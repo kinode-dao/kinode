@@ -1,0 +1,8 @@
+target/
+.vscode
+.app-signing
+*.swp
+/home
+modules/**/wit
+target.wasm
+world

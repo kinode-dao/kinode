@@ -1,0 +1,57 @@
+[package]
+name = "uqbar"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+aes-gcm = "0.10.2"
+anyhow = "1.0.71"
+async-recursion = "1.0.4"
+async-trait = "0.1.71"
+bincode = "1.3.3"
+blake3 = "1.4.1"
+bytes = "1.4.0"
+cap-std = "2.0.0"
+chacha20poly1305 = "0.10.1"
+cita_trie = "4.0.0"
+crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"] }
+digest = "0.10"
+dotenv = "0.15.0"
+elliptic-curve = { version = "0.13.5", features = ["ecdh"] }
+ethers = "2.0"
+ethers-providers = "2.0.9"
+futures = "0.3"
+generic-array = "0.14"
+getrandom = "0.2.10"
+hasher = "*"
+hex = "0.4.3"
+hkdf = "0.12.3"
+hmac = "0.12"
+http = "0.2.9"
+jwt = "0.16"
+lazy_static = "1.4.0"
+log = "*"
+num-traits = "0.2"
+open = "5.0.0"
+public-ip = "0.2.2"
+rand = "0.8.4"
+reqwest = "0.11.18"
+ring = "0.16.20"
+rsa = "0.9"
+rusoto_core = "0.48.0"
+rusoto_s3 = "0.48.0"
+rusoto_credential = "0.48.0"
+serde = {version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_urlencoded = "0.7"
+sha2 = "0.10"
+thiserror = "1.0.43"
+tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "sync"] }
+tokio-tungstenite = "*"
+url = "*"
+uuid = { version = "1.1.2", features = ["serde", "v4"] }
+warp = "0.3.5"
+wasmtime = "12.0.1"
+wasmtime-wasi = "12.0.1"
