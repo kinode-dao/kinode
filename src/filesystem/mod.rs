@@ -224,13 +224,10 @@ async fn get_bytes(entry: &fs::DirEntry, processes: &mut Vec<(String, Vec<u8>)>)
                 if let Some(name) = entry.file_name().to_str() {
                     // Get the path to the wasm file for the process
                     let path = entry.path();
-                    let Some(path) = path.to_str() else {
-                        break
-                    };
+                    let Some(path) = path.to_str() else { break };
                     let wasm_path = format!(
                         "{}/target/wasm32-unknown-unknown/release/{}.wasm",
-                        path,
-                        name,
+                        path, name,
                     );
                     // Read the wasm file
                     if let Ok(wasm_bytes) = fs::read(wasm_path).await {
