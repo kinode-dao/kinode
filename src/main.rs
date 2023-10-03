@@ -1,7 +1,7 @@
 use anyhow::Result;
 use dotenv;
 use ethers::prelude::{abigen, namehash, Address as EthAddress, Provider, U256};
-use ethers_providers::Ws;
+use ethers_providers::{Middleware, Ws};
 use ring::pkcs8::Document;
 use ring::signature::{self, KeyPair};
 use std::env;
@@ -56,7 +56,7 @@ async fn main() {
     }
     // read PKI from websocket endpoint served by public RPC
     // if you get rate-limited or something, pass in your own RPC as a boot argument
-    let mut rpc_url = "wss://eth-sepolia.public.blastapi.io".to_string();
+    let mut rpc_url = "wss://ethereum-sepolia.publicnode.com".to_string();
 
     for (i, arg) in args.iter().enumerate() {
         if arg == "--rpc" {
@@ -162,15 +162,15 @@ async fn main() {
     let (fs_kill_confirm_send, fs_kill_confirm_recv) = oneshot::channel::<()>();
 
     println!("finding public IP address...");
-    let our_ip = {
+    let our_ip: std::net::Ipv4Addr = {
         if let Ok(Some(ip)) = timeout(std::time::Duration::from_secs(5), public_ip::addr_v4()).await
         {
-            ip.to_string()
+            ip
         } else {
             println!(
                 "\x1b[38;5;196mfailed to find public IPv4 address: booting as a routed node\x1b[0m"
             );
-            "localhost".into()
+            std::net::Ipv4Addr::LOCALHOST
         }
     };
 
@@ -202,7 +202,7 @@ async fn main() {
             "Click here to log in to your node.",
         );
         println!("(http://localhost:{}/login)", http_server_port);
-        if our_ip != "localhost" {
+        if our_ip != std::net::Ipv4Addr::LOCALHOST {
             println!(
                 "(if on a remote machine: http://{}:{}/login)",
                 our_ip, http_server_port
@@ -236,11 +236,15 @@ async fn main() {
         let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
             panic!("rpc: couldn't connect to blockchain wss endpoint");
         };
+        let Ok(_) = ws_rpc.get_block_number().await else {
+            panic!("error: RPC endpoint not responding, try setting one with --rpc flag");
+        };
         let qns_address: EthAddress = QNS_SEPOLIA_ADDRESS.parse().unwrap();
         let contract = QNSRegistry::new(qns_address, ws_rpc.into());
         let node_id: U256 = namehash(&username).as_bytes().into();
-        let onchain_id = contract.ws(node_id).call().await.unwrap(); // TODO unwrap
-
+        let Ok(onchain_id) = contract.ws(node_id).call().await else {
+            panic!("error: RPC endpoint failed to fetch our node_id");
+        };
         // double check that routers match on-chain information
         let namehashed_routers: Vec<[u8; 32]> = routers
             .clone()
@@ -256,10 +260,8 @@ async fn main() {
         // double check that keys match on-chain information
         if onchain_id.routers != namehashed_routers
             || onchain_id.public_key != networking_keypair.public_key().as_ref()
-        // || (onchain_id.ip_and_port > 0 && onchain_id.ip_and_port != combineIpAndPort(
-        //     our_ip.clone(),
-        //     http_server_port,
-        // ))
+            || (onchain_id.ip != 0
+                && onchain_id.ip != <std::net::Ipv4Addr as Into<u32>>::into(our_ip))
         {
             panic!("CRITICAL: your routing information does not match on-chain records");
         }
@@ -299,7 +301,7 @@ async fn main() {
             "Click here to register your node.",
         );
         println!("(http://localhost:{})", http_server_port);
-        if our_ip != "localhost" {
+        if our_ip != std::net::Ipv4Addr::LOCALHOST {
             println!(
                 "(if on a remote machine: http://{}:{})",
                 our_ip, http_server_port
@@ -308,7 +310,7 @@ async fn main() {
 
         let (tx, mut rx) = mpsc::channel::<(Identity, String, Document, Vec<u8>)>(1);
         let (mut our, password, serialized_networking_keypair, jwt_secret_bytes) = tokio::select! {
-            _ = register::register(tx, kill_rx, our_ip.clone(), http_server_port, http_server_port)
+            _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, http_server_port)
                 => panic!("registration failed"),
             (our, password, serialized_networking_keypair, jwt_secret_bytes) = async {
                 while let Some(fin) = rx.recv().await {
@@ -415,7 +417,7 @@ async fn main() {
     ));
     tasks.spawn(net::networking(
         our.clone(),
-        our_ip,
+        our_ip.to_string(),
         networking_keypair_arc.clone(),
         kernel_message_sender.clone(),
         network_error_sender,

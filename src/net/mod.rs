@@ -641,7 +641,7 @@ async fn receive_incoming_connections(
 ) {
     let tcp = TcpListener::bind(format!("0.0.0.0:{}", port))
         .await
-        .expect(format!("fatal error: can't listen on port {port}").as_str());
+        .expect(format!("net: fatal error: can't listen on port {port}. change port onchain or free up this port!").as_str());
 
     while let Ok((stream, _socket_addr)) = tcp.accept().await {
         // TODO we can perform some amount of validation here

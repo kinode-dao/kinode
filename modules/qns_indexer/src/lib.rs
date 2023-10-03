@@ -77,8 +77,6 @@ fn subscribe_to_qns(from_block: u64) -> String {
 
 impl UqProcess for Component {
     fn init(our: Address) {
-        bindings::print_to_terminal(0, "qns_indexer: start");
-
         let mut state: State = State {
             names: HashMap::new(),
             nodes: HashMap::new(),
@@ -100,6 +98,8 @@ impl UqProcess for Component {
                 }
             },
         }
+
+        bindings::print_to_terminal(0, &format!("qns_indexer: starting at block {}", state.block));
 
         // shove all state into net::net
         for (_, ipc) in state.nodes.iter() {
@@ -218,6 +218,7 @@ impl UqProcess for Component {
             match msg {
                 // Probably more message types later...maybe not...
                 AllActions::EventSubscription(e) => {
+                    state.block = hex_to_u64(&e.blockNumber).unwrap();
                     match decode_hex(&e.topics[0].clone()) {
                         NodeRegistered::SIGNATURE_HASH => {
                             // bindings::print_to_terminal(0, format!("qns_indexer: got NodeRegistered event: {:?}", e).as_str());
@@ -230,7 +231,6 @@ impl UqProcess for Component {
                             // bindings::print_to_terminal(0, format!("qns_indexer: NAME: {:?}", name.to_string()).as_str());
 
                             state.names.insert(node.to_string(), name);
-                            state.block = hex_to_u64(&e.blockNumber).unwrap();
                         }
                         WsChanged::SIGNATURE_HASH => {
                             // bindings::print_to_terminal(0, format!("qns_indexer: got WsChanged event: {:?}", e).as_str());
