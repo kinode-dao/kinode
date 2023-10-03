@@ -195,10 +195,33 @@ impl UqProcessImports for ProcessWasi {
     async fn spawn(
         &mut self,
         id: wit::ProcessId,
-        _bytes_uri: String,
+        identifier: String,
+        full_path: String,
         on_panic: wit::OnPanic,
         capabilities: wit::Capabilities,
     ) -> Result<Option<wit::ProcessId>> {
+        let _ = send_and_await_response(
+            self,
+            wit::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: wit::ProcessId::Name("vfs".into()),
+            },
+            wit::Request {
+                inherit: false,
+                expects_response: Some(5),
+                ipc: Some(serde_json::to_string(&t::VfsRequest::GetEntry {
+                    identifier: identifier.clone(),
+                    full_path: full_path.clone(),
+                }).unwrap()),
+                metadata: None,
+            },
+            None,
+        ).await.unwrap().unwrap();
+        // TODO: handle case of response is Error
+        let Some(t::Payload { mime: _, bytes }) = self.process.last_payload else {
+            panic!("");  // TODO
+        };
+
         self.process
             .send_to_loop
             .send(t::KernelMessage {
@@ -218,7 +241,8 @@ impl UqProcessImports for ProcessWasi {
                                 wit::ProcessId::Name(ref name) => Some(name.into()),
                                 wit::ProcessId::Id(_id) => None,
                             },
-                            wasm_bytes_handle: 0, // ???????
+                            identifier,
+                            full_path,
                             on_panic: de_wit_on_panic(on_panic),
                             // TODO
                             initial_capabilities: match capabilities {
@@ -244,7 +268,10 @@ impl UqProcessImports for ProcessWasi {
                     ),
                     metadata: None,
                 }),
-                payload: None,
+                payload: Some(t::Payload {
+                    mime: None,
+                    bytes,
+                }),
                 signed_capabilities: None,
             })
             .await?;
@@ -994,6 +1021,8 @@ async fn make_process_loop(
 /// handle messages sent directly to kernel. source is always our own node.
 async fn handle_kernel_request(
     our_name: String,
+    keypair: Arc<signature::Ed25519KeyPair>,
+    home_directory_path: String,
     km: t::KernelMessage,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
@@ -1001,6 +1030,7 @@ async fn handle_kernel_request(
     process_handles: &mut ProcessHandles,
     process_map: &mut t::ProcessMap,
     caps_oracle: t::CapMessageSender,
+    engine: &Engine,
 ) {
     let t::Message::Request(request) = km.message else {
         return;
@@ -1026,55 +1056,52 @@ async fn handle_kernel_request(
         }
         //
         // initialize a new process. this is the only way to create a new process.
-        // this sends a read request to filesystem, when response is received,
-        // the process is spawned
         //
         t::KernelCommand::StartProcess {
             name,
-            wasm_bytes_handle,
+            identifier,
+            full_path,
             on_panic,
             initial_capabilities,
-        } => send_to_loop
-            .send(t::KernelMessage {
-                id: km.id,
-                source: t::Address {
-                    node: our_name.clone(),
-                    process: t::ProcessId::Name("kernel".into()),
+        } => {
+            let Some(ref payload) = km.payload else {
+                send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: "kernel: process startup requires bytes".into(),
+                    })
+                    .await
+                    .unwrap();
+                return;
+            };
+
+            start_process(
+                our_name,
+                keypair.clone(),
+                home_directory_path,
+                km.id,
+                &payload.bytes,
+                send_to_loop,
+                send_to_terminal,
+                senders,
+                process_handles,
+                process_map,
+                engine,
+                caps_oracle,
+                StartProcessMetadata {
+                    source: km.source,
+                    process_id: name.map(|n| t::ProcessId::Name(n)),
+                    persisted: t::PersistedProcess {
+                        identifier,
+                        full_path,
+                        on_panic,
+                        capabilities: initial_capabilities,
+                    },
+                    reboot: false,
                 },
-                target: t::Address {
-                    node: our_name.clone(),
-                    process: t::ProcessId::Name("filesystem".into()),
-                },
-                rsvp: None,
-                message: t::Message::Request(t::Request {
-                    inherit: true,
-                    expects_response: Some(5), // TODO evaluate
-                    ipc: Some(
-                        serde_json::to_string(&t::FsAction::Read(wasm_bytes_handle)).unwrap(),
-                    ),
-                    // TODO find a better way if possible: keeping process metadata
-                    // in request/response roundtrip because kernel itself doesn't
-                    // have contexts to rely on..
-                    // filesystem has to give this back to us.
-                    metadata: Some(
-                        serde_json::to_string(&StartProcessMetadata {
-                            source: km.source,
-                            process_id: name.map(|n| t::ProcessId::Name(n)),
-                            persisted: t::PersistedProcess {
-                                wasm_bytes_handle,
-                                on_panic,
-                                capabilities: initial_capabilities,
-                            },
-                            reboot: false,
-                        })
-                        .unwrap(),
-                    ),
-                }),
-                payload: None,
-                signed_capabilities: None,
-            })
-            .await
-            .unwrap(),
+            )
+            .await;
+        }
         //  reboot from persisted process.
         t::KernelCommand::RebootProcess {
             process_id,
@@ -1181,9 +1208,9 @@ async fn handle_kernel_request(
     }
 }
 
-/// currently, the kernel only receives 2 classes of responses, file-read and set-state
-/// responses from the filesystem module. it uses these to get wasm bytes of a process and
-/// start that process.
+/// currently, the kernel only receives 1 class of Response: set-state
+/// from the filesystem module. it uses this to start a process.
+// TODO: clean up args
 async fn handle_kernel_response(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
@@ -1218,47 +1245,6 @@ async fn handle_kernel_response(
         //  process map upon receiving confirmation that it's been persisted
         return;
     };
-
-    let meta: StartProcessMetadata = match serde_json::from_str(&metadata) {
-        Err(_) => {
-            let _ = send_to_terminal
-                .send(t::Printout {
-                    verbosity: 1,
-                    content: "kernel: got weird metadata from filesystem".into(),
-                })
-                .await;
-            return;
-        }
-        Ok(m) => m,
-    };
-
-    let Some(ref payload) = km.payload else {
-        send_to_terminal
-            .send(t::Printout {
-                verbosity: 0,
-                content: "kernel: process startup requires bytes".into(),
-            })
-            .await
-            .unwrap();
-        return;
-    };
-
-    start_process(
-        our_name,
-        keypair.clone(),
-        home_directory_path,
-        km.id,
-        &payload.bytes,
-        send_to_loop,
-        send_to_terminal,
-        senders,
-        process_handles,
-        process_map,
-        engine,
-        caps_oracle,
-        meta,
-    )
-    .await;
 }
 
 async fn start_process(
@@ -1357,7 +1343,8 @@ async fn start_process(
     process_map.insert(
         process_id,
         t::PersistedProcess {
-            wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle,
+            identifier: process_metadata.persisted.identifier,
+            full_path: process_metadata.persisted.full_path,
             on_panic: process_metadata.persisted.on_panic,
             capabilities: process_metadata.persisted.capabilities,
         },
@@ -1651,6 +1638,8 @@ async fn make_event_loop(
                                 t::Message::Request(_) => {
                                     handle_kernel_request(
                                         our_name.clone(),
+                                        keypair.clone(),
+                                        home_directory_path.clone(),
                                         kernel_message,
                                         send_to_loop.clone(),
                                         send_to_terminal.clone(),
@@ -1658,6 +1647,7 @@ async fn make_event_loop(
                                         &mut process_handles,
                                         &mut process_map,
                                         caps_oracle_sender.clone(),
+                                        &engine,
                                     ).await;
                                 }
                                 t::Message::Response(_) => {

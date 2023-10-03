@@ -2,6 +2,7 @@ target/
 .vscode
 .app-signing
 *.swp
+*.swo
 /home
 modules/**/wit
 target.wasm

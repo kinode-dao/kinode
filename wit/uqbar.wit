@@ -126,7 +126,7 @@ world uq-process {
     import set-on-panic: func(on-panic: on-panic)
 
     // what should bytes_uri be?? need vfs?
-    import spawn: func(id: process-id, bytes-uri: string, on-panic: on-panic, capabilities: capabilities) ->
+    import spawn: func(id: process-id, identifier: string, full-path: string, on-panic: on-panic, capabilities: capabilities) ->
         option<process-id>
 
     // capabilities management

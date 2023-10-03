@@ -250,7 +250,8 @@ pub enum DebugCommand {
 pub enum KernelCommand {
     StartProcess {
         name: Option<String>,
-        wasm_bytes_handle: u128,
+        identifier: String,
+        full_path: String,
         on_panic: OnPanic,
         initial_capabilities: HashSet<Capability>,
     },
@@ -300,7 +301,8 @@ pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistedProcess {
-    pub wasm_bytes_handle: u128,
+    pub identifier: String,
+    pub full_path: String,
     pub on_panic: OnPanic,
     pub capabilities: HashSet<Capability>,
 }
