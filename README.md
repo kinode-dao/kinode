@@ -21,10 +21,6 @@ cargo install --git https://github.com/bytecodealliance/cargo-component --locked
 # OPTIONAL: --release flag
 cargo +nightly build
 
-# To build all of the apps
-# OPTIONAL: --release flag
-./build.sh --all
-
 # Create the home directory for your node
 # If you boot multiple nodes, make sure each has their own home directory.
 mkdir home
