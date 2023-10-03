@@ -1,23 +1,23 @@
 #!/bin/bash
 
-release_flag=""
+debug_flag="--release"
 
 if [ $# -ne 1 ] && [ $# -ne 2 ]; then
-    echo "Usage: $0 <name> [--release]"
+    echo "Usage: $0 <name> [--debug]"
     exit 1
 fi
 
 name="$1"
 
-if [[ "$2" == "--release" ]]; then
-    release_flag="--release"
+if [[ "$2" == "--debug" ]]; then
+    debug_flag=""
 fi
 
 pwd=$(pwd)
 
-# Check if the --release flag is present
-if [[ "$@" == *"--release"* ]]; then
-    release_flag="--release"
+# Check if the --debug flag is present
+if [[ "$@" == *"--debug"* ]]; then
+    debug_flag="--release"
 fi
 
 rm -rf "$pwd/modules/$name/wit" || { echo "Command failed"; exit 1; }
@@ -31,7 +31,7 @@ mkdir -p "$pwd/modules/$name/target/wasm32-unknown-unknown/release" || { echo "C
 
 # Build the module using Cargo
 cargo build \
-  $release_flag \
+  $debug_flag \
   --no-default-features \
   --manifest-path="$pwd/modules/$name/Cargo.toml"\
   --target "wasm32-wasi" || {
