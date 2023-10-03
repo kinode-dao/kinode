@@ -6,7 +6,7 @@ Last updated: 10/02/23
 ```bash
 # Clone the repo.
 
-git clone git@github.com:uqbar-dao/operationOJ.git
+git clone git@github.com:uqbar-dao/uqbar.git
 
 # Get some stuff so we can build wasm.
 
