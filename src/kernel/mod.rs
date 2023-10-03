@@ -484,25 +484,34 @@ impl UqProcessImports for ProcessWasi {
         request: wit::Request,
         payload: Option<wit::Payload>,
     ) -> Result<Result<(wit::Address, wit::Message), wit::SendError>> {
-        if request.expects_response.is_none() {
-            return Err(anyhow::anyhow!("kernel: got invalid send_and_await_response() Request from {:?}: must expect response", self.process.metadata.our.process));
-        }
-        let id = self
-            .process
-            .handle_request(target, request, None, payload)
-            .await;
-        match id {
-            Ok(id) => match self.process.get_specific_message_for_process(id).await {
-                Ok((address, wit::Message::Response(response))) => {
-                    Ok(Ok((address, wit::Message::Response(response))))
-                }
-                Ok((_address, wit::Message::Request(_))) => Err(anyhow::anyhow!(
-                    "fatal: received Request instead of Response"
-                )),
-                Err((net_err, _context)) => Ok(Err(net_err)),
-            },
-            Err(e) => Err(e),
-        }
+        send_and_await_response(self, target, request, payload).await
+    }
+}
+
+async fn send_and_await_response(
+    process: &mut ProcessWasi,
+    target: wit::Address,
+    request: wit::Request,
+    payload: Option<wit::Payload>,
+) -> Result<Result<(wit::Address, wit::Message), wit::SendError>> {
+    if request.expects_response.is_none() {
+        return Err(anyhow::anyhow!("kernel: got invalid send_and_await_response() Request from {:?}: must expect response", process.process.metadata.our.process));
+    }
+    let id = process
+        .process
+        .handle_request(target, request, None, payload)
+        .await;
+    match id {
+        Ok(id) => match process.process.get_specific_message_for_process(id).await {
+            Ok((address, wit::Message::Response(response))) => {
+                Ok(Ok((address, wit::Message::Response(response))))
+            }
+            Ok((_address, wit::Message::Request(_))) => Err(anyhow::anyhow!(
+                "fatal: received Request instead of Response"
+            )),
+            Err((net_err, _context)) => Ok(Err(net_err)),
+        },
+        Err(e) => Err(e),
     }
 }
 
