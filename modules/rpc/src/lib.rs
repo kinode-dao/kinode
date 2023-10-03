@@ -11,8 +11,8 @@ use serde_json::json;
 use std::collections::{HashMap, HashSet};
 extern crate base64;
 
-mod process_lib;
 mod kernel_types;
+mod process_lib;
 
 struct Component;
 
@@ -48,12 +48,12 @@ struct CapabilitiesTransfer {
 
 #[derive(Debug, Deserialize)]
 struct WriteFileId {
-    Write: u128
+    Write: u128,
 }
 
 #[derive(Debug, Deserialize)]
 struct WriteFileResult {
-    Ok: WriteFileId
+    Ok: WriteFileId,
 }
 
 // curl http://localhost:8080/rpc/message -H 'content-type: application/json' -d '{"node": "hosted", "process": "vfs", "inherit": false, "expects_response": null, "ipc": "{\"New\": {\"identifier\": \"foo\"}}", "metadata": null, "context": null, "mime": null, "data": null}'
@@ -329,8 +329,7 @@ impl Guest for Component {
 
                             match result {
                                 Ok((_source, message)) => {
-                                    let Message::Response((response, _context)) = message
-                                    else {
+                                    let Message::Response((response, _context)) = message else {
                                         print_to_terminal(
                                             1,
                                             "rpc: got unexpected response to message",
@@ -346,13 +345,13 @@ impl Guest for Component {
                                         continue;
                                     };
 
-                                let (mime, data) = match get_payload() {
-                                    Some(p) => {
-                                        let mime = match p.mime {
-                                            Some(mime) => mime,
-                                            None => "application/octet-stream".to_string(),
-                                        };
-                                        let bytes = p.bytes;
+                                    let (mime, data) = match get_payload() {
+                                        Some(p) => {
+                                            let mime = match p.mime {
+                                                Some(mime) => mime,
+                                                None => "application/octet-stream".to_string(),
+                                            };
+                                            let bytes = p.bytes;
 
                                             (mime, base64::encode(bytes))
                                         }
@@ -420,14 +419,13 @@ impl Guest for Component {
                                     }
                                 };
 
-                            let payload =
-                                match base64::decode(&body_json.wasm) {
-                                    Ok(bytes) => Some(Payload {
-                                        mime: Some("bytes".to_string()),
-                                        bytes,
-                                    }),
-                                    Err(_) => None,
-                                };
+                            let payload = match base64::decode(&body_json.wasm) {
+                                Ok(bytes) => Some(Payload {
+                                    mime: Some("bytes".to_string()),
+                                    bytes,
+                                }),
+                                Err(_) => None,
+                            };
 
                             let node = match body_json.node {
                                 Some(node) => node,
@@ -461,8 +459,7 @@ impl Guest for Component {
 
                             match write_wasm_result {
                                 Ok((_source, message)) => {
-                                    let Message::Response((response, _context)) = message
-                                    else {
+                                    let Message::Response((response, _context)) = message else {
                                         print_to_terminal(
                                             1,
                                             "rpc: got unexpected response to message",
@@ -486,12 +483,15 @@ impl Guest for Component {
                                                     send_http_response(
                                                         500,
                                                         default_headers.clone(),
-                                                        "Write Error".to_string().as_bytes().to_vec(),
+                                                        "Write Error"
+                                                            .to_string()
+                                                            .as_bytes()
+                                                            .to_vec(),
                                                     );
                                                     continue;
                                                 }
                                             }
-                                        },
+                                        }
                                         None => {
                                             send_http_response(
                                                 500,
@@ -499,10 +499,10 @@ impl Guest for Component {
                                                 "Write Error".to_string().as_bytes().to_vec(),
                                             );
                                             continue;
-                                        },
+                                        }
                                     };
 
-                                    let mut capabilities: HashSet::<Capability> = HashSet::new();
+                                    let mut capabilities: HashSet<Capability> = HashSet::new();
 
                                     match body_json.capabilities {
                                         Some(caps) => {
@@ -510,16 +510,23 @@ impl Guest for Component {
                                                 capabilities.insert(Capability {
                                                     issuer: kernel_types::Address {
                                                         node: node.clone(),
-                                                        process: kernel_types::ProcessId::Name(cap.0),
+                                                        process: kernel_types::ProcessId::Name(
+                                                            cap.0,
+                                                        ),
                                                     },
                                                     params: cap.1,
                                                 });
                                             }
-                                        },
+                                        }
                                         None => (),
                                     };
 
-                                    let stop_process_command = kernel_types::KernelCommand::KillProcess(kernel_types::ProcessId::Name(body_json.process.clone()));
+                                    let stop_process_command =
+                                        kernel_types::KernelCommand::KillProcess(
+                                            kernel_types::ProcessId::Name(
+                                                body_json.process.clone(),
+                                            ),
+                                        );
 
                                     send_request(
                                         &Address {
@@ -529,24 +536,31 @@ impl Guest for Component {
                                         &Request {
                                             inherit: false,
                                             expects_response: Some(5),
-                                            ipc: Some(serde_json::to_string(&stop_process_command).unwrap()),
+                                            ipc: Some(
+                                                serde_json::to_string(&stop_process_command)
+                                                    .unwrap(),
+                                            ),
                                             metadata: None,
                                         },
-                                None,
-                                None,
+                                        None,
+                                        None,
                                     );
 
-                                    let start_process_command = kernel_types::KernelCommand::StartProcess {
-                                        name: Some(body_json.process),
-                                        wasm_bytes_handle,
-                                        on_panic: kernel_types::OnPanic::Restart,
-                                        initial_capabilities: capabilities
-                                    };
+                                    let start_process_command =
+                                        kernel_types::KernelCommand::StartProcess {
+                                            name: Some(body_json.process),
+                                            wasm_bytes_handle,
+                                            on_panic: kernel_types::OnPanic::Restart,
+                                            initial_capabilities: capabilities,
+                                        };
 
                                     let ipc = match serde_json::to_string(&start_process_command) {
                                         Ok(ipc) => ipc,
                                         Err(_) => {
-                                            print_to_terminal(1, "rpc: failed to serialize StartProcess command");
+                                            print_to_terminal(
+                                                1,
+                                                "rpc: failed to serialize StartProcess command",
+                                            );
                                             send_http_response(
                                                 500,
                                                 default_headers.clone(),
@@ -572,7 +586,11 @@ impl Guest for Component {
 
                                     match start_wasm_result {
                                         Ok((_source, _message)) => {
-                                            send_http_response(200, default_headers.clone(), "Success".to_string().as_bytes().to_vec());
+                                            send_http_response(
+                                                200,
+                                                default_headers.clone(),
+                                                "Success".to_string().as_bytes().to_vec(),
+                                            );
                                             continue;
                                         }
                                         Err(_) => {
