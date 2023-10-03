@@ -56,7 +56,6 @@ struct WriteFileResult {
     Ok: WriteFileId
 }
 
-
 // curl http://localhost:8080/rpc/message -H 'content-type: application/json' -d '{"node": "hosted", "process": "vfs", "inherit": false, "expects_response": null, "ipc": "{\"New\": {\"identifier\": \"foo\"}}", "metadata": null, "context": null, "mime": null, "data": null}'
 
 fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
@@ -79,10 +78,6 @@ fn send_http_response(status: u16, headers: HashMap<String, String>, payload_byt
 }
 
 const RPC_PAGE: &str = include_str!("rpc.html");
-
-fn binary_encoded_string_to_bytes(s: &str) -> Vec<u8> {
-    s.chars().map(|c| c as u8).collect()
-}
 
 impl Guest for Component {
     fn init(our: Address) {
@@ -378,7 +373,7 @@ impl Guest for Component {
                                     send_http_response(200, default_headers.clone(), body);
                                     continue;
                                 }
-                                Err(error) => {
+                                Err(_) => {
                                     print_to_terminal(1, "rpc: error coming back");
                                     send_http_response(
                                         500,
@@ -524,6 +519,23 @@ impl Guest for Component {
                                         None => (),
                                     };
 
+                                    let stop_process_command = kernel_types::KernelCommand::KillProcess(kernel_types::ProcessId::Name(body_json.process.clone()));
+
+                                    send_request(
+                                        &Address {
+                                            node: node.clone(),
+                                            process: ProcessId::Name("kernel".to_string()),
+                                        },
+                                        &Request {
+                                            inherit: false,
+                                            expects_response: Some(5),
+                                            ipc: Some(serde_json::to_string(&stop_process_command).unwrap()),
+                                            metadata: None,
+                                        },
+                                None,
+                                None,
+                                    );
+
                                     let start_process_command = kernel_types::KernelCommand::StartProcess {
                                         name: Some(body_json.process),
                                         wasm_bytes_handle,
@@ -559,7 +571,7 @@ impl Guest for Component {
                                     );
 
                                     match start_wasm_result {
-                                        Ok((_source, message)) => {
+                                        Ok((_source, _message)) => {
                                             send_http_response(200, default_headers.clone(), "Success".to_string().as_bytes().to_vec());
                                             continue;
                                         }
