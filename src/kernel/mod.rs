@@ -249,9 +249,9 @@ impl UqProcessImports for ProcessWasi {
             })
             .await?;
 
-
         // child processes are always able to Message parent
-        let _ = self.process
+        let _ = self
+            .process
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: de_wit_process_id(id.clone()),
@@ -259,13 +259,15 @@ impl UqProcessImports for ProcessWasi {
                     issuer: self.process.metadata.our.clone(),
                     params: serde_json::to_string(&serde_json::json!({
                         "messaging": self.process.metadata.our.process.clone(),
-                    })).unwrap(),
+                    }))
+                    .unwrap(),
                 },
             })
             .unwrap();
 
         // parent process is always able to Message child
-        let _ = self.process
+        let _ = self
+            .process
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: self.process.metadata.our.process.clone(),
@@ -273,7 +275,8 @@ impl UqProcessImports for ProcessWasi {
                     issuer: self.process.metadata.our.clone(),
                     params: serde_json::to_string(&serde_json::json!({
                         "messaging": de_wit_process_id(id.clone()),
-                    })).unwrap(),
+                    }))
+                    .unwrap(),
                 },
             })
             .unwrap();
