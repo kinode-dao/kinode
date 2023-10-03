@@ -1,7 +1,7 @@
 #!/bin/bash
 
 all=false
-release=""
+debug="--release"
 
 # prase arguments (--all, --release)
 for arg in "$@"; do
@@ -9,8 +9,8 @@ for arg in "$@"; do
         --all)
             all=true
             ;;
-        --release)
-            release="--release"
+        --debug)
+            debug="--release"
             ;;
         *)
             echo "Error: Unrecognized argument: $arg"
@@ -40,7 +40,7 @@ if $all; then
         # Check if it's a directory
         if [ -d "$dir" ]; then
             dir_name=$(basename "$dir")
-            ./build-app.sh "$dir_name" $release
+            ./build-app.sh "$dir_name" $debug
         fi
     done
 # else just compile the ones that have git changes
@@ -53,6 +53,6 @@ if $all; then
 else
     DIRS=($(git -C . status --porcelain | grep 'modules/' | sed -n 's|^.*modules/\([^/]*\)/.*$|\1|p' | sort -u))
     for dir in "${DIRS[@]}"; do
-        ./build-app.sh $dir $release
+        ./build-app.sh $dir $debug
     done
 fi
