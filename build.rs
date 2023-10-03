@@ -11,7 +11,6 @@ fn run_command(cmd: &mut Command) -> io::Result<()> {
 }
 
 fn main() {
-
     if std::env::var("SKIP_BUILD_SCRIPT").is_ok() {
         println!("Skipping build script");
         return;
