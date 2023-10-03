@@ -19,7 +19,7 @@ cargo install --git https://github.com/bytecodealliance/cargo-component --locked
 
 # Build the runtime, along with a number of booted-at-startup WASM modules including terminal and key_value
 # OPTIONAL: --release flag
-cargo +nightly build
+cargo +nightly build --release
 
 # Create the home directory for your node
 # If you boot multiple nodes, make sure each has their own home directory.
@@ -39,8 +39,6 @@ cargo +nightly run --release home
 
 On boot you will be prompted to navigate to `localhost:8080`. Make sure your eth wallet is connected to the Sepolia test network. Login should be very straightforward, just submit the transactions and follow the flow.
 
-### Development
-Running `./build.sh` will automatically build any apps that have changes in git. Developing with `./build.sh && cargo +nightly run home` anytime you make a change to your app should be very fast. You can also manually recompile just your app with, for example, `./build-app chess`, where `chess` is the folder name inside `/modules`.
 
 ## Terminal syntax
 
