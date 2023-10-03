@@ -3,7 +3,7 @@
 all=false
 release=""
 
-# prase arguments (--all, --release)
+# parse arguments (--all, --release)
 for arg in "$@"; do
     case "$arg" in
         --all)
@@ -33,26 +33,35 @@ touch "${pwd}/world" || {
     exit 1
 }
 
+# Build logic for an app
+build_app() {
+    dir="$1"
+    release="$2"
+    # Check if it contains a Cargo.toml
+    if [ -f "$dir/Cargo.toml" ]; then
+        ./build-app.sh "$dir" $release
+    elif [ -d "$dir" ]; then
+        # It's a directory. Check its subdirectories
+        for sub_dir in "$dir"/*; do
+            if [ -f "$sub_dir/Cargo.toml" ]; then
+                ./build-app.sh "$sub_dir" $release
+            fi
+        done
+    fi
+}
+
 # if --all compile all apps
 if $all; then
     modules_dir="./modules"
     for dir in "$modules_dir"/*; do
-        # Check if it's a directory
-        if [ -d "$dir" ]; then
-            dir_name=$(basename "$dir")
-            ./build-app.sh "$dir_name" $release
+        if [ "key_value" = "$dir" ]; then
+            continue
         fi
+        build_app "$dir" "$release"
     done
-# else just compile the ones that have git changes
-# NOTE: this can screw you up if you
-#   1. make a change
-#   2. compile it with ./build.sh
-#   3. revert those changes
-# this script will not recompile it after that because it uses git to detect changes
-# so every once in a while just run --all to make sure everything is in line
 else
     DIRS=($(git -C . status --porcelain | grep 'modules/' | sed -n 's|^.*modules/\([^/]*\)/.*$|\1|p' | sort -u))
     for dir in "${DIRS[@]}"; do
-        ./build-app.sh $dir $release
+        build_app "./modules/$dir" "$release"
     done
 fi

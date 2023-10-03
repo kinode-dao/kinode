@@ -265,6 +265,25 @@ impl UqProcessImports for ProcessWasi {
             })
             .unwrap();
 
+        // parent processes are always able to Message child
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Add {
+                on: self.process.metadata.our.process.clone(),
+                cap: t::Capability {
+                    issuer: t::Address {
+                        node: self.process.metadata.our.node.clone(),
+                        process: de_wit_process_id(id.clone()),
+                    },
+                    params: serde_json::to_string(&serde_json::json!({
+                        "messaging": de_wit_process_id(id.clone()),
+                    }))
+                    .unwrap(),
+                },
+            })
+            .unwrap();
+
         Ok(Some(id))
     }
 
@@ -1680,12 +1699,23 @@ async fn make_event_loop(
                     match cap_message {
                         t::CapMessage::Add { on, cap } => {
                             // insert cap in process map
-                            process_map.get_mut(&on).unwrap().capabilities.insert(cap);
+                            match process_map.get_mut(&on) {
+                                None => println!("capabilities: no such process {:?}", on),
+                                Some(pp) => {
+                                    pp.capabilities.insert(cap);
+                                },
+                            }
                             let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
                         },
                         t::CapMessage::Drop { on, cap } => {
                             // remove cap from process map
                             process_map.get_mut(&on).unwrap().capabilities.remove(&cap);
+                            match process_map.get_mut(&on) {
+                                None => {},
+                                Some(pp) => {
+                                    pp.capabilities.remove(&cap);
+                                },
+                            }
                             let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
                         },
                         t::CapMessage::Has { on, cap, responder } => {

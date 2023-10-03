@@ -216,6 +216,35 @@ pub async fn bootstrap(
     Ok((process_map, manifest))
 }
 
+async fn get_bytes(entry: &fs::DirEntry, processes: &mut Vec<(String, Vec<u8>)>) -> bool {
+    if let Ok(mut inner_entries) = fs::read_dir(entry.path()).await {
+        while let Ok(Some(inner_entry)) = inner_entries.next_entry().await {
+            if Some("Cargo.toml") == inner_entry.file_name().to_str() {
+                // entry is process dir: read it in
+                if let Some(name) = entry.file_name().to_str() {
+                    // Get the path to the wasm file for the process
+                    let path = entry.path();
+                    let Some(path) = path.to_str() else {
+                        break
+                    };
+                    let wasm_path = format!(
+                        "{}/target/wasm32-unknown-unknown/release/{}.wasm",
+                        path,
+                        name,
+                    );
+                    // Read the wasm file
+                    if let Ok(wasm_bytes) = fs::read(wasm_path).await {
+                        // Add the process name and wasm bytes to the list of processes
+                        processes.push((name.into(), wasm_bytes));
+                    }
+                }
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 async fn get_processes_from_directories() -> Vec<(String, Vec<u8>)> {
     let mut processes = Vec::new();
 
@@ -226,19 +255,21 @@ async fn get_processes_from_directories() -> Vec<(String, Vec<u8>)> {
     if let Ok(mut entries) = fs::read_dir(modules_path).await {
         // Loop through the entries in the directory
         while let Ok(Some(entry)) = entries.next_entry().await {
-            // If the entry is a directory, add its name to the list of processes
+            // If the entry is a directory containing Cargo.toml, add its name to the list of processes
             if let Ok(metadata) = entry.metadata().await {
                 if metadata.is_dir() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        // Get the path to the wasm file for the process
-                        let wasm_path = format!(
-                            "modules/{}/target/wasm32-unknown-unknown/release/{}.wasm",
-                            name, name
-                        );
-                        // Read the wasm file
-                        if let Ok(wasm_bytes) = fs::read(wasm_path).await {
-                            // Add the process name and wasm bytes to the list of processes
-                            processes.push((name.to_string(), wasm_bytes));
+                    let got_bytes = get_bytes(&entry, &mut processes).await;
+                    if !got_bytes {
+                        // Directory did not contain Cargo.toml: check one level deeper
+                        // TODO: make recursive?
+                        if let Ok(mut inner_entries) = fs::read_dir(entry.path()).await {
+                            while let Ok(Some(inner_entry)) = inner_entries.next_entry().await {
+                                if let Ok(metadata) = inner_entry.metadata().await {
+                                    if metadata.is_dir() {
+                                        let _ = get_bytes(&inner_entry, &mut processes).await;
+                                    }
+                                }
+                            }
                         }
                     }
                 }

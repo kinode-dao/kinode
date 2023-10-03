@@ -63,7 +63,9 @@ fn handle_message (
                     let _ = process_lib::send_and_await_response(
                         &vfs_address,
                         false,
-                        Some(serde_json::to_string(&kt::VfsRequest::New { identifier: vfs_identifier }).unwrap()),
+                        Some(serde_json::to_string(&kt::VfsRequest::New {
+                            identifier: vfs_identifier.clone(),
+                        }).unwrap()),
                         None,
                         None,
                         15,
@@ -72,11 +74,11 @@ fn handle_message (
                     //  (2)
                     let vfs_read = get_capability(
                         &vfs_address,
-                        &make_cap("read", identifier),
+                        &make_cap("read", &vfs_identifier),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'read' capability found"))?;
                     let vfs_write = get_capability(
                         &vfs_address,
-                        &make_cap("write", identifier),
+                        &make_cap("write", &vfs_identifier),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
                     let Some(spawned_process_id) = spawn(
                         &ProcessId::Id(0),

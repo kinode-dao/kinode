@@ -737,7 +737,7 @@ impl std::fmt::Display for Message {
         match self {
             Message::Request(request) => write!(
                 f,
-                "Request(\n    inherit: {},\n    expects_response: {:#?},\n    ipc: {},\n    metadata: {}\n)",
+                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n    )",
                 request.inherit,
                 request.expects_response,
                 &request.ipc.as_ref().unwrap_or(&"None".into()),
@@ -745,7 +745,7 @@ impl std::fmt::Display for Message {
             ),
             Message::Response((response, context)) => write!(
                 f,
-                "Response(\n    ipc: {},\n    metadata: {},\n    context: {}\n)",
+                "Response(\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
                 &response.ipc.as_ref().unwrap_or(&"None".into()),
                 &response.metadata.as_ref().unwrap_or(&"None".into()),
                 &context.as_ref().unwrap_or(&"None".into()),
