@@ -103,10 +103,10 @@ pub async fn bootstrap(
                 node: our_name.clone(),
                 process: ProcessId::Name(process_name.into()),
             },
-            params: format!(
-                "{{\"messaging\": \"{}\"}}",
-                serde_json::to_string(&ProcessId::Name(process_name.into())).unwrap()
-            ),
+            params: serde_json::to_string(&serde_json::json!({
+                "messaging": ProcessId::Name(process_name.into()),
+            }))
+            .unwrap(),
         });
     }
     for runtime_module in RUNTIME_MODULES {
@@ -115,10 +115,10 @@ pub async fn bootstrap(
                 node: our_name.clone(),
                 process: ProcessId::Name(runtime_module.into()),
             },
-            params: format!(
-                "{{\"messaging\": \"{}\"}}",
-                serde_json::to_string(&ProcessId::Name(runtime_module.into())).unwrap()
-            ),
+            params: serde_json::to_string(&serde_json::json!({
+                "messaging": ProcessId::Name(runtime_module.into()),
+            }))
+            .unwrap(),
         });
     }
     // give all distro processes the ability to send messages across the network
@@ -133,6 +133,31 @@ pub async fn bootstrap(
     // for a module in /modules, put its bytes into filesystem, add to process_map
     for (process_name, wasm_bytes) in names_and_bytes {
         let hash: [u8; 32] = hash_bytes(&wasm_bytes);
+
+        // allow processes to read their own process bytes
+        let mut special_capabilities = special_capabilities.clone();
+        special_capabilities.insert(Capability {
+            issuer: Address {
+                node: our_name.clone(),
+                process: ProcessId::Name("vfs".into()),
+            },
+            params: serde_json::to_string(&serde_json::json!({
+                "kind": "read",
+                "identifier": process_name,
+            }))
+            .unwrap(),
+        });
+        special_capabilities.insert(Capability {
+            issuer: Address {
+                node: our_name.clone(),
+                process: ProcessId::Name("vfs".into()),
+            },
+            params: serde_json::to_string(&serde_json::json!({
+                "kind": "write",
+                "identifier": process_name,
+            }))
+            .unwrap(),
+        });
 
         if let Some(id) = manifest.get_uuid_by_hash(&hash).await {
             let entry =

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use std::collections::HashSet;
+
 use super::bindings::component::uq_process::types as wit;
 
 //
@@ -42,7 +44,7 @@ impl PartialEq<u64> for ProcessId {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Address {
     pub node: String,
     pub process: ProcessId,
@@ -74,7 +76,7 @@ pub enum Message {
     Response((Response, Option<Context>)),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct Capability {
     pub issuer: Address,
     pub params: String, // JSON-string
@@ -106,6 +108,170 @@ pub enum OnPanic {
     None,
     Restart,
     Requests(Vec<(Address, Request)>),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KernelCommand {
+    StartProcess {
+        name: Option<String>,
+        wasm_bytes_handle: u128,
+        on_panic: OnPanic,
+        initial_capabilities: HashSet<Capability>,
+    },
+    KillProcess(ProcessId), // this is extrajudicial killing: we might lose messages!
+    RebootProcess {
+        // kernel only
+        process_id: ProcessId,
+        persisted: PersistedProcess,
+    },
+    Shutdown,
+    // capabilities creation
+    GrantCapability {
+        to_process: ProcessId,
+        params: String, // JSON-string
+    },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PersistedProcess {
+    pub wasm_bytes_handle: u128,
+    pub on_panic: OnPanic,
+    pub capabilities: HashSet<Capability>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum VfsRequest {
+    New {
+        identifier: String,
+    },
+    Add {
+        identifier: String,
+        full_path: String,
+        entry_type: AddEntryType,
+    },
+    Rename {
+        identifier: String,
+        full_path: String,
+        new_full_path: String,
+    },
+    Delete {
+        identifier: String,
+        full_path: String,
+    },
+    WriteOffset {
+        identifier: String,
+        full_path: String,
+        offset: u64,
+    },
+    SetSize {
+        identifier: String,
+        full_path: String,
+        size: u64,
+    },
+    GetPath {
+        identifier: String,
+        hash: u128,
+    },
+    GetEntry {
+        identifier: String,
+        full_path: String,
+    },
+    GetFileChunk {
+        identifier: String,
+        full_path: String,
+        offset: u64,
+        length: u64,
+    },
+    GetEntryLength {
+        identifier: String,
+        full_path: String,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum AddEntryType {
+    Dir,
+    NewFile, //  add a new file to fs and add name in vfs
+    ExistingFile { hash: u128 }, //  link an existing file in fs to a new name in vfs
+             //  ...  //  symlinks?
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum GetEntryType {
+    Dir,
+    File,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum VfsResponse {
+    New {
+        identifier: String,
+    },
+    Add {
+        identifier: String,
+        full_path: String,
+    },
+    Rename {
+        identifier: String,
+        new_full_path: String,
+    },
+    Delete {
+        identifier: String,
+        full_path: String,
+    },
+    WriteOffset {
+        identifier: String,
+        full_path: String,
+        offset: u64,
+    },
+    SetSize {
+        identifier: String,
+        full_path: String,
+        size: u64,
+    },
+    GetPath {
+        identifier: String,
+        hash: u128,
+        full_path: Option<String>,
+    },
+    GetEntry {
+        identifier: String,
+        full_path: String,
+        children: Vec<String>,
+    },
+    GetFileChunk {
+        identifier: String,
+        full_path: String,
+        offset: u64,
+        length: u64,
+    },
+    GetEntryLength {
+        identifier: String,
+        full_path: String,
+        length: u64,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KeyValueMessage {
+    New { identifier: String },
+    Write { identifier: String, key: Vec<u8> },
+    Read { identifier: String, key: Vec<u8> },
+}
+impl KeyValueError {
+    pub fn kind(&self) -> &str {
+        match *self {
+            KeyValueError::BadIdentifier => "BadIdentifier",
+            KeyValueError::NoCap => "NoCap",
+            KeyValueError::NoBytes => "NoBytes",
+        }
+    }
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KeyValueError {
+    BadIdentifier,
+    NoCap,
+    NoBytes,
 }
 
 //

@@ -90,7 +90,7 @@ fn make_file_name(full_path: &str) -> (String, String) {
 }
 
 fn make_error_message(
-    our_name: String,
+    our_node: String,
     id: u64,
     source: Address,
     error: VfsError,
@@ -98,7 +98,7 @@ fn make_error_message(
     KernelMessage {
         id,
         source: Address {
-            node: our_name,
+            node: our_node,
             process: ProcessId::Name("vfs".into()),
         },
         target: source,
@@ -289,7 +289,7 @@ pub async fn vfs(
             },
             km = recv_from_loop.recv() => {
                 let Some(km) = km else { continue };
-                if let Some(response_sender) = response_router.get(&km.id) {
+                if let Some(response_sender) = response_router.remove(&km.id) {
                     response_sender.send(km).await.unwrap();
                     continue;
                 }
@@ -343,6 +343,7 @@ pub async fn vfs(
                     VfsRequest::Rename { identifier, .. } => (identifier.clone(), false),
                     VfsRequest::Delete { identifier, .. } => (identifier.clone(), false),
                     VfsRequest::WriteOffset { identifier, .. } => (identifier.clone(), false),
+                    VfsRequest::SetSize { identifier, .. } => (identifier.clone(), false),
                     VfsRequest::GetPath { identifier, .. } => (identifier.clone(), false),
                     VfsRequest::GetEntry { identifier, .. } => (identifier.clone(), false),
                     VfsRequest::GetFileChunk { identifier, .. } => (identifier.clone(), false),
@@ -452,7 +453,7 @@ pub async fn vfs(
 
 //  TODO: error handling: send error messages to caller
 async fn handle_request(
-    our_name: String,
+    our_node: String,
     id: u64,
     source: Address,
     expects_response: Option<u64>,
@@ -474,13 +475,14 @@ async fn handle_request(
         VfsRequest::Add { identifier, .. }
         | VfsRequest::Rename { identifier, .. }
         | VfsRequest::Delete { identifier, .. }
-        | VfsRequest::WriteOffset { identifier, .. } => {
+        | VfsRequest::WriteOffset { identifier, .. }
+        | VfsRequest::SetSize { identifier, .. } => {
             let _ = send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
                     cap: Capability {
                         issuer: Address {
-                            node: our_name.clone(),
+                            node: our_node.clone(),
                             process: ProcessId::Name("vfs".into()),
                         },
                         params: serde_json::to_string(&serde_json::json!({
@@ -507,7 +509,7 @@ async fn handle_request(
                     on: source.process.clone(),
                     cap: Capability {
                         issuer: Address {
-                            node: our_name.clone(),
+                            node: our_node.clone(),
                             process: ProcessId::Name("vfs".into()),
                         },
                         params: serde_json::to_string(&serde_json::json!({
@@ -528,7 +530,7 @@ async fn handle_request(
     }
 
     let (ipc, bytes) = match_request(
-        our_name.clone(),
+        our_node.clone(),
         id.clone(),
         source.clone(),
         request,
@@ -547,11 +549,11 @@ async fn handle_request(
         let response = KernelMessage {
             id,
             source: Address {
-                node: our_name.clone(),
+                node: our_node.clone(),
                 process: ProcessId::Name("vfs".into()),
             },
             target: Address {
-                node: our_name.clone(),
+                node: our_node.clone(),
                 process: source.process.clone(),
             },
             rsvp,
@@ -574,7 +576,7 @@ async fn handle_request(
 
 #[async_recursion::async_recursion]
 async fn match_request(
-    our_name: String,
+    our_node: String,
     id: u64,
     source: Address,
     request: VfsRequest,
@@ -593,11 +595,11 @@ async fn match_request(
                     .send(KernelMessage {
                         id,
                         source: Address {
-                            node: our_name.clone(),
+                            node: our_node.clone(),
                             process: ProcessId::Name("vfs".into()),
                         },
                         target: Address {
-                            node: our_name.clone(),
+                            node: our_node.clone(),
                             process: ProcessId::Name("kernel".into()),
                         },
                         rsvp: None,
@@ -718,11 +720,11 @@ async fn match_request(
                         .send(KernelMessage {
                             id,
                             source: Address {
-                                node: our_name.clone(),
+                                node: our_node.clone(),
                                 process: ProcessId::Name("vfs".into()),
                             },
                             target: Address {
-                                node: our_name.clone(),
+                                node: our_node.clone(),
                                 process: ProcessId::Name("filesystem".into()),
                             },
                             rsvp: None,
@@ -1012,11 +1014,11 @@ async fn match_request(
                 .send(KernelMessage {
                     id,
                     source: Address {
-                        node: our_name.clone(),
+                        node: our_node.clone(),
                         process: ProcessId::Name("vfs".into()),
                     },
                     target: Address {
-                        node: our_name.clone(),
+                        node: our_node.clone(),
                         process: ProcessId::Name("filesystem".into()),
                     },
                     rsvp: None,
@@ -1040,6 +1042,78 @@ async fn match_request(
                         identifier,
                         full_path,
                         offset,
+                    })
+                    .unwrap(),
+                ),
+                None,
+            )
+        }
+        VfsRequest::SetSize {
+            identifier,
+            full_path,
+            size,
+        } => {
+            let file_hash = {
+                let mut vfs = vfs.lock().await;
+                let Some(key) = vfs.path_to_key.remove(&full_path) else {
+                    panic!(""); //  TODO
+                };
+                let key2 = key.clone();
+                let Key::File { id: file_hash } = key2 else {
+                    panic!(""); //  TODO
+                };
+                vfs.path_to_key.insert(full_path.clone(), key);
+                file_hash
+            };
+
+            let _ = send_to_loop
+                .send(KernelMessage {
+                    id,
+                    source: Address {
+                        node: our_node.clone(),
+                        process: ProcessId::Name("vfs".into()),
+                    },
+                    target: Address {
+                        node: our_node.clone(),
+                        process: ProcessId::Name("filesystem".into()),
+                    },
+                    rsvp: None,
+                    message: Message::Request(Request {
+                        inherit: true,
+                        expects_response: Some(15),
+                        ipc: Some(
+                            serde_json::to_string(&FsAction::SetLength((file_hash.clone(), size)))
+                                .unwrap(),
+                        ),
+                        metadata: None,
+                    }),
+                    payload: None,
+                    signed_capabilities: None,
+                })
+                .await;
+            let read_response = recv_response.recv().await.unwrap();
+            let KernelMessage {
+                message, payload, ..
+            } = read_response;
+            let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
+                panic!("")
+            };
+            let Some(ipc) = ipc else {
+                panic!("");
+            };
+            let FsResponse::Length(length) = serde_json::from_str(&ipc).unwrap() else {
+                panic!("");
+            };
+            assert_eq!(size, length);
+            // let Some(payload) = payload else {
+            //     panic!("");
+            // };
+            (
+                Some(
+                    serde_json::to_string(&VfsResponse::SetSize {
+                        identifier,
+                        full_path,
+                        size,
                     })
                     .unwrap(),
                 ),
@@ -1153,11 +1227,11 @@ async fn match_request(
                                 .send(KernelMessage {
                                     id,
                                     source: Address {
-                                        node: our_name.clone(),
+                                        node: our_node.clone(),
                                         process: ProcessId::Name("vfs".into()),
                                     },
                                     target: Address {
-                                        node: our_name.clone(),
+                                        node: our_node.clone(),
                                         process: ProcessId::Name("filesystem".into()),
                                     },
                                     rsvp: None,
@@ -1182,7 +1256,7 @@ async fn match_request(
                             } = read_response;
                             let Message::Response((Response { ipc, metadata: _ }, None)) = message
                             else {
-                                panic!("")
+                                panic!("");
                             };
                             let Some(ipc) = ipc else {
                                 panic!("");
@@ -1236,11 +1310,11 @@ async fn match_request(
                 .send(KernelMessage {
                     id,
                     source: Address {
-                        node: our_name.clone(),
+                        node: our_node.clone(),
                         process: ProcessId::Name("vfs".into()),
                     },
                     target: Address {
-                        node: our_name.clone(),
+                        node: our_node.clone(),
                         process: ProcessId::Name("filesystem".into()),
                     },
                     rsvp: None,
@@ -1328,11 +1402,11 @@ async fn match_request(
                     .send(KernelMessage {
                         id,
                         source: Address {
-                            node: our_name.clone(),
+                            node: our_node.clone(),
                             process: ProcessId::Name("vfs".into()),
                         },
                         target: Address {
-                            node: our_name.clone(),
+                            node: our_node.clone(),
                             process: ProcessId::Name("filesystem".into()),
                         },
                         rsvp: None,

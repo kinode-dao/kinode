@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::bindings::component::uq_process::types::*;
-use super::bindings::{get_payload, send_request, Address, Payload};
+use super::bindings::{Address, get_payload, Payload, SendError, send_request};
 
 impl PartialEq for ProcessId {
     fn eq(&self, other: &Self) -> bool {

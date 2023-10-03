@@ -561,6 +561,11 @@ pub enum VfsRequest {
         full_path: String,
         offset: u64,
     },
+    SetSize {
+        identifier: String,
+        full_path: String,
+        size: u64,
+    },
     GetPath {
         identifier: String,
         hash: u128,
@@ -612,6 +617,16 @@ pub enum VfsResponse {
         identifier: String,
         full_path: String,
     },
+    WriteOffset {
+        identifier: String,
+        full_path: String,
+        offset: u64,
+    },
+    SetSize {
+        identifier: String,
+        full_path: String,
+        size: u64,
+    },
     GetPath {
         identifier: String,
         hash: u128,
@@ -628,16 +643,33 @@ pub enum VfsResponse {
         offset: u64,
         length: u64,
     },
-    WriteOffset {
-        identifier: String,
-        full_path: String,
-        offset: u64,
-    },
     GetEntryLength {
         identifier: String,
         full_path: String,
         length: u64,
     },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KeyValueMessage {
+    New { identifier: String },
+    Write { identifier: String, key: Vec<u8> },
+    Read { identifier: String, key: Vec<u8> },
+}
+impl KeyValueError {
+    pub fn kind(&self) -> &str {
+        match *self {
+            KeyValueError::BadIdentifier => "BadIdentifier",
+            KeyValueError::NoCap => "NoCap",
+            KeyValueError::NoBytes => "NoBytes",
+        }
+    }
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KeyValueError {
+    BadIdentifier,
+    NoCap,
+    NoBytes,
 }
 
 //

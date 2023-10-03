@@ -202,7 +202,7 @@ impl UqProcessImports for ProcessWasi {
         self.process
             .send_to_loop
             .send(t::KernelMessage {
-                id: 0,
+                id: rand::random(),
                 source: self.process.metadata.our.clone(),
                 target: t::Address {
                     node: self.process.metadata.our.node.clone(),
@@ -248,8 +248,24 @@ impl UqProcessImports for ProcessWasi {
                 signed_capabilities: None,
             })
             .await?;
-        unimplemented!()
-        //Ok(Some(id))
+
+        // child processes are always able to Message parent
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Add {
+                on: de_wit_process_id(id.clone()),
+                cap: t::Capability {
+                    issuer: self.process.metadata.our.clone(),
+                    params: serde_json::to_string(&serde_json::json!({
+                        "messaging": self.process.metadata.our.process.clone(),
+                    }))
+                    .unwrap(),
+                },
+            })
+            .unwrap();
+
+        Ok(Some(id))
     }
 
     //
@@ -650,7 +666,16 @@ impl Process {
                 (_, None, None) => None,
             },
             message: t::Message::Request(de_wit_request(request.clone())),
-            payload: de_wit_payload(payload),
+            payload: match payload {
+                Some(_) => de_wit_payload(payload),
+                None => {
+                    if !request.inherit {
+                        None
+                    } else {
+                        self.last_payload.clone()
+                    }
+                }
+            },
             signed_capabilities: None,
         };
 
@@ -1550,10 +1575,9 @@ async fn make_event_loop(
                                         node: our_name.clone(),
                                         process: kernel_message.target.process.clone(),
                                     },
-                                    params: format!(
-                                        "{{\"messaging\": \"{}\"}}",
-                                        serde_json::to_string(&kernel_message.target.process.clone()).unwrap()
-                                    ),
+                                    params: serde_json::to_string(&serde_json::json!({
+                                        "messaging": &kernel_message.target.process,
+                                    })).unwrap(),
                                 }) {
                                     // capabilities are not correct! skip this message.
                                     // TODO do some kind of error or something
