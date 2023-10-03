@@ -51,10 +51,10 @@ pub async fn register(
     let pw_post = pw.clone();
     let networking_keypair_post = networking_keypair.clone();
 
-    let static_files = warp::path("static").and(warp::fs::dir("./src/register_app/static/"));
+    let static_files = warp::path("static").and(warp::fs::dir("./src/register/build/static/"));
     let react_app = warp::path::end()
         .and(warp::get())
-        .and(warp::fs::file("./src/register_app/index.html"));
+        .and(warp::fs::file("./src/register/build/index.html"));
 
     let api = warp::path("get-ws-info").and(
         // 1. Get uqname (already on chain) and return networking information

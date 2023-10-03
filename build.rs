@@ -11,12 +11,16 @@ fn run_command(cmd: &mut Command) -> io::Result<()> {
 }
 
 fn main() {
+
     if std::env::var("SKIP_BUILD_SCRIPT").is_ok() {
         println!("Skipping build script");
         return;
     }
 
     let pwd = std::env::current_dir().unwrap();
+
+    // build the register app
+    run_command(Command::new("./build_all.sh").current_dir("src/register")).unwrap();
 
     // create target.wasm (compiled .wit) & world
     run_command(Command::new("wasm-tools").args(&[
