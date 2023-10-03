@@ -52,11 +52,7 @@ pub async fn eth_rpc(
     mut recv_in_client: MessageReceiver,
     print_tx: PrintSender,
 ) -> Result<()> {
-    // TODO maybe don't need to do Arc Mutex
-    let subscriptions = Arc::new(Mutex::new(HashMap::<
-        u64,
-        tokio::task::JoinHandle<Result<(), EthRpcError>>,
-    >::new()));
+    let mut subscriptions = HashMap::<u64, tokio::task::JoinHandle<Result<(), EthRpcError>>>::new();
 
     while let Some(message) = recv_in_client.recv().await {
         let our = our.clone();
@@ -198,8 +194,8 @@ pub async fn eth_rpc(
                             // TODO grab and print error
                             let _ = print_tx
                                 .send(Printout {
-                                    verbosity: 1,
-                                    content: format!("eth_rpc: connection retrying"),
+                                    verbosity: 0,
+                                    content: format!("eth_rpc: connection failed, retrying in 5s"),
                                 })
                                 .await;
                             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -211,12 +207,18 @@ pub async fn eth_rpc(
                             .await
                         {
                             Err(e) => {
+                                let _ = print_tx
+                                    .send(Printout {
+                                        verbosity: 0,
+                                        content: format!("eth_rpc: subscription error: {:?}", e),
+                                    })
+                                    .await;
                                 continue;
                             }
                             Ok(mut stream) => {
                                 let _ = print_tx
                                     .send(Printout {
-                                        verbosity: 1,
+                                        verbosity: 0,
                                         content: format!("eth_rpc: connection established"),
                                     })
                                     .await;
@@ -232,7 +234,7 @@ pub async fn eth_rpc(
                                             target: target.clone(),
                                             rsvp: None,
                                             message: Message::Request(Request {
-                                                inherit: false, // TODO what
+                                                inherit: false,
                                                 expects_response: None,
                                                 ipc: Some(json!({
                                                     "EventSubscription": serde_json::to_value(event.clone()).unwrap()
@@ -257,7 +259,7 @@ pub async fn eth_rpc(
                         };
                     }
                 });
-                subscriptions.lock().await.insert(id, handle);
+                subscriptions.insert(id, handle);
             }
             EthRpcAction::Unsubscribe(sub_id) => {
                 let _ = print_tx
@@ -267,7 +269,7 @@ pub async fn eth_rpc(
                     })
                     .await;
 
-                if let Some(handle) = subscriptions.lock().await.remove(&sub_id) {
+                if let Some(handle) = subscriptions.remove(&sub_id) {
                     handle.abort();
                 } else {
                     let _ = print_tx
