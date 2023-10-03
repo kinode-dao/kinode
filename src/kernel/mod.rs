@@ -209,17 +209,23 @@ impl UqProcessImports for ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: Some(serde_json::to_string(&t::VfsRequest::GetEntry {
-                    identifier: identifier.clone(),
-                    full_path: full_path.clone(),
-                }).unwrap()),
+                ipc: Some(
+                    serde_json::to_string(&t::VfsRequest::GetEntry {
+                        identifier: identifier.clone(),
+                        full_path: full_path.clone(),
+                    })
+                    .unwrap(),
+                ),
                 metadata: None,
             },
             None,
-        ).await.unwrap().unwrap();
+        )
+        .await
+        .unwrap()
+        .unwrap();
         // TODO: handle case of response is Error
         let Some(t::Payload { mime: _, bytes }) = self.process.last_payload else {
-            panic!("");  // TODO
+            panic!(""); // TODO
         };
 
         self.process
@@ -268,10 +274,7 @@ impl UqProcessImports for ProcessWasi {
                     ),
                     metadata: None,
                 }),
-                payload: Some(t::Payload {
-                    mime: None,
-                    bytes,
-                }),
+                payload: Some(t::Payload { mime: None, bytes }),
                 signed_capabilities: None,
             })
             .await?;
@@ -522,7 +525,10 @@ async fn send_and_await_response(
     payload: Option<wit::Payload>,
 ) -> Result<Result<(wit::Address, wit::Message), wit::SendError>> {
     if request.expects_response.is_none() {
-        return Err(anyhow::anyhow!("kernel: got invalid send_and_await_response() Request from {:?}: must expect response", process.process.metadata.our.process));
+        return Err(anyhow::anyhow!(
+            "kernel: got invalid send_and_await_response() Request from {:?}: must expect response",
+            process.process.metadata.our.process
+        ));
     }
     let id = process
         .process
