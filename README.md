@@ -27,9 +27,6 @@ mkdir home
 ```
 
 ### Boot
-
-Before booting, compile all the apps with `./build.sh --all` (this may take some time). Then, booting your node takes one argument: the home directory where all your files will be stored. You can use your own custom eth-rpc URL using the `--rpc` flag (NOTE: RPC URL must begin with `wss://` NOT `https://`). You can also include the `--release` if you want optimized performance.
-
 If you do not receive QNS updates in terminal, it's a sign that the default public-access RPC endpoint is rate-limiting or blocking you. Get an eth-sepolia-rpc API key and pass that as an argument. You can get one for free at `alchemy.com`.
 
 Also, make sure not to use the same home directory for two nodes at once! You can use any name for the home directory.
