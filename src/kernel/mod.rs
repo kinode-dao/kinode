@@ -868,7 +868,6 @@ async fn make_process_loop(
     send_to_terminal: t::PrintSender,
     recv_in_process: ProcessMessageReceiver,
     wasm_bytes: &Vec<u8>,
-    initial_capabilities: HashSet<t::Capability>,
     caps_oracle: t::CapMessageSender,
     engine: &Engine,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
@@ -1186,11 +1185,9 @@ async fn handle_kernel_request(
             process_id,
             persisted,
         } => {
-            println!("rebooting process: {:?}\r", process_id);
             if senders.contains_key(&process_id)
                 || process_id == t::ProcessId::Name("kernel".into())
             {
-                println!("skipping runtime process reboot\r");
                 return;
             }
             send_to_loop
@@ -1467,15 +1464,12 @@ async fn start_process(
                 send_to_terminal.clone(),
                 recv_in_process,
                 &km_payload_bytes,
-                process_metadata.persisted.capabilities.clone(),
                 caps_oracle,
                 engine,
             )
             .await,
         ),
     );
-
-    println!("started process: {:?}\r", process_id);
 
     process_map.insert(
         process_id,
@@ -1570,8 +1564,6 @@ async fn make_event_loop(
             t::ProcessId::Name("vfs".into()),
             ProcessSender::Runtime(send_to_vfs.clone()),
         );
-
-        println!("process map: {:?}", process_map.keys());
 
         // each running process is stored in this map
         let mut process_handles: ProcessHandles = HashMap::new();

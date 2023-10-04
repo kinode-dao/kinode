@@ -79,7 +79,7 @@ fn parse_command(our_name: &str, line: String) {
 impl Guest for Component {
     fn init(our: Address) {
         assert_eq!(our.process, ProcessId::Name("terminal".into()));
-        print_to_terminal(0, &format!("terminal: running"));
+        print_to_terminal(1, &format!("terminal: start"));
         loop {
             let message = match receive() {
                 Ok((source, message)) => {

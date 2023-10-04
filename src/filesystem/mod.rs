@@ -96,18 +96,6 @@ pub async fn bootstrap(
         "eth_rpc",
     ];
 
-    println!(
-        "bootstrapping processes: {:?}",
-        [
-            RUNTIME_MODULES.to_vec(),
-            names_and_bytes
-                .iter()
-                .map(|(n, _)| n.as_str())
-                .collect::<Vec<_>>()
-        ]
-        .concat()
-    );
-
     let mut special_capabilities: HashSet<Capability> = HashSet::new();
     for (process_name, _) in &names_and_bytes {
         special_capabilities.insert(Capability {
@@ -426,7 +414,6 @@ async fn handle_request(
     } = kernel_message;
     let Message::Request(Request {
         ipc: Some(json_string),
-        metadata, // for kernel
         ..
     }) = message
     else {

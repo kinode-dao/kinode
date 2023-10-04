@@ -205,7 +205,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
 impl Guest for Component {
     fn init(our: Address) {
         assert_eq!(our.process, ProcessId::Name("app_tracker".into()));
-        print_to_terminal(0, &format!("app_tracker: running"));
+        print_to_terminal(0, &format!("app_tracker: start"));
         loop {
             let message = match receive() {
                 Ok((source, message)) => {
