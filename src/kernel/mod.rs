@@ -1561,7 +1561,7 @@ async fn make_event_loop(
                                 params: "\"network\"".into(),
                         }) {
                             // capabilities are not correct! skip this message.
-                            // TODO some kind of error thrown
+                            // TODO some kind of error thrown back at process
                             let _ = send_to_terminal.send(
                                 t::Printout {
                                     verbosity: 0,
@@ -1576,7 +1576,7 @@ async fn make_event_loop(
                     } else {
                         // enforce that process has capability to message a target process of this name
                         match process_map.get(&kernel_message.source.process) {
-                            None => {}
+                            None => continue, // this should never be hit
                             Some(persisted) => {
                                 if !persisted.capabilities.contains(&t::Capability {
                                     issuer: t::Address {
@@ -1589,7 +1589,7 @@ async fn make_event_loop(
                                     ),
                                 }) {
                                     // capabilities are not correct! skip this message.
-                                    // TODO do some kind of error or something
+                                    // TODO some kind of error thrown back at process
                                     let _ = send_to_terminal.send(
                                         t::Printout {
                                             verbosity: 0,
@@ -1622,64 +1622,74 @@ async fn make_event_loop(
                     if our_name != kernel_message.target.node {
                         // unrecoverable if fails
                         send_to_net.send(kernel_message).await.expect("fatal: net module died");
+                    } else if kernel_message.target.process == "kernel" {
+                        // kernel only accepts messages from our own node
+                        if our_name != kernel_message.source.node {
+                            continue;
+                        }
+                        match kernel_message.message {
+                            t::Message::Request(_) => {
+                                handle_kernel_request(
+                                    our_name.clone(),
+                                    kernel_message,
+                                    send_to_loop.clone(),
+                                    send_to_terminal.clone(),
+                                    &mut senders,
+                                    &mut process_handles,
+                                    &mut process_map,
+                                    caps_oracle_sender.clone(),
+                                ).await;
+                            }
+                            t::Message::Response(_) => {
+                                handle_kernel_response(
+                                    our_name.clone(),
+                                    keypair.clone(),
+                                    home_directory_path.clone(),
+                                    kernel_message,
+                                    send_to_loop.clone(),
+                                    send_to_terminal.clone(),
+                                    &mut senders,
+                                    &mut process_handles,
+                                    &mut process_map,
+                                    caps_oracle_sender.clone(),
+                                    &engine,
+                                ).await;
+                            }
+                        }
                     } else {
-                        if kernel_message.target.process == "kernel" {
-                            // kernel only accepts messages from our own node
-                            if our_name != kernel_message.source.node {
-                                continue;
+                        // pass message to appropriate runtime module or process
+                        // the receiving process is automatically granted
+                        // capability to communicate with the sending process.
+                        // TODO optimize by only doing this if cap isn't already held
+                        caps_oracle_sender
+                            .send(t::CapMessage::Add {
+                                on: kernel_message.target.process.clone(),
+                                cap: t::Capability {
+                                    issuer: kernel_message.source.clone(),
+                                    params: "\"messaging\"".into(),
+                                },
+                            })
+                            .unwrap();
+                        match senders.get(&kernel_message.target.process) {
+                            Some(ProcessSender::Userspace(sender)) => {
+                                // TODO: this failing should crash kernel
+                                sender.send(Ok(kernel_message)).await.unwrap();
                             }
-                            match kernel_message.message {
-                                t::Message::Request(_) => {
-                                    handle_kernel_request(
-                                        our_name.clone(),
-                                        kernel_message,
-                                        send_to_loop.clone(),
-                                        send_to_terminal.clone(),
-                                        &mut senders,
-                                        &mut process_handles,
-                                        &mut process_map,
-                                        caps_oracle_sender.clone(),
-                                    ).await;
-                                }
-                                t::Message::Response(_) => {
-                                    handle_kernel_response(
-                                        our_name.clone(),
-                                        keypair.clone(),
-                                        home_directory_path.clone(),
-                                        kernel_message,
-                                        send_to_loop.clone(),
-                                        send_to_terminal.clone(),
-                                        &mut senders,
-                                        &mut process_handles,
-                                        &mut process_map,
-                                        caps_oracle_sender.clone(),
-                                        &engine,
-                                    ).await;
-                                }
+                            Some(ProcessSender::Runtime(sender)) => {
+                                sender.send(kernel_message).await.unwrap();
                             }
-                        } else {
-                            // pass message to appropriate runtime module or process
-                            match senders.get(&kernel_message.target.process) {
-                                Some(ProcessSender::Userspace(sender)) => {
-                                    // TODO: this failing should crash kernel
-                                    sender.send(Ok(kernel_message)).await.unwrap();
-                                }
-                                Some(ProcessSender::Runtime(sender)) => {
-                                    sender.send(kernel_message).await.unwrap();
-                                }
-                                None => {
-                                    send_to_terminal
-                                        .send(t::Printout {
-                                            verbosity: 0,
-                                            content: format!(
-                                                "event loop: don't have {:?} amongst registered processes: {:?}",
-                                                kernel_message.target.process,
-                                                senders.keys().collect::<Vec<_>>()
-                                            )
-                                        })
-                                        .await
-                                        .unwrap();
-                                }
+                            None => {
+                                send_to_terminal
+                                    .send(t::Printout {
+                                        verbosity: 0,
+                                        content: format!(
+                                            "event loop: don't have {:?} amongst registered processes: {:?}",
+                                            kernel_message.target.process,
+                                            senders.keys().collect::<Vec<_>>()
+                                        )
+                                    })
+                                    .await
+                                    .unwrap();
                             }
                         }
                     }
@@ -1689,12 +1699,14 @@ async fn make_event_loop(
                     match cap_message {
                         t::CapMessage::Add { on, cap } => {
                             // insert cap in process map
-                            process_map.get_mut(&on).unwrap().capabilities.insert(cap);
+                            let Some(entry) = process_map.get_mut(&on) else { continue };
+                            entry.capabilities.insert(cap);
                             let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
                         },
                         t::CapMessage::Drop { on, cap } => {
                             // remove cap from process map
-                            process_map.get_mut(&on).unwrap().capabilities.remove(&cap);
+                            let Some(entry) = process_map.get_mut(&on) else { continue };
+                            entry.capabilities.remove(&cap);
                             let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
                         },
                         t::CapMessage::Has { on, cap, responder } => {
