@@ -487,10 +487,10 @@ impl Manifest {
         }
 
         // calculate the position for the chunk in memory chunks
-        let position = memory_buffer.len() - chunk_data.len();
         let proper_position = if copy {
             ChunkLocation::ColdStorage(is_local)
         } else {
+            let position = memory_buffer.len() - chunk_data.len();
             ChunkLocation::Memory(position as u64)
         };
 
@@ -1229,7 +1229,7 @@ async fn verify_manifest(
 ) -> tokio::io::Result<()> {
     for (file, in_memory_file) in manifest.iter_mut() {
         let file_hash = in_memory_file.hash();
-        //  note, do we want to add all chunks here?
+
         for (chunk_hash, _, location, _encrypted) in in_memory_file.chunks.values() {
             match location {
                 ChunkLocation::ColdStorage(local) => {
