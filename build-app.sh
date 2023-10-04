@@ -1,13 +1,13 @@
 #!/bin/bash
 
-release_flag=""
+debug_flag="--release"
 
 # Grab the full path to the target
 target_path="$1"
 name=$(basename "$target_path")
 
-if [[ "$2" == "--release" ]]; then
-    release_flag="--release"
+if [[ "$2" == "--debug" ]]; then
+    debug_flag=""
 fi
 
 pwd=$(pwd)

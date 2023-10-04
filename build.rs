@@ -33,7 +33,7 @@ fn main() {
     // Build wasm32-wasi apps.
     const WASI_APPS: [&str; 9] = [
         "app_tracker",
-        "apps_home",
+        "homepage",
         "chess",
         "http_bindings",
         "http_proxy",

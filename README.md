@@ -6,7 +6,7 @@ Last updated: 10/02/23
 ```bash
 # Clone the repo.
 
-git clone git@github.com:uqbar-dao/operationOJ.git
+git clone git@github.com:uqbar-dao/uqbar.git
 
 # Get some stuff so we can build wasm.
 
@@ -19,11 +19,7 @@ cargo install --git https://github.com/bytecodealliance/cargo-component --locked
 
 # Build the runtime, along with a number of booted-at-startup WASM modules including terminal and key_value
 # OPTIONAL: --release flag
-cargo +nightly build
-
-# To build all of the apps
-# OPTIONAL: --release flag
-./build.sh --all
+cargo +nightly build --release
 
 # Create the home directory for your node
 # If you boot multiple nodes, make sure each has their own home directory.
@@ -31,9 +27,6 @@ mkdir home
 ```
 
 ### Boot
-
-Before booting, compile all the apps with `./build.sh --all` (this may take some time). Then, booting your node takes one argument: the home directory where all your files will be stored. You can use your own custom eth-rpc URL using the `--rpc` flag (NOTE: RPC URL must begin with `wss://` NOT `https://`). You can also include the `--release` if you want optimized performance.
-
 If you do not receive QNS updates in terminal, it's a sign that the default public-access RPC endpoint is rate-limiting or blocking you. Get an eth-sepolia-rpc API key and pass that as an argument. You can get one for free at `alchemy.com`.
 
 Also, make sure not to use the same home directory for two nodes at once! You can use any name for the home directory.
@@ -43,8 +36,6 @@ cargo +nightly run --release home
 
 On boot you will be prompted to navigate to `localhost:8080`. Make sure your eth wallet is connected to the Sepolia test network. Login should be very straightforward, just submit the transactions and follow the flow.
 
-### Development
-Running `./build.sh` will automatically build any apps that have changes in git. Developing with `./build.sh && cargo +nightly run home` anytime you make a change to your app should be very fast. You can also manually recompile just your app with, for example, `./build-app chess`, where `chess` is the folder name inside `/modules`.
 
 ## Terminal syntax
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 all=false
-release=""
+debug="--release"
 
 # parse arguments (--all, --release)
 for arg in "$@"; do
@@ -9,8 +9,8 @@ for arg in "$@"; do
         --all)
             all=true
             ;;
-        --release)
-            release="--release"
+        --debug)
+            debug="--release"
             ;;
         *)
             echo "Error: Unrecognized argument: $arg"
