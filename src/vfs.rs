@@ -309,22 +309,15 @@ pub async fn vfs(
                     ..
                 }) = message.clone()
                 else {
-                    //  println!("vfs: {}", message);
+                    // consider moving this handling into it's own function
                     continue;
-                    // return Err(FileSystemError::BadJson {
-                    //     json: "".into(),
-                    //     error: "not a Request with payload".into(),
-                    // });
                 };
 
                 let request: VfsRequest = match serde_json::from_str(&ipc) {
                     Ok(r) => r,
                     Err(e) => {
-                        panic!("{}", e);
-                        // return Err(FileSystemError::BadJson {
-                        //     json: ipc.into(),
-                        //     error: format!("parse failed: {:?}", e),
-                        // })
+                        println!("vfs: got invalid Request: {}", e);
+                        continue;
                     }
                 };
 
