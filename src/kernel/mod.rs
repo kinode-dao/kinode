@@ -1576,7 +1576,7 @@ async fn make_event_loop(
                     } else {
                         // enforce that process has capability to message a target process of this name
                         match process_map.get(&kernel_message.source.process) {
-                            None => continue, // this should never be hit
+                            None => {}, // this should never be hit
                             Some(persisted) => {
                                 if !persisted.capabilities.contains(&t::Capability {
                                     issuer: t::Address {
