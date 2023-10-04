@@ -506,7 +506,7 @@ async fn handle_request(
             };
 
             let file = FileIdentifier::Process(source.process.clone());
-            match manifest.append(&file, &payload.bytes).await {
+            match manifest.write(&file, &payload.bytes).await {
                 Ok(_) => (),
                 Err(e) => {
                     return Err(FsError::WriteFailed {
