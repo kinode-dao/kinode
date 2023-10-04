@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use super::bindings::component::uq_process::types as wit;
@@ -42,7 +44,7 @@ impl PartialEq<u64> for ProcessId {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
 pub struct Address {
     pub node: String,
     pub process: ProcessId,
@@ -74,7 +76,7 @@ pub enum Message {
     Response((Response, Option<Context>)),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, Hash, PartialEq)]
 pub struct Capability {
     pub issuer: Address,
     pub params: String, // JSON-string
@@ -106,6 +108,35 @@ pub enum OnPanic {
     None,
     Restart,
     Requests(Vec<(Address, Request)>),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PersistedProcess {
+    pub wasm_bytes_handle: u128,
+    pub on_panic: OnPanic,
+    pub capabilities: HashSet<Capability>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KernelCommand {
+    StartProcess {
+        name: Option<String>,
+        wasm_bytes_handle: u128,
+        on_panic: OnPanic,
+        initial_capabilities: HashSet<Capability>,
+    },
+    KillProcess(ProcessId), // this is extrajudicial killing: we might lose messages!
+    RebootProcess {
+        // kernel only
+        process_id: ProcessId,
+        persisted: PersistedProcess,
+    },
+    Shutdown,
+    // capabilities creation
+    GrantCapability {
+        to_process: ProcessId,
+        params: String, // JSON-string
+    },
 }
 
 //
