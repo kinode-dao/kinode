@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::io::prelude::*;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -345,6 +346,7 @@ pub async fn vfs(
                     VfsRequest::WriteOffset { identifier, .. } => (identifier.clone(), false),
                     VfsRequest::SetSize { identifier, .. } => (identifier.clone(), false),
                     VfsRequest::GetPath { identifier, .. } => (identifier.clone(), false),
+                    VfsRequest::GetHash { identifier, .. } => (identifier.clone(), false),
                     VfsRequest::GetEntry { identifier, .. } => (identifier.clone(), false),
                     VfsRequest::GetFileChunk { identifier, .. } => (identifier.clone(), false),
                     VfsRequest::GetEntryLength { identifier, .. } => (identifier.clone(), false),
@@ -501,6 +503,7 @@ async fn handle_request(
             }
         }
         VfsRequest::GetPath { identifier, .. }
+        | VfsRequest::GetHash { identifier, .. }
         | VfsRequest::GetEntry { identifier, .. }
         | VfsRequest::GetFileChunk { identifier, .. }
         | VfsRequest::GetEntryLength { identifier, .. } => {
@@ -817,6 +820,168 @@ async fn match_request(
                     );
                     vfs.path_to_key.insert(parent_path, parent_key);
                     vfs.path_to_key.insert(full_path.clone(), key.clone());
+                }
+                AddEntryType::ZipArchive => {
+                    let Some(payload) = payload else {
+                        panic!("");
+                    };
+                    let Some(mime) = payload.mime else {
+                        panic!("");
+                    };
+                    if "application/zip" != mime {
+                        panic!("");
+                    }
+                    let file = std::io::Cursor::new(&payload.bytes);
+                    let mut zip = match zip::ZipArchive::new(file) {
+                        Ok(f) => f,
+                        Err(e) => panic!("vfs: zip error: {:?}", e),
+                    };
+
+                    // loop through items in archive; recursively add to root
+                    for i in 0..zip.len() {
+                        // must destruct the zip file created in zip.by_index()
+                        //  Before any `.await`s are called since ZipFile is not
+                        //  Send and so does not play nicely with await
+                        let (is_file, is_dir, full_path, file_contents) = {
+                            let mut file = zip.by_index(i).unwrap();
+                            let is_file = file.is_file();
+                            let is_dir = file.is_dir();
+                            let full_path = format!("/{}", file.name());
+                            let mut file_contents = Vec::new();
+                            if is_file {
+                                file.read_to_end(&mut file_contents).unwrap();
+                            };
+                            (is_file, is_dir, full_path, file_contents)
+                        };
+                        if is_file {
+                            let _ = send_to_loop
+                                .send(KernelMessage {
+                                    id,
+                                    source: Address {
+                                        node: our_node.clone(),
+                                        process: ProcessId::Name("vfs".into()),
+                                    },
+                                    target: Address {
+                                        node: our_node.clone(),
+                                        process: ProcessId::Name("filesystem".into()),
+                                    },
+                                    rsvp: None,
+                                    message: Message::Request(Request {
+                                        inherit: true,
+                                        expects_response: Some(5), // TODO evaluate
+                                        ipc: Some(serde_json::to_string(&FsAction::Write).unwrap()),
+                                        metadata: None,
+                                    }),
+                                    payload: Some(Payload {
+                                        mime: None,
+                                        bytes: file_contents,
+                                    }),
+                                    signed_capabilities: None,
+                                })
+                                .await;
+                            let write_response = recv_response.recv().await.unwrap();
+                            let KernelMessage { message, .. } = write_response;
+                            let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
+                                panic!("")
+                            };
+                            let Some(ipc) = ipc else {
+                                panic!("");
+                            };
+                            let FsResponse::Write(hash) = serde_json::from_str(&ipc).unwrap() else {
+                                panic!("");
+                            };
+
+                            let (name, parent_path) = make_file_name(&full_path);
+                            let mut vfs = vfs.lock().await;
+                            let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
+                                panic!("");
+                            };
+                            let key = Key::File { id: hash };
+                            vfs.key_to_entry.insert(
+                                key.clone(),
+                                Entry {
+                                    name,
+                                    full_path: full_path.clone(),
+                                    entry_type: EntryType::File {
+                                        parent: parent_key.clone(),
+                                    },
+                                },
+                            );
+                            vfs.path_to_key.insert(parent_path, parent_key);
+                            vfs.path_to_key.insert(full_path.clone(), key.clone());
+                        } else if is_dir {
+                            panic!("vfs: zip dir not yet implemented");
+                        } else {
+                            panic!("vfs: zip with non-file non-dir");
+                        };
+                        // if file.is_file() {
+                        //     println!("Filename: {}", file.name());
+                        //     let mut out = Vec::new();
+                        //     file.read_to_end(&mut out).unwrap();
+                        //     let full_path = format!("/{}", file.name());
+
+                        //     // TODO: factor out
+                        //     let _ = send_to_loop
+                        //         .send(KernelMessage {
+                        //             id,
+                        //             source: Address {
+                        //                 node: our_node.clone(),
+                        //                 process: ProcessId::Name("vfs".into()),
+                        //             },
+                        //             target: Address {
+                        //                 node: our_node.clone(),
+                        //                 process: ProcessId::Name("filesystem".into()),
+                        //             },
+                        //             rsvp: None,
+                        //             message: Message::Request(Request {
+                        //                 inherit: true,
+                        //                 expects_response: Some(5), // TODO evaluate
+                        //                 ipc: Some(serde_json::to_string(&FsAction::Write).unwrap()),
+                        //                 metadata: None,
+                        //             }),
+                        //             payload: Some(Payload {
+                        //                 mime: None,
+                        //                 bytes: out,
+                        //             }),
+                        //             signed_capabilities: None,
+                        //         })
+                        //         .await;
+                        //     let write_response = recv_response.recv().await.unwrap();
+                        //     let KernelMessage { message, .. } = write_response;
+                        //     let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
+                        //         panic!("")
+                        //     };
+                        //     let Some(ipc) = ipc else {
+                        //         panic!("");
+                        //     };
+                        //     let FsResponse::Write(hash) = serde_json::from_str(&ipc).unwrap() else {
+                        //         panic!("");
+                        //     };
+
+                        //     let (name, parent_path) = make_file_name(&full_path);
+                        //     let mut vfs = vfs.lock().await;
+                        //     let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
+                        //         panic!("");
+                        //     };
+                        //     let key = Key::File { id: hash };
+                        //     vfs.key_to_entry.insert(
+                        //         key.clone(),
+                        //         Entry {
+                        //             name,
+                        //             full_path: full_path.clone(),
+                        //             entry_type: EntryType::File {
+                        //                 parent: parent_key.clone(),
+                        //             },
+                        //         },
+                        //     );
+                        //     vfs.path_to_key.insert(parent_path, parent_key);
+                        //     vfs.path_to_key.insert(full_path.clone(), key.clone());
+                        // } else if file.is_dir() {
+                        //     panic!("todo");
+                        // } else {
+                        //     panic!("wat");
+                        // }
+                    }
                 }
             }
             send_to_persist.send(true).await.unwrap();
@@ -1135,6 +1300,24 @@ async fn match_request(
                             Some(full_path)
                         }
                     },
+                })
+                .unwrap(),
+            );
+            (ipc, None)
+        }
+        VfsRequest::GetHash { identifier, full_path } => {
+            let mut vfs = vfs.lock().await;
+            let Some(key) = vfs.path_to_key.get(&full_path) else {
+                panic!("todo");
+            };
+            let Key::File { id: hash } = key else {
+                panic!("todo");
+            };
+            let ipc = Some(
+                serde_json::to_string(&VfsResponse::GetHash {
+                    identifier,
+                    full_path,
+                    hash: hash.clone(),
                 })
                 .unwrap(),
             );

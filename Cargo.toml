@@ -22,6 +22,7 @@ dotenv = "0.15.0"
 elliptic-curve = { version = "0.13.5", features = ["ecdh"] }
 ethers = "2.0"
 ethers-providers = "2.0.9"
+flate2 = "1.0"
 futures = "0.3"
 generic-array = "0.14"
 getrandom = "0.2.10"
@@ -55,3 +56,4 @@ uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"
 wasmtime = "12.0.1"
 wasmtime-wasi = "12.0.1"
+zip = "0.6"

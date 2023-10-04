@@ -82,7 +82,7 @@ pub struct Capability {
     pub params: String, // JSON-string
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct SignedCapability {
     pub issuer: Address,
     pub params: String,     // JSON-string
@@ -116,7 +116,7 @@ pub enum KernelCommand {
         name: Option<String>,
         wasm_bytes_handle: u128,
         on_panic: OnPanic,
-        initial_capabilities: HashSet<Capability>,
+        initial_capabilities: HashSet<SignedCapability>,
     },
     KillProcess(ProcessId), // this is extrajudicial killing: we might lose messages!
     RebootProcess {
@@ -172,6 +172,10 @@ pub enum VfsRequest {
         identifier: String,
         hash: u128,
     },
+    GetHash {
+        identifier: String,
+        full_path: String,
+    },
     GetEntry {
         identifier: String,
         full_path: String,
@@ -193,7 +197,7 @@ pub enum AddEntryType {
     Dir,
     NewFile, //  add a new file to fs and add name in vfs
     ExistingFile { hash: u128 }, //  link an existing file in fs to a new name in vfs
-             //  ...  //  symlinks?
+    ZipArchive,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -233,6 +237,11 @@ pub enum VfsResponse {
         identifier: String,
         hash: u128,
         full_path: Option<String>,
+    },
+    GetHash {
+        identifier: String,
+        full_path: String,
+        hash: u128,
     },
     GetEntry {
         identifier: String,

@@ -4836,6 +4836,7 @@ dependencies = [
  "elliptic-curve",
  "ethers",
  "ethers-providers",
+ "flate2",
  "futures",
  "generic-array",
  "getrandom",
@@ -4869,6 +4870,7 @@ dependencies = [
  "warp",
  "wasmtime",
  "wasmtime-wasi",
+ "zip",
 ]
 
 [[package]]

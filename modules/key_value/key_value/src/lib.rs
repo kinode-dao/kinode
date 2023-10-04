@@ -82,7 +82,8 @@ fn handle_message (
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
                     let Some(spawned_process_id) = spawn(
                         &ProcessId::Id(0),
-                        "",  //  TODO
+                        "key_value",
+                        "/key_value_worker.wasm",
                         &OnPanic::None,  //  TODO: notify us
                         &Capabilities::Some(vec![vfs_read, vfs_write]),
                     ) else {
