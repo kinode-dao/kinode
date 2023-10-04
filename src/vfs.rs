@@ -199,7 +199,7 @@ async fn load_state_from_reboot(
         return false;
     };
     let Ok(Ok(FsResponse::GetState)) =
-        serde_json::from_str::<Result<FsResponse, FileSystemError>>(&ipc.unwrap_or_default())
+        serde_json::from_str::<Result<FsResponse, FsError>>(&ipc.unwrap_or_default())
     else {
         return false;
     };
@@ -1188,7 +1188,7 @@ async fn match_request(
                                 panic!("");
                             };
                             let Ok(FsResponse::Read(read_hash)) =
-                                serde_json::from_str::<Result<FsResponse, FileSystemError>>(&ipc)
+                                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc)
                                     .unwrap()
                             else {
                                 panic!("");
@@ -1272,7 +1272,7 @@ async fn match_request(
                 panic!("");
             };
             let Ok(FsResponse::ReadChunk(read_hash)) =
-                serde_json::from_str::<Result<FsResponse, FileSystemError>>(&ipc).unwrap()
+                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
             else {
                 panic!("");
             };
@@ -1355,7 +1355,7 @@ async fn match_request(
                     panic!("");
                 };
                 let Ok(FsResponse::Length(length)) =
-                    serde_json::from_str::<Result<FsResponse, FileSystemError>>(&ipc).unwrap()
+                    serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
                 else {
                     panic!("");
                 };
