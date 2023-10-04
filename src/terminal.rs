@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::{Datelike, Local, Timelike};
 use crossterm::{
     cursor,
     event::{
@@ -188,7 +189,8 @@ pub async fn terminal(
         tokio::select! {
             prints = print_rx.recv() => match prints {
                 Some(printout) => {
-                    let _ = writeln!(log_writer, "{}", printout.content);
+                    let now = Local::now();
+                    let _ = writeln!(log_writer, "{} {}", now.to_rfc2822(), printout.content);
                     if match printout.verbosity {
                         0 => false,
                         1 => !verbose_mode,
@@ -200,7 +202,14 @@ pub async fn terminal(
                     execute!(
                         stdout,
                         cursor::MoveTo(0, win_rows - 1),
-                        terminal::Clear(ClearType::CurrentLine)
+                        terminal::Clear(ClearType::CurrentLine),
+                        Print(format!("{} {}/{} {:02}:{:02} ",
+                                       now.weekday(),
+                                       now.month(),
+                                       now.day(),
+                                       now.hour(),
+                                       now.minute(),
+                                     )),
                     )?;
                     for line in printout.content.lines() {
                         execute!(
