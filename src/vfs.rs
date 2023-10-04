@@ -1188,8 +1188,7 @@ async fn match_request(
                                 panic!("");
                             };
                             let Ok(FsResponse::Read(read_hash)) =
-                                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc)
-                                    .unwrap()
+                                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
                             else {
                                 panic!("");
                             };

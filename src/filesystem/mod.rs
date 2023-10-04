@@ -393,17 +393,15 @@ async fn handle_request(
 
             let file_uuid = FileIdentifier::UUID(file_uuid);
 
-            match manifest
-                .write_at(&file_uuid, offset, &payload.bytes)
-                .await {
-                    Ok(_) => (),
-                    Err(e) => {
-                        return Err(FsError::WriteFailed {
-                            file: file_uuid.to_uuid().unwrap_or_default(),
-                            error: format!("write_offset error: {}", e),
-                        })
-                    }
+            match manifest.write_at(&file_uuid, offset, &payload.bytes).await {
+                Ok(_) => (),
+                Err(e) => {
+                    return Err(FsError::WriteFailed {
+                        file: file_uuid.to_uuid().unwrap_or_default(),
+                        error: format!("write_offset error: {}", e),
+                    })
                 }
+            }
 
             (FsResponse::Write(file_uuid.to_uuid().unwrap()), None)
         }
@@ -411,7 +409,12 @@ async fn handle_request(
             let file = FileIdentifier::UUID(file_uuid);
 
             match manifest.read(&file, None, None).await {
-                Err(e) => return Err(FsError::ReadFailed { file: file.to_uuid().unwrap_or_default(), error: e.to_string() }),
+                Err(e) => {
+                    return Err(FsError::ReadFailed {
+                        file: file.to_uuid().unwrap_or_default(),
+                        error: e.to_string(),
+                    })
+                }
                 Ok(bytes) => (FsResponse::Read(file_uuid), Some(bytes)),
             }
         }
@@ -422,7 +425,12 @@ async fn handle_request(
                 .read(&file, Some(req.start), Some(req.length))
                 .await
             {
-                Err(e) => return Err(FsError::ReadFailed { file: file.to_uuid().unwrap_or_default(), error: e.to_string() }),
+                Err(e) => {
+                    return Err(FsError::ReadFailed {
+                        file: file.to_uuid().unwrap_or_default(),
+                        error: e.to_string(),
+                    })
+                }
                 Ok(bytes) => (FsResponse::Read(req.file), Some(bytes)),
             }
         }
@@ -544,8 +552,7 @@ async fn handle_request(
             message: Message::Response((
                 Response {
                     ipc: Some(
-                        serde_json::to_string::<Result<FsResponse, FsError>>(&Ok(ipc))
-                            .unwrap(),
+                        serde_json::to_string::<Result<FsResponse, FsError>>(&Ok(ipc)).unwrap(),
                     ),
                     metadata, // for kernel
                 },
@@ -591,12 +598,7 @@ async fn create_dir_if_dne(path: &str) -> Result<(), FsError> {
     }
 }
 
-fn make_error_message(
-    our_name: String,
-    id: u64,
-    target: Address,
-    error: FsError,
-) -> KernelMessage {
+fn make_error_message(our_name: String, id: u64, target: Address, error: FsError) -> KernelMessage {
     KernelMessage {
         id,
         source: Address {
@@ -608,10 +610,7 @@ fn make_error_message(
         message: Message::Response((
             Response {
                 ipc: Some(
-                    serde_json::to_string::<Result<FsResponse, FsError>>(&Err(
-                        error,
-                    ))
-                    .unwrap(),
+                    serde_json::to_string::<Result<FsResponse, FsError>>(&Err(error)).unwrap(),
                 ),
                 metadata: None,
             },

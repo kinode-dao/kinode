@@ -382,9 +382,10 @@ pub enum FsError {
     BadBytes { action: String },
     #[error(
         "fs: JSON payload could not be parsed to FsAction: {:?}, error: {:?}.",
-        json, error
+        json,
+        error
     )]
-    BadJson { json: String, error: String},
+    BadJson { json: String, error: String },
     #[error("fs: No JSON payload.")]
     NoJson,
     #[error("fs: Read failed to file {file}: {error}.")]

@@ -556,11 +556,12 @@ impl Manifest {
                 }
                 ChunkLocation::WAL(offset) => {
                     let mut wal_file = self.wal_file.write().await;
-                    wal_file.seek(SeekFrom::Start(offset)).await.map_err(|e| {
-                        FsError::IOError {
+                    wal_file
+                        .seek(SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| FsError::IOError {
                             error: format!("Local WAL seek failed: {}", e),
-                        }
-                    })?;
+                        })?;
                     let len = if encrypted {
                         len + ENCRYPTION_OVERHEAD as u64
                     } else {
@@ -568,11 +569,12 @@ impl Manifest {
                     };
 
                     let mut buffer = vec![0u8; len as usize];
-                    wal_file.read_exact(&mut buffer).await.map_err(|e| {
-                        FsError::IOError {
+                    wal_file
+                        .read_exact(&mut buffer)
+                        .await
+                        .map_err(|e| FsError::IOError {
                             error: format!("Local WAL read failed: {}", e),
-                        }
-                    })?;
+                        })?;
                     if encrypted {
                         buffer = decrypt(&cipher, &buffer)?;
                     }
@@ -581,12 +583,9 @@ impl Manifest {
                 ChunkLocation::ColdStorage(local) => {
                     if local {
                         let path = self.fs_directory_path.join(hex::encode(hash));
-                        let mut buffer =
-                            fs::read(path)
-                                .await
-                                .map_err(|e| FsError::IOError {
-                                    error: format!("Local Cold read failed: {}", e),
-                                })?;
+                        let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
+                            error: format!("Local Cold read failed: {}", e),
+                        })?;
                         if encrypted {
                             buffer = decrypt(&*self.cipher, &buffer)?;
                         }
@@ -716,11 +715,7 @@ impl Manifest {
         Ok(())
     }
 
-    pub async fn append(
-        &self,
-        file_id: &FileIdentifier,
-        data: &[u8],
-    ) -> Result<(), FsError> {
+    pub async fn append(&self, file_id: &FileIdentifier, data: &[u8]) -> Result<(), FsError> {
         let file = self.get(file_id).await.ok_or(FsError::NotFound {
             file: file_id.to_uuid().unwrap_or_default(),
         })?;
@@ -1279,13 +1274,17 @@ fn parse_s3_config(config: S3Config) -> Result<(S3Client, String), FsError> {
 
 impl From<std::io::Error> for FsError {
     fn from(error: std::io::Error) -> Self {
-        FsError::IOError { error: error.to_string() } 
+        FsError::IOError {
+            error: error.to_string(),
+        }
     }
 }
 
 impl From<aes_gcm::aead::Error> for FsError {
     fn from(error: aes_gcm::aead::Error) -> Self {
-        FsError::EncryptionError { error: error.to_string() } 
+        FsError::EncryptionError {
+            error: error.to_string(),
+        }
     }
 }
 
