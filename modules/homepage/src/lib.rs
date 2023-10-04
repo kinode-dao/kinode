@@ -31,7 +31,7 @@ fn generate_http_binding(add: Address, path: &str, authenticated: bool) -> (Addr
 
 impl Guest for Component {
     fn init(our: Address) {
-        print_to_terminal(1, "homepage: start");
+        print_to_terminal(0, "homepage: start");
 
         let bindings_address = Address {
             node: our.node.clone(),

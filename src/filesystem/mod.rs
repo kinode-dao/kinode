@@ -103,10 +103,7 @@ pub async fn bootstrap(
                 node: our_name.clone(),
                 process: ProcessId::Name(process_name.into()),
             },
-            params: format!(
-                "{{\"messaging\": \"{}\"}}",
-                serde_json::to_string(&ProcessId::Name(process_name.into())).unwrap()
-            ),
+            params: "\"messaging\"".into(),
         });
     }
     for runtime_module in RUNTIME_MODULES {
@@ -115,10 +112,7 @@ pub async fn bootstrap(
                 node: our_name.clone(),
                 process: ProcessId::Name(runtime_module.into()),
             },
-            params: format!(
-                "{{\"messaging\": \"{}\"}}",
-                serde_json::to_string(&ProcessId::Name(runtime_module.into())).unwrap()
-            ),
+            params: "\"messaging\"".into(),
         });
     }
     // give all distro processes the ability to send messages across the network
