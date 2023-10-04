@@ -1657,17 +1657,27 @@ async fn make_event_loop(
                         // pass message to appropriate runtime module or process
                         // the receiving process is automatically granted
                         // capability to communicate with the sending process.
-                        // TODO optimize by only doing this if cap isn't already held
                         if our_name == kernel_message.source.node {
-                            caps_oracle_sender
-                            .send(t::CapMessage::Add {
-                                on: kernel_message.target.process.clone(),
-                                cap: t::Capability {
-                                    issuer: kernel_message.source.clone(),
-                                    params: "\"messaging\"".into(),
-                                },
-                            })
-                            .unwrap();
+                            match process_map.get(&kernel_message.target.process) {
+                                None => {
+                                    // this should never be hit?
+                                    println!("got message for process {:?} but it doesn't exist?", kernel_message.target.process);
+                                }
+                                Some(p) => {
+                                    let cap = t::Capability {
+                                        issuer: kernel_message.source.clone(),
+                                        params: "\"messaging\"".into(),
+                                    };
+                                    if !p.capabilities.contains(&cap) {
+                                        caps_oracle_sender
+                                            .send(t::CapMessage::Add {
+                                                on: kernel_message.target.process.clone(),
+                                                cap,
+                                            })
+                                            .unwrap();
+                                    }
+                                }
+                            }
                         }
                         match senders.get(&kernel_message.target.process) {
                             Some(ProcessSender::Userspace(sender)) => {
@@ -1675,7 +1685,7 @@ async fn make_event_loop(
                                 sender.send(Ok(kernel_message)).await.unwrap();
                             }
                             Some(ProcessSender::Runtime(sender)) => {
-                                sender.send(kernel_message).await.unwrap();
+                                sender.send(kernel_message).await.expect("fatal: runtime module died");
                             }
                             None => {
                                 send_to_terminal
