@@ -1583,10 +1583,7 @@ async fn make_event_loop(
                                         node: our_name.clone(),
                                         process: kernel_message.target.process.clone(),
                                     },
-                                    params: format!(
-                                        "{{\"messaging\": \"{}\"}}",
-                                        serde_json::to_string(&kernel_message.target.process.clone()).unwrap()
-                                    ),
+                                    params: "\"messaging\"".into(),
                                 }) {
                                     // capabilities are not correct! skip this message.
                                     // TODO some kind of error thrown back at process
@@ -1661,7 +1658,8 @@ async fn make_event_loop(
                         // the receiving process is automatically granted
                         // capability to communicate with the sending process.
                         // TODO optimize by only doing this if cap isn't already held
-                        caps_oracle_sender
+                        if our_name == kernel_message.source.node {
+                            caps_oracle_sender
                             .send(t::CapMessage::Add {
                                 on: kernel_message.target.process.clone(),
                                 cap: t::Capability {
@@ -1670,6 +1668,7 @@ async fn make_event_loop(
                                 },
                             })
                             .unwrap();
+                        }
                         match senders.get(&kernel_message.target.process) {
                             Some(ProcessSender::Userspace(sender)) => {
                                 // TODO: this failing should crash kernel
