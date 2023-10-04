@@ -1354,7 +1354,10 @@ async fn handle_kernel_response(
         send_to_terminal
             .send(t::Printout {
                 verbosity: 0,
-                content: format!("kernel: process {:?} seemingly could not be read from filesystem. km: {}", meta.process_id, km),
+                content: format!(
+                    "kernel: process {:?} seemingly could not be read from filesystem. km: {}",
+                    meta.process_id, km
+                ),
             })
             .await
             .unwrap();
