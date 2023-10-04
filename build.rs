@@ -15,6 +15,21 @@ fn main() {
         println!("Skipping build script");
         return;
     }
+    // only execute if one of the modules has source code changes
+    const WASI_APPS: [&str; 9] = [
+        "app_tracker",
+        "homepage",
+        "chess",
+        "http_bindings",
+        "http_proxy",
+        "orgs",
+        "qns_indexer",
+        "rpc",
+        "terminal",
+    ];
+    for name in WASI_APPS {
+        println!("cargo:rerun-if-changed=modules/{}/src", name);
+    }
 
     let pwd = std::env::current_dir().unwrap();
 
@@ -31,20 +46,7 @@ fn main() {
     run_command(Command::new("touch").args(&[&format!("{}/world", pwd.display())])).unwrap();
 
     // Build wasm32-wasi apps.
-    const WASI_APPS: [&str; 9] = [
-        "app_tracker",
-        "homepage",
-        "chess",
-        "http_bindings",
-        "http_proxy",
-        "orgs",
-        "qns_indexer",
-        "rpc",
-        "terminal",
-    ];
     for name in WASI_APPS {
-        // only execute if one of the modules has source code changes
-        println!("cargo:rerun-if-changed=modules/{}/src", name);
         // copy in the wit files
         run_command(
             Command::new("rm").args(&["-rf", &format!("{}/modules/{}/wit", pwd.display(), name)]),
