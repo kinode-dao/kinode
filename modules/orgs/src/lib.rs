@@ -639,7 +639,7 @@ fn serve_static(raw_path: &str, our: Address, default_headers: HashMap<String, S
 
 impl Guest for Component {
     fn init(our: Address) {
-        print_to_terminal(0, "RPC: start");
+        print_to_terminal(0, "orgs: start");
 
         let mut state: OrgsState = match process_lib::get_state(our.node.clone()) {
             Some(payload) => match serde_json::from_slice::<OrgsState>(&payload.bytes) {

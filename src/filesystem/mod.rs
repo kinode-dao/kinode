@@ -96,6 +96,18 @@ pub async fn bootstrap(
         "eth_rpc",
     ];
 
+    println!(
+        "bootstrapping processes: {:?}",
+        [
+            RUNTIME_MODULES.to_vec(),
+            names_and_bytes
+                .iter()
+                .map(|(n, _)| n.as_str())
+                .collect::<Vec<_>>()
+        ]
+        .concat()
+    );
+
     let mut special_capabilities: HashSet<Capability> = HashSet::new();
     for (process_name, _) in &names_and_bytes {
         special_capabilities.insert(Capability {
@@ -327,19 +339,47 @@ pub async fn fs_sender(
                     let mut process_lock = process_lock_clone.lock().await;
 
                     while let Some(km) = process_lock.get_mut(&source.process).and_then(|q| q.pop_front()) {
-                        if let Err(e) = handle_request(
-                            our_name.clone(),
-                            km.clone(),
+                        let res = handle_request(
+                            &km,
                             manifest_clone.clone(),
-                            send_to_loop.clone(),
                             send_to_terminal.clone(),
                         )
-                        .await
-                        {
-                            send_to_loop
-                                .send(make_error_message(our_name.clone(), km.id, km.source.clone(), e))
-                                .await
-                                .unwrap();
+                        .await;
+                        if let Message::Request(req) = km.message {
+                            if req.expects_response.is_some() {
+                                let _ = send_to_loop.send(
+                                    KernelMessage {
+                                        id: km.id,
+                                        source: Address {
+                                            node: our_name.clone(),
+                                            process: ProcessId::Name("filesystem".into()),
+                                        },
+                                        target: source.clone(),
+                                        rsvp: km.rsvp,
+                                        message: Message::Response((
+                                            Response {
+                                                ipc: Some(serde_json::to_string::<Result<FsResponse, FileSystemError>>(
+                                                    &match &res {
+                                                        Ok((resp, _)) => Ok(resp.clone()),
+                                                        Err(e) => Err(e.clone()),
+                                                    }).unwrap()),
+                                                metadata: req.metadata, // for kernel
+                                            },
+                                            None,
+                                        )),
+                                        payload: match res {
+                                            Ok((_, Some(bytes))) => {
+                                                Some(Payload {
+                                                    mime: None,
+                                                    bytes,
+                                                })
+                                            }
+                                            _ => None,
+                                        },
+                                        signed_capabilities: None,
+                                    }
+                                ).await;
+                            }
                         }
                     }
                     // Remove the process entry if no more tasks are left
@@ -374,22 +414,17 @@ pub async fn fs_sender(
 }
 
 async fn handle_request(
-    our_name: String,
-    kernel_message: KernelMessage,
+    kernel_message: &KernelMessage,
     manifest: Manifest,
-    send_to_loop: MessageSender,
     _send_to_terminal: PrintSender,
-) -> Result<(), FileSystemError> {
+) -> Result<(FsResponse, Option<Vec<u8>>), FileSystemError> {
     let KernelMessage {
-        id,
         source,
-        rsvp,
         message,
         payload,
         ..
     } = kernel_message;
     let Message::Request(Request {
-        expects_response,
         ipc: Some(json_string),
         metadata, // for kernel
         ..
@@ -411,9 +446,7 @@ async fn handle_request(
         }
     };
 
-    // println!("got action! {:?}", action);
-
-    let (ipc, bytes) = match action {
+    match action {
         FsAction::Write => {
             let Some(ref payload) = payload else {
                 return Err(FileSystemError::BadBytes {
@@ -424,7 +457,7 @@ async fn handle_request(
             let file_uuid = FileIdentifier::new_uuid();
             manifest.write(&file_uuid, &payload.bytes).await?;
 
-            (FsResponse::Write(file_uuid.to_uuid().unwrap()), None)
+            Ok((FsResponse::Write(file_uuid.to_uuid().unwrap()), None))
         }
         FsAction::WriteOffset((file_uuid, offset)) => {
             let Some(ref payload) = payload else {
@@ -439,14 +472,14 @@ async fn handle_request(
                 .write_at(&file_uuid, offset, &payload.bytes)
                 .await?;
 
-            (FsResponse::Write(file_uuid.to_uuid().unwrap()), None)
+            Ok((FsResponse::Write(file_uuid.to_uuid().unwrap()), None))
         }
         FsAction::Read(file_uuid) => {
             let file = FileIdentifier::UUID(file_uuid);
 
             match manifest.read(&file, None, None).await {
                 Err(e) => return Err(e),
-                Ok(bytes) => (FsResponse::Read(file_uuid), Some(bytes)),
+                Ok(bytes) => Ok((FsResponse::Read(file_uuid), Some(bytes))),
             }
         }
         FsAction::ReadChunk(req) => {
@@ -457,7 +490,7 @@ async fn handle_request(
                 .await
             {
                 Err(e) => return Err(e),
-                Ok(bytes) => (FsResponse::Read(req.file), Some(bytes)),
+                Ok(bytes) => Ok((FsResponse::Read(req.file), Some(bytes))),
             }
         }
         FsAction::Replace(old_file_uuid) => {
@@ -470,13 +503,13 @@ async fn handle_request(
             let file = FileIdentifier::UUID(old_file_uuid);
             manifest.write(&file, &payload.bytes).await?;
 
-            (FsResponse::Write(old_file_uuid), None)
+            Ok((FsResponse::Write(old_file_uuid), None))
         }
         FsAction::Delete(del) => {
             let file = FileIdentifier::UUID(del);
             manifest.delete(&file).await?;
 
-            (FsResponse::Delete(del), None)
+            Ok((FsResponse::Delete(del), None))
         }
         FsAction::Append(maybe_file_uuid) => {
             let Some(ref payload) = payload else {
@@ -492,13 +525,13 @@ async fn handle_request(
 
             manifest.append(&file_uuid, &payload.bytes).await?;
             // note expecting file_uuid here, if we want process state to access append, we would change this.
-            (FsResponse::Append(file_uuid.to_uuid().unwrap()), None)
+            Ok((FsResponse::Append(file_uuid.to_uuid().unwrap()), None))
         }
         FsAction::Length(file_uuid) => {
             let file = FileIdentifier::UUID(file_uuid);
             let length = manifest.get_length(&file).await;
             match length {
-                Some(len) => (FsResponse::Length(len), None),
+                Some(len) => Ok((FsResponse::Length(len), None)),
                 None => {
                     return Err(FileSystemError::LFSError {
                         error: "file not found".into(),
@@ -511,7 +544,7 @@ async fn handle_request(
             manifest.set_length(&file, length).await?;
 
             // doublecheck if this is the type of return statement we want.
-            (FsResponse::Length(length), None)
+            Ok((FsResponse::Length(length), None))
         }
         //  process state handlers
         FsAction::SetState => {
@@ -524,48 +557,17 @@ async fn handle_request(
             let file = FileIdentifier::Process(source.process.clone());
             let _ = manifest.write(&file, &payload.bytes).await;
 
-            (FsResponse::SetState, None)
+            Ok((FsResponse::SetState, None))
         }
         FsAction::GetState => {
             let file = FileIdentifier::Process(source.process.clone());
 
             match manifest.read(&file, None, None).await {
                 Err(e) => return Err(e),
-                Ok(bytes) => (FsResponse::GetState, Some(bytes)),
+                Ok(bytes) => Ok((FsResponse::GetState, Some(bytes))),
             }
         }
-    };
-
-    if expects_response.is_some() {
-        let response = KernelMessage {
-            id: id.clone(),
-            source: Address {
-                node: our_name.clone(),
-                process: ProcessId::Name("filesystem".into()),
-            },
-            target: source.clone(),
-            rsvp,
-            message: Message::Response((
-                Response {
-                    ipc: Some(
-                        serde_json::to_string::<Result<FsResponse, FileSystemError>>(&Ok(ipc))
-                            .unwrap(),
-                    ),
-                    metadata, // for kernel
-                },
-                None,
-            )),
-            payload: Some(Payload {
-                mime: None,
-                bytes: bytes.unwrap_or_default(),
-            }),
-            signed_capabilities: None,
-        };
-
-        let _ = send_to_loop.send(response).await;
     }
-
-    Ok(())
 }
 
 /// HELPERS
@@ -592,36 +594,5 @@ async fn create_dir_if_dne(path: &str) -> Result<(), FileSystemError> {
         }
     } else {
         Ok(())
-    }
-}
-
-fn make_error_message(
-    our_name: String,
-    id: u64,
-    target: Address,
-    error: FileSystemError,
-) -> KernelMessage {
-    KernelMessage {
-        id,
-        source: Address {
-            node: our_name.clone(),
-            process: ProcessId::Name("fileystem".into()),
-        },
-        target,
-        rsvp: None,
-        message: Message::Response((
-            Response {
-                ipc: Some(
-                    serde_json::to_string::<Result<FileSystemResponse, FileSystemError>>(&Err(
-                        error,
-                    ))
-                    .unwrap(),
-                ),
-                metadata: None,
-            },
-            None,
-        )),
-        payload: None,
-        signed_capabilities: None,
     }
 }

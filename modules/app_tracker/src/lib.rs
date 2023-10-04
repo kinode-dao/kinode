@@ -1,10 +1,10 @@
 cargo_component_bindings::generate!();
 
-use std::collections::HashSet;
-
+use bindings::{
+    component::uq_process::types::*, get_capability, get_payload, print_to_terminal, receive, Guest,
+};
 use serde::{Deserialize, Serialize};
-
-use bindings::{component::uq_process::types::*, get_capability, get_payload, Guest, print_to_terminal, receive};
+use std::collections::HashSet;
 
 mod kernel_types;
 use kernel_types as kt;
@@ -28,7 +28,7 @@ struct ManifestEntry {
 }
 
 // TODO: error handle
-fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()>{
+fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
     match serde_json::from_str(&request_string)? {
         AppTrackerRequest::New { package } => {
             //  TODO: should we check if package already exists before creating?
@@ -45,9 +45,12 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()>{
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
                 false,
-                Some(serde_json::to_string(&kt::VfsRequest::New {
-                    identifier: package.clone(),
-                }).unwrap()),
+                Some(
+                    serde_json::to_string(&kt::VfsRequest::New {
+                        identifier: package.clone(),
+                    })
+                    .unwrap(),
+                ),
                 None,
                 None,
                 5,
@@ -57,11 +60,14 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()>{
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
                 true,
-                Some(serde_json::to_string(&kt::VfsRequest::Add {
-                    identifier: package.clone(),
-                    full_path: "".into(),  // TODO
-                    entry_type: kt::AddEntryType::ZipArchive,
-                }).unwrap()),
+                Some(
+                    serde_json::to_string(&kt::VfsRequest::Add {
+                        identifier: package.clone(),
+                        full_path: "".into(), // TODO
+                        entry_type: kt::AddEntryType::ZipArchive,
+                    })
+                    .unwrap(),
+                ),
                 None,
                 Some(&payload),
                 5,
@@ -77,10 +83,13 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()>{
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
                 false,
-                Some(serde_json::to_string(&kt::VfsRequest::GetEntry {
-                    identifier: package.clone(),
-                    full_path: "/.manifest".into(),
-                }).unwrap()),
+                Some(
+                    serde_json::to_string(&kt::VfsRequest::GetEntry {
+                        identifier: package.clone(),
+                        full_path: "/.manifest".into(),
+                    })
+                    .unwrap(),
+                ),
                 None,
                 None,
                 5,
@@ -92,20 +101,22 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()>{
             let manifest = serde_json::from_str::<Vec<ManifestEntry>>(&manifest).unwrap();
 
             for entry in manifest {
-                let path =
-                    if entry.path.starts_with("/") {
-                        entry.path
-                    } else {
-                        format!("/{}", entry.path)
-                    };
+                let path = if entry.path.starts_with("/") {
+                    entry.path
+                } else {
+                    format!("/{}", entry.path)
+                };
 
                 let (_, hash_response) = process_lib::send_and_await_response(
                     &vfs_address,
                     false,
-                    Some(serde_json::to_string(&kt::VfsRequest::GetHash {
-                        identifier: package.clone(),
-                        full_path: path,
-                    }).unwrap()),
+                    Some(
+                        serde_json::to_string(&kt::VfsRequest::GetHash {
+                            identifier: package.clone(),
+                            full_path: path,
+                        })
+                        .unwrap(),
+                    ),
                     None,
                     None,
                     5,
@@ -166,19 +177,21 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()>{
                     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
                 }
 
-
                 let _ = process_lib::send_and_await_response(
                     &Address {
                         node: our.node.clone(),
                         process: ProcessId::Name("kernel".into()),
                     },
                     false,
-                    Some(serde_json::to_string(&kt::KernelCommand::StartProcess {
-                        name: Some(entry.name),
-                        wasm_bytes_handle: hash,
-                        on_panic: entry.on_panic,
-                        initial_capabilities,
-                    }).unwrap()),
+                    Some(
+                        serde_json::to_string(&kt::KernelCommand::StartProcess {
+                            name: Some(entry.name),
+                            wasm_bytes_handle: hash,
+                            on_panic: entry.on_panic,
+                            initial_capabilities,
+                        })
+                        .unwrap(),
+                    ),
                     None,
                     None,
                     5,
@@ -207,21 +220,18 @@ impl Guest for Component {
                 }
             };
             match message {
-                Message::Request(Request {
-                    ipc,
-                    ..
-                }) => {
+                Message::Request(Request { ipc, .. }) => {
                     let Some(command) = ipc else {
                         continue;
                     };
                     match parse_command(&our, command) {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => {
                             print_to_terminal(0, &format!("app_tracker: got error {}", e));
                         }
                     }
                 }
-                _ => continue
+                _ => continue,
             }
         }
     }

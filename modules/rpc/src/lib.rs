@@ -5,7 +5,7 @@ use bindings::{
     get_capabilities, get_capability, get_payload, print_to_terminal, receive,
     send_and_await_response, send_request, send_requests, send_response, Guest,
 };
-use kernel_types::Capability;
+use kernel_types::de_wit_signed_capability;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
@@ -502,20 +502,23 @@ impl Guest for Component {
                                         }
                                     };
 
-                                    let mut capabilities: HashSet<Capability> = HashSet::new();
+                                    let mut capabilities_to_grant: HashSet<
+                                        kernel_types::SignedCapability,
+                                    > = HashSet::new();
 
                                     match body_json.capabilities {
                                         Some(caps) => {
                                             for cap in caps {
-                                                capabilities.insert(Capability {
-                                                    issuer: kernel_types::Address {
-                                                        node: node.clone(),
-                                                        process: kernel_types::ProcessId::Name(
-                                                            cap.0,
-                                                        ),
-                                                    },
-                                                    params: cap.1,
-                                                });
+                                                let addr = Address {
+                                                    node: our.node.clone(),
+                                                    process: ProcessId::Name(cap.0.clone()),
+                                                };
+                                                let Some(signed) = bindings::get_capability(&addr, &cap.1) else {
+                                                    bindings::print_to_terminal(0, &format!("rpc: failed to get capability {} {}", cap.0, cap.1));
+                                                    continue;
+                                                };
+                                                capabilities_to_grant
+                                                    .insert(de_wit_signed_capability(signed));
                                             }
                                         }
                                         None => (),
@@ -551,7 +554,7 @@ impl Guest for Component {
                                             name: Some(body_json.process),
                                             wasm_bytes_handle,
                                             on_panic: kernel_types::OnPanic::Restart,
-                                            initial_capabilities: capabilities,
+                                            initial_capabilities: capabilities_to_grant,
                                         };
 
                                     let ipc = match serde_json::to_string(&start_process_command) {

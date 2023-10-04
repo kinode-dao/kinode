@@ -255,8 +255,8 @@ pub enum KernelCommand {
         initial_capabilities: HashSet<SignedCapability>,
     },
     KillProcess(ProcessId), // this is extrajudicial killing: we might lose messages!
+    // kernel only
     RebootProcess {
-        // kernel only
         process_id: ProcessId,
         persisted: PersistedProcess,
     },
@@ -345,7 +345,7 @@ pub struct ReadChunkRequest {
     pub length: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 pub enum FsResponse {
     Write(u128),
     Read(u128),
@@ -414,7 +414,7 @@ impl FileSystemError {
     }
 }
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Clone, Error, Debug, Serialize, Deserialize)]
 pub enum FileSystemError {
     //  bad input from user
     #[error("Malformed URI: {uri}. Problem with {bad_part_name}: {:?}.", bad_part)]

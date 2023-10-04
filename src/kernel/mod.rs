@@ -1185,44 +1185,54 @@ async fn handle_kernel_request(
         t::KernelCommand::RebootProcess {
             process_id,
             persisted,
-        } => send_to_loop
-            .send(t::KernelMessage {
-                id: km.id,
-                source: t::Address {
-                    node: our_name.clone(),
-                    process: t::ProcessId::Name("kernel".into()),
-                },
-                target: t::Address {
-                    node: our_name.clone(),
-                    process: t::ProcessId::Name("filesystem".into()),
-                },
-                rsvp: None,
-                message: t::Message::Request(t::Request {
-                    inherit: true,
-                    expects_response: Some(5), // TODO evaluate
-                    ipc: Some(
-                        serde_json::to_string(&t::FsAction::Read(persisted.wasm_bytes_handle))
+        } => {
+            println!("rebooting process: {:?}\r", process_id);
+            if senders.contains_key(&process_id)
+                || process_id == t::ProcessId::Name("kernel".into())
+            {
+                println!("skipping runtime process reboot\r");
+                return;
+            }
+            send_to_loop
+                .send(t::KernelMessage {
+                    id: km.id,
+                    source: t::Address {
+                        node: our_name.clone(),
+                        process: t::ProcessId::Name("kernel".into()),
+                    },
+                    target: t::Address {
+                        node: our_name.clone(),
+                        process: t::ProcessId::Name("filesystem".into()),
+                    },
+                    rsvp: None,
+                    message: t::Message::Request(t::Request {
+                        inherit: true,
+                        expects_response: Some(5), // TODO evaluate
+                        ipc: Some(
+                            serde_json::to_string(&t::FsAction::Read(persisted.wasm_bytes_handle))
+                                .unwrap(),
+                        ),
+                        metadata: Some(
+                            serde_json::to_string(&StartProcessMetadata {
+                                source: km.source,
+                                process_id: Some(process_id),
+                                persisted,
+                                reboot: true,
+                            })
                             .unwrap(),
-                    ),
-                    metadata: Some(
-                        serde_json::to_string(&StartProcessMetadata {
-                            source: km.source,
-                            process_id: Some(process_id),
-                            persisted,
-                            reboot: true,
-                        })
-                        .unwrap(),
-                    ),
-                }),
-                payload: None,
-                signed_capabilities: None,
-            })
-            .await
-            .unwrap(),
+                        ),
+                    }),
+                    payload: None,
+                    signed_capabilities: None,
+                })
+                .await
+                .unwrap()
+        }
         t::KernelCommand::KillProcess(process_id) => {
             // brutal and savage killing: aborting the task.
             // do not do this to a process if you don't want to risk
             // dropped messages / un-replied-to-requests
+            println!("kernel: killing process {:?}\r", process_id);
             let _ = senders.remove(&process_id);
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
@@ -1308,7 +1318,7 @@ async fn handle_kernel_response(
     let t::Message::Response((ref response, _)) = km.message else {
         let _ = send_to_terminal
             .send(t::Printout {
-                verbosity: 1,
+                verbosity: 0,
                 content: "kernel: got weird Response".into(),
             })
             .await;
@@ -1331,7 +1341,7 @@ async fn handle_kernel_response(
         Err(_) => {
             let _ = send_to_terminal
                 .send(t::Printout {
-                    verbosity: 1,
+                    verbosity: 0,
                     content: "kernel: got weird metadata from filesystem".into(),
                 })
                 .await;
@@ -1344,7 +1354,7 @@ async fn handle_kernel_response(
         send_to_terminal
             .send(t::Printout {
                 verbosity: 0,
-                content: "kernel: process startup requires bytes".into(),
+                content: format!("kernel: process {:?} seemingly could not be read from filesystem. km: {}", meta.process_id, km),
             })
             .await
             .unwrap();
@@ -1462,6 +1472,8 @@ async fn start_process(
         ),
     );
 
+    println!("started process: {:?}\r", process_id);
+
     process_map.insert(
         process_id,
         t::PersistedProcess {
@@ -1556,24 +1568,15 @@ async fn make_event_loop(
             ProcessSender::Runtime(send_to_vfs.clone()),
         );
 
+        println!("process map: {:?}", process_map.keys());
+
         // each running process is stored in this map
         let mut process_handles: ProcessHandles = HashMap::new();
 
         let mut is_debug: bool = false;
 
-        // will boot every wasm module inside /modules
-        // currently have an exclude list to avoid broken modules
-        // modules started manually by users will bootup automatically
-        // TODO remove once the modules compile!
-
-        let exclude_list: Vec<t::ProcessId> = vec![
-            t::ProcessId::Name("explorer".into()),
-            t::ProcessId::Name("file_transfer".into()),
-            t::ProcessId::Name("file_transfer_one_off".into()),
-        ];
-
         for (process_id, persisted) in &process_map {
-            if !exclude_list.contains(&process_id) && persisted.on_panic.is_restart() {
+            if persisted.on_panic.is_restart() {
                 send_to_loop
                     .send(t::KernelMessage {
                         id: rand::random(),
@@ -1662,9 +1665,8 @@ async fn make_event_loop(
                                 .send(t::Printout {
                                     verbosity: 0,
                                     content: format!(
-                                        "event loop: don't have {:?} amongst registered processes: {:?}",
+                                        "event loop: don't have {:?} amongst registered processes (got message for it from net)",
                                         wrapped_network_error.source.process,
-                                        senders.keys().collect::<Vec<_>>()
                                     )
                                 })
                                 .await
@@ -1704,7 +1706,7 @@ async fn make_event_loop(
                     } else {
                         // enforce that process has capability to message a target process of this name
                         match process_map.get(&kernel_message.source.process) {
-                            None => continue, // this should never be hit
+                            None => {}, // this should only get hit by kernel?
                             Some(persisted) => {
                                 if !persisted.capabilities.contains(&t::Capability {
                                     issuer: t::Address {
@@ -1823,9 +1825,9 @@ async fn make_event_loop(
                                     .send(t::Printout {
                                         verbosity: 0,
                                         content: format!(
-                                            "event loop: don't have {:?} amongst registered processes: {:?}",
+                                            "event loop: don't have {:?} amongst registered processes, got message for it: {}",
                                             kernel_message.target.process,
-                                            senders.keys().collect::<Vec<_>>()
+                                            kernel_message,
                                         )
                                     })
                                     .await

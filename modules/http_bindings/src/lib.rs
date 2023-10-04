@@ -104,7 +104,7 @@ fn send_http_response(status: u16, headers: HashMap<String, String>, payload_byt
 
 impl Guest for Component {
     fn init(our: Address) {
-        print_to_terminal(1, "http_bindings: start");
+        print_to_terminal(0, "http_bindings: start");
         let mut path_bindings: HashMap<String, BoundPath> = HashMap::new();
         let mut jwt_secret: Option<Hmac<Sha256>> = None;
 

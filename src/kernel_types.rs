@@ -1,10 +1,6 @@
-use std::collections::HashSet;
-
-use serde::{Deserialize, Serialize};
-
-use std::collections::HashSet;
-
 use super::bindings::component::uq_process::types as wit;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 //
 // process-facing kernel types, used for process
@@ -197,7 +193,7 @@ pub enum VfsRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum AddEntryType {
     Dir,
-    NewFile, //  add a new file to fs and add name in vfs
+    NewFile,                     //  add a new file to fs and add name in vfs
     ExistingFile { hash: u128 }, //  link an existing file in fs to a new name in vfs
     ZipArchive,
 }
