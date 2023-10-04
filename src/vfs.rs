@@ -881,13 +881,15 @@ async fn match_request(
                                 .await;
                             let write_response = recv_response.recv().await.unwrap();
                             let KernelMessage { message, .. } = write_response;
-                            let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
+                            let Message::Response((Response { ipc, metadata: _ }, None)) = message
+                            else {
                                 panic!("")
                             };
                             let Some(ipc) = ipc else {
                                 panic!("");
                             };
-                            let FsResponse::Write(hash) = serde_json::from_str(&ipc).unwrap() else {
+                            let FsResponse::Write(hash) = serde_json::from_str(&ipc).unwrap()
+                            else {
                                 panic!("");
                             };
 
@@ -1305,7 +1307,10 @@ async fn match_request(
             );
             (ipc, None)
         }
-        VfsRequest::GetHash { identifier, full_path } => {
+        VfsRequest::GetHash {
+            identifier,
+            full_path,
+        } => {
             let mut vfs = vfs.lock().await;
             let Some(key) = vfs.path_to_key.get(&full_path) else {
                 panic!("todo");

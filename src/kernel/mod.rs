@@ -210,15 +210,22 @@ impl UqProcessImports for ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: Some(serde_json::to_string(&t::VfsRequest::GetHash {
-                    identifier: package.clone(),
-                    full_path: full_path.clone(),
-                }).unwrap()),
+                ipc: Some(
+                    serde_json::to_string(&t::VfsRequest::GetHash {
+                        identifier: package.clone(),
+                        full_path: full_path.clone(),
+                    })
+                    .unwrap(),
+                ),
                 metadata: None,
             },
             None,
-        ).await.unwrap().unwrap();
-        let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = hash_response else {
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = hash_response
+        else {
             panic!("baz");
         };
         let t::VfsResponse::GetHash { hash, .. } = serde_json::from_str(&ipc).unwrap() else {
@@ -231,18 +238,24 @@ impl UqProcessImports for ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: Some(serde_json::to_string(&t::VfsRequest::GetEntry {
-                    identifier: package.clone(),
-                    full_path: full_path.clone(),
-                }).unwrap()),
+                ipc: Some(
+                    serde_json::to_string(&t::VfsRequest::GetEntry {
+                        identifier: package.clone(),
+                        full_path: full_path.clone(),
+                    })
+                    .unwrap(),
+                ),
                 metadata: None,
             },
             None,
-        ).await.unwrap().unwrap();
+        )
+        .await
+        .unwrap()
+        .unwrap();
 
         // TODO: handle case of response is Error
         let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
-            panic!("");  // TODO
+            panic!(""); // TODO
         };
 
         self.process
@@ -987,7 +1000,8 @@ async fn make_process_loop(
                         on: our.process.clone(),
                         responder: tx,
                     });
-                    let initial_capabilities = rx.await
+                    let initial_capabilities = rx
+                        .await
                         .unwrap()
                         .into_iter()
                         .map(|cap| t::SignedCapability {
@@ -1132,10 +1146,7 @@ async fn handle_kernel_request(
             };
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
-            let pk = signature::UnparsedPublicKey::new(
-                &signature::ED25519,
-                keypair.public_key(),
-            );
+            let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
             let mut valid_capabilities: HashSet<t::Capability> = HashSet::new();
             for signed_cap in initial_capabilities {
                 let cap = t::Capability {
@@ -1143,11 +1154,11 @@ async fn handle_kernel_request(
                     params: signed_cap.params,
                 };
                 match pk.verify(&bincode::serialize(&cap).unwrap(), &signed_cap.signature) {
-                    Ok(_) => {},
+                    Ok(_) => {}
                     Err(e) => {
                         println!("kernel: StartProcess no cap: {}", e);
                         continue;
-                    },
+                    }
                 }
                 valid_capabilities.insert(cap);
             }
