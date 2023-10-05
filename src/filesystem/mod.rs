@@ -19,7 +19,9 @@ pub async fn load_fs(
     // load/create fs directory, manifest + log if none.
     let fs_directory_path_str = format!("{}/fs", &home_directory_path);
 
-    let new_boot = create_dir_if_dne(&fs_directory_path_str).await.expect("failed creating fs dir!");
+    let new_boot = create_dir_if_dne(&fs_directory_path_str)
+        .await
+        .expect("failed creating fs dir!");
 
     let fs_directory_path: std::path::PathBuf =
         fs::canonicalize(fs_directory_path_str).await.unwrap();
@@ -73,15 +75,27 @@ pub async fn load_fs(
 
     if new_boot {
         //  bootstrap filesystem
-        let _ = bootstrap(&our_name, &kernel_process_id, &mut process_map, &mut manifest).await.expect("fresh bootstrap failed!");
+        let _ = bootstrap(
+            &our_name,
+            &kernel_process_id,
+            &mut process_map,
+            &mut manifest,
+        )
+        .await
+        .expect("fresh bootstrap failed!");
     }
 
     Ok((process_map, manifest))
 }
 
-//  function run only upon fresh boot. 
-//  goes through /modules, gets their .wasm bytes, injects into fs and kernel state. 
-async fn bootstrap(our_name: &str, kernel_process_id: &FileIdentifier, process_map: &mut ProcessMap, manifest: &mut Manifest) -> Result<()> {
+//  function run only upon fresh boot.
+//  goes through /modules, gets their .wasm bytes, injects into fs and kernel state.
+async fn bootstrap(
+    our_name: &str,
+    kernel_process_id: &FileIdentifier,
+    process_map: &mut ProcessMap,
+    manifest: &mut Manifest,
+) -> Result<()> {
     let names_and_bytes = get_processes_from_directories().await;
     const RUNTIME_MODULES: [&str; 8] = [
         "filesystem",

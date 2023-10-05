@@ -188,7 +188,7 @@ async fn main() {
     let http_server_port = http_server::find_open_port(8080).await.unwrap();
     let (kill_tx, kill_rx) = oneshot::channel::<bool>();
     let keyfile = fs::read(format!("{}/.keys", home_directory_path)).await;
-    
+
     let (our, networking_keypair, jwt_secret_bytes, file_key): (
         Identity,
         signature::Ed25519KeyPair,
