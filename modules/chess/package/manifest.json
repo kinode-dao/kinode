@@ -1,0 +1,19 @@
+[
+    {
+        "process_id": "chess",
+        "process_wasm": "chess.wasm",
+        "on_panic": {
+            "on_panic": "Restart"
+        },
+        "networking": true,
+        "request_messaging": [
+            "http_bindings",
+            "encryptor"
+        ],
+        "grant_messaging": [
+            "terminal",
+            "http_bindings",
+            "encryptor"
+        ]
+    }
+]

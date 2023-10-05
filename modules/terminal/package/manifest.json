@@ -1,0 +1,14 @@
+[
+    {
+        "process_id": "terminal",
+        "process_wasm": "terminal.wasm",
+        "on_panic": {
+            "on_panic": "Restart"
+        },
+        "networking": true,
+        "request_messaging": [
+            "net"
+        ],
+        "grant_messaging": "all"
+    }
+]

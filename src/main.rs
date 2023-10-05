@@ -378,6 +378,7 @@ async fn main() {
         home_directory_path.clone(),
         file_key,
         fs_config,
+        vfs_message_sender.clone(),
     )
     .await
     .expect("fs load failed!");

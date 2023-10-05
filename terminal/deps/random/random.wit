@@ -1,0 +1,23 @@
+// https://github.com/bytecodealliance/wasmtime/blob/432b5471ec4bf6d51173def284cd418be6849a49/crates/wasi/wit/deps/random/random.wit
+
+package wasi:random
+
+interface random {
+    /// Return `len` cryptographically-secure pseudo-random bytes.
+    ///
+    /// This function must produce data from an adequately seeded
+    /// cryptographically-secure pseudo-random number generator (CSPRNG), so it
+    /// must not block, from the perspective of the calling program, and the
+    /// returned data is always unpredictable.
+    ///
+    /// This function must always return fresh pseudo-random data. Deterministic
+    /// environments must omit this function, rather than implementing it with
+    /// deterministic data.
+    get-random-bytes: func(len: u64) -> list<u8>
+
+    /// Return a cryptographically-secure pseudo-random `u64` value.
+    ///
+    /// This function returns the same type of pseudo-random data as
+    /// `get-random-bytes`, represented as a `u64`.
+    get-random-u64: func() -> u64
+}

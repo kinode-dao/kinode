@@ -192,6 +192,18 @@ impl UqProcessImports for ProcessWasi {
         //     Ok(())
     }
 
+    async fn get_state(&mut self) -> Result<Option<Vec<u8>>> {
+        unimplemented!()
+    }
+
+    async fn get_state(&mut self, bytes: Vec<u8>) -> Result<()> {
+        unimplemented!()
+    }
+
+    async fn clear_state(&mut self) -> Result<()> {
+        unimplemented!()
+    }
+
     async fn spawn(
         &mut self,
         id: wit::ProcessId,

@@ -15,6 +15,7 @@ pub async fn load_fs(
     home_directory_path: String,
     file_key: Vec<u8>,
     fs_config: FsConfig,
+    vfs_message_sender: MessageSender,
 ) -> Result<(ProcessMap, Manifest), FsError> {
     // load/create fs directory, manifest + log if none.
     let fs_directory_path_str = format!("{}/fs", &home_directory_path);
@@ -80,6 +81,7 @@ pub async fn load_fs(
             &kernel_process_id,
             &mut process_map,
             &mut manifest,
+            &vfs_message_sender,
         )
         .await
         .expect("fresh bootstrap failed!");
@@ -88,15 +90,91 @@ pub async fn load_fs(
     Ok((process_map, manifest))
 }
 
-//  function run only upon fresh boot.
-//  goes through /modules, gets their .wasm bytes, injects into fs and kernel state.
+/// function run only upon fresh boot.
+///
+/// for each folder in /modules, looks for a package.zip file, extracts the contents,
+/// sends the contents to VFS, and reads the manifest.json.
+///
+/// the manifest.json contains instructions for which processes to boot and what
+/// capabilities to give them. since we are inside runtime, can spawn those out of
+/// thin air.
 async fn bootstrap(
     our_name: &str,
     kernel_process_id: &FileIdentifier,
     process_map: &mut ProcessMap,
     manifest: &mut Manifest,
+    vfs_message_sender: &MessageSender,
 ) -> Result<()> {
-    let names_and_bytes = get_processes_from_directories().await;
+    let packages: Vec<zip::ZipArchive<std::io::Cursor<Vec<u8>>>> = get_zipped_packages().await;
+
+    for package in packages {
+        // for each file in package.zip, recursively through all dirs, send a newfile KM to VFS
+        let mut stack = Vec::new();
+        stack.push(package);
+
+        while let Some(mut package) = stack.pop() {
+            for i in 0..package.len() {
+                let mut file = package.by_index(i).unwrap();
+                if file.name().ends_with('/') {
+                    let new_package = zip::ZipArchive::new(std::io::Cursor::new(file.into_inner())).unwrap();
+                    stack.push(new_package);
+                } else {
+                    let file_path = file.sanitized_name();
+                    let mut file_content = Vec::new();
+                    file.read_to_end(&mut file_content).unwrap();
+                    let km = KernelMessage::NewFile {
+                        path: file_path,
+                        content: file_content,
+                    };
+                    vfs_message_sender.send(km).await.unwrap();
+                }
+            }
+        }
+
+        // get and read manifest.json
+
+        // for each process-entry in manifest.json:
+        for entry in process_manifest {
+            // save in process map
+            let hash: [u8; 32] = hash_bytes(&wasm_bytes);
+
+            if let Some(id) = manifest.get_uuid_by_hash(&hash).await {
+                let entry =
+                    process_map
+                        .entry(ProcessId::Name(process_name))
+                        .or_insert(PersistedProcess {
+                            wasm_bytes_handle: id,
+                            on_panic: OnPanic::Restart,
+                            capabilities: HashSet::new(),
+                        });
+                entry.capabilities.extend(special_capabilities.clone());
+                entry.wasm_bytes_handle = id;
+            } else {
+                //  FsAction::Write
+                let file = FileIdentifier::new_uuid();
+
+                let _ = manifest.write(&file, &wasm_bytes).await;
+                let id = file.to_uuid().unwrap();
+
+                let entry =
+                    process_map
+                        .entry(ProcessId::Name(process_name))
+                        .or_insert(PersistedProcess {
+                            wasm_bytes_handle: id,
+                            on_panic: OnPanic::Restart,
+                            capabilities: HashSet::new(),
+                        });
+                entry.capabilities.extend(special_capabilities.clone());
+                entry.wasm_bytes_handle = id;
+            }
+
+            //     spawn the requested capabilities
+
+            //     spawn the granted capabilities
+
+        }
+    }
+
     const RUNTIME_MODULES: [&str; 8] = [
         "filesystem",
         "http_server",
@@ -108,18 +186,9 @@ async fn bootstrap(
         "eth_rpc",
     ];
 
-    let mut special_capabilities: HashSet<Capability> = HashSet::new();
-    for (process_name, _) in &names_and_bytes {
-        special_capabilities.insert(Capability {
-            issuer: Address {
-                node: our_name.to_string(),
-                process: ProcessId::Name(process_name.into()),
-            },
-            params: "\"messaging\"".into(),
-        });
-    }
+    let mut runtime_caps: HashSet<Capability> = HashSet::new();
     for runtime_module in RUNTIME_MODULES {
-        special_capabilities.insert(Capability {
+        runtime_caps.insert(Capability {
             issuer: Address {
                 node: our_name.to_string(),
                 process: ProcessId::Name(runtime_module.into()),
@@ -127,49 +196,14 @@ async fn bootstrap(
             params: "\"messaging\"".into(),
         });
     }
-    // give all distro processes the ability to send messages across the network
-    special_capabilities.insert(Capability {
+    // give all runtime processes the ability to send messages across the network
+    runtime_caps.insert(Capability {
         issuer: Address {
             node: our_name.to_string(),
             process: ProcessId::Name("kernel".into()),
         },
         params: "\"network\"".into(),
     });
-
-    // for a module in /modules, put its bytes into filesystem, add to process_map
-    for (process_name, wasm_bytes) in names_and_bytes {
-        let hash: [u8; 32] = hash_bytes(&wasm_bytes);
-
-        if let Some(id) = manifest.get_uuid_by_hash(&hash).await {
-            let entry =
-                process_map
-                    .entry(ProcessId::Name(process_name))
-                    .or_insert(PersistedProcess {
-                        wasm_bytes_handle: id,
-                        on_panic: OnPanic::Restart,
-                        capabilities: HashSet::new(),
-                    });
-            entry.capabilities.extend(special_capabilities.clone());
-            entry.wasm_bytes_handle = id;
-        } else {
-            //  FsAction::Write
-            let file = FileIdentifier::new_uuid();
-
-            let _ = manifest.write(&file, &wasm_bytes).await;
-            let id = file.to_uuid().unwrap();
-
-            let entry =
-                process_map
-                    .entry(ProcessId::Name(process_name))
-                    .or_insert(PersistedProcess {
-                        wasm_bytes_handle: id,
-                        on_panic: OnPanic::Restart,
-                        capabilities: HashSet::new(),
-                    });
-            entry.capabilities.extend(special_capabilities.clone());
-            entry.wasm_bytes_handle = id;
-        }
-    }
 
     // finally, save runtime modules in state map as well, somewhat fakely
     for runtime_module in RUNTIME_MODULES {
@@ -178,9 +212,8 @@ async fn bootstrap(
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: 0,
                 on_panic: OnPanic::Restart,
-                capabilities: HashSet::new(),
+                capabilities: runtime_caps.clone(),
             });
-        entry.capabilities.extend(special_capabilities.clone());
     }
 
     // save kernel process state. FsAction::SetState(kernel)
@@ -194,6 +227,33 @@ async fn bootstrap(
             .await;
     }
     Ok(())
+}
+
+/// go into /modules folder and get all
+async fn get_zipped_packages() -> Vec<zip::ZipArchive<std::io::Cursor<Vec<u8>>>> {
+    let modules_path = std::path::Path::new("modules");
+
+    let mut packages = Vec::new();
+
+    if let Ok(mut entries) = fs::read_dir(modules_path).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            // get a file named package.zip
+            if let Some(pkg) = entry.file_name().to_str() {
+                if pkg == "package.zip" {
+                    // read the file
+                    if let Ok(bytes) = fs::read(entry.path()).await {
+                        // extract the zip
+                        if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) {
+                            // add to list of packages
+                            packages.push(zip);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return packages;
 }
 
 async fn get_processes_from_directories() -> Vec<(String, Vec<u8>)> {

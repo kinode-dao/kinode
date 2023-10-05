@@ -81,12 +81,9 @@ impl Guest for Component {
         assert_eq!(our.process, ProcessId::Name("terminal".into()));
         print_to_terminal(1, &format!("terminal: start"));
         loop {
-            let message = match receive() {
+            let (source, message) = match receive() {
                 Ok((source, message)) => {
-                    if our.node != source.node {
-                        continue;
-                    }
-                    message
+                    (source, message)
                 }
                 Err((error, _context)) => {
                     print_to_terminal(0, &format!("net error: {:?}!", error.kind));
@@ -99,6 +96,10 @@ impl Guest for Component {
                     ipc,
                     ..
                 }) => {
+                    if our.node != source.node
+                       || our.process != source.process {
+                        continue;
+                    }
                     let Some(command) = ipc else {
                         continue;
                     };
