@@ -10,21 +10,17 @@ use tokio::sync::Mutex;
 use tokio::time::{interval, Duration};
 mod manifest;
 
-pub async fn bootstrap(
+pub async fn load_fs(
     our_name: String,
     home_directory_path: String,
     file_key: Vec<u8>,
     fs_config: FsConfig,
 ) -> Result<(ProcessMap, Manifest), FsError> {
-    // fs bootstrapping, create home_directory, fs directory inside it, manifest + log if none.
-    if let Err(e) = create_dir_if_dne(&home_directory_path).await {
-        panic!("{}", e);
-    }
+    // load/create fs directory, manifest + log if none.
     let fs_directory_path_str = format!("{}/fs", &home_directory_path);
 
-    if let Err(e) = create_dir_if_dne(&fs_directory_path_str).await {
-        panic!("{}", e);
-    }
+    let new_boot = create_dir_if_dne(&fs_directory_path_str).await.expect("failed creating fs dir!");
+
     let fs_directory_path: std::path::PathBuf =
         fs::canonicalize(fs_directory_path_str).await.unwrap();
 
@@ -51,7 +47,7 @@ pub async fn bootstrap(
         .expect("fs: failed to open WAL file");
 
     //  in memory details about files.
-    let manifest = Manifest::load(
+    let mut manifest = Manifest::load(
         manifest_file,
         wal_file,
         &fs_directory_path,
@@ -60,9 +56,8 @@ pub async fn bootstrap(
     )
     .await
     .expect("manifest load failed!");
-    // mimic the FsAction::GetState case and get current state of ProcessId::name("kernel")
-    // serialize it to a ProcessHandles from process id to JoinHandle
 
+    // get kernel state for booting up
     let kernel_process_id = FileIdentifier::Process(ProcessId::Name("kernel".into()));
     let mut process_map: ProcessMap = HashMap::new();
 
@@ -76,14 +71,17 @@ pub async fn bootstrap(
         }
     }
 
-    // NOTE OnPanic
-    // wasm bytes initial source of truth is the compiled .wasm file on-disk, but onPanic needs to come from somewhere to.
-    // for apps in /modules, special cases can be defined here.
+    if new_boot {
+        //  bootstrap filesystem
+        let _ = bootstrap(&our_name, &kernel_process_id, &mut process_map, &mut manifest).await.expect("fresh bootstrap failed!");
+    }
 
-    // we also add special-case capabilities spawned "out of thin air" here, for distro processes.
-    // at the moment, all bootstrapped processes are given the capability to message all others.
-    // this can be easily changed in the future.
-    // they are also given access to all runtime modules by name
+    Ok((process_map, manifest))
+}
+
+//  function run only upon fresh boot. 
+//  goes through /modules, gets their .wasm bytes, injects into fs and kernel state. 
+async fn bootstrap(our_name: &str, kernel_process_id: &FileIdentifier, process_map: &mut ProcessMap, manifest: &mut Manifest) -> Result<()> {
     let names_and_bytes = get_processes_from_directories().await;
     const RUNTIME_MODULES: [&str; 8] = [
         "filesystem",
@@ -100,7 +98,7 @@ pub async fn bootstrap(
     for (process_name, _) in &names_and_bytes {
         special_capabilities.insert(Capability {
             issuer: Address {
-                node: our_name.clone(),
+                node: our_name.to_string(),
                 process: ProcessId::Name(process_name.into()),
             },
             params: "\"messaging\"".into(),
@@ -109,7 +107,7 @@ pub async fn bootstrap(
     for runtime_module in RUNTIME_MODULES {
         special_capabilities.insert(Capability {
             issuer: Address {
-                node: our_name.clone(),
+                node: our_name.to_string(),
                 process: ProcessId::Name(runtime_module.into()),
             },
             params: "\"messaging\"".into(),
@@ -118,7 +116,7 @@ pub async fn bootstrap(
     // give all distro processes the ability to send messages across the network
     special_capabilities.insert(Capability {
         issuer: Address {
-            node: our_name.clone(),
+            node: our_name.to_string(),
             process: ProcessId::Name("kernel".into()),
         },
         params: "\"network\"".into(),
@@ -181,8 +179,7 @@ pub async fn bootstrap(
             .write(&kernel_process_id, &serialized_process_map)
             .await;
     }
-
-    Ok((process_map, manifest))
+    Ok(())
 }
 
 async fn get_processes_from_directories() -> Vec<(String, Vec<u8>)> {
@@ -578,17 +575,18 @@ pub fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-async fn create_dir_if_dne(path: &str) -> Result<(), FsError> {
+//  returns bool: if dir is new
+async fn create_dir_if_dne(path: &str) -> Result<bool, FsError> {
     if let Err(_) = fs::read_dir(&path).await {
         match fs::create_dir_all(&path).await {
-            Ok(_) => Ok(()),
+            Ok(_) => Ok(true),
             Err(e) => Err(FsError::CreateInitialDirError {
                 path: path.into(),
                 error: format!("{}", e),
             }),
         }
     } else {
-        Ok(())
+        Ok(false)
     }
 }
 

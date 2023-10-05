@@ -188,7 +188,7 @@ async fn main() {
     let http_server_port = http_server::find_open_port(8080).await.unwrap();
     let (kill_tx, kill_rx) = oneshot::channel::<bool>();
     let keyfile = fs::read(format!("{}/.keys", home_directory_path)).await;
-
+    
     let (our, networking_keypair, jwt_secret_bytes, file_key): (
         Identity,
         signature::Ed25519KeyPair,
@@ -365,7 +365,7 @@ async fn main() {
             file_key.to_vec(),
         )
     };
-    //  bootstrap FS.
+    //  load in fs.
     let _ = print_sender
         .send(Printout {
             verbosity: 0,
@@ -373,14 +373,14 @@ async fn main() {
         })
         .await;
 
-    let (kernel_process_map, manifest) = filesystem::bootstrap(
+    let (kernel_process_map, manifest) = filesystem::load_fs(
         our.name.clone(),
         home_directory_path.clone(),
         file_key,
         fs_config,
     )
     .await
-    .expect("fs bootstrap failed!");
+    .expect("fs load failed!");
 
     let _ = kill_tx.send(true);
     let _ = print_sender
