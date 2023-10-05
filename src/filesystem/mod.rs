@@ -116,7 +116,8 @@ async fn bootstrap(
             for i in 0..package.len() {
                 let mut file = package.by_index(i).unwrap();
                 if file.name().ends_with('/') {
-                    let new_package = zip::ZipArchive::new(std::io::Cursor::new(file.into_inner())).unwrap();
+                    let new_package =
+                        zip::ZipArchive::new(std::io::Cursor::new(file.into_inner())).unwrap();
                     stack.push(new_package);
                 } else {
                     let file_path = file.sanitized_name();
@@ -171,7 +172,6 @@ async fn bootstrap(
             //     spawn the requested capabilities
 
             //     spawn the granted capabilities
-
         }
     }
 
