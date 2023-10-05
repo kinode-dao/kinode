@@ -233,10 +233,10 @@ async fn main() {
 
         // check if Identity for this username has correct networking keys,
         // if not, prompt user to reset them.
-        let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
+        let Ok(Ok(ws_rpc)) = timeout(tokio::time::Duration::from_secs(10), Provider::<Ws>::connect(rpc_url.clone())).await else {
             panic!("rpc: couldn't connect to blockchain wss endpoint. you MUST set an endpoint with --rpc flag, go to alchemy.com and get a free API key, then use the wss endpoint that looks like this: wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>");
         };
-        let Ok(_) = ws_rpc.get_block_number().await else {
+        let Ok(Ok(_)) = timeout(tokio::time::Duration::from_secs(10), ws_rpc.get_block_number()).await else {
             panic!("error: RPC endpoint not responding, try setting one with --rpc flag");
         };
         let qns_address: EthAddress = QNS_SEPOLIA_ADDRESS.parse().unwrap();

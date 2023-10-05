@@ -15,7 +15,7 @@ pub async fn bootstrap(
     home_directory_path: String,
     file_key: Vec<u8>,
     fs_config: FsConfig,
-) -> Result<(ProcessMap, Manifest), FileSystemError> {
+) -> Result<(ProcessMap, Manifest), FsError> {
     // fs bootstrapping, create home_directory, fs directory inside it, manifest + log if none.
     if let Err(e) = create_dir_if_dne(&home_directory_path).await {
         panic!("{}", e);
@@ -128,31 +128,6 @@ pub async fn bootstrap(
     for (process_name, wasm_bytes) in names_and_bytes {
         let hash: [u8; 32] = hash_bytes(&wasm_bytes);
 
-        // allow processes to read their own process bytes
-        let mut special_capabilities = special_capabilities.clone();
-        special_capabilities.insert(Capability {
-            issuer: Address {
-                node: our_name.clone(),
-                process: ProcessId::Name("vfs".into()),
-            },
-            params: serde_json::to_string(&serde_json::json!({
-                "kind": "read",
-                "identifier": process_name,
-            }))
-            .unwrap(),
-        });
-        special_capabilities.insert(Capability {
-            issuer: Address {
-                node: our_name.clone(),
-                process: ProcessId::Name("vfs".into()),
-            },
-            params: serde_json::to_string(&serde_json::json!({
-                "kind": "write",
-                "identifier": process_name,
-            }))
-            .unwrap(),
-        });
-
         if let Some(id) = manifest.get_uuid_by_hash(&hash).await {
             let entry =
                 process_map
@@ -210,32 +185,6 @@ pub async fn bootstrap(
     Ok((process_map, manifest))
 }
 
-async fn get_bytes(entry: &fs::DirEntry, processes: &mut Vec<(String, Vec<u8>)>) -> bool {
-    if let Ok(mut inner_entries) = fs::read_dir(entry.path()).await {
-        while let Ok(Some(inner_entry)) = inner_entries.next_entry().await {
-            if Some("Cargo.toml") == inner_entry.file_name().to_str() {
-                // entry is process dir: read it in
-                if let Some(name) = entry.file_name().to_str() {
-                    // Get the path to the wasm file for the process
-                    let path = entry.path();
-                    let Some(path) = path.to_str() else { break };
-                    let wasm_path = format!(
-                        "{}/target/wasm32-unknown-unknown/release/{}.wasm",
-                        path, name,
-                    );
-                    // Read the wasm file
-                    if let Ok(wasm_bytes) = fs::read(wasm_path).await {
-                        // Add the process name and wasm bytes to the list of processes
-                        processes.push((name.into(), wasm_bytes));
-                    }
-                }
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
 async fn get_processes_from_directories() -> Vec<(String, Vec<u8>)> {
     let mut processes = Vec::new();
 
@@ -246,21 +195,19 @@ async fn get_processes_from_directories() -> Vec<(String, Vec<u8>)> {
     if let Ok(mut entries) = fs::read_dir(modules_path).await {
         // Loop through the entries in the directory
         while let Ok(Some(entry)) = entries.next_entry().await {
-            // If the entry is a directory containing Cargo.toml, add its name to the list of processes
+            // If the entry is a directory, add its name to the list of processes
             if let Ok(metadata) = entry.metadata().await {
                 if metadata.is_dir() {
-                    let got_bytes = get_bytes(&entry, &mut processes).await;
-                    if !got_bytes {
-                        // Directory did not contain Cargo.toml: check one level deeper
-                        // TODO: make recursive?
-                        if let Ok(mut inner_entries) = fs::read_dir(entry.path()).await {
-                            while let Ok(Some(inner_entry)) = inner_entries.next_entry().await {
-                                if let Ok(metadata) = inner_entry.metadata().await {
-                                    if metadata.is_dir() {
-                                        let _ = get_bytes(&inner_entry, &mut processes).await;
-                                    }
-                                }
-                            }
+                    if let Some(name) = entry.file_name().to_str() {
+                        // Get the path to the wasm file for the process
+                        let wasm_path = format!(
+                            "modules/{}/target/wasm32-unknown-unknown/release/{}.wasm",
+                            name, name
+                        );
+                        // Read the wasm file
+                        if let Ok(wasm_bytes) = fs::read(wasm_path).await {
+                            // Add the process name and wasm bytes to the list of processes
+                            processes.push((name.to_string(), wasm_bytes));
                         }
                     }
                 }
@@ -327,47 +274,19 @@ pub async fn fs_sender(
                     let mut process_lock = process_lock_clone.lock().await;
 
                     while let Some(km) = process_lock.get_mut(&source.process).and_then(|q| q.pop_front()) {
-                        let res = handle_request(
-                            &km,
+                        if let Err(e) = handle_request(
+                            our_name.clone(),
+                            km.clone(),
                             manifest_clone.clone(),
+                            send_to_loop.clone(),
                             send_to_terminal.clone(),
                         )
-                        .await;
-                        if let Message::Request(req) = km.message {
-                            if req.expects_response.is_some() {
-                                let _ = send_to_loop.send(
-                                    KernelMessage {
-                                        id: km.id,
-                                        source: Address {
-                                            node: our_name.clone(),
-                                            process: ProcessId::Name("filesystem".into()),
-                                        },
-                                        target: source.clone(),
-                                        rsvp: km.rsvp,
-                                        message: Message::Response((
-                                            Response {
-                                                ipc: Some(serde_json::to_string::<Result<FsResponse, FileSystemError>>(
-                                                    &match &res {
-                                                        Ok((resp, _)) => Ok(resp.clone()),
-                                                        Err(e) => Err(e.clone()),
-                                                    }).unwrap()),
-                                                metadata: req.metadata, // for kernel
-                                            },
-                                            None,
-                                        )),
-                                        payload: match res {
-                                            Ok((_, Some(bytes))) => {
-                                                Some(Payload {
-                                                    mime: None,
-                                                    bytes,
-                                                })
-                                            }
-                                            _ => None,
-                                        },
-                                        signed_capabilities: None,
-                                    }
-                                ).await;
-                            }
+                        .await
+                        {
+                            send_to_loop
+                                .send(make_error_message(our_name.clone(), km.id, km.source.clone(), e))
+                                .await
+                                .unwrap();
                         }
                     }
                     // Remove the process entry if no more tasks are left
@@ -402,71 +321,95 @@ pub async fn fs_sender(
 }
 
 async fn handle_request(
-    kernel_message: &KernelMessage,
+    our_name: String,
+    kernel_message: KernelMessage,
     manifest: Manifest,
+    send_to_loop: MessageSender,
     _send_to_terminal: PrintSender,
-) -> Result<(FsResponse, Option<Vec<u8>>), FileSystemError> {
+) -> Result<(), FsError> {
     let KernelMessage {
+        id,
         source,
+        rsvp,
         message,
         payload,
         ..
     } = kernel_message;
     let Message::Request(Request {
+        expects_response,
         ipc: Some(json_string),
+        metadata, // for kernel
         ..
     }) = message
     else {
-        return Err(FileSystemError::BadJson {
-            json: "".into(),
-            error: "not a Request with payload".into(),
-        });
+        return Err(FsError::NoJson);
     };
 
     let action: FsAction = match serde_json::from_str(&json_string) {
         Ok(r) => r,
         Err(e) => {
-            return Err(FileSystemError::BadJson {
+            return Err(FsError::BadJson {
                 json: json_string.into(),
                 error: format!("parse failed: {:?}", e),
             })
         }
     };
 
-    match action {
+    // println!("got action! {:?}", action);
+
+    let (ipc, bytes) = match action {
         FsAction::Write => {
             let Some(ref payload) = payload else {
-                return Err(FileSystemError::BadBytes {
+                return Err(FsError::BadBytes {
                     action: "Write".into(),
                 });
             };
 
             let file_uuid = FileIdentifier::new_uuid();
-            manifest.write(&file_uuid, &payload.bytes).await?;
+            match manifest.write(&file_uuid, &payload.bytes).await {
+                Ok(_) => (),
+                Err(e) => {
+                    return Err(FsError::WriteFailed {
+                        file: file_uuid.to_uuid().unwrap_or_default(),
+                        error: e.to_string(),
+                    })
+                }
+            }
 
-            Ok((FsResponse::Write(file_uuid.to_uuid().unwrap()), None))
+            (FsResponse::Write(file_uuid.to_uuid().unwrap()), None)
         }
         FsAction::WriteOffset((file_uuid, offset)) => {
             let Some(ref payload) = payload else {
-                return Err(FileSystemError::BadBytes {
+                return Err(FsError::BadBytes {
                     action: "Write".into(),
                 });
             };
 
             let file_uuid = FileIdentifier::UUID(file_uuid);
 
-            manifest
-                .write_at(&file_uuid, offset, &payload.bytes)
-                .await?;
+            match manifest.write_at(&file_uuid, offset, &payload.bytes).await {
+                Ok(_) => (),
+                Err(e) => {
+                    return Err(FsError::WriteFailed {
+                        file: file_uuid.to_uuid().unwrap_or_default(),
+                        error: format!("write_offset error: {}", e),
+                    })
+                }
+            }
 
-            Ok((FsResponse::Write(file_uuid.to_uuid().unwrap()), None))
+            (FsResponse::Write(file_uuid.to_uuid().unwrap()), None)
         }
         FsAction::Read(file_uuid) => {
             let file = FileIdentifier::UUID(file_uuid);
 
             match manifest.read(&file, None, None).await {
-                Err(e) => return Err(e),
-                Ok(bytes) => Ok((FsResponse::Read(file_uuid), Some(bytes))),
+                Err(e) => {
+                    return Err(FsError::ReadFailed {
+                        file: file.to_uuid().unwrap_or_default(),
+                        error: e.to_string(),
+                    })
+                }
+                Ok(bytes) => (FsResponse::Read(file_uuid), Some(bytes)),
             }
         }
         FsAction::ReadChunk(req) => {
@@ -476,31 +419,44 @@ async fn handle_request(
                 .read(&file, Some(req.start), Some(req.length))
                 .await
             {
-                Err(e) => return Err(e),
-                Ok(bytes) => Ok((FsResponse::Read(req.file), Some(bytes))),
+                Err(e) => {
+                    return Err(FsError::ReadFailed {
+                        file: file.to_uuid().unwrap_or_default(),
+                        error: e.to_string(),
+                    })
+                }
+                Ok(bytes) => (FsResponse::Read(req.file), Some(bytes)),
             }
         }
         FsAction::Replace(old_file_uuid) => {
             let Some(ref payload) = payload else {
-                return Err(FileSystemError::BadBytes {
+                return Err(FsError::BadBytes {
                     action: "Write".into(),
                 });
             };
 
             let file = FileIdentifier::UUID(old_file_uuid);
-            manifest.write(&file, &payload.bytes).await?;
+            match manifest.write(&file, &payload.bytes).await {
+                Ok(_) => (),
+                Err(e) => {
+                    return Err(FsError::WriteFailed {
+                        file: old_file_uuid,
+                        error: format!("replace error: {}", e),
+                    })
+                }
+            }
 
-            Ok((FsResponse::Write(old_file_uuid), None))
+            (FsResponse::Write(old_file_uuid), None)
         }
         FsAction::Delete(del) => {
             let file = FileIdentifier::UUID(del);
             manifest.delete(&file).await?;
 
-            Ok((FsResponse::Delete(del), None))
+            (FsResponse::Delete(del), None)
         }
         FsAction::Append(maybe_file_uuid) => {
             let Some(ref payload) = payload else {
-                return Err(FileSystemError::BadBytes {
+                return Err(FsError::BadBytes {
                     action: "Append".into(),
                 });
             };
@@ -510,18 +466,26 @@ async fn handle_request(
                 None => FileIdentifier::new_uuid(),
             };
 
-            manifest.append(&file_uuid, &payload.bytes).await?;
+            match manifest.append(&file_uuid, &payload.bytes).await {
+                Ok(_) => (),
+                Err(e) => {
+                    return Err(FsError::WriteFailed {
+                        file: file_uuid.to_uuid().unwrap_or_default(),
+                        error: format!("append error: {}", e),
+                    })
+                }
+            };
             // note expecting file_uuid here, if we want process state to access append, we would change this.
-            Ok((FsResponse::Append(file_uuid.to_uuid().unwrap()), None))
+            (FsResponse::Append(file_uuid.to_uuid().unwrap()), None)
         }
         FsAction::Length(file_uuid) => {
             let file = FileIdentifier::UUID(file_uuid);
             let length = manifest.get_length(&file).await;
             match length {
-                Some(len) => Ok((FsResponse::Length(len), None)),
+                Some(len) => (FsResponse::Length(len), None),
                 None => {
-                    return Err(FileSystemError::LFSError {
-                        error: "file not found".into(),
+                    return Err(FsError::LengthError {
+                        error: format!("file not found: {:?}", file_uuid),
                     })
                 }
             }
@@ -531,30 +495,74 @@ async fn handle_request(
             manifest.set_length(&file, length).await?;
 
             // doublecheck if this is the type of return statement we want.
-            Ok((FsResponse::Length(length), None))
+            (FsResponse::Length(length), None)
         }
         //  process state handlers
         FsAction::SetState => {
             let Some(ref payload) = payload else {
-                return Err(FileSystemError::BadBytes {
-                    action: "Write".into(),
+                return Err(FsError::BadBytes {
+                    action: "SetState".into(),
                 });
             };
 
             let file = FileIdentifier::Process(source.process.clone());
-            let _ = manifest.write(&file, &payload.bytes).await;
+            match manifest.write(&file, &payload.bytes).await {
+                Ok(_) => (),
+                Err(e) => {
+                    return Err(FsError::WriteFailed {
+                        file: file.to_uuid().unwrap_or_default(),
+                        error: format!("SetState error: {}", e),
+                    })
+                }
+            };
 
-            Ok((FsResponse::SetState, None))
+            (FsResponse::SetState, None)
+        }
+        FsAction::DeleteState => {
+            let file = FileIdentifier::Process(source.process.clone());
+            manifest.delete(&file).await?;
+
+            (FsResponse::Delete(0), None)
         }
         FsAction::GetState => {
             let file = FileIdentifier::Process(source.process.clone());
 
             match manifest.read(&file, None, None).await {
                 Err(e) => return Err(e),
-                Ok(bytes) => Ok((FsResponse::GetState, Some(bytes))),
+                Ok(bytes) => (FsResponse::GetState, Some(bytes)),
             }
         }
+    };
+
+    if expects_response.is_some() {
+        let response = KernelMessage {
+            id: id.clone(),
+            source: Address {
+                node: our_name.clone(),
+                process: ProcessId::Name("filesystem".into()),
+            },
+            target: source.clone(),
+            rsvp,
+            message: Message::Response((
+                Response {
+                    ipc: Some(
+                        serde_json::to_string::<Result<FsResponse, FsError>>(&Ok(ipc)).unwrap(),
+                    ),
+                    metadata, // for kernel
+                },
+                None,
+            )),
+            payload: Some(Payload {
+                mime: None,
+                bytes: bytes.unwrap_or_default(),
+            }),
+            signed_capabilities: None,
+        };
+
+        let _ = send_to_loop.send(response).await;
     }
+
+    Ok(())
 }
 
 /// HELPERS
@@ -570,16 +578,39 @@ pub fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-async fn create_dir_if_dne(path: &str) -> Result<(), FileSystemError> {
+async fn create_dir_if_dne(path: &str) -> Result<(), FsError> {
     if let Err(_) = fs::read_dir(&path).await {
         match fs::create_dir_all(&path).await {
             Ok(_) => Ok(()),
-            Err(e) => Err(FileSystemError::CouldNotMakeDir {
+            Err(e) => Err(FsError::CreateInitialDirError {
                 path: path.into(),
                 error: format!("{}", e),
             }),
         }
     } else {
         Ok(())
+    }
+}
+
+fn make_error_message(our_name: String, id: u64, target: Address, error: FsError) -> KernelMessage {
+    KernelMessage {
+        id,
+        source: Address {
+            node: our_name.clone(),
+            process: ProcessId::Name("fileystem".into()),
+        },
+        target,
+        rsvp: None,
+        message: Message::Response((
+            Response {
+                ipc: Some(
+                    serde_json::to_string::<Result<FsResponse, FsError>>(&Err(error)).unwrap(),
+                ),
+                metadata: None,
+            },
+            None,
+        )),
+        payload: None,
+        signed_capabilities: None,
     }
 }

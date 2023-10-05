@@ -200,7 +200,7 @@ async fn load_state_from_reboot(
         return false;
     };
     let Ok(Ok(FsResponse::GetState)) =
-        serde_json::from_str::<Result<FsResponse, FileSystemError>>(&ipc.unwrap_or_default())
+        serde_json::from_str::<Result<FsResponse, FsError>>(&ipc.unwrap_or_default())
     else {
         return false;
     };
@@ -310,22 +310,15 @@ pub async fn vfs(
                     ..
                 }) = message.clone()
                 else {
-                    //  println!("vfs: {}", message);
+                    // consider moving this handling into it's own function
                     continue;
-                    // return Err(FileSystemError::BadJson {
-                    //     json: "".into(),
-                    //     error: "not a Request with payload".into(),
-                    // });
                 };
 
                 let request: VfsRequest = match serde_json::from_str(&ipc) {
                     Ok(r) => r,
                     Err(e) => {
-                        panic!("{}", e);
-                        // return Err(FileSystemError::BadJson {
-                        //     json: ipc.into(),
-                        //     error: format!("parse failed: {:?}", e),
-                        // })
+                        println!("vfs: got invalid Request: {}", e);
+                        continue;
                     }
                 };
 
@@ -1450,8 +1443,7 @@ async fn match_request(
                                 panic!("");
                             };
                             let Ok(FsResponse::Read(read_hash)) =
-                                serde_json::from_str::<Result<FsResponse, FileSystemError>>(&ipc)
-                                    .unwrap()
+                                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
                             else {
                                 panic!("");
                             };
@@ -1534,7 +1526,7 @@ async fn match_request(
                 panic!("");
             };
             let Ok(FsResponse::ReadChunk(read_hash)) =
-                serde_json::from_str::<Result<FsResponse, FileSystemError>>(&ipc).unwrap()
+                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
             else {
                 panic!("");
             };
@@ -1617,7 +1609,7 @@ async fn match_request(
                     panic!("");
                 };
                 let Ok(FsResponse::Length(length)) =
-                    serde_json::from_str::<Result<FsResponse, FileSystemError>>(&ipc).unwrap()
+                    serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
                 else {
                     panic!("");
                 };
