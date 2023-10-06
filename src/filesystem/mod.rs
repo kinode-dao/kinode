@@ -232,7 +232,10 @@ async fn bootstrap(
 
         // get and read manifest.json
         let Ok(mut package_manifest_zip) = package.by_name("manifest.json") else {
-            println!("fs: missing manifest for package {}, skipping", package_name);
+            println!(
+                "fs: missing manifest for package {}, skipping",
+                package_name
+            );
             continue;
         };
         let mut manifest_content = Vec::new();
@@ -307,7 +310,7 @@ async fn bootstrap(
     // grant queued capabilities from all packages
     for (to, cap) in caps_to_grant {
         let Some(proc) = process_map.get_mut(&to) else {
-            continue
+            continue;
         };
         proc.capabilities.insert(cap);
     }
@@ -692,10 +695,7 @@ async fn handle_request(
                 None,
             )),
             payload: match bytes {
-                Some(bytes) => Some(Payload {
-                    mime: None,
-                    bytes,
-                }),
+                Some(bytes) => Some(Payload { mime: None, bytes }),
                 None => None,
             },
             signed_capabilities: None,

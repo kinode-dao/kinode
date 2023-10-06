@@ -148,7 +148,8 @@ fn main() {
         ]))
         .unwrap();
         // from the pkg folder, create a zip archive and save in target directory
-        let writer = std::fs::File::create(format!("{}/target/{}.zip", pwd.display(), name)).unwrap();
+        let writer =
+            std::fs::File::create(format!("{}/target/{}.zip", pwd.display(), name)).unwrap();
         let options = zip::write::FileOptions::default()
             .compression_method(zip::CompressionMethod::Stored) // or CompressionMethod::Deflated
             .unix_permissions(0o755);
