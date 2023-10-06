@@ -177,17 +177,5 @@ fn main() {
             }
         }
         zip.finish().unwrap();
-        // Get hash of finished zip file
-        let zip_path = format!("{}/target/{}.zip", pwd.display(), name);
-        let mut zip_file = std::fs::File::open(&zip_path).unwrap();
-        let mut buffer = Vec::new();
-        zip_file.read_to_end(&mut buffer).unwrap();
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(&buffer);
-        let result = hasher.finalize();
-        // save SHA256 hash of final product in module dir
-        let hash_path = format!("{}/modules/{}/.apphash", pwd.display(), name);
-        let mut hash_file = std::fs::File::create(&hash_path).unwrap();
-        hash_file.write_fmt(format_args!("{:x}", result)).unwrap();
     }
 }
