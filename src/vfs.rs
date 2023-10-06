@@ -166,12 +166,13 @@ async fn persist_state(our_node: String, send_to_loop: &MessageSender, state: &I
 async fn load_state_from_reboot(
     our_node: String,
     send_to_loop: &MessageSender,
-    recv_from_loop: &mut MessageReceiver,
+    mut recv_from_loop: MessageReceiver,
     drive_to_vfs: &mut IdentifierToVfs,
+    id: u64,
 ) -> bool {
     let _ = send_to_loop
         .send(KernelMessage {
-            id: rand::random(),
+            id,
             source: Address {
                 node: our_node.clone(),
                 process: ProcessId::Name("vfs".into()),
@@ -202,7 +203,7 @@ async fn load_state_from_reboot(
     let KernelMessage {
         message, payload, ..
     } = km;
-    let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
+    let Message::Response((Response { ipc, .. }, None)) = message else {
         return false;
     };
     let Ok(Ok(FsResponse::GetState)) =
@@ -218,43 +219,8 @@ async fn load_state_from_reboot(
     return true;
 }
 
-fn build_state_for_initial_boot(process_map: &ProcessMap, drive_to_vfs: &mut IdentifierToVfs) {
-    //  add wasm bytes to each process' vfs and to terminal's vfs
-    let mut terminal_vfs = Vfs::new();
-    for (process_id, persisted) in process_map.iter() {
-        let mut vfs = Vfs::new();
-        let ProcessId::Name(id) = process_id else {
-            println!("vfs: initial boot skip adding bytes for {:?}", process_id);
-            continue;
-        };
-        let name = format!("{}.wasm", id);
-        let full_path = format!("/{}", name);
-        let key = Key::File {
-            id: persisted.wasm_bytes_handle.clone(),
-        };
-        let entry_type = EntryType::File {
-            parent: Key::Dir { id: 0 },
-        };
-        let entry = Entry {
-            name,
-            full_path: full_path.clone(),
-            entry_type,
-        };
-        vfs.key_to_entry.insert(key.clone(), entry.clone());
-        vfs.path_to_key.insert(full_path.clone(), key.clone());
-        drive_to_vfs.insert(id.clone(), Arc::new(Mutex::new(vfs)));
-
-        terminal_vfs.key_to_entry.insert(key.clone(), entry);
-        terminal_vfs.path_to_key.insert(full_path.clone(), key);
-    }
-    drive_to_vfs.insert("terminal".into(), Arc::new(Mutex::new(terminal_vfs)));
-
-    //  initial caps are given to processes in src/filesystem/mod.rs:bootstrap()
-}
-
 pub async fn vfs(
     our_node: String,
-    process_map: ProcessMap,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
@@ -271,16 +237,21 @@ pub async fn vfs(
         tokio::sync::mpsc::Receiver<bool>,
     ) = tokio::sync::mpsc::channel(VFS_PERSIST_STATE_CHANNEL_CAPACITY);
 
+    let (response_sender, response_receiver): (MessageSender, MessageReceiver) =
+        tokio::sync::mpsc::channel(VFS_RESPONSE_CHANNEL_CAPACITY);
+    let first_message_id = rand::random();
+    response_router.insert(first_message_id, response_sender);
     let is_reboot = load_state_from_reboot(
         our_node.clone(),
         &send_to_loop,
-        &mut recv_from_loop,
+        response_receiver,
         &mut drive_to_vfs,
+        first_message_id,
     )
     .await;
     if !is_reboot {
-        //  initial boot
-        build_state_for_initial_boot(&process_map, &mut drive_to_vfs);
+        // initial boot
+        // build_state_for_initial_boot(&process_map, &mut drive_to_vfs);
         send_persist_state.send(true).await.unwrap();
     }
 
@@ -328,6 +299,8 @@ pub async fn vfs(
                     }
                 };
 
+                println!("vfs: got request: {:?}\r", request);
+
                 if our_node != source.node {
                     println!(
                         "vfs: request must come from our_node={}, got: {}",
@@ -337,25 +310,11 @@ pub async fn vfs(
                     continue;
                 }
 
-                let (drive, is_new) = match &request {
-                    VfsRequest::New { drive } => (drive.clone(), true),
-                    VfsRequest::Add { drive, .. } => (drive.clone(), false),
-                    VfsRequest::Rename { drive, .. } => (drive.clone(), false),
-                    VfsRequest::Delete { drive, .. } => (drive.clone(), false),
-                    VfsRequest::WriteOffset { drive, .. } => (drive.clone(), false),
-                    VfsRequest::SetSize { drive, .. } => (drive.clone(), false),
-                    VfsRequest::GetPath { drive, .. } => (drive.clone(), false),
-                    VfsRequest::GetHash { drive, .. } => (drive.clone(), false),
-                    VfsRequest::GetEntry { drive, .. } => (drive.clone(), false),
-                    VfsRequest::GetFileChunk { drive, .. } => (drive.clone(), false),
-                    VfsRequest::GetEntryLength { drive, .. } => (drive.clone(), false),
-                };
-
-                let (vfs, new_caps) = match drive_to_vfs.get(&drive) {
+                let (vfs, new_caps) = match drive_to_vfs.get(&request.drive) {
                     Some(vfs) => (Arc::clone(vfs), vec![]),
                     None => {
-                        if !is_new {
-                            println!("vfs: invalid Request: non-New to non-existent");
+                        let VfsAction::New = request.action else {
+                            println!("vfs: invalid Request: non-New to non-existent: {:?}\r", request);
                             send_to_loop
                                 .send(make_error_message(
                                     our_node.clone(),
@@ -366,9 +325,9 @@ pub async fn vfs(
                                 .await
                                 .unwrap();
                             continue;
-                        }
+                        };
                         drive_to_vfs.insert(
-                            drive.clone(),
+                            request.drive.clone(),
                             Arc::new(Mutex::new(Vfs::new())),
                         );
                         let read_cap = Capability {
@@ -376,17 +335,21 @@ pub async fn vfs(
                                 node: our_node.clone(),
                                 process: ProcessId::Name("vfs".into()),
                             },
-                            params: serde_json::to_string(&serde_json::json!({"kind": "read", "drive": drive})).unwrap(),
+                            params: serde_json::to_string(
+                                &serde_json::json!({"kind": "read", "drive": request.drive})
+                            ).unwrap(),
                         };
                         let write_cap = Capability {
                             issuer: Address {
                                 node: our_node.clone(),
                                 process: ProcessId::Name("vfs".into()),
                             },
-                            params: serde_json::to_string(&serde_json::json!({"kind": "write", "drive": drive})).unwrap(),
+                            params: serde_json::to_string(
+                                &serde_json::json!({"kind": "write", "drive": request.drive})
+                            ).unwrap(),
                         };
                         (
-                            Arc::clone(drive_to_vfs.get(&drive).unwrap()),
+                            Arc::clone(drive_to_vfs.get(&request.drive).unwrap()),
                             vec![read_cap, write_cap],
                         )
                     }
@@ -471,13 +434,12 @@ async fn handle_request(
     recv_response: MessageReceiver,
 ) -> Result<(), VfsError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-    match &request {
-        VfsRequest::New { drive: _ } => {}
-        VfsRequest::Add { drive, .. }
-        | VfsRequest::Rename { drive, .. }
-        | VfsRequest::Delete { drive, .. }
-        | VfsRequest::WriteOffset { drive, .. }
-        | VfsRequest::SetSize { drive, .. } => {
+    match &request.action {
+        VfsAction::Add { .. }
+        | VfsAction::Rename { .. }
+        | VfsAction::Delete { .. }
+        | VfsAction::WriteOffset { .. }
+        | VfsAction::SetSize { .. } => {
             let _ = send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
@@ -488,7 +450,7 @@ async fn handle_request(
                         },
                         params: serde_json::to_string(&serde_json::json!({
                             "kind": "write",
-                            "drive": drive,
+                            "drive": request.drive,
                         }))
                         .unwrap(),
                     },
@@ -496,16 +458,15 @@ async fn handle_request(
                 })
                 .unwrap();
             let has_cap = recv_cap_bool.await.unwrap();
-
             if !has_cap {
                 return Err(VfsError::NoCap);
             }
         }
-        VfsRequest::GetPath { drive, .. }
-        | VfsRequest::GetHash { drive, .. }
-        | VfsRequest::GetEntry { drive, .. }
-        | VfsRequest::GetFileChunk { drive, .. }
-        | VfsRequest::GetEntryLength { drive, .. } => {
+        VfsAction::GetPath { .. }
+        | VfsAction::GetHash { .. }
+        | VfsAction::GetEntry { .. }
+        | VfsAction::GetFileChunk { .. }
+        | VfsAction::GetEntryLength { .. } => {
             let _ = send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
@@ -516,7 +477,7 @@ async fn handle_request(
                         },
                         params: serde_json::to_string(&serde_json::json!({
                             "kind": "read",
-                            "drive": drive,
+                            "drive": request.drive,
                         }))
                         .unwrap(),
                     },
@@ -524,11 +485,11 @@ async fn handle_request(
                 })
                 .unwrap();
             let has_cap = recv_cap_bool.await.unwrap();
-
             if !has_cap {
                 return Err(VfsError::NoCap);
             }
         }
+        _ => {} // New
     }
 
     let (ipc, bytes) = match_request(
@@ -576,7 +537,7 @@ async fn handle_request(
     Ok(())
 }
 
-#[async_recursion::async_recursion]
+// #[async_recursion::async_recursion]
 async fn match_request(
     our_node: String,
     id: u64,
@@ -590,8 +551,8 @@ async fn match_request(
     send_to_terminal: &PrintSender,
     mut recv_response: MessageReceiver,
 ) -> Result<(Option<String>, Option<Vec<u8>>), VfsError> {
-    Ok(match request {
-        VfsRequest::New { drive } => {
+    Ok(match request.action {
+        VfsAction::New => {
             for new_cap in new_caps {
                 let _ = send_to_loop
                     .send(KernelMessage {
@@ -623,13 +584,9 @@ async fn match_request(
                     .await;
             }
             send_to_persist.send(true).await.unwrap();
-            (
-                Some(serde_json::to_string(&VfsResponse::New { drive }).unwrap()),
-                None,
-            )
+            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
-        VfsRequest::Add {
-            drive,
+        VfsAction::Add {
             full_path,
             entry_type,
         } => {
@@ -742,13 +699,13 @@ async fn match_request(
                         .await;
                     let write_response = recv_response.recv().await.unwrap();
                     let KernelMessage { message, .. } = write_response;
-                    let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
-                        panic!("")
+                    let Message::Response((Response { ipc, .. }, None)) = message else {
+                        panic!("");
                     };
                     let Some(ipc) = ipc else {
                         panic!("");
                     };
-                    let FsResponse::Write(hash) = serde_json::from_str(&ipc).unwrap() else {
+                    let Ok(FsResponse::Write(hash)) = serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap() else {
                         panic!("");
                     };
 
@@ -986,19 +943,9 @@ async fn match_request(
                 }
             }
             send_to_persist.send(true).await.unwrap();
-            (
-                Some(
-                    serde_json::to_string(&VfsResponse::Add {
-                        drive,
-                        full_path: full_path.clone(),
-                    })
-                    .unwrap(),
-                ),
-                None,
-            )
+            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
-        VfsRequest::Rename {
-            drive,
+        VfsAction::Rename {
             full_path,
             new_full_path,
         } => {
@@ -1062,18 +1009,9 @@ async fn match_request(
                 }
             }
             send_to_persist.send(true).await.unwrap();
-            (
-                Some(
-                    serde_json::to_string(&VfsResponse::Rename {
-                        drive,
-                        new_full_path,
-                    })
-                    .unwrap(),
-                ),
-                None,
-            )
+            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
-        VfsRequest::Delete { drive, full_path } => {
+        VfsAction::Delete(full_path) => {
             let mut vfs = vfs.lock().await;
             let Some(key) = vfs.path_to_key.remove(&full_path) else {
                 send_to_terminal
@@ -1145,16 +1083,9 @@ async fn match_request(
                 }
             }
             send_to_persist.send(true).await.unwrap();
-            (
-                Some(serde_json::to_string(&VfsResponse::Delete { drive, full_path }).unwrap()),
-                None,
-            )
+            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
-        VfsRequest::WriteOffset {
-            drive,
-            full_path,
-            offset,
-        } => {
+        VfsAction::WriteOffset { full_path, offset } => {
             let file_hash = {
                 let mut vfs = vfs.lock().await;
                 let Some(key) = vfs.path_to_key.remove(&full_path) else {
@@ -1193,23 +1124,9 @@ async fn match_request(
                 })
                 .await;
 
-            (
-                Some(
-                    serde_json::to_string(&VfsResponse::WriteOffset {
-                        drive,
-                        full_path,
-                        offset,
-                    })
-                    .unwrap(),
-                ),
-                None,
-            )
+            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
-        VfsRequest::SetSize {
-            drive,
-            full_path,
-            size,
-        } => {
+        VfsAction::SetSize { full_path, size } => {
             let file_hash = {
                 let mut vfs = vfs.lock().await;
                 let Some(key) = vfs.path_to_key.remove(&full_path) else {
@@ -1249,9 +1166,7 @@ async fn match_request(
                 })
                 .await;
             let read_response = recv_response.recv().await.unwrap();
-            let KernelMessage {
-                message, payload, ..
-            } = read_response;
+            let KernelMessage { message, .. } = read_response;
             let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
                 panic!("")
             };
@@ -1265,60 +1180,35 @@ async fn match_request(
             // let Some(payload) = payload else {
             //     panic!("");
             // };
-            (
-                Some(
-                    serde_json::to_string(&VfsResponse::SetSize {
-                        drive,
-                        full_path,
-                        size,
-                    })
-                    .unwrap(),
-                ),
-                None,
-            )
+            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
-        VfsRequest::GetPath { drive, hash } => {
+        VfsAction::GetPath(hash) => {
             let mut vfs = vfs.lock().await;
             let key = Key::File { id: hash.clone() };
             let ipc = Some(
-                serde_json::to_string(&VfsResponse::GetPath {
-                    drive,
-                    hash,
-                    full_path: match vfs.key_to_entry.remove(&key) {
-                        None => None,
-                        Some(entry) => {
-                            let full_path = entry.full_path.clone();
-                            vfs.key_to_entry.insert(key, entry);
-                            Some(full_path)
-                        }
-                    },
-                })
+                serde_json::to_string(&VfsResponse::GetPath(match vfs.key_to_entry.remove(&key) {
+                    None => None,
+                    Some(entry) => {
+                        let full_path = entry.full_path.clone();
+                        vfs.key_to_entry.insert(key, entry);
+                        Some(full_path)
+                    }
+                }))
                 .unwrap(),
             );
             (ipc, None)
         }
-        VfsRequest::GetHash { drive, full_path } => {
-            let mut vfs = vfs.lock().await;
-            let Some(key) = vfs.path_to_key.get(&full_path) else {
-                panic!("todo");
-            };
-            let Key::File { id: hash } = key else {
-                panic!("todo");
-            };
-            let ipc = Some(
-                serde_json::to_string(&VfsResponse::GetHash {
-                    drive,
-                    full_path,
-                    hash: hash.clone(),
-                })
-                .unwrap(),
-            );
+        VfsAction::GetHash(full_path) => {
+            let vfs = vfs.lock().await;
+            let mut ipc = Some(serde_json::to_string(&VfsResponse::GetHash(None)).unwrap());
+            if let Some(key) = vfs.path_to_key.get(&full_path) {
+                if let Key::File { id: hash } = key {
+                    ipc = Some(serde_json::to_string(&VfsResponse::GetHash(Some(*hash))).unwrap());
+                };
+            }
             (ipc, None)
         }
-        VfsRequest::GetEntry {
-            drive,
-            ref full_path,
-        } => {
+        VfsAction::GetEntry(ref full_path) => {
             let (key, entry, paths) = {
                 let mut vfs = vfs.lock().await;
                 let key = vfs.path_to_key.remove(full_path);
@@ -1367,8 +1257,7 @@ async fn match_request(
             let entry_not_found = (
                 Some(
                     serde_json::to_string(&VfsResponse::GetEntry {
-                        drive: drive.clone(),
-                        full_path: full_path.clone(),
+                        exists: false,
                         children: vec![],
                     })
                     .unwrap(),
@@ -1386,8 +1275,7 @@ async fn match_request(
                         } => (
                             Some(
                                 serde_json::to_string(&VfsResponse::GetEntry {
-                                    drive,
-                                    full_path: full_path.clone(),
+                                    exists: true,
                                     children: paths,
                                 })
                                 .unwrap(),
@@ -1441,6 +1329,7 @@ async fn match_request(
                             else {
                                 panic!("");
                             };
+                            // TODO get rid of PANICS!
                             assert_eq!(file_hash, read_hash);
                             let Some(payload) = payload else {
                                 panic!("");
@@ -1448,8 +1337,7 @@ async fn match_request(
                             (
                                 Some(
                                     serde_json::to_string(&VfsResponse::GetEntry {
-                                        drive,
-                                        full_path: full_path.clone(),
+                                        exists: true,
                                         children: vec![],
                                     })
                                     .unwrap(),
@@ -1461,15 +1349,14 @@ async fn match_request(
                 },
             }
         }
-        VfsRequest::GetFileChunk {
-            drive,
-            full_path,
+        VfsAction::GetFileChunk {
+            ref full_path,
             offset,
             length,
         } => {
             let file_hash = {
                 let mut vfs = vfs.lock().await;
-                let Some(key) = vfs.path_to_key.remove(&full_path) else {
+                let Some(key) = vfs.path_to_key.remove(full_path) else {
                     panic!(""); //  TODO
                 };
                 let key2 = key.clone();
@@ -1530,35 +1417,20 @@ async fn match_request(
             };
 
             (
-                Some(
-                    serde_json::to_string(&VfsResponse::GetFileChunk {
-                        drive,
-                        full_path,
-                        offset,
-                        length,
-                    })
-                    .unwrap(),
-                ),
+                Some(serde_json::to_string(&VfsResponse::GetFileChunk).unwrap()),
                 Some(payload.bytes),
             )
         }
-        VfsRequest::GetEntryLength { drive, full_path } => {
+        VfsAction::GetEntryLength(ref full_path) => {
             if full_path.chars().last() == Some('/') {
                 (
-                    Some(
-                        serde_json::to_string(&VfsResponse::GetEntryLength {
-                            drive,
-                            full_path,
-                            length: 0,
-                        })
-                        .unwrap(),
-                    ),
+                    Some(serde_json::to_string(&VfsResponse::GetEntryLength(None)).unwrap()),
                     None,
                 )
             } else {
                 let file_hash = {
                     let mut vfs = vfs.lock().await;
-                    let Some(key) = vfs.path_to_key.remove(&full_path) else {
+                    let Some(key) = vfs.path_to_key.remove(full_path) else {
                         panic!("");
                     };
                     let key2 = key.clone();
@@ -1607,12 +1479,7 @@ async fn match_request(
 
                 (
                     Some(
-                        serde_json::to_string(&VfsResponse::GetEntryLength {
-                            drive,
-                            full_path,
-                            length,
-                        })
-                        .unwrap(),
+                        serde_json::to_string(&VfsResponse::GetEntryLength(Some(length))).unwrap(),
                     ),
                     None,
                 )

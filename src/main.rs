@@ -462,7 +462,6 @@ async fn main() {
     ));
     tasks.spawn(vfs::vfs(
         our.name.clone(),
-        kernel_process_map,
         kernel_message_sender.clone(),
         print_sender.clone(),
         vfs_message_receiver,
@@ -515,7 +514,7 @@ async fn main() {
     // gracefully abort all running processes in kernel
     let _ = kernel_message_sender
         .send(KernelMessage {
-            id: 0,
+            id: rand::random(),
             source: Address {
                 node: our.name.clone(),
                 process: ProcessId::Name("kernel".into()),

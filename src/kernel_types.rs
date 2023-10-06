@@ -138,56 +138,40 @@ pub struct PersistedProcess {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum VfsRequest {
-    New {
-        drive: String,
-    },
+pub struct VfsRequest {
+    pub drive: String,
+    pub action: VfsAction,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum VfsAction {
+    New,
     Add {
-        drive: String,
         full_path: String,
         entry_type: AddEntryType,
     },
     Rename {
-        drive: String,
         full_path: String,
         new_full_path: String,
     },
-    Delete {
-        drive: String,
-        full_path: String,
-    },
+    Delete(String),
     WriteOffset {
-        drive: String,
         full_path: String,
         offset: u64,
     },
     SetSize {
-        drive: String,
         full_path: String,
         size: u64,
     },
-    GetPath {
-        drive: String,
-        hash: u128,
-    },
-    GetHash {
-        drive: String,
-        full_path: String,
-    },
-    GetEntry {
-        drive: String,
-        full_path: String,
-    },
+    GetPath(u128),
+    GetHash(String),
+    GetEntry(String),
     GetFileChunk {
-        drive: String,
         full_path: String,
         offset: u64,
         length: u64,
     },
-    GetEntryLength {
-        drive: String,
-        full_path: String,
-    },
+    GetEntryLength(String),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -206,57 +190,33 @@ pub enum GetEntryType {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsResponse {
-    New {
-        drive: String,
-    },
-    Add {
-        drive: String,
-        full_path: String,
-    },
-    Rename {
-        drive: String,
-        new_full_path: String,
-    },
-    Delete {
-        drive: String,
-        full_path: String,
-    },
-    WriteOffset {
-        drive: String,
-        full_path: String,
-        offset: u64,
-    },
-    SetSize {
-        drive: String,
-        full_path: String,
-        size: u64,
-    },
-    GetPath {
-        drive: String,
-        hash: u128,
-        full_path: Option<String>,
-    },
-    GetHash {
-        drive: String,
-        full_path: String,
-        hash: u128,
-    },
-    GetEntry {
-        drive: String,
-        full_path: String,
+    Ok,
+    Err(VfsError),
+    GetPath(Option<String>),
+    GetHash(Option<u128>),
+    GetEntry { // file bytes in payload, if entry was a file
+        is_file: bool,
         children: Vec<String>,
     },
-    GetFileChunk {
-        drive: String,
-        full_path: String,
-        offset: u64,
-        length: u64,
-    },
-    GetEntryLength {
-        drive: String,
-        full_path: String,
-        length: u64,
-    },
+    GetFileChunk, // chunk in payload
+    GetEntryLength(u64),
+}
+
+impl VfsError {
+    pub fn kind(&self) -> &str {
+        match *self {
+            VfsError::BadDriveName => "BadDriveName",
+            VfsError::BadDescriptor => "BadDescriptor",
+            VfsError::NoCap => "NoCap",
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum VfsError {
+    BadDriveName,
+    BadDescriptor,
+    NoCap,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

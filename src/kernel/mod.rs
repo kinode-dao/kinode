@@ -339,9 +339,9 @@ impl UqProcessImports for ProcessWasi {
                 inherit: false,
                 expects_response: Some(5),
                 ipc: Some(
-                    serde_json::to_string(&t::VfsRequest::GetHash {
+                    serde_json::to_string(&t::VfsRequest {
                         drive: package.clone(),
-                        full_path: full_path.clone(),
+                        action: t::VfsAction::GetHash(full_path.clone()),
                     })
                     .unwrap(),
                 ),
@@ -356,7 +356,7 @@ impl UqProcessImports for ProcessWasi {
         else {
             panic!("baz");
         };
-        let t::VfsResponse::GetHash { hash, .. } = serde_json::from_str(&ipc).unwrap() else {
+        let t::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc).unwrap() else {
             panic!("aaa");
         };
 
@@ -368,9 +368,9 @@ impl UqProcessImports for ProcessWasi {
                 inherit: false,
                 expects_response: Some(5),
                 ipc: Some(
-                    serde_json::to_string(&t::VfsRequest::GetEntry {
+                    serde_json::to_string(&t::VfsRequest {
                         drive: package.clone(),
-                        full_path: full_path.clone(),
+                        action: t::VfsAction::GetEntry(full_path.clone()),
                     })
                     .unwrap(),
                 ),
@@ -1005,7 +1005,7 @@ async fn persist_state(
 
     send_to_loop
         .send(t::KernelMessage {
-            id: 0,
+            id: rand::random(),
             source: t::Address {
                 node: our_name.clone(),
                 process: t::ProcessId::Name("kernel".into()),

@@ -46,8 +46,9 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 &vfs_address,
                 false,
                 Some(
-                    serde_json::to_string(&kt::VfsRequest::New {
+                    serde_json::to_string(&kt::VfsRequest {
                         drive: package.clone(),
+                        action: kt::VfsAction::New,
                     })
                     .unwrap(),
                 ),
@@ -61,10 +62,12 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 &vfs_address,
                 true,
                 Some(
-                    serde_json::to_string(&kt::VfsRequest::Add {
+                    serde_json::to_string(&kt::VfsRequest {
                         drive: package.clone(),
-                        full_path: "".into(), // TODO
-                        entry_type: kt::AddEntryType::ZipArchive,
+                        action: kt::VfsAction::Add {
+                            full_path: "".into(), // TODO
+                            entry_type: kt::AddEntryType::ZipArchive,
+                        },
                     })
                     .unwrap(),
                 ),
@@ -84,9 +87,9 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 &vfs_address,
                 false,
                 Some(
-                    serde_json::to_string(&kt::VfsRequest::GetEntry {
+                    serde_json::to_string(&kt::VfsRequest {
                         drive: package.clone(),
-                        full_path: "/.manifest".into(),
+                        action: kt::VfsAction::GetEntry("/.manifest".into()),
                     })
                     .unwrap(),
                 ),
@@ -111,9 +114,9 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     &vfs_address,
                     false,
                     Some(
-                        serde_json::to_string(&kt::VfsRequest::GetHash {
+                        serde_json::to_string(&kt::VfsRequest {
                             drive: package.clone(),
-                            full_path: path,
+                            action: kt::VfsAction::GetHash(path),
                         })
                         .unwrap(),
                     ),
@@ -124,7 +127,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 let Message::Response((Response { ipc: Some(ipc), .. }, _)) = hash_response else {
                     panic!("baz");
                 };
-                let kt::VfsResponse::GetHash { hash, .. } = serde_json::from_str(&ipc).unwrap() else {
+                let kt::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc).unwrap() else {
                     panic!("aaa");
                 };
 

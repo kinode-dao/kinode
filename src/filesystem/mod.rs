@@ -81,7 +81,6 @@ pub async fn load_fs(
         }
         Ok(bytes) => {
             process_map = bincode::deserialize(&bytes).expect("state map deserialization error!");
-            println!("found persisted processes: {:?}\r", process_map.keys());
         }
     }
 
@@ -157,7 +156,7 @@ async fn bootstrap(
         // create a new package in VFS
         vfs_message_sender
             .send(KernelMessage {
-                id: 0,
+                id: rand::random(),
                 source: Address {
                     node: our_name.to_string(),
                     process: ProcessId::Name("filesystem".into()),
@@ -171,8 +170,9 @@ async fn bootstrap(
                     inherit: false,
                     expects_response: None,
                     ipc: Some(
-                        serde_json::to_string::<VfsRequest>(&VfsRequest::New {
+                        serde_json::to_string::<VfsRequest>(&VfsRequest {
                             drive: package_name.clone(),
+                            action: VfsAction::New,
                         })
                         .unwrap(),
                     ),
@@ -196,7 +196,7 @@ async fn bootstrap(
                 file.read_to_end(&mut file_content).unwrap();
                 vfs_message_sender
                     .send(KernelMessage {
-                        id: 0,
+                        id: rand::random(),
                         source: Address {
                             node: our_name.to_string(),
                             process: ProcessId::Name("filesystem".into()),
@@ -210,10 +210,12 @@ async fn bootstrap(
                             inherit: false,
                             expects_response: None,
                             ipc: Some(
-                                serde_json::to_string::<VfsRequest>(&VfsRequest::Add {
+                                serde_json::to_string::<VfsRequest>(&VfsRequest {
                                     drive: package_name.clone(),
-                                    full_path: file_path.to_string_lossy().to_string(),
-                                    entry_type: AddEntryType::NewFile,
+                                    action: VfsAction::Add {
+                                        full_path: file_path.to_string_lossy().to_string(),
+                                        entry_type: AddEntryType::NewFile,
+                                    },
                                 })
                                 .unwrap(),
                             ),
