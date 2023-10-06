@@ -182,6 +182,7 @@ pub struct ProcessMetadata {
     pub our: Address,
     pub wasm_bytes_handle: u128,
     pub on_panic: OnPanic,
+    pub public: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -253,6 +254,7 @@ pub enum KernelCommand {
         wasm_bytes_handle: u128,
         on_panic: OnPanic,
         initial_capabilities: HashSet<SignedCapability>,
+        public: bool,
     },
     KillProcess(ProcessId), // this is extrajudicial killing: we might lose messages!
     // kernel only
@@ -301,10 +303,11 @@ pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistedProcess {
     pub wasm_bytes_handle: u128,
-    // pub identifier: String,
+    // pub drive: String,
     // pub full_path: String,
     pub on_panic: OnPanic,
     pub capabilities: HashSet<Capability>,
+    pub public: bool, // marks if a process allows messages from any process
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -323,6 +326,16 @@ pub struct ProcessContext {
 // filesystem.rs types
 //
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageManifestEntry {
+    pub process_name: String,
+    pub process_wasm_path: String,
+    pub on_panic: OnPanic,
+    pub request_networking: bool,
+    pub request_messaging: Vec<String>,
+    pub grant_messaging: Vec<String>, // special logic for the string "all": makes process public
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum FsAction {
     Write,
@@ -334,8 +347,9 @@ pub enum FsAction {
     Delete(u128),
     Length(u128),
     SetLength((u128, u64)),
-    GetState,
-    SetState,
+    GetState(ProcessId),
+    SetState(ProcessId),
+    DeleteState(ProcessId),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -377,10 +391,64 @@ pub struct FsConfig {
     // pub flush_to_wal_interval: usize,
 }
 
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum FsError {
+    #[error("fs: Bytes payload required for {action}.")]
+    BadBytes { action: String },
+    #[error(
+        "fs: JSON payload could not be parsed to FsAction: {:?}, error: {:?}.",
+        json,
+        error
+    )]
+    BadJson { json: String, error: String },
+    #[error("fs: No JSON payload.")]
+    NoJson,
+    #[error("fs: Read failed to file {file}: {error}.")]
+    ReadFailed { file: u128, error: String },
+    #[error("fs: Write failed to file {file}: {error}.")]
+    WriteFailed { file: u128, error: String },
+    #[error("fs: file not found: {file}")]
+    NotFound { file: u128 },
+    #[error("fs: S3 error: {error}")]
+    S3Error { error: String },
+    #[error("fs: IO error: {error}")]
+    IOError { error: String },
+    #[error("fs: Encryption error: {error}")]
+    EncryptionError { error: String },
+    #[error("fs: Limit error: {error}")]
+    LimitError { error: String },
+    #[error("fs: memory buffer error: {error}")]
+    MemoryBufferError { error: String },
+    #[error("fs: length operation error: {error}")]
+    LengthError { error: String },
+    #[error("fs: creating fs dir failed at path: {path}: {error}")]
+    CreateInitialDirError { path: String, error: String },
+}
+
+impl FsError {
+    pub fn kind(&self) -> &str {
+        match *self {
+            FsError::BadBytes { .. } => "BadBytes",
+            FsError::BadJson { .. } => "BadJson",
+            FsError::NoJson { .. } => "NoJson",
+            FsError::ReadFailed { .. } => "ReadFailed",
+            FsError::WriteFailed { .. } => "WriteFailed",
+            FsError::S3Error { .. } => "S3Error",
+            FsError::IOError { .. } => "IOError",
+            FsError::EncryptionError { .. } => "EncryptionError",
+            FsError::LimitError { .. } => "LimitError",
+            FsError::MemoryBufferError { .. } => "MemoryBufferError",
+            FsError::NotFound { .. } => "NotFound",
+            FsError::LengthError { .. } => "LengthError",
+            FsError::CreateInitialDirError { .. } => "CreateInitialDirError",
+        }
+    }
+}
+
 impl VfsError {
     pub fn kind(&self) -> &str {
         match *self {
-            VfsError::BadIdentifier => "BadIdentifier",
+            VfsError::BadDriveName => "BadDriveName",
             VfsError::EntryNotFound => "EntryNotFound",
             VfsError::NoCap => "NoCap",
         }
@@ -389,205 +457,60 @@ impl VfsError {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsError {
-    BadIdentifier,
+    BadDriveName,
     EntryNotFound,
     NoCap,
-}
-
-impl FileSystemError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            FileSystemError::BadUri { .. } => "BadUri",
-            FileSystemError::BadJson { .. } => "BadJson",
-            FileSystemError::BadBytes { .. } => "BadBytes",
-            FileSystemError::IllegalAccess { .. } => "IllegalAccess",
-            FileSystemError::AlreadyOpen { .. } => "AlreadyOpen",
-            FileSystemError::NotCurrentlyOpen { .. } => "NotCurrentlyOpen",
-            FileSystemError::BadPathJoin { .. } => "BadPathJoin",
-            FileSystemError::CouldNotMakeDir { .. } => "CouldNotMakeDir",
-            FileSystemError::ReadFailed { .. } => "ReadFailed",
-            FileSystemError::WriteFailed { .. } => "WriteFailed",
-            FileSystemError::OpenFailed { .. } => "OpenFailed",
-            FileSystemError::FsError { .. } => "FsError",
-            FileSystemError::LFSError { .. } => "LFSErrror",
-        }
-    }
-}
-
-#[derive(Clone, Error, Debug, Serialize, Deserialize)]
-pub enum FileSystemError {
-    //  bad input from user
-    #[error("Malformed URI: {uri}. Problem with {bad_part_name}: {:?}.", bad_part)]
-    BadUri {
-        uri: String,
-        bad_part_name: String,
-        bad_part: Option<String>,
-    },
-    #[error(
-        "JSON payload could not be parsed to FileSystemRequest: {error}. Got {:?}.",
-        json
-    )]
-    BadJson { json: String, error: String },
-    #[error("Bytes payload required for {action}.")]
-    BadBytes { action: String },
-    #[error("{process_name} not allowed to access {attempted_dir}. Process may only access within {sandbox_dir}.")]
-    IllegalAccess {
-        process_name: String,
-        attempted_dir: String,
-        sandbox_dir: String,
-    },
-    #[error("Already have {path} opened with mode {:?}.", mode)]
-    AlreadyOpen { path: String, mode: FileSystemMode },
-    #[error("Don't have {path} opened with mode {:?}.", mode)]
-    NotCurrentlyOpen { path: String, mode: FileSystemMode },
-    //  path or underlying fs problems
-    #[error("Failed to join path: base: '{base_path}'; addend: '{addend}'.")]
-    BadPathJoin { base_path: String, addend: String },
-    #[error("Failed to create dir at {path}: {error}.")]
-    CouldNotMakeDir { path: String, error: String },
-    #[error("Failed to read {path}: {error}.")]
-    ReadFailed { path: String, error: String },
-    #[error("Failed to write {path}: {error}.")]
-    WriteFailed { path: String, error: String },
-    #[error("Failed to open {path} for {:?}: {error}.", mode)]
-    OpenFailed {
-        path: String,
-        mode: FileSystemMode,
-        error: String,
-    },
-    #[error("Filesystem error while {what} on {path}: {error}.")]
-    FsError {
-        what: String,
-        path: String,
-        error: String,
-    },
-    #[error("LFS error: {error}.")]
-    LFSError { error: String },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FileSystemRequest {
-    pub uri_string: String,
-    pub action: FileSystemAction,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FileSystemAction {
-    Read,
-    Write,
-    GetMetadata,
-    ReadDir,
-    Open(FileSystemMode),
-    Close(FileSystemMode),
-    Append,
-    ReadChunkFromOpen(u64),
-    SeekWithinOpen(FileSystemSeekFrom),
-}
-
-//  copy of std::io::SeekFrom with Serialize/Deserialize
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FileSystemSeekFrom {
-    Start(u64),
-    End(i64),
-    Current(i64),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FileSystemResponse {
-    Read(FileSystemUriHash),
-    Write(String),
-    GetMetadata(FileSystemMetadata),
-    ReadDir(Vec<FileSystemMetadata>),
-    Open {
-        uri_string: String,
-        mode: FileSystemMode,
-    },
-    Close {
-        uri_string: String,
-        mode: FileSystemMode,
-    },
-    Append(String),
-    ReadChunkFromOpen(FileSystemUriHash),
-    SeekWithinOpen(String),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FileSystemUriHash {
-    pub uri_string: String,
-    pub hash: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FileSystemMetadata {
-    pub uri_string: String,
-    pub hash: Option<u64>,
-    pub entry_type: FileSystemEntryType,
-    pub len: u64,
-}
-
-#[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
-pub enum FileSystemMode {
-    Read,
-    Append,
-    AppendOverwrite,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FileSystemEntryType {
-    Symlink,
-    File,
-    Dir,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsRequest {
     New {
-        identifier: String,
+        drive: String,
     },
     Add {
-        identifier: String,
+        drive: String,
         full_path: String,
         entry_type: AddEntryType,
     },
     Rename {
-        identifier: String,
+        drive: String,
         full_path: String,
         new_full_path: String,
     },
     Delete {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
     WriteOffset {
-        identifier: String,
+        drive: String,
         full_path: String,
         offset: u64,
     },
     SetSize {
-        identifier: String,
+        drive: String,
         full_path: String,
         size: u64,
     },
     GetPath {
-        identifier: String,
+        drive: String,
         hash: u128,
     },
     GetHash {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
     GetEntry {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
     GetFileChunk {
-        identifier: String,
+        drive: String,
         full_path: String,
         offset: u64,
         length: u64,
     },
     GetEntryLength {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
 }
@@ -609,53 +532,53 @@ pub enum GetEntryType {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsResponse {
     New {
-        identifier: String,
+        drive: String,
     },
     Add {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
     Rename {
-        identifier: String,
+        drive: String,
         new_full_path: String,
     },
     Delete {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
     WriteOffset {
-        identifier: String,
+        drive: String,
         full_path: String,
         offset: u64,
     },
     SetSize {
-        identifier: String,
+        drive: String,
         full_path: String,
         size: u64,
     },
     GetPath {
-        identifier: String,
+        drive: String,
         hash: u128,
         full_path: Option<String>,
     },
     GetHash {
-        identifier: String,
+        drive: String,
         full_path: String,
         hash: u128,
     },
     GetEntry {
-        identifier: String,
+        drive: String,
         full_path: String,
         children: Vec<String>,
     },
     GetFileChunk {
-        identifier: String,
+        drive: String,
         full_path: String,
         offset: u64,
         length: u64,
     },
     GetEntryLength {
-        identifier: String,
+        drive: String,
         full_path: String,
         length: u64,
     },
@@ -663,14 +586,14 @@ pub enum VfsResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KeyValueMessage {
-    New { identifier: String },
-    Write { identifier: String, key: Vec<u8> },
-    Read { identifier: String, key: Vec<u8> },
+    New { drive: String },
+    Write { drive: String, key: Vec<u8> },
+    Read { drive: String, key: Vec<u8> },
 }
 impl KeyValueError {
     pub fn kind(&self) -> &str {
         match *self {
-            KeyValueError::BadIdentifier => "BadIdentifier",
+            KeyValueError::BadDriveName => "BadDriveName",
             KeyValueError::NoCap => "NoCap",
             KeyValueError::NoBytes => "NoBytes",
         }
@@ -678,7 +601,7 @@ impl KeyValueError {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KeyValueError {
-    BadIdentifier,
+    BadDriveName,
     NoCap,
     NoBytes,
 }

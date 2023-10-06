@@ -1,0 +1,17 @@
+[
+    {
+        "process_name": "http_bindings",
+        "process_wasm_path": "http_bindings.wasm",
+        "on_panic": "Restart",
+        "request_networking": false,
+        "request_messaging": [
+            "http_server",
+            "http_client",
+            "encryptor",
+            "vfs"
+        ],
+        "grant_messaging": [
+            "http_sever"
+        ]
+    }
+]

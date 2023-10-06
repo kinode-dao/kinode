@@ -560,7 +560,7 @@ fn serve_html(our: Address, default_headers: HashMap<String, String>) {
             ipc: Some(
                 json!({
                     "GetEntry": {
-                        "identifier": "orgs_static",
+                        "drive": "orgs_static",
                         "full_path": "/index.html"
                     }
                 })
@@ -608,7 +608,7 @@ fn serve_static(raw_path: &str, our: Address, default_headers: HashMap<String, S
                 ipc: Some(
                     json!({
                         "GetEntry": {
-                            "identifier": "orgs_static",
+                            "drive": "orgs_static",
                             "full_path": file_path // everything after "/orgs/static"
                         }
                     })

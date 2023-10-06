@@ -4867,6 +4867,7 @@ dependencies = [
  "tokio-tungstenite 0.20.0",
  "url",
  "uuid 1.4.1",
+ "walkdir",
  "warp",
  "wasmtime",
  "wasmtime-wasi",

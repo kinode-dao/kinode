@@ -1,0 +1,17 @@
+[
+    {
+        "process_name": "qns_indexer",
+        "process_wasm_path": "qns_indexer.wasm",
+        "on_panic": "Restart",
+        "request_networking": true,
+        "request_messaging": [
+            "net",
+            "http_bindings",
+            "eth_rpc"
+        ],
+        "grant_messaging": [
+            "eth_rpc",
+            "filesystem"
+        ]
+    }
+]

@@ -140,52 +140,52 @@ pub struct PersistedProcess {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsRequest {
     New {
-        identifier: String,
+        drive: String,
     },
     Add {
-        identifier: String,
+        drive: String,
         full_path: String,
         entry_type: AddEntryType,
     },
     Rename {
-        identifier: String,
+        drive: String,
         full_path: String,
         new_full_path: String,
     },
     Delete {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
     WriteOffset {
-        identifier: String,
+        drive: String,
         full_path: String,
         offset: u64,
     },
     SetSize {
-        identifier: String,
+        drive: String,
         full_path: String,
         size: u64,
     },
     GetPath {
-        identifier: String,
+        drive: String,
         hash: u128,
     },
     GetHash {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
     GetEntry {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
     GetFileChunk {
-        identifier: String,
+        drive: String,
         full_path: String,
         offset: u64,
         length: u64,
     },
     GetEntryLength {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
 }
@@ -207,53 +207,53 @@ pub enum GetEntryType {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsResponse {
     New {
-        identifier: String,
+        drive: String,
     },
     Add {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
     Rename {
-        identifier: String,
+        drive: String,
         new_full_path: String,
     },
     Delete {
-        identifier: String,
+        drive: String,
         full_path: String,
     },
     WriteOffset {
-        identifier: String,
+        drive: String,
         full_path: String,
         offset: u64,
     },
     SetSize {
-        identifier: String,
+        drive: String,
         full_path: String,
         size: u64,
     },
     GetPath {
-        identifier: String,
+        drive: String,
         hash: u128,
         full_path: Option<String>,
     },
     GetHash {
-        identifier: String,
+        drive: String,
         full_path: String,
         hash: u128,
     },
     GetEntry {
-        identifier: String,
+        drive: String,
         full_path: String,
         children: Vec<String>,
     },
     GetFileChunk {
-        identifier: String,
+        drive: String,
         full_path: String,
         offset: u64,
         length: u64,
     },
     GetEntryLength {
-        identifier: String,
+        drive: String,
         full_path: String,
         length: u64,
     },
@@ -261,14 +261,14 @@ pub enum VfsResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KeyValueMessage {
-    New { identifier: String },
-    Write { identifier: String, key: Vec<u8> },
-    Read { identifier: String, key: Vec<u8> },
+    New { drive: String },
+    Write { drive: String, key: Vec<u8> },
+    Read { drive: String, key: Vec<u8> },
 }
 impl KeyValueError {
     pub fn kind(&self) -> &str {
         match *self {
-            KeyValueError::BadIdentifier => "BadIdentifier",
+            KeyValueError::BadDriveName => "BadDriveName",
             KeyValueError::NoCap => "NoCap",
             KeyValueError::NoBytes => "NoBytes",
         }
@@ -276,7 +276,7 @@ impl KeyValueError {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KeyValueError {
-    BadIdentifier,
+    BadDriveName,
     NoCap,
     NoBytes,
 }

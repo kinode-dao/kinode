@@ -47,7 +47,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 false,
                 Some(
                     serde_json::to_string(&kt::VfsRequest::New {
-                        identifier: package.clone(),
+                        drive: package.clone(),
                     })
                     .unwrap(),
                 ),
@@ -62,7 +62,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 true,
                 Some(
                     serde_json::to_string(&kt::VfsRequest::Add {
-                        identifier: package.clone(),
+                        drive: package.clone(),
                         full_path: "".into(), // TODO
                         entry_type: kt::AddEntryType::ZipArchive,
                     })
@@ -85,7 +85,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 false,
                 Some(
                     serde_json::to_string(&kt::VfsRequest::GetEntry {
-                        identifier: package.clone(),
+                        drive: package.clone(),
                         full_path: "/.manifest".into(),
                     })
                     .unwrap(),
@@ -112,7 +112,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     false,
                     Some(
                         serde_json::to_string(&kt::VfsRequest::GetHash {
-                            identifier: package.clone(),
+                            drive: package.clone(),
                             full_path: path,
                         })
                         .unwrap(),
@@ -146,7 +146,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     &vfs_address.clone(),
                     &serde_json::to_string(&serde_json::json!({
                         "kind": "read",
-                        "identifier": package,
+                        "drive": package,
                     })).unwrap(),
                 ) else {
                     panic!("app_tracker: no read cap");
@@ -156,7 +156,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     &vfs_address.clone(),
                     &serde_json::to_string(&serde_json::json!({
                         "kind": "write",
-                        "identifier": package,
+                        "drive": package,
                     })).unwrap(),
                 ) else {
                     panic!("app_tracker: no write cap");

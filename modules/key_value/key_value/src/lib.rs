@@ -15,16 +15,16 @@ struct Component;
 
 const PREFIX: &str = "key_value-";
 
-fn make_cap(kind: &str, identifier: &str) -> String {
+fn make_cap(kind: &str, drive: &str) -> String {
     serde_json::to_string(&serde_json::json!({
         "kind": kind,
-        "identifier": identifier,
+        "drive": drive,
     })).unwrap()
 }
 
 fn handle_message (
     our: &Address,
-    identifier_to_process: &mut HashMap<String, ProcessId>,
+    drive_to_process: &mut HashMap<String, ProcessId>,
 ) -> anyhow::Result<()> {
     let (source, message) = receive().unwrap();
     // let (source, message) = receive()?;
@@ -40,17 +40,17 @@ fn handle_message (
         Message::Response(_) => { unimplemented!() },
         Message::Request(Request { inherit: _ , expects_response: _, ipc, metadata: _ }) => {
             match process_lib::parse_message_ipc(ipc.clone())? {
-                kt::KeyValueMessage::New { ref identifier } => {
+                kt::KeyValueMessage::New { ref drive } => {
                     //  TODO: make atomic
                     //  (1): create vfs
                     //  (2): spin up worker, granting vfs caps
                     //  (3): issue new caps
                     //  (4): persist
 
-                    if identifier_to_process.contains_key(identifier) {
+                    if drive_to_process.contains_key(drive) {
                         return Err(anyhow::anyhow!(
-                            "rejecting New for identifier that already exists: {}",
-                            identifier,
+                            "rejecting New for drive that already exists: {}",
+                            drive,
                         ))
                     }
 
@@ -59,12 +59,12 @@ fn handle_message (
                         node: our.node.clone(),
                         process: ProcessId::Name("vfs".into()),
                     };
-                    let vfs_identifier = format!("{}{}", PREFIX, identifier);
+                    let vfs_drive = format!("{}{}", PREFIX, drive);
                     let _ = process_lib::send_and_await_response(
                         &vfs_address,
                         false,
                         Some(serde_json::to_string(&kt::VfsRequest::New {
-                            identifier: vfs_identifier.clone(),
+                            drive: vfs_drive.clone(),
                         }).unwrap()),
                         None,
                         None,
@@ -74,11 +74,11 @@ fn handle_message (
                     //  (2)
                     let vfs_read = get_capability(
                         &vfs_address,
-                        &make_cap("read", &vfs_identifier),
+                        &make_cap("read", &vfs_drive),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'read' capability found"))?;
                     let vfs_write = get_capability(
                         &vfs_address,
-                        &make_cap("write", &vfs_identifier),
+                        &make_cap("write", &vfs_drive),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
                     let Some(spawned_process_id) = spawn(
                         &ProcessId::Id(0),
@@ -86,6 +86,7 @@ fn handle_message (
                         "/key_value_worker.wasm",
                         &OnPanic::None,  //  TODO: notify us
                         &Capabilities::Some(vec![vfs_read, vfs_write]),
+                        false, // not public
                     ) else {
                         panic!("couldn't spawn");  //  TODO
                     };
@@ -103,7 +104,7 @@ fn handle_message (
                                 expects_response: None,
                                 ipc: Some(serde_json::to_string(&kt::KernelCommand::GrantCapability {
                                     to_process: kt::de_wit_process_id(source.process.clone()),
-                                    params: make_cap("read", identifier),
+                                    params: make_cap("read", drive),
                                 }).unwrap()),
                                 metadata: None,
                             },
@@ -120,7 +121,7 @@ fn handle_message (
                                 expects_response: None,
                                 ipc: Some(serde_json::to_string(&kt::KernelCommand::GrantCapability {
                                     to_process: kt::de_wit_process_id(source.process.clone()),
-                                    params: make_cap("write", identifier),
+                                    params: make_cap("write", drive),
                                 }).unwrap()),
                                 metadata: None,
                             },
@@ -164,17 +165,17 @@ fn handle_message (
                     ]);
 
                     //  (4)
-                    identifier_to_process.insert(identifier.into(), spawned_process_id);
+                    drive_to_process.insert(drive.into(), spawned_process_id);
                     //  TODO
                 },
-                kt::KeyValueMessage::Write { ref identifier, key: _ } => {
-                    if has_capability(&make_cap("write", identifier)) {
+                kt::KeyValueMessage::Write { ref drive, key: _ } => {
+                    if has_capability(&make_cap("write", drive)) {
                         //  forward
-                        let Some(process_id) = identifier_to_process.get(identifier) else {
+                        let Some(process_id) = drive_to_process.get(drive) else {
                             //  TODO
                             return Err(anyhow::anyhow!(
-                                "cannot write to non-existent identifier {}",
-                                identifier,
+                                "cannot write to non-existent drive {}",
+                                drive,
                             ));
                         };
                         send_request(
@@ -195,19 +196,19 @@ fn handle_message (
                         //  reject
                         //  TODO
                         return Err(anyhow::anyhow!(
-                            "cannot write to identifier: missing 'write' capability; {}",
-                            identifier,
+                            "cannot write to drive: missing 'write' capability; {}",
+                            drive,
                         ));
                     }
                 },
-                kt::KeyValueMessage::Read { ref identifier, key: _ } => {
-                    if has_capability(&make_cap("read", identifier)) {
+                kt::KeyValueMessage::Read { ref drive, key: _ } => {
+                    if has_capability(&make_cap("read", drive)) {
                         //  forward
-                        let Some(process_id) = identifier_to_process.get(identifier) else {
+                        let Some(process_id) = drive_to_process.get(drive) else {
                             //  TODO
                             return Err(anyhow::anyhow!(
-                                "cannot read from non-existent identifier {}",
-                                identifier,
+                                "cannot read from non-existent drive {}",
+                                drive,
                             ));
                         };
                         send_request(
@@ -228,8 +229,8 @@ fn handle_message (
                         //  reject
                         //  TODO
                         return Err(anyhow::anyhow!(
-                            "cannot read from identifier: missing 'read' capability; {}",
-                            identifier,
+                            "cannot read from drive: missing 'read' capability; {}",
+                            drive,
                         ));
                     }
                 },
@@ -244,10 +245,10 @@ impl Guest for Component {
     fn init(our: Address) {
         print_to_terminal(1, "key_value: begin");
 
-        let mut identifier_to_process: HashMap<String, ProcessId> = HashMap::new();
+        let mut drive_to_process: HashMap<String, ProcessId> = HashMap::new();
 
         loop {
-            match handle_message(&our, &mut identifier_to_process) {
+            match handle_message(&our, &mut drive_to_process) {
                 Ok(()) => {},
                 Err(e) => {
                     //  TODO: should we send an error on failure?

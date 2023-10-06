@@ -1,0 +1,21 @@
+[
+    {
+        "process_name": "app_tracker",
+        "process_wasm_path": "app_tracker.wasm",
+        "on_panic": "Restart",
+        "request_networking": true,
+        "request_messaging": [
+            "http_bindings",
+            "terminal",
+            "filesystem",
+            "http_server",
+            "http_client",
+            "encryptor",
+            "net",
+            "vfs",
+            "kernel",
+            "eth_rpc"
+        ],
+        "grant_messaging": []
+    }
+]

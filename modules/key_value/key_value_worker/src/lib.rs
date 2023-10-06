@@ -93,8 +93,8 @@ fn handle_message (
         Message::Response(_) => { unimplemented!() },
         Message::Request(Request { inherit: _ , expects_response: _, ipc, metadata: _ }) => {
             match process_lib::parse_message_ipc(ipc.clone())? {
-                kt::KeyValueMessage::New { identifier: kv_identifier } => {
-                    let vfs_identifier = format!("{}{}", PREFIX, kv_identifier);
+                kt::KeyValueMessage::New { drive: kv_drive } => {
+                    let vfs_drive = format!("{}{}", PREFIX, kv_drive);
                     match db {
                         Some(_) => {
                             return Err(anyhow::anyhow!("cannot send New more than once"));
@@ -103,16 +103,16 @@ fn handle_message (
                             *db = Some(redb::Database::create(
                                 format!(
                                     "/{}.redb",
-                                    kv_identifier,
+                                    kv_drive,
                                 ),
-                                vfs_identifier,
+                                vfs_drive,
                                 get_payload_wrapped,
                                 send_and_await_response_wrapped,
                             )?);
                         },
                     }
                 },
-                kt::KeyValueMessage::Write { identifier: _, ref key } => {
+                kt::KeyValueMessage::Write { drive: _, ref key } => {
                     let Some(db) = db else {
                         return Err(anyhow::anyhow!("cannot send New more than once"));
                     };
@@ -134,7 +134,7 @@ fn handle_message (
                         None,
                     );
                 },
-                kt::KeyValueMessage::Read { identifier: _, ref key } => {
+                kt::KeyValueMessage::Read { drive: _, ref key } => {
                     let Some(db) = db else {
                         return Err(anyhow::anyhow!("cannot send New more than once"));
                     };

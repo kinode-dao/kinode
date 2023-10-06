@@ -1,5 +1,5 @@
 use crate::types::*;
-use crate::types::{FileSystemError, ProcessId};
+use crate::types::{FsError, ProcessId};
 use blake3::Hasher;
 use chacha20poly1305::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
@@ -322,7 +322,7 @@ impl Manifest {
         &self,
         manifest: &mut HashMap<FileIdentifier, InMemoryFile>,
         memory_buffer: &mut Vec<u8>,
-    ) -> Result<(), FileSystemError> {
+    ) -> Result<(), FsError> {
         let mut wal_file = self.wal_file.write().await;
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
 
@@ -355,7 +355,7 @@ impl Manifest {
         Ok(())
     }
 
-    pub async fn flush_to_wal_main(&self) -> Result<(), FileSystemError> {
+    pub async fn flush_to_wal_main(&self) -> Result<(), FsError> {
         // called from main, locks manifest
         // other flush_to_wal gets buffer and others passed in.
         // potentially unify with options.
@@ -394,7 +394,7 @@ impl Manifest {
         Ok(())
     }
 
-    pub async fn write(&self, file: &FileIdentifier, data: &[u8]) -> Result<(), FileSystemError> {
+    pub async fn write(&self, file: &FileIdentifier, data: &[u8]) -> Result<(), FsError> {
         let mut manifest = self.manifest.write().await;
         let mut in_memory_file = InMemoryFile::default();
         let mut memory_buffer = self.memory_buffer.write().await;
@@ -446,7 +446,7 @@ impl Manifest {
         cipher: Option<&XChaCha20Poly1305>,
         in_memory_file: &mut InMemoryFile,
         memory_buffer: &mut Vec<u8>,
-    ) -> Result<(), FileSystemError> {
+    ) -> Result<(), FsError> {
         let chunk_hashes = self.chunk_hashes.read().await;
 
         let chunk_hash: [u8; 32] = blake3::hash(&chunk).into();
@@ -509,9 +509,9 @@ impl Manifest {
         file_id: &FileIdentifier,
         start: Option<u64>,
         length: Option<u64>,
-    ) -> Result<Vec<u8>, FileSystemError> {
-        let file = self.get(file_id).await.ok_or(FileSystemError::LFSError {
-            error: "File not found in manifest".to_string(),
+    ) -> Result<Vec<u8>, FsError> {
+        let file = self.get(file_id).await.ok_or(FsError::NotFound {
+            file: file_id.to_uuid().unwrap_or_default(),
         })?;
         let cipher = &self.cipher;
 
@@ -538,7 +538,7 @@ impl Manifest {
                     };
 
                     if offset as usize + len as usize > memory_buffer.len() {
-                        return Err(FileSystemError::LFSError {
+                        return Err(FsError::MemoryBufferError {
                             error: format!(
                                 "Out of bounds read: offset={}, len={}, memory_buffer size={}",
                                 offset,
@@ -556,11 +556,12 @@ impl Manifest {
                 }
                 ChunkLocation::WAL(offset) => {
                     let mut wal_file = self.wal_file.write().await;
-                    wal_file.seek(SeekFrom::Start(offset)).await.map_err(|e| {
-                        FileSystemError::LFSError {
-                            error: format!("Failed to seek in WAL file: {}", e),
-                        }
-                    })?;
+                    wal_file
+                        .seek(SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| FsError::IOError {
+                            error: format!("Local WAL seek failed: {}", e),
+                        })?;
                     let len = if encrypted {
                         len + ENCRYPTION_OVERHEAD as u64
                     } else {
@@ -568,11 +569,12 @@ impl Manifest {
                     };
 
                     let mut buffer = vec![0u8; len as usize];
-                    wal_file.read_exact(&mut buffer).await.map_err(|e| {
-                        FileSystemError::LFSError {
-                            error: format!("Failed to read from WAL file: {}", e),
-                        }
-                    })?;
+                    wal_file
+                        .read_exact(&mut buffer)
+                        .await
+                        .map_err(|e| FsError::IOError {
+                            error: format!("Local WAL read failed: {}", e),
+                        })?;
                     if encrypted {
                         buffer = decrypt(&cipher, &buffer)?;
                     }
@@ -581,12 +583,9 @@ impl Manifest {
                 ChunkLocation::ColdStorage(local) => {
                     if local {
                         let path = self.fs_directory_path.join(hex::encode(hash));
-                        let mut buffer =
-                            fs::read(path)
-                                .await
-                                .map_err(|e| FileSystemError::LFSError {
-                                    error: format!("Failed to read from file system: {}", e),
-                                })?;
+                        let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
+                            error: format!("Local Cold read failed: {}", e),
+                        })?;
                         if encrypted {
                             buffer = decrypt(&*self.cipher, &buffer)?;
                         }
@@ -636,10 +635,10 @@ impl Manifest {
         file_id: &FileIdentifier,
         offset: u64,
         data: &[u8],
-    ) -> Result<(), FileSystemError> {
+    ) -> Result<(), FsError> {
         let mut manifest = self.manifest.write().await;
-        let mut file = self.get(file_id).await.ok_or(FileSystemError::LFSError {
-            error: "File not found in manifest".to_string(),
+        let mut file = self.get(file_id).await.ok_or(FsError::NotFound {
+            file: file_id.to_uuid().unwrap_or_default(),
         })?;
 
         let mut memory_buffer = self.memory_buffer.write().await;
@@ -716,13 +715,9 @@ impl Manifest {
         Ok(())
     }
 
-    pub async fn append(
-        &self,
-        file_id: &FileIdentifier,
-        data: &[u8],
-    ) -> Result<(), FileSystemError> {
-        let file = self.get(file_id).await.ok_or(FileSystemError::LFSError {
-            error: "File not found in manifest".to_string(),
+    pub async fn append(&self, file_id: &FileIdentifier, data: &[u8]) -> Result<(), FsError> {
+        let file = self.get(file_id).await.ok_or(FsError::NotFound {
+            file: file_id.to_uuid().unwrap_or_default(),
         })?;
 
         let offset = file.get_len();
@@ -734,12 +729,12 @@ impl Manifest {
         &self,
         file_id: &FileIdentifier,
         new_length: u64,
-    ) -> Result<(), FileSystemError> {
+    ) -> Result<(), FsError> {
         let mut manifest = self.manifest.write().await;
         let mut in_memory_file = manifest
             .get(file_id)
-            .ok_or(FileSystemError::LFSError {
-                error: "File not found in manifest".to_string(),
+            .ok_or(FsError::NotFound {
+                file: file_id.to_uuid().unwrap_or_default(),
             })?
             .clone();
 
@@ -814,7 +809,7 @@ impl Manifest {
         Ok(())
     }
 
-    pub async fn flush_to_cold(&self) -> Result<(), FileSystemError> {
+    pub async fn flush_to_cold(&self) -> Result<(), FsError> {
         let mut manifest_lock = self.manifest.write().await;
         let mut wal_file = self.wal_file.write().await;
         let mut manifest_file = self.manifest_file.write().await;
@@ -876,8 +871,8 @@ impl Manifest {
 
                         // ensure the memory buffer is large enough
                         if mem_pos + total_len as usize > memory_buffer.len() {
-                            return Err(FileSystemError::LFSError {
-                                error: "Memory buffer is not large enough".to_string(),
+                            return Err(FsError::MemoryBufferError {
+                                error: "membuffer is not large enough".to_string(),
                             });
                         }
                         // copy the chunk data from the memory buffer
@@ -966,7 +961,7 @@ impl Manifest {
         Ok(())
     }
 
-    pub async fn delete(&self, file_id: &FileIdentifier) -> Result<(), FileSystemError> {
+    pub async fn delete(&self, file_id: &FileIdentifier) -> Result<(), FsError> {
         // add a delete entry to the manifest
         let entry = ManifestRecord::Delete(file_id.clone());
         let serialized_entry = bincode::serialize(&entry).unwrap();
@@ -984,7 +979,7 @@ impl Manifest {
         Ok(())
     }
 
-    pub async fn cleanup(&self) -> Result<(), FileSystemError> {
+    pub async fn cleanup(&self) -> Result<(), FsError> {
         let in_use_hashes = self.get_chunk_hashes().await;
 
         // loop through all chunks on disk
@@ -1251,19 +1246,19 @@ fn generate_nonce() -> [u8; 24] {
     nonce
 }
 
-fn encrypt(cipher: &XChaCha20Poly1305, bytes: &[u8]) -> Result<Vec<u8>, aes_gcm::aead::Error> {
+fn encrypt(cipher: &XChaCha20Poly1305, bytes: &[u8]) -> Result<Vec<u8>, FsError> {
     let nonce = generate_nonce();
     let ciphertext = cipher.encrypt(&XNonce::from_slice(&nonce), bytes)?;
     Ok([nonce.to_vec(), ciphertext].concat())
 }
 
-fn decrypt(cipher: &XChaCha20Poly1305, bytes: &[u8]) -> Result<Vec<u8>, aes_gcm::aead::Error> {
+fn decrypt(cipher: &XChaCha20Poly1305, bytes: &[u8]) -> Result<Vec<u8>, FsError> {
     let nonce = XNonce::from_slice(&bytes[..24]);
     let plaintext = cipher.decrypt(nonce, &bytes[24..])?;
     Ok(plaintext)
 }
 
-fn parse_s3_config(config: S3Config) -> Result<(S3Client, String), FileSystemError> {
+fn parse_s3_config(config: S3Config) -> Result<(S3Client, String), FsError> {
     let region = Region::Custom {
         name: config.region.clone(),
         endpoint: config.endpoint.clone(),
@@ -1277,51 +1272,50 @@ fn parse_s3_config(config: S3Config) -> Result<(S3Client, String), FileSystemErr
     Ok((client, config.bucket))
 }
 
-// Error transformations, todo refactor FileSystemError!
-impl From<std::io::Error> for FileSystemError {
+impl From<std::io::Error> for FsError {
     fn from(error: std::io::Error) -> Self {
-        FileSystemError::LFSError {
-            error: format!("IO error: {}", error),
+        FsError::IOError {
+            error: error.to_string(),
         }
     }
 }
 
-impl From<aes_gcm::aead::Error> for FileSystemError {
+impl From<aes_gcm::aead::Error> for FsError {
     fn from(error: aes_gcm::aead::Error) -> Self {
-        FileSystemError::LFSError {
-            error: format!("Encryption error: {}", error),
+        FsError::EncryptionError {
+            error: error.to_string(),
         }
     }
 }
 
-impl From<RusotoError<PutObjectError>> for FileSystemError {
+impl From<RusotoError<PutObjectError>> for FsError {
     fn from(error: RusotoError<PutObjectError>) -> Self {
-        FileSystemError::LFSError {
-            error: format!("S3 PUT error: {}", error),
+        FsError::S3Error {
+            error: format!("PUT error: {}", error),
         }
     }
 }
 
-impl From<RusotoError<GetObjectError>> for FileSystemError {
+impl From<RusotoError<GetObjectError>> for FsError {
     fn from(error: RusotoError<GetObjectError>) -> Self {
-        FileSystemError::LFSError {
-            error: format!("S3 GET error: {}", error),
+        FsError::S3Error {
+            error: format!("GET error: {}", error),
         }
     }
 }
 
-impl From<RusotoError<DeleteObjectError>> for FileSystemError {
+impl From<RusotoError<DeleteObjectError>> for FsError {
     fn from(error: RusotoError<DeleteObjectError>) -> Self {
-        FileSystemError::LFSError {
-            error: format!("S3 DELETE error: {}", error),
+        FsError::S3Error {
+            error: format!("DELETE error: {}", error),
         }
     }
 }
 
-impl From<RusotoError<ListObjectsV2Error>> for FileSystemError {
+impl From<RusotoError<ListObjectsV2Error>> for FsError {
     fn from(error: RusotoError<ListObjectsV2Error>) -> Self {
-        FileSystemError::LFSError {
-            error: format!("S3 LIST error: {}", error),
+        FsError::S3Error {
+            error: format!("LIST error: {}", error),
         }
     }
 }
