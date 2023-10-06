@@ -502,7 +502,8 @@ pub enum VfsResponse {
     Err(VfsError),
     GetPath(Option<String>),
     GetHash(Option<u128>),
-    GetEntry { // file bytes in payload, if entry was a file
+    GetEntry {
+        // file bytes in payload, if entry was a file
         exists: bool,
         children: Vec<String>,
     },

@@ -705,7 +705,9 @@ async fn match_request(
                     let Some(ipc) = ipc else {
                         panic!("");
                     };
-                    let Ok(FsResponse::Write(hash)) = serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap() else {
+                    let Ok(FsResponse::Write(hash)) =
+                        serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                    else {
                         panic!("");
                     };
 
