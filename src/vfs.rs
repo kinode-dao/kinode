@@ -1073,10 +1073,7 @@ async fn match_request(
                 None,
             )
         }
-        VfsRequest::Delete {
-            drive,
-            full_path,
-        } => {
+        VfsRequest::Delete { drive, full_path } => {
             let mut vfs = vfs.lock().await;
             let Some(key) = vfs.path_to_key.remove(&full_path) else {
                 send_to_terminal
@@ -1149,13 +1146,7 @@ async fn match_request(
             }
             send_to_persist.send(true).await.unwrap();
             (
-                Some(
-                    serde_json::to_string(&VfsResponse::Delete {
-                        drive,
-                        full_path,
-                    })
-                    .unwrap(),
-                ),
+                Some(serde_json::to_string(&VfsResponse::Delete { drive, full_path }).unwrap()),
                 None,
             )
         }
@@ -1306,10 +1297,7 @@ async fn match_request(
             );
             (ipc, None)
         }
-        VfsRequest::GetHash {
-            drive,
-            full_path,
-        } => {
+        VfsRequest::GetHash { drive, full_path } => {
             let mut vfs = vfs.lock().await;
             let Some(key) = vfs.path_to_key.get(&full_path) else {
                 panic!("todo");
@@ -1554,10 +1542,7 @@ async fn match_request(
                 Some(payload.bytes),
             )
         }
-        VfsRequest::GetEntryLength {
-            drive,
-            full_path,
-        } => {
+        VfsRequest::GetEntryLength { drive, full_path } => {
             if full_path.chars().last() == Some('/') {
                 (
                     Some(
