@@ -381,7 +381,7 @@ impl VfsError {
     pub fn kind(&self) -> &str {
         match *self {
             VfsError::BadIdentifier => "BadIdentifier",
-            VfsError::BadDescriptor => "BadDescriptor",
+            VfsError::EntryNotFound => "EntryNotFound",
             VfsError::NoCap => "NoCap",
         }
     }
@@ -390,7 +390,7 @@ impl VfsError {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsError {
     BadIdentifier,
-    BadDescriptor,
+    EntryNotFound,
     NoCap,
 }
 

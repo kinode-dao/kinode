@@ -1012,7 +1012,7 @@ async fn match_request(
                     })
                     .await
                     .unwrap();
-                panic!("");
+                return Err(VfsError::EntryNotFound);
             };
             let Some(mut entry) = vfs.key_to_entry.remove(&key) else {
                 send_to_terminal
@@ -1022,7 +1022,7 @@ async fn match_request(
                     })
                     .await
                     .unwrap();
-                panic!("");
+                return Err(VfsError::EntryNotFound);
             };
             match entry.entry_type {
                 EntryType::Dir { .. } => {
@@ -1087,7 +1087,7 @@ async fn match_request(
                     })
                     .await
                     .unwrap();
-                panic!("");
+                return Err(VfsError::EntryNotFound);
             };
             let Some(entry) = vfs.key_to_entry.remove(&key) else {
                 send_to_terminal
@@ -1097,7 +1097,7 @@ async fn match_request(
                     })
                     .await
                     .unwrap();
-                panic!("");
+                return Err(VfsError::EntryNotFound);
             };
             match entry.entry_type {
                 EntryType::Dir {
@@ -1168,7 +1168,7 @@ async fn match_request(
             let file_hash = {
                 let mut vfs = vfs.lock().await;
                 let Some(key) = vfs.path_to_key.remove(&full_path) else {
-                    panic!("");
+                    return Err(VfsError::EntryNotFound);
                 };
                 let key2 = key.clone();
                 let Key::File { id: file_hash } = key2 else {
@@ -1223,7 +1223,7 @@ async fn match_request(
             let file_hash = {
                 let mut vfs = vfs.lock().await;
                 let Some(key) = vfs.path_to_key.remove(&full_path) else {
-                    panic!(""); //  TODO
+                    return Err(VfsError::EntryNotFound);
                 };
                 let key2 = key.clone();
                 let Key::File { id: file_hash } = key2 else {
@@ -1311,9 +1311,9 @@ async fn match_request(
             identifier,
             full_path,
         } => {
-            let mut vfs = vfs.lock().await;
+            let vfs = vfs.lock().await;
             let Some(key) = vfs.path_to_key.get(&full_path) else {
-                panic!("todo");
+                return Err(VfsError::EntryNotFound);
             };
             let Key::File { id: hash } = key else {
                 panic!("todo");
@@ -1377,21 +1377,10 @@ async fn match_request(
                 }
             };
 
-            let entry_not_found = (
-                Some(
-                    serde_json::to_string(&VfsResponse::GetEntry {
-                        identifier: identifier.clone(),
-                        full_path: full_path.clone(),
-                        children: vec![],
-                    })
-                    .unwrap(),
-                ),
-                None,
-            );
             match key {
-                None => entry_not_found,
+                None => return Err(VfsError::EntryNotFound),
                 Some(key) => match entry {
-                    None => entry_not_found,
+                    None => return Err(VfsError::EntryNotFound),
                     Some(entry) => match entry.entry_type {
                         EntryType::Dir {
                             parent: _,
@@ -1484,7 +1473,7 @@ async fn match_request(
             let file_hash = {
                 let mut vfs = vfs.lock().await;
                 let Some(key) = vfs.path_to_key.remove(&full_path) else {
-                    panic!(""); //  TODO
+                    return Err(VfsError::EntryNotFound);
                 };
                 let key2 = key.clone();
                 let Key::File { id: file_hash } = key2 else {
@@ -1576,7 +1565,7 @@ async fn match_request(
                 let file_hash = {
                     let mut vfs = vfs.lock().await;
                     let Some(key) = vfs.path_to_key.remove(&full_path) else {
-                        panic!("");
+                        return Err(VfsError::EntryNotFound);
                     };
                     let key2 = key.clone();
                     let Key::File { id: file_hash } = key2 else {

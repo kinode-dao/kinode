@@ -281,6 +281,13 @@ pub enum KeyValueError {
     NoBytes,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SqliteMessage {
+    New { identifier: String },
+    Write { identifier: String, key: Vec<u8> },
+    Read { identifier: String, key: Vec<u8> },
+}
+
 //
 // conversions between wit types and kernel types (annoying)
 //
