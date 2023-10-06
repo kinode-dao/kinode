@@ -6,8 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-zip = "0.6"
+sha2 = "0.10"
 walkdir = "2.4"
+zip = "0.6"
+
 
 [dependencies]
 aes-gcm = "0.10.2"
