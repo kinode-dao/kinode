@@ -131,7 +131,7 @@ world uq-process {
 
     import clear-state: func()
 
-    import spawn: func(id: process-id, %package: string, full-path: string, on-panic: on-panic, capabilities: capabilities) ->
+    import spawn: func(id: process-id, %package: string, full-path: string, on-panic: on-panic, capabilities: capabilities, public: bool) ->
         option<process-id>
 
     // capabilities management

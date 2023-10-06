@@ -1,7 +1,7 @@
 cargo_component_bindings::generate!();
 mod process_lib;
 struct Component;
-use bindings::{component::uq_process::types::*, Guest, print_to_terminal, receive, send_request};
+use bindings::{component::uq_process::types::*, print_to_terminal, receive, send_request, Guest};
 
 fn parse_command(our_name: &str, line: String) {
     let (head, tail) = line.split_once(" ").unwrap_or((&line, ""));
@@ -82,9 +82,7 @@ impl Guest for Component {
         print_to_terminal(1, &format!("terminal: start"));
         loop {
             let (source, message) = match receive() {
-                Ok((source, message)) => {
-                    (source, message)
-                }
+                Ok((source, message)) => (source, message),
                 Err((error, _context)) => {
                     print_to_terminal(0, &format!("net error: {:?}!", error.kind));
                     continue;
@@ -96,8 +94,7 @@ impl Guest for Component {
                     ipc,
                     ..
                 }) => {
-                    if our.node != source.node
-                       || our.process != source.process {
+                    if our.node != source.node || our.process != source.process {
                         continue;
                     }
                     let Some(command) = ipc else {
@@ -105,7 +102,7 @@ impl Guest for Component {
                     };
                     parse_command(&our.node, command);
                 }
-                _ => continue
+                _ => continue,
             }
         }
     }

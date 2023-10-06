@@ -23,7 +23,7 @@ mkdir -p "$target_path/target/wasm32-unknown-unknown/release" || { echo "Command
 
 # Build the module using Cargo
 cargo +nightly build \
-  $release_flag \
+  $debug_flag \
   --no-default-features \
   --manifest-path="$target_path/Cargo.toml" \
   --target "wasm32-wasi" || {

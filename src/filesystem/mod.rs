@@ -3,6 +3,7 @@ use crate::types::*;
 /// log structured filesystem
 use anyhow::Result;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::io::Read;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::oneshot::{Receiver, Sender};
@@ -20,9 +21,9 @@ pub async fn load_fs(
     // load/create fs directory, manifest + log if none.
     let fs_directory_path_str = format!("{}/fs", &home_directory_path);
 
-    let new_boot = create_dir_if_dne(&fs_directory_path_str)
-        .await
-        .expect("failed creating fs dir!");
+    if let Err(e) = fs::create_dir_all(&fs_directory_path_str).await {
+        panic!("failed creating fs dir! {:?}", e);
+    }
 
     let fs_directory_path: std::path::PathBuf =
         fs::canonicalize(fs_directory_path_str).await.unwrap();
@@ -67,24 +68,21 @@ pub async fn load_fs(
     // get current processes' wasm_bytes handles. GetState(kernel)
     match manifest.read(&kernel_process_id, None, None).await {
         Err(_) => {
-            //  first time!
+            //  bootstrap filesystem
+            bootstrap(
+                &our_name,
+                &kernel_process_id,
+                &mut process_map,
+                &mut manifest,
+                &vfs_message_sender,
+            )
+            .await
+            .expect("fresh bootstrap failed!");
         }
         Ok(bytes) => {
             process_map = bincode::deserialize(&bytes).expect("state map deserialization error!");
+            println!("found persisted processes: {:?}\r", process_map.keys());
         }
-    }
-
-    if new_boot {
-        //  bootstrap filesystem
-        let _ = bootstrap(
-            &our_name,
-            &kernel_process_id,
-            &mut process_map,
-            &mut manifest,
-            &vfs_message_sender,
-        )
-        .await
-        .expect("fresh bootstrap failed!");
     }
 
     Ok((process_map, manifest))
@@ -105,85 +103,16 @@ async fn bootstrap(
     manifest: &mut Manifest,
     vfs_message_sender: &MessageSender,
 ) -> Result<()> {
-    let packages: Vec<zip::ZipArchive<std::io::Cursor<Vec<u8>>>> = get_zipped_packages().await;
-
-    for package in packages {
-        // for each file in package.zip, recursively through all dirs, send a newfile KM to VFS
-        let mut stack = Vec::new();
-        stack.push(package);
-
-        while let Some(mut package) = stack.pop() {
-            for i in 0..package.len() {
-                let mut file = package.by_index(i).unwrap();
-                if file.name().ends_with('/') {
-                    let new_package =
-                        zip::ZipArchive::new(std::io::Cursor::new(file.into_inner())).unwrap();
-                    stack.push(new_package);
-                } else {
-                    let file_path = file.sanitized_name();
-                    let mut file_content = Vec::new();
-                    file.read_to_end(&mut file_content).unwrap();
-                    let km = KernelMessage::NewFile {
-                        path: file_path,
-                        content: file_content,
-                    };
-                    vfs_message_sender.send(km).await.unwrap();
-                }
-            }
-        }
-
-        // get and read manifest.json
-
-        // for each process-entry in manifest.json:
-        for entry in process_manifest {
-            // save in process map
-            let hash: [u8; 32] = hash_bytes(&wasm_bytes);
-
-            if let Some(id) = manifest.get_uuid_by_hash(&hash).await {
-                let entry =
-                    process_map
-                        .entry(ProcessId::Name(process_name))
-                        .or_insert(PersistedProcess {
-                            wasm_bytes_handle: id,
-                            on_panic: OnPanic::Restart,
-                            capabilities: HashSet::new(),
-                        });
-                entry.capabilities.extend(special_capabilities.clone());
-                entry.wasm_bytes_handle = id;
-            } else {
-                //  FsAction::Write
-                let file = FileIdentifier::new_uuid();
-
-                let _ = manifest.write(&file, &wasm_bytes).await;
-                let id = file.to_uuid().unwrap();
-
-                let entry =
-                    process_map
-                        .entry(ProcessId::Name(process_name))
-                        .or_insert(PersistedProcess {
-                            wasm_bytes_handle: id,
-                            on_panic: OnPanic::Restart,
-                            capabilities: HashSet::new(),
-                        });
-                entry.capabilities.extend(special_capabilities.clone());
-                entry.wasm_bytes_handle = id;
-            }
-
-            //     spawn the requested capabilities
-
-            //     spawn the granted capabilities
-        }
-    }
-
-    const RUNTIME_MODULES: [&str; 8] = [
-        "filesystem",
-        "http_server",
-        "http_client",
-        "encryptor",
-        "net",
-        "vfs",
-        "kernel",
-        "eth_rpc",
+    println!("bootstrapping node...\r");
+    const RUNTIME_MODULES: [(&str, bool); 8] = [
+        ("filesystem", false),
+        ("http_server", true), // TODO evaluate
+        ("http_client", false),
+        ("encryptor", false),
+        ("net", false),
+        ("vfs", false),
+        ("kernel", false),
+        ("eth_rpc", true), // TODO evaluate
     ];
 
     let mut runtime_caps: HashSet<Capability> = HashSet::new();
@@ -191,7 +120,7 @@ async fn bootstrap(
         runtime_caps.insert(Capability {
             issuer: Address {
                 node: our_name.to_string(),
-                process: ProcessId::Name(runtime_module.into()),
+                process: ProcessId::Name(runtime_module.0.into()),
             },
             params: "\"messaging\"".into(),
         });
@@ -207,13 +136,180 @@ async fn bootstrap(
 
     // finally, save runtime modules in state map as well, somewhat fakely
     for runtime_module in RUNTIME_MODULES {
-        let entry = process_map
-            .entry(ProcessId::Name(runtime_module.into()))
+        process_map
+            .entry(ProcessId::Name(runtime_module.0.into()))
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: 0,
                 on_panic: OnPanic::Restart,
                 capabilities: runtime_caps.clone(),
+                public: runtime_module.1,
             });
+    }
+
+    let packages: Vec<(String, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> =
+        get_zipped_packages().await;
+
+    // need to grant all caps at the end, after process_map has been filled in!
+    let mut caps_to_grant = Vec::<(ProcessId, Capability)>::new();
+
+    for (package_name, mut package) in packages {
+        println!("fs: handling package {package_name}...\r");
+        // create a new package in VFS
+        vfs_message_sender
+            .send(KernelMessage {
+                id: 0,
+                source: Address {
+                    node: our_name.to_string(),
+                    process: ProcessId::Name("filesystem".into()),
+                },
+                target: Address {
+                    node: our_name.to_string(),
+                    process: ProcessId::Name("vfs".into()),
+                },
+                rsvp: None,
+                message: Message::Request(Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: Some(
+                        serde_json::to_string::<VfsRequest>(&VfsRequest::New {
+                            identifier: package_name.clone(),
+                        })
+                        .unwrap(),
+                    ),
+                    metadata: None,
+                }),
+                payload: None,
+                signed_capabilities: None,
+            })
+            .await
+            .unwrap();
+        // for each file in package.zip, recursively through all dirs, send a newfile KM to VFS
+        for i in 0..package.len() {
+            let mut file = package.by_index(i).unwrap();
+            if file.is_file() {
+                let file_path = file
+                    .enclosed_name()
+                    .expect("fs: name error reading package.zip")
+                    .to_owned();
+                println!("fs: found file {}...\r", file_path.display());
+                let mut file_content = Vec::new();
+                file.read_to_end(&mut file_content).unwrap();
+                vfs_message_sender
+                    .send(KernelMessage {
+                        id: 0,
+                        source: Address {
+                            node: our_name.to_string(),
+                            process: ProcessId::Name("filesystem".into()),
+                        },
+                        target: Address {
+                            node: our_name.to_string(),
+                            process: ProcessId::Name("vfs".into()),
+                        },
+                        rsvp: None,
+                        message: Message::Request(Request {
+                            inherit: false,
+                            expects_response: None,
+                            ipc: Some(
+                                serde_json::to_string::<VfsRequest>(&VfsRequest::Add {
+                                    identifier: package_name.clone(),
+                                    full_path: file_path.to_string_lossy().to_string(),
+                                    entry_type: AddEntryType::NewFile,
+                                })
+                                .unwrap(),
+                            ),
+                            metadata: None,
+                        }),
+                        payload: Some(Payload {
+                            mime: None,
+                            bytes: file_content,
+                        }),
+                        signed_capabilities: None,
+                    })
+                    .await
+                    .unwrap();
+            }
+        }
+
+        // get and read manifest.json
+        let Ok(mut package_manifest_zip) = package.by_name("manifest.json") else {
+            println!("fs: missing manifest for package {}, skipping", package_name);
+            continue;
+        };
+        let mut manifest_content = Vec::new();
+        package_manifest_zip
+            .read_to_end(&mut manifest_content)
+            .unwrap();
+        drop(package_manifest_zip);
+        let package_manifest = String::from_utf8(manifest_content)?;
+        let package_manifest = serde_json::from_str::<Vec<PackageManifestEntry>>(&package_manifest)
+            .expect("fs: manifest parse error");
+
+        // for each process-entry in manifest.json:
+        for mut entry in package_manifest {
+            let wasm_bytes = &mut Vec::new();
+            package
+                .by_name(&format!("{}", entry.process_wasm_path))
+                .expect("fs: no wasm found in package!")
+                .read_to_end(wasm_bytes)
+                .unwrap();
+
+            // spawn the requested capabilities
+            // remember: out of thin air, because this is the root distro
+            let mut requested_caps = HashSet::new();
+            entry.request_messaging.push(entry.process_name.clone());
+            for process_name in entry.request_messaging {
+                requested_caps.insert(Capability {
+                    issuer: Address {
+                        node: our_name.to_string(),
+                        process: ProcessId::Name(process_name),
+                    },
+                    params: "\"messaging\"".into(),
+                });
+            }
+
+            let mut public_process = false;
+
+            // queue the granted capabilities
+            for process_name in entry.grant_messaging {
+                if process_name == "all" {
+                    public_process = true;
+                    continue;
+                }
+                caps_to_grant.push((
+                    ProcessId::Name(process_name),
+                    Capability {
+                        issuer: Address {
+                            node: our_name.to_string(),
+                            process: ProcessId::Name(entry.process_name.clone()),
+                        },
+                        params: "\"messaging\"".into(),
+                    },
+                ));
+            }
+
+            // save in process map
+            let file = FileIdentifier::new_uuid();
+            manifest.write(&file, &wasm_bytes).await.unwrap();
+            let wasm_bytes_handle = file.to_uuid().unwrap();
+
+            process_map.insert(
+                ProcessId::Name(entry.process_name),
+                PersistedProcess {
+                    wasm_bytes_handle,
+                    on_panic: entry.on_panic,
+                    capabilities: requested_caps,
+                    public: public_process,
+                },
+            );
+        }
+    }
+
+    // grant queued capabilities from all packages
+    for (to, cap) in caps_to_grant {
+        let Some(proc) = process_map.get_mut(&to) else {
+            continue
+        };
+        proc.capabilities.insert(cap);
     }
 
     // save kernel process state. FsAction::SetState(kernel)
@@ -229,24 +325,26 @@ async fn bootstrap(
     Ok(())
 }
 
-/// go into /modules folder and get all
-async fn get_zipped_packages() -> Vec<zip::ZipArchive<std::io::Cursor<Vec<u8>>>> {
-    let modules_path = std::path::Path::new("modules");
+/// go into /target folder and get all .zip package files
+async fn get_zipped_packages() -> Vec<(String, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> {
+    println!("fs: reading distro packages...\r");
+    let target_path = std::path::Path::new("target");
 
     let mut packages = Vec::new();
 
-    if let Ok(mut entries) = fs::read_dir(modules_path).await {
+    if let Ok(mut entries) = fs::read_dir(target_path).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
-            // get a file named package.zip
-            if let Some(pkg) = entry.file_name().to_str() {
-                if pkg == "package.zip" {
-                    // read the file
-                    if let Ok(bytes) = fs::read(entry.path()).await {
-                        // extract the zip
-                        if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) {
-                            // add to list of packages
-                            packages.push(zip);
-                        }
+            if entry.file_name().to_string_lossy().ends_with(".zip") {
+                let package_name = entry
+                    .file_name()
+                    .to_string_lossy()
+                    .trim_end_matches(".zip")
+                    .to_string();
+                if let Ok(bytes) = fs::read(entry.path()).await {
+                    if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) {
+                        // add to list of packages
+                        println!("fs: found package: {}\r", package_name);
+                        packages.push((package_name, zip));
                     }
                 }
             }
@@ -254,39 +352,6 @@ async fn get_zipped_packages() -> Vec<zip::ZipArchive<std::io::Cursor<Vec<u8>>>>
     }
 
     return packages;
-}
-
-async fn get_processes_from_directories() -> Vec<(String, Vec<u8>)> {
-    let mut processes = Vec::new();
-
-    // Get the path to the /modules directory
-    let modules_path = std::path::Path::new("modules");
-
-    // Read the /modules directory
-    if let Ok(mut entries) = fs::read_dir(modules_path).await {
-        // Loop through the entries in the directory
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            // If the entry is a directory, add its name to the list of processes
-            if let Ok(metadata) = entry.metadata().await {
-                if metadata.is_dir() {
-                    if let Some(name) = entry.file_name().to_str() {
-                        // Get the path to the wasm file for the process
-                        let wasm_path = format!(
-                            "modules/{}/target/wasm32-unknown-unknown/release/{}.wasm",
-                            name, name
-                        );
-                        // Read the wasm file
-                        if let Ok(wasm_bytes) = fs::read(wasm_path).await {
-                            // Add the process name and wasm bytes to the list of processes
-                            processes.push((name.to_string(), wasm_bytes));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    processes
 }
 
 pub async fn fs_sender(
@@ -355,7 +420,7 @@ pub async fn fs_sender(
                         .await
                         {
                             send_to_loop
-                                .send(make_error_message(our_name.clone(), km.id, km.source.clone(), e))
+                                .send(make_error_message(our_name.clone(), &km, e))
                                 .await
                                 .unwrap();
                         }
@@ -569,14 +634,14 @@ async fn handle_request(
             (FsResponse::Length(length), None)
         }
         //  process state handlers
-        FsAction::SetState => {
+        FsAction::SetState(process_id) => {
             let Some(ref payload) = payload else {
                 return Err(FsError::BadBytes {
                     action: "SetState".into(),
                 });
             };
 
-            let file = FileIdentifier::Process(source.process.clone());
+            let file = FileIdentifier::Process(process_id);
             match manifest.write(&file, &payload.bytes).await {
                 Ok(_) => (),
                 Err(e) => {
@@ -589,14 +654,14 @@ async fn handle_request(
 
             (FsResponse::SetState, None)
         }
-        FsAction::DeleteState => {
-            let file = FileIdentifier::Process(source.process.clone());
+        FsAction::DeleteState(process_id) => {
+            let file = FileIdentifier::Process(process_id);
             manifest.delete(&file).await?;
 
             (FsResponse::Delete(0), None)
         }
-        FsAction::GetState => {
-            let file = FileIdentifier::Process(source.process.clone());
+        FsAction::GetState(process_id) => {
+            let file = FileIdentifier::Process(process_id);
 
             match manifest.read(&file, None, None).await {
                 Err(e) => return Err(e),
@@ -612,8 +677,11 @@ async fn handle_request(
                 node: our_name.clone(),
                 process: ProcessId::Name("filesystem".into()),
             },
-            target: source.clone(),
-            rsvp,
+            target: match rsvp {
+                None => source,
+                Some(rsvp) => rsvp,
+            },
+            rsvp: None,
             message: Message::Response((
                 Response {
                     ipc: Some(
@@ -623,10 +691,13 @@ async fn handle_request(
                 },
                 None,
             )),
-            payload: Some(Payload {
-                mime: None,
-                bytes: bytes.unwrap_or_default(),
-            }),
+            payload: match bytes {
+                Some(bytes) => Some(Payload {
+                    mime: None,
+                    bytes,
+                }),
+                None => None,
+            },
             signed_capabilities: None,
         };
 
@@ -649,29 +720,17 @@ pub fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
-//  returns bool: if dir is new
-async fn create_dir_if_dne(path: &str) -> Result<bool, FsError> {
-    if let Err(_) = fs::read_dir(&path).await {
-        match fs::create_dir_all(&path).await {
-            Ok(_) => Ok(true),
-            Err(e) => Err(FsError::CreateInitialDirError {
-                path: path.into(),
-                error: format!("{}", e),
-            }),
-        }
-    } else {
-        Ok(false)
-    }
-}
-
-fn make_error_message(our_name: String, id: u64, target: Address, error: FsError) -> KernelMessage {
+fn make_error_message(our_name: String, km: &KernelMessage, error: FsError) -> KernelMessage {
     KernelMessage {
-        id,
+        id: km.id,
         source: Address {
             node: our_name.clone(),
             process: ProcessId::Name("fileystem".into()),
         },
-        target,
+        target: match &km.rsvp {
+            None => km.source.clone(),
+            Some(rsvp) => rsvp.clone(),
+        },
         rsvp: None,
         message: Message::Response((
             Response {

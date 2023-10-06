@@ -182,6 +182,7 @@ pub struct ProcessMetadata {
     pub our: Address,
     pub wasm_bytes_handle: u128,
     pub on_panic: OnPanic,
+    pub public: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -253,6 +254,7 @@ pub enum KernelCommand {
         wasm_bytes_handle: u128,
         on_panic: OnPanic,
         initial_capabilities: HashSet<SignedCapability>,
+        public: bool,
     },
     KillProcess(ProcessId), // this is extrajudicial killing: we might lose messages!
     // kernel only
@@ -305,6 +307,7 @@ pub struct PersistedProcess {
     // pub full_path: String,
     pub on_panic: OnPanic,
     pub capabilities: HashSet<Capability>,
+    pub public: bool, // marks if a process allows messages from any process
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -323,6 +326,16 @@ pub struct ProcessContext {
 // filesystem.rs types
 //
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageManifestEntry {
+    pub process_name: String,
+    pub process_wasm_path: String,
+    pub on_panic: OnPanic,
+    pub request_networking: bool,
+    pub request_messaging: Vec<String>,
+    pub grant_messaging: Vec<String>, // special logic for the string "all"
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub enum FsAction {
     Write,
@@ -334,9 +347,9 @@ pub enum FsAction {
     Delete(u128),
     Length(u128),
     SetLength((u128, u64)),
-    GetState,
-    SetState,
-    DeleteState,
+    GetState(ProcessId),
+    SetState(ProcessId),
+    DeleteState(ProcessId),
 }
 
 #[derive(Serialize, Deserialize, Debug)]

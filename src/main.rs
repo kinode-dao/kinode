@@ -255,6 +255,13 @@ async fn main() {
         let Ok(onchain_id) = contract.ws(node_id).call().await else {
             panic!("error: RPC endpoint failed to fetch our node_id");
         };
+        print_sender
+            .send(Printout {
+                verbosity: 0,
+                content: "established connection to Sepolia RPC".to_string(),
+            })
+            .await
+            .unwrap();
         // double check that routers match on-chain information
         let namehashed_routers: Vec<[u8; 32]> = routers
             .clone()
@@ -365,13 +372,6 @@ async fn main() {
             file_key.to_vec(),
         )
     };
-    //  load in fs.
-    let _ = print_sender
-        .send(Printout {
-            verbosity: 0,
-            content: "bootstrapping fs...".to_string(),
-        })
-        .await;
 
     let (kernel_process_map, manifest) = filesystem::load_fs(
         our.name.clone(),
@@ -384,12 +384,6 @@ async fn main() {
     .expect("fs load failed!");
 
     let _ = kill_tx.send(true);
-    let _ = print_sender
-        .send(Printout {
-            verbosity: 0,
-            content: format!("{} now online", our.name),
-        })
-        .await;
     let _ = print_sender
         .send(Printout {
             verbosity: 0,

@@ -1,0 +1,12 @@
+[
+    {
+        "process_name": "rpc",
+        "process_wasm_path": "rpc.wasm",
+        "on_panic": "Restart",
+        "request_networking": false,
+        "request_messaging": [
+            "http_bindings"
+        ],
+        "grant_messaging": []
+    }
+]

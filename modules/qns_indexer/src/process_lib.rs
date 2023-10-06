@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::bindings::component::uq_process::types::*;
-use super::bindings::{get_payload, send_request, Address, Payload};
+use super::bindings::{Address, get_payload, Payload, SendError, send_request};
 
 impl PartialEq for ProcessId {
     fn eq(&self, other: &Self) -> bool {
@@ -50,61 +50,24 @@ pub fn send_and_await_response(
 }
 
 pub fn get_state(our: String) -> Option<Payload> {
-    let _ = send_and_await_response(
-        &Address {
-            node: our,
-            process: ProcessId::Name("filesystem".to_string()),
-        },
-        false,
-        Some(serde_json::to_string(&FsAction::GetState).unwrap()),
-        None,
-        None,
-        5, // TODO evaluate timeout
-    );
-    get_payload()
+    match super::bindings::get_state() {
+        Some(bytes) => Some(Payload {
+            mime: None,
+            bytes,
+        }),
+        None => None,
+    }
 }
 
 pub fn set_state(our: String, bytes: Vec<u8>) {
-    send_request(
-        &Address {
-            node: our,
-            process: ProcessId::Name("filesystem".to_string()),
-        },
-        &Request {
-            inherit: false,
-            expects_response: Some(5), // TODO evaluate timeout
-            ipc: Some(serde_json::to_string(&FsAction::SetState).unwrap()),
-            metadata: None,
-        },
-        None,
-        Some(&Payload { mime: None, bytes }),
-    );
+    super::bindings::set_state(&bytes);
 }
 
 pub fn await_set_state<T>(our: String, state: &T)
 where
     T: serde::Serialize,
 {
-    //  Request/Response stays local -> no SendError
-    let (_, response) = send_and_await_response(
-        &Address {
-            node: our,
-            process: ProcessId::Name("filesystem".to_string()),
-        },
-        false,
-        Some(serde_json::to_string(&FsAction::SetState).unwrap()),
-        None,
-        Some(&Payload {
-            mime: None,
-            bytes: bincode::serialize(state).unwrap(),
-        }),
-        5, // TODO evaluate timeout
-    )
-    .unwrap();
-    match response {
-        Message::Request(_) => panic!("got request from filesystem"),
-        Message::Response((response, _context)) => return,
-    }
+    super::bindings::set_state(&bincode::serialize(state).unwrap());
 }
 
 pub fn parse_message_ipc<T>(json_string: Option<String>) -> anyhow::Result<T>

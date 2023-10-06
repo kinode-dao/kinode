@@ -192,16 +192,129 @@ impl UqProcessImports for ProcessWasi {
         //     Ok(())
     }
 
+    /// create a message from the *kernel* to the filesystem,
+    /// asking it to fetch the current state saved under this process
     async fn get_state(&mut self) -> Result<Option<Vec<u8>>> {
-        unimplemented!()
+        let old_last_payload = self.process.last_payload.clone();
+        let res = match send_and_await_response(
+            self,
+            Some(t::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: t::ProcessId::Name("kernel".into()),
+            }),
+            wit::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: wit::ProcessId::Name("filesystem".into()),
+            },
+            wit::Request {
+                inherit: false,
+                expects_response: Some(5),
+                ipc: Some(
+                    serde_json::to_string(&t::FsAction::GetState(
+                        self.process.metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                ),
+                metadata: None,
+            },
+            None,
+        )
+        .await
+        {
+            Ok(Ok(_resp)) => {
+                // basically assuming filesystem responding properly here
+                match &self.process.last_payload {
+                    None => Ok(None),
+                    Some(payload) => Ok(Some(payload.bytes.clone())),
+                }
+            }
+            _ => Ok(None),
+        };
+        self.process.last_payload = old_last_payload;
+        return res;
     }
 
-    async fn get_state(&mut self, bytes: Vec<u8>) -> Result<()> {
-        unimplemented!()
+    /// create a message from the *kernel* to the filesystem,
+    /// asking it to replace the current state saved under
+    /// this process with these bytes
+    async fn set_state(&mut self, bytes: Vec<u8>) -> Result<()> {
+        let old_last_payload = self.process.last_payload.clone();
+        let res = match send_and_await_response(
+            self,
+            Some(t::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: t::ProcessId::Name("kernel".into()),
+            }),
+            wit::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: wit::ProcessId::Name("filesystem".into()),
+            },
+            wit::Request {
+                inherit: false,
+                expects_response: Some(5),
+                ipc: Some(
+                    serde_json::to_string(&t::FsAction::SetState(
+                        self.process.metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                ),
+                metadata: None,
+            },
+            Some(Payload { mime: None, bytes }),
+        )
+        .await
+        {
+            Ok(Ok(_resp)) => {
+                // basically assuming filesystem responding properly here
+                Ok(())
+            }
+            _ => Err(anyhow::anyhow!(
+                "filesystem did not respond properly to SetState!!"
+            )),
+        };
+        self.process.last_payload = old_last_payload;
+        return res;
     }
 
+    /// create a message from the *kernel* to the filesystem,
+    /// asking it to delete the current state saved under this process
     async fn clear_state(&mut self) -> Result<()> {
-        unimplemented!()
+        let old_last_payload = self.process.last_payload.clone();
+        let res = match send_and_await_response(
+            self,
+            Some(t::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: t::ProcessId::Name("kernel".into()),
+            }),
+            wit::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: wit::ProcessId::Name("filesystem".into()),
+            },
+            wit::Request {
+                inherit: false,
+                expects_response: Some(5),
+                ipc: Some(
+                    serde_json::to_string(&t::FsAction::DeleteState(
+                        self.process.metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                ),
+                metadata: None,
+            },
+            None,
+        )
+        .await
+        {
+            Ok(Ok(_resp)) => {
+                // basically assuming filesystem responding properly here
+                Ok(())
+            }
+            _ => Err(anyhow::anyhow!(
+                "filesystem did not respond properly to ClearState!!"
+            )),
+        };
+        self.process.last_payload = old_last_payload;
+        return res;
     }
 
     async fn spawn(
@@ -211,6 +324,7 @@ impl UqProcessImports for ProcessWasi {
         full_path: String,
         on_panic: wit::OnPanic,
         capabilities: wit::Capabilities,
+        public: bool,
     ) -> Result<Option<wit::ProcessId>> {
         let vfs_address = wit::Address {
             node: self.process.metadata.our.node.clone(),
@@ -218,6 +332,7 @@ impl UqProcessImports for ProcessWasi {
         };
         let (_, hash_response) = send_and_await_response(
             self,
+            None,
             vfs_address.clone(),
             wit::Request {
                 inherit: false,
@@ -246,6 +361,7 @@ impl UqProcessImports for ProcessWasi {
 
         let _ = send_and_await_response(
             self,
+            None,
             vfs_address,
             wit::Request {
                 inherit: false,
@@ -324,6 +440,7 @@ impl UqProcessImports for ProcessWasi {
                                     })
                                     .collect(),
                             },
+                            public,
                         })
                         .unwrap(),
                     ),
@@ -519,7 +636,7 @@ impl UqProcessImports for ProcessWasi {
     ) -> Result<()> {
         let id = self
             .process
-            .handle_request(target, request, context, payload)
+            .handle_request(None, target, request, context, payload)
             .await;
         match id {
             Ok(_id) => Ok(()),
@@ -539,7 +656,7 @@ impl UqProcessImports for ProcessWasi {
         for request in requests {
             let id = self
                 .process
-                .handle_request(request.0, request.1, request.2, request.3)
+                .handle_request(None, request.0, request.1, request.2, request.3)
                 .await;
             match id {
                 Ok(_id) => continue,
@@ -564,12 +681,13 @@ impl UqProcessImports for ProcessWasi {
         request: wit::Request,
         payload: Option<wit::Payload>,
     ) -> Result<Result<(wit::Address, wit::Message), wit::SendError>> {
-        send_and_await_response(self, target, request, payload).await
+        send_and_await_response(self, None, target, request, payload).await
     }
 }
 
 async fn send_and_await_response(
     process: &mut ProcessWasi,
+    source: Option<t::Address>,
     target: wit::Address,
     request: wit::Request,
     payload: Option<wit::Payload>,
@@ -582,7 +700,7 @@ async fn send_and_await_response(
     }
     let id = process
         .process
-        .handle_request(target, request, None, payload)
+        .handle_request(source, target, request, None, payload)
         .await;
     match id {
         Ok(id) => match process.process.get_specific_message_for_process(id).await {
@@ -730,12 +848,16 @@ impl Process {
     /// will only fail if process does not have capability to send to target.
     async fn handle_request(
         &mut self,
+        fake_source: Option<t::Address>, // only used when kernel steps in to get/set state
         target: wit::Address,
         request: wit::Request,
         new_context: Option<wit::Context>,
         payload: Option<wit::Payload>,
     ) -> Result<u64> {
-        let source = self.metadata.our.clone();
+        let source = match &fake_source {
+            Some(_) => fake_source.unwrap(),
+            None => self.metadata.our.clone(),
+        };
         // if request chooses to inherit context, match id to prompting_message
         // otherwise, id is generated randomly
         let request_id: u64 = if request.inherit
@@ -768,7 +890,8 @@ impl Process {
                 &self.prompting_message,
             ) {
                 // this request expects response, so receives any response
-                (_, Some(_), _) => Some(source),
+                // make sure to use the real source, not a fake injected-by-kernel source
+                (_, Some(_), _) => Some(self.metadata.our.clone()),
                 // this request inherits, so response will be routed to prompting message
                 (true, None, Some(ref prompt)) => prompt.rsvp.clone(),
                 // this request doesn't inherit, and doesn't itself want a response
@@ -861,7 +984,12 @@ async fn persist_state(
             message: t::Message::Request(t::Request {
                 inherit: true,
                 expects_response: Some(5), // TODO evaluate
-                ipc: Some(serde_json::to_string(&t::FsAction::SetState).unwrap()),
+                ipc: Some(
+                    serde_json::to_string(&t::FsAction::SetState(t::ProcessId::Name(
+                        "kernel".into(),
+                    )))
+                    .unwrap(),
+                ),
                 metadata: None,
             }),
             payload: Some(t::Payload { mime: None, bytes }),
@@ -883,10 +1011,6 @@ async fn make_process_loop(
     caps_oracle: t::CapMessageSender,
     engine: &Engine,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-    let our = metadata.our.clone();
-    let wasm_bytes_handle = metadata.wasm_bytes_handle.clone();
-    let on_panic = metadata.on_panic.clone();
-
     // let dir = std::env::current_dir().unwrap();
     let dir = cap_std::fs::Dir::open_ambient_dir(home_directory_path, cap_std::ambient_authority())
         .unwrap();
@@ -927,7 +1051,7 @@ async fn make_process_loop(
         ProcessWasi {
             process: Process {
                 keypair: keypair.clone(),
-                metadata,
+                metadata: metadata.clone(),
                 recv_in_process,
                 send_to_loop: send_to_loop.clone(),
                 send_to_terminal: send_to_terminal.clone(),
@@ -953,7 +1077,7 @@ async fn make_process_loop(
                             verbosity: 0,
                             content: format!(
                                 "mk: process {:?} failed to instantiate: {:?}",
-                                our.process, e,
+                                metadata.our.process, e,
                             ),
                         })
                         .await;
@@ -963,7 +1087,7 @@ async fn make_process_loop(
 
         // the process will run until it returns from init()
         let is_error = match bindings
-            .call_init(&mut store, &en_wit_address(our.clone()))
+            .call_init(&mut store, &en_wit_address(metadata.our.clone()))
             .await
         {
             Ok(()) => false,
@@ -971,7 +1095,10 @@ async fn make_process_loop(
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
-                        content: format!("mk: process {:?} ended with error:", our.process,),
+                        content: format!(
+                            "mk: process {:?} ended with error:",
+                            metadata.our.process,
+                        ),
                     })
                     .await;
                 for line in format!("{:?}", e).lines() {
@@ -988,19 +1115,19 @@ async fn make_process_loop(
 
         // the process has completed, perform cleanup
         let our_kernel = t::Address {
-            node: our.node.clone(),
+            node: metadata.our.node.clone(),
             process: t::ProcessId::Name("kernel".into()),
         };
 
         if is_error {
             // fulfill the designated OnPanic behavior
-            match on_panic {
+            match metadata.on_panic {
                 t::OnPanic::None => {}
                 // if restart, tell ourselves to init the app again, with same capabilities
                 t::OnPanic::Restart => {
                     let (tx, rx) = tokio::sync::oneshot::channel();
                     let _ = caps_oracle.send(t::CapMessage::GetAll {
-                        on: our.process.clone(),
+                        on: metadata.our.process.clone(),
                         responder: tx,
                     });
                     let initial_capabilities = rx
@@ -1028,13 +1155,14 @@ async fn make_process_loop(
                                 expects_response: None,
                                 ipc: Some(
                                     serde_json::to_string(&t::KernelCommand::StartProcess {
-                                        name: match &our.process {
+                                        name: match &metadata.our.process {
                                             t::ProcessId::Name(name) => Some(name.into()),
                                             t::ProcessId::Id(_) => None,
                                         },
-                                        wasm_bytes_handle,
-                                        on_panic,
+                                        wasm_bytes_handle: metadata.wasm_bytes_handle,
+                                        on_panic: metadata.on_panic,
                                         initial_capabilities,
+                                        public: metadata.public,
                                     })
                                     .unwrap(),
                                 ),
@@ -1053,7 +1181,7 @@ async fn make_process_loop(
                         send_to_loop
                             .send(t::KernelMessage {
                                 id: rand::random(),
-                                source: our.clone(),
+                                source: metadata.our.clone(),
                                 target: address,
                                 rsvp: None,
                                 message: t::Message::Request(request),
@@ -1078,8 +1206,10 @@ async fn make_process_loop(
                     inherit: false,
                     expects_response: None,
                     ipc: Some(
-                        serde_json::to_string(&t::KernelCommand::KillProcess(our.process.clone()))
-                            .unwrap(),
+                        serde_json::to_string(&t::KernelCommand::KillProcess(
+                            metadata.our.process.clone(),
+                        ))
+                        .unwrap(),
                     ),
                     metadata: None,
                 }),
@@ -1136,6 +1266,7 @@ async fn handle_kernel_request(
             wasm_bytes_handle,
             on_panic,
             initial_capabilities,
+            public,
         } => {
             let Some(ref payload) = km.payload else {
                 send_to_terminal
@@ -1186,6 +1317,7 @@ async fn handle_kernel_request(
                         wasm_bytes_handle,
                         on_panic,
                         capabilities: valid_capabilities,
+                        public,
                     },
                     reboot: false,
                 },
@@ -1464,6 +1596,7 @@ async fn start_process(
         },
         wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle.clone(),
         on_panic: process_metadata.persisted.on_panic.clone(),
+        public: process_metadata.persisted.public,
     };
     process_handles.insert(
         process_id.clone(),
@@ -1483,14 +1616,7 @@ async fn start_process(
         ),
     );
 
-    process_map.insert(
-        process_id,
-        t::PersistedProcess {
-            wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle,
-            on_panic: process_metadata.persisted.on_panic,
-            capabilities: process_metadata.persisted.capabilities,
-        },
-    );
+    process_map.insert(process_id, process_metadata.persisted);
 
     if !process_metadata.reboot {
         // if new, persist

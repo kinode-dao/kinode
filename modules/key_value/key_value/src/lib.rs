@@ -86,6 +86,7 @@ fn handle_message (
                         "/key_value_worker.wasm",
                         &OnPanic::None,  //  TODO: notify us
                         &Capabilities::Some(vec![vfs_read, vfs_write]),
+                        false, // not public
                     ) else {
                         panic!("couldn't spawn");  //  TODO
                     };
