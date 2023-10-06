@@ -60,6 +60,7 @@ pub struct Handshake {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NetActions {
     QnsUpdate(QnsUpdate),
+    QnsBatchUpdate(Vec<QnsUpdate>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

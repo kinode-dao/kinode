@@ -7,8 +7,6 @@ use ethers_providers::{Middleware, StreamExt, Ws};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 #[derive(Debug, Serialize, Deserialize)]
 enum EthRpcAction {
@@ -35,7 +33,7 @@ pub enum EthRpcError {
     EventSubscriptionFailed,
 }
 impl EthRpcError {
-    pub fn kind(&self) -> &str {
+    pub fn _kind(&self) -> &str {
         match *self {
             EthRpcError::NoRsvp { .. } => "NoRsvp",
             EthRpcError::BadJson { .. } => "BapJson",
@@ -60,15 +58,13 @@ pub async fn eth_rpc(
         let print_tx = print_tx.clone();
 
         let KernelMessage {
-            id,
-            source,
+            ref source,
             ref rsvp,
             message:
                 Message::Request(Request {
-                    inherit: _,
                     expects_response,
-                    ipc: json,
-                    metadata: _,
+                    ipc: ref json,
+                    ..
                 }),
             ..
         } = message
@@ -86,8 +82,7 @@ pub async fn eth_rpc(
                 send_to_loop
                     .send(make_error_message(
                         our.clone(),
-                        id.clone(),
-                        source.clone(),
+                        &message,
                         EthRpcError::NoRsvp,
                     ))
                     .await
@@ -103,8 +98,7 @@ pub async fn eth_rpc(
             send_to_loop
                 .send(make_error_message(
                     our.clone(),
-                    id.clone(),
-                    source.clone(),
+                    &message,
                     EthRpcError::NoJson,
                 ))
                 .await
@@ -116,8 +110,7 @@ pub async fn eth_rpc(
             send_to_loop
                 .send(make_error_message(
                     our.clone(),
-                    id.clone(),
-                    source.clone(),
+                    &message,
                     EthRpcError::BadJson,
                 ))
                 .await
@@ -127,20 +120,22 @@ pub async fn eth_rpc(
 
         match action {
             EthRpcAction::SubscribeEvents(sub) => {
-                let id: u64 = rand::random();
                 send_to_loop
                     .send(KernelMessage {
-                        id: id.clone(),
+                        id: message.id,
                         source: Address {
                             node: our.clone(),
                             process: ProcessId::Name("eth_rpc".into()),
                         },
-                        target: target.clone(),
+                        target: match &message.rsvp {
+                            None => message.source.clone(),
+                            Some(rsvp) => rsvp.clone(),
+                        },
                         rsvp: None,
                         message: Message::Response((
                             Response {
                                 ipc: Some(
-                                    serde_json::to_string::<Result<u64, EthRpcError>>(&Ok(id))
+                                    serde_json::to_string::<Result<u64, EthRpcError>>(&Ok(message.id))
                                         .unwrap(),
                                 ),
                                 metadata: None,
@@ -259,7 +254,7 @@ pub async fn eth_rpc(
                         };
                     }
                 });
-                subscriptions.insert(id, handle);
+                subscriptions.insert(message.id, handle);
             }
             EthRpcAction::Unsubscribe(sub_id) => {
                 let _ = print_tx
@@ -290,18 +285,23 @@ pub async fn eth_rpc(
 //  helpers
 //
 
-fn make_error_message(our: String, id: u64, source: Address, error: EthRpcError) -> KernelMessage {
+fn make_error_message(our_name: String, km: &KernelMessage, error: EthRpcError) -> KernelMessage {
     KernelMessage {
-        id,
+        id: km.id,
         source: Address {
-            node: our.clone(),
-            process: ProcessId::Name("eth_rpc".into()),
+            node: our_name.clone(),
+            process: ProcessId::Name("fileystem".into()),
         },
-        target: source,
+        target: match &km.rsvp {
+            None => km.source.clone(),
+            Some(rsvp) => rsvp.clone(),
+        },
         rsvp: None,
         message: Message::Response((
             Response {
-                ipc: Some(serde_json::to_string::<Result<u64, EthRpcError>>(&Err(error)).unwrap()),
+                ipc: Some(
+                    serde_json::to_string::<Result<u64, EthRpcError>>(&Err(error)).unwrap(),
+                ),
                 metadata: None,
             },
             None,

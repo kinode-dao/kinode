@@ -1,4 +1,3 @@
-use sha2::Digest;
 use std::process::Command;
 use std::{
     fs, io,
