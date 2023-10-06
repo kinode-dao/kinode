@@ -56,7 +56,7 @@ struct WriteFileResult {
     Ok: WriteFileId,
 }
 
-// curl http://localhost:8080/rpc/message -H 'content-type: application/json' -d '{"node": "hosted", "process": "vfs", "inherit": false, "expects_response": null, "ipc": "{\"New\": {\"identifier\": \"foo\"}}", "metadata": null, "context": null, "mime": null, "data": null}'
+// curl http://localhost:8080/rpc/message -H 'content-type: application/json' -d '{"node": "hosted", "process": "vfs", "inherit": false, "expects_response": null, "ipc": "{\"New\": {\"drive\": \"foo\"}}", "metadata": null, "context": null, "mime": null, "data": null}'
 
 fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
     send_response(

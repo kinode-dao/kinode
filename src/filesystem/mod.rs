@@ -172,7 +172,7 @@ async fn bootstrap(
                     expects_response: None,
                     ipc: Some(
                         serde_json::to_string::<VfsRequest>(&VfsRequest::New {
-                            identifier: package_name.clone(),
+                            drive: package_name.clone(),
                         })
                         .unwrap(),
                     ),
@@ -211,7 +211,7 @@ async fn bootstrap(
                             expects_response: None,
                             ipc: Some(
                                 serde_json::to_string::<VfsRequest>(&VfsRequest::Add {
-                                    identifier: package_name.clone(),
+                                    drive: package_name.clone(),
                                     full_path: file_path.to_string_lossy().to_string(),
                                     entry_type: AddEntryType::NewFile,
                                 })
@@ -367,7 +367,7 @@ pub async fn fs_sender(
     send_kill_confirm: Sender<()>,
 ) -> Result<()> {
     //  process queues for consistency
-    //  todo: use file_identifier for moar concurrency!
+    //  todo: use file_drive for moar concurrency!
     let process_queues = Arc::new(Mutex::new(
         HashMap::<ProcessId, VecDeque<KernelMessage>>::new(),
     ));

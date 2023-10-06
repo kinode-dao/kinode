@@ -167,7 +167,7 @@ async fn load_state_from_reboot(
     our_node: String,
     send_to_loop: &MessageSender,
     recv_from_loop: &mut MessageReceiver,
-    identifier_to_vfs: &mut IdentifierToVfs,
+    drive_to_vfs: &mut IdentifierToVfs,
 ) -> bool {
     let _ = send_to_loop
         .send(KernelMessage {
@@ -213,12 +213,12 @@ async fn load_state_from_reboot(
     let Some(payload) = payload else {
         panic!("");
     };
-    bytes_to_state(&payload.bytes, identifier_to_vfs);
+    bytes_to_state(&payload.bytes, drive_to_vfs);
 
     return true;
 }
 
-fn build_state_for_initial_boot(process_map: &ProcessMap, identifier_to_vfs: &mut IdentifierToVfs) {
+fn build_state_for_initial_boot(process_map: &ProcessMap, drive_to_vfs: &mut IdentifierToVfs) {
     //  add wasm bytes to each process' vfs and to terminal's vfs
     let mut terminal_vfs = Vfs::new();
     for (process_id, persisted) in process_map.iter() {
@@ -242,12 +242,12 @@ fn build_state_for_initial_boot(process_map: &ProcessMap, identifier_to_vfs: &mu
         };
         vfs.key_to_entry.insert(key.clone(), entry.clone());
         vfs.path_to_key.insert(full_path.clone(), key.clone());
-        identifier_to_vfs.insert(id.clone(), Arc::new(Mutex::new(vfs)));
+        drive_to_vfs.insert(id.clone(), Arc::new(Mutex::new(vfs)));
 
         terminal_vfs.key_to_entry.insert(key.clone(), entry);
         terminal_vfs.path_to_key.insert(full_path.clone(), key);
     }
-    identifier_to_vfs.insert("terminal".into(), Arc::new(Mutex::new(terminal_vfs)));
+    drive_to_vfs.insert("terminal".into(), Arc::new(Mutex::new(terminal_vfs)));
 
     //  initial caps are given to processes in src/filesystem/mod.rs:bootstrap()
 }
@@ -260,7 +260,7 @@ pub async fn vfs(
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
 ) -> anyhow::Result<()> {
-    let mut identifier_to_vfs: IdentifierToVfs = HashMap::new();
+    let mut drive_to_vfs: IdentifierToVfs = HashMap::new();
     let mut response_router: ResponseRouter = HashMap::new();
     let (send_vfs_task_done, mut recv_vfs_task_done): (
         tokio::sync::mpsc::Sender<u64>,
@@ -275,12 +275,12 @@ pub async fn vfs(
         our_node.clone(),
         &send_to_loop,
         &mut recv_from_loop,
-        &mut identifier_to_vfs,
+        &mut drive_to_vfs,
     )
     .await;
     if !is_reboot {
         //  initial boot
-        build_state_for_initial_boot(&process_map, &mut identifier_to_vfs);
+        build_state_for_initial_boot(&process_map, &mut drive_to_vfs);
         send_persist_state.send(true).await.unwrap();
     }
 
@@ -291,7 +291,7 @@ pub async fn vfs(
                 response_router.remove(&id_done);
             },
             _ = recv_persist_state.recv() => {
-                persist_state(our_node.clone(), &send_to_loop, &identifier_to_vfs).await;
+                persist_state(our_node.clone(), &send_to_loop, &drive_to_vfs).await;
                 continue;
             },
             km = recv_from_loop.recv() => {
@@ -337,21 +337,21 @@ pub async fn vfs(
                     continue;
                 }
 
-                let (identifier, is_new) = match &request {
-                    VfsRequest::New { identifier } => (identifier.clone(), true),
-                    VfsRequest::Add { identifier, .. } => (identifier.clone(), false),
-                    VfsRequest::Rename { identifier, .. } => (identifier.clone(), false),
-                    VfsRequest::Delete { identifier, .. } => (identifier.clone(), false),
-                    VfsRequest::WriteOffset { identifier, .. } => (identifier.clone(), false),
-                    VfsRequest::SetSize { identifier, .. } => (identifier.clone(), false),
-                    VfsRequest::GetPath { identifier, .. } => (identifier.clone(), false),
-                    VfsRequest::GetHash { identifier, .. } => (identifier.clone(), false),
-                    VfsRequest::GetEntry { identifier, .. } => (identifier.clone(), false),
-                    VfsRequest::GetFileChunk { identifier, .. } => (identifier.clone(), false),
-                    VfsRequest::GetEntryLength { identifier, .. } => (identifier.clone(), false),
+                let (drive, is_new) = match &request {
+                    VfsRequest::New { drive } => (drive.clone(), true),
+                    VfsRequest::Add { drive, .. } => (drive.clone(), false),
+                    VfsRequest::Rename { drive, .. } => (drive.clone(), false),
+                    VfsRequest::Delete { drive, .. } => (drive.clone(), false),
+                    VfsRequest::WriteOffset { drive, .. } => (drive.clone(), false),
+                    VfsRequest::SetSize { drive, .. } => (drive.clone(), false),
+                    VfsRequest::GetPath { drive, .. } => (drive.clone(), false),
+                    VfsRequest::GetHash { drive, .. } => (drive.clone(), false),
+                    VfsRequest::GetEntry { drive, .. } => (drive.clone(), false),
+                    VfsRequest::GetFileChunk { drive, .. } => (drive.clone(), false),
+                    VfsRequest::GetEntryLength { drive, .. } => (drive.clone(), false),
                 };
 
-                let (vfs, new_caps) = match identifier_to_vfs.get(&identifier) {
+                let (vfs, new_caps) = match drive_to_vfs.get(&drive) {
                     Some(vfs) => (Arc::clone(vfs), vec![]),
                     None => {
                         if !is_new {
@@ -361,14 +361,14 @@ pub async fn vfs(
                                     our_node.clone(),
                                     id,
                                     source.clone(),
-                                    VfsError::BadIdentifier,
+                                    VfsError::BadDriveName,
                                 ))
                                 .await
                                 .unwrap();
                             continue;
                         }
-                        identifier_to_vfs.insert(
-                            identifier.clone(),
+                        drive_to_vfs.insert(
+                            drive.clone(),
                             Arc::new(Mutex::new(Vfs::new())),
                         );
                         let read_cap = Capability {
@@ -376,17 +376,17 @@ pub async fn vfs(
                                 node: our_node.clone(),
                                 process: ProcessId::Name("vfs".into()),
                             },
-                            params: serde_json::to_string(&serde_json::json!({"kind": "read", "identifier": identifier})).unwrap(),
+                            params: serde_json::to_string(&serde_json::json!({"kind": "read", "drive": drive})).unwrap(),
                         };
                         let write_cap = Capability {
                             issuer: Address {
                                 node: our_node.clone(),
                                 process: ProcessId::Name("vfs".into()),
                             },
-                            params: serde_json::to_string(&serde_json::json!({"kind": "write", "identifier": identifier})).unwrap(),
+                            params: serde_json::to_string(&serde_json::json!({"kind": "write", "drive": drive})).unwrap(),
                         };
                         (
-                            Arc::clone(identifier_to_vfs.get(&identifier).unwrap()),
+                            Arc::clone(drive_to_vfs.get(&drive).unwrap()),
                             vec![read_cap, write_cap],
                         )
                     }
@@ -472,12 +472,12 @@ async fn handle_request(
 ) -> Result<(), VfsError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     match &request {
-        VfsRequest::New { identifier: _ } => {}
-        VfsRequest::Add { identifier, .. }
-        | VfsRequest::Rename { identifier, .. }
-        | VfsRequest::Delete { identifier, .. }
-        | VfsRequest::WriteOffset { identifier, .. }
-        | VfsRequest::SetSize { identifier, .. } => {
+        VfsRequest::New { drive: _ } => {}
+        VfsRequest::Add { drive, .. }
+        | VfsRequest::Rename { drive, .. }
+        | VfsRequest::Delete { drive, .. }
+        | VfsRequest::WriteOffset { drive, .. }
+        | VfsRequest::SetSize { drive, .. } => {
             let _ = send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
@@ -488,7 +488,7 @@ async fn handle_request(
                         },
                         params: serde_json::to_string(&serde_json::json!({
                             "kind": "write",
-                            "identifier": identifier,
+                            "drive": drive,
                         }))
                         .unwrap(),
                     },
@@ -501,11 +501,11 @@ async fn handle_request(
                 return Err(VfsError::NoCap);
             }
         }
-        VfsRequest::GetPath { identifier, .. }
-        | VfsRequest::GetHash { identifier, .. }
-        | VfsRequest::GetEntry { identifier, .. }
-        | VfsRequest::GetFileChunk { identifier, .. }
-        | VfsRequest::GetEntryLength { identifier, .. } => {
+        VfsRequest::GetPath { drive, .. }
+        | VfsRequest::GetHash { drive, .. }
+        | VfsRequest::GetEntry { drive, .. }
+        | VfsRequest::GetFileChunk { drive, .. }
+        | VfsRequest::GetEntryLength { drive, .. } => {
             let _ = send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
@@ -516,7 +516,7 @@ async fn handle_request(
                         },
                         params: serde_json::to_string(&serde_json::json!({
                             "kind": "read",
-                            "identifier": identifier,
+                            "drive": drive,
                         }))
                         .unwrap(),
                     },
@@ -591,7 +591,7 @@ async fn match_request(
     mut recv_response: MessageReceiver,
 ) -> Result<(Option<String>, Option<Vec<u8>>), VfsError> {
     Ok(match request {
-        VfsRequest::New { identifier } => {
+        VfsRequest::New { drive } => {
             for new_cap in new_caps {
                 let _ = send_to_loop
                     .send(KernelMessage {
@@ -624,12 +624,12 @@ async fn match_request(
             }
             send_to_persist.send(true).await.unwrap();
             (
-                Some(serde_json::to_string(&VfsResponse::New { identifier }).unwrap()),
+                Some(serde_json::to_string(&VfsResponse::New { drive }).unwrap()),
                 None,
             )
         }
         VfsRequest::Add {
-            identifier,
+            drive,
             full_path,
             entry_type,
         } => {
@@ -989,7 +989,7 @@ async fn match_request(
             (
                 Some(
                     serde_json::to_string(&VfsResponse::Add {
-                        identifier,
+                        drive,
                         full_path: full_path.clone(),
                     })
                     .unwrap(),
@@ -998,7 +998,7 @@ async fn match_request(
             )
         }
         VfsRequest::Rename {
-            identifier,
+            drive,
             full_path,
             new_full_path,
         } => {
@@ -1065,7 +1065,7 @@ async fn match_request(
             (
                 Some(
                     serde_json::to_string(&VfsResponse::Rename {
-                        identifier,
+                        drive,
                         new_full_path,
                     })
                     .unwrap(),
@@ -1074,7 +1074,7 @@ async fn match_request(
             )
         }
         VfsRequest::Delete {
-            identifier,
+            drive,
             full_path,
         } => {
             let mut vfs = vfs.lock().await;
@@ -1151,7 +1151,7 @@ async fn match_request(
             (
                 Some(
                     serde_json::to_string(&VfsResponse::Delete {
-                        identifier,
+                        drive,
                         full_path,
                     })
                     .unwrap(),
@@ -1160,7 +1160,7 @@ async fn match_request(
             )
         }
         VfsRequest::WriteOffset {
-            identifier,
+            drive,
             full_path,
             offset,
         } => {
@@ -1205,7 +1205,7 @@ async fn match_request(
             (
                 Some(
                     serde_json::to_string(&VfsResponse::WriteOffset {
-                        identifier,
+                        drive,
                         full_path,
                         offset,
                     })
@@ -1215,7 +1215,7 @@ async fn match_request(
             )
         }
         VfsRequest::SetSize {
-            identifier,
+            drive,
             full_path,
             size,
         } => {
@@ -1277,7 +1277,7 @@ async fn match_request(
             (
                 Some(
                     serde_json::to_string(&VfsResponse::SetSize {
-                        identifier,
+                        drive,
                         full_path,
                         size,
                     })
@@ -1286,12 +1286,12 @@ async fn match_request(
                 None,
             )
         }
-        VfsRequest::GetPath { identifier, hash } => {
+        VfsRequest::GetPath { drive, hash } => {
             let mut vfs = vfs.lock().await;
             let key = Key::File { id: hash.clone() };
             let ipc = Some(
                 serde_json::to_string(&VfsResponse::GetPath {
-                    identifier,
+                    drive,
                     hash,
                     full_path: match vfs.key_to_entry.remove(&key) {
                         None => None,
@@ -1307,7 +1307,7 @@ async fn match_request(
             (ipc, None)
         }
         VfsRequest::GetHash {
-            identifier,
+            drive,
             full_path,
         } => {
             let mut vfs = vfs.lock().await;
@@ -1319,7 +1319,7 @@ async fn match_request(
             };
             let ipc = Some(
                 serde_json::to_string(&VfsResponse::GetHash {
-                    identifier,
+                    drive,
                     full_path,
                     hash: hash.clone(),
                 })
@@ -1328,7 +1328,7 @@ async fn match_request(
             (ipc, None)
         }
         VfsRequest::GetEntry {
-            identifier,
+            drive,
             ref full_path,
         } => {
             let (key, entry, paths) = {
@@ -1379,7 +1379,7 @@ async fn match_request(
             let entry_not_found = (
                 Some(
                     serde_json::to_string(&VfsResponse::GetEntry {
-                        identifier: identifier.clone(),
+                        drive: drive.clone(),
                         full_path: full_path.clone(),
                         children: vec![],
                     })
@@ -1398,7 +1398,7 @@ async fn match_request(
                         } => (
                             Some(
                                 serde_json::to_string(&VfsResponse::GetEntry {
-                                    identifier,
+                                    drive,
                                     full_path: full_path.clone(),
                                     children: paths,
                                 })
@@ -1460,7 +1460,7 @@ async fn match_request(
                             (
                                 Some(
                                     serde_json::to_string(&VfsResponse::GetEntry {
-                                        identifier,
+                                        drive,
                                         full_path: full_path.clone(),
                                         children: vec![],
                                     })
@@ -1474,7 +1474,7 @@ async fn match_request(
             }
         }
         VfsRequest::GetFileChunk {
-            identifier,
+            drive,
             full_path,
             offset,
             length,
@@ -1544,7 +1544,7 @@ async fn match_request(
             (
                 Some(
                     serde_json::to_string(&VfsResponse::GetFileChunk {
-                        identifier,
+                        drive,
                         full_path,
                         offset,
                         length,
@@ -1555,14 +1555,14 @@ async fn match_request(
             )
         }
         VfsRequest::GetEntryLength {
-            identifier,
+            drive,
             full_path,
         } => {
             if full_path.chars().last() == Some('/') {
                 (
                     Some(
                         serde_json::to_string(&VfsResponse::GetEntryLength {
-                            identifier,
+                            drive,
                             full_path,
                             length: 0,
                         })
@@ -1623,7 +1623,7 @@ async fn match_request(
                 (
                     Some(
                         serde_json::to_string(&VfsResponse::GetEntryLength {
-                            identifier,
+                            drive,
                             full_path,
                             length,
                         })

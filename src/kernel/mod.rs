@@ -340,7 +340,7 @@ impl UqProcessImports for ProcessWasi {
                 expects_response: Some(5),
                 ipc: Some(
                     serde_json::to_string(&t::VfsRequest::GetHash {
-                        identifier: package.clone(),
+                        drive: package.clone(),
                         full_path: full_path.clone(),
                     })
                     .unwrap(),
@@ -369,7 +369,7 @@ impl UqProcessImports for ProcessWasi {
                 expects_response: Some(5),
                 ipc: Some(
                     serde_json::to_string(&t::VfsRequest::GetEntry {
-                        identifier: package.clone(),
+                        drive: package.clone(),
                         full_path: full_path.clone(),
                     })
                     .unwrap(),
