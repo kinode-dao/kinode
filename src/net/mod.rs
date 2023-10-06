@@ -767,12 +767,15 @@ async fn handle_incoming_message(
                             },
                         );
                         let _ = names.write().await.insert(log.node, log.name);
-                    },
+                    }
                     NetActions::QnsBatchUpdate(log_list) => {
                         let _ = print_tx
                             .send(Printout {
                                 verbosity: 0, // TODO 1
-                                content: format!("net: got QNS update with {} peers", log_list.len()),
+                                content: format!(
+                                    "net: got QNS update with {} peers",
+                                    log_list.len()
+                                ),
                             })
                             .await;
                         for log in log_list {
@@ -781,7 +784,8 @@ async fn handle_incoming_message(
                                 Identity {
                                     name: log.name.clone(),
                                     networking_key: log.public_key,
-                                    ws_routing: if log.ip == "0.0.0.0".to_string() || log.port == 0 {
+                                    ws_routing: if log.ip == "0.0.0.0".to_string() || log.port == 0
+                                    {
                                         None
                                     } else {
                                         Some((log.ip, log.port))

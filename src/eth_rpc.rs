@@ -135,8 +135,10 @@ pub async fn eth_rpc(
                         message: Message::Response((
                             Response {
                                 ipc: Some(
-                                    serde_json::to_string::<Result<u64, EthRpcError>>(&Ok(message.id))
-                                        .unwrap(),
+                                    serde_json::to_string::<Result<u64, EthRpcError>>(&Ok(
+                                        message.id
+                                    ))
+                                    .unwrap(),
                                 ),
                                 metadata: None,
                             },
@@ -299,9 +301,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: EthRpcError) 
         rsvp: None,
         message: Message::Response((
             Response {
-                ipc: Some(
-                    serde_json::to_string::<Result<u64, EthRpcError>>(&Err(error)).unwrap(),
-                ),
+                ipc: Some(serde_json::to_string::<Result<u64, EthRpcError>>(&Err(error)).unwrap()),
                 metadata: None,
             },
             None,
