@@ -272,6 +272,16 @@ async fn bootstrap(
                 });
             }
 
+            if entry.request_networking {
+                requested_caps.insert(Capability {
+                    issuer: Address {
+                        node: our_name.to_string(),
+                        process: ProcessId::Name("kernel".into()),
+                    },
+                    params: "\"network\"".into(),
+                });
+            }
+
             let mut public_process = false;
 
             // queue the granted capabilities
