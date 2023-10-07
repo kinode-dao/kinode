@@ -44,11 +44,9 @@ pub async fn register(
     redir_port: u16,
 ) {
     let our = Arc::new(Mutex::new(None));
-    let pw = Arc::new(Mutex::new(None));
     let networking_keypair = Arc::new(Mutex::new(None));
 
-    let our_post = our.clone();
-    let pw_post = pw.clone();
+    let our_get = our.clone();
     let networking_keypair_post = networking_keypair.clone();
 
     let static_files = warp::path("static").and(warp::fs::dir("./src/register/build/static/"));
@@ -58,23 +56,19 @@ pub async fn register(
 
     let api = warp::path("get-ws-info").and(
         // 1. Get uqname (already on chain) and return networking information
-        warp::post()
+        warp::get()
+            .and(warp::any().map(move || our_get.clone()))
+            .and(warp::any().map(move || networking_keypair_post.clone()))
+            .and_then(handle_get)
+        // 2. trigger for finalizing registration once on-chain actions are done
+        .or(warp::post()
             .and(warp::body::content_length_limit(1024 * 16))
             .and(warp::body::json())
-            .and(warp::any().map(move || ip.clone()))
-            .and(warp::any().map(move || our_post.clone()))
-            .and(warp::any().map(move || pw_post.clone()))
-            .and(warp::any().map(move || networking_keypair_post.clone()))
-            .and_then(handle_post)
-            // 2. trigger for finalizing registration once on-chain actions are done
-            .or(warp::put()
-                .and(warp::body::content_length_limit(1024 * 16))
-                .and(warp::any().map(move || tx.clone()))
-                .and(warp::any().map(move || our.lock().unwrap().take().unwrap()))
-                .and(warp::any().map(move || pw.lock().unwrap().take().unwrap()))
-                .and(warp::any().map(move || networking_keypair.lock().unwrap().take().unwrap()))
-                .and(warp::any().map(move || redir_port))
-                .and_then(handle_put)),
+            .and(warp::any().map(move || tx.clone()))
+            .and(warp::any().map(move || our.lock().unwrap().take().unwrap()))
+            .and(warp::any().map(move || networking_keypair.lock().unwrap().take().unwrap()))
+            .and(warp::any().map(move || redir_port))
+            .and_then(handle_post)),
     );
 
     let routes = static_files.or(react_app).or(api);
@@ -88,12 +82,9 @@ pub async fn register(
         .await;
 }
 
-async fn handle_post(
-    info: Registration,
-    ip: String,
-    our_post: Arc<Mutex<Option<Identity>>>,
-    pw_post: Arc<Mutex<Option<String>>>,
-    networking_keypair_post: Arc<Mutex<Option<Document>>>,
+async fn handle_get(
+    our_get: Arc<Mutex<Option<Identity>>>,
+    networking_keypair_post: Arc<Mutex<Option<Document>>>
 ) -> Result<impl Reply, Rejection> {
     // 1. Generate networking keys
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
@@ -101,48 +92,49 @@ async fn handle_post(
 
     // 2. generate ws and routing information
     // TODO: if IP is localhost, assign a router...
-    let ws_port = http_server::find_open_port(9000).await.unwrap();
     let our = Identity {
-        name: info.username.clone(),
         networking_key: public_key,
-        ws_routing: if ip == "localhost" || !info.direct {
-            None
-        } else {
-            Some((ip.clone(), ws_port))
-        },
-        allowed_routers: if ip == "localhost" || !info.direct {
-            vec![
-                "uqbar-router-1.uq".into(), // "0x8d9e54427c50660c6d4802f63edca86a9ca5fd6a78070c4635950e9d149ed441".into(),
-                "uqbar-router-2.uq".into(), // "0x06d331ed65843ecf0860c73292005d8103af20820546b2f8f9007d01f60595b1".into(),
-                "uqbar-router-3.uq".into(), // "0xe6ab611eb62e8aee0460295667f8179cda4315982717db4b0b3da6022deecac1".into(),
-            ]
-        } else {
-            vec![]
-        },
+        name: String::new(),
+        ws_routing: None,
+        allowed_routers: vec![
+            "uqbar-router-1.uq".into(), // "0x8d9e54427c50660c6d4802f63edca86a9ca5fd6a78070c4635950e9d149ed441".into(),
+            "uqbar-router-2.uq".into(), // "0x06d331ed65843ecf0860c73292005d8103af20820546b2f8f9007d01f60595b1".into(),
+            "uqbar-router-3.uq".into(), // "0xe6ab611eb62e8aee0460295667f8179cda4315982717db4b0b3da6022deecac1".into(),
+        ],
     };
-    *our_post.lock().unwrap() = Some(our.clone());
-    *pw_post.lock().unwrap() = Some(info.password);
-    // Return a response containing all networking information
+
+    *our_get.lock().unwrap() = Some(our.clone());
+
+    // return response containing networking information
     Ok(warp::reply::json(&our))
+
 }
 
-async fn handle_put(
+async fn handle_post(
+    info: Registration,
     sender: RegistrationSender,
-    our: Identity,
-    pw: String,
+    mut our: Identity,
     networking_keypair: Document,
     _redir_port: u16,
 ) -> Result<impl Reply, Rejection> {
+
+    our.name = info.username;
+
     let seed = SystemRandom::new();
-    let mut jwt_secret = [0u8; 32];
+    let mut jwt_secret = [0u8, 32];
     ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
 
     let token = match generate_jwt(&jwt_secret, our.name.clone()) {
         Some(token) => token,
-        None => return Err(warp::reject()),
+        None => return Err(warp::reject())
     };
     let cookie_value = format!("uqbar-auth_{}={};", &our.name, &token);
     let ws_cookie_value = format!("uqbar-ws-auth_{}={};", &our.name, &token);
+
+    sender
+        .send((our, info.password, networking_keypair, jwt_secret.to_vec()))
+        .await
+        .unwrap();
 
     let mut response = warp::reply::html("Success".to_string()).into_response();
 
@@ -150,11 +142,8 @@ async fn handle_put(
     headers.append(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
     headers.append(SET_COOKIE, HeaderValue::from_str(&ws_cookie_value).unwrap());
 
-    sender
-        .send((our, pw, networking_keypair, jwt_secret.to_vec()))
-        .await
-        .unwrap();
     Ok(response)
+
 }
 
 /// Serve the login page, just get a password
