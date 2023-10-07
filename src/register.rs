@@ -60,15 +60,15 @@ pub async fn register(
             .and(warp::any().map(move || our_get.clone()))
             .and(warp::any().map(move || networking_keypair_post.clone()))
             .and_then(handle_get)
-        // 2. trigger for finalizing registration once on-chain actions are done
-        .or(warp::post()
-            .and(warp::body::content_length_limit(1024 * 16))
-            .and(warp::body::json())
-            .and(warp::any().map(move || tx.clone()))
-            .and(warp::any().map(move || our.lock().unwrap().take().unwrap()))
-            .and(warp::any().map(move || networking_keypair.lock().unwrap().take().unwrap()))
-            .and(warp::any().map(move || redir_port))
-            .and_then(handle_post)),
+            // 2. trigger for finalizing registration once on-chain actions are done
+            .or(warp::post()
+                .and(warp::body::content_length_limit(1024 * 16))
+                .and(warp::body::json())
+                .and(warp::any().map(move || tx.clone()))
+                .and(warp::any().map(move || our.lock().unwrap().take().unwrap()))
+                .and(warp::any().map(move || networking_keypair.lock().unwrap().take().unwrap()))
+                .and(warp::any().map(move || redir_port))
+                .and_then(handle_post)),
     );
 
     let routes = static_files.or(react_app).or(api);
@@ -84,7 +84,7 @@ pub async fn register(
 
 async fn handle_get(
     our_get: Arc<Mutex<Option<Identity>>>,
-    networking_keypair_post: Arc<Mutex<Option<Document>>>
+    networking_keypair_post: Arc<Mutex<Option<Document>>>,
 ) -> Result<impl Reply, Rejection> {
     // 1. Generate networking keys
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
@@ -107,7 +107,6 @@ async fn handle_get(
 
     // return response containing networking information
     Ok(warp::reply::json(&our))
-
 }
 
 async fn handle_post(
@@ -117,7 +116,6 @@ async fn handle_post(
     networking_keypair: Document,
     _redir_port: u16,
 ) -> Result<impl Reply, Rejection> {
-
     our.name = info.username;
 
     let seed = SystemRandom::new();
@@ -126,7 +124,7 @@ async fn handle_post(
 
     let token = match generate_jwt(&jwt_secret, our.name.clone()) {
         Some(token) => token,
-        None => return Err(warp::reject())
+        None => return Err(warp::reject()),
     };
     let cookie_value = format!("uqbar-auth_{}={};", &our.name, &token);
     let ws_cookie_value = format!("uqbar-ws-auth_{}={};", &our.name, &token);
@@ -143,7 +141,6 @@ async fn handle_post(
     headers.append(SET_COOKIE, HeaderValue::from_str(&ws_cookie_value).unwrap());
 
     Ok(response)
-
 }
 
 /// Serve the login page, just get a password
