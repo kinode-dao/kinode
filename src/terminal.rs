@@ -1,3 +1,4 @@
+use crate::types::*;
 use anyhow::Result;
 use crossterm::{
     cursor,
@@ -13,7 +14,6 @@ use futures::{future::FutureExt, StreamExt};
 use std::collections::VecDeque;
 use std::fs::{read_to_string, File, OpenOptions};
 use std::io::{stdout, BufWriter, Write};
-use crate::types::*;
 
 #[derive(Debug)]
 struct CommandHistory {

@@ -149,8 +149,7 @@ async fn persist_state(our_node: String, send_to_loop: &MessageSender, state: &I
                 inherit: true,
                 expects_response: Some(5), // TODO evaluate
                 ipc: Some(
-                    serde_json::to_string(&FsAction::SetState(VFS_PROCESS_ID.clone()))
-                        .unwrap(),
+                    serde_json::to_string(&FsAction::SetState(VFS_PROCESS_ID.clone())).unwrap(),
                 ),
                 metadata: None,
             }),
@@ -186,8 +185,7 @@ async fn load_state_from_reboot(
                 inherit: true,
                 expects_response: Some(5), // TODO evaluate
                 ipc: Some(
-                    serde_json::to_string(&FsAction::GetState(VFS_PROCESS_ID.clone()))
-                        .unwrap(),
+                    serde_json::to_string(&FsAction::GetState(VFS_PROCESS_ID.clone())).unwrap(),
                 ),
                 metadata: None,
             }),

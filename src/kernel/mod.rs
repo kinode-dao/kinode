@@ -354,7 +354,8 @@ impl UqProcessImports for ProcessWasi {
             },
             None,
         )
-        .await else {
+        .await
+        else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = hash_response
@@ -383,7 +384,8 @@ impl UqProcessImports for ProcessWasi {
             },
             None,
         )
-        .await else {
+        .await
+        else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
@@ -462,7 +464,9 @@ impl UqProcessImports for ProcessWasi {
                 mime: None,
                 bytes: bytes.to_vec(),
             }),
-        ).await else {
+        )
+        .await
+        else {
             return Ok(Err(wit::SpawnError::NameTaken));
         };
 
