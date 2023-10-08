@@ -100,7 +100,7 @@ fn make_error_message(
         id,
         source: Address {
             node: our_node,
-            process: *VFS_PROCESS_ID,
+            process: VFS_PROCESS_ID.clone(),
         },
         target: source,
         rsvp: None,

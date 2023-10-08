@@ -470,6 +470,13 @@ impl UqProcessImports for ProcessWasi {
             return Ok(Err(wit::SpawnError::NameTaken));
         };
 
+        let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = response else {
+            return Ok(Err(wit::SpawnError::NoFileAtPath));
+        };
+        let t::KernelResponse::StartedProcess = serde_json::from_str(&ipc).unwrap() else {
+            return Ok(Err(wit::SpawnError::NoFileAtPath));
+        };
+
         // child processes are always able to Message parent
         self.process
             .caps_oracle
@@ -1318,8 +1325,29 @@ async fn handle_kernel_request(
                     })
                     .await
                     .unwrap();
-                // TODO fire an error back
-                unimplemented!();
+                // fire an error back
+                send_to_loop.send(t::KernelMessage {
+                    id: km.id,
+                    source: t::Address {
+                        node: our_name.clone(),
+                        process: KERNEL_PROCESS_ID.clone(),
+                    },
+                    target: km.source,
+                    rsvp: None,
+                    message: t::Message::Response((
+                        t::Response {
+                            ipc: Some(
+                                serde_json::to_string(&t::KernelResponse::StartProcessError)
+                                .unwrap(),
+                            ),
+                            metadata: None,
+                        },
+                        None,
+                    )),
+                    payload: None,
+                    signed_capabilities: None,
+                }).await.unwrap();
+                return;
             };
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
@@ -1341,6 +1369,7 @@ async fn handle_kernel_request(
                 valid_capabilities.insert(cap);
             }
 
+            // fires "success" response back
             start_process(
                 our_name,
                 keypair.clone(),
@@ -1367,8 +1396,6 @@ async fn handle_kernel_request(
                 },
             )
             .await;
-
-            // TODO fire "success" response back
         }
         //  reboot from persisted process.
         t::KernelCommand::RebootProcess {
@@ -1658,10 +1685,7 @@ async fn start_process(
             rsvp: None,
             message: t::Message::Response((
                 t::Response {
-                    ipc: Some(
-                        serde_json::to_string(&t::KernelResponse::StartedProcess(metadata))
-                            .unwrap(),
-                    ),
+                    ipc: Some(serde_json::to_string(&t::KernelResponse::StartedProcess).unwrap()),
                     metadata: None,
                 },
                 None,

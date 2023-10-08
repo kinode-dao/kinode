@@ -90,6 +90,7 @@ pub struct ProcessId {
     publisher_node: NodeId,
 }
 
+#[allow(dead_code)]
 impl ProcessId {
     /// generates a random u64 number if process_name is not declared
     pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
@@ -343,6 +344,7 @@ pub enum KernelCommand {
     },
 }
 
+#[allow(dead_code)]
 pub enum CapMessage {
     Add {
         on: ProcessId,
@@ -367,7 +369,8 @@ pub enum CapMessage {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KernelResponse {
-    StartedProcess(ProcessMetadata),
+    StartedProcess,
+    StartProcessError,
     KilledProcess(ProcessId),
 }
 
@@ -498,6 +501,7 @@ pub enum FsError {
     CreateInitialDirError { path: String, error: String },
 }
 
+#[allow(dead_code)]
 impl FsError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -584,6 +588,7 @@ pub enum VfsResponse {
     GetEntryLength(Option<u64>),
 }
 
+#[allow(dead_code)]
 impl VfsError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -607,6 +612,8 @@ pub enum KeyValueMessage {
     Write { drive: String, key: Vec<u8> },
     Read { drive: String, key: Vec<u8> },
 }
+
+#[allow(dead_code)]
 impl KeyValueError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -657,6 +664,7 @@ pub enum HttpClientError {
     RequestFailed { error: String },
 }
 
+#[allow(dead_code)]
 impl HttpClientError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -743,6 +751,7 @@ pub enum HttpServerError {
     BadJson { json: String, error: String },
 }
 
+#[allow(dead_code)]
 impl HttpServerError {
     pub fn kind(&self) -> &str {
         match *self {
