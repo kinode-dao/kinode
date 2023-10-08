@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::bindings::component::uq_process::types::*;
-use super::bindings::{Address, Payload, SendError};
+use super::bindings::{Address, Payload, ProcessId, SendError};
 
 #[allow(dead_code)]
 impl ProcessId {
@@ -56,6 +56,7 @@ impl ProcessId {
     }
 }
 
+#[derive(Debug)]
 pub enum ProcessIdParseError {
     TooManyColons,
     MissingField,
@@ -81,18 +82,17 @@ pub fn send_and_await_response(
     )
 }
 
-pub fn get_state(our: String) -> Option<Payload> {
+pub fn get_state<T: serde::de::DeserializeOwned>() -> Option<T> {
     match super::bindings::get_state() {
-        Some(bytes) => Some(Payload { mime: None, bytes }),
+        Some(bytes) => match bincode::deserialize::<T>(&bytes) {
+            Ok(state) => Some(state),
+            Err(_) => None,
+        },
         None => None,
     }
 }
 
-pub fn set_state(our: String, bytes: Vec<u8>) {
-    super::bindings::set_state(&bytes);
-}
-
-pub fn await_set_state<T>(our: String, state: &T)
+pub fn await_set_state<T>(state: &T)
 where
     T: serde::Serialize,
 {

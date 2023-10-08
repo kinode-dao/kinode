@@ -90,6 +90,7 @@ impl ProcessId {
     }
 }
 
+#[derive(Debug)]
 pub enum ProcessIdParseError {
     TooManyColons,
     MissingField,

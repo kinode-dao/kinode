@@ -6,8 +6,11 @@ use bindings::{
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
+#[allow(dead_code)]
 mod kernel_types;
 use kernel_types as kt;
+
+#[allow(dead_code)]
 mod process_lib;
 
 struct Component;
@@ -20,7 +23,7 @@ pub enum AppTrackerRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ManifestEntry {
-    name: String,
+    id: String, // need to parse into ProcessId
     path: String,
     on_panic: kt::OnPanic,
     networking: bool,
@@ -39,7 +42,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
 
             let vfs_address = Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("vfs".into()),
+                process: ProcessId::from_str("vfs:sys:uqbar").unwrap(),
             };
             // make vfs package
             let _ = process_lib::send_and_await_response(
@@ -80,7 +83,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
         AppTrackerRequest::Install { package } => {
             let vfs_address = Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("vfs".into()),
+                process: ProcessId::from_str("vfs:sys:uqbar").unwrap(),
             };
             // get manifest
             let _ = process_lib::send_and_await_response(
@@ -137,7 +140,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     let Some(networking_cap) = get_capability(
                         &Address {
                             node: our.node.clone(),
-                            process: ProcessId::Name("kernel".into()),
+                            process: ProcessId::from_str("kernel:sys:uqbar").unwrap(),
                         },
                         &"\"network\"".to_string(),
                     ) else {
@@ -165,14 +168,22 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     panic!("app_tracker: no write cap");
                 };
                 initial_capabilities.insert(kt::de_wit_signed_capability(write_cap));
+                let mut public = false;
                 for process_name in entry.process_caps {
+                    if process_name == "all" {
+                        public = true;
+                        continue;
+                    }
+                    let Ok(parsed_process_id) = ProcessId::from_str(&process_name) else {
+                        continue;
+                    };
                     let Some(messaging_cap) = get_capability(
                         &Address {
                             node: our.node.clone(),
-                            process: ProcessId::Name(process_name.clone()),
+                            process: parsed_process_id.clone(),
                         },
                         &serde_json::to_string(&serde_json::json!({
-                            "messaging": kt::ProcessId::Name(process_name.into()),
+                            "messaging": kt::ProcessId::de_wit(parsed_process_id),
                         })).unwrap(),
                     ) else {
                         panic!("app_tracker: no cap");
@@ -180,18 +191,22 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
                 }
 
+                let Ok(parsed_new_process_id) = ProcessId::from_str(&entry.id) else {
+                    panic!("app_tracker: invalid process id");
+                };
                 let _ = process_lib::send_and_await_response(
                     &Address {
                         node: our.node.clone(),
-                        process: ProcessId::Name("kernel".into()),
+                        process: ProcessId::from_str("kernel:sys:uqbar").unwrap(),
                     },
                     false,
                     Some(
                         serde_json::to_string(&kt::KernelCommand::StartProcess {
-                            name: Some(entry.name),
+                            id: kt::ProcessId::de_wit(parsed_new_process_id),
                             wasm_bytes_handle: hash,
                             on_panic: entry.on_panic,
                             initial_capabilities,
+                            public,
                         })
                         .unwrap(),
                     ),
@@ -207,7 +222,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
 
 impl Guest for Component {
     fn init(our: Address) {
-        assert_eq!(our.process, ProcessId::Name("app_tracker".into()));
+        assert_eq!(our.process.to_string(), "app_tracker:sys:uqbar");
         print_to_terminal(0, &format!("app_tracker: start"));
         loop {
             let message = match receive() {

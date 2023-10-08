@@ -28,8 +28,8 @@ fn main() {
     // only execute if one of the modules has source code changes
     const WASI_APPS: [&str; 9] = [
         "app_tracker",
-        "homepage",
         "chess",
+        "homepage",
         "http_bindings",
         "http_proxy",
         "orgs",
@@ -58,11 +58,6 @@ fn main() {
 
     // Build wasm32-wasi apps.
     for name in WASI_APPS {
-        // remove old wit, if it existed
-        run_command(
-            Command::new("rm").args(&["-rf", &format!("{}/modules/{}/wit", pwd.display(), name)]),
-        )
-        .unwrap();
         // copy in newly-made wit
         run_command(Command::new("cp").args(&[
             "-r",

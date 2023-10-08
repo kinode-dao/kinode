@@ -89,13 +89,13 @@ pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> t::SignedCapabili
     }
 }
 
-pub fn en_wit_signed_capability(cap: t::SignedCapability) -> wit::SignedCapability {
-    wit::SignedCapability {
-        issuer: cap.issuer.en_wit().to_owned(),
-        params: cap.params,
-        signature: cap.signature,
-    }
-}
+// pub fn en_wit_signed_capability(cap: t::SignedCapability) -> wit::SignedCapability {
+//     wit::SignedCapability {
+//         issuer: cap.issuer.en_wit().to_owned(),
+//         params: cap.params,
+//         signature: cap.signature,
+//     }
+// }
 
 pub fn de_wit_on_panic(wit: wit::OnPanic) -> t::OnPanic {
     match wit {
