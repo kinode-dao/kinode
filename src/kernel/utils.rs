@@ -2,42 +2,8 @@ use crate::kernel::component::uq_process::types as wit;
 use crate::types as t;
 
 //
-// conversions between wit types and kernel types (annoying)
+// conversions between wit types and kernel types (annoying!)
 //
-
-pub fn en_wit_process_id(process_id: t::ProcessId) -> wit::ProcessId {
-    match process_id {
-        t::ProcessId::Id(id) => wit::ProcessId::Id(id),
-        t::ProcessId::Name(name) => wit::ProcessId::Name(name),
-    }
-}
-
-pub fn de_wit_process_id(process_id: wit::ProcessId) -> t::ProcessId {
-    match process_id {
-        wit::ProcessId::Id(id) => t::ProcessId::Id(id),
-        wit::ProcessId::Name(name) => t::ProcessId::Name(name),
-    }
-}
-
-pub fn en_wit_address(address: t::Address) -> wit::Address {
-    wit::Address {
-        node: address.node,
-        process: match address.process {
-            t::ProcessId::Id(id) => wit::ProcessId::Id(id),
-            t::ProcessId::Name(name) => wit::ProcessId::Name(name),
-        },
-    }
-}
-
-pub fn de_wit_address(wit: wit::Address) -> t::Address {
-    t::Address {
-        node: wit.node,
-        process: match wit.process {
-            wit::ProcessId::Id(id) => t::ProcessId::Id(id),
-            wit::ProcessId::Name(name) => t::ProcessId::Name(name),
-        },
-    }
-}
 
 pub fn en_wit_message(message: t::Message) -> wit::Message {
     match message {
@@ -117,7 +83,7 @@ pub fn en_wit_payload(payload: Option<t::Payload>) -> Option<wit::Payload> {
 
 pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> t::SignedCapability {
     t::SignedCapability {
-        issuer: de_wit_address(wit.issuer),
+        issuer: t::Address::de_wit(wit.issuer),
         params: wit.params,
         signature: wit.signature,
     }
@@ -125,7 +91,7 @@ pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> t::SignedCapabili
 
 pub fn en_wit_signed_capability(cap: t::SignedCapability) -> wit::SignedCapability {
     wit::SignedCapability {
-        issuer: en_wit_address(cap.issuer),
+        issuer: cap.issuer.en_wit().to_owned(),
         params: cap.params,
         signature: cap.signature,
     }
@@ -139,7 +105,7 @@ pub fn de_wit_on_panic(wit: wit::OnPanic) -> t::OnPanic {
             reqs.into_iter()
                 .map(|(address, request, payload)| {
                     (
-                        de_wit_address(address),
+                        t::Address::de_wit(address),
                         de_wit_request(request),
                         de_wit_payload(payload),
                     )

@@ -13,7 +13,6 @@ use futures::{future::FutureExt, StreamExt};
 use std::collections::VecDeque;
 use std::fs::{read_to_string, File, OpenOptions};
 use std::io::{stdout, BufWriter, Write};
-
 use crate::types::*;
 
 #[derive(Debug)]
@@ -589,11 +588,11 @@ pub async fn terminal(
                                             id: rand::random(),
                                             source: Address {
                                                 node: our.name.clone(),
-                                                process: ProcessId::Name("terminal".into()),
+                                                process: TERMINAL_PROCESS_ID.clone(),
                                             },
                                             target: Address {
                                                 node: our.name.clone(),
-                                                process: ProcessId::Name("terminal".into()),
+                                                process: TERMINAL_PROCESS_ID.clone(),
                                             },
                                             rsvp: None,
                                             message: Message::Request(Request {

@@ -517,11 +517,11 @@ async fn main() {
             id: rand::random(),
             source: Address {
                 node: our.name.clone(),
-                process: ProcessId::Name("kernel".into()),
+                process: KERNEL_PROCESS_ID.clone(),
             },
             target: Address {
                 node: our.name.clone(),
-                process: ProcessId::Name("kernel".into()),
+                process: KERNEL_PROCESS_ID.clone(),
             },
             rsvp: None,
             message: Message::Request(Request {

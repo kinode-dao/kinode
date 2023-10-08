@@ -10,41 +10,113 @@ use std::collections::HashSet;
 
 pub type Context = String; // JSON-string
 
-#[derive(Clone, Debug, Eq, Hash, Serialize, Deserialize)]
-pub enum ProcessId {
-    Id(u64),
-    Name(String),
+/// process ID is a formatted unique identifier that contains
+/// the publishing node's ID, the package name, and finally the process name.
+/// the process name can be a random number, or a name chosen by the user.
+/// the formatting is as follows:
+/// `[process name]:[package name]:[node ID]`
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct ProcessId {
+    process_name: String,
+    package_name: String,
+    publisher_node: NodeId,
 }
 
-impl PartialEq for ProcessId {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (ProcessId::Id(i1), ProcessId::Id(i2)) => i1 == i2,
-            (ProcessId::Name(s1), ProcessId::Name(s2)) => s1 == s2,
-            _ => false,
+impl ProcessId {
+    /// generates a random u64 number if process_name is not declared
+    pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
+        ProcessId {
+            process_name: match process_name {
+                Some(name) => name.to_string(),
+                None => rand::random::<u64>().to_string(),
+            },
+            package_name: package_name.into(),
+            publisher_node: publisher_node.into(),
         }
     }
-}
-impl PartialEq<&str> for ProcessId {
-    fn eq(&self, other: &&str) -> bool {
-        match self {
-            ProcessId::Id(_) => false,
-            ProcessId::Name(s) => s == other,
+    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+        // split string on colons into 3 segments
+        let mut segments = input.split(':');
+        let process_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let package_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let publisher_node = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        if segments.next().is_some() {
+            return Err(ProcessIdParseError::TooManyColons);
         }
+        Ok(ProcessId {
+            process_name,
+            package_name,
+            publisher_node,
+        })
+    }
+    pub fn to_string(&self) -> String {
+        [
+            self.process_name.as_str(),
+            self.package_name.as_str(),
+            self.publisher_node.as_str(),
+        ]
+        .join(":")
+    }
+    pub fn process(&self) -> &str {
+        &self.process_name
+    }
+    pub fn package(&self) -> &str {
+        &self.package_name
+    }
+    pub fn publisher_node(&self) -> &str {
+        &self.publisher_node
     }
 }
-impl PartialEq<u64> for ProcessId {
-    fn eq(&self, other: &u64) -> bool {
-        match self {
-            ProcessId::Id(i) => i == other,
-            ProcessId::Name(s) => false,
-        }
-    }
+
+pub enum ProcessIdParseError {
+    TooManyColons,
+    MissingField,
 }
+
+// #[derive(Clone, Debug, Eq, Hash, Serialize, Deserialize)]
+// pub enum ProcessId {
+//     Id(u64),
+//     Name(String),
+// }
+
+// impl PartialEq for ProcessId {
+//     fn eq(&self, other: &Self) -> bool {
+//         match (self, other) {
+//             (ProcessId::Id(i1), ProcessId::Id(i2)) => i1 == i2,
+//             (ProcessId::Name(s1), ProcessId::Name(s2)) => s1 == s2,
+//             _ => false,
+//         }
+//     }
+// }
+// impl PartialEq<&str> for ProcessId {
+//     fn eq(&self, other: &&str) -> bool {
+//         match self {
+//             ProcessId::Id(_) => false,
+//             ProcessId::Name(s) => s == other,
+//         }
+//     }
+// }
+// impl PartialEq<u64> for ProcessId {
+//     fn eq(&self, other: &u64) -> bool {
+//         match self {
+//             ProcessId::Id(i) => i == other,
+//             ProcessId::Name(_) => false,
+//         }
+//     }
+// }
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Address {
-    pub node: String,
+    pub node: NodeId,
     pub process: ProcessId,
 }
 
@@ -111,14 +183,15 @@ pub enum OnPanic {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KernelCommand {
     StartProcess {
-        name: Option<String>,
+        id: ProcessId,
         wasm_bytes_handle: u128,
         on_panic: OnPanic,
         initial_capabilities: HashSet<SignedCapability>,
+        public: bool,
     },
     KillProcess(ProcessId), // this is extrajudicial killing: we might lose messages!
+    // kernel only
     RebootProcess {
-        // kernel only
         process_id: ProcessId,
         persisted: PersistedProcess,
     },
@@ -242,40 +315,36 @@ pub enum KeyValueError {
 }
 
 //
-// conversions between wit types and kernel types (annoying)
+// conversions between wit types and kernel types (annoying!)
 //
 
 pub fn en_wit_process_id(process_id: ProcessId) -> wit::ProcessId {
-    match process_id {
-        ProcessId::Id(id) => wit::ProcessId::Id(id),
-        ProcessId::Name(name) => wit::ProcessId::Name(name),
+    wit::ProcessId {
+        process_name: process_id.process().to_string(),
+        package_name: process_id.package().to_string(),
+        publisher_node: process_id.publisher().to_string(),
     }
 }
 
 pub fn de_wit_process_id(wit: wit::ProcessId) -> ProcessId {
-    match wit {
-        wit::ProcessId::Id(id) => ProcessId::Id(id),
-        wit::ProcessId::Name(name) => ProcessId::Name(name),
+    ProcessId {
+        process_name: wit.process_name,
+        package_name: wit.package_name,
+        publisher_node: wit.publisher_node,
     }
 }
 
 pub fn en_wit_address(address: Address) -> wit::Address {
     wit::Address {
         node: address.node,
-        process: match address.process {
-            ProcessId::Id(id) => wit::ProcessId::Id(id),
-            ProcessId::Name(name) => wit::ProcessId::Name(name),
-        },
+        process: en_wit_process_id(address.process),
     }
 }
 
 pub fn de_wit_address(wit: wit::Address) -> Address {
     Address {
         node: wit.node,
-        process: match wit.process {
-            wit::ProcessId::Id(id) => ProcessId::Id(id),
-            wit::ProcessId::Name(name) => ProcessId::Name(name),
-        },
+        process: de_wit_process_id(wit.process),
     }
 }
 

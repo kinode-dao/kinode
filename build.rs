@@ -18,6 +18,13 @@ fn main() {
         println!("Skipping build script");
         return;
     }
+    let build_enabled = std::env::var("BUILD_APPS")
+        .map(|v| v == "true")
+        .unwrap_or(false); // run by default
+
+    if !build_enabled {
+        return;
+    }
     // only execute if one of the modules has source code changes
     const WASI_APPS: [&str; 9] = [
         "app_tracker",

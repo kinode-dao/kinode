@@ -145,7 +145,7 @@ pub async fn encryptor(
                                     Some(rsvp) => rsvp,
                                     None => Address {
                                         node: source.node.clone(),
-                                        process: ProcessId::Name("http_server".into()),
+                                        process: HTTP_SERVER_PROCESS_ID.clone(),
                                     },
                                 };
                                 // Generate and send the response
@@ -153,7 +153,7 @@ pub async fn encryptor(
                                     id: *id,
                                     source: Address {
                                         node: our.clone(),
-                                        process: ProcessId::Name("encryptor".into()),
+                                        process: ENCRYPTOR_PROCESS_ID.clone(),
                                     },
                                     target,
                                     rsvp: None,
@@ -226,7 +226,7 @@ pub async fn encryptor(
                                 id: id.clone(),
                                 source: Address {
                                     node: our.clone(),
-                                    process: ProcessId::Name("encryptor".into()),
+                                    process: ENCRYPTOR_PROCESS_ID.clone(),
                                 },
                                 target: forward_to,
                                 rsvp: None,
@@ -280,7 +280,7 @@ pub async fn encryptor(
                                 id,
                                 source: Address {
                                     node: our.clone(),
-                                    process: ProcessId::Name("encryptor".into()),
+                                    process: ENCRYPTOR_PROCESS_ID.clone(),
                                 },
                                 target: forward_to,
                                 rsvp: None,
@@ -334,7 +334,7 @@ pub async fn encryptor(
                                 id: *id,
                                 source: Address {
                                     node: our.clone(),
-                                    process: ProcessId::Name("encryptor".into()),
+                                    process: ENCRYPTOR_PROCESS_ID.clone(),
                                 },
                                 target: source,
                                 rsvp: None,
@@ -389,7 +389,7 @@ pub async fn encryptor(
                                 id: *id,
                                 source: Address {
                                     node: our.clone(),
-                                    process: ProcessId::Name("encryptor".into()),
+                                    process: ENCRYPTOR_PROCESS_ID.clone(),
                                 },
                                 target: source,
                                 rsvp: None,

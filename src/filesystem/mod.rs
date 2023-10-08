@@ -62,7 +62,7 @@ pub async fn load_fs(
     .expect("manifest load failed!");
 
     // get kernel state for booting up
-    let kernel_process_id = FileIdentifier::Process(ProcessId::Name("kernel".into()));
+    let kernel_process_id = FileIdentifier::Process(KERNEL_PROCESS_ID.clone());
     let mut process_map: ProcessMap = HashMap::new();
 
     // get current processes' wasm_bytes handles. GetState(kernel)
@@ -119,7 +119,7 @@ async fn bootstrap(
         runtime_caps.insert(Capability {
             issuer: Address {
                 node: our_name.to_string(),
-                process: ProcessId::Name(runtime_module.0.into()),
+                process: ProcessId::new(Some(runtime_module.0), "sys", "uqbar"),
             },
             params: "\"messaging\"".into(),
         });
@@ -128,7 +128,7 @@ async fn bootstrap(
     runtime_caps.insert(Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::Name("kernel".into()),
+            process: KERNEL_PROCESS_ID.clone(),
         },
         params: "\"network\"".into(),
     });
@@ -136,7 +136,7 @@ async fn bootstrap(
     // finally, save runtime modules in state map as well, somewhat fakely
     for runtime_module in RUNTIME_MODULES {
         process_map
-            .entry(ProcessId::Name(runtime_module.0.into()))
+            .entry(ProcessId::new(Some(runtime_module.0), "sys", "uqbar"))
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: 0,
                 on_panic: OnPanic::Restart,
@@ -159,11 +159,11 @@ async fn bootstrap(
                 id: rand::random(),
                 source: Address {
                     node: our_name.to_string(),
-                    process: ProcessId::Name("filesystem".into()),
+                    process: FILESYSTEM_PROCESS_ID.clone(),
                 },
                 target: Address {
                     node: our_name.to_string(),
-                    process: ProcessId::Name("vfs".into()),
+                    process: VFS_PROCESS_ID.clone(),
                 },
                 rsvp: None,
                 message: Message::Request(Request {
@@ -199,11 +199,11 @@ async fn bootstrap(
                         id: rand::random(),
                         source: Address {
                             node: our_name.to_string(),
-                            process: ProcessId::Name("filesystem".into()),
+                            process: FILESYSTEM_PROCESS_ID.clone(),
                         },
                         target: Address {
                             node: our_name.to_string(),
-                            process: ProcessId::Name("vfs".into()),
+                            process: VFS_PROCESS_ID.clone(),
                         },
                         rsvp: None,
                         message: Message::Request(Request {
@@ -262,11 +262,11 @@ async fn bootstrap(
             // remember: out of thin air, because this is the root distro
             let mut requested_caps = HashSet::new();
             entry.request_messaging.push(entry.process_name.clone());
-            for process_name in entry.request_messaging {
+            for process_name in &entry.request_messaging {
                 requested_caps.insert(Capability {
                     issuer: Address {
                         node: our_name.to_string(),
-                        process: ProcessId::Name(process_name),
+                        process: ProcessId::new(Some(process_name), "sys", "uqbar"),
                     },
                     params: "\"messaging\"".into(),
                 });
@@ -276,7 +276,7 @@ async fn bootstrap(
                 requested_caps.insert(Capability {
                     issuer: Address {
                         node: our_name.to_string(),
-                        process: ProcessId::Name("kernel".into()),
+                        process: KERNEL_PROCESS_ID.clone(),
                     },
                     params: "\"network\"".into(),
                 });
@@ -285,17 +285,17 @@ async fn bootstrap(
             let mut public_process = false;
 
             // queue the granted capabilities
-            for process_name in entry.grant_messaging {
+            for process_name in &entry.grant_messaging {
                 if process_name == "all" {
                     public_process = true;
                     continue;
                 }
                 caps_to_grant.push((
-                    ProcessId::Name(process_name),
+                    ProcessId::new(Some(process_name), "sys", "uqbar"),
                     Capability {
                         issuer: Address {
                             node: our_name.to_string(),
-                            process: ProcessId::Name(entry.process_name.clone()),
+                            process: ProcessId::new(Some(&entry.process_name), "sys", "uqbar"),
                         },
                         params: "\"messaging\"".into(),
                     },
@@ -308,7 +308,7 @@ async fn bootstrap(
             let wasm_bytes_handle = file.to_uuid().unwrap();
 
             process_map.insert(
-                ProcessId::Name(entry.process_name),
+                ProcessId::new(Some(&entry.process_name), "sys", "uqbar"),
                 PersistedProcess {
                     wasm_bytes_handle,
                     on_panic: entry.on_panic,
@@ -690,7 +690,7 @@ async fn handle_request(
             id: id.clone(),
             source: Address {
                 node: our_name.clone(),
-                process: ProcessId::Name("filesystem".into()),
+                process: FILESYSTEM_PROCESS_ID.clone(),
             },
             target: match rsvp {
                 None => source,
@@ -737,7 +737,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: FsError) -> K
         id: km.id,
         source: Address {
             node: our_name.clone(),
-            process: ProcessId::Name("fileystem".into()),
+            process: FILESYSTEM_PROCESS_ID.clone(),
         },
         target: match &km.rsvp {
             None => km.source.clone(),

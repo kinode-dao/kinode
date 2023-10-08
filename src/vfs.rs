@@ -100,7 +100,7 @@ fn make_error_message(
         id,
         source: Address {
             node: our_node,
-            process: ProcessId::Name("vfs".into()),
+            process: *VFS_PROCESS_ID,
         },
         target: source,
         rsvp: None,
@@ -138,18 +138,18 @@ async fn persist_state(our_node: String, send_to_loop: &MessageSender, state: &I
             id: rand::random(),
             source: Address {
                 node: our_node.clone(),
-                process: ProcessId::Name("vfs".into()),
+                process: VFS_PROCESS_ID.clone(),
             },
             target: Address {
                 node: our_node,
-                process: ProcessId::Name("filesystem".into()),
+                process: FILESYSTEM_PROCESS_ID.clone(),
             },
             rsvp: None,
             message: Message::Request(Request {
                 inherit: true,
                 expects_response: Some(5), // TODO evaluate
                 ipc: Some(
-                    serde_json::to_string(&FsAction::SetState(ProcessId::Name("vfs".into())))
+                    serde_json::to_string(&FsAction::SetState(VFS_PROCESS_ID.clone()))
                         .unwrap(),
                 ),
                 metadata: None,
@@ -175,18 +175,18 @@ async fn load_state_from_reboot(
             id,
             source: Address {
                 node: our_node.clone(),
-                process: ProcessId::Name("vfs".into()),
+                process: VFS_PROCESS_ID.clone(),
             },
             target: Address {
                 node: our_node.clone(),
-                process: ProcessId::Name("filesystem".into()),
+                process: FILESYSTEM_PROCESS_ID.clone(),
             },
             rsvp: None,
             message: Message::Request(Request {
                 inherit: true,
                 expects_response: Some(5), // TODO evaluate
                 ipc: Some(
-                    serde_json::to_string(&FsAction::GetState(ProcessId::Name("vfs".into())))
+                    serde_json::to_string(&FsAction::GetState(VFS_PROCESS_ID.clone()))
                         .unwrap(),
                 ),
                 metadata: None,
@@ -333,7 +333,7 @@ pub async fn vfs(
                         let read_cap = Capability {
                             issuer: Address {
                                 node: our_node.clone(),
-                                process: ProcessId::Name("vfs".into()),
+                                process: VFS_PROCESS_ID.clone(),
                             },
                             params: serde_json::to_string(
                                 &serde_json::json!({"kind": "read", "drive": request.drive})
@@ -342,7 +342,7 @@ pub async fn vfs(
                         let write_cap = Capability {
                             issuer: Address {
                                 node: our_node.clone(),
-                                process: ProcessId::Name("vfs".into()),
+                                process: VFS_PROCESS_ID.clone(),
                             },
                             params: serde_json::to_string(
                                 &serde_json::json!({"kind": "write", "drive": request.drive})
@@ -446,7 +446,7 @@ async fn handle_request(
                     cap: Capability {
                         issuer: Address {
                             node: our_node.clone(),
-                            process: ProcessId::Name("vfs".into()),
+                            process: VFS_PROCESS_ID.clone(),
                         },
                         params: serde_json::to_string(&serde_json::json!({
                             "kind": "write",
@@ -473,7 +473,7 @@ async fn handle_request(
                     cap: Capability {
                         issuer: Address {
                             node: our_node.clone(),
-                            process: ProcessId::Name("vfs".into()),
+                            process: VFS_PROCESS_ID.clone(),
                         },
                         params: serde_json::to_string(&serde_json::json!({
                             "kind": "read",
@@ -513,7 +513,7 @@ async fn handle_request(
             id,
             source: Address {
                 node: our_node.clone(),
-                process: ProcessId::Name("vfs".into()),
+                process: VFS_PROCESS_ID.clone(),
             },
             target: Address {
                 node: our_node.clone(),
@@ -559,11 +559,11 @@ async fn match_request(
                         id,
                         source: Address {
                             node: our_node.clone(),
-                            process: ProcessId::Name("vfs".into()),
+                            process: VFS_PROCESS_ID.clone(),
                         },
                         target: Address {
                             node: our_node.clone(),
-                            process: ProcessId::Name("kernel".into()),
+                            process: ProcessId::new(Some("kernel"), "sys", "uqbar"),
                         },
                         rsvp: None,
                         message: Message::Request(Request {
@@ -680,11 +680,11 @@ async fn match_request(
                             id,
                             source: Address {
                                 node: our_node.clone(),
-                                process: ProcessId::Name("vfs".into()),
+                                process: VFS_PROCESS_ID.clone(),
                             },
                             target: Address {
                                 node: our_node.clone(),
-                                process: ProcessId::Name("filesystem".into()),
+                                process: FILESYSTEM_PROCESS_ID.clone(),
                             },
                             rsvp: None,
                             message: Message::Request(Request {
@@ -817,11 +817,11 @@ async fn match_request(
                                     id,
                                     source: Address {
                                         node: our_node.clone(),
-                                        process: ProcessId::Name("vfs".into()),
+                                        process: VFS_PROCESS_ID.clone(),
                                     },
                                     target: Address {
                                         node: our_node.clone(),
-                                        process: ProcessId::Name("filesystem".into()),
+                                        process: FILESYSTEM_PROCESS_ID.clone(),
                                     },
                                     rsvp: None,
                                     message: Message::Request(Request {
@@ -886,11 +886,11 @@ async fn match_request(
                         //             id,
                         //             source: Address {
                         //                 node: our_node.clone(),
-                        //                 process: ProcessId::Name("vfs".into()),
+                        //                 process: VFS_PROCESS_ID.clone(),
                         //             },
                         //             target: Address {
                         //                 node: our_node.clone(),
-                        //                 process: ProcessId::Name("filesystem".into()),
+                        //                 process: FILESYSTEM_PROCESS_ID.clone(),
                         //             },
                         //             rsvp: None,
                         //             message: Message::Request(Request {
@@ -1105,11 +1105,11 @@ async fn match_request(
                     id,
                     source: Address {
                         node: our_node.clone(),
-                        process: ProcessId::Name("vfs".into()),
+                        process: VFS_PROCESS_ID.clone(),
                     },
                     target: Address {
                         node: our_node.clone(),
-                        process: ProcessId::Name("filesystem".into()),
+                        process: FILESYSTEM_PROCESS_ID.clone(),
                     },
                     rsvp: None,
                     message: Message::Request(Request {
@@ -1147,11 +1147,11 @@ async fn match_request(
                     id,
                     source: Address {
                         node: our_node.clone(),
-                        process: ProcessId::Name("vfs".into()),
+                        process: VFS_PROCESS_ID.clone(),
                     },
                     target: Address {
                         node: our_node.clone(),
-                        process: ProcessId::Name("filesystem".into()),
+                        process: FILESYSTEM_PROCESS_ID.clone(),
                     },
                     rsvp: None,
                     message: Message::Request(Request {
@@ -1293,11 +1293,11 @@ async fn match_request(
                                     id,
                                     source: Address {
                                         node: our_node.clone(),
-                                        process: ProcessId::Name("vfs".into()),
+                                        process: VFS_PROCESS_ID.clone(),
                                     },
                                     target: Address {
                                         node: our_node.clone(),
-                                        process: ProcessId::Name("filesystem".into()),
+                                        process: FILESYSTEM_PROCESS_ID.clone(),
                                     },
                                     rsvp: None,
                                     message: Message::Request(Request {
@@ -1374,11 +1374,11 @@ async fn match_request(
                     id,
                     source: Address {
                         node: our_node.clone(),
-                        process: ProcessId::Name("vfs".into()),
+                        process: VFS_PROCESS_ID.clone(),
                     },
                     target: Address {
                         node: our_node.clone(),
-                        process: ProcessId::Name("filesystem".into()),
+                        process: FILESYSTEM_PROCESS_ID.clone(),
                     },
                     rsvp: None,
                     message: Message::Request(Request {
@@ -1448,11 +1448,11 @@ async fn match_request(
                         id,
                         source: Address {
                             node: our_node.clone(),
-                            process: ProcessId::Name("vfs".into()),
+                            process: VFS_PROCESS_ID.clone(),
                         },
                         target: Address {
                             node: our_node.clone(),
-                            process: ProcessId::Name("filesystem".into()),
+                            process: FILESYSTEM_PROCESS_ID.clone(),
                         },
                         rsvp: None,
                         message: Message::Request(Request {
