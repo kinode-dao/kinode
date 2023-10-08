@@ -1326,27 +1326,30 @@ async fn handle_kernel_request(
                     .await
                     .unwrap();
                 // fire an error back
-                send_to_loop.send(t::KernelMessage {
-                    id: km.id,
-                    source: t::Address {
-                        node: our_name.clone(),
-                        process: KERNEL_PROCESS_ID.clone(),
-                    },
-                    target: km.source,
-                    rsvp: None,
-                    message: t::Message::Response((
-                        t::Response {
-                            ipc: Some(
-                                serde_json::to_string(&t::KernelResponse::StartProcessError)
-                                .unwrap(),
-                            ),
-                            metadata: None,
+                send_to_loop
+                    .send(t::KernelMessage {
+                        id: km.id,
+                        source: t::Address {
+                            node: our_name.clone(),
+                            process: KERNEL_PROCESS_ID.clone(),
                         },
-                        None,
-                    )),
-                    payload: None,
-                    signed_capabilities: None,
-                }).await.unwrap();
+                        target: km.source,
+                        rsvp: None,
+                        message: t::Message::Response((
+                            t::Response {
+                                ipc: Some(
+                                    serde_json::to_string(&t::KernelResponse::StartProcessError)
+                                        .unwrap(),
+                                ),
+                                metadata: None,
+                            },
+                            None,
+                        )),
+                        payload: None,
+                        signed_capabilities: None,
+                    })
+                    .await
+                    .unwrap();
                 return;
             };
 
