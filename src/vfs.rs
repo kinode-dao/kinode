@@ -1255,13 +1255,7 @@ async fn match_request(
             };
 
             let entry_not_found = (
-                Some(
-                    serde_json::to_string(&VfsResponse::GetEntry {
-                        exists: false,
-                        children: vec![],
-                    })
-                    .unwrap(),
-                ),
+                Some(serde_json::to_string(&VfsResponse::Err(VfsError::BadDescriptor)).unwrap()),
                 None,
             );
             match key {
@@ -1275,7 +1269,7 @@ async fn match_request(
                         } => (
                             Some(
                                 serde_json::to_string(&VfsResponse::GetEntry {
-                                    exists: true,
+                                    is_file: false,
                                     children: paths,
                                 })
                                 .unwrap(),
@@ -1337,7 +1331,7 @@ async fn match_request(
                             (
                                 Some(
                                     serde_json::to_string(&VfsResponse::GetEntry {
-                                        exists: true,
+                                        is_file: true,
                                         children: vec![],
                                     })
                                     .unwrap(),

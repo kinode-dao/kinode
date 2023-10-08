@@ -581,11 +581,18 @@ pub enum VfsResponse {
     GetHash(Option<u128>),
     GetEntry {
         // file bytes in payload, if entry was a file
-        exists: bool,
+        is_file: bool,
         children: Vec<String>,
     },
     GetFileChunk, // chunk in payload, if file exists
     GetEntryLength(Option<u64>),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum VfsError {
+    BadDriveName,
+    BadDescriptor,
+    NoCap,
 }
 
 #[allow(dead_code)]
@@ -600,17 +607,17 @@ impl VfsError {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum VfsError {
-    BadDriveName,
-    BadDescriptor,
-    NoCap,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub enum KeyValueMessage {
     New { drive: String },
     Write { drive: String, key: Vec<u8> },
     Read { drive: String, key: Vec<u8> },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KeyValueError {
+    BadDriveName,
+    NoCap,
+    NoBytes,
 }
 
 #[allow(dead_code)]
@@ -622,12 +629,6 @@ impl KeyValueError {
             KeyValueError::NoBytes => "NoBytes",
         }
     }
-}
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KeyValueError {
-    BadDriveName,
-    NoCap,
-    NoBytes,
 }
 
 //

@@ -9,6 +9,7 @@ use std::collections::HashSet;
 //
 
 pub type Context = String; // JSON-string
+pub type NodeId = String; // QNS domain name
 
 /// process ID is a formatted unique identifier that contains
 /// the publishing node's ID, the package name, and finally the process name.
@@ -22,14 +23,12 @@ pub struct ProcessId {
     publisher_node: NodeId,
 }
 
+#[allow(dead_code)]
 impl ProcessId {
     /// generates a random u64 number if process_name is not declared
-    pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
+    pub fn new(process_name: &str, package_name: &str, publisher_node: &str) -> Self {
         ProcessId {
-            process_name: match process_name {
-                Some(name) => name.to_string(),
-                None => rand::random::<u64>().to_string(),
-            },
+            process_name: process_name.into(),
             package_name: package_name.into(),
             publisher_node: publisher_node.into(),
         }
@@ -75,6 +74,20 @@ impl ProcessId {
     pub fn publisher_node(&self) -> &str {
         &self.publisher_node
     }
+    pub fn en_wit(&self) -> wit::ProcessId {
+        wit::ProcessId {
+            process_name: self.process_name.clone(),
+            package_name: self.package_name.clone(),
+            publisher_node: self.publisher_node.clone(),
+        }
+    }
+    pub fn de_wit(wit: wit::ProcessId) -> ProcessId {
+        ProcessId {
+            process_name: wit.process_name,
+            package_name: wit.package_name,
+            publisher_node: wit.publisher_node,
+        }
+    }
 }
 
 pub enum ProcessIdParseError {
@@ -82,42 +95,29 @@ pub enum ProcessIdParseError {
     MissingField,
 }
 
-// #[derive(Clone, Debug, Eq, Hash, Serialize, Deserialize)]
-// pub enum ProcessId {
-//     Id(u64),
-//     Name(String),
-// }
-
-// impl PartialEq for ProcessId {
-//     fn eq(&self, other: &Self) -> bool {
-//         match (self, other) {
-//             (ProcessId::Id(i1), ProcessId::Id(i2)) => i1 == i2,
-//             (ProcessId::Name(s1), ProcessId::Name(s2)) => s1 == s2,
-//             _ => false,
-//         }
-//     }
-// }
-// impl PartialEq<&str> for ProcessId {
-//     fn eq(&self, other: &&str) -> bool {
-//         match self {
-//             ProcessId::Id(_) => false,
-//             ProcessId::Name(s) => s == other,
-//         }
-//     }
-// }
-// impl PartialEq<u64> for ProcessId {
-//     fn eq(&self, other: &u64) -> bool {
-//         match self {
-//             ProcessId::Id(i) => i == other,
-//             ProcessId::Name(_) => false,
-//         }
-//     }
-// }
-
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Address {
     pub node: NodeId,
     pub process: ProcessId,
+}
+
+impl Address {
+    pub fn en_wit(&self) -> wit::Address {
+        wit::Address {
+            node: self.node.clone(),
+            process: self.process.en_wit(),
+        }
+    }
+    pub fn de_wit(wit: wit::Address) -> Address {
+        Address {
+            node: wit.node,
+            process: ProcessId {
+                process_name: wit.process.process_name,
+                package_name: wit.process.package_name,
+                publisher_node: wit.process.publisher_node,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -129,9 +129,9 @@ pub struct Payload {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Request {
     pub inherit: bool,
-    pub expects_response: Option<u64>,
-    pub ipc: Option<String>,      // JSON-string
-    pub metadata: Option<String>, // JSON-string
+    pub expects_response: Option<u64>, // number of seconds until timeout
+    pub ipc: Option<String>,           // JSON-string
+    pub metadata: Option<String>,      // JSON-string
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -177,7 +177,17 @@ pub enum SendErrorKind {
 pub enum OnPanic {
     None,
     Restart,
-    Requests(Vec<(Address, Request)>),
+    Requests(Vec<(Address, Request, Option<Payload>)>),
+}
+
+impl OnPanic {
+    pub fn is_restart(&self) -> bool {
+        match self {
+            OnPanic::None => false,
+            OnPanic::Restart => true,
+            OnPanic::Requests(_) => false,
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -203,11 +213,21 @@ pub enum KernelCommand {
     },
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KernelResponse {
+    StartedProcess,
+    StartProcessError,
+    KilledProcess(ProcessId),
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistedProcess {
     pub wasm_bytes_handle: u128,
+    // pub drive: String,
+    // pub full_path: String,
     pub on_panic: OnPanic,
     pub capabilities: HashSet<Capability>,
+    pub public: bool, // marks if a process allows messages from any process
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -267,7 +287,8 @@ pub enum VfsResponse {
     Err(VfsError),
     GetPath(Option<String>),
     GetHash(Option<u128>),
-    GetEntry { // file bytes in payload, if entry was a file
+    GetEntry {
+        // file bytes in payload, if entry was a file
         is_file: bool,
         children: Vec<String>,
     },
@@ -275,6 +296,14 @@ pub enum VfsResponse {
     GetEntryLength(u64),
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub enum VfsError {
+    BadDriveName,
+    BadDescriptor,
+    NoCap,
+}
+
+#[allow(dead_code)]
 impl VfsError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -286,18 +315,19 @@ impl VfsError {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum VfsError {
-    BadDriveName,
-    BadDescriptor,
-    NoCap,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub enum KeyValueMessage {
     New { drive: String },
     Write { drive: String, key: Vec<u8> },
     Read { drive: String, key: Vec<u8> },
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KeyValueError {
+    BadDriveName,
+    NoCap,
+    NoBytes,
+}
+
 impl KeyValueError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -307,46 +337,10 @@ impl KeyValueError {
         }
     }
 }
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KeyValueError {
-    BadDriveName,
-    NoCap,
-    NoBytes,
-}
 
 //
 // conversions between wit types and kernel types (annoying!)
 //
-
-pub fn en_wit_process_id(process_id: ProcessId) -> wit::ProcessId {
-    wit::ProcessId {
-        process_name: process_id.process().to_string(),
-        package_name: process_id.package().to_string(),
-        publisher_node: process_id.publisher().to_string(),
-    }
-}
-
-pub fn de_wit_process_id(wit: wit::ProcessId) -> ProcessId {
-    ProcessId {
-        process_name: wit.process_name,
-        package_name: wit.package_name,
-        publisher_node: wit.publisher_node,
-    }
-}
-
-pub fn en_wit_address(address: Address) -> wit::Address {
-    wit::Address {
-        node: address.node,
-        process: en_wit_process_id(address.process),
-    }
-}
-
-pub fn de_wit_address(wit: wit::Address) -> Address {
-    Address {
-        node: wit.node,
-        process: de_wit_process_id(wit.process),
-    }
-}
 
 pub fn de_wit_request(wit: wit::Request) -> Request {
     Request {
@@ -402,7 +396,14 @@ pub fn en_wit_payload(load: Option<Payload>) -> Option<wit::Payload> {
 
 pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> SignedCapability {
     SignedCapability {
-        issuer: de_wit_address(wit.issuer),
+        issuer: Address {
+            node: wit.issuer.node,
+            process: ProcessId {
+                process_name: wit.issuer.process.process_name,
+                package_name: wit.issuer.process.package_name,
+                publisher_node: wit.issuer.process.publisher_node,
+            },
+        },
         params: wit.params,
         signature: wit.signature,
     }
@@ -410,7 +411,7 @@ pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> SignedCapability 
 
 pub fn en_wit_signed_capability(cap: SignedCapability) -> wit::SignedCapability {
     wit::SignedCapability {
-        issuer: en_wit_address(cap.issuer),
+        issuer: cap.issuer.en_wit(),
         params: cap.params,
         signature: cap.signature,
     }
