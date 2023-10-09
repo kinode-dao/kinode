@@ -104,14 +104,14 @@ async fn bootstrap(
 ) -> Result<()> {
     println!("bootstrapping node...\r");
     const RUNTIME_MODULES: [(&str, bool); 8] = [
-        ("filesystem", false),
-        ("http_server", true), // TODO evaluate
-        ("http_client", false),
-        ("encryptor", false),
-        ("net", false),
-        ("vfs", false),
-        ("kernel", false),
-        ("eth_rpc", true), // TODO evaluate
+        ("filesystem:sys:uqbar", false),
+        ("http_server:sys:uqbar", true), // TODO evaluate
+        ("http_client:sys:uqbar", false),
+        ("encryptor:sys:uqbar", false),
+        ("net:sys:uqbar", false),
+        ("vfs:sys:uqbar", false),
+        ("kernel:sys:uqbar", false),
+        ("eth_rpc:sys:uqbar", true), // TODO evaluate
     ];
 
     let mut runtime_caps: HashSet<Capability> = HashSet::new();
@@ -119,7 +119,7 @@ async fn bootstrap(
         runtime_caps.insert(Capability {
             issuer: Address {
                 node: our_name.to_string(),
-                process: ProcessId::new(Some(runtime_module.0), "sys", "uqbar"),
+                process: ProcessId::from_str(runtime_module.0).unwrap(),
             },
             params: "\"messaging\"".into(),
         });
@@ -136,7 +136,7 @@ async fn bootstrap(
     // finally, save runtime modules in state map as well, somewhat fakely
     for runtime_module in RUNTIME_MODULES {
         process_map
-            .entry(ProcessId::new(Some(runtime_module.0), "sys", "uqbar"))
+            .entry(ProcessId::from_str(runtime_module.0).unwrap())
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: 0,
                 on_panic: OnPanic::Restart,
@@ -232,6 +232,32 @@ async fn bootstrap(
             }
         }
 
+        // get and read metadata.json
+        let Ok(mut package_metadata_zip) = package.by_name("metadata.json") else {
+            println!(
+                "fs: missing metadata for package {}, skipping",
+                package_name
+            );
+            continue;
+        };
+        let mut metadata_content = Vec::new();
+        package_metadata_zip
+            .read_to_end(&mut metadata_content)
+            .unwrap();
+        drop(package_metadata_zip);
+        let package_metadata: serde_json::Value =
+            serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
+
+        println!("fs: found package metadata: {:?}\r", package_metadata);
+
+        let package_name = package_metadata["package"]
+            .as_str()
+            .expect("fs: metadata parse error: bad package name");
+
+        let package_publisher = package_metadata["publisher"]
+            .as_str()
+            .expect("fs: metadata parse error: bad publisher name");
+
         // get and read manifest.json
         let Ok(mut package_manifest_zip) = package.by_name("manifest.json") else {
             println!(
@@ -261,12 +287,15 @@ async fn bootstrap(
             // spawn the requested capabilities
             // remember: out of thin air, because this is the root distro
             let mut requested_caps = HashSet::new();
-            entry.request_messaging.push(entry.process_name.clone());
+            entry.request_messaging.push(format!(
+                "{}:{}:{}",
+                entry.process_name, package_name, package_publisher
+            ));
             for process_name in &entry.request_messaging {
                 requested_caps.insert(Capability {
                     issuer: Address {
                         node: our_name.to_string(),
-                        process: ProcessId::new(Some(process_name), "sys", "uqbar"),
+                        process: ProcessId::from_str(process_name).unwrap(),
                     },
                     params: "\"messaging\"".into(),
                 });
@@ -291,11 +320,15 @@ async fn bootstrap(
                     continue;
                 }
                 caps_to_grant.push((
-                    ProcessId::new(Some(process_name), "sys", "uqbar"),
+                    ProcessId::from_str(process_name).unwrap(),
                     Capability {
                         issuer: Address {
                             node: our_name.to_string(),
-                            process: ProcessId::new(Some(&entry.process_name), "sys", "uqbar"),
+                            process: ProcessId::new(
+                                Some(&entry.process_name),
+                                package_name,
+                                package_publisher,
+                            ),
                         },
                         params: "\"messaging\"".into(),
                     },
@@ -308,7 +341,7 @@ async fn bootstrap(
             let wasm_bytes_handle = file.to_uuid().unwrap();
 
             process_map.insert(
-                ProcessId::new(Some(&entry.process_name), "sys", "uqbar"),
+                ProcessId::new(Some(&entry.process_name), package_name, package_publisher),
                 PersistedProcess {
                     wasm_bytes_handle,
                     on_panic: entry.on_panic,

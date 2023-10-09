@@ -5,13 +5,13 @@
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [
-            "net",
-            "http_bindings",
-            "eth_rpc"
+            "net:sys:uqbar",
+            "http_bindings:sys:uqbar",
+            "eth_rpc:sys:uqbar"
         ],
         "grant_messaging": [
-            "eth_rpc",
-            "filesystem"
+            "eth_rpc:sys:uqbar",
+            "filesystem:sys:uqbar"
         ]
     }
 ]

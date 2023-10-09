@@ -60,6 +60,7 @@ fn main() {
     for name in WASI_APPS {
         println!("cargo:rerun-if-changed=modules/{}/src", name);
         println!("cargo:rerun-if-changed=modules/{}/pkg/manifest.json", name);
+        println!("cargo:rerun-if-changed=modules/{}/pkg/metadata.json", name);
     }
 
     let pwd = std::env::current_dir().unwrap();

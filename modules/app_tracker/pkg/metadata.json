@@ -1,0 +1,5 @@
+{
+    "package": "sys",
+    "publisher": "uqbar",
+    "desc": "A package manager + app store. This JSON field is optional and you can add whatever you want in addition to this."
+}

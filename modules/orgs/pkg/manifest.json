@@ -5,7 +5,7 @@
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [
-            "http_bindings"
+            "http_bindings:sys:uqbar"
         ],
         "grant_messaging": []
     }

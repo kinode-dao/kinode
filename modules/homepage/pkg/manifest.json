@@ -5,9 +5,9 @@
         "on_panic": "Restart",
         "request_networking": false,
         "request_messaging": [
-            "http_bindings",
-            "http_server",
-            "encryptor"
+            "http_bindings:sys:uqbar",
+            "http_server:sys:uqbar",
+            "encryptor:sys:uqbar"
         ],
         "grant_messaging": []
     }
