@@ -82,7 +82,9 @@ fn main() {
         if file_outdated(
             format!("{}/wit/", pwd.display()),
             format!("{}/modules/{}/wit/", pwd.display(), name),
-        ).unwrap_or(true) {
+        )
+        .unwrap_or(true)
+        {
             run_command(Command::new("cp").args(&[
                 "-r",
                 "wit",
