@@ -193,22 +193,28 @@ impl Guest for Component {
                     .collect::<Vec<&str>>();
                 if app != "homepage:sys:uqbar"
                     && (path_segments.is_empty()
-                        || path_segments[0] != app.clone().replace("_", "-"))
+                        || path_segments[0] != app.clone().split(':').next().unwrap_or_default().to_string().replace("_", "-"))
                 {
                     print_to_terminal(
                         1,
                         format!(
-                            "http_bindings: first path segment does not match process: {}",
-                            path
+                            "http_bindings: first path segment {} does not match process: {}",
+                            path,
+                            app.clone().replace("_", "-"),
                         )
                         .as_str(),
                     );
                     continue;
                 } else {
+                    if !app.clone().ends_with(":sys:uqbar") && path_bindings.contains_key(path) {
+                        print_to_terminal(0, &format!("http_bindings: path already bound {}", path));
+                        continue;
+                    }
                     print_to_terminal(
                         1,
                         format!("http_bindings: binding app 2 {}", path.to_string()).as_str(),
                     );
+
                     path_bindings.insert(path.to_string(), {
                         BoundPath {
                             app,

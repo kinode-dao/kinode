@@ -6,7 +6,8 @@
         "request_networking": false,
         "request_messaging": [
             "http_bindings",
-            "encryptor"
+            "encryptor",
+	        "http_server"
         ],
         "grant_messaging": []
     }
