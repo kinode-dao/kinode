@@ -1893,29 +1893,34 @@ async fn make_event_loop(
                         if kernel_message.source.process != *KERNEL_PROCESS_ID
                             && kernel_message.source.process != *FILESYSTEM_PROCESS_ID
                         {
-                            match process_map.get(&kernel_message.source.process) {
-                                None => {}, // this should only get hit by kernel?
-                                Some(persisted) => {
-                                    if !persisted.public
-                                        && !persisted.capabilities.contains(&t::Capability {
-                                        issuer: t::Address {
-                                            node: our_name.clone(),
-                                            process: kernel_message.target.process.clone(),
-                                        },
-                                        params: "\"messaging\"".into(),
-                                    }) {
-                                        // capabilities are not correct! skip this message.
-                                        // TODO some kind of error thrown back at process
-                                        let _ = send_to_terminal.send(
-                                            t::Printout {
-                                                verbosity: 0,
-                                                content: format!(
-                                                    "event loop: process {:?} doesn't have capability to message process {:?}",
-                                                    kernel_message.source.process, kernel_message.target.process
-                                                )
-                                            }
-                                        ).await;
-                                        continue;
+                            let is_target_public = match process_map.get(&kernel_message.target.process) {
+                                None => false,
+                                Some(p) => p.public,
+                            };
+                            if !is_target_public {
+                                match process_map.get(&kernel_message.source.process) {
+                                    None => {}, // this should only get hit by kernel?
+                                    Some(persisted) => {
+                                        if !persisted.capabilities.contains(&t::Capability {
+                                            issuer: t::Address {
+                                                node: our_name.clone(),
+                                                process: kernel_message.target.process.clone(),
+                                            },
+                                            params: "\"messaging\"".into(),
+                                        }) {
+                                            // capabilities are not correct! skip this message.
+                                            // TODO some kind of error thrown back at process
+                                            let _ = send_to_terminal.send(
+                                                t::Printout {
+                                                    verbosity: 0,
+                                                    content: format!(
+                                                        "event loop: process {:?} doesn't have capability to message process {:?}",
+                                                        kernel_message.source.process, kernel_message.target.process
+                                                    )
+                                                }
+                                            ).await;
+                                            continue;
+                                        }
                                     }
                                 }
                             }
