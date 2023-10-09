@@ -31,7 +31,7 @@ If you do not receive QNS updates in terminal, it's a sign that the default publ
 
 Also, make sure not to use the same home directory for two nodes at once! You can use any name for the home directory.
 ```bash
-cargo +nightly run --release home
+cargo +nightly run --release home --rpc wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>
 ```
 
 On boot you will be prompted to navigate to `localhost:8080`. Make sure your eth wallet is connected to the Sepolia test network. Login should be very straightforward, just submit the transactions and follow the flow.
