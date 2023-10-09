@@ -1406,7 +1406,7 @@ async fn handle_kernel_request(
             persisted,
         } => {
             if senders.contains_key(&process_id) || process_id == KERNEL_PROCESS_ID.clone() {
-                println!("kernel: ignoring reboot for running process??\r");
+                // never reboot a running process
                 return;
             }
             send_to_loop
@@ -1889,28 +1889,33 @@ async fn make_event_loop(
                         }
                     } else {
                         // enforce that process has capability to message a target process of this name
-                        match process_map.get(&kernel_message.source.process) {
-                            None => {}, // this should only get hit by kernel?
-                            Some(persisted) => {
-                                if !persisted.capabilities.contains(&t::Capability {
-                                    issuer: t::Address {
-                                        node: our_name.clone(),
-                                        process: kernel_message.target.process.clone(),
-                                    },
-                                    params: "\"messaging\"".into(),
-                                }) {
-                                    // capabilities are not correct! skip this message.
-                                    // TODO some kind of error thrown back at process
-                                    let _ = send_to_terminal.send(
-                                        t::Printout {
-                                            verbosity: 0,
-                                            content: format!(
-                                                "event loop: process {:?} doesn't have capability to message process {:?}",
-                                                kernel_message.source.process, kernel_message.target.process
-                                            )
-                                        }
-                                    ).await;
-                                    continue;
+                        // kernel and filesystem can ALWAYS message any process
+                        if kernel_message.source.process != *KERNEL_PROCESS_ID
+                            && kernel_message.source.process != *FILESYSTEM_PROCESS_ID
+                        {
+                            match process_map.get(&kernel_message.source.process) {
+                                None => {}, // this should only get hit by kernel?
+                                Some(persisted) => {
+                                    if !persisted.capabilities.contains(&t::Capability {
+                                        issuer: t::Address {
+                                            node: our_name.clone(),
+                                            process: kernel_message.target.process.clone(),
+                                        },
+                                        params: "\"messaging\"".into(),
+                                    }) {
+                                        // capabilities are not correct! skip this message.
+                                        // TODO some kind of error thrown back at process
+                                        let _ = send_to_terminal.send(
+                                            t::Printout {
+                                                verbosity: 0,
+                                                content: format!(
+                                                    "event loop: process {:?} doesn't have capability to message process {:?}",
+                                                    kernel_message.source.process, kernel_message.target.process
+                                                )
+                                            }
+                                        ).await;
+                                        continue;
+                                    }
                                 }
                             }
                         }

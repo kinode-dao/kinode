@@ -40,7 +40,7 @@ fn main() {
     }
     let build_enabled = std::env::var("BUILD_APPS")
         .map(|v| v == "true")
-        .unwrap_or(false); // run by default
+        .unwrap_or(true); // run by default
 
     if !build_enabled {
         return;

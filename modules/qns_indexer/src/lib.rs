@@ -31,6 +31,7 @@ enum AllActions {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EthEvent {
     address: String,
     block_hash: String,
@@ -107,7 +108,7 @@ impl UqProcess for Component {
             Some(s) => {
                 state = s;
             }
-            None => {},
+            None => {}
         }
 
         bindings::print_to_terminal(
@@ -125,9 +126,12 @@ impl UqProcess for Component {
                 inherit: false,
                 expects_response: None,
                 metadata: None,
-                ipc: Some(serde_json::to_string(&NetActions::QnsBatchUpdate(
-                    state.nodes.values().cloned().collect::<Vec<_>>(),
-                )).unwrap()),
+                ipc: Some(
+                    serde_json::to_string(&NetActions::QnsBatchUpdate(
+                        state.nodes.values().cloned().collect::<Vec<_>>(),
+                    ))
+                    .unwrap(),
+                ),
             },
             None,
             None,
@@ -206,7 +210,10 @@ impl UqProcess for Component {
                                     },
                                     Some(&Payload {
                                         mime: Some("application/json".to_string()),
-                                        bytes: serde_json::to_string(&node).unwrap().as_bytes().to_vec(),
+                                        bytes: serde_json::to_string(&node)
+                                            .unwrap()
+                                            .as_bytes()
+                                            .to_vec(),
                                     }),
                                 );
                                 continue;
@@ -235,8 +242,8 @@ impl UqProcess for Component {
                 continue;
             }
 
-            let Ok(msg) = serde_json::from_str::<AllActions>(&request.ipc.unwrap_or_default()) else {
-                print_to_terminal(0, "qns_indexer: got invalid message");
+            let Ok(msg) = serde_json::from_str::<AllActions>(request.ipc.as_ref().unwrap()) else {
+                print_to_terminal(0, &format!("qns_indexer: got invalid message: {}", request.ipc.unwrap_or_default()));
                 continue;
             };
 
@@ -315,9 +322,12 @@ impl UqProcess for Component {
                                     inherit: false,
                                     expects_response: None,
                                     metadata: None,
-                                    ipc: Some(serde_json::to_string(&NetActions::QnsUpdate(
-                                        update.clone(),
-                                    )).unwrap()),
+                                    ipc: Some(
+                                        serde_json::to_string(&NetActions::QnsUpdate(
+                                            update.clone(),
+                                        ))
+                                        .unwrap(),
+                                    ),
                                 },
                                 None,
                                 None,
