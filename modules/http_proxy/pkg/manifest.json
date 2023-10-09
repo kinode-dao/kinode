@@ -1,7 +1,7 @@
 [
     {
         "process_name": "http_proxy",
-        "process_wasm_path": "http_proxy.wasm",
+        "process_wasm_path": "/http_proxy.wasm",
         "on_panic": "Restart",
         "request_networking": false,
         "request_messaging": [

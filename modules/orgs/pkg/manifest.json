@@ -1,7 +1,7 @@
 [
     {
         "process_name": "orgs",
-        "process_wasm_path": "orgs.wasm",
+        "process_wasm_path": "/orgs.wasm",
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [

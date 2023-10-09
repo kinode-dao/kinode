@@ -1896,7 +1896,8 @@ async fn make_event_loop(
                             match process_map.get(&kernel_message.source.process) {
                                 None => {}, // this should only get hit by kernel?
                                 Some(persisted) => {
-                                    if !persisted.capabilities.contains(&t::Capability {
+                                    if !persisted.public
+                                        && !persisted.capabilities.contains(&t::Capability {
                                         issuer: t::Address {
                                             node: our_name.clone(),
                                             process: kernel_message.target.process.clone(),

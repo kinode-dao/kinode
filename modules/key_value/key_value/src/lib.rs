@@ -54,23 +54,26 @@ fn handle_message (
                         ))
                     }
 
+                    print_to_terminal(0, "key_value: 0");
                     //  (1)
                     let vfs_address = Address {
                         node: our.node.clone(),
-                        process: ProcessId::Name("vfs".into()),
+                        process: kt::ProcessId::new("vfs", "sys", "uqbar").en_wit(),
                     };
                     let vfs_drive = format!("{}{}", PREFIX, drive);
                     let _ = process_lib::send_and_await_response(
                         &vfs_address,
                         false,
-                        Some(serde_json::to_string(&kt::VfsRequest::New {
+                        Some(serde_json::to_string(&kt::VfsRequest {
                             drive: vfs_drive.clone(),
+                            action: kt::VfsAction::New,
                         }).unwrap()),
                         None,
                         None,
                         15,
                     ).unwrap();
 
+                    print_to_terminal(0, "key_value: 1");
                     //  (2)
                     let vfs_read = get_capability(
                         &vfs_address,
@@ -80,9 +83,8 @@ fn handle_message (
                         &vfs_address,
                         &make_cap("write", &vfs_drive),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
-                    let Some(spawned_process_id) = spawn(
-                        &ProcessId::Id(0),
-                        "key_value",
+                    let Ok(spawned_process_id) = spawn(
+                        None,
                         "/key_value_worker.wasm",
                         &OnPanic::None,  //  TODO: notify us
                         &Capabilities::Some(vec![vfs_read, vfs_write]),
@@ -91,19 +93,21 @@ fn handle_message (
                         panic!("couldn't spawn");  //  TODO
                     };
 
+                    print_to_terminal(0, "key_value: 2");
                     //  (3)
                     send_requests(&vec![
                         //  grant caps to source
                         (
                             Address {
                                 node: our.node.clone(),
-                                process: ProcessId::Name("kernel".into()),
+                                process: kt::ProcessId::new("kernel", "sys", "uqbar").en_wit(),
                             },
                             Request {
                                 inherit: false,
                                 expects_response: None,
                                 ipc: Some(serde_json::to_string(&kt::KernelCommand::GrantCapability {
-                                    to_process: kt::de_wit_process_id(source.process.clone()),
+                                    to_process: kt::ProcessId::de_wit(source.process.clone()),
+                                    // to_process: kt::de_wit_process_id(source.process.clone()),
                                     params: make_cap("read", drive),
                                 }).unwrap()),
                                 metadata: None,
@@ -114,13 +118,13 @@ fn handle_message (
                         (
                             Address {
                                 node: our.node.clone(),
-                                process: ProcessId::Name("kernel".into()),
+                                process: kt::ProcessId::new("kernel", "sys", "uqbar").en_wit(),
                             },
                             Request {
                                 inherit: false,
                                 expects_response: None,
                                 ipc: Some(serde_json::to_string(&kt::KernelCommand::GrantCapability {
-                                    to_process: kt::de_wit_process_id(source.process.clone()),
+                                    to_process: kt::ProcessId::de_wit(source.process.clone()),
                                     params: make_cap("write", drive),
                                 }).unwrap()),
                                 metadata: None,
@@ -131,15 +135,15 @@ fn handle_message (
                         (
                             Address {
                                 node: our.node.clone(),
-                                process: ProcessId::Name("kernel".into()),
+                                process: kt::ProcessId::new("kernel", "sys", "uqbar").en_wit(),
                             },
                             Request {
                                 inherit: false,
                                 expects_response: None,
                                 ipc: Some(serde_json::to_string(&kt::KernelCommand::GrantCapability {
-                                    to_process: kt::de_wit_process_id(spawned_process_id.clone()),
+                                    to_process: kt::ProcessId::de_wit(spawned_process_id.clone()),
                                     params: serde_json::to_string(&serde_json::json!({
-                                        "messaging": kt::de_wit_process_id(our.process.clone()),
+                                        "messaging": kt::ProcessId::de_wit(our.process.clone()),
                                     })).unwrap(),
                                 }).unwrap()),
                                 metadata: None,
@@ -164,6 +168,7 @@ fn handle_message (
                         ),
                     ]);
 
+                    print_to_terminal(0, "key_value: 3");
                     //  (4)
                     drive_to_process.insert(drive.into(), spawned_process_id);
                     //  TODO
@@ -243,7 +248,7 @@ fn handle_message (
 
 impl Guest for Component {
     fn init(our: Address) {
-        print_to_terminal(1, "key_value: begin");
+        print_to_terminal(0, "key_value: begin");
 
         let mut drive_to_process: HashMap<String, ProcessId> = HashMap::new();
 

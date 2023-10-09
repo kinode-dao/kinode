@@ -191,7 +191,11 @@ async fn bootstrap(
                     .enclosed_name()
                     .expect("fs: name error reading package.zip")
                     .to_owned();
-                println!("fs: found file {}...\r", file_path.display());
+                let mut file_path = file_path.to_string_lossy().to_string();
+                if !file_path.starts_with("/") {
+                    file_path = format!("/{}", file_path);
+                }
+                println!("fs: found file {}...\r", file_path);
                 let mut file_content = Vec::new();
                 file.read_to_end(&mut file_content).unwrap();
                 vfs_message_sender
@@ -213,7 +217,7 @@ async fn bootstrap(
                                 serde_json::to_string::<VfsRequest>(&VfsRequest {
                                     drive: package_name.clone(),
                                     action: VfsAction::Add {
-                                        full_path: file_path.to_string_lossy().to_string(),
+                                        full_path: file_path,
                                         entry_type: AddEntryType::NewFile,
                                     },
                                 })
@@ -278,8 +282,12 @@ async fn bootstrap(
         // for each process-entry in manifest.json:
         for mut entry in package_manifest {
             let wasm_bytes = &mut Vec::new();
+            let mut file_path = format!("{}", entry.process_wasm_path);
+            if file_path.starts_with("/") {
+                file_path = format!("{}", &file_path[1..]);
+            }
             package
-                .by_name(&format!("{}", entry.process_wasm_path))
+                .by_name(&file_path)
                 .expect("fs: no wasm found in package!")
                 .read_to_end(wasm_bytes)
                 .unwrap();
@@ -287,10 +295,11 @@ async fn bootstrap(
             // spawn the requested capabilities
             // remember: out of thin air, because this is the root distro
             let mut requested_caps = HashSet::new();
-            entry.request_messaging.push(format!(
+            let our_process_id = format!(
                 "{}:{}:{}",
                 entry.process_name, package_name, package_publisher
-            ));
+            );
+            entry.request_messaging.push(our_process_id.clone());
             for process_name in &entry.request_messaging {
                 requested_caps.insert(Capability {
                     issuer: Address {
@@ -319,16 +328,13 @@ async fn bootstrap(
                     public_process = true;
                     continue;
                 }
+                let process_id = ProcessId::from_str(process_name).unwrap();
                 caps_to_grant.push((
-                    ProcessId::from_str(process_name).unwrap(),
+                    process_id.clone(),
                     Capability {
                         issuer: Address {
                             node: our_name.to_string(),
-                            process: ProcessId::new(
-                                Some(&entry.process_name),
-                                package_name,
-                                package_publisher,
-                            ),
+                            process: ProcessId::from_str(&our_process_id).unwrap(),
                         },
                         params: "\"messaging\"".into(),
                     },

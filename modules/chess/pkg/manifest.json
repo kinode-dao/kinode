@@ -1,7 +1,7 @@
 [
     {
         "process_name": "chess",
-        "process_wasm_path": "chess.wasm",
+        "process_wasm_path": "/chess.wasm",
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [

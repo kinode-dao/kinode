@@ -1,7 +1,7 @@
 [
     {
         "process_name": "app_tracker",
-        "process_wasm_path": "app_tracker.wasm",
+        "process_wasm_path": "/app_tracker.wasm",
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [

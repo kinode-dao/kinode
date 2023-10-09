@@ -1,7 +1,7 @@
 [
     {
         "process_name": "homepage",
-        "process_wasm_path": "homepage.wasm",
+        "process_wasm_path": "/homepage.wasm",
         "on_panic": "Restart",
         "request_networking": false,
         "request_messaging": [
