@@ -43,37 +43,19 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
     )
     .unwrap_or(true)
     {
-        run_command(Command::new("cp").args(&[
-            "-r",
-            "wit",
-            target_path,
-        ]))
-        .unwrap();
+        run_command(Command::new("cp").args(&["-r", "wit", target_path])).unwrap();
         // create target/bindings directory
-        fs::create_dir_all(&format!(
-            "{}/target/bindings/{}",
-            target_path,
-            name,
-        ))
-        .unwrap();
+        fs::create_dir_all(&format!("{}/target/bindings/{}", target_path, name,)).unwrap();
         // copy newly-made target.wasm into target/bindings
         run_command(Command::new("cp").args(&[
             "target.wasm",
-            &format!(
-                "{}/target/bindings/{}/",
-                target_path,
-                name,
-            ),
+            &format!("{}/target/bindings/{}/", target_path, name,),
         ]))
         .unwrap();
         // copy newly-made world into target/bindings
         run_command(Command::new("cp").args(&[
             "world",
-            &format!(
-                "{}/target/bindings/{}/",
-                target_path,
-                name,
-            ),
+            &format!("{}/target/bindings/{}/", target_path, name,),
         ]))
         .unwrap();
     }
@@ -93,7 +75,10 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
         "new",
         &format!("{}/target/wasm32-wasi/release/{}.wasm", target_path, name),
         "-o",
-        &format!("{}/target/wasm32-wasi/release/{}_adapted.wasm", target_path, name),
+        &format!(
+            "{}/target/wasm32-wasi/release/{}_adapted.wasm",
+            target_path, name
+        ),
         "--adapt",
         &format!("{}/wasi_snapshot_preview1.wasm", pwd.display()),
     ]))
@@ -115,7 +100,10 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
         "wit",
         "--world",
         "uq-process",
-        &format!("{}/target/wasm32-wasi/release/{}_adapted.wasm", target_path, name),
+        &format!(
+            "{}/target/wasm32-wasi/release/{}_adapted.wasm",
+            target_path, name
+        ),
         "-o",
         &wasm_dest_path,
     ]))
@@ -147,7 +135,8 @@ fn main() {
         "terminal",
     ];
 
-    if std::env::var("REBUILD_ALL").is_ok() {} else {
+    if std::env::var("REBUILD_ALL").is_ok() {
+    } else {
         for name in &WASI_APPS {
             println!("cargo:rerun-if-changed=modules/{}/src", name);
             println!("cargo:rerun-if-changed=modules/{}/pkg/manifest.json", name);
@@ -174,7 +163,11 @@ fn main() {
         let entry_path = entry.unwrap().path();
         // If Cargo.toml is present, build the app
         if entry_path.join("Cargo.toml").exists() {
-            build_app(&entry_path.display().to_string(), &entry_path.file_name().unwrap().to_str().unwrap(), None);
+            build_app(
+                &entry_path.display().to_string(),
+                &entry_path.file_name().unwrap().to_str().unwrap(),
+                None,
+            );
         } else if entry_path.is_dir() {
             let parent_pkg_path = format!("{}/pkg", entry_path.display());
             fs::create_dir_all(&parent_pkg_path).unwrap();
@@ -183,12 +176,21 @@ fn main() {
             for sub_entry in std::fs::read_dir(&entry_path).unwrap() {
                 let sub_entry_path = sub_entry.unwrap().path();
                 if sub_entry_path.join("Cargo.toml").exists() {
-                    build_app(&sub_entry_path.display().to_string(), &sub_entry_path.file_name().unwrap().to_str().unwrap(), Some(&parent_pkg_path));
+                    build_app(
+                        &sub_entry_path.display().to_string(),
+                        &sub_entry_path.file_name().unwrap().to_str().unwrap(),
+                        Some(&parent_pkg_path),
+                    );
                 }
             }
 
             // After processing all sub-apps, zip the parent's pkg/ directory
-            let writer = std::fs::File::create(format!("{}/target/{}.zip", pwd.display(), entry_path.file_name().unwrap().to_str().unwrap())).unwrap();
+            let writer = std::fs::File::create(format!(
+                "{}/target/{}.zip",
+                pwd.display(),
+                entry_path.file_name().unwrap().to_str().unwrap()
+            ))
+            .unwrap();
             let options = zip::write::FileOptions::default()
                 .compression_method(zip::CompressionMethod::Stored)
                 .unix_permissions(0o755);
@@ -196,7 +198,9 @@ fn main() {
             for sub_entry in walkdir::WalkDir::new(&parent_pkg_path) {
                 let sub_entry = sub_entry.unwrap();
                 let path = sub_entry.path();
-                let name = path.strip_prefix(std::path::Path::new(&parent_pkg_path)).unwrap();
+                let name = path
+                    .strip_prefix(std::path::Path::new(&parent_pkg_path))
+                    .unwrap();
 
                 // Write a directory or file to the ZIP archive
                 if path.is_file() {
