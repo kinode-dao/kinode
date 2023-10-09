@@ -11,7 +11,7 @@
             "vfs:sys:uqbar"
         ],
         "grant_messaging": [
-            "http_sever:sys:uqbar"
+            "http_server:sys:uqbar"
         ]
     }
 ]
