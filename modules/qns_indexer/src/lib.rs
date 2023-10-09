@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 
+#[allow(dead_code)]
 mod process_lib;
 
 struct Component;
@@ -32,14 +33,14 @@ enum AllActions {
 #[derive(Debug, Serialize, Deserialize)]
 struct EthEvent {
     address: String,
-    blockHash: String,
-    blockNumber: String,
+    block_hash: String,
+    block_number: String,
     data: String,
-    logIndex: String,
+    log_index: String,
     removed: bool,
     topics: Vec<String>,
-    transactionHash: String,
-    transactionIndex: String,
+    transaction_hash: String,
+    transaction_index: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -102,17 +103,11 @@ impl UqProcess for Component {
         };
 
         // if we have state, load it in
-        match process_lib::get_state(our.node.clone()) {
-            None => {}
-            Some(p) => match bincode::deserialize::<State>(&p.bytes) {
-                Err(e) => print_to_terminal(
-                    0,
-                    &format!("qns_indexer: failed to deserialize payload from fs: {}", e),
-                ),
-                Ok(s) => {
-                    state = s;
-                }
-            },
+        match process_lib::get_state::<State>() {
+            Some(s) => {
+                state = s;
+            }
+            None => {},
         }
 
         bindings::print_to_terminal(
@@ -124,7 +119,7 @@ impl UqProcess for Component {
         send_request(
             &Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("net".to_string()),
+                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
             },
             &Request {
                 inherit: false,
@@ -138,10 +133,10 @@ impl UqProcess for Component {
             None,
         );
 
-        let event_sub_res = send_request(
+        let _ = send_request(
             &Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("eth_rpc".to_string()),
+                process: ProcessId::from_str("eth_rpc:sys:uqbar").unwrap(),
             },
             &Request {
                 inherit: false,            // TODO what
@@ -157,7 +152,7 @@ impl UqProcess for Component {
         let _register_endpoint = send_request(
             &Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("http_bindings".to_string()),
+                process: ProcessId::from_str("http_bindings:sys:uqbar").unwrap(),
             },
             &Request {
                 inherit: false,
@@ -189,7 +184,7 @@ impl UqProcess for Component {
                 continue;
             };
 
-            if source.process == ProcessId::Name("http_bindings".to_string()) {
+            if source.process.to_string() == "http_bindings:sys:uqbar" {
                 if let Ok(ipc_json) = serde_json::from_str::<serde_json::Value>(
                     &request.ipc.clone().unwrap_or_default(),
                 ) {
@@ -248,7 +243,7 @@ impl UqProcess for Component {
             match msg {
                 // Probably more message types later...maybe not...
                 AllActions::EventSubscription(e) => {
-                    state.block = hex_to_u64(&e.blockNumber).unwrap();
+                    state.block = hex_to_u64(&e.block_number).unwrap();
                     match decode_hex(&e.topics[0].clone()) {
                         NodeRegistered::SIGNATURE_HASH => {
                             // bindings::print_to_terminal(0, format!("qns_indexer: got NodeRegistered event: {:?}", e).as_str());
@@ -314,7 +309,7 @@ impl UqProcess for Component {
                             send_request(
                                 &Address {
                                     node: our.node.clone(),
-                                    process: ProcessId::Name("net".to_string()),
+                                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
                                 },
                                 &Request {
                                     inherit: false,
@@ -338,7 +333,7 @@ impl UqProcess for Component {
                 }
             }
 
-            process_lib::await_set_state(our.node.clone(), &state);
+            process_lib::set_state::<State>(&state);
         }
     }
 }

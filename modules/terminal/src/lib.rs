@@ -1,7 +1,10 @@
 cargo_component_bindings::generate!();
-mod process_lib;
-struct Component;
 use bindings::{component::uq_process::types::*, print_to_terminal, receive, send_request, Guest};
+
+#[allow(dead_code)]
+mod process_lib;
+
+struct Component;
 
 fn parse_command(our_name: &str, line: String) {
     let (head, tail) = line.split_once(" ").unwrap_or((&line, ""));
@@ -22,7 +25,7 @@ fn parse_command(our_name: &str, line: String) {
                     } else {
                         target.into()
                     },
-                    process: ProcessId::Name("net".into()),
+                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
                 },
                 &Request {
                     inherit: false,
@@ -58,7 +61,9 @@ fn parse_command(our_name: &str, line: String) {
                     } else {
                         target_node.into()
                     },
-                    process: ProcessId::Name(target_process.into()),
+                    process: ProcessId::from_str(target_process).unwrap_or(
+                        ProcessId::from_str(&format!("{}:sys:uqbar", target_process)).unwrap(),
+                    ),
                 },
                 &Request {
                     inherit: false,
@@ -78,7 +83,7 @@ fn parse_command(our_name: &str, line: String) {
 
 impl Guest for Component {
     fn init(our: Address) {
-        assert_eq!(our.process, ProcessId::Name("terminal".into()));
+        assert_eq!(our.process.to_string(), "terminal:sys:uqbar");
         print_to_terminal(1, &format!("terminal: start"));
         loop {
             let (source, message) = match receive() {

@@ -10,6 +10,7 @@ use url::form_urlencoded;
 use bindings::component::uq_process::types::*;
 use bindings::{get_payload, print_to_terminal, receive, send_request, send_response, Guest};
 
+#[allow(dead_code)]
 mod process_lib;
 
 struct Component;
@@ -112,7 +113,7 @@ impl Guest for Component {
         send_request(
             &Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("http_server".to_string()),
+                process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
             },
             &Request {
                 inherit: false,
@@ -158,10 +159,7 @@ impl Guest for Component {
             let action = message_json["action"].as_str().unwrap_or("");
             let address = message_json["address"].as_str().unwrap_or(""); // origin HTTP address
             let path = message_json["path"].as_str().unwrap_or("");
-            let app = match source.process {
-                ProcessId::Name(name) => name,
-                _ => "".to_string(),
-            };
+            let app: String = source.process.to_string();
 
             print_to_terminal(1, "http_bindings: got message");
 
@@ -187,13 +185,13 @@ impl Guest for Component {
                     },
                     None,
                 );
-            } else if action == "bind-app" && path != "" && app != "" {
+            } else if action == "bind-app" && path != "" {
                 print_to_terminal(1, "http_bindings: binding app 1");
                 let path_segments = path
                     .trim_start_matches('/')
                     .split("/")
                     .collect::<Vec<&str>>();
-                if app != "homepage"
+                if app != "homepage:sys:uqbar"
                     && (path_segments.is_empty()
                         || path_segments[0] != app.clone().replace("_", "-"))
                 {
@@ -213,7 +211,7 @@ impl Guest for Component {
                     );
                     path_bindings.insert(path.to_string(), {
                         BoundPath {
-                            app: app.to_string(),
+                            app,
                             authenticated: message_json
                                 .get("authenticated")
                                 .and_then(|v| v.as_bool())
@@ -424,7 +422,7 @@ impl Guest for Component {
                         send_request(
                             &Address {
                                 node: our.node.clone(),
-                                process: ProcessId::Name("encryptor".to_string()),
+                                process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
                             },
                             &Request {
                                 inherit: true,
@@ -580,7 +578,7 @@ impl Guest for Component {
                         send_request(
                             &Address {
                                 node: our.node.clone(),
-                                process: ProcessId::Name(app.to_string()),
+                                process: ProcessId::from_str(app).unwrap(),
                             },
                             &Request {
                                 inherit: true,

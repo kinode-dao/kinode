@@ -13,6 +13,26 @@ fn run_command(cmd: &mut Command) -> io::Result<()> {
     }
 }
 
+fn file_outdated<P1, P2>(input: P1, output: P2) -> io::Result<bool>
+where
+    P1: AsRef<std::path::Path>,
+    P2: AsRef<std::path::Path>,
+{
+    let out_meta = std::fs::metadata(output);
+    if let Ok(meta) = out_meta {
+        let output_mtime = meta.modified()?;
+
+        // if input file is more recent than our output, we are outdated
+        let input_meta = fs::metadata(input)?;
+        let input_mtime = input_meta.modified()?;
+
+        Ok(input_mtime > output_mtime)
+    } else {
+        // output file not found, we are outdated
+        Ok(true)
+    }
+}
+
 fn main() {
     if std::env::var("SKIP_BUILD_SCRIPT").is_ok() {
         println!("Skipping build script");
@@ -58,43 +78,48 @@ fn main() {
 
     // Build wasm32-wasi apps.
     for name in WASI_APPS {
-        // copy in newly-made wit
-        run_command(Command::new("cp").args(&[
-            "-r",
-            "wit",
-            &format!("{}/modules/{}", pwd.display(), name),
-        ]))
-        .unwrap();
-        // create target/bindings directory
-        fs::create_dir_all(&format!(
-            "{}/modules/{}/target/bindings/{}",
-            pwd.display(),
-            name,
-            name
-        ))
-        .unwrap();
-        // copy newly-made target.wasm into target/bindings
-        run_command(Command::new("cp").args(&[
-            "target.wasm",
-            &format!(
-                "{}/modules/{}/target/bindings/{}/",
+        // copy in newly-made wit IF old one is outdated
+        if file_outdated(
+            format!("{}/wit/", pwd.display()),
+            format!("{}/modules/{}/wit/", pwd.display(), name),
+        ).unwrap_or(true) {
+            run_command(Command::new("cp").args(&[
+                "-r",
+                "wit",
+                &format!("{}/modules/{}", pwd.display(), name),
+            ]))
+            .unwrap();
+            // create target/bindings directory
+            fs::create_dir_all(&format!(
+                "{}/modules/{}/target/bindings/{}",
                 pwd.display(),
                 name,
                 name
-            ),
-        ]))
-        .unwrap();
-        // copy newly-made world into target/bindings
-        run_command(Command::new("cp").args(&[
-            "world",
-            &format!(
-                "{}/modules/{}/target/bindings/{}/",
-                pwd.display(),
-                name,
-                name
-            ),
-        ]))
-        .unwrap();
+            ))
+            .unwrap();
+            // copy newly-made target.wasm into target/bindings
+            run_command(Command::new("cp").args(&[
+                "target.wasm",
+                &format!(
+                    "{}/modules/{}/target/bindings/{}/",
+                    pwd.display(),
+                    name,
+                    name
+                ),
+            ]))
+            .unwrap();
+            // copy newly-made world into target/bindings
+            run_command(Command::new("cp").args(&[
+                "world",
+                &format!(
+                    "{}/modules/{}/target/bindings/{}/",
+                    pwd.display(),
+                    name,
+                    name
+                ),
+            ]))
+            .unwrap();
+        }
         // build the module targeting wasm32-wasi
         run_command(Command::new("cargo").args(&[
             "build",

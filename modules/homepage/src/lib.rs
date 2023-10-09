@@ -4,6 +4,7 @@ use bindings::{print_to_terminal, receive, send_request, send_requests, send_res
 use bindings::component::uq_process::types::*;
 use serde_json::json;
 
+#[allow(dead_code)]
 mod process_lib;
 
 struct Component;
@@ -35,7 +36,7 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::Name("http_bindings".to_string()),
+            process: ProcessId::from_str("http_bindings:sys:uqbar").unwrap(),
         };
 
         // <address, request, option<context>, option<payload>>
@@ -129,7 +130,7 @@ impl Guest for Component {
                                 send_request(
                                     &Address {
                                         node: our.node.clone(),
-                                        process: ProcessId::Name("encryptor".to_string()),
+                                        process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
                                     },
                                     &Request {
                                         inherit: false,

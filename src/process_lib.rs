@@ -56,6 +56,14 @@ impl ProcessId {
     }
 }
 
+impl PartialEq for ProcessId {
+    fn eq(&self, other: &Self) -> bool {
+        self.process_name == other.process_name
+            && self.package_name == other.package_name
+            && self.publisher_node == other.publisher_node
+    }
+}
+
 #[derive(Debug)]
 pub enum ProcessIdParseError {
     TooManyColons,
@@ -92,7 +100,7 @@ pub fn get_state<T: serde::de::DeserializeOwned>() -> Option<T> {
     }
 }
 
-pub fn await_set_state<T>(state: &T)
+pub fn set_state<T>(state: &T)
 where
     T: serde::Serialize,
 {
