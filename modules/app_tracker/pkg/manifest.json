@@ -5,8 +5,8 @@
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [
-            "http_bindings:sys:uqbar",
-            "terminal:sys:uqbar",
+            "http_bindings:http_bindings:uqbar",
+            "terminal:terminal:uqbar",
             "filesystem:sys:uqbar",
             "http_server:sys:uqbar",
             "http_client:sys:uqbar",
