@@ -25,8 +25,8 @@ struct Vfs {
     key_to_entry: KeyToEntry,
     path_to_key: PathToKey,
 }
-type IdentifierToVfs = HashMap<String, Arc<Mutex<Vfs>>>;
-type IdentifierToVfsSerializable = HashMap<String, Vfs>;
+type DriveToVfs = HashMap<String, Arc<Mutex<Vfs>>>;
+type DriveToVfsSerializable = HashMap<String, Vfs>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Entry {
@@ -120,8 +120,8 @@ fn make_error_message(
     }
 }
 
-async fn state_to_bytes(state: &IdentifierToVfs) -> Vec<u8> {
-    let mut serializable: IdentifierToVfsSerializable = HashMap::new();
+async fn state_to_bytes(state: &DriveToVfs) -> Vec<u8> {
+    let mut serializable: DriveToVfsSerializable = HashMap::new();
     for (id, vfs) in state.iter() {
         let vfs = vfs.lock().await;
         serializable.insert(id.clone(), (*vfs).clone());
@@ -129,14 +129,14 @@ async fn state_to_bytes(state: &IdentifierToVfs) -> Vec<u8> {
     bincode::serialize(&serializable).unwrap()
 }
 
-fn bytes_to_state(bytes: &Vec<u8>, state: &mut IdentifierToVfs) {
-    let serializable: IdentifierToVfsSerializable = bincode::deserialize(&bytes).unwrap();
+fn bytes_to_state(bytes: &Vec<u8>, state: &mut DriveToVfs) {
+    let serializable: DriveToVfsSerializable = bincode::deserialize(&bytes).unwrap();
     for (id, vfs) in serializable.into_iter() {
         state.insert(id, Arc::new(Mutex::new(vfs)));
     }
 }
 
-async fn persist_state(our_node: String, send_to_loop: &MessageSender, state: &IdentifierToVfs) {
+async fn persist_state(our_node: String, send_to_loop: &MessageSender, state: &DriveToVfs) {
     let _ = send_to_loop
         .send(KernelMessage {
             id: rand::random(),
@@ -169,13 +169,12 @@ async fn persist_state(our_node: String, send_to_loop: &MessageSender, state: &I
 async fn load_state_from_reboot(
     our_node: String,
     send_to_loop: &MessageSender,
-    mut recv_from_loop: MessageReceiver,
-    drive_to_vfs: &mut IdentifierToVfs,
-    id: u64,
-) -> bool {
+    mut recv_from_loop: &mut MessageReceiver,
+    drive_to_vfs: &mut DriveToVfs,
+) {
     let _ = send_to_loop
         .send(KernelMessage {
-            id,
+            id: rand::random(),
             source: Address {
                 node: our_node.clone(),
                 process: VFS_PROCESS_ID.clone(),
@@ -197,29 +196,36 @@ async fn load_state_from_reboot(
             signed_capabilities: None,
         })
         .await;
+    println!("vfs lsfr 1\r");
     let km = recv_from_loop.recv().await;
+    println!("vfs lsfr 2\r");
     let Some(km) = km else {
-        return false;
+        return ();
     };
 
     let KernelMessage {
         message, payload, ..
     } = km;
     let Message::Response((Response { ipc, .. }, None)) = message else {
-        return false;
+        println!("vfs lsfr f0\r");
+        return ();
     };
     let Ok(Ok(FsResponse::GetState)) =
         serde_json::from_str::<Result<FsResponse, FsError>>(&ipc.unwrap_or_default())
     else {
-        return false;
+        println!("vfs lsfr f1\r");
+        return ();
     };
     let Some(payload) = payload else {
         panic!("");
     };
-    bytes_to_state(&payload.bytes, drive_to_vfs);
+    let mut drive_to_vfs: DriveToVfs = HashMap::new();
+    bytes_to_state(&payload.bytes, &mut drive_to_vfs);
 
-    return true;
+    println!("vfs lsfr 4\r");
 }
+
+async fn noop_future() -> Option<DriveToVfs> { None }
 
 pub async fn vfs(
     our_node: String,
@@ -227,8 +233,10 @@ pub async fn vfs(
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
+    vfs_messages: Vec<KernelMessage>,
 ) -> anyhow::Result<()> {
-    let mut drive_to_vfs: IdentifierToVfs = HashMap::new();
+    println!("vfs: begin\r");
+    let mut drive_to_vfs: DriveToVfs = HashMap::new();
     let mut response_router: ResponseRouter = HashMap::new();
     let (send_vfs_task_done, mut recv_vfs_task_done): (
         tokio::sync::mpsc::Sender<u64>,
@@ -239,35 +247,33 @@ pub async fn vfs(
         tokio::sync::mpsc::Receiver<bool>,
     ) = tokio::sync::mpsc::channel(VFS_PERSIST_STATE_CHANNEL_CAPACITY);
 
-    let (response_sender, response_receiver): (MessageSender, MessageReceiver) =
-        tokio::sync::mpsc::channel(VFS_RESPONSE_CHANNEL_CAPACITY);
-    let first_message_id = rand::random();
-    response_router.insert(first_message_id, response_sender);
-    let is_reboot = load_state_from_reboot(
+    load_state_from_reboot(
         our_node.clone(),
         &send_to_loop,
-        response_receiver,
+        &mut recv_from_loop,
         &mut drive_to_vfs,
-        first_message_id,
-    )
-    .await;
-    if !is_reboot {
-        // initial boot
-        // build_state_for_initial_boot(&process_map, &mut drive_to_vfs);
-        send_persist_state.send(true).await.unwrap();
+    ).await;
+
+    for vfs_message in vfs_messages {
+        send_to_loop.send(vfs_message).await.unwrap();
     }
 
+    println!("vfs entering loop\r");
     loop {
         tokio::select! {
             id_done = recv_vfs_task_done.recv() => {
+                println!("vfs got\r");
                 let Some(id_done) = id_done else { continue };
                 response_router.remove(&id_done);
+                continue;
             },
             _ = recv_persist_state.recv() => {
+                println!("vfs got\r");
                 persist_state(our_node.clone(), &send_to_loop, &drive_to_vfs).await;
                 continue;
             },
             km = recv_from_loop.recv() => {
+                println!("vfs got\r");
                 let Some(km) = km else { continue };
                 if let Some(response_sender) = response_router.remove(&km.id) {
                     response_sender.send(km).await.unwrap();
@@ -555,6 +561,7 @@ async fn match_request(
 ) -> Result<(Option<String>, Option<Vec<u8>>), VfsError> {
     Ok(match request.action {
         VfsAction::New => {
+            println!("vfs: got New\r");
             for new_cap in new_caps {
                 let _ = send_to_loop
                     .send(KernelMessage {
@@ -586,6 +593,7 @@ async fn match_request(
                     .await;
             }
             send_to_persist.send(true).await.unwrap();
+            println!("vfs: done w New\r");
             (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
         VfsAction::Add {

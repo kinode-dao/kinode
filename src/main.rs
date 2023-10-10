@@ -373,12 +373,11 @@ async fn main() {
         )
     };
 
-    let (kernel_process_map, manifest) = filesystem::load_fs(
+    let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
         our.name.clone(),
         home_directory_path.clone(),
         file_key,
         fs_config,
-        vfs_message_sender.clone(),
     )
     .await
     .expect("fs load failed!");
@@ -466,6 +465,7 @@ async fn main() {
         print_sender.clone(),
         vfs_message_receiver,
         caps_oracle_sender.clone(),
+        vfs_messages,
     ));
     tasks.spawn(encryptor::encryptor(
         our.name.clone(),

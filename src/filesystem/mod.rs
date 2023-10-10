@@ -16,8 +16,7 @@ pub async fn load_fs(
     home_directory_path: String,
     file_key: Vec<u8>,
     fs_config: FsConfig,
-    vfs_message_sender: MessageSender,
-) -> Result<(ProcessMap, Manifest), FsError> {
+) -> Result<(ProcessMap, Manifest, Vec<KernelMessage>), FsError> {
     // load/create fs directory, manifest + log if none.
     let fs_directory_path_str = format!("{}/fs", &home_directory_path);
 
@@ -66,7 +65,7 @@ pub async fn load_fs(
     let mut process_map: ProcessMap = HashMap::new();
 
     // get current processes' wasm_bytes handles. GetState(kernel)
-    match manifest.read(&kernel_process_id, None, None).await {
+    let vfs_messages = match manifest.read(&kernel_process_id, None, None).await {
         Err(_) => {
             //  bootstrap filesystem
             bootstrap(
@@ -74,17 +73,17 @@ pub async fn load_fs(
                 &kernel_process_id,
                 &mut process_map,
                 &mut manifest,
-                &vfs_message_sender,
             )
             .await
-            .expect("fresh bootstrap failed!");
+            .expect("fresh bootstrap failed!")
         }
         Ok(bytes) => {
             process_map = bincode::deserialize(&bytes).expect("state map deserialization error!");
+            vec![]
         }
-    }
+    };
 
-    Ok((process_map, manifest))
+    Ok((process_map, manifest, vfs_messages))
 }
 
 /// function run only upon fresh boot.
@@ -100,8 +99,7 @@ async fn bootstrap(
     kernel_process_id: &FileIdentifier,
     process_map: &mut ProcessMap,
     manifest: &mut Manifest,
-    vfs_message_sender: &MessageSender,
-) -> Result<()> {
+) -> Result<Vec<KernelMessage>> {
     println!("bootstrapping node...\r");
     const RUNTIME_MODULES: [(&str, bool); 8] = [
         ("filesystem:sys:uqbar", false),
@@ -109,7 +107,7 @@ async fn bootstrap(
         ("http_client:sys:uqbar", false),
         ("encryptor:sys:uqbar", false),
         ("net:sys:uqbar", false),
-        ("vfs:sys:uqbar", false),
+        ("vfs:sys:uqbar", true),
         ("kernel:sys:uqbar", false),
         ("eth_rpc:sys:uqbar", true), // TODO evaluate
     ];
@@ -144,6 +142,7 @@ async fn bootstrap(
                 public: runtime_module.1,
             });
     }
+    println!("fs bs: runtime process_map {:#?}\r", process_map);
 
     let packages: Vec<(String, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> =
         get_zipped_packages().await;
@@ -151,38 +150,37 @@ async fn bootstrap(
     // need to grant all caps at the end, after process_map has been filled in!
     let mut caps_to_grant = Vec::<(ProcessId, Capability)>::new();
 
+    let mut vfs_messages = Vec::new();
+
     for (package_name, mut package) in packages {
         println!("fs: handling package {package_name}...\r");
         // create a new package in VFS
-        vfs_message_sender
-            .send(KernelMessage {
-                id: rand::random(),
-                source: Address {
-                    node: our_name.to_string(),
-                    process: FILESYSTEM_PROCESS_ID.clone(),
-                },
-                target: Address {
-                    node: our_name.to_string(),
-                    process: VFS_PROCESS_ID.clone(),
-                },
-                rsvp: None,
-                message: Message::Request(Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: Some(
-                        serde_json::to_string::<VfsRequest>(&VfsRequest {
-                            drive: package_name.clone(),
-                            action: VfsAction::New,
-                        })
-                        .unwrap(),
-                    ),
-                    metadata: None,
-                }),
-                payload: None,
-                signed_capabilities: None,
-            })
-            .await
-            .unwrap();
+        vfs_messages.push(KernelMessage {
+            id: rand::random(),
+            source: Address {
+                node: our_name.to_string(),
+                process: FILESYSTEM_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node: our_name.to_string(),
+                process: VFS_PROCESS_ID.clone(),
+            },
+            rsvp: None,
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: None,
+                ipc: Some(
+                    serde_json::to_string::<VfsRequest>(&VfsRequest {
+                        drive: package_name.clone(),
+                        action: VfsAction::New,
+                    })
+                    .unwrap(),
+                ),
+                metadata: None,
+            }),
+            payload: None,
+            signed_capabilities: None,
+        });
         // for each file in package.zip, recursively through all dirs, send a newfile KM to VFS
         for i in 0..package.len() {
             let mut file = package.by_index(i).unwrap();
@@ -198,41 +196,38 @@ async fn bootstrap(
                 println!("fs: found file {}...\r", file_path);
                 let mut file_content = Vec::new();
                 file.read_to_end(&mut file_content).unwrap();
-                vfs_message_sender
-                    .send(KernelMessage {
-                        id: rand::random(),
-                        source: Address {
-                            node: our_name.to_string(),
-                            process: FILESYSTEM_PROCESS_ID.clone(),
-                        },
-                        target: Address {
-                            node: our_name.to_string(),
-                            process: VFS_PROCESS_ID.clone(),
-                        },
-                        rsvp: None,
-                        message: Message::Request(Request {
-                            inherit: false,
-                            expects_response: None,
-                            ipc: Some(
-                                serde_json::to_string::<VfsRequest>(&VfsRequest {
-                                    drive: package_name.clone(),
-                                    action: VfsAction::Add {
-                                        full_path: file_path,
-                                        entry_type: AddEntryType::NewFile,
-                                    },
-                                })
-                                .unwrap(),
-                            ),
-                            metadata: None,
-                        }),
-                        payload: Some(Payload {
-                            mime: None,
-                            bytes: file_content,
-                        }),
-                        signed_capabilities: None,
-                    })
-                    .await
-                    .unwrap();
+                vfs_messages.push(KernelMessage {
+                    id: rand::random(),
+                    source: Address {
+                        node: our_name.to_string(),
+                        process: FILESYSTEM_PROCESS_ID.clone(),
+                    },
+                    target: Address {
+                        node: our_name.to_string(),
+                        process: VFS_PROCESS_ID.clone(),
+                    },
+                    rsvp: None,
+                    message: Message::Request(Request {
+                        inherit: false,
+                        expects_response: None,
+                        ipc: Some(
+                            serde_json::to_string::<VfsRequest>(&VfsRequest {
+                                drive: package_name.clone(),
+                                action: VfsAction::Add {
+                                    full_path: file_path,
+                                    entry_type: AddEntryType::NewFile,
+                                },
+                            })
+                            .unwrap(),
+                        ),
+                        metadata: None,
+                    }),
+                    payload: Some(Payload {
+                        mime: None,
+                        bytes: file_content,
+                    }),
+                    signed_capabilities: None,
+                });
             }
         }
 
@@ -376,7 +371,7 @@ async fn bootstrap(
             .write(&kernel_process_id, &serialized_process_map)
             .await;
     }
-    Ok(())
+    Ok(vfs_messages)
 }
 
 /// go into /target folder and get all .zip package files
