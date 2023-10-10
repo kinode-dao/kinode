@@ -274,7 +274,7 @@ pub async fn vfs(
             km = recv_from_loop.recv() => {
                 println!("vfs got msg\r");
                 let Some(km) = km else { continue };
-                if let Some(response_sender) = response_router.remove(&km.id) {
+                if let Some(response_sender) = response_router.get(&km.id) {
                     let _ = response_sender.send(km).await;
                     continue;
                 }

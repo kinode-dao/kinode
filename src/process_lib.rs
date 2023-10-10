@@ -90,6 +90,27 @@ pub fn send_and_await_response(
     )
 }
 
+pub fn send_request(
+    target: &Address,
+    inherit: bool,
+    ipc: Option<Json>,
+    metadata: Option<Json>,
+    context: Option<&Json>,
+    payload: Option<&Payload>,
+) {
+    super::bindings::send_request(
+        target,
+        &Request {
+            inherit,
+            expects_response: None,
+            ipc,
+            metadata,
+        },
+        context,
+        payload,
+    )
+}
+
 pub fn get_state<T: serde::de::DeserializeOwned>() -> Option<T> {
     match super::bindings::get_state() {
         Some(bytes) => match bincode::deserialize::<T>(&bytes) {

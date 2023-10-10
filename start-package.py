@@ -22,7 +22,7 @@ def send_request(path, json_data):
 def new_package(package, zip_file):
     request = {
         "node": NODE,
-        "process": "app_tracker:sys:uqbar",
+        "process": "app_tracker:app_tracker:uqbar",
         "inherit": False,
         "expects_response": None,
         "ipc": json.dumps({
@@ -41,7 +41,7 @@ def new_package(package, zip_file):
 def install_package(package):
     request = {
         "node": NODE,
-        "process": "app_tracker:sys:uqbar",
+        "process": "app_tracker:app_tracker:uqbar",
         "inherit": False,
         "expects_response": None,
         "ipc": json.dumps({
