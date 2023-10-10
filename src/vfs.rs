@@ -225,7 +225,9 @@ async fn load_state_from_reboot(
     println!("vfs lsfr 4\r");
 }
 
-async fn noop_future() -> Option<DriveToVfs> { None }
+async fn noop_future() -> Option<DriveToVfs> {
+    None
+}
 
 pub async fn vfs(
     our_node: String,
@@ -252,7 +254,8 @@ pub async fn vfs(
         &send_to_loop,
         &mut recv_from_loop,
         &mut drive_to_vfs,
-    ).await;
+    )
+    .await;
 
     for vfs_message in vfs_messages {
         send_to_loop.send(vfs_message).await.unwrap();
