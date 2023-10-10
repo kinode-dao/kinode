@@ -64,7 +64,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
             )?;
 
             print_to_terminal(0, "we in here after new");
-
             // add zip bytes
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
@@ -73,7 +72,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     serde_json::to_string(&kt::VfsRequest {
                         drive: package.clone(),
                         action: kt::VfsAction::Add {
-                            full_path: "".into(), // TODO
+                            full_path: package.into(),
                             entry_type: kt::AddEntryType::ZipArchive,
                         },
                     })
@@ -84,10 +83,10 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 5,
             )?;
             print_to_terminal(0, "we in here after zippie zip");
-
             Ok(())
         }
         AppTrackerRequest::Install { package } => {
+            print_to_terminal(0, "in app tracker install");
             let vfs_address = Address {
                 node: our.node.clone(),
                 process: ProcessId::from_str("vfs:sys:uqbar").unwrap(),
@@ -99,7 +98,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 Some(
                     serde_json::to_string(&kt::VfsRequest {
                         drive: package.clone(),
-                        action: kt::VfsAction::GetEntry("/.manifest".into()),
+                        action: kt::VfsAction::GetEntry("/manifest.json".into()),
                     })
                     .unwrap(),
                 ),
@@ -107,11 +106,13 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 None,
                 5,
             )?;
+            print_to_terminal(0, "after get entry /manifest.json");
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
             let manifest = String::from_utf8(payload.bytes)?;
             let manifest = serde_json::from_str::<Vec<PackageManifestEntry>>(&manifest).unwrap();
+            print_to_terminal(0, "after  ./manifest deserialize");
 
             for entry in manifest {
                 let path = if entry.process_wasm_path.starts_with("/") {
@@ -119,6 +120,9 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 } else {
                     format!("/{}", entry.process_wasm_path)
                 };
+
+                print_to_terminal(0, &format!("APT;: path: {}", path));
+
 
                 let (_, hash_response) = process_lib::send_and_await_response(
                     &vfs_address,
@@ -134,12 +138,16 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     None,
                     5,
                 )?;
+
+                print_to_terminal(0, "get hash succesful");
+
                 let Message::Response((Response { ipc: Some(ipc), .. }, _)) = hash_response else {
                     return Err(anyhow::anyhow!("bad vfs response"));
                 };
                 let kt::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc).unwrap() else {
                     return Err(anyhow::anyhow!("no hash in vfs"));
                 };
+                print_to_terminal(0, "get hash RLY succesful");
 
                 // build initial caps
                 let mut initial_capabilities: HashSet<kt::SignedCapability> = HashSet::new();
@@ -198,6 +206,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     };
                     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
                 }
+                print_to_terminal(0, "after grant caps");
 
                 // TODO fix request?
                 for process_name in &entry.request_messaging {
@@ -217,6 +226,9 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     };
                     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
                 }
+
+                print_to_terminal(0, "after request caåps");
+
                 let process_id = format!("{}:{}", entry.process_name, package.clone());
                 let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {
                     return Err(anyhow::anyhow!("app_tracker: invalid process id!"));
@@ -234,6 +246,9 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     None,
                     5,
                 )?;
+
+                print_to_terminal(0, "after kill");
+
 
                 let _ = process_lib::send_and_await_response(
                     &Address {
@@ -255,6 +270,8 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     None,
                     5,
                 )?;
+                print_to_terminal(0, "after start!");
+
             }
             Ok(())
         }

@@ -32,7 +32,7 @@ def new_package(package, zip_file):
         }),
         "metadata": None,
         "context": None,
-        "mime": None,
+        "mime": "application/zip",
         "data": zip_file
     }
     return json.dumps(request)
@@ -45,7 +45,9 @@ def install_package(package):
         "inherit": False,
         "expects_response": None,
         "ipc": json.dumps({
-            "Install": package
+            "Install": {
+                "package": package
+            }
         }),
         "metadata": None,
         "context": None,
@@ -107,7 +109,7 @@ res = send_request("/rpc/message", new_pkg)
 
 if not res.status == 200:
     print("Failed to send new package request, response: ", res)
-    sys.exit(1)
+    #sys.exit(1)
 
 # install/start/reboot the package
 install_pkg = install_package(PKG_PUBLISHER)
