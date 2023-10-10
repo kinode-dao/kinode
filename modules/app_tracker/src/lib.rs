@@ -130,7 +130,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     Some(
                         serde_json::to_string(&kt::VfsRequest {
                             drive: package.clone(),
-                            action: kt::VfsAction::GetHash(path),
+                            action: kt::VfsAction::GetHash(path.clone()),
                         })
                         .unwrap(),
                     ),
@@ -249,6 +249,27 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
 
                 print_to_terminal(0, "after kill");
 
+                // kernel start process takes bytes as payload + wasm_bytes_handle...
+                // reconsider perhaps
+                let (_, _bytes_response) = process_lib::send_and_await_response(
+                    &vfs_address,
+                    false,
+                    Some(
+                        serde_json::to_string(&kt::VfsRequest {
+                            drive: package.clone(),
+                            action: kt::VfsAction::GetEntry(path),
+                        })
+                        .unwrap(),
+                    ),
+                    None,
+                    None,
+                    5,
+                )?;
+
+                print_to_terminal(0, "get wasm bytes");
+                let Some(payload) = get_payload() else {
+                    return Err(anyhow::anyhow!("no wasm bytes payload."));
+                };
 
                 let _ = process_lib::send_and_await_response(
                     &Address {
@@ -267,7 +288,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                         .unwrap(),
                     ),
                     None,
-                    None,
+                    Some(&payload),
                     5,
                 )?;
                 print_to_terminal(0, "after start!");
