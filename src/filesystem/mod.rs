@@ -468,10 +468,9 @@ pub async fn fs_sender(
                         )
                         .await
                         {
-                            send_to_loop
+                            let _ = send_to_loop
                                 .send(make_error_message(our_name.clone(), &km, e))
-                                .await
-                                .unwrap();
+                                .await;
                         }
                     }
                     // Remove the process entry if no more tasks are left

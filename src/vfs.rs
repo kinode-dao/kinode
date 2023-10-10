@@ -275,7 +275,7 @@ pub async fn vfs(
                 println!("vfs got\r");
                 let Some(km) = km else { continue };
                 if let Some(response_sender) = response_router.remove(&km.id) {
-                    response_sender.send(km).await.unwrap();
+                    let _ = response_sender.send(km).await;
                     continue;
                 }
 
@@ -413,7 +413,7 @@ pub async fn vfs(
                                 },
                                 Ok(_) => {},
                             }
-                            send_vfs_task_done.send(id).await.unwrap();
+                            let _ = send_vfs_task_done.send(id).await;
                         });
                     },
                 }
@@ -857,6 +857,7 @@ async fn match_request(
                             (is_file, is_dir, full_path, file_contents)
                         };
                         if is_file {
+                            println!("writing file: {}", full_path);
                             let _ = send_to_loop
                                 .send(KernelMessage {
                                     id,
@@ -882,7 +883,13 @@ async fn match_request(
                                     signed_capabilities: None,
                                 })
                                 .await;
-                            let write_response = recv_response.recv().await.unwrap();
+                            let write_response = match recv_response.recv().await {
+                                Some(response) => response,
+                                None => {
+                                    println!("No response received...");
+                                    continue;
+                                }
+                            };
                             let KernelMessage { message, .. } = write_response;
                             let Message::Response((Response { ipc, metadata: _ }, None)) = message
                             else {
@@ -891,7 +898,8 @@ async fn match_request(
                             let Some(ipc) = ipc else {
                                 panic!("");
                             };
-                            let FsResponse::Write(hash) = serde_json::from_str(&ipc).unwrap()
+                            let Ok(FsResponse::Write(hash)) =
+                                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
                             else {
                                 panic!("");
                             };
@@ -986,13 +994,12 @@ async fn match_request(
                 }
                 EntryType::File { parent: _ } => {
                     if vfs.path_to_key.contains_key(&new_full_path) {
-                        send_to_terminal
+                        let _ = send_to_terminal
                             .send(Printout {
                                 verbosity: 1,
                                 content: format!("vfs: overwriting file {}", new_full_path),
                             })
-                            .await
-                            .unwrap();
+                            .await;
                     };
                     let (name, _) = make_file_name(&new_full_path);
                     entry.name = name;
