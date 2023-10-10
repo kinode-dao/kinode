@@ -85,9 +85,13 @@ fn make_dir_name(full_path: &str) -> (String, String) {
 
 fn make_file_name(full_path: &str) -> (String, String) {
     let mut split_path: Vec<&str> = full_path.split("/").collect();
-    let name = split_path.pop().unwrap();
-    let path = format!("{}/", split_path.join("/"));
-    (name.into(), path)
+    let name = split_path.pop().unwrap_or("").to_string();
+    let path = if split_path.is_empty() {
+        String::new()
+    } else {
+        format!("{}/", split_path.join("/"))
+    };
+    (name, path)
 }
 
 fn make_error_message(
