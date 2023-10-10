@@ -628,7 +628,11 @@ async fn match_request(
                     let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
                         panic!("");
                     };
-                    let EntryType::Dir { children: ref mut parent_children, .. } = parent_entry.entry_type else {
+                    let EntryType::Dir {
+                        children: ref mut parent_children,
+                        ..
+                    } = parent_entry.entry_type
+                    else {
                         panic!("");
                     };
                     let key = Key::Dir { id: rand::random() };
@@ -724,7 +728,11 @@ async fn match_request(
                     let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
                         panic!("");
                     };
-                    let EntryType::Dir { children: ref mut parent_children, .. } = parent_entry.entry_type else {
+                    let EntryType::Dir {
+                        children: ref mut parent_children,
+                        ..
+                    } = parent_entry.entry_type
+                    else {
                         panic!("");
                     };
                     let key = Key::File { id: hash };
@@ -782,7 +790,11 @@ async fn match_request(
                     let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
                         panic!("");
                     };
-                    let EntryType::Dir { children: ref mut parent_children, .. } = parent_entry.entry_type else {
+                    let EntryType::Dir {
+                        children: ref mut parent_children,
+                        ..
+                    } = parent_entry.entry_type
+                    else {
                         panic!("");
                     };
                     let key = Key::File { id: hash };
@@ -878,10 +890,15 @@ async fn match_request(
                             let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
                                 panic!("");
                             };
-                            let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
+                            let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key)
+                            else {
                                 panic!("");
                             };
-                            let EntryType::Dir { children: ref mut parent_children, .. } = parent_entry.entry_type else {
+                            let EntryType::Dir {
+                                children: ref mut parent_children,
+                                ..
+                            } = parent_entry.entry_type
+                            else {
                                 panic!("");
                             };
                             let key = Key::File { id: hash };
