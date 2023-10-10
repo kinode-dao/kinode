@@ -110,7 +110,7 @@ fn make_error_message(
         rsvp: None,
         message: Message::Response((
             Response {
-                ipc: Some(serde_json::to_string(&error).unwrap()), //  TODO: handle error?
+                ipc: Some(serde_json::to_string(&VfsResponse::Err(error)).unwrap()), //  TODO: handle error?
                 metadata: None,
             },
             None,
@@ -261,18 +261,18 @@ pub async fn vfs(
     loop {
         tokio::select! {
             id_done = recv_vfs_task_done.recv() => {
-                println!("vfs got\r");
+                println!("vfs got done\r");
                 let Some(id_done) = id_done else { continue };
                 response_router.remove(&id_done);
                 continue;
             },
             _ = recv_persist_state.recv() => {
-                println!("vfs got\r");
+                println!("vfs got persist\r");
                 persist_state(our_node.clone(), &send_to_loop, &drive_to_vfs).await;
                 continue;
             },
             km = recv_from_loop.recv() => {
-                println!("vfs got\r");
+                println!("vfs got msg\r");
                 let Some(km) = km else { continue };
                 if let Some(response_sender) = response_router.remove(&km.id) {
                     let _ = response_sender.send(km).await;

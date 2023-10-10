@@ -2009,12 +2009,10 @@ async fn make_event_loop(
                         }
                         match senders.get(&kernel_message.target.process) {
                             Some(ProcessSender::Userspace(sender)) => {
-                                println!("el: sending to {}\r", kernel_message.target.process);
                                 // TODO: should this failing should crash kernel? probably not
                                 sender.send(Ok(kernel_message)).await.unwrap();
                             }
                             Some(ProcessSender::Runtime(sender)) => {
-                                println!("el: sending to {}\r", kernel_message.target.process);
                                 sender.send(kernel_message).await.expect("fatal: runtime module died");
                             }
                             None => {
