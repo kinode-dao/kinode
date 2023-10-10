@@ -139,6 +139,7 @@ fn main() {
     } else {
         for name in &WASI_APPS {
             println!("cargo:rerun-if-changed=modules/{}/src", name);
+            println!("cargo:rerun-if-changed=modules/{}/Cargo.toml", name);
             println!("cargo:rerun-if-changed=modules/{}/pkg/manifest.json", name);
             println!("cargo:rerun-if-changed=modules/{}/pkg/metadata.json", name);
         }
@@ -162,6 +163,7 @@ fn main() {
     for entry in std::fs::read_dir(&modules_dir).unwrap() {
         let entry_path = entry.unwrap().path();
         // If Cargo.toml is present, build the app
+        let parent_pkg_path = format!("{}/pkg", entry_path.display());
         if entry_path.join("Cargo.toml").exists() {
             build_app(
                 &entry_path.display().to_string(),
@@ -169,7 +171,6 @@ fn main() {
                 None,
             );
         } else if entry_path.is_dir() {
-            let parent_pkg_path = format!("{}/pkg", entry_path.display());
             fs::create_dir_all(&parent_pkg_path).unwrap();
 
             // Otherwise, consider it a directory containing subdirectories with potential apps
@@ -183,39 +184,39 @@ fn main() {
                     );
                 }
             }
-
-            // After processing all sub-apps, zip the parent's pkg/ directory
-            let writer = std::fs::File::create(format!(
-                "{}/target/{}.zip",
-                pwd.display(),
-                entry_path.file_name().unwrap().to_str().unwrap()
-            ))
-            .unwrap();
-            let options = zip::write::FileOptions::default()
-                .compression_method(zip::CompressionMethod::Stored)
-                .unix_permissions(0o755);
-            let mut zip = zip::ZipWriter::new(writer);
-            for sub_entry in walkdir::WalkDir::new(&parent_pkg_path) {
-                let sub_entry = sub_entry.unwrap();
-                let path = sub_entry.path();
-                let name = path
-                    .strip_prefix(std::path::Path::new(&parent_pkg_path))
-                    .unwrap();
-
-                // Write a directory or file to the ZIP archive
-                if path.is_file() {
-                    zip.start_file(name.to_string_lossy().into_owned(), options)
-                        .unwrap();
-                    let mut file = std::fs::File::open(path).unwrap();
-                    let mut buffer = Vec::new();
-                    file.read_to_end(&mut buffer).unwrap();
-                    zip.write_all(&buffer).unwrap();
-                } else if name.as_os_str().len() != 0 {
-                    zip.add_directory(name.to_string_lossy().into_owned(), options)
-                        .unwrap();
-                }
-            }
-            zip.finish().unwrap();
         }
+
+        // After processing all sub-apps, zip the parent's pkg/ directory
+        let writer = std::fs::File::create(format!(
+            "{}/target/{}.zip",
+            pwd.display(),
+            entry_path.file_name().unwrap().to_str().unwrap()
+        ))
+        .unwrap();
+        let options = zip::write::FileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .unix_permissions(0o755);
+        let mut zip = zip::ZipWriter::new(writer);
+        for sub_entry in walkdir::WalkDir::new(&parent_pkg_path) {
+            let sub_entry = sub_entry.unwrap();
+            let path = sub_entry.path();
+            let name = path
+                .strip_prefix(std::path::Path::new(&parent_pkg_path))
+                .unwrap();
+
+            // Write a directory or file to the ZIP archive
+            if path.is_file() {
+                zip.start_file(name.to_string_lossy().into_owned(), options)
+                    .unwrap();
+                let mut file = std::fs::File::open(path).unwrap();
+                let mut buffer = Vec::new();
+                file.read_to_end(&mut buffer).unwrap();
+                zip.write_all(&buffer).unwrap();
+            } else if name.as_os_str().len() != 0 {
+                zip.add_directory(name.to_string_lossy().into_owned(), options)
+                    .unwrap();
+            }
+        }
+        zip.finish().unwrap();
     }
 }
