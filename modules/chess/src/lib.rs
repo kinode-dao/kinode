@@ -176,7 +176,7 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::from_str("http_bindings:sys:uqbar").unwrap(),
+            process: ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
         };
 
         // <address, request, option<context>, option<payload>>
@@ -471,7 +471,7 @@ impl Guest for Component {
                             continue;
                         }
                     }
-                } else if source.process.to_string() == "http_bindings:sys:uqbar" {
+                } else if source.process.to_string() == "http_bindings:http_bindings:uqbar" {
                     let path = message_json["path"].as_str().unwrap_or("");
                     let method = message_json["method"].as_str().unwrap_or("");
 

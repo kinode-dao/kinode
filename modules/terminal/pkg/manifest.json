@@ -1,7 +1,7 @@
 [
     {
         "process_name": "terminal",
-        "process_wasm_path": "terminal.wasm",
+        "process_wasm_path": "/terminal.wasm",
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [

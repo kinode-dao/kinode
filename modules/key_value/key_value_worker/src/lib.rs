@@ -26,29 +26,29 @@ fn get_payload_wrapped() -> Option<(Option<String>, Vec<u8>)> {
 
 fn send_and_await_response_wrapped(
     target_node: String,
-    target_process: Result<u64, String>,
+    target_process: String,
+    target_package: String,
+    target_publisher: String,
     request_ipc: Option<String>,
     request_metadata: Option<String>,
     payload: Option<(Option<String>, Vec<u8>)>,
     timeout: u64,
-) -> (
-    (String, Result<u64, String>),
-    (Option<String>, Option<String>),
-) {
+) -> (Option<String>, Option<String>) {
     let payload = match payload {
         None => None,
         Some((mime, bytes)) => Some(Payload { mime, bytes }),
     };
     let (
-        Address { node, process },
+        _,
         Message::Response((Response { ipc, metadata }, _)),
     ) = send_and_await_response(
         &Address {
             node: target_node,
-            process: match target_process {
-                Ok(id) => ProcessId::Id(id),
-                Err(name) => ProcessId::Name(name),
-            },
+            process: kt::ProcessId::new(
+                &target_process,
+                &target_package,
+                &target_publisher,
+            ).en_wit(),
         },
         &Request {
             inherit: false,
@@ -63,16 +63,7 @@ fn send_and_await_response_wrapped(
     ).unwrap() else {
         panic!("");
     };
-    (
-        (
-            node,
-            match process {
-                ProcessId::Id(id) => Ok(id),
-                ProcessId::Name(name) => Err(name),
-            },
-        ),
-        (ipc, metadata)
-    )
+    (ipc, metadata)
 }
 
 fn handle_message (

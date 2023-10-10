@@ -225,10 +225,6 @@ async fn load_state_from_reboot(
     println!("vfs lsfr 4\r");
 }
 
-async fn noop_future() -> Option<DriveToVfs> {
-    None
-}
-
 pub async fn vfs(
     our_node: String,
     send_to_loop: MessageSender,

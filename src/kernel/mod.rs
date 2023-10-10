@@ -1751,7 +1751,7 @@ async fn make_event_loop(
         );
         senders.insert(
             t::ProcessId::new(Some("vfs"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_vfs.clone()),
+            ProcessSender::Runtime(send_to_vfs),
         );
 
         // each running process is stored in this map
@@ -1893,28 +1893,34 @@ async fn make_event_loop(
                         if kernel_message.source.process != *KERNEL_PROCESS_ID
                             && kernel_message.source.process != *FILESYSTEM_PROCESS_ID
                         {
-                            match process_map.get(&kernel_message.source.process) {
-                                None => {}, // this should only get hit by kernel?
-                                Some(persisted) => {
-                                    if !persisted.capabilities.contains(&t::Capability {
-                                        issuer: t::Address {
-                                            node: our_name.clone(),
-                                            process: kernel_message.target.process.clone(),
-                                        },
-                                        params: "\"messaging\"".into(),
-                                    }) {
-                                        // capabilities are not correct! skip this message.
-                                        // TODO some kind of error thrown back at process
-                                        let _ = send_to_terminal.send(
-                                            t::Printout {
-                                                verbosity: 0,
-                                                content: format!(
-                                                    "event loop: process {:?} doesn't have capability to message process {:?}",
-                                                    kernel_message.source.process, kernel_message.target.process
-                                                )
-                                            }
-                                        ).await;
-                                        continue;
+                            let is_target_public = match process_map.get(&kernel_message.target.process) {
+                                None => false,
+                                Some(p) => p.public,
+                            };
+                            if !is_target_public {
+                                match process_map.get(&kernel_message.source.process) {
+                                    None => {}, // this should only get hit by kernel?
+                                    Some(persisted) => {
+                                        if !persisted.capabilities.contains(&t::Capability {
+                                            issuer: t::Address {
+                                                node: our_name.clone(),
+                                                process: kernel_message.target.process.clone(),
+                                            },
+                                            params: "\"messaging\"".into(),
+                                        }) {
+                                            // capabilities are not correct! skip this message.
+                                            // TODO some kind of error thrown back at process
+                                            let _ = send_to_terminal.send(
+                                                t::Printout {
+                                                    verbosity: 0,
+                                                    content: format!(
+                                                        "event loop: process {:?} doesn't have capability to message process {:?}",
+                                                        kernel_message.source.process, kernel_message.target.process
+                                                    )
+                                                }
+                                            ).await;
+                                            continue;
+                                        }
                                     }
                                 }
                             }
@@ -2003,10 +2009,12 @@ async fn make_event_loop(
                         }
                         match senders.get(&kernel_message.target.process) {
                             Some(ProcessSender::Userspace(sender)) => {
+                                println!("el: sending to {}\r", kernel_message.target.process);
                                 // TODO: should this failing should crash kernel? probably not
                                 sender.send(Ok(kernel_message)).await.unwrap();
                             }
                             Some(ProcessSender::Runtime(sender)) => {
+                                println!("el: sending to {}\r", kernel_message.target.process);
                                 sender.send(kernel_message).await.expect("fatal: runtime module died");
                             }
                             None => {

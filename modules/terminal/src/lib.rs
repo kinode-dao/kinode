@@ -54,6 +54,9 @@ fn parse_command(our_name: &str, line: String) {
             };
             //  TODO: why does this work but using the API below does not?
             //        Is it related to passing json in rather than a Serialize type?
+            //
+            print_to_terminal(0, &format!("terminal: {}\r", target_process));
+            print_to_terminal(0, &format!("terminal: {:?}\r", ProcessId::from_str(target_process).unwrap_or(ProcessId::from_str(&format!("{}:sys:uqbar", target_process)).unwrap())));
             send_request(
                 &Address {
                     node: if target_node == "our" {
@@ -83,7 +86,7 @@ fn parse_command(our_name: &str, line: String) {
 
 impl Guest for Component {
     fn init(our: Address) {
-        assert_eq!(our.process.to_string(), "terminal:sys:uqbar");
+        assert_eq!(our.process.to_string(), "terminal:terminal:uqbar");
         print_to_terminal(1, &format!("terminal: start"));
         loop {
             let (source, message) = match receive() {
