@@ -660,7 +660,7 @@ async fn handler(
         },
         target: Address {
             node: our.clone(),
-            process: ProcessId::new(Some("http_bindings"), "sys", "uqbar"),
+            process: ProcessId::new(Some("http_bindings"), "http_bindings", "uqbar"),
         },
         rsvp: Some(Address {
             node: our.clone(),

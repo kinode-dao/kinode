@@ -5,8 +5,8 @@
         "on_panic": "Restart",
         "request_networking": false,
         "request_messaging": [
-            "http_bindings:http_bindings:uqbar"
-            "app_tracker:app_tracker:uqbar"
+            "http_bindings:http_bindings:uqbar",
+            "app_tracker:app_tracker:uqbar",
 	        "http_server:sys:uqbar"
         ],
         "grant_messaging": []

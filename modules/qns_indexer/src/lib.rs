@@ -153,10 +153,13 @@ impl UqProcess for Component {
             None,
         );
 
+        let http_bindings_process_id_str = "http_bindings:http_bindings:uqbar";
+        let http_bindings_process_id = ProcessId::from_str(http_bindings_process_id_str).unwrap();
+
         let _register_endpoint = send_request(
             &Address {
                 node: our.node.clone(),
-                process: ProcessId::from_str("http_bindings:sys:uqbar").unwrap(),
+                process: http_bindings_process_id.clone(),
             },
             &Request {
                 inherit: false,
@@ -188,7 +191,7 @@ impl UqProcess for Component {
                 continue;
             };
 
-            if source.process.to_string() == "http_bindings:sys:uqbar" {
+            if source.process.to_string() == http_bindings_process_id_str {
                 if let Ok(ipc_json) = serde_json::from_str::<serde_json::Value>(
                     &request.ipc.clone().unwrap_or_default(),
                 ) {
