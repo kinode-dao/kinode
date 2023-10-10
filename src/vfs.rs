@@ -625,6 +625,12 @@ async fn match_request(
                     let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
                         panic!("fp, pp: {}, {}", full_path, parent_path);
                     };
+                    let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
+                        panic!("");
+                    };
+                    let EntryType::Dir { children: ref mut parent_children, .. } = parent_entry.entry_type else {
+                        panic!("");
+                    };
                     let key = Key::Dir { id: rand::random() };
                     vfs.key_to_entry.insert(
                         key.clone(),
@@ -637,7 +643,9 @@ async fn match_request(
                             },
                         },
                     );
-                    vfs.path_to_key.insert(parent_path, parent_key);
+                    parent_children.insert(key.clone());
+                    vfs.path_to_key.insert(parent_path, parent_key.clone());
+                    vfs.key_to_entry.insert(parent_key, parent_entry);
                     vfs.path_to_key.insert(full_path.clone(), key.clone());
                 }
                 AddEntryType::NewFile => {
@@ -713,6 +721,12 @@ async fn match_request(
                     let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
                         panic!("");
                     };
+                    let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
+                        panic!("");
+                    };
+                    let EntryType::Dir { children: ref mut parent_children, .. } = parent_entry.entry_type else {
+                        panic!("");
+                    };
                     let key = Key::File { id: hash };
                     vfs.key_to_entry.insert(
                         key.clone(),
@@ -724,7 +738,9 @@ async fn match_request(
                             },
                         },
                     );
-                    vfs.path_to_key.insert(parent_path, parent_key);
+                    parent_children.insert(key.clone());
+                    vfs.path_to_key.insert(parent_path, parent_key.clone());
+                    vfs.key_to_entry.insert(parent_key, parent_entry);
                     vfs.path_to_key.insert(full_path.clone(), key.clone());
                 }
                 AddEntryType::ExistingFile { hash } => {
@@ -763,6 +779,12 @@ async fn match_request(
                     let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
                         panic!("");
                     };
+                    let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
+                        panic!("");
+                    };
+                    let EntryType::Dir { children: ref mut parent_children, .. } = parent_entry.entry_type else {
+                        panic!("");
+                    };
                     let key = Key::File { id: hash };
                     vfs.key_to_entry.insert(
                         key.clone(),
@@ -774,7 +796,9 @@ async fn match_request(
                             },
                         },
                     );
-                    vfs.path_to_key.insert(parent_path, parent_key);
+                    parent_children.insert(key.clone());
+                    vfs.path_to_key.insert(parent_path, parent_key.clone());
+                    vfs.key_to_entry.insert(parent_key, parent_entry);
                     vfs.path_to_key.insert(full_path.clone(), key.clone());
                 }
                 AddEntryType::ZipArchive => {
@@ -854,6 +878,12 @@ async fn match_request(
                             let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
                                 panic!("");
                             };
+                            let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
+                                panic!("");
+                            };
+                            let EntryType::Dir { children: ref mut parent_children, .. } = parent_entry.entry_type else {
+                                panic!("");
+                            };
                             let key = Key::File { id: hash };
                             vfs.key_to_entry.insert(
                                 key.clone(),
@@ -865,80 +895,15 @@ async fn match_request(
                                     },
                                 },
                             );
-                            vfs.path_to_key.insert(parent_path, parent_key);
+                            parent_children.insert(key.clone());
+                            vfs.path_to_key.insert(parent_path, parent_key.clone());
+                            vfs.key_to_entry.insert(parent_key, parent_entry);
                             vfs.path_to_key.insert(full_path.clone(), key.clone());
                         } else if is_dir {
                             panic!("vfs: zip dir not yet implemented");
                         } else {
                             panic!("vfs: zip with non-file non-dir");
                         };
-                        // if file.is_file() {
-                        //     println!("Filename: {}", file.name());
-                        //     let mut out = Vec::new();
-                        //     file.read_to_end(&mut out).unwrap();
-                        //     let full_path = format!("/{}", file.name());
-
-                        //     // TODO: factor out
-                        //     let _ = send_to_loop
-                        //         .send(KernelMessage {
-                        //             id,
-                        //             source: Address {
-                        //                 node: our_node.clone(),
-                        //                 process: VFS_PROCESS_ID.clone(),
-                        //             },
-                        //             target: Address {
-                        //                 node: our_node.clone(),
-                        //                 process: FILESYSTEM_PROCESS_ID.clone(),
-                        //             },
-                        //             rsvp: None,
-                        //             message: Message::Request(Request {
-                        //                 inherit: true,
-                        //                 expects_response: Some(5), // TODO evaluate
-                        //                 ipc: Some(serde_json::to_string(&FsAction::Write).unwrap()),
-                        //                 metadata: None,
-                        //             }),
-                        //             payload: Some(Payload {
-                        //                 mime: None,
-                        //                 bytes: out,
-                        //             }),
-                        //             signed_capabilities: None,
-                        //         })
-                        //         .await;
-                        //     let write_response = recv_response.recv().await.unwrap();
-                        //     let KernelMessage { message, .. } = write_response;
-                        //     let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
-                        //         panic!("")
-                        //     };
-                        //     let Some(ipc) = ipc else {
-                        //         panic!("");
-                        //     };
-                        //     let FsResponse::Write(hash) = serde_json::from_str(&ipc).unwrap() else {
-                        //         panic!("");
-                        //     };
-
-                        //     let (name, parent_path) = make_file_name(&full_path);
-                        //     let mut vfs = vfs.lock().await;
-                        //     let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
-                        //         panic!("");
-                        //     };
-                        //     let key = Key::File { id: hash };
-                        //     vfs.key_to_entry.insert(
-                        //         key.clone(),
-                        //         Entry {
-                        //             name,
-                        //             full_path: full_path.clone(),
-                        //             entry_type: EntryType::File {
-                        //                 parent: parent_key.clone(),
-                        //             },
-                        //         },
-                        //     );
-                        //     vfs.path_to_key.insert(parent_path, parent_key);
-                        //     vfs.path_to_key.insert(full_path.clone(), key.clone());
-                        // } else if file.is_dir() {
-                        //     panic!("todo");
-                        // } else {
-                        //     panic!("wat");
-                        // }
                     }
                 }
             }
