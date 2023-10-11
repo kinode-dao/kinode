@@ -1316,10 +1316,12 @@ async fn make_process_loop(
                 // if restart, tell ourselves to init the app again, with same capabilities
                 t::OnPanic::Restart => {
                     let (tx, rx) = tokio::sync::oneshot::channel();
-                    let _ = caps_oracle.send(t::CapMessage::GetAll {
-                        on: metadata.our.process.clone(),
-                        responder: tx,
-                    }).await;
+                    let _ = caps_oracle
+                        .send(t::CapMessage::GetAll {
+                            on: metadata.our.process.clone(),
+                            responder: tx,
+                        })
+                        .await;
                     let initial_capabilities = rx
                         .await
                         .unwrap()
