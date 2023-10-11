@@ -444,7 +444,7 @@ pub struct ReadChunkRequest {
 pub enum FsResponse {
     Write(u128),
     Read(u128),
-    ReadChunk(u128),  //  TODO: remove?
+    ReadChunk(u128), //  TODO: remove?
     Append(u128),
     Delete(u128),
     Length(u64),

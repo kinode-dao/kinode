@@ -149,7 +149,10 @@ fn main() {
         }
         for (outer, inner) in &NESTED_WASI_APPS {
             println!("cargo:rerun-if-changed=modules/{}/{}/src", outer, inner);
-            println!("cargo:rerun-if-changed=modules/{}/{}/Cargo.toml", outer, inner);
+            println!(
+                "cargo:rerun-if-changed=modules/{}/{}/Cargo.toml",
+                outer, inner
+            );
             println!("cargo:rerun-if-changed=modules/{}/pkg/manifest.json", outer);
             println!("cargo:rerun-if-changed=modules/{}/pkg/metadata.json", outer);
         }

@@ -221,7 +221,6 @@ async fn load_state_from_reboot(
     };
     let mut drive_to_vfs: DriveToVfs = HashMap::new();
     bytes_to_state(&payload.bytes, &mut drive_to_vfs);
-
 }
 
 pub async fn vfs(
@@ -1200,7 +1199,9 @@ async fn match_request(
             let Some(ipc) = ipc else {
                 panic!("");
             };
-            let Ok(FsResponse::Write(_)) = serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap() else {
+            let Ok(FsResponse::Write(_)) =
+                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+            else {
                 panic!("");
             };
 
@@ -1253,7 +1254,9 @@ async fn match_request(
             let Some(ipc) = ipc else {
                 panic!("");
             };
-            let Ok(FsResponse::Length(length)) = serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap() else {
+            let Ok(FsResponse::Length(length)) =
+                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+            else {
                 panic!("");
             };
             assert_eq!(size, length);

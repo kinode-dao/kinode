@@ -789,7 +789,9 @@ impl Manifest {
             let write_length = remaining_length.min(remaining_data);
 
             // let mut chunk_data = self.read(file_id, Some(start), Some(length)).await?;
-            let mut chunk_data = self.read_from_file(&file, &memory_buffer, Some(start), Some(length)).await?;
+            let mut chunk_data = self
+                .read_from_file(&file, &memory_buffer, Some(start), Some(length))
+                .await?;
             chunk_data.resize(chunk_data_start + write_length, 0); // extend the chunk data if necessary
 
             let data_to_write = &data[data_offset..data_offset + write_length as usize];
