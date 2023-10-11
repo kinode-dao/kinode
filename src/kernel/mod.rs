@@ -430,10 +430,14 @@ impl UqProcessImports for ProcessWasi {
                             wit::Capabilities::None => HashSet::new(),
                             wit::Capabilities::All => {
                                 let (tx, rx) = tokio::sync::oneshot::channel();
-                                let _ = self.process.caps_oracle.send(t::CapMessage::GetAll {
-                                    on: self.process.metadata.our.process.clone(),
-                                    responder: tx,
-                                }).await;
+                                let _ = self
+                                    .process
+                                    .caps_oracle
+                                    .send(t::CapMessage::GetAll {
+                                        on: self.process.metadata.our.process.clone(),
+                                        responder: tx,
+                                    })
+                                    .await;
                                 rx.await
                                     .unwrap()
                                     .into_iter()
