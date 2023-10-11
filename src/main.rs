@@ -56,7 +56,7 @@ async fn main() {
     }
     // read PKI from websocket endpoint served by public RPC
     // if you get rate-limited or something, pass in your own RPC as a boot argument
-    let mut rpc_url = "wss://ethereum-sepolia.publicnode.com".to_string();
+    let mut rpc_url = "".to_string();
 
     for (i, arg) in args.iter().enumerate() {
         if arg == "--rpc" {
@@ -234,7 +234,7 @@ async fn main() {
         // check if Identity for this username has correct networking keys,
         // if not, prompt user to reset them.
         let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
-            panic!("rpc: couldn't connect to blockchain wss endpoint");
+            panic!("rpc: couldn't connect to blockchain wss endpoint. you MUST set an endpoint with --rpc flag, go to alchemy.com and get a free API key, then use the wss endpoint that looks like this: wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>");
         };
         let Ok(_) = ws_rpc.get_block_number().await else {
             panic!("error: RPC endpoint not responding, try setting one with --rpc flag");

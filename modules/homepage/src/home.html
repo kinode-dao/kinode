@@ -228,7 +228,7 @@
         //   webSocket.send(JSON.stringify({
         //       Register: {
         //           auth_token: getCookie(`uqbar-ws-auth_${window.our}`),
-        //           channel_id: "apps_home"           // Can be unique to this connection, app, or omitted entirely
+        //           channel_id: "homepage"           // Can be unique to this connection, app, or omitted entirely
         //       }
         //   }))
 
@@ -238,9 +238,9 @@
         //         auth_token: getCookie(`uqbar-ws-auth_${window.our}`),
         //         target: {
         //           node: window.our,
-        //           process: 'apps_home'
+        //           process: 'homepage'
         //         },
-        //         channel_id: 'apps_home',
+        //         channel_id: 'homepage',
         //         json: {
         //           action: 'ping'
         //           // You could add a unique ID here so that the server can respond to only this ID

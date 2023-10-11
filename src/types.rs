@@ -334,6 +334,7 @@ pub enum FsAction {
     SetLength((u128, u64)),
     GetState,
     SetState,
+    DeleteState,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -375,6 +376,60 @@ pub struct FsConfig {
     // pub flush_to_wal_interval: usize,
 }
 
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum FsError {
+    #[error("fs: Bytes payload required for {action}.")]
+    BadBytes { action: String },
+    #[error(
+        "fs: JSON payload could not be parsed to FsAction: {:?}, error: {:?}.",
+        json,
+        error
+    )]
+    BadJson { json: String, error: String },
+    #[error("fs: No JSON payload.")]
+    NoJson,
+    #[error("fs: Read failed to file {file}: {error}.")]
+    ReadFailed { file: u128, error: String },
+    #[error("fs: Write failed to file {file}: {error}.")]
+    WriteFailed { file: u128, error: String },
+    #[error("fs: file not found: {file}")]
+    NotFound { file: u128 },
+    #[error("fs: S3 error: {error}")]
+    S3Error { error: String },
+    #[error("fs: IO error: {error}")]
+    IOError { error: String },
+    #[error("fs: Encryption error: {error}")]
+    EncryptionError { error: String },
+    #[error("fs: Limit error: {error}")]
+    LimitError { error: String },
+    #[error("fs: memory buffer error: {error}")]
+    MemoryBufferError { error: String },
+    #[error("fs: length operation error: {error}")]
+    LengthError { error: String },
+    #[error("fs: creating fs dir failed at path: {path}: {error}")]
+    CreateInitialDirError { path: String, error: String },
+}
+
+impl FsError {
+    pub fn kind(&self) -> &str {
+        match *self {
+            FsError::BadBytes { .. } => "BadBytes",
+            FsError::BadJson { .. } => "BadJson",
+            FsError::NoJson { .. } => "NoJson",
+            FsError::ReadFailed { .. } => "ReadFailed",
+            FsError::WriteFailed { .. } => "WriteFailed",
+            FsError::S3Error { .. } => "S3Error",
+            FsError::IOError { .. } => "IOError",
+            FsError::EncryptionError { .. } => "EncryptionError",
+            FsError::LimitError { .. } => "LimitError",
+            FsError::MemoryBufferError { .. } => "MemoryBufferError",
+            FsError::NotFound { .. } => "NotFound",
+            FsError::LengthError { .. } => "LengthError",
+            FsError::CreateInitialDirError { .. } => "CreateInitialDirError",
+        }
+    }
+}
+
 impl VfsError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -390,151 +445,6 @@ pub enum VfsError {
     BadIdentifier,
     BadDescriptor,
     NoCap,
-}
-
-impl FileSystemError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            FileSystemError::BadUri { .. } => "BadUri",
-            FileSystemError::BadJson { .. } => "BadJson",
-            FileSystemError::BadBytes { .. } => "BadBytes",
-            FileSystemError::IllegalAccess { .. } => "IllegalAccess",
-            FileSystemError::AlreadyOpen { .. } => "AlreadyOpen",
-            FileSystemError::NotCurrentlyOpen { .. } => "NotCurrentlyOpen",
-            FileSystemError::BadPathJoin { .. } => "BadPathJoin",
-            FileSystemError::CouldNotMakeDir { .. } => "CouldNotMakeDir",
-            FileSystemError::ReadFailed { .. } => "ReadFailed",
-            FileSystemError::WriteFailed { .. } => "WriteFailed",
-            FileSystemError::OpenFailed { .. } => "OpenFailed",
-            FileSystemError::FsError { .. } => "FsError",
-            FileSystemError::LFSError { .. } => "LFSErrror",
-        }
-    }
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum FileSystemError {
-    //  bad input from user
-    #[error("Malformed URI: {uri}. Problem with {bad_part_name}: {:?}.", bad_part)]
-    BadUri {
-        uri: String,
-        bad_part_name: String,
-        bad_part: Option<String>,
-    },
-    #[error(
-        "JSON payload could not be parsed to FileSystemRequest: {error}. Got {:?}.",
-        json
-    )]
-    BadJson { json: String, error: String },
-    #[error("Bytes payload required for {action}.")]
-    BadBytes { action: String },
-    #[error("{process_name} not allowed to access {attempted_dir}. Process may only access within {sandbox_dir}.")]
-    IllegalAccess {
-        process_name: String,
-        attempted_dir: String,
-        sandbox_dir: String,
-    },
-    #[error("Already have {path} opened with mode {:?}.", mode)]
-    AlreadyOpen { path: String, mode: FileSystemMode },
-    #[error("Don't have {path} opened with mode {:?}.", mode)]
-    NotCurrentlyOpen { path: String, mode: FileSystemMode },
-    //  path or underlying fs problems
-    #[error("Failed to join path: base: '{base_path}'; addend: '{addend}'.")]
-    BadPathJoin { base_path: String, addend: String },
-    #[error("Failed to create dir at {path}: {error}.")]
-    CouldNotMakeDir { path: String, error: String },
-    #[error("Failed to read {path}: {error}.")]
-    ReadFailed { path: String, error: String },
-    #[error("Failed to write {path}: {error}.")]
-    WriteFailed { path: String, error: String },
-    #[error("Failed to open {path} for {:?}: {error}.", mode)]
-    OpenFailed {
-        path: String,
-        mode: FileSystemMode,
-        error: String,
-    },
-    #[error("Filesystem error while {what} on {path}: {error}.")]
-    FsError {
-        what: String,
-        path: String,
-        error: String,
-    },
-    #[error("LFS error: {error}.")]
-    LFSError { error: String },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FileSystemRequest {
-    pub uri_string: String,
-    pub action: FileSystemAction,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FileSystemAction {
-    Read,
-    Write,
-    GetMetadata,
-    ReadDir,
-    Open(FileSystemMode),
-    Close(FileSystemMode),
-    Append,
-    ReadChunkFromOpen(u64),
-    SeekWithinOpen(FileSystemSeekFrom),
-}
-
-//  copy of std::io::SeekFrom with Serialize/Deserialize
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FileSystemSeekFrom {
-    Start(u64),
-    End(i64),
-    Current(i64),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FileSystemResponse {
-    Read(FileSystemUriHash),
-    Write(String),
-    GetMetadata(FileSystemMetadata),
-    ReadDir(Vec<FileSystemMetadata>),
-    Open {
-        uri_string: String,
-        mode: FileSystemMode,
-    },
-    Close {
-        uri_string: String,
-        mode: FileSystemMode,
-    },
-    Append(String),
-    ReadChunkFromOpen(FileSystemUriHash),
-    SeekWithinOpen(String),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FileSystemUriHash {
-    pub uri_string: String,
-    pub hash: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FileSystemMetadata {
-    pub uri_string: String,
-    pub hash: Option<u64>,
-    pub entry_type: FileSystemEntryType,
-    pub len: u64,
-}
-
-#[derive(Eq, Hash, PartialEq, Clone, Debug, Serialize, Deserialize)]
-pub enum FileSystemMode {
-    Read,
-    Append,
-    AppendOverwrite,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FileSystemEntryType {
-    Symlink,
-    File,
-    Dir,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

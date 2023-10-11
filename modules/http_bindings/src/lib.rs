@@ -193,7 +193,7 @@ impl Guest for Component {
                     .trim_start_matches('/')
                     .split("/")
                     .collect::<Vec<&str>>();
-                if app != "apps_home"
+                if app != "homepage"
                     && (path_segments.is_empty()
                         || path_segments[0] != app.clone().replace("_", "-"))
                 {
@@ -522,42 +522,42 @@ impl Guest for Component {
                                 }
                             };
 
-                            if !auth_success {
-                                print_to_terminal(1, "http_bindings: failure to authenticate");
-                                let proxy_path = message_json["proxy_path"].as_str();
+                            // if !auth_success {
+                            //     print_to_terminal(1, "http_bindings: failure to authenticate");
+                            //     let proxy_path = message_json["proxy_path"].as_str();
 
-                                let redirect_path: String = match proxy_path {
-                                    Some(pp) => {
-                                        form_urlencoded::byte_serialize(pp.as_bytes()).collect()
-                                    }
-                                    None => {
-                                        form_urlencoded::byte_serialize(path.as_bytes()).collect()
-                                    }
-                                };
+                            //     let redirect_path: String = match proxy_path {
+                            //         Some(pp) => {
+                            //             form_urlencoded::byte_serialize(pp.as_bytes()).collect()
+                            //         }
+                            //         None => {
+                            //             form_urlencoded::byte_serialize(path.as_bytes()).collect()
+                            //         }
+                            //     };
 
-                                let location = match proxy_path {
-                                    Some(_) => format!(
-                                        "/http-proxy/serve/{}/login?redirect={}",
-                                        &our.node, redirect_path
-                                    ),
-                                    None => format!("/login?redirect={}", redirect_path),
-                                };
+                            //     let location = match proxy_path {
+                            //         Some(_) => format!(
+                            //             "/http-proxy/serve/{}/login?redirect={}",
+                            //             &our.node, redirect_path
+                            //         ),
+                            //         None => format!("/login?redirect={}", redirect_path),
+                            //     };
 
-                                send_http_response(
-                                    302,
-                                    {
-                                        let mut headers = HashMap::new();
-                                        headers.insert(
-                                            "Content-Type".to_string(),
-                                            "text/html".to_string(),
-                                        );
-                                        headers.insert("Location".to_string(), location);
-                                        headers
-                                    },
-                                    "Auth cookie not valid".as_bytes().to_vec(),
-                                );
-                                continue;
-                            }
+                            //     send_http_response(
+                            //         302,
+                            //         {
+                            //             let mut headers = HashMap::new();
+                            //             headers.insert(
+                            //                 "Content-Type".to_string(),
+                            //                 "text/html".to_string(),
+                            //             );
+                            //             headers.insert("Location".to_string(), location);
+                            //             headers
+                            //         },
+                            //         "Auth cookie not valid".as_bytes().to_vec(),
+                            //     );
+                            //     continue;
+                            // }
                         }
 
                         if bound_path.local_only && !address.starts_with("127.0.0.1:") {

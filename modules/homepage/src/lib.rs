@@ -8,7 +8,7 @@ mod process_lib;
 
 struct Component;
 
-const APPS_HOME_PAGE: &str = include_str!("home.html");
+const HOME_PAGE: &str = include_str!("home.html");
 
 fn generate_http_binding(add: Address, path: &str, authenticated: bool) -> (Address, Request, Option<Context>, Option<Payload>) {
     (
@@ -19,7 +19,7 @@ fn generate_http_binding(add: Address, path: &str, authenticated: bool) -> (Addr
             ipc: Some(serde_json::json!({
                 "action": "bind-app",
                 "path": path,
-                "app": "apps_home",
+                "app": "homepage",
                 "authenticated": authenticated
             }).to_string()),
             metadata: None,
@@ -31,7 +31,7 @@ fn generate_http_binding(add: Address, path: &str, authenticated: bool) -> (Addr
 
 impl Guest for Component {
     fn init(our: Address) {
-        print_to_terminal(1, "apps_home: start");
+        print_to_terminal(0, "homepage: start");
 
         let bindings_address = Address {
             node: our.node.clone(),
@@ -46,28 +46,28 @@ impl Guest for Component {
 
         loop {
             let Ok((_source, message)) = receive() else {
-                print_to_terminal(0, "apps_home: got network error");
+                print_to_terminal(0, "homepage: got network error");
                 continue;
             };
             let Message::Request(request) = message else {
-                print_to_terminal(0, &format!("apps_home: got unexpected message: {:?}", message));
+                print_to_terminal(0, &format!("homepage: got unexpected message: {:?}", message));
                 continue;
             };
 
             if let Some(json) = request.ipc {
-                print_to_terminal(1, format!("apps_home: JSON {}", json).as_str());
+                print_to_terminal(1, format!("homepage: JSON {}", json).as_str());
                 let message_json: serde_json::Value = match serde_json::from_str(&json) {
                     Ok(v) => v,
                     Err(_) => {
-                        print_to_terminal(1, "apps_home: failed to parse ipc JSON, skipping");
+                        print_to_terminal(1, "homepage: failed to parse ipc JSON, skipping");
                         continue;
                     },
                 };
 
-                print_to_terminal(1, "apps_home: parsed ipc JSON");
+                print_to_terminal(1, "homepage: parsed ipc JSON");
 
                 if message_json["path"] == "/" && message_json["method"] == "GET" {
-                    print_to_terminal(1, "apps_home: sending response");
+                    print_to_terminal(1, "homepage: sending response");
 
                     send_response(
                         &Response {
@@ -82,7 +82,7 @@ impl Guest for Component {
                         },
                         Some(&Payload {
                             mime: Some("text/html".to_string()),
-                            bytes: APPS_HOME_PAGE.replace("${our}", &our.node).to_string().as_bytes().to_vec(),
+                            bytes: HOME_PAGE.replace("${our}", &our.node).to_string().as_bytes().to_vec(),
                         }),
                     );
                 } else if message_json["path"].is_string() {
@@ -136,7 +136,7 @@ impl Guest for Component {
                                         expects_response: None,
                                         ipc: Some(serde_json::json!({
                                             "EncryptAndForwardAction": {
-                                                "channel_id": "apps_home",
+                                                "channel_id": "homepage",
                                                 "forward_to": {
                                                     "node": our.node.clone(),
                                                     "process": {
@@ -147,7 +147,7 @@ impl Guest for Component {
                                                     "WebSocketPush": {
                                                         "target": {
                                                             "node": our.node.clone(),
-                                                            "id": "apps_home", // If the message passed in an ID then we could send to just that ID
+                                                            "id": "homepage", // If the message passed in an ID then we could send to just that ID
                                                         }
                                                     }
                                                 })),
