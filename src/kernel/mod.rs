@@ -1319,7 +1319,7 @@ async fn make_process_loop(
                     let _ = caps_oracle.send(t::CapMessage::GetAll {
                         on: metadata.our.process.clone(),
                         responder: tx,
-                    });
+                    }).await;
                     let initial_capabilities = rx
                         .await
                         .unwrap()
