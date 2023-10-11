@@ -1210,32 +1210,49 @@ async fn make_process_loop(
         };
 
         if is_error {
+            // get caps before killing
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = caps_oracle
+                .send(t::CapMessage::GetAll {
+                    on: metadata.our.process.clone(),
+                    responder: tx,
+                })
+                .await;
+            let initial_capabilities = rx
+                .await
+                .unwrap()
+                .into_iter()
+                .collect();
+
+            // always send message to tell main kernel loop to remove handler
+            send_to_loop
+            .send(t::KernelMessage {
+                id: rand::random(),
+                source: our_kernel.clone(),
+                target: our_kernel.clone(),
+                rsvp: None,
+                message: t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: Some(
+                        serde_json::to_string(&t::KernelCommand::KillProcess(
+                            metadata.our.process.clone(),
+                        ))
+                        .unwrap(),
+                    ),
+                    metadata: None,
+                }),
+                payload: None,
+                signed_capabilities: None,
+            })
+            .await
+            .unwrap();
+
             // fulfill the designated OnPanic behavior
             match metadata.on_panic {
                 t::OnPanic::None => {}
                 // if restart, tell ourselves to init the app again, with same capabilities
                 t::OnPanic::Restart => {
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    let _ = caps_oracle
-                        .send(t::CapMessage::GetAll {
-                            on: metadata.our.process.clone(),
-                            responder: tx,
-                        })
-                        .await;
-                    let initial_capabilities = rx
-                        .await
-                        .unwrap()
-                        .into_iter()
-                        .map(|cap| t::SignedCapability {
-                            issuer: cap.issuer.clone(),
-                            params: cap.params.clone(),
-                            signature: keypair
-                                .sign(&bincode::serialize(&cap).unwrap())
-                                .as_ref()
-                                .to_vec(),
-                        })
-                        .collect();
-
                     send_to_loop
                         .send(t::KernelMessage {
                             id: rand::random(),
@@ -1246,12 +1263,14 @@ async fn make_process_loop(
                                 inherit: false,
                                 expects_response: None,
                                 ipc: Some(
-                                    serde_json::to_string(&t::KernelCommand::StartProcess {
-                                        id: metadata.our.process.clone(),
-                                        wasm_bytes_handle: metadata.wasm_bytes_handle,
-                                        on_panic: metadata.on_panic,
-                                        initial_capabilities,
-                                        public: metadata.public,
+                                    serde_json::to_string(&t::KernelCommand::RebootProcess {
+                                        process_id: metadata.our.process.clone(),
+                                        persisted: t::PersistedProcess {
+                                            wasm_bytes_handle: metadata.wasm_bytes_handle,
+                                            on_panic: metadata.on_panic,
+                                            capabilities: initial_capabilities,
+                                            public: metadata.public,
+                                        }
                                     })
                                     .unwrap(),
                                 ),
@@ -1285,30 +1304,6 @@ async fn make_process_loop(
                 }
             }
         }
-
-        // always send message to tell main kernel loop to remove handler
-        send_to_loop
-            .send(t::KernelMessage {
-                id: rand::random(),
-                source: our_kernel.clone(),
-                target: our_kernel.clone(),
-                rsvp: None,
-                message: t::Message::Request(t::Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: Some(
-                        serde_json::to_string(&t::KernelCommand::KillProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                    ),
-                    metadata: None,
-                }),
-                payload: None,
-                signed_capabilities: None,
-            })
-            .await
-            .unwrap();
         Ok(())
     })
 }
