@@ -336,7 +336,7 @@ impl UqProcessImports for ProcessWasi {
             node: self.process.metadata.our.node.clone(),
             process: VFS_PROCESS_ID.en_wit(),
         };
-        let Ok(Ok((_, hash_response))) = send_and_await_response(
+        let hash_response = match send_and_await_response(
             self,
             None,
             vfs_address.clone(),
@@ -354,10 +354,42 @@ impl UqProcessImports for ProcessWasi {
             },
             None,
         )
-        .await
-        else {
-            return Ok(Err(wit::SpawnError::NoFileAtPath));
+        .await {
+            Ok(Ok((_, hash_response)))  => {
+                hash_response
+            },
+            Err(e) => {
+                println!("spawn: GetHash fail {}\r", e);
+                return Ok(Err(wit::SpawnError::NoFileAtPath));
+            }
+            _ => {
+                println!("spawn: GetHash fail\r");
+                return Ok(Err(wit::SpawnError::NoFileAtPath));
+            }
         };
+        // let Ok(Ok((_, hash_response))) = send_and_await_response(
+        //     self,
+        //     None,
+        //     vfs_address.clone(),
+        //     wit::Request {
+        //         inherit: false,
+        //         expects_response: Some(5),
+        //         ipc: Some(
+        //             serde_json::to_string(&t::VfsRequest {
+        //                 drive: self.process.metadata.our.process.package().to_string(),
+        //                 action: t::VfsAction::GetHash(wasm_path.clone()),
+        //             })
+        //             .unwrap(),
+        //         ),
+        //         metadata: None,
+        //     },
+        //     None,
+        // )
+        // .await
+        // else {
+        //     println!("spawn: GetHash fail");
+        //     return Ok(Err(wit::SpawnError::NoFileAtPath));
+        // };
         let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = hash_response
         else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
@@ -366,6 +398,7 @@ impl UqProcessImports for ProcessWasi {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
+        println!("spawn 0\r");
         let Ok(Ok(_)) = send_and_await_response(
             self,
             None,
@@ -389,6 +422,7 @@ impl UqProcessImports for ProcessWasi {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
+        println!("spawn 1\r");
         let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
@@ -403,7 +437,8 @@ impl UqProcessImports for ProcessWasi {
             self.process.metadata.our.process.publisher_node(),
         );
 
-        let Ok(Ok((_from, response))) = send_and_await_response(
+        println!("spawn 2\r");
+        let start_response = send_and_await_response(
             self,
             Some(t::Address {
                 node: self.process.metadata.our.node.clone(),
@@ -429,7 +464,7 @@ impl UqProcessImports for ProcessWasi {
                                 let _ = self.process.caps_oracle.send(t::CapMessage::GetAll {
                                     on: self.process.metadata.our.process.clone(),
                                     responder: tx,
-                                });
+                                }).await;
                                 rx.await
                                     .unwrap()
                                     .into_iter()
@@ -465,19 +500,85 @@ impl UqProcessImports for ProcessWasi {
                 bytes: bytes.to_vec(),
             }),
         )
-        .await
-        else {
-            return Ok(Err(wit::SpawnError::NameTaken));
-        };
+        .await;
+        println!("spawn: {:?}", start_response);
+        // let Ok(Ok((_, response))) = send_and_await_response(
+        //     self,
+        //     Some(t::Address {
+        //         node: self.process.metadata.our.node.clone(),
+        //         process: KERNEL_PROCESS_ID.clone(),
+        //     }),
+        //     wit::Address {
+        //         node: self.process.metadata.our.node.clone(),
+        //         process: KERNEL_PROCESS_ID.en_wit(),
+        //     },
+        //     wit::Request {
+        //         inherit: false,
+        //         expects_response: Some(5), // TODO evaluate
+        //         ipc: Some(
+        //             serde_json::to_string(&t::KernelCommand::StartProcess {
+        //                 id: new_process_id.clone(),
+        //                 wasm_bytes_handle: hash,
+        //                 on_panic: de_wit_on_panic(on_panic),
+        //                 // TODO
+        //                 initial_capabilities: match capabilities {
+        //                     wit::Capabilities::None => HashSet::new(),
+        //                     wit::Capabilities::All => {
+        //                         let (tx, rx) = tokio::sync::oneshot::channel();
+        //                         let _ = self.process.caps_oracle.send(t::CapMessage::GetAll {
+        //                             on: self.process.metadata.our.process.clone(),
+        //                             responder: tx,
+        //                         }).await;
+        //                         rx.await
+        //                             .unwrap()
+        //                             .into_iter()
+        //                             .map(|cap| t::SignedCapability {
+        //                                 issuer: cap.issuer.clone(),
+        //                                 params: cap.params.clone(),
+        //                                 signature: self
+        //                                     .process
+        //                                     .keypair
+        //                                     .sign(&bincode::serialize(&cap).unwrap())
+        //                                     .as_ref()
+        //                                     .to_vec(),
+        //                             })
+        //                             .collect()
+        //                     }
+        //                     wit::Capabilities::Some(caps) => caps
+        //                         .into_iter()
+        //                         .map(|cap| t::SignedCapability {
+        //                             issuer: t::Address::de_wit(cap.issuer),
+        //                             params: cap.params,
+        //                             signature: cap.signature,
+        //                         })
+        //                         .collect(),
+        //                 },
+        //                 public,
+        //             })
+        //             .unwrap(),
+        //         ),
+        //         metadata: None,
+        //     },
+        //     Some(wit::Payload {
+        //         mime: None,
+        //         bytes: bytes.to_vec(),
+        //     }),
+        // )
+        // .await
+        // else {
+        //     return Ok(Err(wit::SpawnError::NameTaken));
+        // };
+        println!("spawn 3\r");
 
-        let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = response else {
-            return Ok(Err(wit::SpawnError::NoFileAtPath));
-        };
-        let t::KernelResponse::StartedProcess = serde_json::from_str(&ipc).unwrap() else {
-            return Ok(Err(wit::SpawnError::NoFileAtPath));
-        };
+        // let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = response else {
+        //     return Ok(Err(wit::SpawnError::NoFileAtPath));
+        // };
+        // let t::KernelResponse::StartedProcess = serde_json::from_str(&ipc).unwrap() else {
+        //     return Ok(Err(wit::SpawnError::NoFileAtPath));
+        // };
 
         // child processes are always able to Message parent
+        let (tx, rx) = tokio::sync::oneshot::channel();
         self.process
             .caps_oracle
             .send(t::CapMessage::Add {
@@ -486,20 +587,36 @@ impl UqProcessImports for ProcessWasi {
                     issuer: self.process.metadata.our.clone(),
                     params: "\"messaging\"".into(),
                 },
+                responder: tx,
             })
+            .await
             .unwrap();
+        let _ = rx.await.unwrap();
 
         // parent process is always able to Message child
+        let (tx, rx) = tokio::sync::oneshot::channel();
         self.process
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: self.process.metadata.our.process.clone(),
                 cap: t::Capability {
-                    issuer: self.process.metadata.our.clone(),
+                    issuer: t::Address {
+                        node: self.process.metadata.our.node.clone(),
+                        process: new_process_id.clone(),
+                        // process: t::ProcessId::de_wit(new_process_id),
+                        // process: t::ProcessId::new(
+                        //     new_process_id,
+                        //     self.process.metadata.our.process.package(),
+                        //     self.process.metadata.our.process.publisher_node(),
+                        // ),
+                    },
                     params: "\"messaging\"".into(),
                 },
+                responder: tx,
             })
+            .await
             .unwrap();
+        let _ = rx.await.unwrap();
 
         Ok(Ok(new_process_id.en_wit().to_owned()))
     }
@@ -512,7 +629,7 @@ impl UqProcessImports for ProcessWasi {
         let _ = self.process.caps_oracle.send(t::CapMessage::GetAll {
             on: self.process.metadata.our.process.clone(),
             responder: tx,
-        });
+        }).await;
         Ok(rx
             .await
             .unwrap()
@@ -544,7 +661,7 @@ impl UqProcessImports for ProcessWasi {
             on: self.process.metadata.our.process.clone(),
             cap: cap.clone(),
             responder: tx,
-        });
+        }).await;
         if rx.await.unwrap() {
             let sig = self
                 .process
@@ -586,10 +703,13 @@ impl UqProcessImports for ProcessWasi {
             };
             pk.verify(&bincode::serialize(&cap).unwrap(), &signed_cap.signature)?;
 
+            let (tx, rx) = tokio::sync::oneshot::channel();
             let _ = self.process.caps_oracle.send(t::CapMessage::Add {
                 on: self.process.metadata.our.process.clone(),
                 cap: cap.clone(),
-            });
+                responder: tx,
+            }).await.unwrap();
+            let _ = rx.await.unwrap();
         }
         Ok(())
     }
@@ -612,7 +732,7 @@ impl UqProcessImports for ProcessWasi {
                 on: self.process.metadata.our.process.clone(),
                 cap: cap.clone(),
                 responder: tx,
-            });
+            }).await;
             Ok(rx.await.unwrap_or(false))
         } else {
             // if remote, just check prompting_message
@@ -1288,6 +1408,7 @@ async fn handle_kernel_request(
     let t::Message::Request(request) = km.message else {
         return;
     };
+    println!("kernel: hkreq {:?}\r", request);
     let command: t::KernelCommand = match serde_json::from_str(&request.ipc.unwrap_or_default()) {
         Err(e) => {
             send_to_terminal
@@ -1500,14 +1621,44 @@ async fn handle_kernel_request(
                 .unwrap();
         }
         t::KernelCommand::GrantCapability { to_process, params } => {
-            caps_oracle
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            println!("kernel GC: sending\r");
+            let _ = caps_oracle
                 .send(t::CapMessage::Add {
                     on: to_process,
                     cap: t::Capability {
                         issuer: km.source.clone(),
                         params,
                     },
+                    responder: tx,
+                }).await.unwrap();
+            println!("kernel GC: awaiting\r");
+            let _ = rx.await;
+            println!("kernel GC: responding\r");
+            send_to_loop
+                .send(t::KernelMessage {
+                    id: km.id,
+                    source: t::Address {
+                        node: our_name.clone(),
+                        process: KERNEL_PROCESS_ID.clone(),
+                    },
+                    target: km.source,
+                    rsvp: None,
+                    message: t::Message::Response((
+                        t::Response {
+                            ipc: Some(
+                                serde_json::to_string(
+                                    &t::KernelResponse::GrantCapability
+                                ).unwrap(),
+                            ),
+                            metadata: None,
+                        },
+                        None,
+                    )),
+                    payload: None,
+                    signed_capabilities: None,
                 })
+                .await
                 .unwrap();
         }
     }
@@ -1819,6 +1970,7 @@ async fn make_event_loop(
         // main message loop
         loop {
             tokio::select! {
+                // aaa
                 // debug mode toggle: when on, this loop becomes a manual step-through
                 debug = recv_debug_in_loop.recv() => {
                     if let Some(t::DebugCommand::Toggle) = debug {
@@ -1899,7 +2051,9 @@ async fn make_event_loop(
                             };
                             if !is_target_public {
                                 match process_map.get(&kernel_message.source.process) {
-                                    None => {}, // this should only get hit by kernel?
+                                    None => {
+                                        println!("kernel: did not find process in process_map: {}\r", kernel_message.source.process);
+                                    }, // this should only get hit by kernel?
                                     Some(persisted) => {
                                         if !persisted.capabilities.contains(&t::Capability {
                                             issuer: t::Address {
@@ -1997,12 +2151,18 @@ async fn make_event_loop(
                                         params: "\"messaging\"".into(),
                                     };
                                     if !p.capabilities.contains(&cap) {
+                                        println!("kernel: adding cap to receiver\r");
+                                        let (tx, rx) =
+                                            tokio::sync::oneshot::channel();
                                         caps_oracle_sender
                                             .send(t::CapMessage::Add {
                                                 on: kernel_message.target.process.clone(),
                                                 cap,
+                                                responder: tx,
                                             })
+                                            .await
                                             .unwrap();
+                                        // rx.await.unwrap();  // deadlocks
                                     }
                                 }
                             }
@@ -2033,21 +2193,36 @@ async fn make_event_loop(
                 },
                 // capabilities oracle!!!
                 Some(cap_message) = caps_oracle_receiver.recv() => {
+                    println!("cap oracle {:?}\r", cap_message);
                     match cap_message {
-                        t::CapMessage::Add { on, cap } => {
+                        t::CapMessage::Add { on, cap, responder } => {
                             // insert cap in process map
-                            let Some(entry) = process_map.get_mut(&on) else { continue };
+                            println!("cap oracle: got Add\r");
+                            let Some(entry) = process_map.get_mut(&on) else {
+                                println!("cap oracle: Add no such process\r");
+                                let _ = responder.send(false);
+                                continue;
+                            };
                             entry.capabilities.insert(cap);
+                            println!("cap oracle: Add persist\r");
                             let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
+                            let _ = responder.send(true);
+                            println!("cap oracle: Add done\r");
                         },
-                        t::CapMessage::Drop { on, cap } => {
+                        t::CapMessage::Drop { on, cap, responder } => {
                             // remove cap from process map
-                            let Some(entry) = process_map.get_mut(&on) else { continue };
+                            println!("cap oracle: got Drop\r");
+                            let Some(entry) = process_map.get_mut(&on) else {
+                                let _ = responder.send(false);
+                                continue;
+                            };
                             entry.capabilities.remove(&cap);
                             let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
+                            let _ = responder.send(true);
                         },
                         t::CapMessage::Has { on, cap, responder } => {
                             // return boolean on responder
+                            println!("cap oracle: got Has\r");
                             let _ = responder.send(
                                 match process_map.get(&on) {
                                     None => false,
@@ -2057,6 +2232,7 @@ async fn make_event_loop(
                         },
                         t::CapMessage::GetAll { on, responder } => {
                             // return all caps on responder
+                            println!("cap oracle: got GetAll\r");
                             let _ = responder.send(
                                 match process_map.get(&on) {
                                     None => HashSet::new(),

@@ -90,6 +90,7 @@ fn handle_message (
                         &Capabilities::Some(vec![vfs_read, vfs_write]),
                         false, // not public
                     ) else {
+                        print_to_terminal(0, "couldn't spawn");
                         panic!("couldn't spawn");  //  TODO
                     };
 

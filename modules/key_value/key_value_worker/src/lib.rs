@@ -167,7 +167,7 @@ fn handle_message (
 
 impl Guest for Component {
     fn init(our: Address) {
-        print_to_terminal(1, "key_value: begin");
+        print_to_terminal(1, "key_value_worker: begin");
 
         let mut db: Option<redb::Database> = None;
 

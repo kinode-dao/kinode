@@ -34,6 +34,7 @@ const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
+const CAP_CHANNEL_CAPACITY: usize = 1_000;
 
 const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
 
@@ -71,7 +72,7 @@ async fn main() {
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(EVENT_LOOP_CHANNEL_CAPACITY);
     // kernel informs other runtime modules of capabilities through this
-    let (caps_oracle_sender, caps_oracle_receiver) = mpsc::unbounded_channel::<CapMessage>();
+    let (caps_oracle_sender, caps_oracle_receiver): (CapMessageSender, CapMessageReceiver) = mpsc::channel(CAP_CHANNEL_CAPACITY);
     // networking module sends error messages to kernel
     let (network_error_sender, network_error_receiver): (NetworkErrorSender, NetworkErrorReceiver) =
         mpsc::channel(EVENT_LOOP_CHANNEL_CAPACITY);

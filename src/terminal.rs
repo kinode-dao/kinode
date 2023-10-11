@@ -185,6 +185,7 @@ pub async fn terminal(
         let event = reader.next().fuse();
 
         tokio::select! {
+            // aaa
             prints = print_rx.recv() => match prints {
                 Some(printout) => {
                     let _ = writeln!(log_writer, "{}", printout.content);
@@ -583,6 +584,7 @@ pub async fn terminal(
                                     command_history.add(command.clone());
                                     cursor_col = prompt_len.try_into().unwrap();
                                     line_col = prompt_len;
+                                    println!("terminal: sending\r");
                                     let _err = event_loop.send(
                                         KernelMessage {
                                             id: rand::random(),
@@ -605,6 +607,7 @@ pub async fn terminal(
                                             signed_capabilities: None,
                                         }
                                     ).await;
+                                    println!("terminal: sent\r");
                                 },
                                 _ => {},
                             }

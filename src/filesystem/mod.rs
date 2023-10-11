@@ -315,6 +315,30 @@ async fn bootstrap(
                 });
             }
 
+            // give access to package_name vfs
+            requested_caps.insert(Capability {
+                issuer: Address {
+                    node: our_name.into(),
+                    process: VFS_PROCESS_ID.clone(),
+                },
+                params: serde_json::to_string(&serde_json::json!({
+                    "kind": "read",
+                    "drive": package_name,
+                }))
+                .unwrap(),
+            });
+            requested_caps.insert(Capability {
+                issuer: Address {
+                    node: our_name.into(),
+                    process: VFS_PROCESS_ID.clone(),
+                },
+                params: serde_json::to_string(&serde_json::json!({
+                    "kind": "write",
+                    "drive": package_name,
+                }))
+                .unwrap(),
+            });
+
             let mut public_process = false;
 
             // queue the granted capabilities
@@ -543,6 +567,7 @@ async fn handle_request(
 
     let (ipc, bytes) = match action {
         FsAction::Write => {
+            println!("fs: Write\r");
             let Some(ref payload) = payload else {
                 return Err(FsError::BadBytes {
                     action: "Write".into(),

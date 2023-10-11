@@ -35,8 +35,8 @@ pub type PrintReceiver = tokio::sync::mpsc::Receiver<Printout>;
 pub type DebugSender = tokio::sync::mpsc::Sender<DebugCommand>;
 pub type DebugReceiver = tokio::sync::mpsc::Receiver<DebugCommand>;
 
-pub type CapMessageSender = tokio::sync::mpsc::UnboundedSender<CapMessage>;
-pub type CapMessageReceiver = tokio::sync::mpsc::UnboundedReceiver<CapMessage>;
+pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
+pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
 
 //
 // types used for UQI: uqbar's identity system
@@ -346,15 +346,18 @@ pub enum KernelCommand {
 }
 
 #[allow(dead_code)]
+#[derive(Debug)]
 pub enum CapMessage {
     Add {
         on: ProcessId,
         cap: Capability,
+        responder: tokio::sync::oneshot::Sender<bool>,
     },
     Drop {
         // not used yet!
         on: ProcessId,
         cap: Capability,
+        responder: tokio::sync::oneshot::Sender<bool>,
     },
     Has {
         // a bool is given in response here
@@ -373,6 +376,7 @@ pub enum KernelResponse {
     StartedProcess,
     StartProcessError,
     KilledProcess(ProcessId),
+    GrantCapability,
 }
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;

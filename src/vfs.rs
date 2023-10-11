@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::prelude::*;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -9,6 +9,7 @@ use crate::types::*;
 const VFS_PERSIST_STATE_CHANNEL_CAPACITY: usize = 5;
 const VFS_TASK_DONE_CHANNEL_CAPACITY: usize = 5;
 const VFS_RESPONSE_CHANNEL_CAPACITY: usize = 2;
+const VFS_CLEAN_QUEUE_CHANNEL_CAPACITY: usize = 5;
 
 type ResponseRouter = HashMap<u64, MessageSender>;
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
@@ -27,6 +28,9 @@ struct Vfs {
 }
 type DriveToVfs = HashMap<String, Arc<Mutex<Vfs>>>;
 type DriveToVfsSerializable = HashMap<String, Vfs>;
+
+type RequestQueue = Arc<Mutex<VecDeque<(KernelMessage, MessageReceiver)>>>;
+type DriveToQueue = HashMap<String, RequestQueue>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Entry {
@@ -235,6 +239,7 @@ pub async fn vfs(
 ) -> anyhow::Result<()> {
     println!("vfs: begin\r");
     let mut drive_to_vfs: DriveToVfs = HashMap::new();
+    let mut drive_to_queue: DriveToQueue = HashMap::new();
     let mut response_router: ResponseRouter = HashMap::new();
     let (send_vfs_task_done, mut recv_vfs_task_done): (
         tokio::sync::mpsc::Sender<u64>,
@@ -244,6 +249,10 @@ pub async fn vfs(
         tokio::sync::mpsc::Sender<bool>,
         tokio::sync::mpsc::Receiver<bool>,
     ) = tokio::sync::mpsc::channel(VFS_PERSIST_STATE_CHANNEL_CAPACITY);
+    let (send_clean_queue, mut recv_clean_queue): (
+        tokio::sync::mpsc::Sender<String>,
+        tokio::sync::mpsc::Receiver<String>,
+    ) = tokio::sync::mpsc::channel(VFS_CLEAN_QUEUE_CHANNEL_CAPACITY);
 
     load_state_from_reboot(
         our_node.clone(),
@@ -254,12 +263,15 @@ pub async fn vfs(
     .await;
 
     for vfs_message in vfs_messages {
+        println!("vfs: sent vfs_message\r");
         send_to_loop.send(vfs_message).await.unwrap();
     }
 
     println!("vfs entering loop\r");
     loop {
+        println!("vfs: ready\r");
         tokio::select! {
+            // aaa
             id_done = recv_vfs_task_done.recv() => {
                 println!("vfs got done\r");
                 let Some(id_done) = id_done else { continue };
@@ -271,26 +283,39 @@ pub async fn vfs(
                 persist_state(our_node.clone(), &send_to_loop, &drive_to_vfs).await;
                 continue;
             },
+            drive = recv_clean_queue.recv() => {
+                let Some(drive) = drive else {
+                    continue;
+                };
+                let _ = drive_to_queue.remove(&drive);
+                continue;
+            },
             km = recv_from_loop.recv() => {
-                println!("vfs got msg\r");
-                let Some(km) = km else { continue };
+                let Some(km) = km else {
+                    println!("vfs: dropping empty km");
+                    continue;
+                };
+                println!("vfs got msg {}\r", km.id);
                 if let Some(response_sender) = response_router.get(&km.id) {
+                    println!("vfs: routing Response {}\r", km.id);
                     let _ = response_sender.send(km).await;
                     continue;
                 }
 
+                let (response_sender, response_receiver): (
+                    MessageSender,
+                    MessageReceiver,
+                ) = tokio::sync::mpsc::channel(VFS_RESPONSE_CHANNEL_CAPACITY);
+                response_router.insert(km.id.clone(), response_sender);
+
                 let KernelMessage {
                     id,
                     source,
-                    rsvp,
                     message,
-                    payload,
                     ..
-                } = km;
+                } = km.clone();
                 let Message::Request(Request {
-                    expects_response,
                     ipc: Some(ipc),
-                    metadata, // we return this to Requester for kernel reasons
                     ..
                 }) = message.clone()
                 else {
@@ -306,8 +331,6 @@ pub async fn vfs(
                     }
                 };
 
-                println!("vfs: got request: {:?}\r", request);
-
                 if our_node != source.node {
                     println!(
                         "vfs: request must come from our_node={}, got: {}",
@@ -316,105 +339,180 @@ pub async fn vfs(
                     );
                     continue;
                 }
-
-                let (vfs, new_caps) = match drive_to_vfs.get(&request.drive) {
-                    Some(vfs) => (Arc::clone(vfs), vec![]),
+                match drive_to_queue.remove(&request.drive) {
+                    Some(queue) => {
+                        println!("vfs: queuing to {}: {:?}\r", request.drive, request);
+                        let mut queue_lock = queue.lock().await;
+                        queue_lock.push_back((km, response_receiver));
+                        drive_to_queue.insert(request.drive, Arc::clone(&queue));
+                        continue;
+                    },
                     None => {
-                        let VfsAction::New = request.action else {
-                            println!("vfs: invalid Request: non-New to non-existent: {:?}\r", request);
-                            send_to_loop
-                                .send(make_error_message(
-                                    our_node.clone(),
-                                    id,
-                                    source.clone(),
-                                    VfsError::BadDriveName,
-                                ))
-                                .await
-                                .unwrap();
-                            continue;
-                        };
-                        drive_to_vfs.insert(
-                            request.drive.clone(),
-                            Arc::new(Mutex::new(Vfs::new())),
-                        );
-                        let read_cap = Capability {
-                            issuer: Address {
-                                node: our_node.clone(),
-                                process: VFS_PROCESS_ID.clone(),
-                            },
-                            params: serde_json::to_string(
-                                &serde_json::json!({"kind": "read", "drive": request.drive})
-                            ).unwrap(),
-                        };
-                        let write_cap = Capability {
-                            issuer: Address {
-                                node: our_node.clone(),
-                                process: VFS_PROCESS_ID.clone(),
-                            },
-                            params: serde_json::to_string(
-                                &serde_json::json!({"kind": "write", "drive": request.drive})
-                            ).unwrap(),
-                        };
-                        (
-                            Arc::clone(drive_to_vfs.get(&request.drive).unwrap()),
-                            vec![read_cap, write_cap],
-                        )
-                    }
-                };
+                        println!("vfs: no queue for {}: {:?}\r", request.drive, request);
+                        let mut queue = VecDeque::new();
+                        queue.push_back((km, response_receiver));
+                        let queue: RequestQueue = Arc::new(Mutex::new(queue));
+                        drive_to_queue.insert(request.drive.clone(), Arc::clone(&queue));
 
-                //  TODO: remove after vfs is stable
-                let _ = send_to_terminal.send(Printout {
-                    verbosity: 1,
-                    content: format!("{:?}", vfs)
-                }).await;
-
-                let (response_sender, response_receiver): (
-                    MessageSender,
-                    MessageReceiver,
-                ) = tokio::sync::mpsc::channel(VFS_RESPONSE_CHANNEL_CAPACITY);
-                response_router.insert(id.clone(), response_sender);
-                let our_node = our_node.clone();
-                let send_to_loop = send_to_loop.clone();
-                let send_persist_state = send_persist_state.clone();
-                let send_to_terminal = send_to_terminal.clone();
-                let send_to_caps_oracle = send_to_caps_oracle.clone();
-                let send_vfs_task_done = send_vfs_task_done.clone();
-                match &message {
-                    Message::Response(_) => {},
-                    Message::Request(_) => {
-                        tokio::spawn(async move {
-                            match handle_request(
-                                our_node.clone(),
-                                id,
-                                source.clone(),
-                                expects_response,
-                                rsvp,
-                                request,
-                                metadata,
-                                payload,
-                                new_caps,
-                                vfs,
-                                send_to_loop.clone(),
-                                send_persist_state,
-                                send_to_terminal,
-                                send_to_caps_oracle,
-                                response_receiver,
-                            ).await {
-                                Err(e) => {
+                        let (vfs, new_caps) = match drive_to_vfs.get(&request.drive) {
+                            Some(vfs) => (Arc::clone(vfs), vec![]),
+                            None => {
+                                let VfsAction::New = request.action else {
+                                    println!("vfs: invalid Request: non-New to non-existent: {:?}\r", request);
                                     send_to_loop
                                         .send(make_error_message(
-                                            our_node.into(),
+                                            our_node.clone(),
                                             id,
-                                            source,
-                                            e,
+                                            source.clone(),
+                                            VfsError::BadDriveName,
                                         ))
                                         .await
                                         .unwrap();
-                                },
-                                Ok(_) => {},
+                                    continue;
+                                };
+                                drive_to_vfs.insert(
+                                    request.drive.clone(),
+                                    Arc::new(Mutex::new(Vfs::new())),
+                                );
+                                let read_cap = Capability {
+                                    issuer: Address {
+                                        node: our_node.clone(),
+                                        process: VFS_PROCESS_ID.clone(),
+                                    },
+                                    params: serde_json::to_string(
+                                        &serde_json::json!({"kind": "read", "drive": request.drive})
+                                    ).unwrap(),
+                                };
+                                let write_cap = Capability {
+                                    issuer: Address {
+                                        node: our_node.clone(),
+                                        process: VFS_PROCESS_ID.clone(),
+                                    },
+                                    params: serde_json::to_string(
+                                        &serde_json::json!({"kind": "write", "drive": request.drive})
+                                    ).unwrap(),
+                                };
+
+                                // let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
+                                // let _ = send_to_caps_oracle
+                                //     .send(CapMessage::Add {
+                                //         on: source.process.clone(),
+                                //         cap: read_cap,
+                                //         responder: send_cap_bool,
+                                //     })
+                                //     .await
+                                //     .unwrap();
+                                // let _ = recv_cap_bool.await.unwrap();
+
+                                // let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
+                                // let _ = send_to_caps_oracle
+                                //     .send(CapMessage::Add {
+                                //         on: source.process.clone(),
+                                //         cap: write_cap,
+                                //         responder: send_cap_bool,
+                                //     })
+                                //     .await
+                                //     .unwrap();
+                                // let _ = recv_cap_bool.await.unwrap();
+
+                                (
+                                    Arc::clone(drive_to_vfs.get(&request.drive).unwrap()),
+                                    // vec![],
+                                    vec![read_cap, write_cap],
+                                )
                             }
-                            let _ = send_vfs_task_done.send(id).await;
-                        });
+                        };
+
+                        let our_node = our_node.clone();
+                        let drive = request.drive.clone();
+                        let send_to_loop = send_to_loop.clone();
+                        let send_persist_state = send_persist_state.clone();
+                        let send_to_terminal = send_to_terminal.clone();
+                        let send_to_caps_oracle = send_to_caps_oracle.clone();
+                        let send_vfs_task_done = send_vfs_task_done.clone();
+                        let send_clean_queue = send_clean_queue.clone();
+                        match &message {
+                            Message::Response(_) => {},
+                            Message::Request(_) => {
+                                tokio::spawn(async move {
+                                    loop {
+                                        let our_node = our_node.clone();
+                                        let drive = drive.clone();
+                                        let next_message = {
+                                            let mut queue_lock = queue.lock().await;
+                                            println!("vfs: queue length {} {}\r", drive, queue_lock.len());
+                                            queue_lock.pop_front()
+                                        };
+                                        match next_message {
+                                            None => {
+                                                // queue is empty
+                                                let _ = send_clean_queue.send(drive).await;
+                                                return ();
+                                            },
+                                            Some((km, response_receiver)) => {
+                                                // handle next item
+                                                let KernelMessage {
+                                                    id,
+                                                    source,
+                                                    rsvp,
+                                                    message,
+                                                    payload,
+                                                    ..
+                                                } = km;
+                                                let Message::Request(Request {
+                                                    expects_response,
+                                                    ipc: Some(ipc),
+                                                    metadata, // we return this to Requester for kernel reasons
+                                                    ..
+                                                }) = message.clone()
+                                                else {
+                                                    continue;
+                                                };
+
+                                                let request: VfsRequest = match serde_json::from_str(&ipc) {
+                                                    Ok(r) => r,
+                                                    Err(e) => {
+                                                        println!("vfs: got invalid Request: {}", e);
+                                                        continue;
+                                                    }
+                                                };
+                                                match handle_request(
+                                                    our_node.clone(),
+                                                    id,
+                                                    source.clone(),
+                                                    expects_response,
+                                                    rsvp,
+                                                    request,
+                                                    metadata,
+                                                    payload,
+                                                    new_caps.clone(),
+                                                    Arc::clone(&vfs),
+                                                    send_to_loop.clone(),
+                                                    send_persist_state.clone(),
+                                                    send_to_terminal.clone(),
+                                                    send_to_caps_oracle.clone(),
+                                                    response_receiver,
+                                                ).await {
+                                                    Err(e) => {
+                                                        send_to_loop
+                                                            .send(make_error_message(
+                                                                our_node.into(),
+                                                                id,
+                                                                source,
+                                                                e,
+                                                            ))
+                                                            .await
+                                                            .unwrap();
+                                                    },
+                                                    Ok(_) => {},
+                                                }
+                                                let _ = send_vfs_task_done.send(id).await;
+                                            },
+                                        }
+                                    }
+                                });
+                            },
+                        }
                     },
                 }
             },
@@ -463,6 +561,7 @@ async fn handle_request(
                     },
                     responder: send_cap_bool,
                 })
+                .await
                 .unwrap();
             let has_cap = recv_cap_bool.await.unwrap();
             if !has_cap {
@@ -490,6 +589,7 @@ async fn handle_request(
                     },
                     responder: send_cap_bool,
                 })
+                .await
                 .unwrap();
             let has_cap = recv_cap_bool.await.unwrap();
             if !has_cap {
@@ -510,6 +610,7 @@ async fn handle_request(
         &send_to_loop,
         &send_to_persist,
         &send_to_terminal,
+        &send_to_caps_oracle,
         recv_response,
     )
     .await?;
@@ -556,43 +657,58 @@ async fn match_request(
     send_to_loop: &MessageSender,
     send_to_persist: &tokio::sync::mpsc::Sender<bool>,
     send_to_terminal: &PrintSender,
+    send_to_caps_oracle: &CapMessageSender,
     mut recv_response: MessageReceiver,
 ) -> Result<(Option<String>, Option<Vec<u8>>), VfsError> {
     Ok(match request.action {
         VfsAction::New => {
-            println!("vfs: got New\r");
+            println!("vfs: got New {}\r", id);
             for new_cap in new_caps {
-                let _ = send_to_loop
-                    .send(KernelMessage {
-                        id,
-                        source: Address {
-                            node: our_node.clone(),
-                            process: VFS_PROCESS_ID.clone(),
-                        },
-                        target: Address {
-                            node: our_node.clone(),
-                            process: ProcessId::new(Some("kernel"), "sys", "uqbar"),
-                        },
-                        rsvp: None,
-                        message: Message::Request(Request {
-                            inherit: false,
-                            expects_response: None,
-                            ipc: Some(
-                                serde_json::to_string(&KernelCommand::GrantCapability {
-                                    to_process: source.process.clone(),
-                                    params: new_cap.params,
-                                })
-                                .unwrap(),
-                            ),
-                            metadata: None,
-                        }),
-                        payload: None,
-                        signed_capabilities: None,
+                let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
+                let _ = send_to_caps_oracle
+                    .send(CapMessage::Add {
+                        on: source.process.clone(),
+                        cap: new_cap,
+                        responder: send_cap_bool,
                     })
-                    .await;
+                    .await
+                    .unwrap();
+                let _ = recv_cap_bool.await.unwrap();
+
+                // let _ = send_to_loop
+                //     .send(KernelMessage {
+                //         id,
+                //         source: Address {
+                //             node: our_node.clone(),
+                //             process: VFS_PROCESS_ID.clone(),
+                //         },
+                //         target: Address {
+                //             node: our_node.clone(),
+                //             process: KERNEL_PROCESS_ID.clone(),
+                //         },
+                //         rsvp: None,
+                //         message: Message::Request(Request {
+                //             inherit: false,
+                //             expects_response: None,
+                //             ipc: Some(
+                //                 serde_json::to_string(&KernelCommand::GrantCapability {
+                //                     to_process: source.process.clone(),
+                //                     params: new_cap.params,
+                //                 })
+                //                 .unwrap(),
+                //             ),
+                //             metadata: None,
+                //         }),
+                //         payload: None,
+                //         signed_capabilities: None,
+                //     })
+                //     .await;
+                // println!("vfs: New awaiting {}\r", id);
+                // let _ = recv_response.recv().await.unwrap();
+                println!("vfs: New done {}\r", id);
             }
             send_to_persist.send(true).await.unwrap();
-            println!("vfs: done w New\r");
+            println!("vfs: done w New {}\r", id);
             (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
         VfsAction::Add {
@@ -681,20 +797,23 @@ async fn match_request(
                     } else {
                         panic!("empty path");
                     };
-                    let mut vfs = vfs.lock().await;
-                    if vfs.path_to_key.contains_key(&full_path) {
-                        send_to_terminal
-                            .send(Printout {
-                                verbosity: 1,
-                                content: format!("vfs: overwriting file {}", full_path),
-                            })
-                            .await
-                            .unwrap();
-                        let Some(old_key) = vfs.path_to_key.remove(&full_path) else {
-                            panic!("");
+
+                    {
+                        let mut vfs = vfs.lock().await;
+                        if vfs.path_to_key.contains_key(&full_path) {
+                            send_to_terminal
+                                .send(Printout {
+                                    verbosity: 1,
+                                    content: format!("vfs: overwriting file {}", full_path),
+                                })
+                                .await
+                                .unwrap();
+                            let Some(old_key) = vfs.path_to_key.remove(&full_path) else {
+                                panic!("");
+                            };
+                            vfs.key_to_entry.remove(&old_key);
                         };
-                        vfs.key_to_entry.remove(&old_key);
-                    };
+                    }
 
                     let _ = send_to_loop
                         .send(KernelMessage {
@@ -718,7 +837,9 @@ async fn match_request(
                             signed_capabilities: None,
                         })
                         .await;
+                    println!("vfs awaiting Write NewFile {}\r", full_path);
                     let write_response = recv_response.recv().await.unwrap();
+                    println!("vfs unblocked Write NewFile {}\r", full_path);
                     let KernelMessage { message, .. } = write_response;
                     let Message::Response((Response { ipc, .. }, None)) = message else {
                         panic!("");
@@ -733,6 +854,7 @@ async fn match_request(
                     };
 
                     let (name, parent_path) = make_file_name(&full_path);
+                    let mut vfs = vfs.lock().await;
                     let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
                         panic!("");
                     };
@@ -883,6 +1005,7 @@ async fn match_request(
                                     signed_capabilities: None,
                                 })
                                 .await;
+                            println!("vfs awaiting Write ZipArchive\r");
                             let write_response = match recv_response.recv().await {
                                 Some(response) => response,
                                 None => {
@@ -1086,8 +1209,8 @@ async fn match_request(
             (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
         VfsAction::WriteOffset { full_path, offset } => {
+            let mut vfs = vfs.lock().await;
             let file_hash = {
-                let mut vfs = vfs.lock().await;
                 let Some(key) = vfs.path_to_key.remove(&full_path) else {
                     panic!("");
                 };
@@ -1165,6 +1288,7 @@ async fn match_request(
                     signed_capabilities: None,
                 })
                 .await;
+            println!("vfs awaiting SetSize {}\r", full_path);
             let read_response = recv_response.recv().await.unwrap();
             let KernelMessage { message, .. } = read_response;
             let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
@@ -1307,6 +1431,7 @@ async fn match_request(
                                     signed_capabilities: None,
                                 })
                                 .await;
+                            println!("vfs awaiting GetEntry File {}\r", full_path);
                             let read_response = recv_response.recv().await.unwrap();
                             let KernelMessage {
                                 message, payload, ..
@@ -1390,6 +1515,7 @@ async fn match_request(
                     signed_capabilities: None,
                 })
                 .await;
+            println!("vfs awaiting GetFileChunk {}\r", full_path);
             let read_response = recv_response.recv().await.unwrap();
             let KernelMessage {
                 message, payload, ..
@@ -1457,6 +1583,7 @@ async fn match_request(
                         signed_capabilities: None,
                     })
                     .await;
+                println!("vfs awaiting GetEntryLength {}\r", full_path);
                 let length_response = recv_response.recv().await.unwrap();
                 let KernelMessage { message, .. } = length_response;
                 let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
