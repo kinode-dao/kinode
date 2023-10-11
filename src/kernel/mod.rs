@@ -1218,35 +1218,31 @@ async fn make_process_loop(
                     responder: tx,
                 })
                 .await;
-            let initial_capabilities = rx
-                .await
-                .unwrap()
-                .into_iter()
-                .collect();
+            let initial_capabilities = rx.await.unwrap().into_iter().collect();
 
             // always send message to tell main kernel loop to remove handler
             send_to_loop
-            .send(t::KernelMessage {
-                id: rand::random(),
-                source: our_kernel.clone(),
-                target: our_kernel.clone(),
-                rsvp: None,
-                message: t::Message::Request(t::Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: Some(
-                        serde_json::to_string(&t::KernelCommand::KillProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                    ),
-                    metadata: None,
-                }),
-                payload: None,
-                signed_capabilities: None,
-            })
-            .await
-            .unwrap();
+                .send(t::KernelMessage {
+                    id: rand::random(),
+                    source: our_kernel.clone(),
+                    target: our_kernel.clone(),
+                    rsvp: None,
+                    message: t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        ipc: Some(
+                            serde_json::to_string(&t::KernelCommand::KillProcess(
+                                metadata.our.process.clone(),
+                            ))
+                            .unwrap(),
+                        ),
+                        metadata: None,
+                    }),
+                    payload: None,
+                    signed_capabilities: None,
+                })
+                .await
+                .unwrap();
 
             // fulfill the designated OnPanic behavior
             match metadata.on_panic {
@@ -1270,7 +1266,7 @@ async fn make_process_loop(
                                             on_panic: metadata.on_panic,
                                             capabilities: initial_capabilities,
                                             public: metadata.public,
-                                        }
+                                        },
                                     })
                                     .unwrap(),
                                 ),
