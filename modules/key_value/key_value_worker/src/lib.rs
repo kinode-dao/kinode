@@ -91,15 +91,18 @@ fn handle_message (
                             return Err(anyhow::anyhow!("cannot send New more than once"));
                         },
                         None => {
+                            print_to_terminal(0, "kvw: Create");
                             *db = Some(redb::Database::create(
                                 format!(
                                     "/{}.redb",
                                     kv_drive,
                                 ),
+                                our.node.clone(),
                                 vfs_drive,
                                 get_payload_wrapped,
                                 send_and_await_response_wrapped,
                             )?);
+                            print_to_terminal(0, "kvw: Create done");
                         },
                     }
                 },

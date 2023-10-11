@@ -504,6 +504,130 @@ impl Manifest {
         Ok(())
     }
 
+    //  TODO: factor this out
+    pub async fn read_from_file(
+        &self,
+        file: &InMemoryFile,
+        memory_buffer: &Vec<u8>,
+        start: Option<u64>,
+        length: Option<u64>,
+    ) -> Result<Vec<u8>, FsError> {
+        let cipher = &self.cipher;
+
+        let mut data = Vec::new();
+
+        // filter chunks based on start and length if they are defined
+        let filtered_chunks = if let (Some(start), Some(length)) = (start, length) {
+            file.find_chunks_in_range(start, length)
+        } else {
+            file.chunks
+                .iter()
+                .map(|(&start, value)| (start, value.clone()))
+                .collect()
+        };
+
+        for (start_chunk, (hash, len, location, encrypted)) in filtered_chunks {
+            let mut chunk_data = match location {
+                ChunkLocation::Memory(offset) => {
+                    let len = if encrypted {
+                        len + ENCRYPTION_OVERHEAD as u64
+                    } else {
+                        len
+                    };
+
+                    if offset as usize + len as usize > memory_buffer.len() {
+                        return Err(FsError::MemoryBufferError {
+                            error: format!(
+                                "Out of bounds read: offset={}, len={}, memory_buffer size={}",
+                                offset,
+                                len,
+                                memory_buffer.len()
+                            ),
+                        });
+                    }
+                    let mut chunk_data =
+                        memory_buffer[offset as usize..(offset + len) as usize].to_vec();
+                    if encrypted {
+                        chunk_data = decrypt(&cipher, &chunk_data)?;
+                    }
+                    chunk_data
+                }
+                ChunkLocation::WAL(offset) => {
+                    let mut wal_file = self.wal_file.write().await;
+                    wal_file
+                        .seek(SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| FsError::IOError {
+                            error: format!("Local WAL seek failed: {}", e),
+                        })?;
+                    let len = if encrypted {
+                        len + ENCRYPTION_OVERHEAD as u64
+                    } else {
+                        len
+                    };
+
+                    let mut buffer = vec![0u8; len as usize];
+                    wal_file
+                        .read_exact(&mut buffer)
+                        .await
+                        .map_err(|e| FsError::IOError {
+                            error: format!("Local WAL read failed: {}", e),
+                        })?;
+                    if encrypted {
+                        buffer = decrypt(&cipher, &buffer)?;
+                    }
+                    buffer
+                }
+                ChunkLocation::ColdStorage(local) => {
+                    if local {
+                        let path = self.fs_directory_path.join(hex::encode(hash));
+                        let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
+                            error: format!("Local Cold read failed: {}", e),
+                        })?;
+                        if encrypted {
+                            buffer = decrypt(&*self.cipher, &buffer)?;
+                        }
+                        buffer
+                    } else {
+                        let file_name = hex::encode(hash);
+                        let (client, bucket) = self.s3_client.as_ref().unwrap();
+                        let req = GetObjectRequest {
+                            bucket: bucket.clone(),
+                            key: file_name.clone(),
+                            ..Default::default()
+                        };
+                        let res = client.get_object(req).await?;
+                        let body = res.body.unwrap();
+                        let mut stream = body.into_async_read();
+                        let mut buffer = Vec::new();
+                        stream.read_to_end(&mut buffer).await?;
+                        if encrypted {
+                            buffer = decrypt(&*self.cipher, &buffer)?;
+                        }
+                        buffer
+                    }
+                }
+            };
+
+            // adjust the chunk data based on the start and length
+            if let Some(start) = start {
+                if start > start_chunk {
+                    chunk_data.drain(..(start - start_chunk) as usize);
+                }
+            }
+            if let Some(length) = length {
+                let end = start.unwrap_or(0) + length;
+                if end < start_chunk + len {
+                    chunk_data.truncate((end - start_chunk) as usize);
+                }
+            }
+
+            data.append(&mut chunk_data);
+        }
+
+        Ok(data)
+    }
+
     pub async fn read(
         &self,
         file_id: &FileIdentifier,
@@ -637,11 +761,12 @@ impl Manifest {
         data: &[u8],
     ) -> Result<(), FsError> {
         let mut manifest = self.manifest.write().await;
-        let mut file = self.get(file_id).await.ok_or(FsError::NotFound {
+        let mut file = manifest.get(file_id).cloned().ok_or(FsError::NotFound {
             file: file_id.to_uuid().unwrap_or_default(),
         })?;
 
         let mut memory_buffer = self.memory_buffer.write().await;
+
         let cipher: Option<&XChaCha20Poly1305> = if self.encryption {
             Some(&self.cipher)
         } else {
@@ -663,7 +788,8 @@ impl Manifest {
             let remaining_data = data.len() - data_offset;
             let write_length = remaining_length.min(remaining_data);
 
-            let mut chunk_data = self.read(file_id, Some(start), Some(length)).await?;
+            // let mut chunk_data = self.read(file_id, Some(start), Some(length)).await?;
+            let mut chunk_data = self.read_from_file(&file, &memory_buffer, Some(start), Some(length)).await?;
             chunk_data.resize(chunk_data_start + write_length, 0); // extend the chunk data if necessary
 
             let data_to_write = &data[data_offset..data_offset + write_length as usize];

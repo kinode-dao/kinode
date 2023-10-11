@@ -37,7 +37,9 @@ fn handle_message (
     }
 
     match message {
-        Message::Response(_) => { unimplemented!() },
+        Message::Response(r) => {
+            return Err(anyhow::anyhow!("key_value: unexpected Response: {:?}", r));
+        },
         Message::Request(Request { inherit: _ , expects_response: _, ipc, metadata: _ }) => {
             match process_lib::parse_message_ipc(ipc.clone())? {
                 kt::KeyValueMessage::New { ref drive } => {

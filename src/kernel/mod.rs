@@ -367,7 +367,6 @@ impl UqProcessImports for ProcessWasi {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
-        println!("spawn 0\r");
         let Ok(Ok(_)) = send_and_await_response(
             self,
             None,
@@ -391,7 +390,6 @@ impl UqProcessImports for ProcessWasi {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
-        println!("spawn 1\r");
         let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
@@ -406,7 +404,6 @@ impl UqProcessImports for ProcessWasi {
             self.process.metadata.our.process.publisher_node(),
         );
 
-        println!("spawn 2\r");
         let Ok(Ok((_, response))) = send_and_await_response(
             self,
             Some(t::Address {
@@ -477,7 +474,6 @@ impl UqProcessImports for ProcessWasi {
         else {
             return Ok(Err(wit::SpawnError::NameTaken));
         };
-        println!("spawn 3\r");
 
         let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = response else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
@@ -1321,7 +1317,6 @@ async fn handle_kernel_request(
     let t::Message::Request(request) = km.message else {
         return;
     };
-    println!("kernel: hkreq {:?}\r", request);
     let command: t::KernelCommand = match serde_json::from_str(&request.ipc.unwrap_or_default()) {
         Err(e) => {
             send_to_terminal
@@ -1539,7 +1534,6 @@ async fn handle_kernel_request(
         }
         t::KernelCommand::GrantCapability { to_process, params } => {
             let (tx, rx) = tokio::sync::oneshot::channel();
-            println!("kernel GC: sending\r");
             let _ = caps_oracle
                 .send(t::CapMessage::Add {
                     on: to_process,
@@ -1551,9 +1545,7 @@ async fn handle_kernel_request(
                 })
                 .await
                 .unwrap();
-            println!("kernel GC: awaiting\r");
-            // let _ = rx.await;
-            println!("kernel GC: responding\r");
+            // let _ = rx.await;  // deadlock
             send_to_loop
                 .send(t::KernelMessage {
                     id: km.id,
@@ -2068,7 +2060,6 @@ async fn make_event_loop(
                                         params: "\"messaging\"".into(),
                                     };
                                     if !p.capabilities.contains(&cap) {
-                                        println!("kernel: adding cap to receiver\r");
                                         let (tx, rx) =
                                             tokio::sync::oneshot::channel();
                                         caps_oracle_sender
@@ -2110,25 +2101,19 @@ async fn make_event_loop(
                 },
                 // capabilities oracle!!!
                 Some(cap_message) = caps_oracle_receiver.recv() => {
-                    println!("cap oracle {:?}\r", cap_message);
                     match cap_message {
                         t::CapMessage::Add { on, cap, responder } => {
                             // insert cap in process map
-                            println!("cap oracle: got Add\r");
                             let Some(entry) = process_map.get_mut(&on) else {
-                                println!("cap oracle: Add no such process\r");
                                 let _ = responder.send(false);
                                 continue;
                             };
                             entry.capabilities.insert(cap);
-                            println!("cap oracle: Add persist\r");
                             let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
                             let _ = responder.send(true);
-                            println!("cap oracle: Add done\r");
                         },
                         t::CapMessage::Drop { on, cap, responder } => {
                             // remove cap from process map
-                            println!("cap oracle: got Drop\r");
                             let Some(entry) = process_map.get_mut(&on) else {
                                 let _ = responder.send(false);
                                 continue;
@@ -2139,7 +2124,6 @@ async fn make_event_loop(
                         },
                         t::CapMessage::Has { on, cap, responder } => {
                             // return boolean on responder
-                            println!("cap oracle: got Has\r");
                             let _ = responder.send(
                                 match process_map.get(&on) {
                                     None => false,
@@ -2149,7 +2133,6 @@ async fn make_event_loop(
                         },
                         t::CapMessage::GetAll { on, responder } => {
                             // return all caps on responder
-                            println!("cap oracle: got GetAll\r");
                             let _ = responder.send(
                                 match process_map.get(&on) {
                                     None => HashSet::new(),

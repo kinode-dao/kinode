@@ -200,9 +200,7 @@ async fn load_state_from_reboot(
             signed_capabilities: None,
         })
         .await;
-    println!("vfs lsfr 1\r");
     let km = recv_from_loop.recv().await;
-    println!("vfs lsfr 2\r");
     let Some(km) = km else {
         return ();
     };
@@ -211,13 +209,11 @@ async fn load_state_from_reboot(
         message, payload, ..
     } = km;
     let Message::Response((Response { ipc, .. }, None)) = message else {
-        println!("vfs lsfr f0\r");
         return ();
     };
     let Ok(Ok(FsResponse::GetState)) =
         serde_json::from_str::<Result<FsResponse, FsError>>(&ipc.unwrap_or_default())
     else {
-        println!("vfs lsfr f1\r");
         return ();
     };
     let Some(payload) = payload else {
@@ -226,7 +222,6 @@ async fn load_state_from_reboot(
     let mut drive_to_vfs: DriveToVfs = HashMap::new();
     bytes_to_state(&payload.bytes, &mut drive_to_vfs);
 
-    println!("vfs lsfr 4\r");
 }
 
 pub async fn vfs(
@@ -263,23 +258,18 @@ pub async fn vfs(
     .await;
 
     for vfs_message in vfs_messages {
-        println!("vfs: sent vfs_message\r");
         send_to_loop.send(vfs_message).await.unwrap();
     }
 
-    println!("vfs entering loop\r");
     loop {
-        println!("vfs: ready\r");
         tokio::select! {
             // aaa
             id_done = recv_vfs_task_done.recv() => {
-                println!("vfs got done\r");
                 let Some(id_done) = id_done else { continue };
                 response_router.remove(&id_done);
                 continue;
             },
             _ = recv_persist_state.recv() => {
-                println!("vfs got persist\r");
                 persist_state(our_node.clone(), &send_to_loop, &drive_to_vfs).await;
                 continue;
             },
@@ -292,12 +282,9 @@ pub async fn vfs(
             },
             km = recv_from_loop.recv() => {
                 let Some(km) = km else {
-                    println!("vfs: dropping empty km");
                     continue;
                 };
-                println!("vfs got msg {}\r", km.id);
                 if let Some(response_sender) = response_router.get(&km.id) {
-                    println!("vfs: routing Response {}\r", km.id);
                     let _ = response_sender.send(km).await;
                     continue;
                 }
@@ -341,14 +328,12 @@ pub async fn vfs(
                 }
                 match drive_to_queue.remove(&request.drive) {
                     Some(queue) => {
-                        println!("vfs: queuing to {}: {:?}\r", request.drive, request);
                         let mut queue_lock = queue.lock().await;
                         queue_lock.push_back((km, response_receiver));
                         drive_to_queue.insert(request.drive, Arc::clone(&queue));
                         continue;
                     },
                     None => {
-                        println!("vfs: no queue for {}: {:?}\r", request.drive, request);
                         let mut queue = VecDeque::new();
                         queue.push_back((km, response_receiver));
                         let queue: RequestQueue = Arc::new(Mutex::new(queue));
@@ -440,7 +425,6 @@ pub async fn vfs(
                                         let drive = drive.clone();
                                         let next_message = {
                                             let mut queue_lock = queue.lock().await;
-                                            println!("vfs: queue length {} {}\r", drive, queue_lock.len());
                                             queue_lock.pop_front()
                                         };
                                         match next_message {
@@ -662,7 +646,6 @@ async fn match_request(
 ) -> Result<(Option<String>, Option<Vec<u8>>), VfsError> {
     Ok(match request.action {
         VfsAction::New => {
-            println!("vfs: got New {}\r", id);
             for new_cap in new_caps {
                 let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
                 let _ = send_to_caps_oracle
@@ -674,41 +657,8 @@ async fn match_request(
                     .await
                     .unwrap();
                 let _ = recv_cap_bool.await.unwrap();
-
-                // let _ = send_to_loop
-                //     .send(KernelMessage {
-                //         id,
-                //         source: Address {
-                //             node: our_node.clone(),
-                //             process: VFS_PROCESS_ID.clone(),
-                //         },
-                //         target: Address {
-                //             node: our_node.clone(),
-                //             process: KERNEL_PROCESS_ID.clone(),
-                //         },
-                //         rsvp: None,
-                //         message: Message::Request(Request {
-                //             inherit: false,
-                //             expects_response: None,
-                //             ipc: Some(
-                //                 serde_json::to_string(&KernelCommand::GrantCapability {
-                //                     to_process: source.process.clone(),
-                //                     params: new_cap.params,
-                //                 })
-                //                 .unwrap(),
-                //             ),
-                //             metadata: None,
-                //         }),
-                //         payload: None,
-                //         signed_capabilities: None,
-                //     })
-                //     .await;
-                // println!("vfs: New awaiting {}\r", id);
-                // let _ = recv_response.recv().await.unwrap();
-                println!("vfs: New done {}\r", id);
             }
             send_to_persist.send(true).await.unwrap();
-            println!("vfs: done w New {}\r", id);
             (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
         VfsAction::Add {
@@ -837,9 +787,7 @@ async fn match_request(
                             signed_capabilities: None,
                         })
                         .await;
-                    println!("vfs awaiting Write NewFile {}\r", full_path);
                     let write_response = recv_response.recv().await.unwrap();
-                    println!("vfs unblocked Write NewFile {}\r", full_path);
                     let KernelMessage { message, .. } = write_response;
                     let Message::Response((Response { ipc, .. }, None)) = message else {
                         panic!("");
@@ -979,7 +927,6 @@ async fn match_request(
                             (is_file, is_dir, full_path, file_contents)
                         };
                         if is_file {
-                            println!("writing file: {}", full_path);
                             let _ = send_to_loop
                                 .send(KernelMessage {
                                     id,
@@ -1005,7 +952,6 @@ async fn match_request(
                                     signed_capabilities: None,
                                 })
                                 .await;
-                            println!("vfs awaiting Write ZipArchive\r");
                             let write_response = match recv_response.recv().await {
                                 Some(response) => response,
                                 None => {
@@ -1246,6 +1192,17 @@ async fn match_request(
                     signed_capabilities: None,
                 })
                 .await;
+            let write_response = recv_response.recv().await.unwrap();
+            let KernelMessage { message, .. } = write_response;
+            let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
+                panic!("")
+            };
+            let Some(ipc) = ipc else {
+                panic!("");
+            };
+            let Ok(FsResponse::Write(_)) = serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap() else {
+                panic!("");
+            };
 
             (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
@@ -1288,16 +1245,15 @@ async fn match_request(
                     signed_capabilities: None,
                 })
                 .await;
-            println!("vfs awaiting SetSize {}\r", full_path);
-            let read_response = recv_response.recv().await.unwrap();
-            let KernelMessage { message, .. } = read_response;
+            let write_response = recv_response.recv().await.unwrap();
+            let KernelMessage { message, .. } = write_response;
             let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
                 panic!("")
             };
             let Some(ipc) = ipc else {
                 panic!("");
             };
-            let FsResponse::Length(length) = serde_json::from_str(&ipc).unwrap() else {
+            let Ok(FsResponse::Length(length)) = serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap() else {
                 panic!("");
             };
             assert_eq!(size, length);
@@ -1431,7 +1387,6 @@ async fn match_request(
                                     signed_capabilities: None,
                                 })
                                 .await;
-                            println!("vfs awaiting GetEntry File {}\r", full_path);
                             let read_response = recv_response.recv().await.unwrap();
                             let KernelMessage {
                                 message, payload, ..
@@ -1515,7 +1470,6 @@ async fn match_request(
                     signed_capabilities: None,
                 })
                 .await;
-            println!("vfs awaiting GetFileChunk {}\r", full_path);
             let read_response = recv_response.recv().await.unwrap();
             let KernelMessage {
                 message, payload, ..
@@ -1526,7 +1480,7 @@ async fn match_request(
             let Some(ipc) = ipc else {
                 panic!("");
             };
-            let Ok(FsResponse::ReadChunk(read_hash)) =
+            let Ok(FsResponse::Read(read_hash)) =
                 serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
             else {
                 panic!("");
@@ -1583,7 +1537,6 @@ async fn match_request(
                         signed_capabilities: None,
                     })
                     .await;
-                println!("vfs awaiting GetEntryLength {}\r", full_path);
                 let length_response = recv_response.recv().await.unwrap();
                 let KernelMessage { message, .. } = length_response;
                 let Message::Response((Response { ipc, metadata: _ }, None)) = message else {

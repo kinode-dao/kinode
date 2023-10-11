@@ -134,6 +134,10 @@ fn main() {
         "rpc",
         "terminal",
     ];
+    const NESTED_WASI_APPS: [(&str, &str); 2] = [
+        ("key_value", "key_value"),
+        ("key_value", "key_value_worker"),
+    ];
 
     if std::env::var("REBUILD_ALL").is_ok() {
     } else {
@@ -142,6 +146,12 @@ fn main() {
             println!("cargo:rerun-if-changed=modules/{}/Cargo.toml", name);
             println!("cargo:rerun-if-changed=modules/{}/pkg/manifest.json", name);
             println!("cargo:rerun-if-changed=modules/{}/pkg/metadata.json", name);
+        }
+        for (outer, inner) in &NESTED_WASI_APPS {
+            println!("cargo:rerun-if-changed=modules/{}/{}/src", outer, inner);
+            println!("cargo:rerun-if-changed=modules/{}/{}/Cargo.toml", outer, inner);
+            println!("cargo:rerun-if-changed=modules/{}/pkg/manifest.json", outer);
+            println!("cargo:rerun-if-changed=modules/{}/pkg/metadata.json", outer);
         }
     }
 

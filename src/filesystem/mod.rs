@@ -142,7 +142,6 @@ async fn bootstrap(
                 public: runtime_module.1,
             });
     }
-    println!("fs bs: runtime process_map {:#?}\r", process_map);
 
     let packages: Vec<(String, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> =
         get_zipped_packages().await;
@@ -459,52 +458,52 @@ pub async fn fs_sender(
                     continue;
                 }
 
-            //  internal structures have Arc::clone setup.
-            let manifest_clone = manifest.clone();
+                //  internal structures have Arc::clone setup.
+                let manifest_clone = manifest.clone();
 
-            let our_name = our_name.clone();
-            let source = kernel_message.source.clone();
-            let send_to_loop = send_to_loop.clone();
-            let send_to_terminal = send_to_terminal.clone();
+                let our_name = our_name.clone();
+                let source = kernel_message.source.clone();
+                let send_to_loop = send_to_loop.clone();
+                let send_to_terminal = send_to_terminal.clone();
 
-            let mut process_lock = process_queues.lock().await;
+                let mut process_lock = process_queues.lock().await;
 
-            if let Some(queue) = process_lock.get_mut(&source.process) {
-                queue.push_back(kernel_message.clone());
-            } else {
-                let mut new_queue = VecDeque::new();
-                new_queue.push_back(kernel_message.clone());
-                process_lock.insert(source.process.clone(), new_queue);
+                if let Some(queue) = process_lock.get_mut(&source.process) {
+                    queue.push_back(kernel_message.clone());
+                } else {
+                    let mut new_queue = VecDeque::new();
+                    new_queue.push_back(kernel_message.clone());
+                    process_lock.insert(source.process.clone(), new_queue);
 
-                // clone Arc for thread
-                let process_lock_clone = process_queues.clone();
+                    // clone Arc for thread
+                    let process_lock_clone = process_queues.clone();
 
-                tokio::spawn(async move {
-                    let mut process_lock = process_lock_clone.lock().await;
+                    tokio::spawn(async move {
+                        let mut process_lock = process_lock_clone.lock().await;
 
-                    while let Some(km) = process_lock.get_mut(&source.process).and_then(|q| q.pop_front()) {
-                        if let Err(e) = handle_request(
-                            our_name.clone(),
-                            km.clone(),
-                            manifest_clone.clone(),
-                            send_to_loop.clone(),
-                            send_to_terminal.clone(),
-                        )
-                        .await
-                        {
-                            let _ = send_to_loop
-                                .send(make_error_message(our_name.clone(), &km, e))
-                                .await;
+                        while let Some(km) = process_lock.get_mut(&source.process).and_then(|q| q.pop_front()) {
+                            if let Err(e) = handle_request(
+                                our_name.clone(),
+                                km.clone(),
+                                manifest_clone.clone(),
+                                send_to_loop.clone(),
+                                send_to_terminal.clone(),
+                            )
+                            .await
+                            {
+                                let _ = send_to_loop
+                                    .send(make_error_message(our_name.clone(), &km, e))
+                                    .await;
+                            }
                         }
-                    }
-                    // Remove the process entry if no more tasks are left
-                    if let Some(queue) = process_lock.get(&source.process) {
-                        if queue.is_empty() {
-                            process_lock.remove(&source.process);
+                        // Remove the process entry if no more tasks are left
+                        if let Some(queue) = process_lock.get(&source.process) {
+                            if queue.is_empty() {
+                                process_lock.remove(&source.process);
+                            }
                         }
-                    }
-                });
-            }
+                    });
+                }
             }
             _ = interval.tick() => {
                 if !first_open {
@@ -567,7 +566,6 @@ async fn handle_request(
 
     let (ipc, bytes) = match action {
         FsAction::Write => {
-            println!("fs: Write\r");
             let Some(ref payload) = payload else {
                 return Err(FsError::BadBytes {
                     action: "Write".into(),
