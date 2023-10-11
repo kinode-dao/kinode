@@ -8,6 +8,7 @@ use alloy_primitives::FixedBytes;
 use alloy_sol_types::{sol, SolEvent};
 use hex;
 use std::collections::HashMap;
+use std::string::FromUtf8Error;
 
 mod process_lib;
 
@@ -225,18 +226,15 @@ impl UqProcess for Component {
 
                             let node       = &e.topics[1];
                             let decoded    = NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                            let name = dnswire_decode(decoded.0);
-
-                            // bindings::print_to_terminal(0, format!("qns_indexer: NODE1: {:?}", node).as_str());
-                            // bindings::print_to_terminal(0, format!("qns_indexer: NAME: {:?}", name.to_string()).as_str());
+                            let Ok(name) = dnswire_decode(decoded.0.clone()) else {
+                                bindings::print_to_terminal(0, &format!("qns_indexer: failed to decode name: {:?}", decoded.0));
+                                continue;
+                            };
 
                             state.names.insert(node.to_string(), name);
                         }
                         WsChanged::SIGNATURE_HASH => {
-                            // bindings::print_to_terminal(0, format!("qns_indexer: got WsChanged event: {:?}", e).as_str());
-
                             let node       = &e.topics[1];
-                            // bindings::print_to_terminal(0, format!("qns_indexer: NODE2: {:?}", node.to_string()).as_str());
                             let decoded     = WsChanged::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                             let public_key  = hex::encode(decoded.0);
                             let ip = decoded.1;
@@ -253,12 +251,10 @@ impl UqProcess for Component {
                                 })
                                 .collect::<Vec<String>>();
 
-                            let name = state.names.get(node).unwrap();
-                            // bindings::print_to_terminal(0, format!("qns_indexer: NAME: {:?}", name).as_str());
-                            // bindings::print_to_terminal(0, format!("qns_indexer: DECODED: {:?}", decoded).as_str());
-                            // bindings::print_to_terminal(0, format!("qns_indexer: PUB KEY: {:?}", public_key).as_str());
-                            // bindings::print_to_terminal(0, format!("qns_indexer: IP PORT: {:?} {:?}", ip, port).as_str());
-                            // bindings::print_to_terminal(0, format!("qns_indexer: ROUTERS: {:?}", routers).as_str());
+                            let Some(name) = state.names.get(node) else {
+                                bindings::print_to_terminal(0, &format!("qns_indexer: failed to find name for node during WsChanged: {:?}", node));
+                                continue;
+                            };
 
                             let json_payload = json!({
                                 "QnsUpdate": {
@@ -342,7 +338,7 @@ fn hex_to_u64(hex: &str) -> Result<u64, std::num::ParseIntError> {
     u64::from_str_radix(without_prefix, 16)
 }
 
-fn dnswire_decode(wire_format_bytes: Vec<u8>) -> String {
+fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {
     let mut i = 0;
     let mut result = Vec::new();
 
@@ -358,12 +354,12 @@ fn dnswire_decode(wire_format_bytes: Vec<u8>) -> String {
 
     let flat: Vec<_> = result.into_iter().flatten().collect();
 
-    let name = String::from_utf8(flat).unwrap();
+    let name = String::from_utf8(flat)?;
 
     // Remove the trailing '.' if it exists (it should always exist)
     if name.ends_with('.') {
-        name[0..name.len()-1].to_string()
+        Ok(name[0..name.len()-1].to_string())
     } else {
-        name
+        Ok(name)
     }
 }
