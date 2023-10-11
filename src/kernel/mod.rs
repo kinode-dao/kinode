@@ -354,10 +354,9 @@ impl UqProcessImports for ProcessWasi {
             },
             None,
         )
-        .await {
-            Ok(Ok((_, hash_response)))  => {
-                hash_response
-            },
+        .await
+        {
+            Ok(Ok((_, hash_response))) => hash_response,
             Err(e) => {
                 println!("spawn: GetHash fail {}\r", e);
                 return Ok(Err(wit::SpawnError::NoFileAtPath));
@@ -461,10 +460,14 @@ impl UqProcessImports for ProcessWasi {
                             wit::Capabilities::None => HashSet::new(),
                             wit::Capabilities::All => {
                                 let (tx, rx) = tokio::sync::oneshot::channel();
-                                let _ = self.process.caps_oracle.send(t::CapMessage::GetAll {
-                                    on: self.process.metadata.our.process.clone(),
-                                    responder: tx,
-                                }).await;
+                                let _ = self
+                                    .process
+                                    .caps_oracle
+                                    .send(t::CapMessage::GetAll {
+                                        on: self.process.metadata.our.process.clone(),
+                                        responder: tx,
+                                    })
+                                    .await;
                                 rx.await
                                     .unwrap()
                                     .into_iter()
@@ -626,10 +629,14 @@ impl UqProcessImports for ProcessWasi {
     //
     async fn get_capabilities(&mut self) -> Result<Vec<wit::SignedCapability>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self.process.caps_oracle.send(t::CapMessage::GetAll {
-            on: self.process.metadata.our.process.clone(),
-            responder: tx,
-        }).await;
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::GetAll {
+                on: self.process.metadata.our.process.clone(),
+                responder: tx,
+            })
+            .await;
         Ok(rx
             .await
             .unwrap()
@@ -657,11 +664,15 @@ impl UqProcessImports for ProcessWasi {
             params,
         };
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self.process.caps_oracle.send(t::CapMessage::Has {
-            on: self.process.metadata.our.process.clone(),
-            cap: cap.clone(),
-            responder: tx,
-        }).await;
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Has {
+                on: self.process.metadata.our.process.clone(),
+                cap: cap.clone(),
+                responder: tx,
+            })
+            .await;
         if rx.await.unwrap() {
             let sig = self
                 .process
@@ -704,11 +715,16 @@ impl UqProcessImports for ProcessWasi {
             pk.verify(&bincode::serialize(&cap).unwrap(), &signed_cap.signature)?;
 
             let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = self.process.caps_oracle.send(t::CapMessage::Add {
-                on: self.process.metadata.our.process.clone(),
-                cap: cap.clone(),
-                responder: tx,
-            }).await.unwrap();
+            let _ = self
+                .process
+                .caps_oracle
+                .send(t::CapMessage::Add {
+                    on: self.process.metadata.our.process.clone(),
+                    cap: cap.clone(),
+                    responder: tx,
+                })
+                .await
+                .unwrap();
             let _ = rx.await.unwrap();
         }
         Ok(())
@@ -728,11 +744,15 @@ impl UqProcessImports for ProcessWasi {
                 params,
             };
             let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = self.process.caps_oracle.send(t::CapMessage::Has {
-                on: self.process.metadata.our.process.clone(),
-                cap: cap.clone(),
-                responder: tx,
-            }).await;
+            let _ = self
+                .process
+                .caps_oracle
+                .send(t::CapMessage::Has {
+                    on: self.process.metadata.our.process.clone(),
+                    cap: cap.clone(),
+                    responder: tx,
+                })
+                .await;
             Ok(rx.await.unwrap_or(false))
         } else {
             // if remote, just check prompting_message
@@ -1631,7 +1651,9 @@ async fn handle_kernel_request(
                         params,
                     },
                     responder: tx,
-                }).await.unwrap();
+                })
+                .await
+                .unwrap();
             println!("kernel GC: awaiting\r");
             let _ = rx.await;
             println!("kernel GC: responding\r");
@@ -1647,9 +1669,7 @@ async fn handle_kernel_request(
                     message: t::Message::Response((
                         t::Response {
                             ipc: Some(
-                                serde_json::to_string(
-                                    &t::KernelResponse::GrantCapability
-                                ).unwrap(),
+                                serde_json::to_string(&t::KernelResponse::GrantCapability).unwrap(),
                             ),
                             metadata: None,
                         },

@@ -72,7 +72,8 @@ async fn main() {
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(EVENT_LOOP_CHANNEL_CAPACITY);
     // kernel informs other runtime modules of capabilities through this
-    let (caps_oracle_sender, caps_oracle_receiver): (CapMessageSender, CapMessageReceiver) = mpsc::channel(CAP_CHANNEL_CAPACITY);
+    let (caps_oracle_sender, caps_oracle_receiver): (CapMessageSender, CapMessageReceiver) =
+        mpsc::channel(CAP_CHANNEL_CAPACITY);
     // networking module sends error messages to kernel
     let (network_error_sender, network_error_receiver): (NetworkErrorSender, NetworkErrorReceiver) =
         mpsc::channel(EVENT_LOOP_CHANNEL_CAPACITY);
