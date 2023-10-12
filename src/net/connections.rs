@@ -154,7 +154,7 @@ pub async fn maintain_connection(
                 }
                 NetworkMessage::Ping => {
                     println!("net: got ping\r");
-                    let _ = message_tx.send((NetworkMessage::Ping, None));
+                    let _ = message_tx.send((NetworkMessage::Pong, None));
                     continue;
                 }
                 NetworkMessage::Ack(id) => {
