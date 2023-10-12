@@ -1499,15 +1499,21 @@ async fn handle_kernel_request(
             // brutal and savage killing: aborting the task.
             // do not do this to a process if you don't want to risk
             // dropped messages / un-replied-to-requests
-            println!("kernel: killing process {:?}\r", process_id);
+            send_to_terminal
+                .send(t::Printout {
+                    verbosity: 1,
+                    content: format!("kernel: killing process {:?}", process_id),
+                })
+                .await
+                .unwrap();
             let _ = senders.remove(&process_id);
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
                 None => {
                     send_to_terminal
                         .send(t::Printout {
-                            verbosity: 0,
-                            content: format!("kernel: no such process {:?} to Stop", process_id),
+                            verbosity: 1,
+                            content: format!("kernel: no such process {:?} to kill", process_id),
                         })
                         .await
                         .unwrap();

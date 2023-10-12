@@ -326,14 +326,14 @@ pub async fn vfs(
                 }
                 match drive_to_queue.remove(&request.drive) {
                     Some(queue) => {
-                        println!("vfs: q\r"); // magic print that makes kv work
+                        // println!("vfs: q\r"); // magic print that makes kv work
                         let mut queue_lock = queue.lock().await;
                         queue_lock.push_back((km, response_receiver));
                         drive_to_queue.insert(request.drive, Arc::clone(&queue));
                         continue;
                     },
                     None => {
-                        println!("vfs: no q\r"); // magic print that makes kv work
+                        // println!("vfs: no q\r"); // magic print that makes kv work
                         let mut queue = VecDeque::new();
                         queue.push_back((km, response_receiver));
                         let queue: RequestQueue = Arc::new(Mutex::new(queue));

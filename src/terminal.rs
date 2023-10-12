@@ -593,7 +593,7 @@ pub async fn terminal(
                                     command_history.add(command.clone());
                                     cursor_col = prompt_len.try_into().unwrap();
                                     line_col = prompt_len;
-                                    println!("terminal: sending\r");
+                                    // println!("terminal: sending\r");
                                     let _err = event_loop.send(
                                         KernelMessage {
                                             id: rand::random(),
