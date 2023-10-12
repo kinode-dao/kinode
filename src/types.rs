@@ -613,10 +613,19 @@ impl VfsError {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KeyValueMessage {
-    New { drive: String },
+    New {
+        drive: String,
+    },
     // Write { drive: String, key: Vec<u8> },
-    Write { drive: String, key: Vec<u8>, val: Vec<u8> },
-    Read { drive: String, key: Vec<u8> },
+    Write {
+        drive: String,
+        key: Vec<u8>,
+        val: Vec<u8>,
+    },
+    Read {
+        drive: String,
+        key: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
