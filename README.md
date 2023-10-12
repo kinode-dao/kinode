@@ -17,6 +17,9 @@ rustup target add wasm32-wasi --toolchain nightly
 cargo install cargo-wasi
 cargo install --git https://github.com/bytecodealliance/cargo-component --locked cargo-component
 
+# Initialize submodules, in particular the register app
+git submodule update --init --recursive
+
 # Build the runtime, along with a number of booted-at-startup WASM modules including terminal and key_value
 # OPTIONAL: --release flag
 cargo +nightly build --release

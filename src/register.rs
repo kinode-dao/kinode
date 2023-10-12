@@ -57,6 +57,7 @@ pub async fn register(
     let api = warp::path("get-ws-info").and(
         // 1. Get uqname (already on chain) and return networking information
         warp::get()
+            .and(warp::any().map(move || ip.clone()))
             .and(warp::any().map(move || our_get.clone()))
             .and(warp::any().map(move || networking_keypair_post.clone()))
             .and_then(handle_get)
@@ -83,6 +84,7 @@ pub async fn register(
 }
 
 async fn handle_get(
+    ip: String,
     our_get: Arc<Mutex<Option<Identity>>>,
     networking_keypair_post: Arc<Mutex<Option<Document>>>,
 ) -> Result<impl Reply, Rejection> {
@@ -90,12 +92,14 @@ async fn handle_get(
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
     *networking_keypair_post.lock().unwrap() = Some(serialized_networking_keypair);
 
+    let ws_port = http_server::find_open_port(9000).await.unwrap();
+
     // 2. generate ws and routing information
     // TODO: if IP is localhost, assign a router...
     let our = Identity {
         networking_key: public_key,
         name: String::new(),
-        ws_routing: None,
+        ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
             "uqbar-router-1.uq".into(), // "0x8d9e54427c50660c6d4802f63edca86a9ca5fd6a78070c4635950e9d149ed441".into(),
             "uqbar-router-2.uq".into(), // "0x06d331ed65843ecf0860c73292005d8103af20820546b2f8f9007d01f60595b1".into(),
