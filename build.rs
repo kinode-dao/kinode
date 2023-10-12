@@ -185,11 +185,7 @@ fn main() {
         // If Cargo.toml is present, build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());
         if entry_path.join("Cargo.toml").exists() {
-            build_app(
-                &entry_path.display().to_string(),
-                &package_name,
-                None,
-            );
+            build_app(&entry_path.display().to_string(), &package_name, None);
         } else if entry_path.is_dir() {
             fs::create_dir_all(&parent_pkg_path).unwrap();
 
