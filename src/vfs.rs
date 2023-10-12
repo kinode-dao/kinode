@@ -9,7 +9,6 @@ use crate::types::*;
 const VFS_PERSIST_STATE_CHANNEL_CAPACITY: usize = 5;
 const VFS_TASK_DONE_CHANNEL_CAPACITY: usize = 5;
 const VFS_RESPONSE_CHANNEL_CAPACITY: usize = 2;
-const VFS_CLEAN_QUEUE_CHANNEL_CAPACITY: usize = 5;
 
 type ResponseRouter = HashMap<u64, MessageSender>;
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Deserialize, Serialize)]
@@ -173,7 +172,7 @@ async fn persist_state(our_node: String, send_to_loop: &MessageSender, state: &D
 async fn load_state_from_reboot(
     our_node: String,
     send_to_loop: &MessageSender,
-    mut recv_from_loop: &mut MessageReceiver,
+    recv_from_loop: &mut MessageReceiver,
     drive_to_vfs: &mut DriveToVfs,
 ) {
     let _ = send_to_loop
@@ -219,8 +218,7 @@ async fn load_state_from_reboot(
     let Some(payload) = payload else {
         panic!("");
     };
-    let mut drive_to_vfs: DriveToVfs = HashMap::new();
-    bytes_to_state(&payload.bytes, &mut drive_to_vfs);
+    bytes_to_state(&payload.bytes, drive_to_vfs);
 }
 
 pub async fn vfs(
@@ -251,7 +249,10 @@ pub async fn vfs(
         &mut drive_to_vfs,
     )
     .await;
-    println!("vfs: state after reboot: {:#?}\r", drive_to_vfs);
+    println!("vfs: state after reboot:\r");
+    for (drive, vfs) in drive_to_vfs.iter() {
+        println!("{}: {:?}\r", drive, vfs);
+    }
 
     for vfs_message in vfs_messages {
         send_to_loop.send(vfs_message).await.unwrap();
