@@ -171,20 +171,19 @@ pub async fn login(
     port: u16,
 ) {
     let login_page = include_str!("login.html");
-    let routes = warp::path("login")
-        .and(
-            // 1. serve login.html right here
-            warp::get()
-                .map(move || warp::reply::html(login_page))
-                // 2. await a single POST
-                //    - password
-                .or(warp::post()
-                    .and(warp::body::content_length_limit(1024 * 16))
-                    .and(warp::body::json())
-                    .and(warp::any().map(move || keyfile.clone()))
-                    .and(warp::any().map(move || tx.clone()))
-                    .and_then(handle_password)),
-        );
+    let routes = warp::path("login").and(
+        // 1. serve login.html right here
+        warp::get()
+            .map(move || warp::reply::html(login_page))
+            // 2. await a single POST
+            //    - password
+            .or(warp::post()
+                .and(warp::body::content_length_limit(1024 * 16))
+                .and(warp::body::json())
+                .and(warp::any().map(move || keyfile.clone()))
+                .and(warp::any().map(move || tx.clone()))
+                .and_then(handle_password)),
+    );
 
     let _ = open::that(format!("http://localhost:{}/login", port));
     warp::serve(routes)
