@@ -22,6 +22,13 @@ pub enum AppTrackerRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub enum ApptrackerResponse {
+    New { package: String },
+    Install { package: String },
+    Error { error: String },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PackageManifestEntry {
     pub process_name: String,
     pub process_wasm_path: String,
@@ -39,14 +46,11 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
-            print_to_terminal(0, "after payload");
 
             let vfs_address = Address {
                 node: our.node.clone(),
                 process: ProcessId::from_str("vfs:sys:uqbar").unwrap(),
             };
-            // make vfs package
-            print_to_terminal(0, "new vfs action");
 
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
@@ -63,7 +67,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 5,
             )?;
 
-            print_to_terminal(0, "we in here after new");
             // add zip bytes
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
@@ -82,11 +85,9 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 Some(&payload),
                 5,
             )?;
-            print_to_terminal(0, "we in here after zippie zip");
             Ok(())
         }
         AppTrackerRequest::Install { package } => {
-            print_to_terminal(0, "in app tracker install");
             let vfs_address = Address {
                 node: our.node.clone(),
                 process: ProcessId::from_str("vfs:sys:uqbar").unwrap(),
@@ -106,13 +107,11 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 None,
                 5,
             )?;
-            print_to_terminal(0, "after get entry /manifest.json");
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
             let manifest = String::from_utf8(payload.bytes)?;
             let manifest = serde_json::from_str::<Vec<PackageManifestEntry>>(&manifest).unwrap();
-            print_to_terminal(0, "after  ./manifest deserialize");
 
             for entry in manifest {
                 let path = if entry.process_wasm_path.starts_with("/") {
@@ -139,7 +138,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     5,
                 )?;
 
-                print_to_terminal(0, "get hash succesful");
 
                 let Message::Response((Response { ipc: Some(ipc), .. }, _)) = hash_response else {
                     return Err(anyhow::anyhow!("bad vfs response"));
@@ -147,7 +145,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 let kt::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc).unwrap() else {
                     return Err(anyhow::anyhow!("no hash in vfs"));
                 };
-                print_to_terminal(0, "get hash RLY succesful");
 
                 // build initial caps
                 let mut initial_capabilities: HashSet<kt::SignedCapability> = HashSet::new();
@@ -206,7 +203,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     };
                     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
                 }
-                print_to_terminal(0, "after grant caps");
 
                 // // TODO fix request?
                 // for process_name in &entry.request_messaging {
@@ -227,7 +223,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 //     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
                 // }
 
-                print_to_terminal(0, "after request caåps");
 
                 let process_id = format!("{}:{}", entry.process_name, package.clone());
                 let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {
@@ -247,8 +242,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     None,
                 );
 
-                print_to_terminal(0, "after kill");
-
                 // kernel start process takes bytes as payload + wasm_bytes_handle...
                 // reconsider perhaps
                 let (_, _bytes_response) = process_lib::send_and_await_response(
@@ -266,7 +259,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     5,
                 )?;
 
-                print_to_terminal(0, "get wasm bytes");
                 let Some(payload) = get_payload() else {
                     return Err(anyhow::anyhow!("no wasm bytes payload."));
                 };
@@ -291,7 +283,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     Some(&payload),
                     5,
                 )?;
-                print_to_terminal(0, "after start!");
 
             }
             Ok(())
