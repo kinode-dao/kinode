@@ -55,9 +55,6 @@ fn parse_command(our_name: &str, line: String) {
             //  TODO: why does this work but using the API below does not?
             //        Is it related to passing json in rather than a Serialize type?
             //
-            print_to_terminal(0, &format!("terminal: {}\r", target_process));
-            print_to_terminal(0, &format!("terminal: {:?}\r", ProcessId::from_str(target_process)));
-            print_to_terminal(0, &format!("terminal: {:?}\r", ProcessId::from_str(target_process).unwrap_or_else(|_| ProcessId::from_str(&format!("{}:sys:uqbar", target_process)).unwrap())));
             send_request(
                 &Address {
                     node: if target_node == "our" {

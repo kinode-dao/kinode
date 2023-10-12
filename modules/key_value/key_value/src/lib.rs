@@ -56,7 +56,6 @@ fn handle_message (
                         ))
                     }
 
-                    print_to_terminal(0, "key_value: 0");
                     //  (1)
                     let vfs_address = Address {
                         node: our.node.clone(),
@@ -75,7 +74,6 @@ fn handle_message (
                         15,
                     ).unwrap();
 
-                    print_to_terminal(0, "key_value: 1");
                     //  (2)
                     let vfs_read = get_capability(
                         &vfs_address,
@@ -85,18 +83,20 @@ fn handle_message (
                         &vfs_address,
                         &make_cap("write", &vfs_drive),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
-                    let Ok(spawned_process_id) = spawn(
+                    let spawned_process_id = match spawn(
                         None,
                         "/key_value_worker.wasm",
                         &OnPanic::None,  //  TODO: notify us
                         &Capabilities::Some(vec![vfs_read, vfs_write]),
                         false, // not public
-                    ) else {
-                        print_to_terminal(0, "couldn't spawn");
-                        panic!("couldn't spawn");  //  TODO
+                    ) {
+                        Ok(spawned_process_id) => spawned_process_id,
+                        Err(e) => {
+                            print_to_terminal(0, &format!("couldn't spawn: {}", e));
+                            panic!("couldn't spawn");  //  TODO
+                        },
                     };
 
-                    print_to_terminal(0, "key_value: 2");
                     //  (3)
                     send_requests(&vec![
                         //  grant caps to source
@@ -135,25 +135,6 @@ fn handle_message (
                             None,
                             None,
                         ),
-                        (
-                            Address {
-                                node: our.node.clone(),
-                                process: kt::ProcessId::new("kernel", "sys", "uqbar").en_wit(),
-                            },
-                            Request {
-                                inherit: false,
-                                expects_response: None,
-                                ipc: Some(serde_json::to_string(&kt::KernelCommand::GrantCapability {
-                                    to_process: kt::ProcessId::de_wit(spawned_process_id.clone()),
-                                    params: serde_json::to_string(&serde_json::json!({
-                                        "messaging": kt::ProcessId::de_wit(our.process.clone()),
-                                    })).unwrap(),
-                                }).unwrap()),
-                                metadata: None,
-                            },
-                            None,
-                            None,
-                        ),
                         //  initialize worker
                         (
                             Address {
@@ -171,13 +152,12 @@ fn handle_message (
                         ),
                     ]);
 
-                    print_to_terminal(0, "key_value: 3");
                     //  (4)
                     drive_to_process.insert(drive.into(), spawned_process_id);
                     //  TODO
                 },
-                kt::KeyValueMessage::Write { ref drive, key: _ } => {
-                    if has_capability(&make_cap("write", drive)) {
+                kt::KeyValueMessage::Write { ref drive, .. } => {
+                    // if has_capability(&make_cap("write", &drive)) {
                         //  forward
                         let Some(process_id) = drive_to_process.get(drive) else {
                             //  TODO
@@ -200,17 +180,17 @@ fn handle_message (
                             None,
                             None,
                         );
-                    } else {
-                        //  reject
-                        //  TODO
-                        return Err(anyhow::anyhow!(
-                            "cannot write to drive: missing 'write' capability; {}",
-                            drive,
-                        ));
-                    }
+                    // } else {
+                    //     //  reject
+                    //     //  TODO
+                    //     return Err(anyhow::anyhow!(
+                    //         "cannot write to drive: missing 'write' capability; {}",
+                    //         drive,
+                    //     ));
+                    // }
                 },
-                kt::KeyValueMessage::Read { ref drive, key: _ } => {
-                    if has_capability(&make_cap("read", drive)) {
+                kt::KeyValueMessage::Read { ref drive, .. } => {
+                    // if has_capability(&make_cap("read", &drive)) {
                         //  forward
                         let Some(process_id) = drive_to_process.get(drive) else {
                             //  TODO
@@ -233,14 +213,14 @@ fn handle_message (
                             None,
                             None,
                         );
-                    } else {
-                        //  reject
-                        //  TODO
-                        return Err(anyhow::anyhow!(
-                            "cannot read from drive: missing 'read' capability; {}",
-                            drive,
-                        ));
-                    }
+                    // } else {
+                    //     //  reject
+                    //     //  TODO
+                    //     return Err(anyhow::anyhow!(
+                    //         "cannot read from drive: missing 'read' capability; {}",
+                    //         drive,
+                    //     ));
+                    // }
                 },
             }
 

@@ -91,7 +91,7 @@ fn handle_message (
                             return Err(anyhow::anyhow!("cannot send New more than once"));
                         },
                         None => {
-                            print_to_terminal(0, "kvw: Create");
+                            print_to_terminal(0, "key_value_worker: Create");
                             *db = Some(redb::Database::create(
                                 format!(
                                     "/{}.redb",
@@ -102,21 +102,23 @@ fn handle_message (
                                 get_payload_wrapped,
                                 send_and_await_response_wrapped,
                             )?);
-                            print_to_terminal(0, "kvw: Create done");
+                            print_to_terminal(0, "key_value_worker: Create done");
                         },
                     }
                 },
-                kt::KeyValueMessage::Write { drive: _, ref key } => {
+                // kt::KeyValueMessage::Write { ref key, .. } => {
+                kt::KeyValueMessage::Write { ref key, ref val, .. } => {
                     let Some(db) = db else {
                         return Err(anyhow::anyhow!("cannot send New more than once"));
                     };
 
-                    let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
+                    // let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
 
                     let write_txn = db.begin_write()?;
                     {
                         let mut table = write_txn.open_table(TABLE)?;
-                        table.insert(&key[..], &bytes[..])?;
+                        // table.insert(&key[..], &bytes[..])?;
+                        table.insert(&key[..], &val[..])?;
                     }
                     write_txn.commit()?;
 
@@ -128,7 +130,7 @@ fn handle_message (
                         None,
                     );
                 },
-                kt::KeyValueMessage::Read { drive: _, ref key } => {
+                kt::KeyValueMessage::Read { ref key, .. } => {
                     let Some(db) = db else {
                         return Err(anyhow::anyhow!("cannot send New more than once"));
                     };
@@ -148,15 +150,17 @@ fn handle_message (
                             );
                         },
                         Some(v) => {
+                            print_to_terminal(0, &format!("key_value_worker: key {:?} value {:?}", key, v.value().to_vec()));
                             send_response(
                                 &Response {
                                     ipc,
                                     metadata: None,
                                 },
-                                Some(&Payload {
-                                    mime: None,
-                                    bytes: v.value().to_vec(),
-                                }),
+                                None,
+                                // Some(&Payload {
+                                //     mime: None,
+                                //     bytes: v.value().to_vec(),
+                                // }),
                             );
                         },
                     };

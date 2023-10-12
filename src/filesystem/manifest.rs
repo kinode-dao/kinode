@@ -778,6 +778,7 @@ impl Manifest {
 
         let tx_id = rand::random::<u64>(); // uuid instead?
 
+        let initial_length = file.get_len();
         for (start, (_hash, length, _location, _encrypted)) in affected_chunks {
             let chunk_data_start = if start < offset {
                 (offset - start) as usize
@@ -789,10 +790,8 @@ impl Manifest {
             let write_length = remaining_length.min(remaining_data);
 
             // let mut chunk_data = self.read(file_id, Some(start), Some(length)).await?;
-            let mut chunk_data = self
-                .read_from_file(&file, &memory_buffer, Some(start), Some(length))
-                .await?;
-            chunk_data.resize(chunk_data_start + write_length, 0); // extend the chunk data if necessary
+            let mut chunk_data = self.read_from_file(&file, &memory_buffer, Some(start), Some(length)).await?;
+            chunk_data.resize(std::cmp::max(chunk_data_start + write_length, initial_length as usize), 0); // extend the chunk data if necessary
 
             let data_to_write = &data[data_offset..data_offset + write_length as usize];
             chunk_data[chunk_data_start..chunk_data_start + write_length as usize]
@@ -837,6 +836,7 @@ impl Manifest {
         }
 
         self.commit_tx(tx_id, &mut file, &mut memory_buffer).await;
+
 
         manifest.insert(file_id.clone(), file);
 
