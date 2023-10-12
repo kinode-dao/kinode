@@ -135,7 +135,6 @@ pub async fn maintain_connection(
     // or create it, if necessary.
     let ws_receiver = tokio::spawn(async move {
         while let Some(incoming) = read_stream.next().await {
-
             let Ok(tungstenite::Message::Binary(bin)) = incoming else {
                 if let Ok(tungstenite::Message::Ping(_)) = incoming {
                     // let _ = write_stream.send(tungstenite::Message::Pong(vec![])).await;
