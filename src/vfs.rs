@@ -262,7 +262,6 @@ pub async fn vfs(
 
     loop {
         tokio::select! {
-            // aaa
             id_done = recv_vfs_task_done.recv() => {
                 let Some(id_done) = id_done else { continue };
                 response_router.remove(&id_done);
@@ -327,12 +326,14 @@ pub async fn vfs(
                 }
                 match drive_to_queue.remove(&request.drive) {
                     Some(queue) => {
+                        println!("vfs: q\r"); // magic print that makes kv work
                         let mut queue_lock = queue.lock().await;
                         queue_lock.push_back((km, response_receiver));
                         drive_to_queue.insert(request.drive, Arc::clone(&queue));
                         continue;
                     },
                     None => {
+                        println!("vfs: no q\r"); // magic print that makes kv work
                         let mut queue = VecDeque::new();
                         queue.push_back((km, response_receiver));
                         let queue: RequestQueue = Arc::new(Mutex::new(queue));
@@ -376,28 +377,6 @@ pub async fn vfs(
                                         &serde_json::json!({"kind": "write", "drive": request.drive})
                                     ).unwrap(),
                                 };
-
-                                // let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-                                // let _ = send_to_caps_oracle
-                                //     .send(CapMessage::Add {
-                                //         on: source.process.clone(),
-                                //         cap: read_cap,
-                                //         responder: send_cap_bool,
-                                //     })
-                                //     .await
-                                //     .unwrap();
-                                // let _ = recv_cap_bool.await.unwrap();
-
-                                // let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-                                // let _ = send_to_caps_oracle
-                                //     .send(CapMessage::Add {
-                                //         on: source.process.clone(),
-                                //         cap: write_cap,
-                                //         responder: send_cap_bool,
-                                //     })
-                                //     .await
-                                //     .unwrap();
-                                // let _ = recv_cap_bool.await.unwrap();
 
                                 (
                                     Arc::clone(drive_to_vfs.get(&request.drive).unwrap()),

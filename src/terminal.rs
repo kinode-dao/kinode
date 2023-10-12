@@ -616,7 +616,6 @@ pub async fn terminal(
                                             signed_capabilities: None,
                                         }
                                     ).await;
-                                    println!("terminal: sent\r");
                                 },
                                 _ => {},
                             }
