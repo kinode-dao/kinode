@@ -41,8 +41,6 @@ pub struct PackageManifestEntry {
 fn parse_command(our: &Address, request_string: String) -> anyhow::Result<ApptrackerResponse> {
     match serde_json::from_str(&request_string)? {
         AppTrackerRequest::New { package } => {
-            print_to_terminal(0, "in app tracker");
-
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
