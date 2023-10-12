@@ -102,7 +102,7 @@ impl InMemoryFile {
         length: u64,
     ) -> Vec<(u64, ([u8; 32], u64, ChunkLocation, bool))> {
         let end = start + length;
-
+        println!("hello");
         self.chunks
             .iter()
             .filter(
@@ -760,10 +760,10 @@ impl Manifest {
         offset: u64,
         data: &[u8],
     ) -> Result<(), FsError> {
-        let mut manifest = self.manifest.write().await;
-        let mut file = manifest.get(file_id).cloned().ok_or(FsError::NotFound {
+        let mut file = self.get(file_id).await.ok_or(FsError::NotFound {
             file: file_id.to_uuid().unwrap_or_default(),
         })?;
+        let mut manifest = self.manifest.write().await;
 
         let mut memory_buffer = self.memory_buffer.write().await;
 
