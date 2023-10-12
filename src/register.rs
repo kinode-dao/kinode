@@ -120,7 +120,6 @@ async fn handle_post(
     networking_keypair: Document,
     _redir_port: u16,
 ) -> Result<impl Reply, Rejection> {
-
     if info.direct {
         our.allowed_routers = vec![];
     } else {
