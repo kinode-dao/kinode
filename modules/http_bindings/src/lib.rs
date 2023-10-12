@@ -191,7 +191,7 @@ impl Guest for Component {
                     .trim_start_matches('/')
                     .split("/")
                     .collect::<Vec<&str>>();
-                if app != "homepage:sys:uqbar"
+                if app != "homepage:homepage:uqbar"
                     && (path_segments.is_empty()
                         || path_segments[0] != app.clone().split(':').next().unwrap_or_default().to_string().replace("_", "-"))
                 {
