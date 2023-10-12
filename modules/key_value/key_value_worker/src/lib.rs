@@ -107,18 +107,17 @@ fn handle_message (
                     }
                 },
                 // kt::KeyValueMessage::Write { ref key, .. } => {
-                kt::KeyValueMessage::Write { ref key, ref val, .. } => {
+                kt::KeyValueMessage::Write { ref key, .. } => {
                     let Some(db) = db else {
                         return Err(anyhow::anyhow!("cannot send New more than once"));
                     };
 
-                    // let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
+                    let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
 
                     let write_txn = db.begin_write()?;
                     {
                         let mut table = write_txn.open_table(TABLE)?;
-                        // table.insert(&key[..], &bytes[..])?;
-                        table.insert(&key[..], &val[..])?;
+                        table.insert(&key[..], &bytes[..])?;
                     }
                     write_txn.commit()?;
 
@@ -150,17 +149,15 @@ fn handle_message (
                             );
                         },
                         Some(v) => {
-                            print_to_terminal(0, &format!("key_value_worker: key {:?} value {:?}", key, v.value().to_vec()));
                             send_response(
                                 &Response {
                                     ipc,
                                     metadata: None,
                                 },
-                                None,
-                                // Some(&Payload {
-                                //     mime: None,
-                                //     bytes: v.value().to_vec(),
-                                // }),
+                                Some(&Payload {
+                                    mime: None,
+                                    bytes: v.value().to_vec(),
+                                }),
                             );
                         },
                     };

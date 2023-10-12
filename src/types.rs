@@ -610,11 +610,9 @@ pub enum KeyValueMessage {
     New {
         drive: String,
     },
-    // Write { drive: String, key: Vec<u8> },
     Write {
         drive: String,
         key: Vec<u8>,
-        val: Vec<u8>,
     },
     Read {
         drive: String,
