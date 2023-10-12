@@ -36,6 +36,11 @@ where
 fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
     let pwd = std::env::current_dir().unwrap();
 
+    // NOT YET building KV, waiting for deps to be ready
+    if name == "key_value" || name == "key_value_worker" {
+        return;
+    }
+
     // Copy in newly-made wit IF old one is outdated
     if file_outdated(
         format!("{}/wit/", pwd.display()),
@@ -135,9 +140,9 @@ fn main() {
         "terminal",
     ];
     // NOT YET building KV, waiting for deps to be ready
-    const NESTED_WASI_APPS: [(&str, &str); 0] = [
-        // ("key_value", "key_value"),
-        // ("key_value", "key_value_worker"),
+    const NESTED_WASI_APPS: [(&str, &str); 2] = [
+        ("key_value", "key_value"),
+        ("key_value", "key_value_worker"),
     ];
 
     if std::env::var("REBUILD_ALL").is_ok() {
