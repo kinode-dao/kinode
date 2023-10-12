@@ -4,20 +4,23 @@ interface types {
     // JSON is passed over WASM boundary as a string.
     type json = string
 
+    type node-id = string
+
     // context is a string of UTF-8 JSON.
     // it is used when building a Request to save information
     // that will not be part of a Response, in order to more
     // easily handle ("contextualize") that Response.
     type context = json
 
-    variant process-id {
-        id(u64),
-        name(string),
+    record process-id {
+        process-name: string,
+        package-name: string,
+        publisher-node: node-id,
     }
 
     // TODO better name for this
     record address {
-        node: string,
+        node: node-id,
         process: process-id,
     }
 
@@ -65,6 +68,14 @@ interface types {
         signature: list<u8>,
     }
 
+    // on-panic is a setting that determines what happens when a process panics.
+    // NOTE: requests should have expects-response set to false, will always be set to that by kernel
+    variant on-panic {
+        none,
+        restart,
+        requests(list<tuple<address, request, option<payload>>>),
+    }
+
     // network errors come from trying to send a message to another node.
     // a message can fail by timing out, or by the node being entirely unreachable (offline).
     // in either case, the message is not delivered, and the process that sent it
@@ -83,21 +94,20 @@ interface types {
         timeout,
     }
 
-    // on-panic is a setting that determines what happens when a process panics.
-    // NOTE: requests should have expects-response set to false, will always be set to that by kernel
-    variant on-panic {
-        none,
-        restart,
-        requests(list<tuple<address, request, option<payload>>>),
+    enum spawn-error {
+        name-taken,
+        no-file-at-path,
+        // TODO more here?
     }
 }
 
 world uq-process {
     use types.{
         json,
+        node-id,
         context,
-        address,
         process-id,
+        address,
 
         payload,
         request,
@@ -107,9 +117,10 @@ world uq-process {
         capabilities,
         signed-capability,
 
+        on-panic,
         send-error,
         send-error-kind,
-        on-panic,
+        spawn-error
     }
 
     // entry point to all programs
@@ -125,9 +136,19 @@ world uq-process {
 
     import set-on-panic: func(on-panic: on-panic)
 
-    // what should bytes_uri be?? need vfs?
-    import spawn: func(id: process-id, bytes-uri: string, on-panic: on-panic, capabilities: capabilities) ->
-        option<process-id>
+    import get-state: func() -> option<list<u8>>
+
+    import set-state: func(bytes: list<u8>)
+
+    import clear-state: func()
+
+    import spawn: func(
+                name: option<string>,
+                wasm-path: string, // must be located within package's drive
+                on-panic: on-panic,
+                capabilities: capabilities,
+                public: bool
+            ) -> result<process-id, spawn-error>
 
     // capabilities management
 
@@ -146,6 +167,10 @@ world uq-process {
     // check to see if the sender of a prompting message has a given capability, issued by us
     // if the prompting message has a remote source, they must have attached it.
     import has-capability: func(params: json) -> bool
+
+    // generates a new capability with our process as the issuer and gives it to the target,
+    // which must be a locally-running process.
+    import create-capability: func(to: process-id, params: json)
 
 
     // message I/O:

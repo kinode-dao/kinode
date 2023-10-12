@@ -1,3 +1,4 @@
+use crate::types::*;
 use anyhow::Result;
 use chrono::{Datelike, Local, Timelike};
 use crossterm::{
@@ -14,8 +15,6 @@ use futures::{future::FutureExt, StreamExt};
 use std::collections::VecDeque;
 use std::fs::{read_to_string, File, OpenOptions};
 use std::io::{stdout, BufWriter, Write};
-
-use crate::types::*;
 
 #[derive(Debug)]
 struct CommandHistory {
@@ -187,6 +186,7 @@ pub async fn terminal(
         let event = reader.next().fuse();
 
         tokio::select! {
+            // aaa
             prints = print_rx.recv() => match prints {
                 Some(printout) => {
                     let now = Local::now();
@@ -593,16 +593,17 @@ pub async fn terminal(
                                     command_history.add(command.clone());
                                     cursor_col = prompt_len.try_into().unwrap();
                                     line_col = prompt_len;
+                                    // println!("terminal: sending\r");
                                     let _err = event_loop.send(
                                         KernelMessage {
                                             id: rand::random(),
                                             source: Address {
                                                 node: our.name.clone(),
-                                                process: ProcessId::Name("terminal".into()),
+                                                process: TERMINAL_PROCESS_ID.clone(),
                                             },
                                             target: Address {
                                                 node: our.name.clone(),
-                                                process: ProcessId::Name("terminal".into()),
+                                                process: TERMINAL_PROCESS_ID.clone(),
                                             },
                                             rsvp: None,
                                             message: Message::Request(Request {

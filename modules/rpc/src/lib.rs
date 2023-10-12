@@ -5,13 +5,16 @@ use bindings::{
     get_capabilities, get_capability, get_payload, print_to_terminal, receive,
     send_and_await_response, send_request, send_requests, send_response, Guest,
 };
-use kernel_types::Capability;
+use kernel_types::de_wit_signed_capability;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
 extern crate base64;
 
+#[allow(dead_code)]
 mod kernel_types;
+
+#[allow(dead_code)]
 mod process_lib;
 
 struct Component;
@@ -48,15 +51,15 @@ struct CapabilitiesTransfer {
 
 #[derive(Debug, Deserialize)]
 struct WriteFileId {
-    Write: u128,
+    write: u128,
 }
 
 #[derive(Debug, Deserialize)]
 struct WriteFileResult {
-    Ok: WriteFileId,
+    ok: WriteFileId,
 }
 
-// curl http://localhost:8080/rpc/message -H 'content-type: application/json' -d '{"node": "hosted", "process": "vfs", "inherit": false, "expects_response": null, "ipc": "{\"New\": {\"identifier\": \"foo\"}}", "metadata": null, "context": null, "mime": null, "data": null}'
+// curl http://localhost:8080/rpc/message -H 'content-type: application/json' -d '{"node": "hosted", "process": "vfs", "inherit": false, "expects_response": null, "ipc": "{\"New\": {\"drive\": \"foo\"}}", "metadata": null, "context": null, "mime": null, "data": null}'
 
 fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
     send_response(
@@ -85,7 +88,7 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::Name("http_bindings".to_string()),
+            process: ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
         };
 
         let http_endpoint_binding_requests: [(Address, Request, Option<Context>, Option<Payload>);
@@ -231,14 +234,10 @@ impl Guest for Component {
                             let caps = capabilities
                                 .iter()
                                 .map(|cap| {
-                                    let process = match &cap.issuer.process {
-                                        ProcessId::Name(name) => name.clone(),
-                                        ProcessId::Id(id) => id.to_string(),
-                                    };
                                     json!({
                                         "issuer": {
                                             "node": cap.issuer.node.clone(),
-                                            "process": process,
+                                            "process": cap.issuer.process.to_string(),
                                         },
                                         "params": cap.params.clone(),
                                     })
@@ -316,7 +315,7 @@ impl Guest for Component {
                             let result = send_and_await_response(
                                 &Address {
                                     node: body_json.node,
-                                    process: ProcessId::Name(body_json.process),
+                                    process: ProcessId::from_str(&body_json.process).unwrap(),
                                 },
                                 &Request {
                                     inherit: false,
@@ -441,7 +440,7 @@ impl Guest for Component {
                             let write_wasm_result = send_and_await_response(
                                 &Address {
                                     node: node.clone(),
-                                    process: ProcessId::Name("filesystem".to_string()),
+                                    process: ProcessId::from_str("filesystem:sys:uqbar").unwrap(),
                                 },
                                 &Request {
                                     inherit: false,
@@ -478,7 +477,7 @@ impl Guest for Component {
                                     let wasm_bytes_handle = match response.ipc {
                                         Some(ipc) => {
                                             match serde_json::from_str::<WriteFileResult>(&ipc) {
-                                                Ok(result) => result.Ok.Write,
+                                                Ok(result) => result.ok.write,
                                                 Err(_) => {
                                                     send_http_response(
                                                         500,
@@ -502,20 +501,23 @@ impl Guest for Component {
                                         }
                                     };
 
-                                    let mut capabilities: HashSet<Capability> = HashSet::new();
+                                    let mut capabilities_to_grant: HashSet<
+                                        kernel_types::SignedCapability,
+                                    > = HashSet::new();
 
                                     match body_json.capabilities {
                                         Some(caps) => {
                                             for cap in caps {
-                                                capabilities.insert(Capability {
-                                                    issuer: kernel_types::Address {
-                                                        node: node.clone(),
-                                                        process: kernel_types::ProcessId::Name(
-                                                            cap.0,
-                                                        ),
-                                                    },
-                                                    params: cap.1,
-                                                });
+                                                let addr = Address {
+                                                    node: our.node.clone(),
+                                                    process: ProcessId::from_str(&cap.0).unwrap(),
+                                                };
+                                                let Some(signed) = bindings::get_capability(&addr, &cap.1) else {
+                                                    bindings::print_to_terminal(0, &format!("rpc: failed to get capability {} {}", cap.0, cap.1));
+                                                    continue;
+                                                };
+                                                capabilities_to_grant
+                                                    .insert(de_wit_signed_capability(signed));
                                             }
                                         }
                                         None => (),
@@ -523,15 +525,15 @@ impl Guest for Component {
 
                                     let stop_process_command =
                                         kernel_types::KernelCommand::KillProcess(
-                                            kernel_types::ProcessId::Name(
-                                                body_json.process.clone(),
-                                            ),
+                                            kernel_types::ProcessId::from_str(&body_json.process)
+                                                .unwrap(),
                                         );
 
                                     send_request(
                                         &Address {
                                             node: node.clone(),
-                                            process: ProcessId::Name("kernel".to_string()),
+                                            process: ProcessId::from_str("kernel:sys:uqbar")
+                                                .unwrap(),
                                         },
                                         &Request {
                                             inherit: false,
@@ -548,10 +550,11 @@ impl Guest for Component {
 
                                     let start_process_command =
                                         kernel_types::KernelCommand::StartProcess {
-                                            name: Some(body_json.process),
+                                            id: kernel_types::ProcessId::from_str(&body_json.process).unwrap(),
                                             wasm_bytes_handle,
                                             on_panic: kernel_types::OnPanic::Restart,
-                                            initial_capabilities: capabilities,
+                                            initial_capabilities: capabilities_to_grant,
+                                            public: false, // TODO ADD TO RPC
                                         };
 
                                     let ipc = match serde_json::to_string(&start_process_command) {
@@ -573,7 +576,8 @@ impl Guest for Component {
                                     let start_wasm_result = send_and_await_response(
                                         &Address {
                                             node,
-                                            process: ProcessId::Name("kernel".to_string()),
+                                            process: ProcessId::from_str("kernel:sys:uqbar")
+                                                .unwrap(),
                                         },
                                         &Request {
                                             inherit: false,
@@ -674,7 +678,7 @@ impl Guest for Component {
                             let capability = get_capability(
                                 &Address {
                                     node: body_json.node,
-                                    process: ProcessId::Name(body_json.process),
+                                    process: ProcessId::from_str(&body_json.process).unwrap(),
                                 },
                                 &body_json.params,
                             );
@@ -686,14 +690,14 @@ impl Guest for Component {
 
                             match capability {
                                 Some(capability) => {
-                                    let process = match capability.issuer.process {
-                                        ProcessId::Name(name) => name,
-                                        ProcessId::Id(id) => id.to_string(),
-                                    };
+                                    let process = capability.issuer.process.to_string();
                                     send_request(
                                         &Address {
                                             node: body_json.destination_node,
-                                            process: ProcessId::Name(body_json.destination_process),
+                                            process: ProcessId::from_str(
+                                                &body_json.destination_process,
+                                            )
+                                            .unwrap(),
                                         },
                                         &Request {
                                             inherit: false,

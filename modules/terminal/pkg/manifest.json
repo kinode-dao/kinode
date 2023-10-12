@@ -1,0 +1,14 @@
+[
+    {
+        "process_name": "terminal",
+        "process_wasm_path": "/terminal.wasm",
+        "on_panic": "Restart",
+        "request_networking": true,
+        "request_messaging": [
+            "net:sys:uqbar"
+        ],
+        "grant_messaging": [
+            "all"
+        ]
+    }
+]

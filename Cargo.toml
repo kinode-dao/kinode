@@ -5,6 +5,12 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[build-dependencies]
+sha2 = "0.10"
+walkdir = "2.4"
+zip = "0.6"
+
+
 [dependencies]
 aes-gcm = "0.10.2"
 anyhow = "1.0.71"
@@ -23,6 +29,7 @@ dotenv = "0.15.0"
 elliptic-curve = { version = "0.13.5", features = ["ecdh"] }
 ethers = "2.0"
 ethers-providers = "2.0.9"
+flate2 = "1.0"
 futures = "0.3"
 generic-array = "0.14"
 getrandom = "0.2.10"
@@ -56,3 +63,4 @@ uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"
 wasmtime = "12.0.1"
 wasmtime-wasi = "12.0.1"
+zip = "0.6"

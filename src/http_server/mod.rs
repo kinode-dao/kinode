@@ -351,11 +351,11 @@ async fn http_handle_messages(
                                             id: id.clone(),
                                             source: Address {
                                                 node: our.clone(),
-                                                process: ProcessId::Name("http_server".into()),
+                                                process: HTTP_SERVER_PROCESS_ID.clone(),
                                             },
                                             target: Address {
                                                 node: proxy_node.clone(),
-                                                process: ProcessId::Name("http_server".into()),
+                                                process: HTTP_SERVER_PROCESS_ID.clone(),
                                             },
                                             rsvp: None,
                                             message: Message::Request(Request {
@@ -428,12 +428,12 @@ async fn http_handle_messages(
                                     id: id.clone(),
                                     source: Address {
                                         node: our.clone(),
-                                        process: ProcessId::Name("http_server".into()),
+                                        process: HTTP_SERVER_PROCESS_ID.clone(),
                                     },
                                     target: source,
                                     rsvp: Some(Address {
                                         node: our.clone(),
-                                        process: ProcessId::Name("http_server".into()),
+                                        process: HTTP_SERVER_PROCESS_ID.clone(),
                                     }),
                                     message: Message::Request(Request {
                                         inherit: false,
@@ -656,15 +656,15 @@ async fn handler(
         id: id.clone(),
         source: Address {
             node: our.clone(),
-            process: ProcessId::Name("http_server".into()),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
         },
         target: Address {
             node: our.clone(),
-            process: ProcessId::Name("http_bindings".into()),
+            process: ProcessId::new(Some("http_bindings"), "http_bindings", "uqbar"),
         },
         rsvp: Some(Address {
             node: our.clone(),
-            process: ProcessId::Name("http_server".into()),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
         }),
         message: Message::Request(Request {
             inherit: false,

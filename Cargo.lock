@@ -4839,6 +4839,7 @@ dependencies = [
  "elliptic-curve",
  "ethers",
  "ethers-providers",
+ "flate2",
  "futures",
  "generic-array",
  "getrandom",
@@ -4869,9 +4870,11 @@ dependencies = [
  "tokio-tungstenite 0.20.0",
  "url",
  "uuid 1.4.1",
+ "walkdir",
  "warp",
  "wasmtime",
  "wasmtime-wasi",
+ "zip",
 ]
 
 [[package]]

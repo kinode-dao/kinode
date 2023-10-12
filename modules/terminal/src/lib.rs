@@ -1,7 +1,10 @@
 cargo_component_bindings::generate!();
+use bindings::{component::uq_process::types::*, print_to_terminal, receive, send_request, Guest};
+
+#[allow(dead_code)]
 mod process_lib;
+
 struct Component;
-use bindings::{component::uq_process::types::*, Guest, print_to_terminal, receive, send_request};
 
 fn parse_command(our_name: &str, line: String) {
     let (head, tail) = line.split_once(" ").unwrap_or((&line, ""));
@@ -22,7 +25,7 @@ fn parse_command(our_name: &str, line: String) {
                     } else {
                         target.into()
                     },
-                    process: ProcessId::Name("net".into()),
+                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
                 },
                 &Request {
                     inherit: false,
@@ -51,6 +54,7 @@ fn parse_command(our_name: &str, line: String) {
             };
             //  TODO: why does this work but using the API below does not?
             //        Is it related to passing json in rather than a Serialize type?
+            //
             send_request(
                 &Address {
                     node: if target_node == "our" {
@@ -58,7 +62,9 @@ fn parse_command(our_name: &str, line: String) {
                     } else {
                         target_node.into()
                     },
-                    process: ProcessId::Name(target_process.into()),
+                    process: ProcessId::from_str(target_process).unwrap_or_else(|_|
+                        ProcessId::from_str(&format!("{}:sys:uqbar", target_process)).unwrap(),
+                    ),
                 },
                 &Request {
                     inherit: false,
@@ -78,16 +84,11 @@ fn parse_command(our_name: &str, line: String) {
 
 impl Guest for Component {
     fn init(our: Address) {
-        assert_eq!(our.process, ProcessId::Name("terminal".into()));
-        print_to_terminal(0, &format!("terminal: running"));
+        assert_eq!(our.process.to_string(), "terminal:terminal:uqbar");
+        print_to_terminal(1, &format!("terminal: start"));
         loop {
-            let message = match receive() {
-                Ok((source, message)) => {
-                    if our.node != source.node {
-                        continue;
-                    }
-                    message
-                }
+            let (source, message) = match receive() {
+                Ok((source, message)) => (source, message),
                 Err((error, _context)) => {
                     print_to_terminal(0, &format!("net error: {:?}!", error.kind));
                     continue;
@@ -99,12 +100,15 @@ impl Guest for Component {
                     ipc,
                     ..
                 }) => {
+                    if our.node != source.node || our.process != source.process {
+                        continue;
+                    }
                     let Some(command) = ipc else {
                         continue;
                     };
                     parse_command(&our.node, command);
                 }
-                _ => continue
+                _ => continue,
             }
         }
     }

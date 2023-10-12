@@ -138,7 +138,7 @@ async fn handle_message(
         id,
         source: Address {
             node: our,
-            process: ProcessId::Name("http_client".to_string()),
+            process: ProcessId::new(Some("http_client"), "sys", "uqbar"),
         },
         target,
         rsvp: None,

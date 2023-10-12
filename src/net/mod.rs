@@ -746,15 +746,6 @@ async fn handle_incoming_message(
                 };
                 match act {
                     NetActions::QnsUpdate(log) => {
-                        if km.source.process != ProcessId::Name("qns_indexer".to_string()) {
-                            let _ = print_tx
-                                .send(Printout {
-                                    verbosity: 0,
-                                    content: "net: only qns_indexer can update qns data".into(),
-                                })
-                                .await;
-                            return;
-                        }
                         let _ = print_tx
                             .send(Printout {
                                 verbosity: 0, // TODO 1
@@ -776,6 +767,34 @@ async fn handle_incoming_message(
                             },
                         );
                         let _ = names.write().await.insert(log.node, log.name);
+                    }
+                    NetActions::QnsBatchUpdate(log_list) => {
+                        let _ = print_tx
+                            .send(Printout {
+                                verbosity: 0, // TODO 1
+                                content: format!(
+                                    "net: got QNS update with {} peers",
+                                    log_list.len()
+                                ),
+                            })
+                            .await;
+                        for log in log_list {
+                            let _ = pki.write().await.insert(
+                                log.name.clone(),
+                                Identity {
+                                    name: log.name.clone(),
+                                    networking_key: log.public_key,
+                                    ws_routing: if log.ip == "0.0.0.0".to_string() || log.port == 0
+                                    {
+                                        None
+                                    } else {
+                                        Some((log.ip, log.port))
+                                    },
+                                    allowed_routers: log.routers,
+                                },
+                            );
+                            let _ = names.write().await.insert(log.node, log.name);
+                        }
                     }
                 }
             }
