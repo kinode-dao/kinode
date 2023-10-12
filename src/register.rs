@@ -171,8 +171,6 @@ pub async fn login(
     port: u16,
 ) {
     let login_page = include_str!("login.html");
-    let redirect_to_login =
-        warp::path::end().map(|| warp::redirect(warp::http::Uri::from_static("/login")));
     let routes = warp::path("login")
         .and(
             // 1. serve login.html right here
@@ -186,8 +184,7 @@ pub async fn login(
                     .and(warp::any().map(move || keyfile.clone()))
                     .and(warp::any().map(move || tx.clone()))
                     .and_then(handle_password)),
-        )
-        .or(redirect_to_login);
+        );
 
     let _ = open::that(format!("http://localhost:{}/login", port));
     warp::serve(routes)
