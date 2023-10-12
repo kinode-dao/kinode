@@ -92,10 +92,10 @@ async fn handle_get(
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
     *networking_keypair_post.lock().unwrap() = Some(serialized_networking_keypair);
 
+    // 2. set our...
+    // TODO: if IP is localhost, assign a router...
     let ws_port = http_server::find_open_port(9000).await.unwrap();
 
-    // 2. generate ws and routing information
-    // TODO: if IP is localhost, assign a router...
     let our = Identity {
         networking_key: public_key,
         name: String::new(),
@@ -120,6 +120,13 @@ async fn handle_post(
     networking_keypair: Document,
     _redir_port: u16,
 ) -> Result<impl Reply, Rejection> {
+
+    if info.direct {
+        our.allowed_routers = vec![];
+    } else {
+        our.ws_routing = None;
+    }
+
     our.name = info.username;
 
     let seed = SystemRandom::new();
