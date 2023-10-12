@@ -82,7 +82,6 @@ pub async fn maintain_connection(
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
             if ping_last_pong.read().await.elapsed() > tokio::time::Duration::from_secs(60) {
-                println!("no Pong received for 60 seconds, killing the connection\r");
                 break;
             }
             if let Err(_) = ping_tx.send((NetworkMessage::Ping, None)) {
@@ -148,12 +147,11 @@ pub async fn maintain_connection(
             };
             match net_message {
                 NetworkMessage::Pong => {
-                    println!("net: got pong\r");
                     *last_pong.write().await = tokio::time::Instant::now();
                     continue;
                 }
                 NetworkMessage::Ping => {
-                    println!("net: got ping\r");
+                    // respond with a Pong
                     let _ = message_tx.send((NetworkMessage::Pong, None));
                     continue;
                 }
