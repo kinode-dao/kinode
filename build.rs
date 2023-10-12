@@ -134,9 +134,10 @@ fn main() {
         "rpc",
         "terminal",
     ];
-    const NESTED_WASI_APPS: [(&str, &str); 2] = [
-        ("key_value", "key_value"),
-        ("key_value", "key_value_worker"),
+    // NOT YET building KV, waiting for deps to be ready
+    const NESTED_WASI_APPS: [(&str, &str); 0] = [
+        // ("key_value", "key_value"),
+        // ("key_value", "key_value_worker"),
     ];
 
     if std::env::var("REBUILD_ALL").is_ok() {
