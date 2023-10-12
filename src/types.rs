@@ -338,11 +338,6 @@ pub enum KernelCommand {
         persisted: PersistedProcess,
     },
     Shutdown,
-    // capabilities creation
-    GrantCapability {
-        to_process: ProcessId,
-        params: String, // JSON-string
-    },
 }
 
 #[allow(dead_code)]
@@ -376,7 +371,6 @@ pub enum KernelResponse {
     StartedProcess,
     StartProcessError,
     KilledProcess(ProcessId),
-    GrantCapability,
 }
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;

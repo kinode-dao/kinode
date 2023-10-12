@@ -96,61 +96,24 @@ fn handle_message (
                             panic!("couldn't spawn");  //  TODO
                         },
                     };
-
-                    //  (3)
-                    send_requests(&vec![
-                        //  grant caps to source
-                        (
-                            Address {
-                                node: our.node.clone(),
-                                process: kt::ProcessId::new("kernel", "sys", "uqbar").en_wit(),
-                            },
-                            Request {
-                                inherit: false,
-                                expects_response: None,
-                                ipc: Some(serde_json::to_string(&kt::KernelCommand::GrantCapability {
-                                    to_process: kt::ProcessId::de_wit(source.process.clone()),
-                                    // to_process: kt::de_wit_process_id(source.process.clone()),
-                                    params: make_cap("read", drive),
-                                }).unwrap()),
-                                metadata: None,
-                            },
-                            None,
-                            None,
-                        ),
-                        (
-                            Address {
-                                node: our.node.clone(),
-                                process: kt::ProcessId::new("kernel", "sys", "uqbar").en_wit(),
-                            },
-                            Request {
-                                inherit: false,
-                                expects_response: None,
-                                ipc: Some(serde_json::to_string(&kt::KernelCommand::GrantCapability {
-                                    to_process: kt::ProcessId::de_wit(source.process.clone()),
-                                    params: make_cap("write", drive),
-                                }).unwrap()),
-                                metadata: None,
-                            },
-                            None,
-                            None,
-                        ),
-                        //  initialize worker
-                        (
-                            Address {
-                                node: our.node.clone(),
-                                process: spawned_process_id.clone(),
-                            },
-                            Request {
-                                inherit: false,
-                                expects_response: None,
-                                ipc,
-                                metadata: None,
-                            },
-                            None,
-                            None,
-                        ),
-                    ]);
+                    //  grant caps
+                    bindings::create_capability(&source.process, &make_cap("read", drive));
+                    bindings::create_capability(&source.process, &make_cap("write", drive));
+                    //  initialize worker
+                    send_request(
+                        &Address {
+                            node: our.node.clone(),
+                            process: spawned_process_id.clone(),
+                        },
+                        &Request {
+                            inherit: false,
+                            expects_response: None,
+                            ipc,
+                            metadata: None,
+                        },
+                        None,
+                        None,
+                    );
 
                     //  (4)
                     drive_to_process.insert(drive.into(), spawned_process_id);

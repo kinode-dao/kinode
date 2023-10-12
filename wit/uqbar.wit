@@ -168,6 +168,10 @@ world uq-process {
     // if the prompting message has a remote source, they must have attached it.
     import has-capability: func(params: json) -> bool
 
+    // generates a new capability with our process as the issuer and gives it to the target,
+    // which must be a locally-running process.
+    import create-capability: func(to: process-id, params: json)
+
 
     // message I/O:
 

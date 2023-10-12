@@ -207,11 +207,6 @@ pub enum KernelCommand {
         persisted: PersistedProcess,
     },
     Shutdown,
-    // capabilities creation
-    GrantCapability {
-        to_process: ProcessId,
-        params: String, // JSON-string
-    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]

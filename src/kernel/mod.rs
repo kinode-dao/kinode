@@ -664,6 +664,24 @@ impl UqProcessImports for ProcessWasi {
         }
     }
 
+    /// generate a new cap with this process as the issuer and send to caps oracle
+    async fn create_capability(&mut self, to: wit::ProcessId, params: String) -> Result<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Add {
+                on: t::ProcessId::de_wit(to),
+                cap: t::Capability {
+                    issuer: self.process.metadata.our.clone(),
+                    params,
+                },
+                responder: tx,
+            })
+            .await;
+        let _ = rx.await.unwrap();
+        Ok(())
+    }
     //
     // message I/O:
     //
@@ -1521,44 +1539,6 @@ async fn handle_kernel_request(
                                     process_id,
                                 ))
                                 .unwrap(),
-                            ),
-                            metadata: None,
-                        },
-                        None,
-                    )),
-                    payload: None,
-                    signed_capabilities: None,
-                })
-                .await
-                .unwrap();
-        }
-        t::KernelCommand::GrantCapability { to_process, params } => {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = caps_oracle
-                .send(t::CapMessage::Add {
-                    on: to_process,
-                    cap: t::Capability {
-                        issuer: km.source.clone(),
-                        params,
-                    },
-                    responder: tx,
-                })
-                .await
-                .unwrap();
-            // let _ = rx.await;  // deadlock
-            send_to_loop
-                .send(t::KernelMessage {
-                    id: km.id,
-                    source: t::Address {
-                        node: our_name.clone(),
-                        process: KERNEL_PROCESS_ID.clone(),
-                    },
-                    target: km.source,
-                    rsvp: None,
-                    message: t::Message::Response((
-                        t::Response {
-                            ipc: Some(
-                                serde_json::to_string(&t::KernelResponse::GrantCapability).unwrap(),
                             ),
                             metadata: None,
                         },
