@@ -38,6 +38,9 @@ pub enum NetworkMessage {
     },
     Handshake(Handshake),
     HandshakeAck(Handshake),
+    // only used in implementation, not part of protocol
+    Ping,
+    Pong,
 }
 
 pub enum PeerMessage {
