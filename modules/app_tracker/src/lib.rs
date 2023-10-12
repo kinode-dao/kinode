@@ -1,7 +1,7 @@
 cargo_component_bindings::generate!();
 
 use bindings::{
-    component::uq_process::types::*, get_capability, get_payload, print_to_terminal, receive, Guest, send_request
+    component::uq_process::types::*, get_capability, get_payload, print_to_terminal, receive, Guest, send_request, send_response
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -38,7 +38,7 @@ pub struct PackageManifestEntry {
     pub grant_messaging: Vec<String>, // special logic for the string "all": makes process public
 }
 
-fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
+fn parse_command(our: &Address, request_string: String) -> anyhow::Result<ApptrackerResponse> {
     match serde_json::from_str(&request_string)? {
         AppTrackerRequest::New { package } => {
             print_to_terminal(0, "in app tracker");
@@ -75,7 +75,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                     serde_json::to_string(&kt::VfsRequest {
                         drive: package.clone(),
                         action: kt::VfsAction::Add {
-                            full_path: package.into(),
+                            full_path: package.clone().into(),
                             entry_type: kt::AddEntryType::ZipArchive,
                         },
                     })
@@ -85,7 +85,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 Some(&payload),
                 5,
             )?;
-            Ok(())
+            Ok(ApptrackerResponse::New { package })
         }
         AppTrackerRequest::Install { package } => {
             let vfs_address = Address {
@@ -119,8 +119,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 } else {
                     format!("/{}", entry.process_wasm_path)
                 };
-
-                print_to_terminal(0, &format!("APT;: path: {}", path));
 
 
                 let (_, hash_response) = process_lib::send_and_await_response(
@@ -285,7 +283,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<()> {
                 )?;
 
             }
-            Ok(())
+            Ok(ApptrackerResponse::Install { package })
         }
     }
 }
@@ -308,14 +306,36 @@ impl Guest for Component {
                 }
             };
             match message {
-                Message::Request(Request { ipc, .. }) => {
+                Message::Request(Request { ipc, expects_response, metadata, .. }) => {
                     let Some(command) = ipc else {
                         continue;
                     };
                     match parse_command(&our, command) {
-                        Ok(_) => {}
+                        Ok(response) => {
+                            if let Some(_) = expects_response {
+                                let _ = send_response(
+                                    &Response {
+                                        ipc: Some(serde_json::to_string(&response).unwrap()),
+                                        metadata,
+                                    },
+                                    None,
+                                );
+                            };
+                        }
                         Err(e) => {
                             print_to_terminal(0, &format!("app_tracker: got error {}", e));
+                            if let Some(_) = expects_response {
+                                let error = ApptrackerResponse::Error {
+                                    error: format!("{}", e),
+                                };
+                                let _ = send_response(
+                                    &Response {
+                                        ipc: Some(serde_json::to_string(&error).unwrap()),
+                                        metadata,
+                                    },
+                                    None,
+                                );
+                            };
                         }
                     }
                 }
