@@ -2029,7 +2029,7 @@ async fn make_event_loop(
                         // the receiving process is automatically granted
                         // capability to communicate with the sending process.
                         if our_name == kernel_message.source.node {
-                            match process_map.get(&kernel_message.target.process) {
+                            match process_map.get_mut(&kernel_message.target.process) {
                                 None => {
                                     // this should never be hit?
                                     println!("got message for process {:?} but it doesn't exist?", kernel_message.target.process);
@@ -2040,17 +2040,9 @@ async fn make_event_loop(
                                         params: "\"messaging\"".into(),
                                     };
                                     if !p.capabilities.contains(&cap) {
-                                        let (tx, rx) =
-                                            tokio::sync::oneshot::channel();
-                                        caps_oracle_sender
-                                            .send(t::CapMessage::Add {
-                                                on: kernel_message.target.process.clone(),
-                                                cap,
-                                                responder: tx,
-                                            })
-                                            .await
-                                            .unwrap();
-                                        // rx.await.unwrap();  // deadlocks
+                                        // insert cap in process if it doesn't already have it
+                                        p.capabilities.insert(cap);
+                                        let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
                                     }
                                 }
                             }
