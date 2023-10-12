@@ -102,7 +102,6 @@ impl InMemoryFile {
         length: u64,
     ) -> Vec<(u64, ([u8; 32], u64, ChunkLocation, bool))> {
         let end = start + length;
-        println!("hello");
         self.chunks
             .iter()
             .filter(
