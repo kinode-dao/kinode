@@ -36,11 +36,6 @@ where
 fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
     let pwd = std::env::current_dir().unwrap();
 
-    // NOT YET building KV, waiting for deps to be ready
-    if name == "key_value" || name == "key_value_worker" {
-        return;
-    }
-
     // Copy in newly-made wit IF old one is outdated
     if file_outdated(
         format!("{}/wit/", pwd.display()),
@@ -181,12 +176,18 @@ fn main() {
     let modules_dir = format!("{}/modules", pwd.display());
     for entry in std::fs::read_dir(&modules_dir).unwrap() {
         let entry_path = entry.unwrap().path();
+        let package_name = entry_path.file_name().unwrap().to_str().unwrap();
+        // NOT YET building KV, waiting for deps to be ready
+        if package_name == "key_value" {
+            return;
+        }
+
         // If Cargo.toml is present, build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());
         if entry_path.join("Cargo.toml").exists() {
             build_app(
                 &entry_path.display().to_string(),
-                &entry_path.file_name().unwrap().to_str().unwrap(),
+                &package_name,
                 None,
             );
         } else if entry_path.is_dir() {
