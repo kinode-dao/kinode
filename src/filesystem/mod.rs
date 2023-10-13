@@ -571,6 +571,7 @@ async fn handle_request(
                     action: "Write".into(),
                 });
             };
+            // println!("fs: got write from {:?} with len {:?}", source.process, &payload.bytes.len());
 
             let file_uuid = FileIdentifier::new_uuid();
             match manifest.write(&file_uuid, &payload.bytes).await {
@@ -712,6 +713,7 @@ async fn handle_request(
                 });
             };
 
+            // println!("setting state for process {:?} with len {:?}", process_id, &payload.bytes.len());
             let file = FileIdentifier::Process(process_id);
             match manifest.write(&file, &payload.bytes).await {
                 Ok(_) => (),
