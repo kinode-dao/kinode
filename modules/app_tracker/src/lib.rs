@@ -1,7 +1,8 @@
 cargo_component_bindings::generate!();
 
 use bindings::{
-    component::uq_process::types::*, get_capability, get_payload, print_to_terminal, receive, Guest, send_request, send_response
+    component::uq_process::types::*, get_capability, get_payload, print_to_terminal, receive,
+    send_request, send_response, Guest,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -118,7 +119,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                     format!("/{}", entry.process_wasm_path)
                 };
 
-
                 let (_, hash_response) = process_lib::send_and_await_response(
                     &vfs_address,
                     false,
@@ -133,7 +133,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                     None,
                     5,
                 )?;
-
 
                 let Message::Response((Response { ipc: Some(ipc), .. }, _)) = hash_response else {
                     return Err(anyhow::anyhow!("bad vfs response"));
@@ -178,12 +177,42 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                 initial_capabilities.insert(kt::de_wit_signed_capability(write_cap));
                 let mut public = false;
 
-                for process_name in &entry.grant_messaging {
-                    if process_name == "all" {
-                        public = true;
-                        continue;
+                let entry_process_id = match ProcessId::from_str(
+                    &[entry.process_name.clone(), ":".into(), package.clone()].concat(),
+                ) {
+                    Ok(process_id) => process_id,
+                    Err(_) => {
+                        return Err(anyhow::anyhow!("app_tracker: invalid process id!"));
                     }
+                };
+
+                // let Some(messaging_cap) = get_capability(
+                //     &Address {
+                //         node: our.node.clone(),
+                //         process: entry_process_id,
+                //     },
+                //     &"\"messaging\"".into()
+                // ) else {
+                //     return Err(anyhow::anyhow!(
+                //         "app_tracker: no messaging cap for {} to give away!",
+                //         entry.process_name,
+                //     ));
+                // };
+                // for process_name in &entry.grant_messaging {
+                //     if process_name == "all" {
+                //         public = true;
+                //         continue;
+                //     }
+                //     let Ok(parsed_process_id) = ProcessId::from_str(&process_name) else {
+                //         // TODO handle arbitrary caps here
+                //         continue;
+                //     };
+                //     bindings::share_capability(&parsed_process_id, &messaging_cap);
+                // }
+
+                for process_name in &entry.request_messaging {
                     let Ok(parsed_process_id) = ProcessId::from_str(&process_name) else {
+                        // TODO handle arbitrary caps here
                         continue;
                     };
                     let Some(messaging_cap) = get_capability(
@@ -193,30 +222,11 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                         },
                         &"\"messaging\"".into()
                     ) else {
-                        return Err(anyhow::anyhow!(format!("app_tracker: no cap for {}", process_name)));
+                        print_to_terminal(0, &format!("app_tracker: no cap for {} to give away!", process_name));
+                        continue;
                     };
                     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
                 }
-
-                // // TODO fix request?
-                // for process_name in &entry.request_messaging {
-                //     let Ok(parsed_process_id) = ProcessId::from_str(process_name) else {
-                //         continue;
-                //     };
-                //     let Some(messaging_cap) = get_capability(
-                //         &Address {
-                //             node: our.node.clone(),
-                //             process: parsed_process_id.clone(),
-                //         },
-                //         &serde_json::to_string(&serde_json::json!({
-                //             "messaging": kt::ProcessId::de_wit(parsed_process_id),
-                //         })).unwrap(),
-                //     ) else {
-                //         return Err(anyhow::anyhow!(format!("app_tracker: no cap for {}", process_name)));
-                //     };
-                //     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
-                // }
-
 
                 let process_id = format!("{}:{}", entry.process_name, package.clone());
                 let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {
@@ -229,8 +239,11 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                     },
                     false,
                     Some(
-                        serde_json::to_string(
-                            &kt::KernelCommand::KillProcess(kt::ProcessId::de_wit(parsed_new_process_id.clone()))).unwrap()),
+                        serde_json::to_string(&kt::KernelCommand::KillProcess(
+                            kt::ProcessId::de_wit(parsed_new_process_id.clone()),
+                        ))
+                        .unwrap(),
+                    ),
                     None,
                     None,
                     None,
@@ -277,7 +290,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                     Some(&payload),
                     5,
                 )?;
-
             }
             Ok(ApptrackerResponse::Install { package })
         }
@@ -302,7 +314,12 @@ impl Guest for Component {
                 }
             };
             match message {
-                Message::Request(Request { ipc, expects_response, metadata, .. }) => {
+                Message::Request(Request {
+                    ipc,
+                    expects_response,
+                    metadata,
+                    ..
+                }) => {
                     let Some(command) = ipc else {
                         continue;
                     };

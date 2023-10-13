@@ -619,9 +619,8 @@ impl UqProcessImports for ProcessWasi {
                     cap: cap.clone(),
                     responder: tx,
                 })
-                .await
-                .unwrap();
-            let _ = rx.await.unwrap();
+                .await?;
+            let _ = rx.await?;
         }
         Ok(())
     }
@@ -678,8 +677,36 @@ impl UqProcessImports for ProcessWasi {
                 },
                 responder: tx,
             })
-            .await;
-        let _ = rx.await.unwrap();
+            .await?;
+        let _ = rx.await?;
+        Ok(())
+    }
+
+    async fn share_capability(
+        &mut self,
+        to: wit::ProcessId,
+        signed_cap: wit::SignedCapability,
+    ) -> Result<()> {
+        let pk = signature::UnparsedPublicKey::new(
+            &signature::ED25519,
+            self.process.keypair.public_key(),
+        );
+        let cap = t::Capability {
+            issuer: t::Address::de_wit(signed_cap.issuer),
+            params: signed_cap.params,
+        };
+        pk.verify(&bincode::serialize(&cap).unwrap(), &signed_cap.signature)?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Add {
+                on: t::ProcessId::de_wit(to),
+                cap,
+                responder: tx,
+            })
+            .await?;
+        let _ = rx.await?;
         Ok(())
     }
     //
@@ -1194,13 +1221,24 @@ async fn make_process_loop(
 
         // the process will run until it returns from init()
         let is_error = match bindings.call_init(&mut store, &metadata.our.en_wit()).await {
-            Ok(()) => false,
+            Ok(()) => {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!(
+                            "process {:?} returned without error",
+                            metadata.our.process,
+                        ),
+                    })
+                    .await;
+                false
+            }
             Err(e) => {
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
                         content: format!(
-                            "mk: process {:?} ended with error:",
+                            "process {:?} ended with error:",
                             metadata.our.process,
                         ),
                     })
@@ -1418,6 +1456,15 @@ async fn handle_kernel_request(
                 }
                 valid_capabilities.insert(cap);
             }
+
+            // always give process the messaging cap for itself
+            valid_capabilities.insert(t::Capability {
+                issuer: t::Address {
+                    node: our_name.clone(),
+                    process: id.clone(),
+                },
+                params: "\"messaging\"".into(),
+            });
 
             // fires "success" response back
             start_process(

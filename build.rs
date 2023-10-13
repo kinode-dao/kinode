@@ -36,6 +36,8 @@ where
 fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
     let pwd = std::env::current_dir().unwrap();
 
+    println!("cargo:warning=building {}", target_path);
+
     // Copy in newly-made wit IF old one is outdated
     if file_outdated(
         format!("{}/wit/", pwd.display()),
@@ -179,7 +181,7 @@ fn main() {
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
         // NOT YET building KV, waiting for deps to be ready
         if package_name == "key_value" {
-            return;
+            continue;
         }
 
         // If Cargo.toml is present, build the app

@@ -56,6 +56,16 @@ impl ProcessId {
     }
 }
 
+impl std::fmt::Display for ProcessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{}:{}",
+            self.process_name, self.package_name, self.publisher_node
+        )
+    }
+}
+
 impl PartialEq for ProcessId {
     fn eq(&self, other: &Self) -> bool {
         self.process_name == other.process_name

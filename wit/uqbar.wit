@@ -172,6 +172,9 @@ world uq-process {
     // which must be a locally-running process.
     import create-capability: func(to: process-id, params: json)
 
+    // take a signed capability and save it to a given locally-running process
+    import share-capability: func(to: process-id, capability: signed-capability)
+
 
     // message I/O:
 
