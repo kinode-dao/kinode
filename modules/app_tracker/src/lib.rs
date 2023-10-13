@@ -191,9 +191,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                             node: our.node.clone(),
                             process: parsed_process_id.clone(),
                         },
-                        &serde_json::to_string(&serde_json::json!({
-                            "messaging": kt::ProcessId::de_wit(parsed_process_id),
-                        })).unwrap(),
+                        &"\"messaging\"".into()
                     ) else {
                         return Err(anyhow::anyhow!(format!("app_tracker: no cap for {}", process_name)));
                     };
