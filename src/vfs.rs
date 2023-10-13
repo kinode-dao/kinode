@@ -275,10 +275,6 @@ pub async fn vfs(
         &mut drive_to_vfs,
     )
     .await;
-    println!("vfs: state after reboot:\r");
-    for (drive, vfs) in drive_to_vfs.iter() {
-        println!("{}: {:?}\r", drive, vfs);
-    }
 
     for vfs_message in vfs_messages {
         send_to_loop.send(vfs_message).await.unwrap();
