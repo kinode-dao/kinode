@@ -98,8 +98,16 @@ pub async fn networking(
             //
             if let Some(peer) = peers_read.get(target) {
                 // println!("net: direct send to known peer\r");
-                let _ = peer.sender.send((PeerMessage::Raw(km.clone()), None));
-                continue;
+                match peer.sender.send((PeerMessage::Raw(km.clone()), None)) {
+                    Ok(_) => continue,
+                    Err(_) => {
+                        // println!("net: failed to send to known peer\r");
+                        drop(peers_read);
+                        peers.write().await.remove(target);
+                        error_offline(km, &network_error_tx).await;
+                        continue;
+                    }
+                }
             }
             drop(peers_read);
             //
@@ -585,14 +593,14 @@ async fn connect_to_routers(
                 let response_shake = match timeout(TIMEOUT, handshake_rx.recv()).await {
                     Ok(Some(Ok(NetworkMessage::HandshakeAck(shake)))) => shake,
                     _ => {
-                        println!("net: failed handshake with {router_name}\r");
+                        // println!("net: failed handshake with {router_name}\r");
                         conn_handle.abort();
                         let _ = routers_to_try_tx.send(router_name);
                         continue;
                     }
                 };
                 let Ok(their_ephemeral_pk) = validate_handshake(&response_shake, &router_id) else {
-                    println!("net: failed handshake with {router_name}\r");
+                    // println!("net: failed handshake with {router_name}\r");
                     conn_handle.abort();
                     let _ = routers_to_try_tx.send(router_name);
                     continue;
