@@ -223,7 +223,7 @@ pub async fn maintain_connection(
                                 PeerMessage::Net(net_message),
                                 Some(forwarding_ack_tx.clone()),
                             )) {
-                                Ok(_) => {},
+                                Ok(_) => {}
                                 Err(_) => {
                                     peers.write().await.remove(&to);
                                     message_tx.send((NetworkMessage::Nack(id), None)).unwrap();
