@@ -1237,10 +1237,7 @@ async fn make_process_loop(
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
-                        content: format!(
-                            "process {:?} ended with error:",
-                            metadata.our.process,
-                        ),
+                        content: format!("process {:?} ended with error:", metadata.our.process,),
                     })
                     .await;
                 for line in format!("{:?}", e).lines() {
