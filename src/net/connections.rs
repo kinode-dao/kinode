@@ -217,10 +217,18 @@ pub async fn maintain_connection(
                         // with the matching peer handler "sender".
                         //
                         if let Some(peer) = peers.read().await.get(to) {
-                            let _ = peer.sender.send((
+                            let id = *id;
+                            let to = to.clone();
+                            match peer.sender.send((
                                 PeerMessage::Net(net_message),
                                 Some(forwarding_ack_tx.clone()),
-                            ));
+                            )) {
+                                Ok(_) => {}
+                                Err(_) => {
+                                    peers.write().await.remove(&to);
+                                    message_tx.send((NetworkMessage::Nack(id), None)).unwrap();
+                                }
+                            }
                         } else {
                             // if we don't have the peer, throw a nack.
                             // println!("net: nacking message with id {id}\r");
@@ -467,10 +475,10 @@ async fn peer_handler(
                         break;
                     }
                     println!("net: failed to deserialize message from {}\r", who);
-                    continue;
+                    break;
                 }
                 println!("net: failed to decrypt message from {}, could be spoofer\r", who);
-                continue;
+                break;
             }
         } => {
             // println!("net: lost peer {who}\r");
