@@ -10,11 +10,8 @@ use serde_json::{json, to_vec};
 use std::collections::HashMap;
 extern crate base64;
 
+#[allow(dead_code)]
 mod process_lib;
-
-// process_lib::set_state our, bytes
-// process_lib::await_set_state our, any serializable type
-// process_lib::get_state -> Option<Payload> gets the entire state
 
 struct Component;
 
@@ -170,7 +167,7 @@ fn send_http_client_request(
     send_request(
         &Address {
             node: our_name,
-            process: ProcessId::Name("http_client".to_string()),
+            process: ProcessId::from_str("http_client:sys:uqbar").unwrap(),
         },
         &Request {
             inherit: false,
@@ -304,7 +301,7 @@ fn handle_telegram_update(
                         send_request(
                             &Address {
                                 node: our_name.clone(),
-                                process: ProcessId::Name("encryptor".to_string()),
+                                process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
                             },
                             &Request {
                                 inherit: false,
@@ -353,7 +350,7 @@ fn handle_telegram_update(
                         let response = send_and_await_response(
                             &Address {
                                 node: our_name.clone(),
-                                process: ProcessId::Name("http_client".to_string()),
+                                process: ProcessId::from_str("http_client:sys:uqbar").unwrap(),
                             },
                             &Request {
                                 inherit: false,
@@ -552,7 +549,7 @@ fn serve_html(our: Address, default_headers: HashMap<String, String>) {
     let response = send_and_await_response(
         &Address {
             node: our.node.clone(),
-            process: ProcessId::Name("vfs".to_string()),
+            process: ProcessId::from_str("vfs:sys:uqbar").unwrap(),
         },
         &Request {
             inherit: false,
@@ -560,7 +557,7 @@ fn serve_html(our: Address, default_headers: HashMap<String, String>) {
             ipc: Some(
                 json!({
                     "GetEntry": {
-                        "identifier": "orgs_static",
+                        "drive": "orgs_static",
                         "full_path": "/index.html"
                     }
                 })
@@ -600,7 +597,7 @@ fn serve_static(raw_path: &str, our: Address, default_headers: HashMap<String, S
         let response = send_and_await_response(
             &Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("vfs".to_string()),
+                process: ProcessId::from_str("vfs:sys:uqbar").unwrap(),
             },
             &Request {
                 inherit: false,
@@ -608,7 +605,7 @@ fn serve_static(raw_path: &str, our: Address, default_headers: HashMap<String, S
                 ipc: Some(
                     json!({
                         "GetEntry": {
-                            "identifier": "orgs_static",
+                            "drive": "orgs_static",
                             "full_path": file_path // everything after "/orgs/static"
                         }
                     })
@@ -639,10 +636,10 @@ fn serve_static(raw_path: &str, our: Address, default_headers: HashMap<String, S
 
 impl Guest for Component {
     fn init(our: Address) {
-        print_to_terminal(0, "RPC: start");
+        print_to_terminal(0, "orgs: start");
 
-        let mut state: OrgsState = match process_lib::get_state(our.node.clone()) {
-            Some(payload) => match serde_json::from_slice::<OrgsState>(&payload.bytes) {
+        let mut state: OrgsState = match bindings::get_state() {
+            Some(bytes) => match serde_json::from_slice::<OrgsState>(&bytes) {
                 Ok(state) => state,
                 Err(_) => OrgsState {
                     our_contact_info: HashMap::new(),
@@ -665,7 +662,7 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::Name("http_bindings".to_string()),
+            process: ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
         };
 
         // <address, request, option<context>, option<payload>>
@@ -728,7 +725,7 @@ impl Guest for Component {
                                 save_capabilities(&[SignedCapability {
                                     issuer: Address {
                                         node,
-                                        process: ProcessId::Name(process),
+                                        process: ProcessId::from_str(&process).unwrap(),
                                     },
                                     params,
                                     signature,
@@ -758,7 +755,7 @@ impl Guest for Component {
                                     serde_json::from_slice::<Contact>(&payload.bytes)
                                 {
                                     state.address_book.insert(source.node.clone(), contact_info.clone());
-                                    process_lib::set_state(our.node.clone(), to_vec(&state).unwrap());
+                                    bindings::set_state(&to_vec(&state).unwrap());
                                     send_response(
                                         &Response {
                                             ipc: Some(
@@ -794,7 +791,7 @@ impl Guest for Component {
                             }
                             continue;
                         } else if source.node == our.node
-                            && source.process == ProcessId::Name("http_bindings".to_string())
+                            && source.process.to_string() == "http_binding:sys:uqbar"
                         {
                             // Handle http request
                             let mut default_headers = HashMap::new();
@@ -956,7 +953,7 @@ impl Guest for Component {
                                                 state.our_contact_info.insert(key, value);
                                             }
 
-                                            process_lib::set_state(our.node.clone(), to_vec(&state).unwrap());
+                                            bindings::set_state(&to_vec(&state).unwrap());
 
                                             send_http_response(
                                                 201,
@@ -1053,9 +1050,7 @@ impl Guest for Component {
                                                 send_request(
                                                     &Address {
                                                         node: username.clone(),
-                                                        process: ProcessId::Name(
-                                                            "orgs".to_string(),
-                                                        ),
+                                                        process: ProcessId::from_str("orgs:sys:uqbar").unwrap(),
                                                     },
                                                     &Request {
                                                         inherit: false,
@@ -1075,9 +1070,7 @@ impl Guest for Component {
                                                 send_request(
                                                     &Address {
                                                         node: username.clone(),
-                                                        process: ProcessId::Name(
-                                                            "orgs".to_string(),
-                                                        ),
+                                                        process: ProcessId::from_str("orgs:sys:uqbar").unwrap(),
                                                     },
                                                     &Request {
                                                         inherit: false,
@@ -1188,7 +1181,7 @@ impl Guest for Component {
                                                 let response = send_and_await_response(
                                                     &Address {
                                                         node: our.node.clone(),
-                                                        process: ProcessId::Name("http_client".to_string()),
+                                                        process: ProcessId::from_str("http_client:sys:uqbar").unwrap(),
                                                     },
                                                     &Request {
                                                         inherit: false,
@@ -1346,7 +1339,7 @@ impl Guest for Component {
                                                 let response = send_and_await_response(
                                                     &Address {
                                                         node: our.node.clone(),
-                                                        process: ProcessId::Name("http_client".to_string()),
+                                                        process: ProcessId::from_str("http_client:sys:uqbar").unwrap(),
                                                     },
                                                     &Request {
                                                         inherit: false,
@@ -1684,7 +1677,7 @@ impl Guest for Component {
                     }
                 }
                 Message::Response((response, context)) => {
-                    if source.process == ProcessId::Name("http_client".to_string()) {
+                    if source.process.to_string() == "http_client:sys:uqbar" {
                         let Some(bot_id_string) = context else {
                             print_to_terminal(0, "orgs: got response without context");
                             continue;
@@ -1753,7 +1746,7 @@ impl Guest for Component {
                                 );
                             }
                         }
-                    } else if source.process == ProcessId::Name("orgs".to_string()) {
+                    } else if source.process.to_string() == "orgs:sys:uqbar" {
                         if let Some(json) = response.ipc {
                             let message_json: serde_json::Value = match serde_json::from_str(&json)
                             {

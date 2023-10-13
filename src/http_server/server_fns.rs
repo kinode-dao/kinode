@@ -223,11 +223,11 @@ pub async fn handle_ws_register(
             id: id.clone(),
             source: Address {
                 node: our.clone(),
-                process: ProcessId::Name("http_server".into()),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
             },
             target: Address {
                 node: node.clone(),
-                process: ProcessId::Name("http_server".into()),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
             },
             rsvp: None,
             message: Message::Request(Request {
@@ -272,7 +272,7 @@ pub async fn handle_ws_message(
         id: id.clone(),
         source: Address {
             node: our.clone(),
-            process: ProcessId::Name("http_server".into()),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
         },
         target: target.clone(),
         rsvp: None,
@@ -314,11 +314,11 @@ pub async fn handle_encrypted_ws_message(
         id: id.clone(),
         source: Address {
             node: our.clone(),
-            process: ProcessId::Name("http_server".into()),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
         },
         target: Address {
             node: target.node.clone(),
-            process: ProcessId::Name("encryptor".into()),
+            process: ENCRYPTOR_PROCESS_ID.clone(),
         },
         rsvp: None,
         message: Message::Request(Request {
@@ -363,11 +363,11 @@ pub async fn proxy_ws_message(
         id: id.clone(),
         source: Address {
             node: our.clone(),
-            process: ProcessId::Name("http_server".into()),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
         },
         target: Address {
             node,
-            process: ProcessId::Name("http_server".into()),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
         },
         rsvp: None,
         message: Message::Request(Request {
@@ -411,11 +411,11 @@ pub async fn send_ws_disconnect(
         id: id.clone(),
         source: Address {
             node: our.clone(),
-            process: ProcessId::Name("http_server".into()),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
         },
         target: Address {
             node: node.clone(),
-            process: ProcessId::Name("http_server".into()),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
         },
         rsvp: None,
         message: Message::Request(Request {
@@ -451,7 +451,7 @@ pub fn make_error_message(
         id,
         source: Address {
             node: our_name.clone(),
-            process: ProcessId::Name("http_server".into()),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
         },
         target,
         rsvp: None,

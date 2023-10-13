@@ -1,8 +1,12 @@
 target/
 .vscode
 .app-signing
+.DS_Store
 *.swp
+*.swo
+*.zip
 /home
+modules/**/pkg/*.wasm
 modules/**/wit
 target.wasm
 world

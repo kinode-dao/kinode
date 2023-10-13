@@ -1,32 +1,73 @@
 use serde::{Deserialize, Serialize};
 
 use super::bindings::component::uq_process::types::*;
-use super::bindings::{get_payload, send_request, Address, Payload};
+use super::bindings::{Address, Payload, ProcessId, SendError};
+
+#[allow(dead_code)]
+impl ProcessId {
+    /// generates a random u64 number if process_name is not declared
+    pub fn new(process_name: &str, package_name: &str, publisher_node: &str) -> Self {
+        ProcessId {
+            process_name: process_name.into(),
+            package_name: package_name.into(),
+            publisher_node: publisher_node.into(),
+        }
+    }
+    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+        // split string on colons into 3 segments
+        let mut segments = input.split(':');
+        let process_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let package_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let publisher_node = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        if segments.next().is_some() {
+            return Err(ProcessIdParseError::TooManyColons);
+        }
+        Ok(ProcessId {
+            process_name,
+            package_name,
+            publisher_node,
+        })
+    }
+    pub fn to_string(&self) -> String {
+        [
+            self.process_name.as_str(),
+            self.package_name.as_str(),
+            self.publisher_node.as_str(),
+        ]
+        .join(":")
+    }
+    pub fn process(&self) -> &str {
+        &self.process_name
+    }
+    pub fn package(&self) -> &str {
+        &self.package_name
+    }
+    pub fn publisher_node(&self) -> &str {
+        &self.publisher_node
+    }
+}
 
 impl PartialEq for ProcessId {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (ProcessId::Id(i1), ProcessId::Id(i2)) => i1 == i2,
-            (ProcessId::Name(s1), ProcessId::Name(s2)) => s1 == s2,
-            _ => false,
-        }
+        self.process_name == other.process_name
+            && self.package_name == other.package_name
+            && self.publisher_node == other.publisher_node
     }
 }
-impl PartialEq<&str> for ProcessId {
-    fn eq(&self, other: &&str) -> bool {
-        match self {
-            ProcessId::Id(_) => false,
-            ProcessId::Name(s) => s == other,
-        }
-    }
-}
-impl PartialEq<u64> for ProcessId {
-    fn eq(&self, other: &u64) -> bool {
-        match self {
-            ProcessId::Id(i) => i == other,
-            ProcessId::Name(_) => false,
-        }
-    }
+
+#[derive(Debug)]
+pub enum ProcessIdParseError {
+    TooManyColons,
+    MissingField,
 }
 
 pub fn send_and_await_response(
@@ -49,62 +90,42 @@ pub fn send_and_await_response(
     )
 }
 
-pub fn get_state(our: String) -> Option<Payload> {
-    let _ = send_and_await_response(
-        &Address {
-            node: our,
-            process: ProcessId::Name("filesystem".to_string()),
-        },
-        false,
-        Some(serde_json::to_string(&FsAction::GetState).unwrap()),
-        None,
-        None,
-        5, // TODO evaluate timeout
-    );
-    get_payload()
-}
-
-pub fn set_state(our: String, bytes: Vec<u8>) {
-    send_request(
-        &Address {
-            node: our,
-            process: ProcessId::Name("filesystem".to_string()),
-        },
+pub fn send_request(
+    target: &Address,
+    inherit: bool,
+    ipc: Option<Json>,
+    metadata: Option<Json>,
+    context: Option<&Json>,
+    payload: Option<&Payload>,
+) {
+    super::bindings::send_request(
+        target,
         &Request {
-            inherit: false,
-            expects_response: Some(5), // TODO evaluate timeout
-            ipc: Some(serde_json::to_string(&FsAction::SetState).unwrap()),
-            metadata: None,
+            inherit,
+            expects_response: None,
+            ipc,
+            metadata,
         },
-        None,
-        Some(&Payload { mime: None, bytes }),
-    );
+        context,
+        payload,
+    )
 }
 
-pub fn await_set_state<T>(our: String, state: &T)
+pub fn get_state<T: serde::de::DeserializeOwned>() -> Option<T> {
+    match super::bindings::get_state() {
+        Some(bytes) => match bincode::deserialize::<T>(&bytes) {
+            Ok(state) => Some(state),
+            Err(_) => None,
+        },
+        None => None,
+    }
+}
+
+pub fn set_state<T>(state: &T)
 where
     T: serde::Serialize,
 {
-    //  Request/Response stays local -> no SendError
-    let (_, response) = send_and_await_response(
-        &Address {
-            node: our,
-            process: ProcessId::Name("filesystem".to_string()),
-        },
-        false,
-        Some(serde_json::to_string(&FsAction::SetState).unwrap()),
-        None,
-        Some(&Payload {
-            mime: None,
-            bytes: bincode::serialize(state).unwrap(),
-        }),
-        5, // TODO evaluate timeout
-    )
-    .unwrap();
-    match response {
-        Message::Request(_) => panic!("got request from filesystem"),
-        Message::Response((response, _context)) => return,
-    }
+    super::bindings::set_state(&bincode::serialize(state).unwrap());
 }
 
 pub fn parse_message_ipc<T>(json_string: Option<String>) -> anyhow::Result<T>

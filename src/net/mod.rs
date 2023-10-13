@@ -87,6 +87,7 @@ pub async fn networking(
                     keys.clone(),
                     pki.clone(),
                     names.clone(),
+                    kernel_message_tx.clone(),
                     print_tx.clone(),
                 )
                 .await;
@@ -98,8 +99,16 @@ pub async fn networking(
             //
             if let Some(peer) = peers_read.get(target) {
                 // println!("net: direct send to known peer\r");
-                let _ = peer.sender.send((PeerMessage::Raw(km.clone()), None));
-                continue;
+                match peer.sender.send((PeerMessage::Raw(km.clone()), None)) {
+                    Ok(_) => continue,
+                    Err(_) => {
+                        // println!("net: failed to send to known peer\r");
+                        drop(peers_read);
+                        peers.write().await.remove(target);
+                        error_offline(km, &network_error_tx).await;
+                        continue;
+                    }
+                }
             }
             drop(peers_read);
             //
@@ -585,14 +594,14 @@ async fn connect_to_routers(
                 let response_shake = match timeout(TIMEOUT, handshake_rx.recv()).await {
                     Ok(Some(Ok(NetworkMessage::HandshakeAck(shake)))) => shake,
                     _ => {
-                        println!("net: failed handshake with {router_name}\r");
+                        // println!("net: failed handshake with {router_name}\r");
                         conn_handle.abort();
                         let _ = routers_to_try_tx.send(router_name);
                         continue;
                     }
                 };
                 let Ok(their_ephemeral_pk) = validate_handshake(&response_shake, &router_id) else {
-                    println!("net: failed handshake with {router_name}\r");
+                    // println!("net: failed handshake with {router_name}\r");
                     conn_handle.abort();
                     let _ = routers_to_try_tx.send(router_name);
                     continue;
@@ -677,10 +686,13 @@ async fn handle_incoming_message(
     keys: PeerKeys,
     pki: OnchainPKI,
     names: PKINames,
+    kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) {
     let data = match km.message {
-        Message::Response(_) => return,
+        Message::Response(_) => {
+            return;
+        }
         Message::Request(request) => match request.ipc {
             None => return,
             Some(ipc) => ipc,
@@ -688,10 +700,31 @@ async fn handle_incoming_message(
     };
 
     if km.source.node != our.name {
+        // respond to a text message with a simple "delivered" response
         let _ = print_tx
             .send(Printout {
                 verbosity: 0,
-                content: format!("\x1b[3;32m{}: {}\x1b[0m", km.source.node, data,),
+                content: format!("\x1b[3;32m{}: {}\x1b[0m", km.source.node, data),
+            })
+            .await;
+        let _ = kernel_message_tx
+            .send(KernelMessage {
+                id: km.id,
+                source: Address {
+                    node: our.name.clone(),
+                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+                },
+                target: km.rsvp.unwrap_or(km.source),
+                rsvp: None,
+                message: Message::Response((
+                    Response {
+                        ipc: Some("delivered".into()),
+                        metadata: None,
+                    },
+                    None,
+                )),
+                payload: None,
+                signed_capabilities: None,
             })
             .await;
     } else {
@@ -746,15 +779,6 @@ async fn handle_incoming_message(
                 };
                 match act {
                     NetActions::QnsUpdate(log) => {
-                        if km.source.process != ProcessId::Name("qns_indexer".to_string()) {
-                            let _ = print_tx
-                                .send(Printout {
-                                    verbosity: 0,
-                                    content: "net: only qns_indexer can update qns data".into(),
-                                })
-                                .await;
-                            return;
-                        }
                         let _ = print_tx
                             .send(Printout {
                                 verbosity: 0, // TODO 1
@@ -776,6 +800,34 @@ async fn handle_incoming_message(
                             },
                         );
                         let _ = names.write().await.insert(log.node, log.name);
+                    }
+                    NetActions::QnsBatchUpdate(log_list) => {
+                        let _ = print_tx
+                            .send(Printout {
+                                verbosity: 0, // TODO 1
+                                content: format!(
+                                    "net: got QNS update with {} peers",
+                                    log_list.len()
+                                ),
+                            })
+                            .await;
+                        for log in log_list {
+                            let _ = pki.write().await.insert(
+                                log.name.clone(),
+                                Identity {
+                                    name: log.name.clone(),
+                                    networking_key: log.public_key,
+                                    ws_routing: if log.ip == "0.0.0.0".to_string() || log.port == 0
+                                    {
+                                        None
+                                    } else {
+                                        Some((log.ip, log.port))
+                                    },
+                                    allowed_routers: log.routers,
+                                },
+                            );
+                            let _ = names.write().await.insert(log.node, log.name);
+                        }
                     }
                 }
             }

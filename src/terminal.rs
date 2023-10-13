@@ -1,4 +1,6 @@
+use crate::types::*;
 use anyhow::Result;
+use chrono::{Datelike, Local, Timelike};
 use crossterm::{
     cursor,
     event::{
@@ -13,8 +15,6 @@ use futures::{future::FutureExt, StreamExt};
 use std::collections::VecDeque;
 use std::fs::{read_to_string, File, OpenOptions};
 use std::io::{stdout, BufWriter, Write};
-
-use crate::types::*;
 
 #[derive(Debug)]
 struct CommandHistory {
@@ -186,9 +186,11 @@ pub async fn terminal(
         let event = reader.next().fuse();
 
         tokio::select! {
+            // aaa
             prints = print_rx.recv() => match prints {
                 Some(printout) => {
-                    let _ = writeln!(log_writer, "{}", printout.content);
+                    let now = Local::now();
+                    let _ = writeln!(log_writer, "{} {}", now.to_rfc2822(), printout.content);
                     if match printout.verbosity {
                         0 => false,
                         1 => !verbose_mode,
@@ -200,7 +202,14 @@ pub async fn terminal(
                     execute!(
                         stdout,
                         cursor::MoveTo(0, win_rows - 1),
-                        terminal::Clear(ClearType::CurrentLine)
+                        terminal::Clear(ClearType::CurrentLine),
+                        Print(format!("{} {}/{} {:02}:{:02} ",
+                                       now.weekday(),
+                                       now.month(),
+                                       now.day(),
+                                       now.hour(),
+                                       now.minute(),
+                                     )),
                     )?;
                     for line in printout.content.lines() {
                         execute!(
@@ -584,16 +593,17 @@ pub async fn terminal(
                                     command_history.add(command.clone());
                                     cursor_col = prompt_len.try_into().unwrap();
                                     line_col = prompt_len;
+                                    // println!("terminal: sending\r");
                                     let _err = event_loop.send(
                                         KernelMessage {
                                             id: rand::random(),
                                             source: Address {
                                                 node: our.name.clone(),
-                                                process: ProcessId::Name("terminal".into()),
+                                                process: TERMINAL_PROCESS_ID.clone(),
                                             },
                                             target: Address {
                                                 node: our.name.clone(),
-                                                process: ProcessId::Name("terminal".into()),
+                                                process: TERMINAL_PROCESS_ID.clone(),
                                             },
                                             rsvp: None,
                                             message: Message::Request(Request {

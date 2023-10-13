@@ -38,6 +38,9 @@ pub enum NetworkMessage {
     },
     Handshake(Handshake),
     HandshakeAck(Handshake),
+    // only used in implementation, not part of protocol
+    Ping,
+    Pong,
 }
 
 pub enum PeerMessage {
@@ -60,6 +63,7 @@ pub struct Handshake {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NetActions {
     QnsUpdate(QnsUpdate),
+    QnsBatchUpdate(Vec<QnsUpdate>),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

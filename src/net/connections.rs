@@ -73,6 +73,24 @@ pub async fn maintain_connection(
     let ack_map = Arc::new(RwLock::new(HashMap::<u64, ErrorShuttle>::new()));
     let sender_ack_map = ack_map.clone();
 
+    let last_pong = Arc::new(RwLock::new(tokio::time::Instant::now()));
+    let ping_last_pong = last_pong.clone();
+    let ping_tx = message_tx.clone();
+
+    // Ping/Pong keepalive task
+    let ping_task = tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+            if ping_last_pong.read().await.elapsed() > tokio::time::Duration::from_secs(60) {
+                break;
+            }
+            if let Err(_) = ping_tx.send((NetworkMessage::Ping, None)) {
+                // Failed to send Ping, kill the connection
+                break;
+            }
+        }
+    });
+
     let forwarder_message_tx = message_tx.clone();
     let ack_forwarder = tokio::spawn(async move {
         while let Some(result) = forwarding_ack_rx.recv().await {
@@ -115,13 +133,28 @@ pub async fn maintain_connection(
     // receive messages from over the websocket and route them to the correct peer handler,
     // or create it, if necessary.
     let ws_receiver = tokio::spawn(async move {
-        while let Some(Ok(tungstenite::Message::Binary(bin))) = read_stream.next().await {
+        while let Some(incoming) = read_stream.next().await {
+            let Ok(tungstenite::Message::Binary(bin)) = incoming else {
+                if let Ok(tungstenite::Message::Ping(_)) = incoming {
+                    // let _ = write_stream.send(tungstenite::Message::Pong(vec![])).await;
+                }
+                continue;
+            };
             // TODO use a language-netural serialization format here!
             let Ok(net_message) = bincode::deserialize::<NetworkMessage>(&bin) else {
                 // just kill the connection if we get a non-Uqbar message
                 break;
             };
             match net_message {
+                NetworkMessage::Pong => {
+                    *last_pong.write().await = tokio::time::Instant::now();
+                    continue;
+                }
+                NetworkMessage::Ping => {
+                    // respond with a Pong
+                    let _ = message_tx.send((NetworkMessage::Pong, None));
+                    continue;
+                }
                 NetworkMessage::Ack(id) => {
                     let Some(result_tx) = ack_map.write().await.remove(&id) else {
                         // println!("conn {conn_id}: got unexpected Ack {id}\r");
@@ -184,10 +217,18 @@ pub async fn maintain_connection(
                         // with the matching peer handler "sender".
                         //
                         if let Some(peer) = peers.read().await.get(to) {
-                            let _ = peer.sender.send((
+                            let id = *id;
+                            let to = to.clone();
+                            match peer.sender.send((
                                 PeerMessage::Net(net_message),
                                 Some(forwarding_ack_tx.clone()),
-                            ));
+                            )) {
+                                Ok(_) => {}
+                                Err(_) => {
+                                    peers.write().await.remove(&to);
+                                    message_tx.send((NetworkMessage::Nack(id), None)).unwrap();
+                                }
+                            }
                         } else {
                             // if we don't have the peer, throw a nack.
                             // println!("net: nacking message with id {id}\r");
@@ -286,7 +327,10 @@ pub async fn maintain_connection(
         },
         _ = ack_forwarder => {
             // println!("ack_forwarder died\r");
-        }
+        },
+        _ = ping_task => {
+            // println!("ping_task died\r");
+        },
         // receive messages we would like to send to peers along this connection
         // and send them to the websocket
         _ = async {
@@ -431,10 +475,10 @@ async fn peer_handler(
                         break;
                     }
                     println!("net: failed to deserialize message from {}\r", who);
-                    continue;
+                    break;
                 }
                 println!("net: failed to decrypt message from {}, could be spoofer\r", who);
-                continue;
+                break;
             }
         } => {
             // println!("net: lost peer {who}\r");
