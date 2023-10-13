@@ -29,7 +29,7 @@ fn parse_command(our_name: &str, line: String) {
                 },
                 &Request {
                     inherit: false,
-                    expects_response: None,
+                    expects_response: Some(5),
                     ipc: Some(message.into()),
                     metadata: None,
                 },
@@ -62,9 +62,9 @@ fn parse_command(our_name: &str, line: String) {
                     } else {
                         target_node.into()
                     },
-                    process: ProcessId::from_str(target_process).unwrap_or_else(|_|
-                        ProcessId::from_str(&format!("{}:sys:uqbar", target_process)).unwrap(),
-                    ),
+                    process: ProcessId::from_str(target_process).unwrap_or_else(|_| {
+                        ProcessId::from_str(&format!("{}:sys:uqbar", target_process)).unwrap()
+                    }),
                 },
                 &Request {
                     inherit: false,
@@ -108,7 +108,11 @@ impl Guest for Component {
                     };
                     parse_command(&our.node, command);
                 }
-                _ => continue,
+                Message::Response((Response { ipc, metadata }, _)) => {
+                    if let Some(txt) = &ipc {
+                        print_to_terminal(0, &format!("net response: {}", txt));
+                    }
+                }
             }
         }
     }

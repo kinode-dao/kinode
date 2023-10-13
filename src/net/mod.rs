@@ -87,6 +87,7 @@ pub async fn networking(
                     keys.clone(),
                     pki.clone(),
                     names.clone(),
+                    kernel_message_tx.clone(),
                     print_tx.clone(),
                 )
                 .await;
@@ -685,10 +686,13 @@ async fn handle_incoming_message(
     keys: PeerKeys,
     pki: OnchainPKI,
     names: PKINames,
+    kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) {
     let data = match km.message {
-        Message::Response(_) => return,
+        Message::Response(_) => {
+            return;
+        }
         Message::Request(request) => match request.ipc {
             None => return,
             Some(ipc) => ipc,
@@ -696,12 +700,31 @@ async fn handle_incoming_message(
     };
 
     if km.source.node != our.name {
+        // respond to a text message with a simple "delivered" response
         let _ = print_tx
             .send(Printout {
                 verbosity: 0,
-                content: format!("\x1b[3;32m{}: {}\x1b[0m", km.source.node, data,),
+                content: format!("\x1b[3;32m{}: {}\x1b[0m", km.source.node, data),
             })
             .await;
+        let _ = kernel_message_tx.send(KernelMessage {
+            id: km.id,
+            source: Address {
+                node: our.name.clone(),
+                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+            },
+            target: km.rsvp.unwrap_or(km.source),
+            rsvp: None,
+            message: Message::Response((
+                Response {
+                    ipc: Some("delivered".into()),
+                    metadata: None,
+                },
+                None,
+            )),
+            payload: None,
+            signed_capabilities: None,
+        }).await;
     } else {
         // available commands: "peers", "QnsUpdate" (see qns_indexer module)
         // first parse as raw string, then deserialize to NetActions object
