@@ -707,24 +707,26 @@ async fn handle_incoming_message(
                 content: format!("\x1b[3;32m{}: {}\x1b[0m", km.source.node, data),
             })
             .await;
-        let _ = kernel_message_tx.send(KernelMessage {
-            id: km.id,
-            source: Address {
-                node: our.name.clone(),
-                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
-            },
-            target: km.rsvp.unwrap_or(km.source),
-            rsvp: None,
-            message: Message::Response((
-                Response {
-                    ipc: Some("delivered".into()),
-                    metadata: None,
+        let _ = kernel_message_tx
+            .send(KernelMessage {
+                id: km.id,
+                source: Address {
+                    node: our.name.clone(),
+                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
                 },
-                None,
-            )),
-            payload: None,
-            signed_capabilities: None,
-        }).await;
+                target: km.rsvp.unwrap_or(km.source),
+                rsvp: None,
+                message: Message::Response((
+                    Response {
+                        ipc: Some("delivered".into()),
+                        metadata: None,
+                    },
+                    None,
+                )),
+                payload: None,
+                signed_capabilities: None,
+            })
+            .await;
     } else {
         // available commands: "peers", "QnsUpdate" (see qns_indexer module)
         // first parse as raw string, then deserialize to NetActions object
