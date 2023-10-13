@@ -366,6 +366,16 @@ pub async fn vfs(
                             Some(vfs) => (Arc::clone(vfs), vec![]),
                             None => {
                                 let VfsAction::New = request.action else {
+                                    // clean up queue
+                                    match drive_to_queue_lock.remove(&request.drive) {
+                                        None => {},
+                                        Some(mut queue) => {
+                                            let _ = queue.pop_back();
+                                            if !queue.is_empty() {
+                                                drive_to_queue_lock.insert(request.drive, queue);
+                                            }
+                                        },
+                                    }
                                     send_to_loop
                                         .send(make_error_message(
                                             our_node.clone(),
