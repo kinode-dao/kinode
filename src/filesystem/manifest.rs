@@ -950,7 +950,10 @@ impl Manifest {
         let mut hash_index = self.hash_index.write().await;
         let mut memory_buffer = self.memory_buffer.write().await;
 
-        let mut to_flush: Vec<(FileIdentifier, Vec<([u8; 32], u64, u64, ChunkLocation, bool)>)> = Vec::new();
+        let mut to_flush: Vec<(
+            FileIdentifier,
+            Vec<([u8; 32], u64, u64, ChunkLocation, bool)>,
+        )> = Vec::new();
         for (file_id, in_memory_file) in manifest_lock.iter_mut() {
             let mut chunks_to_flush: Vec<([u8; 32], u64, u64, ChunkLocation, bool)> = Vec::new();
 
@@ -996,7 +999,7 @@ impl Manifest {
                 } else {
                     *length
                 };
-    
+
                 let buffer = match location {
                     ChunkLocation::WAL(wal_pos) => {
                         // seek to the chunk in the WAL file
@@ -1009,7 +1012,7 @@ impl Manifest {
                     ChunkLocation::Memory(mem_pos) => {
                         // convert mem_pos and length to usize
                         let mem_pos = *mem_pos as usize;
-    
+
                         // ensure the memory buffer is large enough
                         if mem_pos + total_len as usize > memory_buffer.len() {
                             return Err(FsError::MemoryBufferError {
@@ -1054,7 +1057,7 @@ impl Manifest {
             in_memory_file.mem_chunks.clear();
             in_memory_file.wal_chunks.clear();
 
-            // chunks have been flushed, let's add a manifest entry. 
+            // chunks have been flushed, let's add a manifest entry.
             let entry = ManifestRecord::Backup(BackupEntry {
                 file: file_id.clone(),
                 chunks: in_memory_file
