@@ -177,10 +177,10 @@ fn main() {
     for entry in std::fs::read_dir(&modules_dir).unwrap() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
-        // NOT YET building KV, waiting for deps to be ready
-        if package_name == "key_value" {
-            continue;
-        }
+        // // NOT YET building KV, waiting for deps to be ready
+        // if package_name == "key_value" {
+        //     continue;
+        // }
 
         // If Cargo.toml is present, build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());
