@@ -26,29 +26,29 @@ fn get_payload_wrapped() -> Option<(Option<String>, Vec<u8>)> {
 
 fn send_and_await_response_wrapped(
     target_node: String,
-    target_process: Result<u64, String>,
+    target_process: String,
+    target_package: String,
+    target_publisher: String,
     request_ipc: Option<String>,
     request_metadata: Option<String>,
     payload: Option<(Option<String>, Vec<u8>)>,
     timeout: u64,
-) -> (
-    (String, Result<u64, String>),
-    (Option<String>, Option<String>),
-) {
+) -> (Option<String>, Option<String>) {
     let payload = match payload {
         None => None,
         Some((mime, bytes)) => Some(Payload { mime, bytes }),
     };
     let (
-        Address { node, process },
+        _,
         Message::Response((Response { ipc, metadata }, _)),
     ) = send_and_await_response(
         &Address {
             node: target_node,
-            process: match target_process {
-                Ok(id) => ProcessId::Id(id),
-                Err(name) => ProcessId::Name(name),
-            },
+            process: kt::ProcessId::new(
+                &target_process,
+                &target_package,
+                &target_publisher,
+            ).en_wit(),
         },
         &Request {
             inherit: false,
@@ -63,16 +63,7 @@ fn send_and_await_response_wrapped(
     ).unwrap() else {
         panic!("");
     };
-    (
-        (
-            node,
-            match process {
-                ProcessId::Id(id) => Ok(id),
-                ProcessId::Name(name) => Err(name),
-            },
-        ),
-        (ipc, metadata)
-    )
+    (ipc, metadata)
 }
 
 fn handle_message (
@@ -100,19 +91,23 @@ fn handle_message (
                             return Err(anyhow::anyhow!("cannot send New more than once"));
                         },
                         None => {
+                            print_to_terminal(0, "key_value_worker: Create");
                             *db = Some(redb::Database::create(
                                 format!(
                                     "/{}.redb",
                                     kv_drive,
                                 ),
+                                our.node.clone(),
                                 vfs_drive,
                                 get_payload_wrapped,
                                 send_and_await_response_wrapped,
                             )?);
+                            print_to_terminal(0, "key_value_worker: Create done");
                         },
                     }
                 },
-                kt::KeyValueMessage::Write { drive: _, ref key } => {
+                // kt::KeyValueMessage::Write { ref key, .. } => {
+                kt::KeyValueMessage::Write { ref key, .. } => {
                     let Some(db) = db else {
                         return Err(anyhow::anyhow!("cannot send New more than once"));
                     };
@@ -134,7 +129,7 @@ fn handle_message (
                         None,
                     );
                 },
-                kt::KeyValueMessage::Read { drive: _, ref key } => {
+                kt::KeyValueMessage::Read { ref key, .. } => {
                     let Some(db) = db else {
                         return Err(anyhow::anyhow!("cannot send New more than once"));
                     };
@@ -176,7 +171,7 @@ fn handle_message (
 
 impl Guest for Component {
     fn init(our: Address) {
-        print_to_terminal(1, "key_value: begin");
+        print_to_terminal(1, "key_value_worker: begin");
 
         let mut db: Option<redb::Database> = None;
 

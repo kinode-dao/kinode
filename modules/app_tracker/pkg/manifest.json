@@ -1,20 +1,20 @@
 [
     {
         "process_name": "app_tracker",
-        "process_wasm_path": "app_tracker.wasm",
+        "process_wasm_path": "/app_tracker.wasm",
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [
-            "http_bindings",
-            "terminal",
-            "filesystem",
-            "http_server",
-            "http_client",
-            "encryptor",
-            "net",
-            "vfs",
-            "kernel",
-            "eth_rpc"
+            "http_bindings:http_bindings:uqbar",
+            "terminal:terminal:uqbar",
+            "filesystem:sys:uqbar",
+            "http_server:sys:uqbar",
+            "http_client:sys:uqbar",
+            "encryptor:sys:uqbar",
+            "net:sys:uqbar",
+            "vfs:sys:uqbar",
+            "kernel:sys:uqbar",
+            "eth_rpc:sys:uqbar"
         ],
         "grant_messaging": []
     }

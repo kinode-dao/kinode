@@ -9,10 +9,12 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use wasmtime::component::*;
 use wasmtime::{Config, Engine, Store, WasmBacktraceDetails};
-
 use wasmtime_wasi::preview2::{DirPerms, FilePerms, Table, WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::types as t;
+use crate::FILESYSTEM_PROCESS_ID;
+use crate::KERNEL_PROCESS_ID;
+use crate::VFS_PROCESS_ID;
 //  WIT errors when `use`ing interface unless we import this and implement Host for Process below
 use crate::kernel::component::uq_process::types as wit;
 use crate::kernel::component::uq_process::types::Host;
@@ -25,6 +27,7 @@ bindgen!({
     world: "uq-process",
     async: true,
 });
+
 const PROCESS_CHANNEL_CAPACITY: usize = 100;
 
 type ProcessMessageSender =
@@ -141,7 +144,7 @@ impl wasi::random::random::Host for ProcessWasi {
 impl UqProcessImports for ProcessWasi {
     //
     // system utils:
-    //f
+    //
     async fn print_to_terminal(&mut self, verbosity: u8, content: String) -> Result<()> {
         match self
             .process
@@ -201,11 +204,11 @@ impl UqProcessImports for ProcessWasi {
             self,
             Some(t::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: t::ProcessId::Name("kernel".into()),
+                process: KERNEL_PROCESS_ID.clone(),
             }),
             wit::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: wit::ProcessId::Name("filesystem".into()),
+                process: FILESYSTEM_PROCESS_ID.en_wit(),
             },
             wit::Request {
                 inherit: false,
@@ -244,11 +247,11 @@ impl UqProcessImports for ProcessWasi {
             self,
             Some(t::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: t::ProcessId::Name("kernel".into()),
+                process: KERNEL_PROCESS_ID.clone(),
             }),
             wit::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: wit::ProcessId::Name("filesystem".into()),
+                process: FILESYSTEM_PROCESS_ID.en_wit(),
             },
             wit::Request {
                 inherit: false,
@@ -285,11 +288,11 @@ impl UqProcessImports for ProcessWasi {
             self,
             Some(t::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: t::ProcessId::Name("kernel".into()),
+                process: KERNEL_PROCESS_ID.clone(),
             }),
             wit::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: wit::ProcessId::Name("filesystem".into()),
+                process: FILESYSTEM_PROCESS_ID.en_wit(),
             },
             wit::Request {
                 inherit: false,
@@ -318,20 +321,22 @@ impl UqProcessImports for ProcessWasi {
         return res;
     }
 
+    /// shortcut to spawn a new process. the child process will automatically
+    /// be able to send messages to the parent process, and vice versa.
+    /// the .wasm file for the process must already be in VFS.
     async fn spawn(
         &mut self,
-        id: wit::ProcessId,
-        package: String,
-        full_path: String,
+        name: Option<String>,
+        wasm_path: String, // must be located within package's drive
         on_panic: wit::OnPanic,
         capabilities: wit::Capabilities,
         public: bool,
-    ) -> Result<Option<wit::ProcessId>> {
+    ) -> Result<Result<wit::ProcessId, wit::SpawnError>> {
         let vfs_address = wit::Address {
             node: self.process.metadata.our.node.clone(),
-            process: wit::ProcessId::Name("vfs".into()),
+            process: VFS_PROCESS_ID.en_wit(),
         };
-        let (_, hash_response) = send_and_await_response(
+        let Ok(Ok((_, hash_response))) = send_and_await_response(
             self,
             None,
             vfs_address.clone(),
@@ -339,9 +344,9 @@ impl UqProcessImports for ProcessWasi {
                 inherit: false,
                 expects_response: Some(5),
                 ipc: Some(
-                    serde_json::to_string(&t::VfsRequest::GetHash {
-                        drive: package.clone(),
-                        full_path: full_path.clone(),
+                    serde_json::to_string(&t::VfsRequest {
+                        drive: self.process.metadata.our.process.package().to_string(),
+                        action: t::VfsAction::GetHash(wasm_path.clone()),
                     })
                     .unwrap(),
                 ),
@@ -350,17 +355,19 @@ impl UqProcessImports for ProcessWasi {
             None,
         )
         .await
-        .unwrap()
-        .unwrap();
+        else {
+            println!("spawn: GetHash fail");
+            return Ok(Err(wit::SpawnError::NoFileAtPath));
+        };
         let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = hash_response
         else {
-            panic!("baz");
+            return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let t::VfsResponse::GetHash { hash, .. } = serde_json::from_str(&ipc).unwrap() else {
-            panic!("aaa");
+        let t::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc).unwrap() else {
+            return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
-        let _ = send_and_await_response(
+        let Ok(Ok(_)) = send_and_await_response(
             self,
             None,
             vfs_address,
@@ -368,9 +375,9 @@ impl UqProcessImports for ProcessWasi {
                 inherit: false,
                 expects_response: Some(5),
                 ipc: Some(
-                    serde_json::to_string(&t::VfsRequest::GetEntry {
-                        drive: package.clone(),
-                        full_path: full_path.clone(),
+                    serde_json::to_string(&t::VfsRequest {
+                        drive: self.process.metadata.our.process.package().to_string(),
+                        action: t::VfsAction::GetEntry(wasm_path.clone()),
                     })
                     .unwrap(),
                 ),
@@ -379,110 +386,138 @@ impl UqProcessImports for ProcessWasi {
             None,
         )
         .await
-        .unwrap()
-        .unwrap();
-
-        // TODO: handle case of response is Error
-        let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
-            panic!(""); // TODO
+        else {
+            return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
-        self.process
-            .send_to_loop
-            .send(t::KernelMessage {
-                id: rand::random(),
-                source: self.process.metadata.our.clone(),
-                target: t::Address {
-                    node: self.process.metadata.our.node.clone(),
-                    process: t::ProcessId::Name("kernel".into()),
-                },
-                rsvp: Some(self.process.metadata.our.clone()),
-                message: t::Message::Request(t::Request {
-                    inherit: false,
-                    expects_response: Some(5), // TODO evaluate
-                    ipc: Some(
-                        serde_json::to_string(&t::KernelCommand::StartProcess {
-                            name: match id {
-                                wit::ProcessId::Name(ref name) => Some(name.into()),
-                                wit::ProcessId::Id(_id) => None,
-                            },
-                            wasm_bytes_handle: hash,
-                            on_panic: de_wit_on_panic(on_panic),
-                            // TODO
-                            initial_capabilities: match capabilities {
-                                wit::Capabilities::None => HashSet::new(),
-                                wit::Capabilities::All => {
-                                    let (tx, rx) = tokio::sync::oneshot::channel();
-                                    let _ = self.process.caps_oracle.send(t::CapMessage::GetAll {
+        let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
+            return Ok(Err(wit::SpawnError::NoFileAtPath));
+        };
+
+        let name = match name {
+            Some(name) => name,
+            None => rand::random::<u64>().to_string(),
+        };
+        let new_process_id = t::ProcessId::new(
+            Some(&name),
+            self.process.metadata.our.process.package(),
+            self.process.metadata.our.process.publisher_node(),
+        );
+
+        let Ok(Ok((_, response))) = send_and_await_response(
+            self,
+            Some(t::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: KERNEL_PROCESS_ID.clone(),
+            }),
+            wit::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: KERNEL_PROCESS_ID.en_wit(),
+            },
+            wit::Request {
+                inherit: false,
+                expects_response: Some(5), // TODO evaluate
+                ipc: Some(
+                    serde_json::to_string(&t::KernelCommand::StartProcess {
+                        id: new_process_id.clone(),
+                        wasm_bytes_handle: hash,
+                        on_panic: de_wit_on_panic(on_panic),
+                        // TODO
+                        initial_capabilities: match capabilities {
+                            wit::Capabilities::None => HashSet::new(),
+                            wit::Capabilities::All => {
+                                let (tx, rx) = tokio::sync::oneshot::channel();
+                                let _ = self
+                                    .process
+                                    .caps_oracle
+                                    .send(t::CapMessage::GetAll {
                                         on: self.process.metadata.our.process.clone(),
                                         responder: tx,
-                                    });
-                                    rx.await
-                                        .unwrap()
-                                        .into_iter()
-                                        .map(|cap| t::SignedCapability {
-                                            issuer: cap.issuer.clone(),
-                                            params: cap.params.clone(),
-                                            signature: self
-                                                .process
-                                                .keypair
-                                                .sign(&bincode::serialize(&cap).unwrap())
-                                                .as_ref()
-                                                .to_vec(),
-                                        })
-                                        .collect()
-                                }
-                                wit::Capabilities::Some(caps) => caps
+                                    })
+                                    .await;
+                                rx.await
+                                    .unwrap()
                                     .into_iter()
                                     .map(|cap| t::SignedCapability {
-                                        issuer: de_wit_address(cap.issuer),
-                                        params: cap.params,
-                                        signature: cap.signature,
+                                        issuer: cap.issuer.clone(),
+                                        params: cap.params.clone(),
+                                        signature: self
+                                            .process
+                                            .keypair
+                                            .sign(&bincode::serialize(&cap).unwrap())
+                                            .as_ref()
+                                            .to_vec(),
                                     })
-                                    .collect(),
-                            },
-                            public,
-                        })
-                        .unwrap(),
-                    ),
-                    metadata: None,
-                }),
-                payload: Some(t::Payload {
-                    mime: None,
-                    bytes: bytes.clone(),
-                }),
-                signed_capabilities: None,
-            })
-            .await?;
+                                    .collect()
+                            }
+                            wit::Capabilities::Some(caps) => caps
+                                .into_iter()
+                                .map(|cap| t::SignedCapability {
+                                    issuer: t::Address::de_wit(cap.issuer),
+                                    params: cap.params,
+                                    signature: cap.signature,
+                                })
+                                .collect(),
+                        },
+                        public,
+                    })
+                    .unwrap(),
+                ),
+                metadata: None,
+            },
+            Some(wit::Payload {
+                mime: None,
+                bytes: bytes.to_vec(),
+            }),
+        )
+        .await
+        else {
+            return Ok(Err(wit::SpawnError::NameTaken));
+        };
+
+        let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = response else {
+            return Ok(Err(wit::SpawnError::NoFileAtPath));
+        };
+        let t::KernelResponse::StartedProcess = serde_json::from_str(&ipc).unwrap() else {
+            return Ok(Err(wit::SpawnError::NoFileAtPath));
+        };
 
         // child processes are always able to Message parent
-        let _ = self
-            .process
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.process
             .caps_oracle
             .send(t::CapMessage::Add {
-                on: de_wit_process_id(id.clone()),
+                on: new_process_id.clone(),
                 cap: t::Capability {
                     issuer: self.process.metadata.our.clone(),
                     params: "\"messaging\"".into(),
                 },
+                responder: tx,
             })
+            .await
             .unwrap();
+        let _ = rx.await.unwrap();
 
         // parent process is always able to Message child
-        let _ = self
-            .process
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.process
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: self.process.metadata.our.process.clone(),
                 cap: t::Capability {
-                    issuer: self.process.metadata.our.clone(),
+                    issuer: t::Address {
+                        node: self.process.metadata.our.node.clone(),
+                        process: new_process_id.clone(),
+                    },
                     params: "\"messaging\"".into(),
                 },
+                responder: tx,
             })
+            .await
             .unwrap();
+        let _ = rx.await.unwrap();
 
-        unimplemented!()
-        //Ok(Some(id))
+        Ok(Ok(new_process_id.en_wit().to_owned()))
     }
 
     //
@@ -490,16 +525,20 @@ impl UqProcessImports for ProcessWasi {
     //
     async fn get_capabilities(&mut self) -> Result<Vec<wit::SignedCapability>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self.process.caps_oracle.send(t::CapMessage::GetAll {
-            on: self.process.metadata.our.process.clone(),
-            responder: tx,
-        });
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::GetAll {
+                on: self.process.metadata.our.process.clone(),
+                responder: tx,
+            })
+            .await;
         Ok(rx
             .await
             .unwrap()
             .into_iter()
             .map(|cap| wit::SignedCapability {
-                issuer: en_wit_address(cap.issuer.clone()),
+                issuer: cap.issuer.en_wit().to_owned(),
                 params: cap.params.clone(),
                 signature: self
                     .process
@@ -517,22 +556,26 @@ impl UqProcessImports for ProcessWasi {
         params: String,
     ) -> Result<Option<wit::SignedCapability>> {
         let cap = t::Capability {
-            issuer: de_wit_address(issuer),
+            issuer: t::Address::de_wit(issuer),
             params,
         };
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self.process.caps_oracle.send(t::CapMessage::Has {
-            on: self.process.metadata.our.process.clone(),
-            cap: cap.clone(),
-            responder: tx,
-        });
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Has {
+                on: self.process.metadata.our.process.clone(),
+                cap: cap.clone(),
+                responder: tx,
+            })
+            .await;
         if rx.await.unwrap() {
             let sig = self
                 .process
                 .keypair
                 .sign(&bincode::serialize(&cap).unwrap());
             return Ok(Some(wit::SignedCapability {
-                issuer: en_wit_address(cap.issuer.clone()),
+                issuer: cap.issuer.en_wit().to_owned(),
                 params: cap.params.clone(),
                 signature: sig.as_ref().to_vec(),
             }));
@@ -562,15 +605,23 @@ impl UqProcessImports for ProcessWasi {
         for signed_cap in capabilities {
             // validate our signature!
             let cap = t::Capability {
-                issuer: de_wit_address(signed_cap.issuer),
+                issuer: t::Address::de_wit(signed_cap.issuer),
                 params: signed_cap.params,
             };
             pk.verify(&bincode::serialize(&cap).unwrap(), &signed_cap.signature)?;
 
-            let _ = self.process.caps_oracle.send(t::CapMessage::Add {
-                on: self.process.metadata.our.process.clone(),
-                cap: cap.clone(),
-            });
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = self
+                .process
+                .caps_oracle
+                .send(t::CapMessage::Add {
+                    on: self.process.metadata.our.process.clone(),
+                    cap: cap.clone(),
+                    responder: tx,
+                })
+                .await
+                .unwrap();
+            let _ = rx.await.unwrap();
         }
         Ok(())
     }
@@ -589,11 +640,15 @@ impl UqProcessImports for ProcessWasi {
                 params,
             };
             let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = self.process.caps_oracle.send(t::CapMessage::Has {
-                on: self.process.metadata.our.process.clone(),
-                cap: cap.clone(),
-                responder: tx,
-            });
+            let _ = self
+                .process
+                .caps_oracle
+                .send(t::CapMessage::Has {
+                    on: self.process.metadata.our.process.clone(),
+                    cap: cap.clone(),
+                    responder: tx,
+                })
+                .await;
             Ok(rx.await.unwrap_or(false))
         } else {
             // if remote, just check prompting_message
@@ -609,6 +664,24 @@ impl UqProcessImports for ProcessWasi {
         }
     }
 
+    /// generate a new cap with this process as the issuer and send to caps oracle
+    async fn create_capability(&mut self, to: wit::ProcessId, params: String) -> Result<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Add {
+                on: t::ProcessId::de_wit(to),
+                cap: t::Capability {
+                    issuer: self.process.metadata.our.clone(),
+                    params,
+                },
+                responder: tx,
+            })
+            .await;
+        let _ = rx.await.unwrap();
+        Ok(())
+    }
     //
     // message I/O:
     //
@@ -823,7 +896,7 @@ impl Process {
         // (in fact it should be None, possibly always)
         // we need to get *our* context for this message id
         Ok((
-            en_wit_address(km.source),
+            km.source.en_wit().to_owned(),
             match km.message {
                 t::Message::Request(request) => wit::Message::Request(en_wit_request(request)),
                 t::Message::Response((response, _context)) => {
@@ -905,7 +978,7 @@ impl Process {
         let kernel_message = t::KernelMessage {
             id: request_id,
             source: source.clone(),
-            target: de_wit_address(target.clone()),
+            target: t::Address::de_wit(target.clone()),
             rsvp: match (
                 request.inherit,
                 request.expects_response,
@@ -937,10 +1010,10 @@ impl Process {
                 self_sender
                     .send(Err(t::WrappedSendError {
                         id: request_id,
-                        source: de_wit_address(target.clone()), // TODO check this
+                        source: t::Address::de_wit(target.clone()), // TODO check this
                         error: t::SendError {
                             kind: t::SendErrorKind::Timeout,
-                            target: de_wit_address(target),
+                            target: t::Address::de_wit(target),
                             message: t::Message::Request(de_wit_request(request.clone())),
                             payload,
                         },
@@ -1005,24 +1078,22 @@ async fn persist_state(
 
     send_to_loop
         .send(t::KernelMessage {
-            id: 0,
+            id: rand::random(),
             source: t::Address {
                 node: our_name.clone(),
-                process: t::ProcessId::Name("kernel".into()),
+                process: KERNEL_PROCESS_ID.clone(),
             },
             target: t::Address {
                 node: our_name.clone(),
-                process: t::ProcessId::Name("filesystem".into()),
+                process: FILESYSTEM_PROCESS_ID.clone(),
             },
             rsvp: None,
             message: t::Message::Request(t::Request {
                 inherit: true,
                 expects_response: Some(5), // TODO evaluate
                 ipc: Some(
-                    serde_json::to_string(&t::FsAction::SetState(t::ProcessId::Name(
-                        "kernel".into(),
-                    )))
-                    .unwrap(),
+                    serde_json::to_string(&t::FsAction::SetState(KERNEL_PROCESS_ID.clone()))
+                        .unwrap(),
                 ),
                 metadata: None,
             }),
@@ -1122,10 +1193,7 @@ async fn make_process_loop(
             };
 
         // the process will run until it returns from init()
-        let is_error = match bindings
-            .call_init(&mut store, &en_wit_address(metadata.our.clone()))
-            .await
-        {
+        let is_error = match bindings.call_init(&mut store, &metadata.our.en_wit()).await {
             Ok(()) => false,
             Err(e) => {
                 let _ = send_to_terminal
@@ -1152,34 +1220,49 @@ async fn make_process_loop(
         // the process has completed, perform cleanup
         let our_kernel = t::Address {
             node: metadata.our.node.clone(),
-            process: t::ProcessId::Name("kernel".into()),
+            process: KERNEL_PROCESS_ID.clone(),
         };
 
         if is_error {
+            // get caps before killing
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = caps_oracle
+                .send(t::CapMessage::GetAll {
+                    on: metadata.our.process.clone(),
+                    responder: tx,
+                })
+                .await;
+            let initial_capabilities = rx.await.unwrap().into_iter().collect();
+
+            // always send message to tell main kernel loop to remove handler
+            send_to_loop
+                .send(t::KernelMessage {
+                    id: rand::random(),
+                    source: our_kernel.clone(),
+                    target: our_kernel.clone(),
+                    rsvp: None,
+                    message: t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        ipc: Some(
+                            serde_json::to_string(&t::KernelCommand::KillProcess(
+                                metadata.our.process.clone(),
+                            ))
+                            .unwrap(),
+                        ),
+                        metadata: None,
+                    }),
+                    payload: None,
+                    signed_capabilities: None,
+                })
+                .await
+                .unwrap();
+
             // fulfill the designated OnPanic behavior
             match metadata.on_panic {
                 t::OnPanic::None => {}
                 // if restart, tell ourselves to init the app again, with same capabilities
                 t::OnPanic::Restart => {
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    let _ = caps_oracle.send(t::CapMessage::GetAll {
-                        on: metadata.our.process.clone(),
-                        responder: tx,
-                    });
-                    let initial_capabilities = rx
-                        .await
-                        .unwrap()
-                        .into_iter()
-                        .map(|cap| t::SignedCapability {
-                            issuer: cap.issuer.clone(),
-                            params: cap.params.clone(),
-                            signature: keypair
-                                .sign(&bincode::serialize(&cap).unwrap())
-                                .as_ref()
-                                .to_vec(),
-                        })
-                        .collect();
-
                     send_to_loop
                         .send(t::KernelMessage {
                             id: rand::random(),
@@ -1190,15 +1273,14 @@ async fn make_process_loop(
                                 inherit: false,
                                 expects_response: None,
                                 ipc: Some(
-                                    serde_json::to_string(&t::KernelCommand::StartProcess {
-                                        name: match &metadata.our.process {
-                                            t::ProcessId::Name(name) => Some(name.into()),
-                                            t::ProcessId::Id(_) => None,
+                                    serde_json::to_string(&t::KernelCommand::RebootProcess {
+                                        process_id: metadata.our.process.clone(),
+                                        persisted: t::PersistedProcess {
+                                            wasm_bytes_handle: metadata.wasm_bytes_handle,
+                                            on_panic: metadata.on_panic,
+                                            capabilities: initial_capabilities,
+                                            public: metadata.public,
                                         },
-                                        wasm_bytes_handle: metadata.wasm_bytes_handle,
-                                        on_panic: metadata.on_panic,
-                                        initial_capabilities,
-                                        public: metadata.public,
                                     })
                                     .unwrap(),
                                 ),
@@ -1211,9 +1293,11 @@ async fn make_process_loop(
                         .unwrap();
                 }
                 // if requests, fire them
+                // check that dying process had capability to send each message
                 t::OnPanic::Requests(requests) => {
                     for (address, mut request, payload) in requests {
                         request.expects_response = None;
+                        // TODO caps check
                         send_to_loop
                             .send(t::KernelMessage {
                                 id: rand::random(),
@@ -1230,30 +1314,6 @@ async fn make_process_loop(
                 }
             }
         }
-
-        // always send message to tell main kernel loop to remove handler
-        send_to_loop
-            .send(t::KernelMessage {
-                id: rand::random(),
-                source: our_kernel.clone(),
-                target: our_kernel.clone(),
-                rsvp: None,
-                message: t::Message::Request(t::Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: Some(
-                        serde_json::to_string(&t::KernelCommand::KillProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                    ),
-                    metadata: None,
-                }),
-                payload: None,
-                signed_capabilities: None,
-            })
-            .await
-            .unwrap();
         Ok(())
     })
 }
@@ -1298,7 +1358,7 @@ async fn handle_kernel_request(
         // initialize a new process. this is the only way to create a new process.
         //
         t::KernelCommand::StartProcess {
-            name,
+            id,
             wasm_bytes_handle,
             on_panic,
             initial_capabilities,
@@ -1309,6 +1369,31 @@ async fn handle_kernel_request(
                     .send(t::Printout {
                         verbosity: 0,
                         content: "kernel: process startup requires bytes".into(),
+                    })
+                    .await
+                    .unwrap();
+                // fire an error back
+                send_to_loop
+                    .send(t::KernelMessage {
+                        id: km.id,
+                        source: t::Address {
+                            node: our_name.clone(),
+                            process: KERNEL_PROCESS_ID.clone(),
+                        },
+                        target: km.source,
+                        rsvp: None,
+                        message: t::Message::Response((
+                            t::Response {
+                                ipc: Some(
+                                    serde_json::to_string(&t::KernelResponse::StartProcessError)
+                                        .unwrap(),
+                                ),
+                                metadata: None,
+                            },
+                            None,
+                        )),
+                        payload: None,
+                        signed_capabilities: None,
                     })
                     .await
                     .unwrap();
@@ -1327,12 +1412,14 @@ async fn handle_kernel_request(
                     Ok(_) => {}
                     Err(e) => {
                         println!("kernel: StartProcess no cap: {}", e);
+                        // TODO should this make the spawn fail??? could go either way
                         continue;
                     }
                 }
                 valid_capabilities.insert(cap);
             }
 
+            // fires "success" response back
             start_process(
                 our_name,
                 keypair.clone(),
@@ -1347,8 +1434,12 @@ async fn handle_kernel_request(
                 engine,
                 caps_oracle,
                 StartProcessMetadata {
-                    source: km.source,
-                    process_id: name.map(|n| t::ProcessId::Name(n)),
+                    source: if let Some(rsvp) = km.rsvp {
+                        rsvp
+                    } else {
+                        km.source
+                    },
+                    process_id: Some(id),
                     persisted: t::PersistedProcess {
                         wasm_bytes_handle,
                         on_panic,
@@ -1365,9 +1456,8 @@ async fn handle_kernel_request(
             process_id,
             persisted,
         } => {
-            if senders.contains_key(&process_id)
-                || process_id == t::ProcessId::Name("kernel".into())
-            {
+            if senders.contains_key(&process_id) || process_id == KERNEL_PROCESS_ID.clone() {
+                // never reboot a running process
                 return;
             }
             send_to_loop
@@ -1375,11 +1465,11 @@ async fn handle_kernel_request(
                     id: km.id,
                     source: t::Address {
                         node: our_name.clone(),
-                        process: t::ProcessId::Name("kernel".into()),
+                        process: KERNEL_PROCESS_ID.clone(),
                     },
                     target: t::Address {
                         node: our_name.clone(),
-                        process: t::ProcessId::Name("filesystem".into()),
+                        process: FILESYSTEM_PROCESS_ID.clone(),
                     },
                     rsvp: None,
                     message: t::Message::Request(t::Request {
@@ -1409,15 +1499,21 @@ async fn handle_kernel_request(
             // brutal and savage killing: aborting the task.
             // do not do this to a process if you don't want to risk
             // dropped messages / un-replied-to-requests
-            println!("kernel: killing process {:?}\r", process_id);
+            send_to_terminal
+                .send(t::Printout {
+                    verbosity: 1,
+                    content: format!("kernel: killing process {:?}", process_id),
+                })
+                .await
+                .unwrap();
             let _ = senders.remove(&process_id);
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
                 None => {
                     send_to_terminal
                         .send(t::Printout {
-                            verbosity: 0,
-                            content: format!("kernel: no such process {:?} to Stop", process_id),
+                            verbosity: 1,
+                            content: format!("kernel: no such process {:?} to kill", process_id),
                         })
                         .await
                         .unwrap();
@@ -1438,7 +1534,7 @@ async fn handle_kernel_request(
                     id: km.id,
                     source: t::Address {
                         node: our_name.clone(),
-                        process: t::ProcessId::Name("kernel".into()),
+                        process: KERNEL_PROCESS_ID.clone(),
                     },
                     target: km.source,
                     rsvp: None,
@@ -1458,17 +1554,6 @@ async fn handle_kernel_request(
                     signed_capabilities: None,
                 })
                 .await
-                .unwrap();
-        }
-        t::KernelCommand::GrantCapability { to_process, params } => {
-            caps_oracle
-                .send(t::CapMessage::Add {
-                    on: to_process,
-                    cap: t::Capability {
-                        issuer: km.source.clone(),
-                        params,
-                    },
-                })
                 .unwrap();
         }
     }
@@ -1503,7 +1588,7 @@ async fn handle_kernel_response(
     };
 
     // ignore responses that aren't filesystem responses
-    if km.source.process != t::ProcessId::Name("filesystem".into()) {
+    if km.source.process != *FILESYSTEM_PROCESS_ID {
         return;
     }
 
@@ -1577,47 +1662,25 @@ async fn start_process(
     let (send_to_process, recv_in_process) =
         mpsc::channel::<Result<t::KernelMessage, t::WrappedSendError>>(PROCESS_CHANNEL_CAPACITY);
     let process_id = match process_metadata.process_id {
-        Some(t::ProcessId::Name(name)) => {
-            if senders.contains_key(&t::ProcessId::Name(name.clone())) {
+        Some(id) => {
+            if senders.contains_key(&id) {
                 // TODO: make a Response to indicate failure?
                 send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
-                        content: format!("kernel: process named {} already exists", name),
+                        content: format!("kernel: process with ID {} already exists", id),
                     })
                     .await
                     .unwrap();
                 return;
             } else {
-                t::ProcessId::Name(name)
+                id
             }
         }
-        Some(t::ProcessId::Id(id)) => {
-            if senders.contains_key(&t::ProcessId::Id(id)) {
-                // TODO: make a Response to indicate failure?
-                send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: format!("kernel: process with id {} already exists", id),
-                    })
-                    .await
-                    .unwrap();
-                return;
-            } else {
-                t::ProcessId::Id(id)
-            }
-        }
-        // first 2 Some cases were for reboot or start with defined name, this is for start without name
+        // first cases was for reboot or start with defined name, this is for start without name
         None => {
-            loop {
-                // lol
-                let id: u64 = rand::random();
-                if senders.contains_key(&t::ProcessId::Id(id)) {
-                    continue;
-                } else {
-                    break t::ProcessId::Id(id);
-                }
-            }
+            // TODO change signature of outer fn
+            unimplemented!()
         }
     };
 
@@ -1665,16 +1728,13 @@ async fn start_process(
             id: km_id,
             source: t::Address {
                 node: our_name.clone(),
-                process: t::ProcessId::Name("kernel".into()),
+                process: KERNEL_PROCESS_ID.clone(),
             },
             target: process_metadata.source,
             rsvp: None,
             message: t::Message::Response((
                 t::Response {
-                    ipc: Some(
-                        serde_json::to_string(&t::KernelResponse::StartedProcess(metadata))
-                            .unwrap(),
-                    ),
+                    ipc: Some(serde_json::to_string(&t::KernelResponse::StartedProcess).unwrap()),
                     metadata: None,
                 },
                 None,
@@ -1712,32 +1772,32 @@ async fn make_event_loop(
     Box::pin(async move {
         let mut senders: Senders = HashMap::new();
         senders.insert(
-            t::ProcessId::Name("eth_rpc".into()),
+            t::ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
             ProcessSender::Runtime(send_to_eth_rpc),
         );
         senders.insert(
-            t::ProcessId::Name("filesystem".into()),
+            t::ProcessId::new(Some("filesystem"), "sys", "uqbar"),
             ProcessSender::Runtime(send_to_fs),
         );
         senders.insert(
-            t::ProcessId::Name("http_server".into()),
+            t::ProcessId::new(Some("http_server"), "sys", "uqbar"),
             ProcessSender::Runtime(send_to_http_server),
         );
         senders.insert(
-            t::ProcessId::Name("http_client".into()),
+            t::ProcessId::new(Some("http_client"), "sys", "uqbar"),
             ProcessSender::Runtime(send_to_http_client),
         );
         senders.insert(
-            t::ProcessId::Name("encryptor".into()),
+            t::ProcessId::new(Some("encryptor"), "sys", "uqbar"),
             ProcessSender::Runtime(send_to_encryptor),
         );
         senders.insert(
-            t::ProcessId::Name("net".into()),
+            t::ProcessId::new(Some("net"), "sys", "uqbar"),
             ProcessSender::Runtime(send_to_net.clone()),
         );
         senders.insert(
-            t::ProcessId::Name("vfs".into()),
-            ProcessSender::Runtime(send_to_vfs.clone()),
+            t::ProcessId::new(Some("vfs"), "sys", "uqbar"),
+            ProcessSender::Runtime(send_to_vfs),
         );
 
         // each running process is stored in this map
@@ -1752,11 +1812,11 @@ async fn make_event_loop(
                         id: rand::random(),
                         source: t::Address {
                             node: our_name.clone(),
-                            process: t::ProcessId::Name("kernel".into()),
+                            process: KERNEL_PROCESS_ID.clone(),
                         },
                         target: t::Address {
                             node: our_name.clone(),
-                            process: t::ProcessId::Name("kernel".into()),
+                            process: KERNEL_PROCESS_ID.clone(),
                         },
                         rsvp: None,
                         message: t::Message::Request(t::Request {
@@ -1805,6 +1865,7 @@ async fn make_event_loop(
         // main message loop
         loop {
             tokio::select! {
+                // aaa
                 // debug mode toggle: when on, this loop becomes a manual step-through
                 debug = recv_debug_in_loop.recv() => {
                     if let Some(t::DebugCommand::Toggle) = debug {
@@ -1856,7 +1917,7 @@ async fn make_event_loop(
                                 &t::Capability {
                                     issuer: t::Address {
                                     node: our_name.clone(),
-                                    process: t::ProcessId::Name("kernel".into()),
+                                    process: KERNEL_PROCESS_ID.clone(),
                                 },
                                 params: "\"network\"".into(),
                         }) {
@@ -1875,28 +1936,41 @@ async fn make_event_loop(
                         }
                     } else {
                         // enforce that process has capability to message a target process of this name
-                        match process_map.get(&kernel_message.source.process) {
-                            None => {}, // this should only get hit by kernel?
-                            Some(persisted) => {
-                                if !persisted.capabilities.contains(&t::Capability {
-                                    issuer: t::Address {
-                                        node: our_name.clone(),
-                                        process: kernel_message.target.process.clone(),
-                                    },
-                                    params: "\"messaging\"".into(),
-                                }) {
-                                    // capabilities are not correct! skip this message.
-                                    // TODO some kind of error thrown back at process
-                                    let _ = send_to_terminal.send(
-                                        t::Printout {
-                                            verbosity: 0,
-                                            content: format!(
-                                                "event loop: process {:?} doesn't have capability to message process {:?}",
-                                                kernel_message.source.process, kernel_message.target.process
-                                            )
+                        // kernel and filesystem can ALWAYS message any process
+                        if kernel_message.source.process != *KERNEL_PROCESS_ID
+                            && kernel_message.source.process != *FILESYSTEM_PROCESS_ID
+                        {
+                            let is_target_public = match process_map.get(&kernel_message.target.process) {
+                                None => false,
+                                Some(p) => p.public,
+                            };
+                            if !is_target_public {
+                                match process_map.get(&kernel_message.source.process) {
+                                    None => {
+                                        println!("kernel: did not find process in process_map: {}\r", kernel_message.source.process);
+                                    }, // this should only get hit by kernel?
+                                    Some(persisted) => {
+                                        if !persisted.capabilities.contains(&t::Capability {
+                                            issuer: t::Address {
+                                                node: our_name.clone(),
+                                                process: kernel_message.target.process.clone(),
+                                            },
+                                            params: "\"messaging\"".into(),
+                                        }) {
+                                            // capabilities are not correct! skip this message.
+                                            // TODO some kind of error thrown back at process
+                                            let _ = send_to_terminal.send(
+                                                t::Printout {
+                                                    verbosity: 0,
+                                                    content: format!(
+                                                        "event loop: process {:?} doesn't have capability to message process {:?}",
+                                                        kernel_message.source.process, kernel_message.target.process
+                                                    )
+                                                }
+                                            ).await;
+                                            continue;
                                         }
-                                    ).await;
-                                    continue;
+                                    }
                                 }
                             }
                         }
@@ -1919,7 +1993,7 @@ async fn make_event_loop(
                     if our_name != kernel_message.target.node {
                         // unrecoverable if fails
                         send_to_net.send(kernel_message).await.expect("fatal: net module died");
-                    } else if kernel_message.target.process == "kernel" {
+                    } else if kernel_message.target.process.process() == "kernel" {
                         // kernel only accepts messages from our own node
                         if our_name != kernel_message.source.node {
                             continue;
@@ -1961,7 +2035,7 @@ async fn make_event_loop(
                         // the receiving process is automatically granted
                         // capability to communicate with the sending process.
                         if our_name == kernel_message.source.node {
-                            match process_map.get(&kernel_message.target.process) {
+                            match process_map.get_mut(&kernel_message.target.process) {
                                 None => {
                                     // this should never be hit?
                                     println!("got message for process {:?} but it doesn't exist?", kernel_message.target.process);
@@ -1972,12 +2046,9 @@ async fn make_event_loop(
                                         params: "\"messaging\"".into(),
                                     };
                                     if !p.capabilities.contains(&cap) {
-                                        caps_oracle_sender
-                                            .send(t::CapMessage::Add {
-                                                on: kernel_message.target.process.clone(),
-                                                cap,
-                                            })
-                                            .unwrap();
+                                        // insert cap in process if it doesn't already have it
+                                        p.capabilities.insert(cap);
+                                        let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
                                     }
                                 }
                             }
@@ -2009,17 +2080,25 @@ async fn make_event_loop(
                 // capabilities oracle!!!
                 Some(cap_message) = caps_oracle_receiver.recv() => {
                     match cap_message {
-                        t::CapMessage::Add { on, cap } => {
+                        t::CapMessage::Add { on, cap, responder } => {
                             // insert cap in process map
-                            let Some(entry) = process_map.get_mut(&on) else { continue };
+                            let Some(entry) = process_map.get_mut(&on) else {
+                                let _ = responder.send(false);
+                                continue;
+                            };
                             entry.capabilities.insert(cap);
                             let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
+                            let _ = responder.send(true);
                         },
-                        t::CapMessage::Drop { on, cap } => {
+                        t::CapMessage::Drop { on, cap, responder } => {
                             // remove cap from process map
-                            let Some(entry) = process_map.get_mut(&on) else { continue };
+                            let Some(entry) = process_map.get_mut(&on) else {
+                                let _ = responder.send(false);
+                                continue;
+                            };
                             entry.capabilities.remove(&cap);
                             let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
+                            let _ = responder.send(true);
                         },
                         t::CapMessage::Has { on, cap, responder } => {
                             // return boolean on responder

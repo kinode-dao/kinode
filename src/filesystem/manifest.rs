@@ -102,7 +102,6 @@ impl InMemoryFile {
         length: u64,
     ) -> Vec<(u64, ([u8; 32], u64, ChunkLocation, bool))> {
         let end = start + length;
-
         self.chunks
             .iter()
             .filter(
@@ -336,6 +335,7 @@ impl Manifest {
                 {
                     if let ChunkLocation::Memory(offset) = location {
                         *location = ChunkLocation::WAL(wal_length_before_flush + *offset);
+                        in_memory_file.wal_chunks.push(start);
                     }
                 }
             }
@@ -348,6 +348,7 @@ impl Manifest {
                     }
                 }
             }
+            in_memory_file.mem_chunks.clear();
         }
 
         memory_buffer.clear();
@@ -359,7 +360,6 @@ impl Manifest {
         // called from main, locks manifest
         // other flush_to_wal gets buffer and others passed in.
         // potentially unify with options.
-
         let mut manifest = self.manifest.write().await;
         let mut memory_buffer = self.memory_buffer.write().await;
         let mut wal_file = self.wal_file.write().await;
@@ -375,6 +375,7 @@ impl Manifest {
                 {
                     if let ChunkLocation::Memory(offset) = location {
                         *location = ChunkLocation::WAL(wal_length_before_flush + *offset);
+                        in_memory_file.wal_chunks.push(start);
                     }
                 }
             }
@@ -387,10 +388,10 @@ impl Manifest {
                     }
                 }
             }
+            in_memory_file.mem_chunks.clear();
         }
 
         memory_buffer.clear();
-
         Ok(())
     }
 
@@ -502,6 +503,130 @@ impl Manifest {
             .push((start, chunk_hash, chunk_length, proper_position, encrypted));
 
         Ok(())
+    }
+
+    //  TODO: factor this out
+    pub async fn read_from_file(
+        &self,
+        file: &InMemoryFile,
+        memory_buffer: &Vec<u8>,
+        start: Option<u64>,
+        length: Option<u64>,
+    ) -> Result<Vec<u8>, FsError> {
+        let cipher = &self.cipher;
+
+        let mut data = Vec::new();
+
+        // filter chunks based on start and length if they are defined
+        let filtered_chunks = if let (Some(start), Some(length)) = (start, length) {
+            file.find_chunks_in_range(start, length)
+        } else {
+            file.chunks
+                .iter()
+                .map(|(&start, value)| (start, value.clone()))
+                .collect()
+        };
+
+        for (start_chunk, (hash, len, location, encrypted)) in filtered_chunks {
+            let mut chunk_data = match location {
+                ChunkLocation::Memory(offset) => {
+                    let len = if encrypted {
+                        len + ENCRYPTION_OVERHEAD as u64
+                    } else {
+                        len
+                    };
+
+                    if offset as usize + len as usize > memory_buffer.len() {
+                        return Err(FsError::MemoryBufferError {
+                            error: format!(
+                                "Out of bounds read: offset={}, len={}, memory_buffer size={}",
+                                offset,
+                                len,
+                                memory_buffer.len()
+                            ),
+                        });
+                    }
+                    let mut chunk_data =
+                        memory_buffer[offset as usize..(offset + len) as usize].to_vec();
+                    if encrypted {
+                        chunk_data = decrypt(&cipher, &chunk_data)?;
+                    }
+                    chunk_data
+                }
+                ChunkLocation::WAL(offset) => {
+                    let mut wal_file = self.wal_file.write().await;
+                    wal_file
+                        .seek(SeekFrom::Start(offset))
+                        .await
+                        .map_err(|e| FsError::IOError {
+                            error: format!("Local WAL seek failed: {}", e),
+                        })?;
+                    let len = if encrypted {
+                        len + ENCRYPTION_OVERHEAD as u64
+                    } else {
+                        len
+                    };
+
+                    let mut buffer = vec![0u8; len as usize];
+                    wal_file
+                        .read_exact(&mut buffer)
+                        .await
+                        .map_err(|e| FsError::IOError {
+                            error: format!("Local WAL read failed: {}", e),
+                        })?;
+                    if encrypted {
+                        buffer = decrypt(&cipher, &buffer)?;
+                    }
+                    buffer
+                }
+                ChunkLocation::ColdStorage(local) => {
+                    if local {
+                        let path = self.fs_directory_path.join(hex::encode(hash));
+                        let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
+                            error: format!("Local Cold read failed: {}", e),
+                        })?;
+                        if encrypted {
+                            buffer = decrypt(&*self.cipher, &buffer)?;
+                        }
+                        buffer
+                    } else {
+                        let file_name = hex::encode(hash);
+                        let (client, bucket) = self.s3_client.as_ref().unwrap();
+                        let req = GetObjectRequest {
+                            bucket: bucket.clone(),
+                            key: file_name.clone(),
+                            ..Default::default()
+                        };
+                        let res = client.get_object(req).await?;
+                        let body = res.body.unwrap();
+                        let mut stream = body.into_async_read();
+                        let mut buffer = Vec::new();
+                        stream.read_to_end(&mut buffer).await?;
+                        if encrypted {
+                            buffer = decrypt(&*self.cipher, &buffer)?;
+                        }
+                        buffer
+                    }
+                }
+            };
+
+            // adjust the chunk data based on the start and length
+            if let Some(start) = start {
+                if start > start_chunk {
+                    chunk_data.drain(..(start - start_chunk) as usize);
+                }
+            }
+            if let Some(length) = length {
+                let end = start.unwrap_or(0) + length;
+                if end < start_chunk + len {
+                    chunk_data.truncate((end - start_chunk) as usize);
+                }
+            }
+
+            data.append(&mut chunk_data);
+        }
+
+        Ok(data)
     }
 
     pub async fn read(
@@ -636,12 +761,13 @@ impl Manifest {
         offset: u64,
         data: &[u8],
     ) -> Result<(), FsError> {
-        let mut manifest = self.manifest.write().await;
         let mut file = self.get(file_id).await.ok_or(FsError::NotFound {
             file: file_id.to_uuid().unwrap_or_default(),
         })?;
+        let mut manifest = self.manifest.write().await;
 
         let mut memory_buffer = self.memory_buffer.write().await;
+
         let cipher: Option<&XChaCha20Poly1305> = if self.encryption {
             Some(&self.cipher)
         } else {
@@ -653,6 +779,7 @@ impl Manifest {
 
         let tx_id = rand::random::<u64>(); // uuid instead?
 
+        let initial_length = file.get_len();
         for (start, (_hash, length, _location, _encrypted)) in affected_chunks {
             let chunk_data_start = if start < offset {
                 (offset - start) as usize
@@ -663,8 +790,14 @@ impl Manifest {
             let remaining_data = data.len() - data_offset;
             let write_length = remaining_length.min(remaining_data);
 
-            let mut chunk_data = self.read(file_id, Some(start), Some(length)).await?;
-            chunk_data.resize(chunk_data_start + write_length, 0); // extend the chunk data if necessary
+            // let mut chunk_data = self.read(file_id, Some(start), Some(length)).await?;
+            let mut chunk_data = self
+                .read_from_file(&file, &memory_buffer, Some(start), Some(length))
+                .await?;
+            chunk_data.resize(
+                std::cmp::max(chunk_data_start + write_length, initial_length as usize),
+                0,
+            ); // extend the chunk data if necessary
 
             let data_to_write = &data[data_offset..data_offset + write_length as usize];
             chunk_data[chunk_data_start..chunk_data_start + write_length as usize]
@@ -817,8 +950,13 @@ impl Manifest {
         let mut hash_index = self.hash_index.write().await;
         let mut memory_buffer = self.memory_buffer.write().await;
 
+        let mut to_flush: Vec<(
+            FileIdentifier,
+            Vec<([u8; 32], u64, u64, ChunkLocation, bool)>,
+        )> = Vec::new();
         for (file_id, in_memory_file) in manifest_lock.iter_mut() {
             let mut chunks_to_flush: Vec<([u8; 32], u64, u64, ChunkLocation, bool)> = Vec::new();
+
             for &start in &in_memory_file.mem_chunks {
                 if let Some((hash, length, location, encrypted)) = in_memory_file.chunks.get(&start)
                 {
@@ -848,8 +986,14 @@ impl Manifest {
                     }
                 }
             }
+            if !chunks_to_flush.is_empty() {
+                to_flush.push((file_id.clone(), chunks_to_flush));
+            }
+        }
 
-            for (hash, start, length, location, encrypted) in chunks_to_flush.iter() {
+        for (file_id, chunks) in to_flush.iter() {
+            let in_memory_file = manifest_lock.get_mut(file_id).unwrap();
+            for (hash, start, length, location, encrypted) in chunks.iter() {
                 let total_len = if *encrypted {
                     length + ENCRYPTION_OVERHEAD as u64
                 } else {
@@ -896,7 +1040,7 @@ impl Manifest {
                     client.put_object(req).await?;
                 } else {
                     let path = self.fs_directory_path.join(hex::encode(hash));
-                    fs::write(path, &buffer).await?;
+                    fs::write(path, buffer).await?;
                 }
                 // add a manifest entry with the new hash and removed wal_position
                 in_memory_file.chunks.insert(
@@ -908,56 +1052,54 @@ impl Manifest {
                         *encrypted,
                     ),
                 );
-
                 chunk_hashes.insert(*hash, !self.cloud_enabled);
             }
+            in_memory_file.mem_chunks.clear();
+            in_memory_file.wal_chunks.clear();
 
-            if !chunks_to_flush.is_empty() {
-                // add updated manifest entries to the manifest file
-                let entry = ManifestRecord::Backup(BackupEntry {
-                    file: file_id.clone(),
-                    chunks: in_memory_file
-                        .chunks
-                        .iter()
-                        .map(|(&k, v)| {
-                            let local = match v.2 {
-                                ChunkLocation::ColdStorage(local) => local,
-                                _ => true, // WAL is always local
-                            };
-                            (v.0, k, v.1, v.3, local)
-                        })
-                        .collect::<Vec<_>>(),
-                });
-                let serialized_entry = bincode::serialize(&entry).unwrap();
-                let entry_length = serialized_entry.len() as u64;
+            // chunks have been flushed, let's add a manifest entry.
+            let entry = ManifestRecord::Backup(BackupEntry {
+                file: file_id.clone(),
+                chunks: in_memory_file
+                    .chunks
+                    .iter()
+                    .map(|(&k, v)| {
+                        let local = match v.2 {
+                            ChunkLocation::ColdStorage(local) => local,
+                            _ => true, // WAL is always local
+                        };
+                        (v.0, k, v.1, v.3, local)
+                    })
+                    .collect::<Vec<_>>(),
+            });
 
+            let serialized_entry = bincode::serialize(&entry).unwrap();
+            let entry_length = serialized_entry.len() as u64;
+
+            let mut buffer = Vec::new();
+            buffer.extend_from_slice(&entry_length.to_le_bytes());
+            buffer.extend_from_slice(&serialized_entry);
+
+            manifest_file.write_all(&buffer).await?;
+            if self.cloud_enabled {
+                let (client, bucket) = self.s3_client.as_ref().unwrap();
                 let mut buffer = Vec::new();
-                buffer.extend_from_slice(&entry_length.to_le_bytes());
-                buffer.extend_from_slice(&serialized_entry);
+                manifest_file.seek(SeekFrom::Start(0)).await?;
+                manifest_file.read_to_end(&mut buffer).await?;
 
-                manifest_file.write_all(&buffer).await?;
-                if self.cloud_enabled {
-                    let (client, bucket) = self.s3_client.as_ref().unwrap();
-                    let mut buffer = Vec::new();
-                    manifest_file.seek(SeekFrom::Start(0)).await?;
-                    manifest_file.read_to_end(&mut buffer).await?;
-
-                    let req = PutObjectRequest {
-                        bucket: bucket.clone(),
-                        key: "manifest.bin".to_string(),
-                        body: Some(StreamingBody::from(buffer)),
-                        ..Default::default()
-                    };
-                    client.put_object(req).await?;
-                }
-                hash_index.insert(in_memory_file.hash(), file_id.clone());
+                let req = PutObjectRequest {
+                    bucket: bucket.clone(),
+                    key: "manifest.bin".to_string(),
+                    body: Some(StreamingBody::from(buffer)),
+                    ..Default::default()
+                };
+                client.put_object(req).await?;
             }
+            hash_index.insert(in_memory_file.hash(), file_id.clone());
         }
-
         // clear the WAL file and memory buffer
         wal_file.set_len(0).await?;
         memory_buffer.clear();
-
         Ok(())
     }
 

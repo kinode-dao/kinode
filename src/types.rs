@@ -1,3 +1,4 @@
+use crate::kernel::component::uq_process::types as wit;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -5,6 +6,17 @@ use std::{
 };
 use thiserror::Error;
 use tokio::sync::RwLock;
+
+lazy_static::lazy_static! {
+    pub static ref ENCRYPTOR_PROCESS_ID: ProcessId = ProcessId::new(Some("encryptor"), "sys", "uqbar");
+    pub static ref ETH_RPC_PROCESS_ID: ProcessId = ProcessId::new(Some("eth_rpc"), "sys", "uqbar");
+    pub static ref FILESYSTEM_PROCESS_ID: ProcessId = ProcessId::new(Some("filesystem"), "sys", "uqbar");
+    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "sys", "uqbar");
+    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "sys", "uqbar");
+    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "sys", "uqbar");
+    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "uqbar");
+    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "sys", "uqbar");
+}
 
 //
 // internal message pipes between kernel and runtime modules
@@ -23,28 +35,29 @@ pub type PrintReceiver = tokio::sync::mpsc::Receiver<Printout>;
 pub type DebugSender = tokio::sync::mpsc::Sender<DebugCommand>;
 pub type DebugReceiver = tokio::sync::mpsc::Receiver<DebugCommand>;
 
-pub type CapMessageSender = tokio::sync::mpsc::UnboundedSender<CapMessage>;
-pub type CapMessageReceiver = tokio::sync::mpsc::UnboundedReceiver<CapMessage>;
+pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
+pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
 
 //
 // types used for UQI: uqbar's identity system
 //
-pub type PKINames = Arc<RwLock<HashMap<String, String>>>; // TODO maybe U256 to String
+pub type NodeId = String;
+pub type PKINames = Arc<RwLock<HashMap<String, NodeId>>>; // TODO maybe U256 to String
 pub type OnchainPKI = Arc<RwLock<HashMap<String, Identity>>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Registration {
-    pub username: String,
+    pub username: NodeId,
     pub password: String,
     pub direct: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Identity {
-    pub name: String,
+    pub name: NodeId,
     pub networking_key: String,
     pub ws_routing: Option<(String, u16)>,
-    pub allowed_routers: Vec<String>,
+    pub allowed_routers: Vec<NodeId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,42 +78,117 @@ pub struct IdentityTransaction {
 
 pub type Context = String; // JSON-string
 
-#[derive(Clone, Debug, Eq, Hash, Serialize, Deserialize)]
-pub enum ProcessId {
-    Id(u64),
-    Name(String),
+/// process ID is a formatted unique identifier that contains
+/// the publishing node's ID, the package name, and finally the process name.
+/// the process name can be a random number, or a name chosen by the user.
+/// the formatting is as follows:
+/// `[process name]:[package name]:[node ID]`
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct ProcessId {
+    process_name: String,
+    package_name: String,
+    publisher_node: NodeId,
 }
 
-impl PartialEq for ProcessId {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (ProcessId::Id(i1), ProcessId::Id(i2)) => i1 == i2,
-            (ProcessId::Name(s1), ProcessId::Name(s2)) => s1 == s2,
-            _ => false,
+#[allow(dead_code)]
+impl ProcessId {
+    /// generates a random u64 number if process_name is not declared
+    pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
+        ProcessId {
+            process_name: match process_name {
+                Some(name) => name.to_string(),
+                None => rand::random::<u64>().to_string(),
+            },
+            package_name: package_name.into(),
+            publisher_node: publisher_node.into(),
+        }
+    }
+    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+        // split string on colons into 3 segments
+        let mut segments = input.split(':');
+        let process_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let package_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let publisher_node = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        if segments.next().is_some() {
+            return Err(ProcessIdParseError::TooManyColons);
+        }
+        Ok(ProcessId {
+            process_name,
+            package_name,
+            publisher_node,
+        })
+    }
+    pub fn to_string(&self) -> String {
+        [
+            self.process_name.as_str(),
+            self.package_name.as_str(),
+            self.publisher_node.as_str(),
+        ]
+        .join(":")
+    }
+    pub fn process(&self) -> &str {
+        &self.process_name
+    }
+    pub fn package(&self) -> &str {
+        &self.package_name
+    }
+    pub fn publisher_node(&self) -> &str {
+        &self.publisher_node
+    }
+    pub fn en_wit(&self) -> wit::ProcessId {
+        wit::ProcessId {
+            process_name: self.process_name.clone(),
+            package_name: self.package_name.clone(),
+            publisher_node: self.publisher_node.clone(),
+        }
+    }
+    pub fn de_wit(wit: wit::ProcessId) -> ProcessId {
+        ProcessId {
+            process_name: wit.process_name,
+            package_name: wit.package_name,
+            publisher_node: wit.publisher_node,
         }
     }
 }
-impl PartialEq<&str> for ProcessId {
-    fn eq(&self, other: &&str) -> bool {
-        match self {
-            ProcessId::Id(_) => false,
-            ProcessId::Name(s) => s == other,
-        }
-    }
-}
-impl PartialEq<u64> for ProcessId {
-    fn eq(&self, other: &u64) -> bool {
-        match self {
-            ProcessId::Id(i) => i == other,
-            ProcessId::Name(_) => false,
-        }
-    }
+
+#[derive(Debug)]
+pub enum ProcessIdParseError {
+    TooManyColons,
+    MissingField,
 }
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Address {
-    pub node: String,
+    pub node: NodeId,
     pub process: ProcessId,
+}
+
+impl Address {
+    pub fn en_wit(&self) -> wit::Address {
+        wit::Address {
+            node: self.node.clone(),
+            process: self.process.en_wit(),
+        }
+    }
+    pub fn de_wit(wit: wit::Address) -> Address {
+        Address {
+            node: wit.node,
+            process: ProcessId {
+                process_name: wit.process.process_name,
+                package_name: wit.process.package_name,
+                publisher_node: wit.process.publisher_node,
+            },
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -221,19 +309,6 @@ pub type Rsvp = Option<Address>;
 //  boot/startup specific types???
 //
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum SequentializeRequest {
-    QueueMessage(QueueMessage),
-    RunQueue,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct QueueMessage {
-    pub target: ProcessId,
-    pub request: Request,
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BootOutboundRequest {
     pub target_process: ProcessId,
@@ -250,7 +325,7 @@ pub enum DebugCommand {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KernelCommand {
     StartProcess {
-        name: Option<String>,
+        id: ProcessId,
         wasm_bytes_handle: u128,
         on_panic: OnPanic,
         initial_capabilities: HashSet<SignedCapability>,
@@ -263,22 +338,21 @@ pub enum KernelCommand {
         persisted: PersistedProcess,
     },
     Shutdown,
-    // capabilities creation
-    GrantCapability {
-        to_process: ProcessId,
-        params: String, // JSON-string
-    },
 }
 
+#[allow(dead_code)]
+#[derive(Debug)]
 pub enum CapMessage {
     Add {
         on: ProcessId,
         cap: Capability,
+        responder: tokio::sync::oneshot::Sender<bool>,
     },
     Drop {
         // not used yet!
         on: ProcessId,
         cap: Capability,
+        responder: tokio::sync::oneshot::Sender<bool>,
     },
     Has {
         // a bool is given in response here
@@ -294,7 +368,8 @@ pub enum CapMessage {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KernelResponse {
-    StartedProcess(ProcessMetadata),
+    StartedProcess,
+    StartProcessError,
     KilledProcess(ProcessId),
 }
 
@@ -363,7 +438,7 @@ pub struct ReadChunkRequest {
 pub enum FsResponse {
     Write(u128),
     Read(u128),
-    ReadChunk(u128),
+    ReadChunk(u128), //  TODO: remove?
     Append(u128),
     Delete(u128),
     Length(u64),
@@ -425,6 +500,7 @@ pub enum FsError {
     CreateInitialDirError { path: String, error: String },
 }
 
+#[allow(dead_code)]
 impl FsError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -445,74 +521,41 @@ impl FsError {
     }
 }
 
-impl VfsError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            VfsError::BadDriveName => "BadDriveName",
-            VfsError::EntryNotFound => "EntryNotFound",
-            VfsError::NoCap => "NoCap",
-        }
-    }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct VfsRequest {
+    pub drive: String,
+    pub action: VfsAction,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum VfsError {
-    BadDriveName,
-    EntryNotFound,
-    NoCap,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum VfsRequest {
-    New {
-        drive: String,
-    },
+pub enum VfsAction {
+    New,
     Add {
-        drive: String,
         full_path: String,
         entry_type: AddEntryType,
     },
     Rename {
-        drive: String,
         full_path: String,
         new_full_path: String,
     },
-    Delete {
-        drive: String,
-        full_path: String,
-    },
+    Delete(String),
     WriteOffset {
-        drive: String,
         full_path: String,
         offset: u64,
     },
     SetSize {
-        drive: String,
         full_path: String,
         size: u64,
     },
-    GetPath {
-        drive: String,
-        hash: u128,
-    },
-    GetHash {
-        drive: String,
-        full_path: String,
-    },
-    GetEntry {
-        drive: String,
-        full_path: String,
-    },
+    GetPath(u128),
+    GetHash(String),
+    GetEntry(String),
     GetFileChunk {
-        drive: String,
         full_path: String,
         offset: u64,
         length: u64,
     },
-    GetEntryLength {
-        drive: String,
-        full_path: String,
-    },
+    GetEntryLength(String),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -531,57 +574,37 @@ pub enum GetEntryType {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsResponse {
-    New {
-        drive: String,
-    },
-    Add {
-        drive: String,
-        full_path: String,
-    },
-    Rename {
-        drive: String,
-        new_full_path: String,
-    },
-    Delete {
-        drive: String,
-        full_path: String,
-    },
-    WriteOffset {
-        drive: String,
-        full_path: String,
-        offset: u64,
-    },
-    SetSize {
-        drive: String,
-        full_path: String,
-        size: u64,
-    },
-    GetPath {
-        drive: String,
-        hash: u128,
-        full_path: Option<String>,
-    },
-    GetHash {
-        drive: String,
-        full_path: String,
-        hash: u128,
-    },
+    Ok,
+    Err(VfsError),
+    GetPath(Option<String>),
+    GetHash(Option<u128>),
     GetEntry {
-        drive: String,
-        full_path: String,
+        // file bytes in payload, if entry was a file
+        is_file: bool,
         children: Vec<String>,
     },
-    GetFileChunk {
-        drive: String,
-        full_path: String,
-        offset: u64,
-        length: u64,
-    },
-    GetEntryLength {
-        drive: String,
-        full_path: String,
-        length: u64,
-    },
+    GetFileChunk, // chunk in payload, if file exists
+    GetEntryLength(Option<u64>),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum VfsError {
+    BadDriveName,
+    BadDescriptor,
+    NoCap,
+    EntryNotFound,
+}
+
+#[allow(dead_code)]
+impl VfsError {
+    pub fn kind(&self) -> &str {
+        match self {
+            VfsError::BadDriveName => "BadDriveName",
+            VfsError::BadDescriptor => "BadDescriptor",
+            VfsError::NoCap => "NoCap",
+            VfsError::EntryNotFound => "EntryNotFound",
+        }
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -590,6 +613,15 @@ pub enum KeyValueMessage {
     Write { drive: String, key: Vec<u8> },
     Read { drive: String, key: Vec<u8> },
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KeyValueError {
+    BadDriveName,
+    NoCap,
+    NoBytes,
+}
+
+#[allow(dead_code)]
 impl KeyValueError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -598,12 +630,6 @@ impl KeyValueError {
             KeyValueError::NoBytes => "NoBytes",
         }
     }
-}
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KeyValueError {
-    BadDriveName,
-    NoCap,
-    NoBytes,
 }
 
 //
@@ -640,6 +666,7 @@ pub enum HttpClientError {
     RequestFailed { error: String },
 }
 
+#[allow(dead_code)]
 impl HttpClientError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -655,6 +682,18 @@ impl HttpClientError {
 //
 // custom kernel displays
 //
+
+impl std::fmt::Display for ProcessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl std::fmt::Display for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}@{}", self.node, self.process.to_string(),)
+    }
+}
 
 impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -714,6 +753,7 @@ pub enum HttpServerError {
     BadJson { json: String, error: String },
 }
 
+#[allow(dead_code)]
 impl HttpServerError {
     pub fn kind(&self) -> &str {
         match *self {
@@ -741,25 +781,6 @@ pub struct WebSocketServerTarget {
 pub struct WebSocketPush {
     pub target: WebSocketServerTarget,
     pub is_text: Option<bool>,
-}
-
-impl std::fmt::Display for Address {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Address {
-                    node,
-                    process: ProcessId::Id(id),
-                } => format!("{}/{}", node, id),
-                Address {
-                    node,
-                    process: ProcessId::Name(name),
-                } => format!("{}/{}", node, name),
-            }
-        )
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,13 +1,13 @@
 [
     {
         "process_name": "homepage",
-        "process_wasm_path": "homepage.wasm",
+        "process_wasm_path": "/homepage.wasm",
         "on_panic": "Restart",
         "request_networking": false,
         "request_messaging": [
-            "http_bindings",
-            "http_server",
-            "encryptor"
+            "http_bindings:http_bindings:uqbar",
+            "http_server:sys:uqbar",
+            "encryptor:sys:uqbar"
         ],
         "grant_messaging": []
     }

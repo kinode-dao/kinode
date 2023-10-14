@@ -21,6 +21,7 @@ blake3 = "1.4.1"
 bytes = "1.4.0"
 cap-std = "2.0.0"
 chacha20poly1305 = "0.10.1"
+chrono = "0.4.31"
 cita_trie = "4.0.0"
 crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"] }
 digest = "0.10"

@@ -125,7 +125,7 @@ pub async fn eth_rpc(
                         id: message.id,
                         source: Address {
                             node: our.clone(),
-                            process: ProcessId::Name("eth_rpc".into()),
+                            process: ETH_RPC_PROCESS_ID.clone(),
                         },
                         target: match &message.rsvp {
                             None => message.source.clone(),
@@ -226,7 +226,7 @@ pub async fn eth_rpc(
                                             id: rand::random(),
                                             source: Address {
                                                 node: our.clone(),
-                                                process: ProcessId::Name("eth_rpc".into()),
+                                                process: ETH_RPC_PROCESS_ID.clone(),
                                             },
                                             target: target.clone(),
                                             rsvp: None,
@@ -292,7 +292,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: EthRpcError) 
         id: km.id,
         source: Address {
             node: our_name.clone(),
-            process: ProcessId::Name("fileystem".into()),
+            process: FILESYSTEM_PROCESS_ID.clone(),
         },
         target: match &km.rsvp {
             None => km.source.clone(),

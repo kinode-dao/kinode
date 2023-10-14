@@ -12,6 +12,7 @@ extern crate base64;
 extern crate pleco;
 use pleco::Board;
 
+#[allow(dead_code)]
 mod process_lib;
 
 struct Component;
@@ -104,7 +105,7 @@ fn send_ws_update(our_name: String, game: Game) {
     send_request(
         &Address {
             node: our_name.clone(),
-            process: ProcessId::Name("encryptor".to_string()),
+            process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
         },
         &Request {
             inherit: false,
@@ -160,13 +161,9 @@ fn response_success() -> bool {
     status == "success"
 }
 
-fn binary_encoded_string_to_bytes(s: &str) -> Vec<u8> {
-    s.chars().map(|c| c as u8).collect()
-}
-
-fn save_chess_state(our: String, state: ChessState) {
+fn save_chess_state(state: ChessState) {
     let stored_state = convert_state(state);
-    process_lib::set_state(our, bincode::serialize(&stored_state).unwrap());
+    process_lib::set_state::<StoredChessState>(&stored_state);
 }
 
 const CHESS_PAGE: &str = include_str!("chess.html");
@@ -179,7 +176,7 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::Name("http_bindings".to_string()),
+            process: ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
         };
 
         // <address, request, option<context>, option<payload>>
@@ -226,48 +223,42 @@ impl Guest for Component {
         ];
         send_requests(&http_endpoint_binding_requests);
 
-        let mut state: ChessState = match process_lib::get_state(our.node.clone()) {
-            Some(payload) => match bincode::deserialize::<StoredChessState>(&payload.bytes) {
-                Ok(state) => {
-                    let mut games = HashMap::new();
-                    for (id, game) in state.games {
-                        if let Ok(board) = Board::from_fen(&game.board) {
-                            games.insert(
-                                id,
-                                Game {
-                                    id: game.id.clone(),
-                                    turns: game.turns,
-                                    board: board,
-                                    white: game.white.clone(),
-                                    black: game.black.clone(),
-                                    ended: game.ended,
-                                },
-                            );
-                        } else {
-                            games.insert(
-                                id,
-                                Game {
-                                    id: game.id.clone(),
-                                    turns: 0,
-                                    board: Board::start_pos(),
-                                    white: game.white.clone(),
-                                    black: game.black.clone(),
-                                    ended: game.ended,
-                                },
-                            );
-                        }
-                    }
-
-                    ChessState {
-                        games: games,
-                        records: state.records,
+        let mut state: ChessState = match process_lib::get_state::<StoredChessState>() {
+            Some(state) => {
+                let mut games = HashMap::new();
+                for (id, game) in state.games {
+                    if let Ok(board) = Board::from_fen(&game.board) {
+                        games.insert(
+                            id,
+                            Game {
+                                id: game.id.clone(),
+                                turns: game.turns,
+                                board: board,
+                                white: game.white.clone(),
+                                black: game.black.clone(),
+                                ended: game.ended,
+                            },
+                        );
+                    } else {
+                        games.insert(
+                            id,
+                            Game {
+                                id: game.id.clone(),
+                                turns: 0,
+                                board: Board::start_pos(),
+                                white: game.white.clone(),
+                                black: game.black.clone(),
+                                ended: game.ended,
+                            },
+                        );
                     }
                 }
-                Err(_) => ChessState {
-                    games: HashMap::new(),
-                    records: HashMap::new(),
-                },
-            },
+
+                ChessState {
+                    games,
+                    records: state.records,
+                }
+            }
             None => ChessState {
                 games: HashMap::new(),
                 records: HashMap::new(),
@@ -296,7 +287,7 @@ impl Guest for Component {
 
                 print_to_terminal(1, "chess: parsed ipc JSON");
 
-                if source.process == ProcessId::Name("chess".to_string()) {
+                if source.process.to_string() == "chess:sys:uqbar" {
                     let action = message_json["action"].as_str().unwrap_or("");
                     let game_id = source.node.clone();
 
@@ -336,7 +327,7 @@ impl Guest for Component {
 
                             send_ws_update(our.node.clone(), game.clone());
 
-                            save_chess_state(our.node.clone(), state.clone());
+                            save_chess_state(state.clone());
 
                             send_response(
                                 &Response {
@@ -410,7 +401,7 @@ impl Guest for Component {
                                 }
 
                                 send_ws_update(our.node.clone(), game.clone());
-                                save_chess_state(our.node.clone(), state.clone());
+                                save_chess_state(state.clone());
 
                                 send_response(
                                     &Response {
@@ -462,7 +453,7 @@ impl Guest for Component {
                             }
 
                             send_ws_update(our.node.clone(), game.clone());
-                            save_chess_state(our.node.clone(), state.clone());
+                            save_chess_state(state.clone());
 
                             send_response(
                                 &Response {
@@ -480,7 +471,7 @@ impl Guest for Component {
                             continue;
                         }
                     }
-                } else if source.process == ProcessId::Name("http_bindings".to_string()) {
+                } else if source.process.to_string() == "http_bindings:http_bindings:uqbar" {
                     let path = message_json["path"].as_str().unwrap_or("");
                     let method = message_json["method"].as_str().unwrap_or("");
 
@@ -489,17 +480,12 @@ impl Guest for Component {
                     // Handle incoming http
                     match path {
                         "/chess" => {
-                            let process: String = match our.process {
-                                ProcessId::Name(ref name) => name.clone(),
-                                ProcessId::Id(id) => id.to_string(),
-                            };
-
                             send_http_response(
                                 200,
                                 default_headers.clone(),
                                 CHESS_PAGE
                                     .replace("${node}", &our.node)
-                                    .replace("${process}", &process)
+                                    .replace("${process}", &source.process.to_string())
                                     .replace("${js}", CHESS_JS)
                                     .replace("${css}", CHESS_CSS)
                                     .to_string()
@@ -573,7 +559,8 @@ impl Guest for Component {
                                             let response = send_and_await_response(
                                                 &Address {
                                                     node: game_id.clone(),
-                                                    process: ProcessId::Name("chess".to_string()),
+                                                    process: ProcessId::from_str("chess:sys:uqbar")
+                                                        .unwrap(),
                                                 },
                                                 &Request {
                                                     inherit: false,
@@ -617,10 +604,7 @@ impl Guest for Component {
                                                         .games
                                                         .insert(game_id.clone(), game.clone());
 
-                                                    save_chess_state(
-                                                        our.node.clone(),
-                                                        state.clone(),
-                                                    );
+                                                    save_chess_state(state.clone());
 
                                                     send_http_response(
                                                         200,
@@ -727,13 +711,14 @@ impl Guest for Component {
                                                     let response = send_and_await_response(
                                                         &Address {
                                                             node: game_id.clone(),
-                                                            process: ProcessId::Name(
-                                                                "chess".to_string(),
-                                                            ),
+                                                            process: ProcessId::from_str(
+                                                                "chess:sys:uqbar",
+                                                            )
+                                                            .unwrap(),
                                                         },
                                                         &Request {
                                                             inherit: false,
-                                                            expects_response: Some(30),  // TODO check this!
+                                                            expects_response: Some(30), // TODO check this!
                                                             ipc: Some(
                                                                 serde_json::json!({
                                                                     "action": "make_move",
@@ -816,10 +801,7 @@ impl Guest for Component {
                                                             }
 
                                                             let game = game.clone();
-                                                            save_chess_state(
-                                                                our.node.clone(),
-                                                                state.clone(),
-                                                            );
+                                                            save_chess_state(state.clone());
                                                             // return the game
                                                             send_http_response(
                                                                 200,
@@ -881,7 +863,8 @@ impl Guest for Component {
                                             let response = send_and_await_response(
                                                 &Address {
                                                     node: game_id.clone(),
-                                                    process: ProcessId::Name("chess".to_string()),
+                                                    process: ProcessId::from_str("chess:sys:uqbar")
+                                                        .unwrap(),
                                                 },
                                                 &Request {
                                                     inherit: false,
@@ -924,10 +907,7 @@ impl Guest for Component {
                                                     }
 
                                                     let game = game.clone();
-                                                    save_chess_state(
-                                                        our.node.clone(),
-                                                        state.clone(),
-                                                    );
+                                                    save_chess_state(state.clone());
 
                                                     // return the game
                                                     send_http_response(

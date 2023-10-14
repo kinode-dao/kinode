@@ -1,7 +1,10 @@
 cargo_component_bindings::generate!();
-mod process_lib;
-struct Component;
 use bindings::{component::uq_process::types::*, print_to_terminal, receive, send_request, Guest};
+
+#[allow(dead_code)]
+mod process_lib;
+
+struct Component;
 
 fn parse_command(our_name: &str, line: String) {
     let (head, tail) = line.split_once(" ").unwrap_or((&line, ""));
@@ -22,11 +25,11 @@ fn parse_command(our_name: &str, line: String) {
                     } else {
                         target.into()
                     },
-                    process: ProcessId::Name("net".into()),
+                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
                 },
                 &Request {
                     inherit: false,
-                    expects_response: None,
+                    expects_response: Some(5),
                     ipc: Some(message.into()),
                     metadata: None,
                 },
@@ -51,6 +54,7 @@ fn parse_command(our_name: &str, line: String) {
             };
             //  TODO: why does this work but using the API below does not?
             //        Is it related to passing json in rather than a Serialize type?
+            //
             send_request(
                 &Address {
                     node: if target_node == "our" {
@@ -58,7 +62,9 @@ fn parse_command(our_name: &str, line: String) {
                     } else {
                         target_node.into()
                     },
-                    process: ProcessId::Name(target_process.into()),
+                    process: ProcessId::from_str(target_process).unwrap_or_else(|_| {
+                        ProcessId::from_str(&format!("{}:sys:uqbar", target_process)).unwrap()
+                    }),
                 },
                 &Request {
                     inherit: false,
@@ -78,7 +84,7 @@ fn parse_command(our_name: &str, line: String) {
 
 impl Guest for Component {
     fn init(our: Address) {
-        assert_eq!(our.process, ProcessId::Name("terminal".into()));
+        assert_eq!(our.process.to_string(), "terminal:terminal:uqbar");
         print_to_terminal(1, &format!("terminal: start"));
         loop {
             let (source, message) = match receive() {
@@ -102,7 +108,11 @@ impl Guest for Component {
                     };
                     parse_command(&our.node, command);
                 }
-                _ => continue,
+                Message::Response((Response { ipc, metadata }, _)) => {
+                    if let Some(txt) = &ipc {
+                        print_to_terminal(0, &format!("net response: {}", txt));
+                    }
+                }
             }
         }
     }

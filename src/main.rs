@@ -34,6 +34,7 @@ const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
+const CAP_CHANNEL_CAPACITY: usize = 1_000;
 
 const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
 
@@ -71,7 +72,8 @@ async fn main() {
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(EVENT_LOOP_CHANNEL_CAPACITY);
     // kernel informs other runtime modules of capabilities through this
-    let (caps_oracle_sender, caps_oracle_receiver) = mpsc::unbounded_channel::<CapMessage>();
+    let (caps_oracle_sender, caps_oracle_receiver): (CapMessageSender, CapMessageReceiver) =
+        mpsc::channel(CAP_CHANNEL_CAPACITY);
     // networking module sends error messages to kernel
     let (network_error_sender, network_error_receiver): (NetworkErrorSender, NetworkErrorReceiver) =
         mpsc::channel(EVENT_LOOP_CHANNEL_CAPACITY);
@@ -373,12 +375,11 @@ async fn main() {
         )
     };
 
-    let (kernel_process_map, manifest) = filesystem::load_fs(
+    let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
         our.name.clone(),
         home_directory_path.clone(),
         file_key,
         fs_config,
-        vfs_message_sender.clone(),
     )
     .await
     .expect("fs load failed!");
@@ -462,11 +463,11 @@ async fn main() {
     ));
     tasks.spawn(vfs::vfs(
         our.name.clone(),
-        kernel_process_map,
         kernel_message_sender.clone(),
         print_sender.clone(),
         vfs_message_receiver,
         caps_oracle_sender.clone(),
+        vfs_messages,
     ));
     tasks.spawn(encryptor::encryptor(
         our.name.clone(),
@@ -515,14 +516,14 @@ async fn main() {
     // gracefully abort all running processes in kernel
     let _ = kernel_message_sender
         .send(KernelMessage {
-            id: 0,
+            id: rand::random(),
             source: Address {
                 node: our.name.clone(),
-                process: ProcessId::Name("kernel".into()),
+                process: KERNEL_PROCESS_ID.clone(),
             },
             target: Address {
                 node: our.name.clone(),
-                process: ProcessId::Name("kernel".into()),
+                process: KERNEL_PROCESS_ID.clone(),
             },
             rsvp: None,
             message: Message::Request(Request {

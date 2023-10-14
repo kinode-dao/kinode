@@ -8,7 +8,9 @@ use hex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
+use std::string::FromUtf8Error;
 
+#[allow(dead_code)]
 mod process_lib;
 
 struct Component;
@@ -30,16 +32,17 @@ enum AllActions {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct EthEvent {
     address: String,
-    blockHash: String,
-    blockNumber: String,
+    block_hash: String,
+    block_number: String,
     data: String,
-    logIndex: String,
+    log_index: String,
     removed: bool,
     topics: Vec<String>,
-    transactionHash: String,
-    transactionIndex: String,
+    transaction_hash: String,
+    transaction_index: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -102,17 +105,11 @@ impl UqProcess for Component {
         };
 
         // if we have state, load it in
-        match process_lib::get_state(our.node.clone()) {
+        match process_lib::get_state::<State>() {
+            Some(s) => {
+                state = s;
+            }
             None => {}
-            Some(p) => match bincode::deserialize::<State>(&p.bytes) {
-                Err(e) => print_to_terminal(
-                    0,
-                    &format!("qns_indexer: failed to deserialize payload from fs: {}", e),
-                ),
-                Ok(s) => {
-                    state = s;
-                }
-            },
         }
 
         bindings::print_to_terminal(
@@ -124,24 +121,27 @@ impl UqProcess for Component {
         send_request(
             &Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("net".to_string()),
+                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
             },
             &Request {
                 inherit: false,
                 expects_response: None,
                 metadata: None,
-                ipc: Some(serde_json::to_string(&NetActions::QnsBatchUpdate(
-                    state.nodes.values().cloned().collect::<Vec<_>>(),
-                )).unwrap()),
+                ipc: Some(
+                    serde_json::to_string(&NetActions::QnsBatchUpdate(
+                        state.nodes.values().cloned().collect::<Vec<_>>(),
+                    ))
+                    .unwrap(),
+                ),
             },
             None,
             None,
         );
 
-        let event_sub_res = send_request(
+        let _ = send_request(
             &Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("eth_rpc".to_string()),
+                process: ProcessId::from_str("eth_rpc:sys:uqbar").unwrap(),
             },
             &Request {
                 inherit: false,            // TODO what
@@ -154,10 +154,13 @@ impl UqProcess for Component {
             None,
         );
 
+        let http_bindings_process_id_str = "http_bindings:http_bindings:uqbar";
+        let http_bindings_process_id = ProcessId::from_str(http_bindings_process_id_str).unwrap();
+
         let _register_endpoint = send_request(
             &Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("http_bindings".to_string()),
+                process: http_bindings_process_id.clone(),
             },
             &Request {
                 inherit: false,
@@ -189,7 +192,7 @@ impl UqProcess for Component {
                 continue;
             };
 
-            if source.process == ProcessId::Name("http_bindings".to_string()) {
+            if source.process.to_string() == http_bindings_process_id_str {
                 if let Ok(ipc_json) = serde_json::from_str::<serde_json::Value>(
                     &request.ipc.clone().unwrap_or_default(),
                 ) {
@@ -211,7 +214,10 @@ impl UqProcess for Component {
                                     },
                                     Some(&Payload {
                                         mime: Some("application/json".to_string()),
-                                        bytes: serde_json::to_string(&node).unwrap().as_bytes().to_vec(),
+                                        bytes: serde_json::to_string(&node)
+                                            .unwrap()
+                                            .as_bytes()
+                                            .to_vec(),
                                     }),
                                 );
                                 continue;
@@ -240,38 +246,32 @@ impl UqProcess for Component {
                 continue;
             }
 
-            let Ok(msg) = serde_json::from_str::<AllActions>(&request.ipc.unwrap_or_default()) else {
-                print_to_terminal(0, "qns_indexer: got invalid message");
+            let Ok(msg) = serde_json::from_str::<AllActions>(request.ipc.as_ref().unwrap()) else {
+                print_to_terminal(0, &format!("qns_indexer: got invalid message: {}", request.ipc.unwrap_or_default()));
                 continue;
             };
 
             match msg {
                 // Probably more message types later...maybe not...
                 AllActions::EventSubscription(e) => {
-                    state.block = hex_to_u64(&e.blockNumber).unwrap();
+                    state.block = hex_to_u64(&e.block_number).unwrap();
                     match decode_hex(&e.topics[0].clone()) {
                         NodeRegistered::SIGNATURE_HASH => {
                             // bindings::print_to_terminal(0, format!("qns_indexer: got NodeRegistered event: {:?}", e).as_str());
 
-                            let node = &e.topics[1];
-                            let decoded =
-                                NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true)
-                                    .unwrap();
-                            let name = dnswire_decode(decoded.0);
-
-                            // bindings::print_to_terminal(0, format!("qns_indexer: NODE1: {:?}", node).as_str());
-                            // bindings::print_to_terminal(0, format!("qns_indexer: NAME: {:?}", name.to_string()).as_str());
+                            let node       = &e.topics[1];
+                            let decoded    = NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                            let Ok(name) = dnswire_decode(decoded.0.clone()) else {
+                                bindings::print_to_terminal(0, &format!("qns_indexer: failed to decode name: {:?}", decoded.0));
+                                continue;
+                            };
 
                             state.names.insert(node.to_string(), name);
                         }
                         WsChanged::SIGNATURE_HASH => {
-                            // bindings::print_to_terminal(0, format!("qns_indexer: got WsChanged event: {:?}", e).as_str());
-
-                            let node = &e.topics[1];
-                            // bindings::print_to_terminal(0, format!("qns_indexer: NODE2: {:?}", node.to_string()).as_str());
-                            let decoded =
-                                WsChanged::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                            let public_key = hex::encode(decoded.0);
+                            let node       = &e.topics[1];
+                            let decoded     = WsChanged::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                            let public_key  = hex::encode(decoded.0);
                             let ip = decoded.1;
                             let port = decoded.2;
                             let routers_raw = decoded.3;
@@ -286,12 +286,10 @@ impl UqProcess for Component {
                                 })
                                 .collect::<Vec<String>>();
 
-                            let name = state.names.get(node).unwrap();
-                            // bindings::print_to_terminal(0, format!("qns_indexer: NAME: {:?}", name).as_str());
-                            // bindings::print_to_terminal(0, format!("qns_indexer: DECODED: {:?}", decoded).as_str());
-                            // bindings::print_to_terminal(0, format!("qns_indexer: PUB KEY: {:?}", public_key).as_str());
-                            // bindings::print_to_terminal(0, format!("qns_indexer: IP PORT: {:?} {:?}", ip, port).as_str());
-                            // bindings::print_to_terminal(0, format!("qns_indexer: ROUTERS: {:?}", routers).as_str());
+                            let Some(name) = state.names.get(node) else {
+                                bindings::print_to_terminal(0, &format!("qns_indexer: failed to find name for node during WsChanged: {:?}", node));
+                                continue;
+                            };
 
                             let update = QnsUpdate {
                                 name: name.clone(),
@@ -314,15 +312,18 @@ impl UqProcess for Component {
                             send_request(
                                 &Address {
                                     node: our.node.clone(),
-                                    process: ProcessId::Name("net".to_string()),
+                                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
                                 },
                                 &Request {
                                     inherit: false,
                                     expects_response: None,
                                     metadata: None,
-                                    ipc: Some(serde_json::to_string(&NetActions::QnsUpdate(
-                                        update.clone(),
-                                    )).unwrap()),
+                                    ipc: Some(
+                                        serde_json::to_string(&NetActions::QnsUpdate(
+                                            update.clone(),
+                                        ))
+                                        .unwrap(),
+                                    ),
                                 },
                                 None,
                                 None,
@@ -338,7 +339,7 @@ impl UqProcess for Component {
                 }
             }
 
-            process_lib::await_set_state(our.node.clone(), &state);
+            process_lib::set_state::<State>(&state);
         }
     }
 }
@@ -370,7 +371,7 @@ fn hex_to_u64(hex: &str) -> Result<u64, std::num::ParseIntError> {
     u64::from_str_radix(without_prefix, 16)
 }
 
-fn dnswire_decode(wire_format_bytes: Vec<u8>) -> String {
+fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {
     let mut i = 0;
     let mut result = Vec::new();
 
@@ -388,12 +389,12 @@ fn dnswire_decode(wire_format_bytes: Vec<u8>) -> String {
 
     let flat: Vec<_> = result.into_iter().flatten().collect();
 
-    let name = String::from_utf8(flat).unwrap();
+    let name = String::from_utf8(flat)?;
 
     // Remove the trailing '.' if it exists (it should always exist)
     if name.ends_with('.') {
-        name[0..name.len() - 1].to_string()
+        Ok(name[0..name.len()-1].to_string())
     } else {
-        name
+        Ok(name)
     }
 }

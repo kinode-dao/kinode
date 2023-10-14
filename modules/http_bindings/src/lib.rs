@@ -10,6 +10,7 @@ use url::form_urlencoded;
 use bindings::component::uq_process::types::*;
 use bindings::{get_payload, print_to_terminal, receive, send_request, send_response, Guest};
 
+#[allow(dead_code)]
 mod process_lib;
 
 struct Component;
@@ -112,7 +113,7 @@ impl Guest for Component {
         send_request(
             &Address {
                 node: our.node.clone(),
-                process: ProcessId::Name("http_server".to_string()),
+                process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
             },
             &Request {
                 inherit: false,
@@ -158,10 +159,7 @@ impl Guest for Component {
             let action = message_json["action"].as_str().unwrap_or("");
             let address = message_json["address"].as_str().unwrap_or(""); // origin HTTP address
             let path = message_json["path"].as_str().unwrap_or("");
-            let app = match source.process {
-                ProcessId::Name(name) => name,
-                _ => "".to_string(),
-            };
+            let app: String = source.process.to_string();
 
             print_to_terminal(1, "http_bindings: got message");
 
@@ -187,33 +185,39 @@ impl Guest for Component {
                     },
                     None,
                 );
-            } else if action == "bind-app" && path != "" && app != "" {
+            } else if action == "bind-app" && path != "" {
                 print_to_terminal(1, "http_bindings: binding app 1");
                 let path_segments = path
                     .trim_start_matches('/')
                     .split("/")
                     .collect::<Vec<&str>>();
-                if app != "homepage"
+                if app != "homepage:homepage:uqbar"
                     && (path_segments.is_empty()
-                        || path_segments[0] != app.clone().replace("_", "-"))
+                        || path_segments[0] != app.clone().split(':').next().unwrap_or_default().to_string().replace("_", "-"))
                 {
                     print_to_terminal(
                         1,
                         format!(
-                            "http_bindings: first path segment does not match process: {}",
-                            path
+                            "http_bindings: first path segment {} does not match process: {}",
+                            path,
+                            app.clone().replace("_", "-"),
                         )
                         .as_str(),
                     );
                     continue;
                 } else {
+                    if !app.clone().ends_with(":sys:uqbar") && path_bindings.contains_key(path) {
+                        print_to_terminal(0, &format!("http_bindings: path already bound {}", path));
+                        continue;
+                    }
                     print_to_terminal(
                         1,
                         format!("http_bindings: binding app 2 {}", path.to_string()).as_str(),
                     );
+
                     path_bindings.insert(path.to_string(), {
                         BoundPath {
-                            app: app.to_string(),
+                            app,
                             authenticated: message_json
                                 .get("authenticated")
                                 .and_then(|v| v.as_bool())
@@ -424,7 +428,7 @@ impl Guest for Component {
                         send_request(
                             &Address {
                                 node: our.node.clone(),
-                                process: ProcessId::Name("encryptor".to_string()),
+                                process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
                             },
                             &Request {
                                 inherit: true,
@@ -522,42 +526,42 @@ impl Guest for Component {
                                 }
                             };
 
-                            if !auth_success {
-                                print_to_terminal(1, "http_bindings: failure to authenticate");
-                                let proxy_path = message_json["proxy_path"].as_str();
+                            // if !auth_success {
+                            //     print_to_terminal(1, "http_bindings: failure to authenticate");
+                            //     let proxy_path = message_json["proxy_path"].as_str();
 
-                                let redirect_path: String = match proxy_path {
-                                    Some(pp) => {
-                                        form_urlencoded::byte_serialize(pp.as_bytes()).collect()
-                                    }
-                                    None => {
-                                        form_urlencoded::byte_serialize(path.as_bytes()).collect()
-                                    }
-                                };
+                            //     let redirect_path: String = match proxy_path {
+                            //         Some(pp) => {
+                            //             form_urlencoded::byte_serialize(pp.as_bytes()).collect()
+                            //         }
+                            //         None => {
+                            //             form_urlencoded::byte_serialize(path.as_bytes()).collect()
+                            //         }
+                            //     };
 
-                                let location = match proxy_path {
-                                    Some(_) => format!(
-                                        "/http-proxy/serve/{}/login?redirect={}",
-                                        &our.node, redirect_path
-                                    ),
-                                    None => format!("/login?redirect={}", redirect_path),
-                                };
+                            //     let location = match proxy_path {
+                            //         Some(_) => format!(
+                            //             "/http-proxy/serve/{}/login?redirect={}",
+                            //             &our.node, redirect_path
+                            //         ),
+                            //         None => format!("/login?redirect={}", redirect_path),
+                            //     };
 
-                                send_http_response(
-                                    302,
-                                    {
-                                        let mut headers = HashMap::new();
-                                        headers.insert(
-                                            "Content-Type".to_string(),
-                                            "text/html".to_string(),
-                                        );
-                                        headers.insert("Location".to_string(), location);
-                                        headers
-                                    },
-                                    "Auth cookie not valid".as_bytes().to_vec(),
-                                );
-                                continue;
-                            }
+                            //     send_http_response(
+                            //         302,
+                            //         {
+                            //             let mut headers = HashMap::new();
+                            //             headers.insert(
+                            //                 "Content-Type".to_string(),
+                            //                 "text/html".to_string(),
+                            //             );
+                            //             headers.insert("Location".to_string(), location);
+                            //             headers
+                            //         },
+                            //         "Auth cookie not valid".as_bytes().to_vec(),
+                            //     );
+                            //     continue;
+                            // }
                         }
 
                         if bound_path.local_only && !address.starts_with("127.0.0.1:") {
@@ -580,7 +584,7 @@ impl Guest for Component {
                         send_request(
                             &Address {
                                 node: our.node.clone(),
-                                process: ProcessId::Name(app.to_string()),
+                                process: ProcessId::from_str(app).unwrap(),
                             },
                             &Request {
                                 inherit: true,
