@@ -1181,8 +1181,8 @@ async fn match_request(
             (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
         VfsAction::WriteOffset { full_path, offset } => {
-            let mut vfs = vfs.lock().await;
             let file_hash = {
+                let mut vfs = vfs.lock().await;
                 let Some(key) = vfs.path_to_key.remove(&full_path) else {
                     return Err(VfsError::EntryNotFound);
                 };
@@ -1429,6 +1429,7 @@ async fn match_request(
                             let Ok(FsResponse::Read(read_hash)) =
                                 serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
                             else {
+                                println!("vfs: GetEntry fail fs error: {}\r", ipc);
                                 panic!("");
                             };
                             // TODO get rid of PANICS!
