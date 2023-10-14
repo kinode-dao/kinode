@@ -102,19 +102,17 @@ fn handle_message (
                         },
                     }
                 },
-                // kv::KeyValueMessage::Write { ref key, .. } => {
-                kv::KeyValueMessage::Write { ref key, ref val, .. } => {
+                kv::KeyValueMessage::Write { ref key, .. } => {
                     let Some(db_handle) = db_handle else {
                         return Err(kv::KeyValueError::DbDoesNotExist.into());
                     };
 
-                    // let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
+                    let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
 
                     let write_txn = db_handle.begin_write()?;
                     {
                         let mut table = write_txn.open_table(TABLE)?;
-                        // table.insert(&key[..], &bytes[..])?;
-                        table.insert(&key[..], &val[..])?;
+                        table.insert(&key[..], &bytes[..])?;
                     }
                     write_txn.commit()?;
 
@@ -149,7 +147,11 @@ fn handle_message (
                             let bytes = v.value().to_vec();
                             print_to_terminal(
                                 1,
-                                &format!("key_value_worker: key, val: {:?}, {:?}", key, bytes),
+                                &format!(
+                                    "key_value_worker: key, val: {:?}, {}",
+                                    key,
+                                    if bytes.len() < 100 { format!("{:?}", bytes) } else { "<elided>".into() },
+                                ),
                             );
                             send_response(
                                 &Response {
