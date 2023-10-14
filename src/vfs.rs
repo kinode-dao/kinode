@@ -1311,12 +1311,13 @@ async fn match_request(
             let Some(key) = vfs.path_to_key.get(&full_path) else {
                 return Err(VfsError::EntryNotFound);
             };
-            let ipc = Some(serde_json::to_string(&VfsResponse::GetHash(
-                match key {
+            let ipc = Some(
+                serde_json::to_string(&VfsResponse::GetHash(match key {
                     Key::File { id } => Some(id.clone()),
                     Key::Dir { .. } => None,
-                }
-            )).unwrap());
+                }))
+                .unwrap(),
+            );
             (ipc, None)
         }
         VfsAction::GetEntry(ref full_path) => {
