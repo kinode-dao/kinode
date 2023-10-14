@@ -310,30 +310,6 @@ impl VfsError {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KeyValueMessage {
-    New { drive: String },
-    Write { drive: String, key: Vec<u8> },
-    Read { drive: String, key: Vec<u8> },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KeyValueError {
-    BadDriveName,
-    NoCap,
-    NoBytes,
-}
-
-impl KeyValueError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            KeyValueError::BadDriveName => "BadDriveName",
-            KeyValueError::NoCap => "NoCap",
-            KeyValueError::NoBytes => "NoBytes",
-        }
-    }
-}
-
 //
 // conversions between wit types and kernel types (annoying!)
 //

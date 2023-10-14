@@ -178,9 +178,9 @@ fn main() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
         // NOT YET building KV, waiting for deps to be ready
-        if package_name == "key_value" {
-            return;
-        }
+        // if package_name == "key_value" {
+        //     return;
+        // }
 
         // If Cargo.toml is present, build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());
