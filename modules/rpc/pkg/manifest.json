@@ -6,7 +6,7 @@
         "request_networking": false,
         "request_messaging": [
             "http_bindings:http_bindings:uqbar",
-            "app_tracker:app_tracker:uqbar",
+            "main:app_store:uqbar",
 	        "http_server:sys:uqbar"
         ],
         "public": false

@@ -3,6 +3,49 @@ use serde::{Deserialize, Serialize};
 use super::bindings::component::uq_process::types::*;
 use super::bindings::{Address, Payload, ProcessId, SendError};
 
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct PackageId {
+    pub package_name: String,
+    pub publisher_node: String,
+}
+
+impl PackageId {
+    pub fn new(package_name: &str, publisher_node: &str) -> Self {
+        PackageId {
+            package_name: package_name.into(),
+            publisher_node: publisher_node.into(),
+        }
+    }
+    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+        // split string on colons into 2 segments
+        let mut segments = input.split(':');
+        let package_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let publisher_node = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        if segments.next().is_some() {
+            return Err(ProcessIdParseError::TooManyColons);
+        }
+        Ok(PackageId {
+            package_name,
+            publisher_node,
+        })
+    }
+    pub fn to_string(&self) -> String {
+        [self.package_name.as_str(), self.publisher_node.as_str()].join(":")
+    }
+    pub fn package(&self) -> &str {
+        &self.package_name
+    }
+    pub fn publisher_node(&self) -> &str {
+        &self.publisher_node
+    }
+}
+
 #[allow(dead_code)]
 impl ProcessId {
     /// generates a random u64 number if process_name is not declared
@@ -78,6 +121,28 @@ impl PartialEq for ProcessId {
 pub enum ProcessIdParseError {
     TooManyColons,
     MissingField,
+}
+
+impl std::fmt::Display for ProcessIdParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ProcessIdParseError::TooManyColons => "Too many colons in ProcessId string",
+                ProcessIdParseError::MissingField => "Missing field in ProcessId string",
+            }
+        )
+    }
+}
+
+impl std::error::Error for ProcessIdParseError {
+    fn description(&self) -> &str {
+        match self {
+            ProcessIdParseError::TooManyColons => "Too many colons in ProcessId string",
+            ProcessIdParseError::MissingField => "Missing field in ProcessId string",
+        }
+    }
 }
 
 pub fn send_and_await_response(

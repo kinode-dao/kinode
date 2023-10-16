@@ -1971,7 +1971,7 @@ async fn make_event_loop(
                                 t::Printout {
                                     verbosity: 0,
                                     content: format!(
-                                        "event loop: process {:?} doesn't have capability to send networked messages",
+                                        "event loop: process {} doesn't have capability to send networked messages",
                                         kernel_message.source.process
                                     )
                                 }
@@ -2007,7 +2007,7 @@ async fn make_event_loop(
                                                 t::Printout {
                                                     verbosity: 0,
                                                     content: format!(
-                                                        "event loop: process {:?} doesn't have capability to message process {:?}",
+                                                        "event loop: process {} doesn't have capability to message process {}",
                                                         kernel_message.source.process, kernel_message.target.process
                                                     )
                                                 }

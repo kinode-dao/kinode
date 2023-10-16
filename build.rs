@@ -126,7 +126,7 @@ fn main() {
     }
     // only execute if one of the modules has source code changes
     const WASI_APPS: [&str; 9] = [
-        "app_tracker",
+        "app_store",
         "chess",
         "homepage",
         "http_bindings",
