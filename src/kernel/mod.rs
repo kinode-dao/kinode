@@ -635,7 +635,7 @@ impl UqProcessImports for ProcessWasi {
         if prompt.source.node == self.process.metadata.our.node {
             // if local, need to ask them
             let cap = t::Capability {
-                issuer: prompt.source.clone(),
+                issuer: self.process.metadata.our.clone(),
                 params,
             };
             let (tx, rx) = tokio::sync::oneshot::channel();
@@ -643,7 +643,7 @@ impl UqProcessImports for ProcessWasi {
                 .process
                 .caps_oracle
                 .send(t::CapMessage::Has {
-                    on: self.process.metadata.our.process.clone(),
+                    on: prompt.source.process.clone(),
                     cap: cap.clone(),
                     responder: tx,
                 })

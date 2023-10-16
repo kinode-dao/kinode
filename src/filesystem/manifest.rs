@@ -413,7 +413,9 @@ impl Manifest {
 
         while let Some(chunk) = chunks.next() {
             if memory_buffer.len() + chunk.len() > self.memory_limit {
+                manifest.insert(file.clone(), in_memory_file);
                 self.flush_to_wal(&mut manifest, &mut memory_buffer).await?;
+                in_memory_file = manifest.get(file).unwrap().clone();
             }
 
             self.write_chunk(
@@ -804,7 +806,9 @@ impl Manifest {
                 .copy_from_slice(data_to_write);
 
             if memory_buffer.len() + chunk_data.len() > self.memory_limit {
+                manifest.insert(file_id.clone(), file);
                 self.flush_to_wal(&mut manifest, &mut memory_buffer).await?;
+                file = manifest.get(file_id).unwrap().clone();
             }
 
             self.write_chunk(
