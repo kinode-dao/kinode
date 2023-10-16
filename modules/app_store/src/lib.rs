@@ -38,7 +38,7 @@ struct AppTrackerState {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum AppTrackerRequest {
     New {
-        package: String,
+        package: PackageId,
         mirror: bool,
     },
     NewFromRemote {
@@ -46,7 +46,7 @@ pub enum AppTrackerRequest {
         install_from: NodeId,
     },
     Install {
-        package: String,
+        package: PackageId,
     },
 }
 
@@ -87,7 +87,7 @@ fn parse_command(
             if our.node != source.node {
                 return Err(anyhow::anyhow!("new package request from non-local node"));
             }
-            let Some(payload) = get_payload() else {
+            let Some(mut payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
 
@@ -100,7 +100,7 @@ fn parse_command(
                 &vfs_address,
                 false,
                 Some(serde_json::to_string(&kt::VfsRequest {
-                    drive: package.clone(),
+                    drive: package.to_string(),
                     action: kt::VfsAction::New,
                 })?),
                 None,
@@ -109,13 +109,14 @@ fn parse_command(
             )?;
 
             // add zip bytes
+            payload.mime = Some("application/zip".to_string());
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
                 true,
                 Some(serde_json::to_string(&kt::VfsRequest {
-                    drive: package.clone(),
+                    drive: package.to_string(),
                     action: kt::VfsAction::Add {
-                        full_path: package.clone().into(),
+                        full_path: package.to_string(),
                         entry_type: kt::AddEntryType::ZipArchive,
                     },
                 })?),
@@ -130,9 +131,9 @@ fn parse_command(
                 &vfs_address,
                 true,
                 Some(serde_json::to_string(&kt::VfsRequest {
-                    drive: package.clone(),
+                    drive: package.to_string(),
                     action: kt::VfsAction::Add {
-                        full_path: format!("/{}.zip", package),
+                        full_path: format!("/{}.zip", package.to_string()),
                         entry_type: kt::AddEntryType::NewFile,
                     },
                 })?),
@@ -147,7 +148,7 @@ fn parse_command(
                     &vfs_address,
                     false,
                     Some(serde_json::to_string(&kt::VfsRequest {
-                        drive: package.clone(),
+                        drive: package.to_string(),
                         action: kt::VfsAction::GetEntry("/metadata.json".into()),
                     })?),
                     None,
@@ -165,7 +166,7 @@ fn parse_command(
                 process_lib::set_state::<AppTrackerState>(&state);
             }
 
-            Ok(Some(AppTrackerResponse::New { package }))
+            Ok(Some(AppTrackerResponse::New { package: package.to_string() }))
         }
         // if we are the source, forward to install_from target.
         // if we install_from, respond with package if we have it
@@ -183,16 +184,20 @@ fn parse_command(
                         inherit: true,
                         expects_response: Some(5), // TODO
                         ipc: Some(serde_json::to_string(&AppTrackerRequest::NewFromRemote {
-                            package_id,
-                            install_from,
+                            package_id: package_id.clone(),
+                            install_from: install_from.clone(),
                         })?),
                         metadata: None,
                     },
                     None,
                     None,
                 );
+                state.requested_packages.insert(package_id, install_from);
+                process_lib::set_state::<AppTrackerState>(&state);
                 Ok(None)
             } else if our.node == install_from {
+                print_to_terminal(0, &format!("app-store: got new from remote for {}", package_id.to_string()));
+                print_to_terminal(0, &format!("{:?}", state.mirrored_packages));
                 let Some(_mirror) = state.mirrored_packages.get(&package_id) else {
                     return Ok(Some(AppTrackerResponse::Error { error: "package not mirrored here!".into() }))
                 };
@@ -231,7 +236,7 @@ fn parse_command(
                 &vfs_address,
                 false,
                 Some(serde_json::to_string(&kt::VfsRequest {
-                    drive: package.clone(),
+                    drive: package.to_string(),
                     action: kt::VfsAction::GetEntry("/manifest.json".into()),
                 })?),
                 None,
@@ -255,7 +260,7 @@ fn parse_command(
                     &vfs_address,
                     false,
                     Some(serde_json::to_string(&kt::VfsRequest {
-                        drive: package.clone(),
+                        drive: package.to_string(),
                         action: kt::VfsAction::GetHash(path.clone()),
                     })?),
                     None,
@@ -288,7 +293,7 @@ fn parse_command(
                     &vfs_address.clone(),
                     &serde_json::to_string(&serde_json::json!({
                         "kind": "read",
-                        "drive": package,
+                        "drive": package.to_string(),
                     }))?,
                 ) else {
                     return Err(anyhow::anyhow!("app-store: no read cap"));
@@ -298,7 +303,7 @@ fn parse_command(
                     &vfs_address.clone(),
                     &serde_json::to_string(&serde_json::json!({
                         "kind": "write",
-                        "drive": package,
+                        "drive": package.to_string(),
                     }))?,
                 ) else {
                     return Err(anyhow::anyhow!("app-store: no write cap"));
@@ -323,7 +328,7 @@ fn parse_command(
                     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
                 }
 
-                let process_id = format!("{}:{}", entry.process_name, package.clone());
+                let process_id = format!("{}:{}", entry.process_name, package.to_string());
                 let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {
                     return Err(anyhow::anyhow!("app-store: invalid process id!"));
                 };
@@ -347,7 +352,7 @@ fn parse_command(
                     &vfs_address,
                     false,
                     Some(serde_json::to_string(&kt::VfsRequest {
-                        drive: package.clone(),
+                        drive: package.to_string(),
                         action: kt::VfsAction::GetEntry(path),
                     })?),
                     None,
@@ -377,7 +382,7 @@ fn parse_command(
                     5,
                 )?;
             }
-            Ok(Some(AppTrackerResponse::Install { package }))
+            Ok(Some(AppTrackerResponse::Install { package: package.to_string() }))
         }
     }
 }
@@ -385,6 +390,23 @@ fn parse_command(
 impl Guest for Component {
     fn init(our: Address) {
         assert_eq!(our.process.to_string(), "main:app_store:uqbar");
+
+        // grant messaging caps to http_bindings and terminal
+        let Some(our_messaging_cap) = bindings::get_capability(
+            &our,
+            &"\"messaging\"".into()
+        ) else {
+            panic!("missing self-messaging cap!")
+        };
+        bindings::share_capability(
+            &ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
+            &our_messaging_cap,
+        );
+        bindings::share_capability(
+            &ProcessId::from_str("terminal:terminal:uqbar").unwrap(),
+            &our_messaging_cap,
+        );
+
         print_to_terminal(0, &format!("app_store main proc: start"));
 
         let mut state = process_lib::get_state::<AppTrackerState>().unwrap_or(AppTrackerState {
@@ -413,8 +435,10 @@ impl Guest for Component {
                     match parse_command(&our, &source, command, &mut state) {
                         Ok(response) => {
                             if let Some(_) = expects_response {
+                                print_to_terminal(0, &format!("app-store: sending response {:?}", response));
                                 let _ = send_response(
                                     &Response {
+                                        inherit: true,
                                         ipc: Some(serde_json::to_string(&response).unwrap()),
                                         metadata,
                                     },
@@ -430,6 +454,7 @@ impl Guest for Component {
                                 };
                                 let _ = send_response(
                                     &Response {
+                                        inherit: false,
                                         ipc: Some(serde_json::to_string(&error).unwrap()),
                                         metadata,
                                     },
@@ -440,12 +465,14 @@ impl Guest for Component {
                     }
                 }
                 Message::Response((response, _)) => {
+                    print_to_terminal(0, &format!("app-store: got response {:?}", response));
                     // only expecting NewFromRemote for apps we've requested
                     match serde_json::from_str(&response.ipc.unwrap_or_default()) {
                         Ok(AppTrackerResponse::NewFromRemote { package_id }) => {
                             if let Some(install_from) = state.requested_packages.remove(&package_id)
                             {
                                 if install_from == source.node {
+                                    print_to_terminal(0, "got install");
                                     // auto-take zip from payload and request ourself with New
                                     let _ = send_request(
                                         &our,
@@ -454,7 +481,7 @@ impl Guest for Component {
                                             expects_response: None,
                                             ipc: Some(
                                                 serde_json::to_string(&AppTrackerRequest::New {
-                                                    package: package_id.package().into(),
+                                                    package: package_id,
                                                     mirror: true,
                                                 })
                                                 .unwrap(),

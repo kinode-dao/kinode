@@ -162,6 +162,7 @@ pub fn receive_transfer(
     // respond to first request
     send_response(
         &Response {
+            inherit: false,
             ipc: None,
             metadata: Some(1.to_string()),
         },
@@ -201,6 +202,7 @@ pub fn receive_transfer(
                         file.extend(payload.bytes);
                         send_response(
                             &Response {
+                                inherit: false,
                                 ipc: None,
                                 metadata: Some(chunk_num.to_string()),
                             },

@@ -718,6 +718,7 @@ async fn handle_incoming_message(
                 rsvp: None,
                 message: Message::Response((
                     Response {
+                        inherit: false,
                         ipc: Some("delivered".into()),
                         metadata: None,
                     },
@@ -781,7 +782,7 @@ async fn handle_incoming_message(
                     NetActions::QnsUpdate(log) => {
                         let _ = print_tx
                             .send(Printout {
-                                verbosity: 0, // TODO 1
+                                verbosity: 1, // TODO 1
                                 content: format!("net: got QNS update for {}", log.name),
                             })
                             .await;

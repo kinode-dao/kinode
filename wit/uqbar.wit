@@ -41,6 +41,7 @@ interface types {
     }
 
     record response {
+        inherit: bool,
         ipc: option<json>,
         metadata: option<json>,
         // to grab payload, use get_payload()

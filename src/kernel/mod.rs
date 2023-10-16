@@ -993,7 +993,10 @@ impl Process {
                 mime: p.mime,
                 bytes: p.bytes,
             }),
-            None => None,
+            None => match request.inherit {
+                true => self.last_payload.clone(),
+                false => None,
+            },
         };
 
         // rsvp is set if there was a Request expecting Response
@@ -1076,6 +1079,11 @@ impl Process {
             }
         };
 
+        let payload = match response.inherit {
+            true => self.last_payload.clone(),
+            false => de_wit_payload(payload),
+        };
+
         self.send_to_loop
             .send(t::KernelMessage {
                 id,
@@ -1087,7 +1095,7 @@ impl Process {
                     // the context will be set by the process receiving this Response.
                     None,
                 )),
-                payload: de_wit_payload(payload),
+                payload,
                 signed_capabilities: None,
             })
             .await
@@ -1419,6 +1427,7 @@ async fn handle_kernel_request(
                         rsvp: None,
                         message: t::Message::Response((
                             t::Response {
+                                inherit: false,
                                 ipc: Some(
                                     serde_json::to_string(&t::KernelResponse::StartProcessError)
                                         .unwrap(),
@@ -1584,6 +1593,7 @@ async fn handle_kernel_request(
                     rsvp: None,
                     message: t::Message::Response((
                         t::Response {
+                            inherit: false,
                             ipc: Some(
                                 serde_json::to_string(&t::KernelResponse::KilledProcess(
                                     process_id,
@@ -1778,6 +1788,7 @@ async fn start_process(
             rsvp: None,
             message: t::Message::Response((
                 t::Response {
+                    inherit: false,
                     ipc: Some(serde_json::to_string(&t::KernelResponse::StartedProcess).unwrap()),
                     metadata: None,
                 },

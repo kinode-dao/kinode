@@ -201,6 +201,7 @@ impl UqProcess for Component {
                             if let Some(node) = state.nodes.get(name) {
                                 send_response(
                                     &Response {
+                                        inherit: false,
                                         ipc: Some(
                                             serde_json::json!({
                                                 "status": 200,
@@ -227,6 +228,7 @@ impl UqProcess for Component {
                 }
                 send_response(
                     &Response {
+                        inherit: false,
                         ipc: Some(
                             serde_json::json!({
                                 "status": 404,

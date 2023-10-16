@@ -207,6 +207,7 @@ pub struct Request {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Response {
+    pub inherit: bool,
     pub ipc: Option<String>,      // JSON-string
     pub metadata: Option<String>, // JSON-string
 }
@@ -672,8 +673,8 @@ impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {:?},\n    message: {}\n}}",
-            self.id, self.source, self.target, self.rsvp, self.message,
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {:?},\n    message: {},\n    payload: {}\n}}",
+            self.id, self.source, self.target, self.rsvp, self.message, self.payload.is_some()
         )
     }
 }
@@ -691,7 +692,8 @@ impl std::fmt::Display for Message {
             ),
             Message::Response((response, context)) => write!(
                 f,
-                "Response(\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
+                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
+                response.inherit,
                 &response.ipc.as_ref().unwrap_or(&"None".into()),
                 &response.metadata.as_ref().unwrap_or(&"None".into()),
                 &context.as_ref().unwrap_or(&"None".into()),
