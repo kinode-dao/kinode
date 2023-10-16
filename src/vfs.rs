@@ -968,7 +968,9 @@ async fn match_request(
                                     message: Message::Request(Request {
                                         inherit: true,
                                         expects_response: Some(5), // TODO evaluate
-                                        ipc: Some(serde_json::to_string(&FsAction::Write(None)).unwrap()),
+                                        ipc: Some(
+                                            serde_json::to_string(&FsAction::Write(None)).unwrap(),
+                                        ),
                                         metadata: None,
                                     }),
                                     payload: Some(Payload {
