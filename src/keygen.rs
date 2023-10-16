@@ -66,11 +66,7 @@ pub fn encode_keyfile(
     .unwrap()
 }
 
-pub fn decode_keyfile(
-    keyfile: Vec<u8>,
-    password: &str,
-) -> Result<Keyfile, &'static str> {
-
+pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'static str> {
     let (username, routers, salt, key_enc, jtw_enc, file_enc) =
         bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(&keyfile)
             .map_err(|_| "failed to deserialize keyfile")?;
@@ -92,26 +88,28 @@ pub fn decode_keyfile(
     let jwt_nonce = generic_array::GenericArray::from_slice(&jtw_enc[..12]);
     let file_nonce = generic_array::GenericArray::from_slice(&file_enc[..12]);
 
-    let serialized_networking_keypair: Vec<u8> = cipher.decrypt(net_nonce, &key_enc[12..])
+    let serialized_networking_keypair: Vec<u8> = cipher
+        .decrypt(net_nonce, &key_enc[12..])
         .map_err(|_| "failed to decrypt networking keys")?;
 
     let networking_keypair = signature::Ed25519KeyPair::from_pkcs8(&serialized_networking_keypair)
         .map_err(|_| "failed to parse networking keys")?;
 
-    let jwt_secret_bytes: Vec<u8> = cipher.decrypt(jwt_nonce, &jtw_enc[12..])
+    let jwt_secret_bytes: Vec<u8> = cipher
+        .decrypt(jwt_nonce, &jtw_enc[12..])
         .map_err(|_| "failed to decrypt jwt secret")?;
 
-    let file_key: Vec<u8> = cipher.decrypt(file_nonce, &file_enc[12..])
+    let file_key: Vec<u8> = cipher
+        .decrypt(file_nonce, &file_enc[12..])
         .map_err(|_| "failed to decrypt file key")?;
 
     Ok(Keyfile {
-        username, 
-        routers, 
-        networking_keypair, 
-        jwt_secret_bytes, 
+        username,
+        routers,
+        networking_keypair,
+        jwt_secret_bytes,
         file_key,
     })
-
 }
 
 /// # Returns
