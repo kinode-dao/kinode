@@ -338,26 +338,26 @@ async fn bootstrap(
                 .unwrap(),
             });
 
-            let mut public_process = false;
+            let public_process = entry.public;
 
             // queue the granted capabilities
-            for process_name in &entry.grant_messaging {
-                if process_name == "all" {
-                    public_process = true;
-                    continue;
-                }
-                let process_id = ProcessId::from_str(process_name).unwrap();
-                caps_to_grant.push((
-                    process_id.clone(),
-                    Capability {
-                        issuer: Address {
-                            node: our_name.to_string(),
-                            process: ProcessId::from_str(&our_process_id).unwrap(),
-                        },
-                        params: "\"messaging\"".into(),
-                    },
-                ));
-            }
+            // for process_name in &entry.public {
+            //     if process_name == "all" {
+            //         public_process = true;
+            //         continue;
+            //     }
+            //     let process_id = ProcessId::from_str(process_name).unwrap();
+            //     caps_to_grant.push((
+            //         process_id.clone(),
+            //         Capability {
+            //             issuer: Address {
+            //                 node: our_name.to_string(),
+            //                 process: ProcessId::from_str(&our_process_id).unwrap(),
+            //             },
+            //             params: "\"messaging\"".into(),
+            //         },
+            //     ));
+            // }
 
             // save in process map
             let file = FileIdentifier::new_uuid();

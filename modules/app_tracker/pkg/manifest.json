@@ -16,6 +16,6 @@
             "kernel:sys:uqbar",
             "eth_rpc:sys:uqbar"
         ],
-        "grant_messaging": []
+        "public": false
     }
 ]

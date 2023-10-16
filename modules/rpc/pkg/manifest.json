@@ -9,6 +9,6 @@
             "app_tracker:app_tracker:uqbar",
 	        "http_server:sys:uqbar"
         ],
-        "grant_messaging": []
+        "public": false
     }
 ]

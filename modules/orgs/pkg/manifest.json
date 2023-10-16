@@ -7,6 +7,6 @@
         "request_messaging": [
             "http_bindings:http_bindings:uqbar"
         ],
-        "grant_messaging": []
+        "public": false
     }
 ]

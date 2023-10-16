@@ -13,6 +13,7 @@ use kernel_types as kt;
 
 #[allow(dead_code)]
 mod process_lib;
+mod transfer_lib;
 
 struct Component;
 
@@ -23,7 +24,7 @@ pub enum AppTrackerRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum ApptrackerResponse {
+pub enum AppTrackerResponse {
     New { package: String },
     Install { package: String },
     Error { error: String },
@@ -36,10 +37,10 @@ pub struct PackageManifestEntry {
     pub on_panic: kt::OnPanic,
     pub request_networking: bool,
     pub request_messaging: Vec<String>,
-    pub grant_messaging: Vec<String>, // special logic for the string "all": makes process public
+    pub public: bool,
 }
 
-fn parse_command(our: &Address, request_string: String) -> anyhow::Result<ApptrackerResponse> {
+fn parse_command(our: &Address, request_string: String) -> anyhow::Result<AppTrackerResponse> {
     match serde_json::from_str(&request_string)? {
         AppTrackerRequest::New { package } => {
             let Some(payload) = get_payload() else {
@@ -84,7 +85,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                 Some(&payload),
                 5,
             )?;
-            Ok(ApptrackerResponse::New { package })
+            Ok(AppTrackerResponse::New { package })
         }
         AppTrackerRequest::Install { package } => {
             let vfs_address = Address {
@@ -186,30 +187,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                     }
                 };
 
-                // let Some(messaging_cap) = get_capability(
-                //     &Address {
-                //         node: our.node.clone(),
-                //         process: entry_process_id,
-                //     },
-                //     &"\"messaging\"".into()
-                // ) else {
-                //     return Err(anyhow::anyhow!(
-                //         "app_tracker: no messaging cap for {} to give away!",
-                //         entry.process_name,
-                //     ));
-                // };
-                // for process_name in &entry.grant_messaging {
-                //     if process_name == "all" {
-                //         public = true;
-                //         continue;
-                //     }
-                //     let Ok(parsed_process_id) = ProcessId::from_str(&process_name) else {
-                //         // TODO handle arbitrary caps here
-                //         continue;
-                //     };
-                //     bindings::share_capability(&parsed_process_id, &messaging_cap);
-                // }
-
                 for process_name in &entry.request_messaging {
                     let Ok(parsed_process_id) = ProcessId::from_str(&process_name) else {
                         // TODO handle arbitrary caps here
@@ -224,22 +201,6 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                     ) else {
                         print_to_terminal(0, &format!("app_tracker: no cap for {} to give away!", process_name));
                         continue;
-                    };
-                    initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
-                }
-
-                for process_name in &entry.request_messaging {
-                    let Ok(parsed_process_id) = ProcessId::from_str(process_name) else {
-                        continue;
-                    };
-                    let Some(messaging_cap) = get_capability(
-                        &Address {
-                            node: our.node.clone(),
-                            process: parsed_process_id.clone(),
-                        },
-                        &"\"messaging\"".into()
-                    ) else {
-                        return Err(anyhow::anyhow!(format!("app_tracker: no cap for {}", process_name)));
                     };
                     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
                 }
@@ -307,7 +268,7 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                     5,
                 )?;
             }
-            Ok(ApptrackerResponse::Install { package })
+            Ok(AppTrackerResponse::Install { package })
         }
     }
 }
@@ -354,7 +315,7 @@ impl Guest for Component {
                         Err(e) => {
                             print_to_terminal(0, &format!("app_tracker: got error {}", e));
                             if let Some(_) = expects_response {
-                                let error = ApptrackerResponse::Error {
+                                let error = AppTrackerResponse::Error {
                                     error: format!("{}", e),
                                 };
                                 let _ = send_response(

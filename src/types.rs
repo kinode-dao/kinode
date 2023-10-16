@@ -408,7 +408,7 @@ pub struct PackageManifestEntry {
     pub on_panic: OnPanic,
     pub request_networking: bool,
     pub request_messaging: Vec<String>,
-    pub grant_messaging: Vec<String>, // special logic for the string "all": makes process public
+    pub public: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
