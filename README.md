@@ -10,8 +10,10 @@ git clone git@github.com:uqbar-dao/uqbar.git
 git clone git@github.com:uqbar-dao/redb.git
 
 Make sure the two repos are next to each other in your directory structure.
+
 # Get some stuff so we can build wasm.
 
+cd uqbar/
 cargo install wasm-tools
 rustup install nightly
 rustup target add wasm32-wasi
