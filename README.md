@@ -1,4 +1,4 @@
-Last updated: 10/02/23
+Last updated: 10/16/23
 ## Setup
 
 ### Building components
@@ -9,6 +9,7 @@ Last updated: 10/02/23
 git clone git@github.com:uqbar-dao/uqbar.git
 git clone git@github.com:uqbar-dao/redb.git
 
+Make sure the two repos are next to each other in your directory structure.
 # Get some stuff so we can build wasm.
 
 cargo install wasm-tools
