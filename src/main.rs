@@ -169,9 +169,7 @@ async fn main() {
         {
             ip
         } else {
-            println!(
-                "\x1b[38;5;196mfailed to find public IPv4 address: booting as a routed node\x1b[0m"
-            );
+            println!( "\x1b[38;5;196mfailed to find public IPv4 address: booting as a routed node\x1b[0m");
             std::net::Ipv4Addr::LOCALHOST
         }
     };
@@ -189,200 +187,35 @@ async fn main() {
     // that updates their PKI info on-chain.
     let http_server_port = http_server::find_open_port(8080).await.unwrap();
     let (kill_tx, kill_rx) = oneshot::channel::<bool>();
-    let keyfile = fs::read(format!("{}/.keys", home_directory_path)).await;
 
-    let (our, networking_keypair, jwt_secret_bytes, file_key): (
-        Identity,
-        signature::Ed25519KeyPair,
-        Vec<u8>,
-        Vec<u8>,
-    ) = if keyfile.is_ok() {
-        // LOGIN flow
-        println!(
-            "\u{1b}]8;;{}\u{1b}\\{}\u{1b}]8;;\u{1b}\\",
-            format!("http://localhost:{}/login", http_server_port),
-            "Click here to log in to your node.",
-        );
-        println!("(http://localhost:{}/login)", http_server_port);
-        if our_ip != std::net::Ipv4Addr::LOCALHOST {
-            println!(
-                "(if on a remote machine: http://{}:{}/login)",
-                our_ip, http_server_port
-            );
-        }
-
-        let (tx, mut rx) = mpsc::channel::<(
-            String,
-            Vec<String>,
-            signature::Ed25519KeyPair,
-            Vec<u8>,
-            Vec<u8>,
-        )>(1);
-        let (username, routers, networking_keypair, jwt_secret_bytes, file_key) = tokio::select! {
-            _ = register::login(
-                tx,
-                kill_rx,
-                keyfile.unwrap(),
-                http_server_port,
-            ) => panic!("login failed"),
-            (username, routers, networking_keypair, jwt_secret_bytes, file_key) = async {
-                while let Some(fin) = rx.recv().await {
-                    return fin
-                }
-                panic!("login failed")
-            } => (username, routers, networking_keypair, jwt_secret_bytes, file_key),
-        };
-
-        // check if Identity for this username has correct networking keys,
-        // if not, prompt user to reset them.
-        let Ok(Ok(ws_rpc)) = timeout(
-            tokio::time::Duration::from_secs(10),
-            Provider::<Ws>::connect(rpc_url.clone()),
-        )
-        .await
-        else {
-            panic!("rpc: couldn't connect to blockchain wss endpoint. you MUST set an endpoint with --rpc flag, go to alchemy.com and get a free API key, then use the wss endpoint that looks like this: wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>");
-        };
-        let Ok(Ok(_)) = timeout(
-            tokio::time::Duration::from_secs(10),
-            ws_rpc.get_block_number(),
-        )
-        .await
-        else {
-            panic!("error: RPC endpoint not responding, try setting one with --rpc flag");
-        };
-        let qns_address: EthAddress = QNS_SEPOLIA_ADDRESS.parse().unwrap();
-        let contract = QNSRegistry::new(qns_address, ws_rpc.into());
-        let node_id: U256 = namehash(&username).as_bytes().into();
-        let Ok(onchain_id) = contract.ws(node_id).call().await else {
-            panic!("error: RPC endpoint failed to fetch our node_id");
-        };
-        print_sender
-            .send(Printout {
-                verbosity: 0,
-                content: "established connection to Sepolia RPC".to_string(),
-            })
-            .await
-            .unwrap();
-        // double check that routers match on-chain information
-        let namehashed_routers: Vec<[u8; 32]> = routers
-            .clone()
-            .into_iter()
-            .map(|name| {
-                let hash = namehash(&name);
-                let mut result = [0u8; 32];
-                result.copy_from_slice(hash.as_bytes());
-                result
-            })
-            .collect();
-
-        // double check that keys match on-chain information
-        if onchain_id.routers != namehashed_routers
-            || onchain_id.public_key != networking_keypair.public_key().as_ref()
-            || (onchain_id.ip != 0
-                && onchain_id.ip != <std::net::Ipv4Addr as Into<u32>>::into(our_ip))
-        {
-            panic!("CRITICAL: your routing information does not match on-chain records");
-        }
-
-        let our_identity = Identity {
-            name: username.clone(),
-            networking_key: format!(
-                "0x{}",
-                hex::encode(networking_keypair.public_key().as_ref())
-            ),
-            ws_routing: if onchain_id.ip > 0 && onchain_id.port > 0 {
-                let ip = format!(
-                    "{}.{}.{}.{}",
-                    (onchain_id.ip >> 24) & 0xFF,
-                    (onchain_id.ip >> 16) & 0xFF,
-                    (onchain_id.ip >> 8) & 0xFF,
-                    onchain_id.ip & 0xFF
-                );
-                Some((ip, onchain_id.port))
-            } else {
-                None
-            },
-            allowed_routers: routers,
-        };
-
-        (
-            our_identity.clone(),
-            networking_keypair,
-            jwt_secret_bytes,
-            file_key,
-        )
-    } else {
-        // REGISTER flow
-        println!(
-            "\u{1b}]8;;{}\u{1b}\\{}\u{1b}]8;;\u{1b}\\",
-            format!("http://localhost:{}", http_server_port),
-            "Click here to register your node.",
-        );
-        println!("(http://localhost:{})", http_server_port);
-        if our_ip != std::net::Ipv4Addr::LOCALHOST {
-            println!(
-                "(if on a remote machine: http://{}:{})",
-                our_ip, http_server_port
-            );
-        }
-
-        let (tx, mut rx) = mpsc::channel::<(Identity, String, Document, Vec<u8>)>(1);
-        let (mut our, password, serialized_networking_keypair, jwt_secret_bytes) = tokio::select! {
-            _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, http_server_port)
-                => panic!("registration failed"),
-            (our, password, serialized_networking_keypair, jwt_secret_bytes) = async {
-                while let Some(fin) = rx.recv().await {
-                    return fin
-                }
-                panic!("registration failed")
-            } => (our, password, serialized_networking_keypair, jwt_secret_bytes),
-        };
-
-        println!(
-            "saving encrypted networking keys to {}/.keys",
-            home_directory_path
-        );
-
-        let networking_keypair =
-            signature::Ed25519KeyPair::from_pkcs8(serialized_networking_keypair.as_ref()).unwrap();
-
-        // TODO fix register frontend so this isn't necessary
-        our.networking_key = format!("0x{}", our.networking_key);
-
-        let file_key = keygen::generate_file_key();
-
-        fs::write(
-            format!("{}/.keys", home_directory_path),
-            keygen::encode_keyfile(
-                password,
-                our.name.clone(),
-                our.allowed_routers.clone(),
-                serialized_networking_keypair,
-                jwt_secret_bytes.clone(),
-                file_key.clone(),
-            ),
-        )
-        .await
-        .unwrap();
-
-        println!("registration complete!");
-        (
-            our,
-            networking_keypair,
-            jwt_secret_bytes.to_vec(),
-            file_key.to_vec(),
-        )
+    let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
+        Ok(keyfile) => keyfile,
+        Err(_) => Vec::new(),
     };
+
+    let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
+    let (mut our, decoded_keyfile, encoded_keyfile) = tokio::select! {
+        _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, disk_keyfile)
+            => panic!("registration failed"),
+        (our, decoded_keyfile, encoded_keyfile) = async {
+            while let Some(fin) = rx.recv().await { return fin }
+            panic!("registration failed")
+        } => (our, decoded_keyfile, encoded_keyfile),
+    };
+
+    println!("saving encrypted networking keys to {}/.keys", home_directory_path);
+
+    fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
+        .await.unwrap();
+
+    println!("registration complete!");
 
     let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
         our.name.clone(),
         home_directory_path.clone(),
-        file_key,
+        decoded_keyfile.file_key,
         fs_config,
-    )
-    .await
-    .expect("fs load failed!");
+    ).await.expect("fs load failed!");
 
     let _ = kill_tx.send(true);
     let _ = print_sender
@@ -398,7 +231,7 @@ async fn main() {
      *
      *  if any of these modules fail, the program exits with an error.
      */
-    let networking_keypair_arc = Arc::new(networking_keypair);
+    let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
 
     let mut tasks = tokio::task::JoinSet::<Result<()>>::new();
     tasks.spawn(kernel::kernel(
@@ -443,7 +276,7 @@ async fn main() {
     tasks.spawn(http_server::http_server(
         our.name.clone(),
         http_server_port,
-        jwt_secret_bytes.clone(),
+        decoded_keyfile.jwt_secret_bytes.clone(),
         http_server_receiver,
         kernel_message_sender.clone(),
         print_sender.clone(),

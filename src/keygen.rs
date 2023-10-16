@@ -27,7 +27,6 @@ pub fn encode_keyfile(
     jwt: Vec<u8>,
     file_key: Vec<u8>,
 ) -> Vec<u8> {
-    println!("generating disk encryption keys...");
     let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
 
     let rng = SystemRandom::new();

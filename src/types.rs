@@ -53,6 +53,20 @@ pub struct Registration {
     pub direct: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyfileCheck {
+    pub password: String,
+    pub keyfile: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BootInfo {
+    pub password: String,
+    pub keyfile: String,
+    pub username: String,
+    pub direct: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Identity {
     pub name: NodeId,
