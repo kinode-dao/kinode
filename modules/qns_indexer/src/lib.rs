@@ -264,7 +264,7 @@ impl UqProcess for Component {
                             let node       = &e.topics[1];
                             let decoded    = NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                             let Ok(name) = dnswire_decode(decoded.0.clone()) else {
-                                bindings::print_to_terminal(0, &format!("qns_indexer: failed to decode name: {:?}", decoded.0));
+                                bindings::print_to_terminal(1, &format!("qns_indexer: failed to decode name: {:?}", decoded.0));
                                 continue;
                             };
 

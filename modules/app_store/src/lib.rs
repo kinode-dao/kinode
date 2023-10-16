@@ -196,8 +196,6 @@ fn parse_command(
                 process_lib::set_state::<AppTrackerState>(&state);
                 Ok(None)
             } else if our.node == install_from {
-                print_to_terminal(0, &format!("app-store: got new from remote for {}", package_id.to_string()));
-                print_to_terminal(0, &format!("{:?}", state.mirrored_packages));
                 let Some(_mirror) = state.mirrored_packages.get(&package_id) else {
                     return Ok(Some(AppTrackerResponse::Error { error: "package not mirrored here!".into() }))
                 };
@@ -435,7 +433,6 @@ impl Guest for Component {
                     match parse_command(&our, &source, command, &mut state) {
                         Ok(response) => {
                             if let Some(_) = expects_response {
-                                print_to_terminal(0, &format!("app-store: sending response {:?}", response));
                                 let _ = send_response(
                                     &Response {
                                         inherit: true,
@@ -472,7 +469,6 @@ impl Guest for Component {
                             if let Some(install_from) = state.requested_packages.remove(&package_id)
                             {
                                 if install_from == source.node {
-                                    print_to_terminal(0, "got install");
                                     // auto-take zip from payload and request ourself with New
                                     let _ = send_request(
                                         &our,
