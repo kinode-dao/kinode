@@ -9,8 +9,11 @@ use sha2::Sha256;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 use warp::{
-    http::{ StatusCode, header::{HeaderValue, SET_COOKIE}, },
-    Filter, Rejection, Reply, 
+    http::{
+        header::{HeaderValue, SET_COOKIE},
+        StatusCode,
+    },
+    Filter, Rejection, Reply,
 };
 
 use crate::http_server;
@@ -42,9 +45,8 @@ pub async fn register(
     kill_rx: oneshot::Receiver<bool>,
     ip: String,
     port: u16,
-    keyfile: Vec<u8>
+    keyfile: Vec<u8>,
 ) {
-
     let our_arc = Arc::new(Mutex::new(None));
     let our_ws_info = our_arc.clone();
 
@@ -60,29 +62,34 @@ pub async fn register(
         .and(warp::fs::file("./src/register/build/index.html"));
 
     let api = warp::path("has-keyfile")
-            .and(warp::get()
+        .and(
+            warp::get()
                 .and(warp::any().map(move || keyfile_has.clone()))
-                .and_then(handle_has_keyfile))
-        .or(warp::path("info")
-            .and(warp::get()
+                .and_then(handle_has_keyfile),
+        )
+        .or(warp::path("info").and(
+            warp::get()
                 .and(warp::any().map(move || ip.clone()))
                 .and(warp::any().map(move || our_ws_info.clone()))
                 .and(warp::any().map(move || net_keypair_ws_info.clone()))
-                .and_then(handle_info)))
-        .or(warp::path("vet-keyfile")
-            .and(warp::post()
-                .and(warp::body::content_length_limit(1024 * 16)) 
+                .and_then(handle_info),
+        ))
+        .or(warp::path("vet-keyfile").and(
+            warp::post()
+                .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
-                .and_then(handle_keyfile_check)))
-        .or(warp::path("boot")
-            .and(warp::put()
-                .and(warp::body::content_length_limit(1024 * 16)) 
+                .and_then(handle_keyfile_check),
+        ))
+        .or(warp::path("boot").and(
+            warp::put()
+                .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(warp::any().map(move || tx.clone()))
                 .and(warp::any().map(move || our_arc.lock().unwrap().take().unwrap()))
                 .and(warp::any().map(move || net_keypair_arc.lock().unwrap().take().unwrap()))
                 .and(warp::any().map(move || keyfile_arc.lock().unwrap().take().unwrap()))
-                .and_then(handle_boot)));
+                .and_then(handle_boot),
+        ));
 
     let routes = static_files.or(react_app).or(api);
 
@@ -95,25 +102,17 @@ pub async fn register(
         .await;
 }
 
-async fn handle_has_keyfile(
-    keyfile: Arc<Mutex<Option<Vec<u8>>>>,
-) -> Result<impl Reply, Rejection> {
-
+async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl Reply, Rejection> {
     Ok(warp::reply::json(&keyfile.lock().unwrap().is_some()))
-
 }
 
-async fn handle_keyfile_check(
-    payload: KeyfileCheck
-) -> Result<impl Reply, Rejection> {
-
+async fn handle_keyfile_check(payload: KeyfileCheck) -> Result<impl Reply, Rejection> {
     let keyfile = base64::decode(payload.keyfile).unwrap();
 
     match keygen::decode_keyfile(keyfile, &payload.password) {
         Ok(_) => Ok(warp::reply::with_status(warp::reply(), StatusCode::OK)),
         Err(_) => Err(warp::reject()),
     }
-
 }
 
 async fn handle_keyfile_gen(
@@ -122,9 +121,7 @@ async fn handle_keyfile_gen(
     networking_keypair: Arc<Mutex<Option<Document>>>,
     jwt_secret: Arc<Mutex<Option<Vec<u8>>>>,
 ) -> Result<impl Reply, Rejection> {
-
     Ok(warp::reply::with_status(warp::reply(), StatusCode::OK))
-
 }
 
 async fn handle_boot(
@@ -134,7 +131,6 @@ async fn handle_boot(
     networking_keypair: Document,
     mut encoded_keyfile: Vec<u8>,
 ) -> Result<impl Reply, Rejection> {
-
     println!("hello");
 
     if info.direct {
@@ -164,13 +160,14 @@ async fn handle_boot(
         let mut jwt_secret = [0u8, 32];
         ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
 
-        let networking_pair = signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref()).unwrap();
+        let networking_pair =
+            signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref()).unwrap();
 
         Keyfile {
             username: our.name.clone(),
             routers: our.allowed_routers.clone(),
-            networking_keypair: signature::Ed25519KeyPair
-                ::from_pkcs8(networking_keypair.as_ref()).unwrap(),
+            networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
+                .unwrap(),
             jwt_secret_bytes: jwt_secret.to_vec(),
             file_key: keygen::generate_file_key(),
         }
@@ -196,17 +193,24 @@ async fn handle_boot(
         None => return Err(warp::reject()),
     };
 
-    sender.send((our.clone(), decoded_keyfile, encoded_keyfile.clone())).await.unwrap();
+    sender
+        .send((our.clone(), decoded_keyfile, encoded_keyfile.clone()))
+        .await
+        .unwrap();
 
     let mut response = warp::reply::html("Success".to_string()).into_response();
 
     println!("ioioioio");
 
     let headers = response.headers_mut();
-    headers.append(SET_COOKIE, HeaderValue::from_str(
-        &format!("uqbar-auth_{}={};", &our.name, &token)).unwrap());
-    headers.append(SET_COOKIE, HeaderValue::from_str(
-        &format!("uqbar-ws-auth_{}={};", &our.name, &token)).unwrap());
+    headers.append(
+        SET_COOKIE,
+        HeaderValue::from_str(&format!("uqbar-auth_{}={};", &our.name, &token)).unwrap(),
+    );
+    headers.append(
+        SET_COOKIE,
+        HeaderValue::from_str(&format!("uqbar-ws-auth_{}={};", &our.name, &token)).unwrap(),
+    );
 
     Ok(warp::reply::with_status(warp::reply(), StatusCode::OK))
 }
@@ -238,7 +242,6 @@ async fn handle_info(
     *our_arc.lock().unwrap() = Some(our.clone());
 
     Ok(warp::reply::json(&our))
-
 }
 
 async fn handle_post(
