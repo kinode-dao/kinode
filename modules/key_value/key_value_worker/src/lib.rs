@@ -10,6 +10,8 @@ use bindings::{get_payload, Guest, print_to_terminal, receive, send_and_await_re
 
 mod kernel_types;
 use kernel_types as kt;
+mod key_value_types;
+use key_value_types as kv;
 mod process_lib;
 
 struct Component;
@@ -68,35 +70,29 @@ fn send_and_await_response_wrapped(
 
 fn handle_message (
     our: &Address,
-    db: &mut Option<redb::Database>,
+    db_handle: &mut Option<redb::Database>,
 ) -> anyhow::Result<()> {
     let (source, message) = receive().unwrap();
     // let (source, message) = receive()?;
 
     if our.node != source.node {
-        return Err(anyhow::anyhow!(
-            "rejecting foreign Message from {:?}",
-            source,
-        ));
+        return Err(kv::KeyValueError::RejectForeign.into());
     }
 
     match message {
         Message::Response(_) => { unimplemented!() },
         Message::Request(Request { inherit: _ , expects_response: _, ipc, metadata: _ }) => {
             match process_lib::parse_message_ipc(ipc.clone())? {
-                kt::KeyValueMessage::New { drive: kv_drive } => {
-                    let vfs_drive = format!("{}{}", PREFIX, kv_drive);
-                    match db {
+                kv::KeyValueMessage::New { db } => {
+                    let vfs_drive = format!("{}{}", PREFIX, db);
+                    match db_handle {
                         Some(_) => {
-                            return Err(anyhow::anyhow!("cannot send New more than once"));
+                            return Err(kv::KeyValueError::DbAlreadyExists.into());
                         },
                         None => {
                             print_to_terminal(0, "key_value_worker: Create");
-                            *db = Some(redb::Database::create(
-                                format!(
-                                    "/{}.redb",
-                                    kv_drive,
-                                ),
+                            *db_handle = Some(redb::Database::create(
+                                format!("/{}.redb", db),
                                 our.node.clone(),
                                 vfs_drive,
                                 get_payload_wrapped,
@@ -106,15 +102,14 @@ fn handle_message (
                         },
                     }
                 },
-                // kt::KeyValueMessage::Write { ref key, .. } => {
-                kt::KeyValueMessage::Write { ref key, .. } => {
-                    let Some(db) = db else {
-                        return Err(anyhow::anyhow!("cannot send New more than once"));
+                kv::KeyValueMessage::Write { ref key, .. } => {
+                    let Some(db_handle) = db_handle else {
+                        return Err(kv::KeyValueError::DbDoesNotExist.into());
                     };
 
                     let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
 
-                    let write_txn = db.begin_write()?;
+                    let write_txn = db_handle.begin_write()?;
                     {
                         let mut table = write_txn.open_table(TABLE)?;
                         table.insert(&key[..], &bytes[..])?;
@@ -129,12 +124,12 @@ fn handle_message (
                         None,
                     );
                 },
-                kt::KeyValueMessage::Read { ref key, .. } => {
-                    let Some(db) = db else {
-                        return Err(anyhow::anyhow!("cannot send New more than once"));
+                kv::KeyValueMessage::Read { ref key, .. } => {
+                    let Some(db_handle) = db_handle else {
+                        return Err(kv::KeyValueError::DbDoesNotExist.into());
                     };
 
-                    let read_txn = db.begin_read()?;
+                    let read_txn = db_handle.begin_read()?;
 
                     let table = read_txn.open_table(TABLE)?;
 
@@ -149,6 +144,15 @@ fn handle_message (
                             );
                         },
                         Some(v) => {
+                            let bytes = v.value().to_vec();
+                            print_to_terminal(
+                                1,
+                                &format!(
+                                    "key_value_worker: key, val: {:?}, {}",
+                                    key,
+                                    if bytes.len() < 100 { format!("{:?}", bytes) } else { "<elided>".into() },
+                                ),
+                            );
                             send_response(
                                 &Response {
                                     ipc,
@@ -156,12 +160,15 @@ fn handle_message (
                                 },
                                 Some(&Payload {
                                     mime: None,
-                                    bytes: v.value().to_vec(),
+                                    bytes,
                                 }),
                             );
                         },
                     };
                 },
+                kv::KeyValueMessage::Err { error } => {
+                    return Err(error.into());
+                }
             }
 
             Ok(())
@@ -173,17 +180,26 @@ impl Guest for Component {
     fn init(our: Address) {
         print_to_terminal(1, "key_value_worker: begin");
 
-        let mut db: Option<redb::Database> = None;
+        let mut db_handle: Option<redb::Database> = None;
 
         loop {
-            match handle_message(&our, &mut db) {
+            match handle_message(&our, &mut db_handle) {
                 Ok(()) => {},
                 Err(e) => {
-                    //  TODO: should we send an error on failure?
                     print_to_terminal(0, format!(
                         "key_value_worker: error: {:?}",
                         e,
                     ).as_str());
+                    if let Some(e) = e.downcast_ref::<kv::KeyValueError>() {
+                        send_response(
+                            &Response {
+                                ipc: Some(serde_json::to_string(&e).unwrap()),
+                                metadata: None,
+                            },
+                            None,
+                        );
+                    }
+                    panic!("");
                 },
             };
         }

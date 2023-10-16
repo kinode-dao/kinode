@@ -198,25 +198,21 @@ fn parse_command(our: &Address, request_string: String) -> anyhow::Result<Apptra
                     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
                 }
 
-                // // TODO fix request?
-                // for process_name in &entry.request_messaging {
-                //     let Ok(parsed_process_id) = ProcessId::from_str(process_name) else {
-                //         continue;
-                //     };
-                //     let Some(messaging_cap) = get_capability(
-                //         &Address {
-                //             node: our.node.clone(),
-                //             process: parsed_process_id.clone(),
-                //         },
-                //         &serde_json::to_string(&serde_json::json!({
-                //             "messaging": kt::ProcessId::de_wit(parsed_process_id),
-                //         })).unwrap(),
-                //     ) else {
-                //         return Err(anyhow::anyhow!(format!("app_tracker: no cap for {}", process_name)));
-                //     };
-                //     initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
-                // }
-
+                for process_name in &entry.request_messaging {
+                    let Ok(parsed_process_id) = ProcessId::from_str(process_name) else {
+                        continue;
+                    };
+                    let Some(messaging_cap) = get_capability(
+                        &Address {
+                            node: our.node.clone(),
+                            process: parsed_process_id.clone(),
+                        },
+                        &"\"messaging\"".into()
+                    ) else {
+                        return Err(anyhow::anyhow!(format!("app_tracker: no cap for {}", process_name)));
+                    };
+                    initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
+                }
 
                 let process_id = format!("{}:{}", entry.process_name, package.clone());
                 let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {

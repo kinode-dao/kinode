@@ -7,6 +7,7 @@ Last updated: 10/02/23
 # Clone the repo.
 
 git clone git@github.com:uqbar-dao/uqbar.git
+git clone git@github.com:uqbar-dao/redb.git
 
 # Get some stuff so we can build wasm.
 
@@ -22,6 +23,7 @@ git submodule update --init --recursive
 
 # Build the runtime, along with a number of booted-at-startup WASM modules including terminal and key_value
 # OPTIONAL: --release flag
+cd uqbar
 cargo +nightly build --release
 
 # Create the home directory for your node
