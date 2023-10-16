@@ -206,15 +206,17 @@ async fn handle_password(
         None => return Err(warp::reject()),
     };
     // use password to decrypt networking keys
-    let (username, routers, networking_keypair, jwt_secret_bytes, file_key) =
-        keygen::decode_keyfile(keyfile, password);
+    let decoded = match keygen::decode_keyfile(keyfile, password) {
+        Ok(decoded) => decoded,
+        Err(_) => return Err(warp::reject()),
+    };
 
-    let token = match generate_jwt(&jwt_secret_bytes, username.clone()) {
+    let token = match generate_jwt(&decoded.jwt_secret_bytes, decoded.username.clone()) {
         Some(token) => token,
         None => return Err(warp::reject()),
     };
-    let cookie_value = format!("uqbar-auth_{}={};", &username, &token);
-    let ws_cookie_value = format!("uqbar-ws-auth_{}={};", &username, &token);
+    let cookie_value = format!("uqbar-auth_{}={};", &decoded.username, &token);
+    let ws_cookie_value = format!("uqbar-ws-auth_{}={};", &decoded.username, &token);
 
     let mut response = warp::reply::html("Success".to_string()).into_response();
 
@@ -223,11 +225,11 @@ async fn handle_password(
     headers.append(SET_COOKIE, HeaderValue::from_str(&ws_cookie_value).unwrap());
 
     tx.send((
-        username,
-        routers,
-        networking_keypair,
-        jwt_secret_bytes.to_vec(),
-        file_key.to_vec(),
+        decoded.username,
+        decoded.routers,
+        decoded.networking_keypair,
+        decoded.jwt_secret_bytes.to_vec(),
+        decoded.file_key.to_vec(),
     ))
     .await
     .unwrap();

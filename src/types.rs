@@ -4,6 +4,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+use ring::signature;
 use thiserror::Error;
 use tokio::sync::RwLock;
 
@@ -68,6 +69,15 @@ pub struct IdentityTransaction {
     pub town_id: u32,
     pub calldata: Identity,
     pub nonce: String,
+}
+
+#[derive(Debug)]
+pub struct Keyfile {
+    pub username: String,
+    pub routers: Vec<String>,
+    pub networking_keypair: signature::Ed25519KeyPair,
+    pub jwt_secret_bytes: Vec<u8>,
+    pub file_key: Vec<u8>,
 }
 
 //
