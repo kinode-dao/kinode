@@ -131,7 +131,6 @@ async fn handle_boot(
     networking_keypair: Document,
     mut encoded_keyfile: Vec<u8>,
 ) -> Result<impl Reply, Rejection> {
-
     our.name = info.username;
 
     if info.direct {
@@ -196,10 +195,9 @@ async fn handle_boot(
         false => info.keyfile.clone(),
     };
 
-    let mut response = warp::reply::with_status(
-        warp::reply::json((&encoded_keyfile_str)), 
-        StatusCode::OK
-    ).into_response();
+    let mut response =
+        warp::reply::with_status(warp::reply::json((&encoded_keyfile_str)), StatusCode::OK)
+            .into_response();
 
     let headers = response.headers_mut();
     headers.append(
@@ -212,7 +210,6 @@ async fn handle_boot(
     );
 
     Ok(response)
-
 }
 
 async fn handle_info(
