@@ -1,4 +1,4 @@
-package component:uq-process
+package component:uq-process@0.1.0
 
 interface types {
     // JSON is passed over WASM boundary as a string.
