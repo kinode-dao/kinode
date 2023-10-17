@@ -793,7 +793,7 @@ async fn match_request(
                                         panic!("");
                                     };
                                     Some(hash)
-                                },
+                                }
                             }
                             // vfs.key_to_entry.remove(&old_key);
                         }
@@ -816,7 +816,9 @@ async fn match_request(
                                     message: Message::Request(Request {
                                         inherit: true,
                                         expects_response: Some(5), // TODO evaluate
-                                        ipc: Some(serde_json::to_string(&FsAction::Write(None)).unwrap()),
+                                        ipc: Some(
+                                            serde_json::to_string(&FsAction::Write(None)).unwrap(),
+                                        ),
                                         metadata: None,
                                     }),
                                     payload,
@@ -842,7 +844,8 @@ async fn match_request(
                             let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
                                 panic!("");
                             };
-                            let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
+                            let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key)
+                            else {
                                 panic!("");
                             };
                             let EntryType::Dir {
@@ -867,29 +870,31 @@ async fn match_request(
                             vfs.path_to_key.insert(parent_path, parent_key.clone());
                             vfs.key_to_entry.insert(parent_key, parent_entry);
                             vfs.path_to_key.insert(full_path.clone(), key.clone());
-                        },
+                        }
                         Some(hash) => {
-                            let _ = send_to_loop
-                                .send(KernelMessage {
-                                    id,
-                                    source: Address {
-                                        node: our_node.clone(),
-                                        process: VFS_PROCESS_ID.clone(),
-                                    },
-                                    target: Address {
-                                        node: our_node.clone(),
-                                        process: FILESYSTEM_PROCESS_ID.clone(),
-                                    },
-                                    rsvp: None,
-                                    message: Message::Request(Request {
-                                        inherit: true,
-                                        expects_response: Some(5), // TODO evaluate
-                                        ipc: Some(serde_json::to_string(&FsAction::Write(Some(hash))).unwrap()),
-                                        metadata: None,
-                                    }),
-                                    payload,
-                                    signed_capabilities: None,
-                                });
+                            let _ = send_to_loop.send(KernelMessage {
+                                id,
+                                source: Address {
+                                    node: our_node.clone(),
+                                    process: VFS_PROCESS_ID.clone(),
+                                },
+                                target: Address {
+                                    node: our_node.clone(),
+                                    process: FILESYSTEM_PROCESS_ID.clone(),
+                                },
+                                rsvp: None,
+                                message: Message::Request(Request {
+                                    inherit: true,
+                                    expects_response: Some(5), // TODO evaluate
+                                    ipc: Some(
+                                        serde_json::to_string(&FsAction::Write(Some(hash)))
+                                            .unwrap(),
+                                    ),
+                                    metadata: None,
+                                }),
+                                payload,
+                                signed_capabilities: None,
+                            });
                             let write_response = recv_response.recv().await.unwrap();
                             let KernelMessage { message, .. } = write_response;
                             let Message::Response((Response { ipc, .. }, None)) = message else {
@@ -903,7 +908,7 @@ async fn match_request(
                             else {
                                 panic!("");
                             };
-                        },
+                        }
                     }
                 }
                 AddEntryType::ExistingFile { hash } => {
