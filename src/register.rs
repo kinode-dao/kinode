@@ -8,6 +8,7 @@ use ring::signature;
 use sha2::Sha256;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
+use ring::signature::KeyPair;
 use warp::{
     http::{
         header::{HeaderValue, SET_COOKIE},
@@ -55,6 +56,7 @@ pub async fn register(
 
     let keyfile_arc = Arc::new(Mutex::new(Some(keyfile)));
     let keyfile_has = keyfile_arc.clone();
+    let keyfile_vet = keyfile_arc.clone();
 
     let static_files = warp::path("static").and(warp::fs::dir("./src/register/build/static/"));
     let react_app = warp::path::end()
@@ -78,7 +80,8 @@ pub async fn register(
             warp::post()
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
-                .and_then(handle_keyfile_check),
+                .and(warp::any().map(move || keyfile_vet.clone()))
+                .and_then(handle_keyfile_vet),
         ))
         .or(warp::path("boot").and(
             warp::put()
@@ -102,26 +105,39 @@ pub async fn register(
         .await;
 }
 
-async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl Reply, Rejection> {
-    Ok(warp::reply::json(&keyfile.lock().unwrap().is_some()))
-}
-
-async fn handle_keyfile_check(payload: KeyfileCheck) -> Result<impl Reply, Rejection> {
-    let keyfile = base64::decode(payload.keyfile).unwrap();
-
-    match keygen::decode_keyfile(keyfile, &payload.password) {
-        Ok(_) => Ok(warp::reply::with_status(warp::reply(), StatusCode::OK)),
-        Err(_) => Err(warp::reject()),
-    }
-}
-
-async fn handle_keyfile_gen(
-    payload: Registration,
-    our: Arc<Mutex<Option<Identity>>>,
-    networking_keypair: Arc<Mutex<Option<Document>>>,
-    jwt_secret: Arc<Mutex<Option<Vec<u8>>>>,
+async fn handle_has_keyfile(
+    keyfile: Arc<Mutex<Option<Vec<u8>>>>
 ) -> Result<impl Reply, Rejection> {
-    Ok(warp::reply::with_status(warp::reply(), StatusCode::OK))
+
+    Ok(warp::reply::json(&keyfile.lock().unwrap().is_some()))
+
+}
+
+async fn handle_keyfile_vet(
+    payload: KeyfileVet,
+    keyfile_arc: Arc<Mutex<Option<Vec<u8>>>>
+) -> Result<impl Reply, Rejection> {
+
+    let encoded_keyfile = match payload.keyfile.is_empty() {
+        true => keyfile_arc.lock().unwrap().clone().unwrap(),
+        false => base64::decode(payload.keyfile).unwrap(),
+    };
+
+    let decoded_keyfile = match 
+        keygen::decode_keyfile(encoded_keyfile, &payload.password) {
+            Ok(k) => k,
+            Err(_) => return Err(warp::reject()),
+        };
+
+    let keyfile_vetted = KeyfileVetted {
+        username: decoded_keyfile.username,
+        networking_key: hex::encode(decoded_keyfile
+            .networking_keypair.public_key().as_ref()),
+        routers: decoded_keyfile.routers,
+    };
+
+    Ok(warp::reply::json(&keyfile_vetted))
+
 }
 
 async fn handle_boot(
@@ -239,128 +255,4 @@ async fn handle_info(
     *our_arc.lock().unwrap() = Some(our.clone());
 
     Ok(warp::reply::json(&our))
-}
-
-async fn handle_post(
-    info: Registration,
-    sender: RegistrationSender,
-    mut our: Identity,
-    networking_keypair: Document,
-    keyfile: Vec<u8>,
-) -> Result<impl Reply, Rejection> {
-    if info.direct {
-        our.allowed_routers = vec![];
-    } else {
-        our.ws_routing = None;
-    }
-
-    our.name = info.username;
-
-    let seed = SystemRandom::new();
-    let mut jwt_secret = [0u8, 32];
-    ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
-
-    let token = match generate_jwt(&jwt_secret, our.name.clone()) {
-        Some(token) => token,
-        None => return Err(warp::reject()),
-    };
-    let cookie_value = format!("uqbar-auth_{}={};", &our.name, &token);
-    let ws_cookie_value = format!("uqbar-ws-auth_{}={};", &our.name, &token);
-
-    // sender
-    //     .send((our, info.password, networking_keypair, jwt_secret.to_vec(), keyfile))
-    //     .await
-    //     .unwrap();
-
-    let mut response = warp::reply::html("Success".to_string()).into_response();
-
-    let headers = response.headers_mut();
-    headers.append(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
-    headers.append(SET_COOKIE, HeaderValue::from_str(&ws_cookie_value).unwrap());
-
-    Ok(response)
-}
-
-/// Serve the login page, just get a password
-pub async fn login(
-    tx: mpsc::Sender<(
-        String,
-        Vec<String>,
-        signature::Ed25519KeyPair,
-        Vec<u8>,
-        Vec<u8>,
-    )>,
-    kill_rx: oneshot::Receiver<bool>,
-    keyfile: Vec<u8>,
-    port: u16,
-) {
-    let login_page = include_str!("login.html");
-    let routes = warp::path("login").and(
-        // 1. serve login.html right here
-        warp::get()
-            .map(move || warp::reply::html(login_page))
-            // 2. await a single POST
-            //    - password
-            .or(warp::post()
-                .and(warp::body::content_length_limit(1024 * 16))
-                .and(warp::body::json())
-                .and(warp::any().map(move || keyfile.clone()))
-                .and(warp::any().map(move || tx.clone()))
-                .and_then(handle_password)),
-    );
-
-    let _ = open::that(format!("http://localhost:{}/login", port));
-    warp::serve(routes)
-        .bind_with_graceful_shutdown(([0, 0, 0, 0], port), async {
-            kill_rx.await.ok();
-        })
-        .1
-        .await;
-}
-
-async fn handle_password(
-    password: serde_json::Value,
-    keyfile: Vec<u8>,
-    tx: mpsc::Sender<(
-        String,
-        Vec<String>,
-        signature::Ed25519KeyPair,
-        Vec<u8>,
-        Vec<u8>,
-    )>,
-) -> Result<impl Reply, Rejection> {
-    let password = match password["password"].as_str() {
-        Some(p) => p,
-        None => return Err(warp::reject()),
-    };
-    // use password to decrypt networking keys
-    let decoded = match keygen::decode_keyfile(keyfile, password) {
-        Ok(decoded) => decoded,
-        Err(_) => return Err(warp::reject()),
-    };
-
-    let token = match generate_jwt(&decoded.jwt_secret_bytes, decoded.username.clone()) {
-        Some(token) => token,
-        None => return Err(warp::reject()),
-    };
-    let cookie_value = format!("uqbar-auth_{}={};", &decoded.username, &token);
-    let ws_cookie_value = format!("uqbar-ws-auth_{}={};", &decoded.username, &token);
-
-    let mut response = warp::reply::html("Success".to_string()).into_response();
-
-    let headers = response.headers_mut();
-    headers.append(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
-    headers.append(SET_COOKIE, HeaderValue::from_str(&ws_cookie_value).unwrap());
-
-    tx.send((
-        decoded.username,
-        decoded.routers,
-        decoded.networking_keypair,
-        decoded.jwt_secret_bytes.to_vec(),
-        decoded.file_key.to_vec(),
-    ))
-    .await
-    .unwrap();
-    // TODO unhappy paths where key has changed / can't be decrypted
-    Ok(response)
 }
