@@ -135,7 +135,7 @@ async fn handle_boot(
     mut encoded_keyfile: Vec<u8>,
 ) -> Result<impl Reply, Rejection> {
 
-    println!("hello");
+    our.name = info.username;
 
     if info.direct {
         our.allowed_routers = vec![];
@@ -143,16 +143,12 @@ async fn handle_boot(
         our.ws_routing = None;
     }
 
-    println!("~~~~~");
-
-    if encoded_keyfile.is_empty() && !info.keyfile.is_empty() {
-        match base64::decode(info.keyfile) {
+    if encoded_keyfile.is_empty() && !info.keyfile.clone().is_empty() {
+        match base64::decode(info.keyfile.clone()) {
             Ok(k) => encoded_keyfile = k,
             Err(_) => return Err(warp::reject()),
         }
     }
-
-    println!("_____");
 
     let decoded_keyfile = if !encoded_keyfile.is_empty() {
         match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
@@ -176,8 +172,6 @@ async fn handle_boot(
         }
     };
 
-    println!(">>>>>");
-
     if encoded_keyfile.is_empty() {
         encoded_keyfile = keygen::encode_keyfile(
             info.password,
@@ -189,8 +183,6 @@ async fn handle_boot(
         );
     }
 
-    println!("<<<<<");
-
     let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, our.name.clone()) {
         Some(token) => token,
         None => return Err(warp::reject()),
@@ -198,9 +190,15 @@ async fn handle_boot(
 
     sender.send((our.clone(), decoded_keyfile, encoded_keyfile.clone())).await.unwrap();
 
-    let mut response = warp::reply::html("Success".to_string()).into_response();
+    let encoded_keyfile_str = match info.keyfile.clone().is_empty() {
+        true => base64::encode(encoded_keyfile),
+        false => info.keyfile.clone(),
+    };
 
-    println!("ioioioio");
+    let mut response = warp::reply::with_status(
+        warp::reply::json((&encoded_keyfile_str)), 
+        StatusCode::OK
+    ).into_response();
 
     let headers = response.headers_mut();
     headers.append(SET_COOKIE, HeaderValue::from_str(
@@ -208,7 +206,8 @@ async fn handle_boot(
     headers.append(SET_COOKIE, HeaderValue::from_str(
         &format!("uqbar-ws-auth_{}={};", &our.name, &token)).unwrap());
 
-    Ok(warp::reply::with_status(warp::reply(), StatusCode::OK))
+    Ok(response)
+
 }
 
 async fn handle_info(
