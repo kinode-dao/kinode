@@ -314,9 +314,9 @@ impl VfsError {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SqliteMessage {
-    New { identifier: String },
-    Write { identifier: String, key: Vec<u8> },
-    Read { identifier: String, key: Vec<u8> },
+    New { db: String },
+    Write { db: String, key: String },
+    Read { db: String, key: String },
 }
 
 //

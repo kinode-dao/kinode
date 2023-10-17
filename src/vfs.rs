@@ -1460,7 +1460,7 @@ async fn match_request(
             let file_hash = {
                 let mut vfs = vfs.lock().await;
                 let Some(key) = vfs.path_to_key.remove(full_path) else {
-                    panic!(""); //  TODO
+                    return Err(VfsError::EntryNotFound);
                 };
                 let key2 = key.clone();
                 let Key::File { id: file_hash } = key2 else {

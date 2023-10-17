@@ -1,0 +1,14 @@
+[
+    {
+        "process_name": "sqlite",
+        "process_wasm_path": "/sqlite.wasm",
+        "on_panic": "Restart",
+        "request_networking": false,
+        "request_messaging": [
+            "vfs:sys:uqbar"
+        ],
+        "grant_messaging": [
+            "all"
+        ]
+    }
+]

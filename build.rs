@@ -60,15 +60,24 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
         .unwrap();
     }
     // Build the module targeting wasm32-wasi
-    run_command(Command::new("cargo").args(&[
-        "build",
-        "--release",
-        "--no-default-features",
-        &format!("--manifest-path={}/Cargo.toml", target_path),
-        "--target",
-        "wasm32-wasi",
-    ]))
-    .unwrap();
+    let bash_build_path = &format!("{}/build.sh", target_path);
+    if std::path::Path::new(&bash_build_path).exists() {
+        let cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(target_path).unwrap();
+        run_command(&mut Command::new("/bin/bash").arg("build.sh")).unwrap();
+        std::env::set_current_dir(cwd).unwrap();
+    } else {
+        run_command(Command::new("cargo")
+            .args(&[
+                "build",
+                "--release",
+                "--no-default-features",
+                &format!("--manifest-path={}/Cargo.toml", target_path),
+                "--target",
+                "wasm32-wasi",
+            ])
+        ).unwrap();
+    }
     // Adapt module to component with adapter based on wasi_snapshot_preview1.wasm
     run_command(Command::new("wasm-tools").args(&[
         "component",
@@ -123,7 +132,7 @@ fn main() {
         return;
     }
     // only execute if one of the modules has source code changes
-    const WASI_APPS: [&str; 9] = [
+    const WASI_APPS: [&str; 10] = [
         "app_tracker",
         "chess",
         "homepage",
@@ -132,6 +141,7 @@ fn main() {
         "orgs",
         "qns_indexer",
         "rpc",
+        "sqlite",
         "terminal",
     ];
     // NOT YET building KV, waiting for deps to be ready
@@ -177,10 +187,6 @@ fn main() {
     for entry in std::fs::read_dir(&modules_dir).unwrap() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
-        // // NOT YET building KV, waiting for deps to be ready
-        // if package_name == "key_value" {
-        //     continue;
-        // }
 
         // If Cargo.toml is present, build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());

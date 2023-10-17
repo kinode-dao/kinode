@@ -38,9 +38,9 @@ pub struct CPayload {
 
 #[repr(C)]
 pub struct CProcessId {
-    result_number: c_int,  // 0 -> first (u64), !0 -> second (String)
-    id: c_ulonglong,
-    name: *const c_char,
+    process_name: *const c_char,
+    package_name: *const c_char,
+    publisher_node: *const c_char,
 }
 
 #[repr(C)]
@@ -151,21 +151,11 @@ fn from_cpayload_to_option_payload(p: *const CPayload) -> Option<Payload> {
     }
 }
 
-impl From<CProcessId> for ProcessId {
-    fn from(pid: CProcessId) -> Self {
-        if pid.result_number == 0 {
-            ProcessId::Id(pid.id)
-        } else {
-            ProcessId::Name(from_cstr_to_string(pid.name))
-        }
-    }
-}
-
 fn from_cprocessid_to_processid(pid: *const CProcessId) -> ProcessId {
-    if unsafe { (*pid).result_number } == 0 {
-        ProcessId::Id(unsafe { (*pid).id })
-    } else {
-        ProcessId::Name(from_cstr_to_string(unsafe { (*pid).name }))
+    ProcessId {
+        process_name: from_cstr_to_string(unsafe { (*pid).process_name }),
+        package_name: from_cstr_to_string(unsafe { (*pid).package_name }),
+        publisher_node: from_cstr_to_string(unsafe { (*pid).publisher_node }),
     }
 }
 
@@ -233,7 +223,7 @@ pub extern "C" fn send_and_await_response_wrapped(
 
 fn handle_message (
     our: &Address,
-    db: &mut Option<rusqlite::Connection>,
+    db_handle: &mut Option<rusqlite::Connection>,
 ) -> anyhow::Result<()> {
     let (source, message) = receive().unwrap();
     // let (source, message) = receive()?;
@@ -249,29 +239,49 @@ fn handle_message (
         Message::Response(_) => { unimplemented!() },
         Message::Request(Request { ipc, .. }) => {
             match process_lib::parse_message_ipc(ipc.clone())? {
-                kt::SqliteMessage::New { identifier: sql_identifier } => {
-                    let vfs_identifier = format!("{}{}", PREFIX, sql_identifier);
-                    match db {
+                kt::SqliteMessage::New { db } => {
+                    let vfs_address = Address {
+                        node: our.node.clone(),
+                        process: kt::ProcessId::new("vfs", "sys", "uqbar").en_wit(),
+                    };
+                    let vfs_drive = format!("{}{}", PREFIX, db);
+
+                    let _ = process_lib::send_and_await_response(
+                        &vfs_address,
+                        false,
+                        Some(serde_json::to_string(&kt::VfsRequest {
+                            drive: vfs_drive.clone(),
+                            action: kt::VfsAction::New,
+                        }).unwrap()),
+                        None,
+                        None,
+                        15,
+                    ).unwrap();
+
+                    match db_handle {
                         Some(_) => {
                             return Err(anyhow::anyhow!("cannot send New more than once"));
                         },
                         None => {
                             let flags = rusqlite::OpenFlags::default();
-                            *db = Some(rusqlite::Connection::open_with_flags_and_vfs(
+                            *db_handle = Some(rusqlite::Connection::open_with_flags_and_vfs(
                                 format!(
-                                    "/{}.sql",
-                                    sql_identifier,
+                                    "{}:{}:/{}.sql",
+                                    our.node,
+                                    vfs_drive,
+                                    db,
                                 ),
                                 flags,
                                 "demo",
                             )?);
                         },
                     }
+                    print_to_terminal(0, "sqlite: New done");
                 },
                 kt::SqliteMessage::Write { ref key, .. } => {
-                    // let Some(db) = db else {
-                    //     return Err(anyhow::anyhow!("cannot send New more than once"));
-                    // };
+                    let Some(db_handle) = db_handle else {
+                        return Err(anyhow::anyhow!("need New before Write"));
+                    };
 
                     // let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
 
@@ -334,15 +344,15 @@ impl Guest for Component {
     fn init(our: Address) {
         print_to_terminal(0, "sqlite: begin");
 
-        let mut db: Option<rusqlite::Connection> = None;
+        let mut db_handle: Option<rusqlite::Connection> = None;
 
         loop {
-            match handle_message(&our, &mut db) {
+            match handle_message(&our, &mut db_handle) {
                 Ok(()) => {},
                 Err(e) => {
                     //  TODO: should we send an error on failure?
                     print_to_terminal(0, format!(
-                        "key_value_worker: error: {:?}",
+                        "sqlite: error: {:?}",
                         e,
                     ).as_str());
                 },
