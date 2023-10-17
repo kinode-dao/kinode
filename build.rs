@@ -67,16 +67,15 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
         run_command(&mut Command::new("/bin/bash").arg("build.sh")).unwrap();
         std::env::set_current_dir(cwd).unwrap();
     } else {
-        run_command(Command::new("cargo")
-            .args(&[
-                "build",
-                "--release",
-                "--no-default-features",
-                &format!("--manifest-path={}/Cargo.toml", target_path),
-                "--target",
-                "wasm32-wasi",
-            ])
-        ).unwrap();
+        run_command(Command::new("cargo").args(&[
+            "build",
+            "--release",
+            "--no-default-features",
+            &format!("--manifest-path={}/Cargo.toml", target_path),
+            "--target",
+            "wasm32-wasi",
+        ]))
+        .unwrap();
     }
     // Adapt module to component with adapter based on wasi_snapshot_preview1.wasm
     run_command(Command::new("wasm-tools").args(&[
