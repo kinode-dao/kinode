@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use wasmtime::component::*;
@@ -1141,20 +1144,48 @@ async fn persist_state(
 
 /// create a specific process, and generate a task that will run it.
 async fn make_process_loop(
+    booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
     home_directory_path: String,
     metadata: t::ProcessMetadata,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
-    recv_in_process: ProcessMessageReceiver,
+    mut recv_in_process: ProcessMessageReceiver,
     send_to_process: ProcessMessageSender,
     wasm_bytes: &Vec<u8>,
     caps_oracle: t::CapMessageSender,
     engine: &Engine,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+    // before process can be instantiated, need to await booted message from kernel
+    if !booted.load(Ordering::Relaxed) {
+        let mut pre_boot_queue = Vec::<Result<t::KernelMessage, t::WrappedSendError>>::new();
+        while let Some(message) = recv_in_process.recv().await {
+            if let Err(_) = &message {
+                pre_boot_queue.push(message);
+                continue;
+            }
+            let message = message.unwrap();
+            if (message.source
+                == t::Address {
+                    node: metadata.our.node.clone(),
+                    process: KERNEL_PROCESS_ID.clone(),
+                })
+                && (message.message
+                    == t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        ipc: Some("booted".into()),
+                        metadata: None,
+                    }))
+            {
+                break;
+            }
+            pre_boot_queue.push(Ok(message));
+        }
+    }
     // let dir = std::env::current_dir().unwrap();
-    let dir = cap_std::fs::Dir::open_ambient_dir(home_directory_path, cap_std::ambient_authority())
-        .unwrap();
+    // let dir = cap_std::fs::Dir::open_ambient_dir(home_directory_path, cap_std::ambient_authority())
+    //     .unwrap();
 
     let component =
         Component::new(&engine, wasm_bytes).expect("make_process_loop: couldn't read file");
@@ -1164,7 +1195,7 @@ async fn make_process_loop(
 
     let mut table = Table::new();
     let wasi = WasiCtxBuilder::new()
-        .push_preopened_dir(dir, DirPerms::all(), FilePerms::all(), &"")
+        // .push_preopened_dir(dir, DirPerms::all(), FilePerms::all(), &"")
         .build(&mut table)
         .unwrap();
 
@@ -1364,6 +1395,7 @@ async fn make_process_loop(
 /// handle messages sent directly to kernel. source is always our own node.
 async fn handle_kernel_request(
     our_name: String,
+    booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
     home_directory_path: String,
     km: t::KernelMessage,
@@ -1392,6 +1424,36 @@ async fn handle_kernel_request(
         Ok(c) => c,
     };
     match command {
+        t::KernelCommand::Booted => {
+            for (process_id, process_sender) in senders {
+                let ProcessSender::Userspace(sender) = process_sender else {
+                    continue
+                };
+                let _ = sender
+                    .send(Ok(t::KernelMessage {
+                        id: rand::random(),
+                        source: t::Address {
+                            node: our_name.clone(),
+                            process: KERNEL_PROCESS_ID.clone(),
+                        },
+                        target: t::Address {
+                            node: our_name.clone(),
+                            process: process_id.clone(),
+                        },
+                        rsvp: None,
+                        message: t::Message::Request(t::Request {
+                            inherit: false,
+                            expects_response: None,
+                            ipc: Some("booted".into()),
+                            metadata: None,
+                        }),
+                        payload: None,
+                        signed_capabilities: None,
+                    }))
+                    .await;
+            }
+            booted.store(true, Ordering::Relaxed);
+        }
         t::KernelCommand::Shutdown => {
             for handle in process_handles.values() {
                 handle.abort();
@@ -1475,6 +1537,7 @@ async fn handle_kernel_request(
             // fires "success" response back
             start_process(
                 our_name,
+                booted,
                 keypair.clone(),
                 home_directory_path,
                 km.id,
@@ -1620,6 +1683,7 @@ async fn handle_kernel_request(
 // `let meta: StartProcessMetadata ... `
 async fn handle_kernel_response(
     our_name: String,
+    booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
     home_directory_path: String,
     km: t::KernelMessage,
@@ -1682,6 +1746,7 @@ async fn handle_kernel_response(
 
     start_process(
         our_name,
+        booted,
         keypair.clone(),
         home_directory_path,
         km.id,
@@ -1700,6 +1765,7 @@ async fn handle_kernel_response(
 
 async fn start_process(
     our_name: String,
+    booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
     home_directory_path: String,
     km_id: u64,
@@ -1755,6 +1821,7 @@ async fn start_process(
         process_id.clone(),
         tokio::spawn(
             make_process_loop(
+                booted,
                 keypair.clone(),
                 home_directory_path,
                 metadata.clone(),
@@ -1824,6 +1891,9 @@ async fn make_event_loop(
     send_to_terminal: t::PrintSender,
     engine: Engine,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+    // shared global flag to mark if we're finished boot process
+    let booted = Arc::new(AtomicBool::new(false));
+
     Box::pin(async move {
         let mut senders: Senders = HashMap::new();
         senders.insert(
@@ -1894,6 +1964,7 @@ async fn make_event_loop(
             }
             if let t::OnPanic::Requests(requests) = &persisted.on_panic {
                 // if a persisted process had on-death-requests, we should perform them now
+                // TODO check for caps here
                 for (address, request, payload) in requests {
                     // the process that made the request is dead, so never expects response
                     let mut request = request.clone();
@@ -1917,10 +1988,35 @@ async fn make_event_loop(
             }
         }
 
+        // after all bootstrapping messages are handled, send a Booted kernelcommand
+        // to turn it on
+        send_to_loop
+            .send(t::KernelMessage {
+                id: rand::random(),
+                source: t::Address {
+                    node: our_name.clone(),
+                    process: KERNEL_PROCESS_ID.clone(),
+                },
+                target: t::Address {
+                    node: our_name.clone(),
+                    process: KERNEL_PROCESS_ID.clone(),
+                },
+                rsvp: None,
+                message: t::Message::Request(t::Request {
+                    inherit: true,
+                    expects_response: None,
+                    ipc: Some(serde_json::to_string(&t::KernelCommand::Booted).unwrap()),
+                    metadata: None,
+                }),
+                payload: None,
+                signed_capabilities: None,
+            })
+            .await
+            .unwrap();
+
         // main message loop
         loop {
             tokio::select! {
-                // aaa
                 // debug mode toggle: when on, this loop becomes a manual step-through
                 debug = recv_debug_in_loop.recv() => {
                     if let Some(t::DebugCommand::Toggle) = debug {
@@ -2057,6 +2153,7 @@ async fn make_event_loop(
                             t::Message::Request(_) => {
                                 handle_kernel_request(
                                     our_name.clone(),
+                                    booted.clone(),
                                     keypair.clone(),
                                     home_directory_path.clone(),
                                     kernel_message,
@@ -2072,6 +2169,7 @@ async fn make_event_loop(
                             t::Message::Response(_) => {
                                 handle_kernel_response(
                                     our_name.clone(),
+                                    booted.clone(),
                                     keypair.clone(),
                                     home_directory_path.clone(),
                                     kernel_message,

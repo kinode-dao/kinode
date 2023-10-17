@@ -197,7 +197,7 @@ pub struct Payload {
     pub bytes: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Request {
     pub inherit: bool,
     pub expects_response: Option<u64>, // number of seconds until timeout
@@ -205,14 +205,14 @@ pub struct Request {
     pub metadata: Option<String>,      // JSON-string
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Response {
     pub inherit: bool,
     pub ipc: Option<String>,      // JSON-string
     pub metadata: Option<String>, // JSON-string
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Message {
     Request(Request),
     Response((Response, Option<Context>)),
@@ -325,6 +325,7 @@ pub enum DebugCommand {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KernelCommand {
+    Booted,
     StartProcess {
         id: ProcessId,
         wasm_bytes_handle: u128,
