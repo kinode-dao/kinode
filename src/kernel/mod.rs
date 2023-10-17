@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use wasmtime::component::*;
 use wasmtime::{Config, Engine, Store, WasmBacktraceDetails};
-use wasmtime_wasi::preview2::{DirPerms, FilePerms, Table, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::types as t;
 use crate::FILESYSTEM_PROCESS_ID;
@@ -98,47 +98,47 @@ impl WasiView for ProcessWasi {
 /// intercept wasi random
 ///
 
-#[async_trait::async_trait]
-impl wasi::random::insecure::Host for ProcessWasi {
-    async fn get_insecure_random_bytes(&mut self, len: u64) -> Result<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(len as usize);
-        for _ in 0..len {
-            bytes.push(rand::random());
-        }
-        Ok(bytes)
-    }
+// #[async_trait::async_trait]
+// impl wasi::random::insecure::Host for ProcessWasi {
+//     async fn get_insecure_random_bytes(&mut self, len: u64) -> Result<Vec<u8>> {
+//         let mut bytes = Vec::with_capacity(len as usize);
+//         for _ in 0..len {
+//             bytes.push(rand::random());
+//         }
+//         Ok(bytes)
+//     }
 
-    async fn get_insecure_random_u64(&mut self) -> Result<u64> {
-        Ok(rand::random())
-    }
-}
+//     async fn get_insecure_random_u64(&mut self) -> Result<u64> {
+//         Ok(rand::random())
+//     }
+// }
 
-#[async_trait::async_trait]
-impl wasi::random::insecure_seed::Host for ProcessWasi {
-    async fn insecure_seed(&mut self) -> Result<(u64, u64)> {
-        Ok((rand::random(), rand::random()))
-    }
-}
+// #[async_trait::async_trait]
+// impl wasi::random::insecure_seed::Host for ProcessWasi {
+//     async fn insecure_seed(&mut self) -> Result<(u64, u64)> {
+//         Ok((rand::random(), rand::random()))
+//     }
+// }
 
-#[async_trait::async_trait]
-impl wasi::random::random::Host for ProcessWasi {
-    async fn get_random_bytes(&mut self, len: u64) -> Result<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(len as usize);
-        getrandom::getrandom(&mut bytes[..])?;
-        Ok(bytes)
-    }
+// #[async_trait::async_trait]
+// impl wasi::random::random::Host for ProcessWasi {
+//     async fn get_random_bytes(&mut self, len: u64) -> Result<Vec<u8>> {
+//         let mut bytes = Vec::with_capacity(len as usize);
+//         getrandom::getrandom(&mut bytes[..])?;
+//         Ok(bytes)
+//     }
 
-    async fn get_random_u64(&mut self) -> Result<u64> {
-        let mut bytes = Vec::with_capacity(8);
-        getrandom::getrandom(&mut bytes[..])?;
+//     async fn get_random_u64(&mut self) -> Result<u64> {
+//         let mut bytes = Vec::with_capacity(8);
+//         getrandom::getrandom(&mut bytes[..])?;
 
-        let mut number = 0u64;
-        for (i, &byte) in bytes.iter().enumerate() {
-            number |= (byte as u64) << (i * 8);
-        }
-        Ok(number)
-    }
-}
+//         let mut number = 0u64;
+//         for (i, &byte) in bytes.iter().enumerate() {
+//             number |= (byte as u64) << (i * 8);
+//         }
+//         Ok(number)
+//     }
+// }
 
 ///
 /// create the process API. this is where the functions that a process can use live.
@@ -157,13 +157,6 @@ impl UqProcessImports for ProcessWasi {
         {
             Ok(()) => Ok(()),
             Err(e) => Err(anyhow::anyhow!("fatal: couldn't send to terminal: {:?}", e)),
-        }
-    }
-
-    async fn get_unix_time(&mut self) -> Result<u64> {
-        match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-            Ok(t) => Ok(t.as_secs()),
-            Err(e) => Err(e.into()),
         }
     }
 
@@ -1146,7 +1139,6 @@ async fn persist_state(
 async fn make_process_loop(
     booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     metadata: t::ProcessMetadata,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
@@ -1183,9 +1175,6 @@ async fn make_process_loop(
             pre_boot_queue.push(Ok(message));
         }
     }
-    // let dir = std::env::current_dir().unwrap();
-    // let dir = cap_std::fs::Dir::open_ambient_dir(home_directory_path, cap_std::ambient_authority())
-    //     .unwrap();
 
     let component =
         Component::new(&engine, wasm_bytes).expect("make_process_loop: couldn't read file");
@@ -1194,30 +1183,28 @@ async fn make_process_loop(
     UqProcess::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
 
     let mut table = Table::new();
-    let wasi = WasiCtxBuilder::new()
-        // .push_preopened_dir(dir, DirPerms::all(), FilePerms::all(), &"")
-        .build(&mut table)
-        .unwrap();
+    let wasi = WasiCtxBuilder::new().build(&mut table).unwrap();
 
-    // wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
-    wasmtime_wasi::preview2::bindings::clocks::wall_clock::add_to_linker(&mut linker, |t| t)
-        .unwrap();
-    wasmtime_wasi::preview2::bindings::clocks::monotonic_clock::add_to_linker(&mut linker, |t| t)
-        .unwrap();
-    wasmtime_wasi::preview2::bindings::clocks::timezone::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::filesystem::filesystem::add_to_linker(&mut linker, |t| t)
-        .unwrap();
-    wasmtime_wasi::preview2::bindings::poll::poll::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::io::streams::add_to_linker(&mut linker, |t| t).unwrap();
+    wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
+    // wasmtime_wasi::preview2::bindings::clocks::wall_clock::add_to_linker(&mut linker, |t| t)
+    //     .unwrap();
+    // wasmtime_wasi::preview2::bindings::clocks::monotonic_clock::add_to_linker(&mut linker, |t| t)
+    //     .unwrap();
+    // wasmtime_wasi::preview2::bindings::clocks::timezone::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::filesystem::filesystem::add_to_linker(&mut linker, |t| t)
+    //     .unwrap();
+    // wasmtime_wasi::preview2::bindings::poll::poll::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::io::streams::add_to_linker(&mut linker, |t| t).unwrap();
     // wasmtime_wasi::preview2::bindings::random::random::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::exit::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::environment::add_to_linker(&mut linker, |t| t)
-        .unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::preopens::add_to_linker(&mut linker, |t| t)
-        .unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::stdin::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::stdout::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::stderr::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::exit::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::environment::add_to_linker(&mut linker, |t| t)
+    //     .unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::preopens::add_to_linker(&mut linker, |t| t)
+    //     .unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::stdin::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::stdout::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::stderr::add_to_linker(&mut linker, |t| t).unwrap();
+
     let mut store = Store::new(
         engine,
         ProcessWasi {
@@ -1397,7 +1384,6 @@ async fn handle_kernel_request(
     our_name: String,
     booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     km: t::KernelMessage,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
@@ -1539,7 +1525,6 @@ async fn handle_kernel_request(
                 our_name,
                 booted,
                 keypair.clone(),
-                home_directory_path,
                 km.id,
                 &payload.bytes,
                 send_to_loop,
@@ -1685,7 +1670,6 @@ async fn handle_kernel_response(
     our_name: String,
     booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     km: t::KernelMessage,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
@@ -1748,7 +1732,6 @@ async fn handle_kernel_response(
         our_name,
         booted,
         keypair.clone(),
-        home_directory_path,
         km.id,
         &payload.bytes,
         send_to_loop,
@@ -1767,7 +1750,6 @@ async fn start_process(
     our_name: String,
     booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     km_id: u64,
     km_payload_bytes: &Vec<u8>,
     send_to_loop: t::MessageSender,
@@ -1823,7 +1805,6 @@ async fn start_process(
             make_process_loop(
                 booted,
                 keypair.clone(),
-                home_directory_path,
                 metadata.clone(),
                 send_to_loop.clone(),
                 send_to_terminal.clone(),
@@ -1873,7 +1854,6 @@ async fn start_process(
 async fn make_event_loop(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     mut process_map: t::ProcessMap,
     caps_oracle_sender: t::CapMessageSender,
     mut caps_oracle_receiver: t::CapMessageReceiver,
@@ -2155,7 +2135,6 @@ async fn make_event_loop(
                                     our_name.clone(),
                                     booted.clone(),
                                     keypair.clone(),
-                                    home_directory_path.clone(),
                                     kernel_message,
                                     send_to_loop.clone(),
                                     send_to_terminal.clone(),
@@ -2171,7 +2150,6 @@ async fn make_event_loop(
                                     our_name.clone(),
                                     booted.clone(),
                                     keypair.clone(),
-                                    home_directory_path.clone(),
                                     kernel_message,
                                     send_to_loop.clone(),
                                     send_to_terminal.clone(),
@@ -2282,7 +2260,6 @@ async fn make_event_loop(
 pub async fn kernel(
     our: t::Identity,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     process_map: t::ProcessMap,
     caps_oracle_sender: t::CapMessageSender,
     caps_oracle_receiver: t::CapMessageReceiver,
@@ -2310,7 +2287,6 @@ pub async fn kernel(
         make_event_loop(
             our.name,
             keypair,
-            home_directory_path,
             process_map,
             caps_oracle_sender,
             caps_oracle_receiver,

@@ -1,6 +1,5 @@
 use super::bindings::component::uq_process::types::*;
-use crate::bindings::wasi::random::random;
-use crate::bindings::{get_payload, get_unix_time, receive, send_request, send_response};
+use crate::bindings::{get_payload, receive, send_request, send_response};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug)]
@@ -29,7 +28,7 @@ pub fn transfer(
     Result<(), TransferError>,
     Vec<Result<(Address, Message), (SendError, Option<Context>)>>,
 ) {
-    let transfer_context_id = random::get_random_u64();
+    let transfer_context_id: u64 = rand::random();
     let mut bytes_remaining: u64 = bytes.len() as u64;
     let mut offset: u64 = 0;
     let mut chunk_size: u64 = 1048576; // 1MB
@@ -151,7 +150,7 @@ pub fn receive_transfer(
     Result<Vec<u8>, TransferError>,
     Vec<Result<(Address, Message), (SendError, Option<Context>)>>,
 ) {
-    let start_time: u64 = get_unix_time();
+    let start_time = std::time::SystemTime::now();
     // get first payload then loop and receive rest
     let mut file = match get_payload() {
         Some(payload) => payload.bytes,
@@ -175,7 +174,7 @@ pub fn receive_transfer(
     let mut non_transfer_message_queue = Vec::new();
     loop {
         let next = receive();
-        if start_time + max_timeout < get_unix_time() {
+        if start_time.elapsed().expect("time error").as_secs() > max_timeout {
             return (
                 Err(TransferError::TargetTimeout(file.len() as u64)),
                 non_transfer_message_queue,

@@ -130,7 +130,8 @@ world uq-process {
     // system utils:
 
     import print-to-terminal: func(verbosity: u8, message: string)
-    import get-unix-time: func() -> u64
+
+    // **more will be added here with regard to blockchains**
     import get-eth-block: func() -> u64
 
     // process management:
@@ -199,9 +200,4 @@ world uq-process {
     import send-and-await-response:
         func(target: address, request: request, payload: option<payload>) ->
             result<tuple<address, message>, send-error>
-
-    //  wasi
-    import wasi:random/insecure
-    import wasi:random/insecure-seed
-    import wasi:random/random
 }
