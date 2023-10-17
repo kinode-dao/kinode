@@ -72,7 +72,7 @@ pub struct KeyfileVet {
 pub struct KeyfileVetted {
     pub username: String,
     pub networking_key: String,
-    pub routers: Vec<String>
+    pub routers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,7 +100,6 @@ pub struct IdentityTransaction {
     pub calldata: Identity,
     pub nonce: String,
 }
-
 
 //
 // process-facing kernel types, used for process
