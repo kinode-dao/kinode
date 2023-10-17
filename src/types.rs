@@ -53,10 +53,26 @@ pub struct Registration {
     pub direct: bool,
 }
 
+#[derive(Debug)]
+pub struct Keyfile {
+    pub username: String,
+    pub routers: Vec<String>,
+    pub networking_keypair: signature::Ed25519KeyPair,
+    pub jwt_secret_bytes: Vec<u8>,
+    pub file_key: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyfileCheck {
+pub struct KeyfileVet {
     pub password: String,
     pub keyfile: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyfileVetted {
+    pub username: String,
+    pub networking_key: String,
+    pub routers: Vec<String>
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,14 +101,6 @@ pub struct IdentityTransaction {
     pub nonce: String,
 }
 
-#[derive(Debug)]
-pub struct Keyfile {
-    pub username: String,
-    pub routers: Vec<String>,
-    pub networking_keypair: signature::Ed25519KeyPair,
-    pub jwt_secret_bytes: Vec<u8>,
-    pub file_key: Vec<u8>,
-}
 
 //
 // process-facing kernel types, used for process
