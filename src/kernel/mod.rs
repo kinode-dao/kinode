@@ -1427,7 +1427,7 @@ async fn handle_kernel_request(
         t::KernelCommand::Booted => {
             for (process_id, process_sender) in senders {
                 let ProcessSender::Userspace(sender) = process_sender else {
-                    continue
+                    continue;
                 };
                 let _ = sender
                     .send(Ok(t::KernelMessage {
