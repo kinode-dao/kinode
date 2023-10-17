@@ -108,7 +108,7 @@ impl Guest for Component {
                     };
                     parse_command(&our.node, command);
                 }
-                Message::Response((Response { ipc, metadata }, _)) => {
+                Message::Response((Response { ipc, metadata, .. }, _)) => {
                     if let Some(txt) = &ipc {
                         print_to_terminal(0, &format!("net response: {}", txt));
                     }

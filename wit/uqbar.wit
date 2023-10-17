@@ -1,4 +1,4 @@
-package component:uq-process
+package component:uq-process@0.1.0
 
 interface types {
     // JSON is passed over WASM boundary as a string.
@@ -41,6 +41,7 @@ interface types {
     }
 
     record response {
+        inherit: bool,
         ipc: option<json>,
         metadata: option<json>,
         // to grab payload, use get_payload()
@@ -129,7 +130,8 @@ world uq-process {
     // system utils:
 
     import print-to-terminal: func(verbosity: u8, message: string)
-    import get-unix-time: func() -> u64
+
+    // **more will be added here with regard to blockchains**
     import get-eth-block: func() -> u64
 
     // process management:
@@ -172,6 +174,9 @@ world uq-process {
     // which must be a locally-running process.
     import create-capability: func(to: process-id, params: json)
 
+    // take a signed capability and save it to a given locally-running process
+    import share-capability: func(to: process-id, capability: signed-capability)
+
 
     // message I/O:
 
@@ -195,9 +200,4 @@ world uq-process {
     import send-and-await-response:
         func(target: address, request: request, payload: option<payload>) ->
             result<tuple<address, message>, send-error>
-
-    //  wasi
-    import wasi:random/insecure
-    import wasi:random/insecure-seed
-    import wasi:random/random
 }

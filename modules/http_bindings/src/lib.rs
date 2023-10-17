@@ -87,6 +87,7 @@ fn auth_cookie_valid(our_node: String, cookie: &str, secret: Hmac<Sha256>) -> bo
 fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
     send_response(
         &Response {
+            inherit: false,
             ipc: Some(
                 serde_json::json!({
                     "status": status,
@@ -180,6 +181,7 @@ impl Guest for Component {
                 };
                 send_response(
                     &Response {
+                        inherit: false,
                         ipc: None,
                         metadata: None,
                     },

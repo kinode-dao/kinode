@@ -137,6 +137,7 @@ pub struct Request {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Response {
+    pub inherit: bool,
     pub ipc: Option<String>,      // JSON-string
     pub metadata: Option<String>, // JSON-string
 }
@@ -343,6 +344,7 @@ pub fn en_wit_request(request: Request) -> wit::Request {
 
 pub fn de_wit_response(wit: wit::Response) -> Response {
     Response {
+        inherit: wit.inherit,
         ipc: wit.ipc,
         metadata: wit.metadata,
     }
@@ -350,6 +352,7 @@ pub fn de_wit_response(wit: wit::Response) -> Response {
 
 pub fn en_wit_response(response: Response) -> wit::Response {
     wit::Response {
+        inherit: response.inherit,
         ipc: response.ipc,
         metadata: response.metadata,
     }

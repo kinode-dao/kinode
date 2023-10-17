@@ -36,6 +36,8 @@ where
 fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
     let pwd = std::env::current_dir().unwrap();
 
+    println!("cargo:warning=building {}", target_path);
+
     // Copy in newly-made wit IF old one is outdated
     if file_outdated(
         format!("{}/wit/", pwd.display()),
@@ -132,7 +134,7 @@ fn main() {
     }
     // only execute if one of the modules has source code changes
     const WASI_APPS: [&str; 10] = [
-        "app_tracker",
+        "app_store",
         "chess",
         "homepage",
         "http_bindings",

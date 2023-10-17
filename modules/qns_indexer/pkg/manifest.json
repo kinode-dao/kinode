@@ -9,9 +9,6 @@
             "http_bindings:http_bindings:uqbar",
             "eth_rpc:sys:uqbar"
         ],
-        "grant_messaging": [
-            "eth_rpc:sys:uqbar",
-            "filesystem:sys:uqbar"
-        ]
+        "public": true
     }
 ]

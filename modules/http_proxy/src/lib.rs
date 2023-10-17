@@ -30,6 +30,7 @@ pub struct FileSystemRequest {
 fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
     send_response(
         &Response {
+            inherit: false,
             ipc: Some(
                 serde_json::json!({
                     "status": status,
@@ -197,6 +198,7 @@ impl Guest for Component {
             if message_json["path"] == "/http-proxy" && message_json["method"] == "GET" {
                 send_response(
                     &Response {
+                        inherit: false,
                         ipc: Some(
                             serde_json::json!({
                                 "action": "response",
@@ -221,6 +223,7 @@ impl Guest for Component {
             {
                 send_response(
                     &Response {
+                        inherit: false,
                         ipc: Some(
                             serde_json::json!({
                                 "action": "response",
@@ -271,6 +274,7 @@ impl Guest for Component {
 
                 send_response(
                     &Response {
+                        inherit: false,
                         ipc: Some(
                             serde_json::json!({
                                 "action": "response",
@@ -313,6 +317,7 @@ impl Guest for Component {
 
                 send_response(
                     &Response {
+                        inherit: false,
                         ipc: Some(
                             serde_json::json!({
                                 "action": "response",
@@ -349,6 +354,7 @@ impl Guest for Component {
                 } else if !registrations.contains_key(username) {
                     send_response(
                         &Response {
+                            inherit: false,
                             ipc: Some(
                                 json!({
                                     "action": "response",

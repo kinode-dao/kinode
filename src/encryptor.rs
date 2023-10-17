@@ -159,6 +159,7 @@ pub async fn encryptor(
                                     rsvp: None,
                                     message: Message::Response((
                                         Response {
+                                            inherit: false,
                                             ipc: Some(serde_json::json!({
                                                 "status": 201,
                                                 "headers": headers,
@@ -340,6 +341,7 @@ pub async fn encryptor(
                                 rsvp: None,
                                 message: Message::Response((
                                     Response {
+                                        inherit: false,
                                         ipc: None,
                                         metadata: None,
                                     },
@@ -395,6 +397,7 @@ pub async fn encryptor(
                                 rsvp: None,
                                 message: Message::Response((
                                     Response {
+                                        inherit: false,
                                         ipc: None,
                                         metadata: None,
                                     },
