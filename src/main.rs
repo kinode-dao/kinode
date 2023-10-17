@@ -169,7 +169,9 @@ async fn main() {
         {
             ip
         } else {
-            println!( "\x1b[38;5;196mfailed to find public IPv4 address: booting as a routed node\x1b[0m");
+            println!(
+                "\x1b[38;5;196mfailed to find public IPv4 address: booting as a routed node\x1b[0m"
+            );
             std::net::Ipv4Addr::LOCALHOST
         }
     };
@@ -203,10 +205,14 @@ async fn main() {
         } => (our, decoded_keyfile, encoded_keyfile),
     };
 
-    println!("saving encrypted networking keys to {}/.keys", home_directory_path);
+    println!(
+        "saving encrypted networking keys to {}/.keys",
+        home_directory_path
+    );
 
     fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
-        .await.unwrap();
+        .await
+        .unwrap();
 
     println!("registration complete!");
 
@@ -215,7 +221,9 @@ async fn main() {
         home_directory_path.clone(),
         decoded_keyfile.file_key,
         fs_config,
-    ).await.expect("fs load failed!");
+    )
+    .await
+    .expect("fs load failed!");
 
     let _ = kill_tx.send(true);
     let _ = print_sender
