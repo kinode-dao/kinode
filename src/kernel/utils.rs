@@ -34,6 +34,7 @@ pub fn en_wit_request(request: t::Request) -> wit::Request {
 
 pub fn de_wit_response(wit: wit::Response) -> t::Response {
     t::Response {
+        inherit: wit.inherit,
         ipc: wit.ipc,
         metadata: wit.metadata,
     }
@@ -41,6 +42,7 @@ pub fn de_wit_response(wit: wit::Response) -> t::Response {
 
 pub fn en_wit_response(response: t::Response) -> wit::Response {
     wit::Response {
+        inherit: response.inherit,
         ipc: response.ipc,
         metadata: response.metadata,
     }

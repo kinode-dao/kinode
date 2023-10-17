@@ -64,6 +64,7 @@ struct WriteFileResult {
 fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
     send_response(
         &Response {
+            inherit: false,
             ipc: Some(
                 json!({
                     "status": status,
@@ -207,6 +208,7 @@ impl Guest for Component {
                         "/rpc" => {
                             send_response(
                                 &Response {
+                                    inherit: false,
                                     ipc: Some(
                                         json!({
                                             "action": "response",

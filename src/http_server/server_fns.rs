@@ -457,6 +457,7 @@ pub fn make_error_message(
         rsvp: None,
         message: Message::Response((
             Response {
+                inherit: false,
                 ipc: Some(serde_json::to_string(&error).unwrap()),
                 metadata: None,
             },

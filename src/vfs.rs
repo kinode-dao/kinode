@@ -113,6 +113,7 @@ fn make_error_message(
         rsvp: None,
         message: Message::Response((
             Response {
+                inherit: false,
                 ipc: Some(serde_json::to_string(&VfsResponse::Err(error)).unwrap()), //  TODO: handle error?
                 metadata: None,
             },
@@ -638,7 +639,14 @@ async fn handle_request(
                 process: source.process.clone(),
             },
             rsvp,
-            message: Message::Response((Response { ipc, metadata }, None)),
+            message: Message::Response((
+                Response {
+                    inherit: false,
+                    ipc,
+                    metadata,
+                },
+                None,
+            )),
             payload: match bytes {
                 Some(bytes) => Some(Payload {
                     mime: Some("application/octet-stream".into()),
@@ -986,8 +994,7 @@ async fn match_request(
                                 }
                             };
                             let KernelMessage { message, .. } = write_response;
-                            let Message::Response((Response { ipc, metadata: _ }, None)) = message
-                            else {
+                            let Message::Response((Response { ipc, .. }, None)) = message else {
                                 panic!("")
                             };
                             let Some(ipc) = ipc else {
@@ -1220,7 +1227,7 @@ async fn match_request(
                 .await;
             let write_response = recv_response.recv().await.unwrap();
             let KernelMessage { message, .. } = write_response;
-            let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
+            let Message::Response((Response { ipc, .. }, None)) = message else {
                 panic!("")
             };
             let Some(ipc) = ipc else {
@@ -1275,7 +1282,7 @@ async fn match_request(
                 .await;
             let write_response = recv_response.recv().await.unwrap();
             let KernelMessage { message, .. } = write_response;
-            let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
+            let Message::Response((Response { ipc, .. }, None)) = message else {
                 panic!("")
             };
             let Some(ipc) = ipc else {
@@ -1419,8 +1426,7 @@ async fn match_request(
                             let KernelMessage {
                                 message, payload, ..
                             } = read_response;
-                            let Message::Response((Response { ipc, metadata: _ }, None)) = message
-                            else {
+                            let Message::Response((Response { ipc, .. }, None)) = message else {
                                 panic!("");
                             };
                             let Some(ipc) = ipc else {
@@ -1503,7 +1509,7 @@ async fn match_request(
             let KernelMessage {
                 message, payload, ..
             } = read_response;
-            let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
+            let Message::Response((Response { ipc, .. }, None)) = message else {
                 panic!("")
             };
             let Some(ipc) = ipc else {
@@ -1568,7 +1574,7 @@ async fn match_request(
                     .await;
                 let length_response = recv_response.recv().await.unwrap();
                 let KernelMessage { message, .. } = length_response;
-                let Message::Response((Response { ipc, metadata: _ }, None)) = message else {
+                let Message::Response((Response { ipc, .. }, None)) = message else {
                     panic!("")
                 };
                 let Some(ipc) = ipc else {

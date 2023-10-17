@@ -197,7 +197,7 @@ pub struct Payload {
     pub bytes: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Request {
     pub inherit: bool,
     pub expects_response: Option<u64>, // number of seconds until timeout
@@ -205,13 +205,14 @@ pub struct Request {
     pub metadata: Option<String>,      // JSON-string
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Response {
+    pub inherit: bool,
     pub ipc: Option<String>,      // JSON-string
     pub metadata: Option<String>, // JSON-string
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Message {
     Request(Request),
     Response((Response, Option<Context>)),
@@ -324,6 +325,7 @@ pub enum DebugCommand {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KernelCommand {
+    Booted,
     StartProcess {
         id: ProcessId,
         wasm_bytes_handle: u128,
@@ -408,7 +410,7 @@ pub struct PackageManifestEntry {
     pub on_panic: OnPanic,
     pub request_networking: bool,
     pub request_messaging: Vec<String>,
-    pub grant_messaging: Vec<String>, // special logic for the string "all": makes process public
+    pub public: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -672,8 +674,8 @@ impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {:?},\n    message: {}\n}}",
-            self.id, self.source, self.target, self.rsvp, self.message,
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {:?},\n    message: {},\n    payload: {}\n}}",
+            self.id, self.source, self.target, self.rsvp, self.message, self.payload.is_some()
         )
     }
 }
@@ -691,7 +693,8 @@ impl std::fmt::Display for Message {
             ),
             Message::Response((response, context)) => write!(
                 f,
-                "Response(\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
+                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
+                response.inherit,
                 &response.ipc.as_ref().unwrap_or(&"None".into()),
                 &response.metadata.as_ref().unwrap_or(&"None".into()),
                 &context.as_ref().unwrap_or(&"None".into()),

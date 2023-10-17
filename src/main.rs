@@ -404,7 +404,6 @@ async fn main() {
     tasks.spawn(kernel::kernel(
         our.clone(),
         networking_keypair_arc.clone(),
-        home_directory_path.into(),
         kernel_process_map.clone(),
         caps_oracle_sender.clone(),
         caps_oracle_receiver,
