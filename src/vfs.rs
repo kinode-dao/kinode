@@ -774,9 +774,11 @@ async fn match_request(
                         panic!("empty path");
                     };
 
-                    {
+                    let hash = {
                         let mut vfs = vfs.lock().await;
-                        if vfs.path_to_key.contains_key(&full_path) {
+                        if !vfs.path_to_key.contains_key(&full_path) {
+                            None
+                        } else {
                             send_to_terminal
                                 .send(Printout {
                                     verbosity: 1,
@@ -784,79 +786,125 @@ async fn match_request(
                                 })
                                 .await
                                 .unwrap();
-                            let Some(old_key) = vfs.path_to_key.remove(&full_path) else {
+                            match vfs.path_to_key.remove(&full_path) {
+                                None => None,
+                                Some(key) => {
+                                    let Key::File { id: hash } = key else {
+                                        panic!("");
+                                    };
+                                    Some(hash)
+                                },
+                            }
+                            // vfs.key_to_entry.remove(&old_key);
+                        }
+                    };
+
+                    match hash {
+                        None => {
+                            let _ = send_to_loop
+                                .send(KernelMessage {
+                                    id,
+                                    source: Address {
+                                        node: our_node.clone(),
+                                        process: VFS_PROCESS_ID.clone(),
+                                    },
+                                    target: Address {
+                                        node: our_node.clone(),
+                                        process: FILESYSTEM_PROCESS_ID.clone(),
+                                    },
+                                    rsvp: None,
+                                    message: Message::Request(Request {
+                                        inherit: true,
+                                        expects_response: Some(5), // TODO evaluate
+                                        ipc: Some(serde_json::to_string(&FsAction::Write(None)).unwrap()),
+                                        metadata: None,
+                                    }),
+                                    payload,
+                                    signed_capabilities: None,
+                                })
+                                .await;
+                            let write_response = recv_response.recv().await.unwrap();
+                            let KernelMessage { message, .. } = write_response;
+                            let Message::Response((Response { ipc, .. }, None)) = message else {
                                 panic!("");
                             };
-                            vfs.key_to_entry.remove(&old_key);
-                        };
-                    }
+                            let Some(ipc) = ipc else {
+                                panic!("");
+                            };
+                            let Ok(FsResponse::Write(hash)) =
+                                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                            else {
+                                panic!("");
+                            };
 
-                    let _ = send_to_loop
-                        .send(KernelMessage {
-                            id,
-                            source: Address {
-                                node: our_node.clone(),
-                                process: VFS_PROCESS_ID.clone(),
-                            },
-                            target: Address {
-                                node: our_node.clone(),
-                                process: FILESYSTEM_PROCESS_ID.clone(),
-                            },
-                            rsvp: None,
-                            message: Message::Request(Request {
-                                inherit: true,
-                                expects_response: Some(5), // TODO evaluate
-                                ipc: Some(serde_json::to_string(&FsAction::Write(None)).unwrap()),
-                                metadata: None,
-                            }),
-                            payload,
-                            signed_capabilities: None,
-                        })
-                        .await;
-                    let write_response = recv_response.recv().await.unwrap();
-                    let KernelMessage { message, .. } = write_response;
-                    let Message::Response((Response { ipc, .. }, None)) = message else {
-                        panic!("");
-                    };
-                    let Some(ipc) = ipc else {
-                        panic!("");
-                    };
-                    let Ok(FsResponse::Write(hash)) =
-                        serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
-                    else {
-                        panic!("");
-                    };
-
-                    let (name, parent_path) = make_file_name(&full_path);
-                    let mut vfs = vfs.lock().await;
-                    let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
-                        panic!("");
-                    };
-                    let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
-                        panic!("");
-                    };
-                    let EntryType::Dir {
-                        children: ref mut parent_children,
-                        ..
-                    } = parent_entry.entry_type
-                    else {
-                        panic!("");
-                    };
-                    let key = Key::File { id: hash };
-                    vfs.key_to_entry.insert(
-                        key.clone(),
-                        Entry {
-                            name,
-                            full_path: full_path.clone(),
-                            entry_type: EntryType::File {
-                                parent: parent_key.clone(),
-                            },
+                            let (name, parent_path) = make_file_name(&full_path);
+                            let mut vfs = vfs.lock().await;
+                            let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
+                                panic!("");
+                            };
+                            let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
+                                panic!("");
+                            };
+                            let EntryType::Dir {
+                                children: ref mut parent_children,
+                                ..
+                            } = parent_entry.entry_type
+                            else {
+                                panic!("");
+                            };
+                            let key = Key::File { id: hash };
+                            vfs.key_to_entry.insert(
+                                key.clone(),
+                                Entry {
+                                    name,
+                                    full_path: full_path.clone(),
+                                    entry_type: EntryType::File {
+                                        parent: parent_key.clone(),
+                                    },
+                                },
+                            );
+                            parent_children.insert(key.clone());
+                            vfs.path_to_key.insert(parent_path, parent_key.clone());
+                            vfs.key_to_entry.insert(parent_key, parent_entry);
+                            vfs.path_to_key.insert(full_path.clone(), key.clone());
                         },
-                    );
-                    parent_children.insert(key.clone());
-                    vfs.path_to_key.insert(parent_path, parent_key.clone());
-                    vfs.key_to_entry.insert(parent_key, parent_entry);
-                    vfs.path_to_key.insert(full_path.clone(), key.clone());
+                        Some(hash) => {
+                            let _ = send_to_loop
+                                .send(KernelMessage {
+                                    id,
+                                    source: Address {
+                                        node: our_node.clone(),
+                                        process: VFS_PROCESS_ID.clone(),
+                                    },
+                                    target: Address {
+                                        node: our_node.clone(),
+                                        process: FILESYSTEM_PROCESS_ID.clone(),
+                                    },
+                                    rsvp: None,
+                                    message: Message::Request(Request {
+                                        inherit: true,
+                                        expects_response: Some(5), // TODO evaluate
+                                        ipc: Some(serde_json::to_string(&FsAction::Write(Some(hash))).unwrap()),
+                                        metadata: None,
+                                    }),
+                                    payload,
+                                    signed_capabilities: None,
+                                });
+                            let write_response = recv_response.recv().await.unwrap();
+                            let KernelMessage { message, .. } = write_response;
+                            let Message::Response((Response { ipc, .. }, None)) = message else {
+                                panic!("");
+                            };
+                            let Some(ipc) = ipc else {
+                                panic!("");
+                            };
+                            let Ok(FsResponse::Write(_)) =
+                                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                            else {
+                                panic!("");
+                            };
+                        },
+                    }
                 }
                 AddEntryType::ExistingFile { hash } => {
                     if let Some(last_char) = full_path.chars().last() {
