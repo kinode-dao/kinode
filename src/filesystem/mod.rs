@@ -146,9 +146,6 @@ async fn bootstrap(
     let packages: Vec<(String, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> =
         get_zipped_packages().await;
 
-    // need to grant all caps at the end, after process_map has been filled in!
-    let mut caps_to_grant = Vec::<(ProcessId, Capability)>::new();
-
     let mut vfs_messages = Vec::new();
 
     for (package_name, mut package) in packages {
@@ -338,26 +335,7 @@ async fn bootstrap(
                 .unwrap(),
             });
 
-            let mut public_process = false;
-
-            // queue the granted capabilities
-            for process_name in &entry.grant_messaging {
-                if process_name == "all" {
-                    public_process = true;
-                    continue;
-                }
-                let process_id = ProcessId::from_str(process_name).unwrap();
-                caps_to_grant.push((
-                    process_id.clone(),
-                    Capability {
-                        issuer: Address {
-                            node: our_name.to_string(),
-                            process: ProcessId::from_str(&our_process_id).unwrap(),
-                        },
-                        params: "\"messaging\"".into(),
-                    },
-                ));
-            }
+            let public_process = entry.public;
 
             // save in process map
             let file = FileIdentifier::new_uuid();
@@ -374,14 +352,6 @@ async fn bootstrap(
                 },
             );
         }
-    }
-
-    // grant queued capabilities from all packages
-    for (to, cap) in caps_to_grant {
-        let Some(proc) = process_map.get_mut(&to) else {
-            continue;
-        };
-        proc.capabilities.insert(cap);
     }
 
     // save kernel process state. FsAction::SetState(kernel)
@@ -739,6 +709,7 @@ async fn handle_request(
             rsvp: None,
             message: Message::Response((
                 Response {
+                    inherit: false,
                     ipc: Some(
                         serde_json::to_string::<Result<FsResponse, FsError>>(&Ok(ipc)).unwrap(),
                     ),
@@ -786,6 +757,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: FsError) -> K
         rsvp: None,
         message: Message::Response((
             Response {
+                inherit: false,
                 ipc: Some(
                     serde_json::to_string::<Result<FsResponse, FsError>>(&Err(error)).unwrap(),
                 ),

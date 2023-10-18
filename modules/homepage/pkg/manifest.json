@@ -9,6 +9,6 @@
             "http_server:sys:uqbar",
             "encryptor:sys:uqbar"
         ],
-        "grant_messaging": []
+        "public": false
     }
 ]

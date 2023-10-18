@@ -85,6 +85,7 @@ fn json_game(game: &Game) -> serde_json::Value {
 fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
     send_response(
         &Response {
+            inherit: false,
             ipc: Some(
                 serde_json::json!({
                     "status": status,
@@ -298,6 +299,7 @@ impl Guest for Component {
                                 if !game.ended {
                                     send_response(
                                         &Response {
+                                            inherit: false,
                                             ipc: None,
                                             metadata: None,
                                         },
@@ -331,6 +333,7 @@ impl Guest for Component {
 
                             send_response(
                                 &Response {
+                                    inherit: false,
                                     ipc: None,
                                     metadata: None,
                                 },
@@ -346,6 +349,7 @@ impl Guest for Component {
                             let Some(game) = state.games.get_mut(&game_id) else {
                                 send_response(
                                     &Response {
+                                        inherit: false,
                                         ipc: None,
                                         metadata: None,
                                     },
@@ -405,6 +409,7 @@ impl Guest for Component {
 
                                 send_response(
                                     &Response {
+                                        inherit: false,
                                         ipc: None,
                                         metadata: None,
                                     },
@@ -417,6 +422,7 @@ impl Guest for Component {
                             } else {
                                 send_response(
                                     &Response {
+                                        inherit: false,
                                         ipc: None,
                                         metadata: None,
                                     },
@@ -433,6 +439,7 @@ impl Guest for Component {
                             let Some(game) = state.games.get_mut(&game_id) else {
                                 send_response(
                                     &Response {
+                                        inherit: false,
                                         ipc: None,
                                         metadata: None,
                                     },
@@ -457,6 +464,7 @@ impl Guest for Component {
 
                             send_response(
                                 &Response {
+                                    inherit: false,
                                     ipc: None,
                                     metadata: None,
                                 },

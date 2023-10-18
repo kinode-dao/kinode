@@ -72,6 +72,7 @@ impl Guest for Component {
 
                     send_response(
                         &Response {
+                            inherit: false,
                             ipc: Some(serde_json::json!({
                                 "action": "response",
                                 "status": 200,
@@ -89,6 +90,7 @@ impl Guest for Component {
                 } else if message_json["path"].is_string() {
                     send_response(
                         &Response {
+                            inherit: false,
                             ipc: Some(json!({
                                 "action": "response",
                                 "status": 404,
@@ -109,6 +111,7 @@ impl Guest for Component {
                 } else if message_json["hello"] == "world" {
                     send_response(
                         &Response {
+                            inherit: false,
                             ipc: Some(serde_json::json!({
                                 "hello": "to you too"
                             }).to_string()),

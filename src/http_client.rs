@@ -144,6 +144,7 @@ async fn handle_message(
         rsvp: None,
         message: Message::Response((
             Response {
+                inherit: false,
                 ipc: Some(
                     serde_json::to_string::<Result<HttpClientResponse, HttpClientError>>(&Ok(
                         http_client_response,
@@ -219,6 +220,7 @@ fn make_error_message(
         rsvp: None,
         message: Message::Response((
             Response {
+                inherit: false,
                 ipc: Some(
                     serde_json::to_string::<Result<HttpClientResponse, HttpClientError>>(&Err(
                         error,

@@ -7,8 +7,6 @@
         "request_messaging": [
             "vfs:sys:uqbar"
         ],
-        "grant_messaging": [
-            "all"
-        ]
+        "public": true
     }
 ]
