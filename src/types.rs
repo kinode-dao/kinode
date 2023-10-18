@@ -745,6 +745,8 @@ pub enum HttpServerError {
         json
     )]
     BadJson { json: String, error: String },
+    #[error("http_server: path bindning error:  {:?}", error)]
+    PathBind { error: String },
 }
 
 #[allow(dead_code)]
@@ -755,6 +757,7 @@ impl HttpServerError {
             HttpServerError::NoBytes { .. } => "NoBytes",
             HttpServerError::BadJson { .. } => "BadJson",
             HttpServerError::ResponseError { .. } => "ResponseError",
+            HttpServerError::PathBind { .. } => "PathBind",
         }
     }
 }
@@ -784,6 +787,11 @@ pub struct ServerAction {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpServerMessage {
+    BindPath {
+        path: String,
+        authenticated: bool,
+        local_only: bool,
+    },
     WebSocketPush(WebSocketPush),
     ServerAction(ServerAction),
     WsRegister(WsRegister),                 // Coming from a proxy

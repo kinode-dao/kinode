@@ -6,6 +6,7 @@ use anyhow::Result;
 use futures::SinkExt;
 use futures::StreamExt;
 use serde_urlencoded;
+use base64;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -21,6 +22,7 @@ mod server_fns;
 // types and constants
 type HttpSender = tokio::sync::oneshot::Sender<HttpResponse>;
 type HttpResponseSenders = Arc<Mutex<HashMap<u64, (String, HttpSender)>>>;
+type PathBindings = Arc<Mutex<HashMap<String, BoundPath>>>;
 
 // node -> ID -> random ID
 
@@ -37,11 +39,22 @@ pub async fn http_server(
     let websockets: WebSockets = Arc::new(Mutex::new(HashMap::new()));
     let ws_proxies: WebSocketProxies = Arc::new(Mutex::new(HashMap::new())); // channel_id -> node
 
+    // Add RPC paths
+    let mut bindings_map: HashMap<String, BoundPath> = HashMap::new();
+    let rpc_bound_path = BoundPath {
+        app: ProcessId::from_str("rpc:rpc:uqbar").unwrap(),
+        authenticated: false,
+        local_only: true,
+    };
+    bindings_map.insert("/rpc/message".to_string(), rpc_bound_path);
+    let path_bindings: PathBindings = Arc::new(Mutex::new(bindings_map));
+
     let _ = tokio::join!(
         http_serve(
             our_name.clone(),
             our_port,
             http_response_senders.clone(),
+            path_bindings.clone(),
             websockets.clone(),
             jwt_secret_bytes.clone(),
             send_to_loop.clone(),
@@ -64,6 +77,7 @@ pub async fn http_server(
                     message,
                     payload,
                     http_response_senders.clone(),
+                    path_bindings.clone(),
                     websockets.clone(),
                     ws_proxies.clone(),
                     jwt_secret_bytes.clone(),
@@ -200,6 +214,7 @@ async fn http_handle_messages(
     message: Message,
     payload: Option<Payload>,
     http_response_senders: HttpResponseSenders,
+    path_bindings: PathBindings,
     websockets: WebSockets,
     ws_proxies: WebSocketProxies,
     jwt_secret_bytes: Vec<u8>,
@@ -321,6 +336,32 @@ async fn http_handle_messages(
             match serde_json::from_str(&json) {
                 Ok(message) => {
                     match message {
+                        HttpServerMessage::BindPath { path, authenticated, local_only } => {
+                            let mut path_bindings = path_bindings.lock().await;
+                            println!("got bindpath! {} {} {}", path, authenticated, local_only);
+                            let app = source.process.clone().to_string();
+                            let path_segments = path
+                                .trim_start_matches('/')
+                                .split("/")
+                                .collect::<Vec<&str>>();
+
+                            if app != "homepage:homepage:uqbar"
+                                && (path_segments.is_empty()
+                                    || path_segments[0] != app.split(':').next().unwrap_or_default().to_string().replace("_", "-"))
+                            {
+                                return Err(HttpServerError::PathBind { error: format!("invalid path: {}", path) })
+                            } else {
+                                if !app.clone().ends_with(":sys:uqbar") && path_bindings.contains_key(&path) {
+                                    return Err(HttpServerError::PathBind { error: format!("already bound path!: {}", path) })
+                                }
+                                let bound_path = BoundPath {
+                                    app: source.process,
+                                    authenticated: authenticated,
+                                    local_only: local_only,
+                                };
+                                path_bindings.insert(path, bound_path);
+                            }
+                        }
                         HttpServerMessage::WebSocketPush(WebSocketPush { target, is_text }) => {
                             let Some(payload) = payload else {
                                 return Err(HttpServerError::NoBytes);
@@ -556,6 +597,7 @@ async fn http_serve(
     our: String,
     our_port: u16,
     http_response_senders: HttpResponseSenders,
+    path_bindings: PathBindings,
     websockets: WebSockets,
     jwt_secret_bytes: Vec<u8>,
     send_to_loop: MessageSender,
@@ -616,6 +658,8 @@ async fn http_serve(
         .and(warp::filters::body::bytes())
         .and(warp::any().map(move || our.clone()))
         .and(warp::any().map(move || http_response_senders.clone()))
+        .and(warp::any().map(move || path_bindings.clone()))
+        .and(warp::any().map(move || jwt_secret_bytes.clone()))
         .and(warp::any().map(move || send_to_loop.clone()))
         .and(warp::any().map(move || print_tx_move.clone()))
         .and_then(handler);
@@ -642,6 +686,8 @@ async fn handler(
     body: warp::hyper::body::Bytes,
     our: String,
     http_response_senders: HttpResponseSenders,
+    path_bindings: PathBindings,
+    jwt_secret_bytes: Vec<u8>,
     send_to_loop: MessageSender,
     _print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
@@ -650,52 +696,189 @@ async fn handler(
         None => "".to_string(),
     };
 
-    let path_str = path.as_str().to_string();
+    let path = path.as_str().to_string();
     let id: u64 = rand::random();
-    let message = KernelMessage {
-        id: id.clone(),
-        source: Address {
-            node: our.clone(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        target: Address {
-            node: our.clone(),
-            process: ProcessId::new(Some("http_bindings"), "http_bindings", "uqbar"),
-        },
-        rsvp: Some(Address {
-            node: our.clone(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        }),
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: Some(30), // TODO evaluate timeout
-            ipc: Some(
-                serde_json::json!({
-                    "action": "request".to_string(),
-                    "address": address,
-                    "method": method.to_string(),
-                    "path": path_str.clone(),
-                    "headers": serialize_headers(&headers),
-                    "query_params": query_params,
-                })
-                .to_string(),
-            ),
-            metadata: None,
-        }),
-        payload: Some(Payload {
-            mime: Some("application/octet-stream".to_string()), // TODO adjust MIME type as needed
-            bytes: body.to_vec(),
-        }),
-        signed_capabilities: None,
-    };
+    let real_headers = serialize_headers(&headers);
 
+    let path_bindings = path_bindings.lock().await;
+    
+    // todo: maybe don't loop through each, library help? 
+    let path_segments = path
+        .trim_start_matches('/')
+        .trim_end_matches('/')
+        .split("/")
+        .collect::<Vec<&str>>();
+    let mut registered_path = path.clone();
+    let mut url_params: HashMap<String, String> = HashMap::new();
+
+    for (key, _value) in &*path_bindings {
+        let key_segments = key
+            .trim_start_matches('/')
+            .trim_end_matches('/')
+            .split("/")
+            .collect::<Vec<&str>>();
+        if key_segments.len() != path_segments.len()
+            && (!key.contains("/.*") || (key_segments.len() - 1) > path_segments.len())
+        {
+            continue;
+        }
+
+        let mut paths_match = true;
+        for i in 0..key_segments.len() {
+            if key_segments[i] == "*" {
+                break;
+            } else if !(key_segments[i].starts_with(":")
+                || key_segments[i] == path_segments[i])
+            {
+                paths_match = false;
+                break;
+            } else if key_segments[i].starts_with(":") {
+                url_params.insert(
+                    key_segments[i][1..].to_string(),
+                    path_segments[i].to_string(),
+                );
+            }
+        }
+
+        if paths_match {
+            registered_path = key.to_string();
+            break;
+        }
+        url_params = HashMap::new();
+    }
+
+    let mut km: Option<KernelMessage> = None; 
+
+    if let Some(bound_path) = path_bindings.get(&registered_path) {
+        let app = bound_path.app.to_string();
+        println!("http_server: got path, app: {}", app);
+        if bound_path.authenticated {
+            let auth_token = real_headers.get("cookie").cloned().unwrap_or_default();   
+            if !auth_cookie_valid(our.clone(), &auth_token, jwt_secret_bytes) {
+                println!("http_server: no secret, or invalid token");
+                return Ok(warp::reply::with_status(
+                    vec![],
+                    StatusCode::UNAUTHORIZED,
+                ).into_response());
+            }
+        }
+
+        if bound_path.local_only && !address.starts_with("127.0.0.1:") {
+            // send 403
+            let mut headers = HashMap::new();
+            headers.insert(
+                "Content-Type".to_string(),
+                "text/html".to_string(),
+            );
+        }
+
+        // RPC functionality: if path is /rpc/message,
+        // we extract message from base64 encoded bytes in data
+        // and send it to the correct app.
+        
+        if app == "rpc:rpc:uqbar".to_string() {
+            let rpc_message: RpcMessage = match serde_json::from_slice(&body) { // to_vec()?
+                Ok(v) => v,
+                Err(_) => {
+                    println!("http_server: JSON is not valid RpcMessage");
+                    return Ok(warp::reply::with_status(
+                        vec![],
+                        StatusCode::BAD_REQUEST,
+                    ).into_response());
+                }
+            };
+
+            let payload = match base64::decode(&rpc_message.data.unwrap_or("".to_string())) {
+                Ok(bytes) => Some(Payload {
+                    mime: rpc_message.mime,
+                    bytes,
+                }),
+                Err(_) => None,
+            };
+
+            km = Some(
+                KernelMessage {
+                    id, 
+                    source: Address {
+                        node: our.clone(),
+                        process: HTTP_SERVER_PROCESS_ID.clone(),
+                    },
+                    target: Address {
+                        node: rpc_message.node,
+                        process: ProcessId::from_str(&rpc_message.process).unwrap(), // DOUBLECHECK
+                    },
+                    rsvp: Some(Address {
+                        node: our.clone(),
+                        process: HTTP_SERVER_PROCESS_ID.clone(),
+                    }),
+                    message: Message::Request(Request {
+                        inherit: false,
+                        expects_response: Some(30), // TODO evaluate timeout
+                        ipc: rpc_message.ipc,
+                        metadata: rpc_message.metadata,
+                    }),
+                    payload,
+                    signed_capabilities: None,
+                }
+            )
+        } else {
+            // otherwise, make a message, to the correct app.
+            km = Some(
+                KernelMessage {
+                    id, 
+                    source: Address {
+                        node: our.clone(),
+                        process: HTTP_SERVER_PROCESS_ID.clone(),
+                    },
+                    target: Address {
+                        node: our.clone(),  
+                        process: bound_path.app.clone(),
+                    },
+                    rsvp: Some(Address {
+                        node: our.clone(),
+                        process: HTTP_SERVER_PROCESS_ID.clone(),
+                    }),
+                    message: Message::Request(Request {
+                        inherit: false,
+                        expects_response: Some(30), // TODO evaluate timeout
+                        ipc: Some(
+                            serde_json::json!({
+                                "address": address,
+                                "method": method.to_string(),
+                                "raw_path": path.clone(),
+                                "headers": serialize_headers(&headers),
+                                "query_params": query_params,
+                                "url_params": url_params,
+                            })
+                            .to_string(),
+                        ),
+                        metadata: None,
+                    }),
+                    payload: Some(Payload {
+                        mime: Some("application/octet-stream".to_string()), // TODO adjust MIME type as needed
+                        bytes: body.to_vec(),
+                    }),
+                    signed_capabilities: None,
+                }
+            )
+        }
+    } else {
+        return Ok(warp::reply::with_status(
+            vec![],
+            StatusCode::NOT_FOUND,
+        ).into_response());
+    }
+
+    println!("sending km message to somebody");
     let (response_sender, response_receiver) = oneshot::channel();
     http_response_senders
         .lock()
         .await
-        .insert(id, (path_str, response_sender));
+        .insert(id, (path, response_sender));
 
+    let message = km.unwrap(); // DOUBLECHECK
     send_to_loop.send(message).await.unwrap();
+
     let from_channel = response_receiver.await.unwrap();
     let reply = warp::reply::with_status(
         match from_channel.body {
