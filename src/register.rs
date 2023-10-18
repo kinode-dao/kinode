@@ -109,7 +109,8 @@ async fn handle_has_keyfile(
     keyfile: Arc<Mutex<Option<Vec<u8>>>>
 ) -> Result<impl Reply, Rejection> {
 
-    Ok(warp::reply::json(&keyfile.lock().unwrap().is_some()))
+    Ok(warp::reply::json(
+        &keyfile.lock().unwrap().as_ref().unwrap().is_empty()))
 
 }
 
