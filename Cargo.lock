@@ -4826,6 +4826,7 @@ dependencies = [
  "anyhow",
  "async-recursion",
  "async-trait",
+ "base64 0.13.1",
  "bincode",
  "blake3",
  "bytes",
