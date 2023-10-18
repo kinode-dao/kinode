@@ -5,10 +5,10 @@ use jwt::SignWithKey;
 use ring::pkcs8::Document;
 use ring::rand::SystemRandom;
 use ring::signature;
+use ring::signature::KeyPair;
 use sha2::Sha256;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
-use ring::signature::KeyPair;
 use warp::{
     http::{
         header::{HeaderValue, SET_COOKIE},
@@ -105,40 +105,33 @@ pub async fn register(
         .await;
 }
 
-async fn handle_has_keyfile(
-    keyfile: Arc<Mutex<Option<Vec<u8>>>>
-) -> Result<impl Reply, Rejection> {
-
+async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl Reply, Rejection> {
     Ok(warp::reply::json(
-        &keyfile.lock().unwrap().as_ref().unwrap().is_empty()))
-
+        &keyfile.lock().unwrap().as_ref().unwrap().is_empty(),
+    ))
 }
 
 async fn handle_keyfile_vet(
     payload: KeyfileVet,
-    keyfile_arc: Arc<Mutex<Option<Vec<u8>>>>
+    keyfile_arc: Arc<Mutex<Option<Vec<u8>>>>,
 ) -> Result<impl Reply, Rejection> {
-
     let encoded_keyfile = match payload.keyfile.is_empty() {
         true => keyfile_arc.lock().unwrap().clone().unwrap(),
         false => base64::decode(payload.keyfile).unwrap(),
     };
 
-    let decoded_keyfile = match 
-        keygen::decode_keyfile(encoded_keyfile, &payload.password) {
-            Ok(k) => k,
-            Err(_) => return Err(warp::reject()),
-        };
+    let decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile, &payload.password) {
+        Ok(k) => k,
+        Err(_) => return Err(warp::reject()),
+    };
 
     let keyfile_vetted = KeyfileVetted {
         username: decoded_keyfile.username,
-        networking_key: hex::encode(decoded_keyfile
-            .networking_keypair.public_key().as_ref()),
+        networking_key: hex::encode(decoded_keyfile.networking_keypair.public_key().as_ref()),
         routers: decoded_keyfile.routers,
     };
 
     Ok(warp::reply::json(&keyfile_vetted))
-
 }
 
 async fn handle_boot(
