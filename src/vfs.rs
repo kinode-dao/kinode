@@ -972,6 +972,30 @@ async fn match_request(
                             (is_file, is_dir, full_path, file_contents)
                         };
                         if is_file {
+                            let hash = {
+                                let vfs = vfs.lock().await;
+                                if !vfs.path_to_key.contains_key(&full_path) {
+                                    None
+                                } else {
+                                    send_to_terminal
+                                        .send(Printout {
+                                            verbosity: 1,
+                                            content: format!("vfs: overwriting file {}", full_path),
+                                        })
+                                        .await
+                                        .unwrap();
+                                    match vfs.path_to_key.get(&full_path) {
+                                        None => None,
+                                        Some(key) => {
+                                            let Key::File { id: hash } = key else {
+                                                panic!("");
+                                            };
+                                            Some(*hash)
+                                        }
+                                    }
+                                    // vfs.key_to_entry.remove(&old_key);
+                                }
+                            };
                             let _ = send_to_loop
                                 .send(KernelMessage {
                                     id,
@@ -988,7 +1012,7 @@ async fn match_request(
                                         inherit: true,
                                         expects_response: Some(5), // TODO evaluate
                                         ipc: Some(
-                                            serde_json::to_string(&FsAction::Write(None)).unwrap(),
+                                            serde_json::to_string(&FsAction::Write(hash)).unwrap(),
                                         ),
                                         metadata: None,
                                     }),
