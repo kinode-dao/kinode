@@ -3,6 +3,7 @@ cargo_component_bindings::generate!();
 use core::ffi::{c_char, c_int, c_ulonglong, CStr};
 use std::ffi::CString;
 
+use rusqlite::{Connection, types::FromSql, types::FromSqlError, types::ToSql, types::Value, types::ValueRef};
 use serde::{Deserialize, Serialize};
 
 use bindings::component::uq_process::types::*;
@@ -16,6 +17,47 @@ struct Component;
 
 const PREFIX: &str = "sqlite-";
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+enum SqlValue {
+    Integer(i64),
+    Real(f64),
+    Text(String),
+    Blob(Vec<u8>),
+}
+
+impl ToSql for SqlValue {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput> {
+        match self {
+            SqlValue::Integer(i) => i.to_sql(),
+            SqlValue::Real(f) => f.to_sql(),
+            SqlValue::Text(ref s) => s.to_sql(),
+            SqlValue::Blob(ref b) => b.to_sql(),
+        }
+    }
+}
+
+impl FromSql for SqlValue {
+    fn column_result(value: ValueRef<'_>) -> Result<Self, FromSqlError> {
+        match value {
+            ValueRef::Integer(i) => Ok(SqlValue::Integer(i)),
+            ValueRef::Real(f) => Ok(SqlValue::Real(f)),
+            ValueRef::Text(t) => {
+                let text_str = std::str::from_utf8(t).map_err(|_| FromSqlError::InvalidType)?;
+                Ok(SqlValue::Text(text_str.to_string()))
+            },
+            ValueRef::Blob(b) => Ok(SqlValue::Blob(b.to_vec())),
+            _ => Err(FromSqlError::InvalidType),
+        }
+    }
+}
+
+pub trait Deserializable: for<'de> Deserialize<'de> + Sized {
+    fn from_serialized(bytes: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
+        rmp_serde::from_slice(bytes)
+    }
+}
+
+impl Deserializable for Vec<SqlValue> {}
 
 #[repr(C)]
 pub struct COptionStr {
@@ -199,7 +241,7 @@ pub extern "C" fn send_and_await_response_wrapped(
     let request_metadata = from_coptionstr_to_option_string(request_metadata);
     let (
         _,
-        Message::Response((Response { ipc, metadata }, _)),
+        Message::Response((Response { ipc, metadata, .. }, _)),
     ) = send_and_await_response(
         &Address {
             node: target_node,
@@ -278,60 +320,67 @@ fn handle_message (
                     }
                     print_to_terminal(0, "sqlite: New done");
                 },
-                kt::SqliteMessage::Write { ref key, .. } => {
+                kt::SqliteMessage::Write { ref statement, .. } => {
                     let Some(db_handle) = db_handle else {
                         return Err(anyhow::anyhow!("need New before Write"));
                     };
 
-                    // let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
+                    let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
 
-                    // let write_txn = db.begin_write()?;
-                    // {
-                    //     let mut table = write_txn.open_table(TABLE)?;
-                    //     table.insert(&key[..], &bytes[..])?;
-                    // }
-                    // write_txn.commit()?;
+                    let parameters = Vec::<SqlValue>::from_serialized(&bytes)?;
+                    let parameters: Vec<&dyn rusqlite::ToSql> = parameters
+                        .iter()
+                        .map(|param| param as &dyn rusqlite::ToSql)
+                        .collect();
 
-                    // send_response(
-                    //     &Response {
-                    //         ipc,
-                    //         metadata: None,
-                    //     },
-                    //     None,
-                    // );
+                    db_handle.execute(
+                        statement,
+                        &parameters[..],
+                    )?;
+
+                    send_response(
+                        &Response {
+                            inherit: false,
+                            ipc,
+                            metadata: None,
+                        },
+                        None,
+                    );
                 },
-                kt::SqliteMessage::Read { ref key, .. } => {
-                    // let Some(db) = db else {
-                    //     return Err(anyhow::anyhow!("cannot send New more than once"));
-                    // };
+                kt::SqliteMessage::Read { ref query, .. } => {
+                    let Some(db_handle) = db_handle else {
+                        return Err(anyhow::anyhow!("need New before Write"));
+                    };
 
-                    // let read_txn = db.begin_read()?;
+                    let mut statement = db_handle.prepare(query)?;
+                    let column_names: Vec<String> = statement
+                        .column_names()
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect();
+                    let number_columns = column_names.len();
+                    let results: Vec<Vec<SqlValue>> = statement
+                        .query_map([], |row| {
+                            (0..number_columns)
+                                .map(|i| row.get(i))
+                                .collect()
+                            })?
+                        .map(|item| item.unwrap())  //  TODO
+                        .collect();
 
-                    // let table = read_txn.open_table(TABLE)?;
+                    let results = rmp_serde::to_vec(&results).unwrap();
 
-                    // match table.get(&key[..])? {
-                    //     None => {
-                    //         send_response(
-                    //             &Response {
-                    //                 ipc,
-                    //                 metadata: None,
-                    //             },
-                    //             None,
-                    //         );
-                    //     },
-                    //     Some(v) => {
-                    //         send_response(
-                    //             &Response {
-                    //                 ipc,
-                    //                 metadata: None,
-                    //             },
-                    //             Some(&Payload {
-                    //                 mime: None,
-                    //                 bytes: v.value().to_vec(),
-                    //             }),
-                    //         );
-                    //     },
-                    // };
+                    send_response(
+                        &Response {
+                            inherit: false,
+                            ipc,
+                            metadata: None,
+                        },
+                        Some(&Payload {
+                            mime: None,
+                            bytes: results,
+                        }),
+                    );
                 },
             }
 
