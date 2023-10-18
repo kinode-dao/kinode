@@ -7,6 +7,7 @@ use base64;
 use futures::SinkExt;
 use futures::StreamExt;
 use serde_urlencoded;
+use base64;
 
 use route_recognizer::Router;
 use std::collections::HashMap;
@@ -905,6 +906,7 @@ async fn handler(
         .await
         .insert(id, (original_path.clone(), response_sender));
 
+    let message = km.unwrap(); // DOUBLECHECK
     send_to_loop.send(message).await.unwrap();
     let timeout_duration = tokio::time::Duration::from_secs(15); // adjust as needed
     let result = tokio::time::timeout(timeout_duration, response_receiver).await;
