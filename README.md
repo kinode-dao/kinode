@@ -1,4 +1,4 @@
-Last updated: 10/02/23
+Last updated: 10/16/23
 ## Setup
 
 ### Building components
@@ -9,8 +9,11 @@ Last updated: 10/02/23
 git clone git@github.com:uqbar-dao/uqbar.git
 git clone git@github.com:uqbar-dao/redb.git
 
+Make sure the two repos are next to each other in your directory structure.
+
 # Get some stuff so we can build wasm.
 
+cd uqbar
 cargo install wasm-tools
 rustup install nightly
 rustup target add wasm32-wasi
@@ -23,7 +26,6 @@ git submodule update --init --recursive
 
 # Build the runtime, along with a number of booted-at-startup WASM modules including terminal and key_value
 # OPTIONAL: --release flag
-cd uqbar
 cargo +nightly build --release
 
 # Create the home directory for your node

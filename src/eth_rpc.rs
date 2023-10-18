@@ -134,6 +134,7 @@ pub async fn eth_rpc(
                         rsvp: None,
                         message: Message::Response((
                             Response {
+                                inherit: false,
                                 ipc: Some(
                                     serde_json::to_string::<Result<u64, EthRpcError>>(&Ok(
                                         message.id
@@ -301,6 +302,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: EthRpcError) 
         rsvp: None,
         message: Message::Response((
             Response {
+                inherit: false,
                 ipc: Some(serde_json::to_string::<Result<u64, EthRpcError>>(&Err(error)).unwrap()),
                 metadata: None,
             },

@@ -121,6 +121,7 @@ fn get_http_request_info(
 fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
     send_response(
         &Response {
+            inherit: false,
             ipc: Some(
                 json!({
                     "status": status,
@@ -735,6 +736,7 @@ impl Guest for Component {
                             print_to_terminal(1, "orgs: get_contact_info");
                             send_response(
                                 &Response {
+                                    inherit: false,
                                     ipc: Some(
                                         json!({
                                             "action": "get_contact_info",
@@ -758,6 +760,7 @@ impl Guest for Component {
                                     bindings::set_state(&to_vec(&state).unwrap());
                                     send_response(
                                         &Response {
+                                            inherit: false,
                                             ipc: Some(
                                                 json!({
                                                     "action": "update_contact_info",
@@ -777,6 +780,7 @@ impl Guest for Component {
                                     state.orgs.insert(org.id, org);
                                     send_response(
                                         &Response {
+                                            inherit: false,
                                             ipc: Some(
                                                 json!({
                                                     "action": "update_orgs",

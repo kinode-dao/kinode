@@ -4,12 +4,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use wasmtime::component::*;
 use wasmtime::{Config, Engine, Store, WasmBacktraceDetails};
-use wasmtime_wasi::preview2::{DirPerms, FilePerms, Table, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView};
 
 use crate::types as t;
 use crate::FILESYSTEM_PROCESS_ID;
@@ -95,47 +98,47 @@ impl WasiView for ProcessWasi {
 /// intercept wasi random
 ///
 
-#[async_trait::async_trait]
-impl wasi::random::insecure::Host for ProcessWasi {
-    async fn get_insecure_random_bytes(&mut self, len: u64) -> Result<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(len as usize);
-        for _ in 0..len {
-            bytes.push(rand::random());
-        }
-        Ok(bytes)
-    }
+// #[async_trait::async_trait]
+// impl wasi::random::insecure::Host for ProcessWasi {
+//     async fn get_insecure_random_bytes(&mut self, len: u64) -> Result<Vec<u8>> {
+//         let mut bytes = Vec::with_capacity(len as usize);
+//         for _ in 0..len {
+//             bytes.push(rand::random());
+//         }
+//         Ok(bytes)
+//     }
 
-    async fn get_insecure_random_u64(&mut self) -> Result<u64> {
-        Ok(rand::random())
-    }
-}
+//     async fn get_insecure_random_u64(&mut self) -> Result<u64> {
+//         Ok(rand::random())
+//     }
+// }
 
-#[async_trait::async_trait]
-impl wasi::random::insecure_seed::Host for ProcessWasi {
-    async fn insecure_seed(&mut self) -> Result<(u64, u64)> {
-        Ok((rand::random(), rand::random()))
-    }
-}
+// #[async_trait::async_trait]
+// impl wasi::random::insecure_seed::Host for ProcessWasi {
+//     async fn insecure_seed(&mut self) -> Result<(u64, u64)> {
+//         Ok((rand::random(), rand::random()))
+//     }
+// }
 
-#[async_trait::async_trait]
-impl wasi::random::random::Host for ProcessWasi {
-    async fn get_random_bytes(&mut self, len: u64) -> Result<Vec<u8>> {
-        let mut bytes = Vec::with_capacity(len as usize);
-        getrandom::getrandom(&mut bytes[..])?;
-        Ok(bytes)
-    }
+// #[async_trait::async_trait]
+// impl wasi::random::random::Host for ProcessWasi {
+//     async fn get_random_bytes(&mut self, len: u64) -> Result<Vec<u8>> {
+//         let mut bytes = Vec::with_capacity(len as usize);
+//         getrandom::getrandom(&mut bytes[..])?;
+//         Ok(bytes)
+//     }
 
-    async fn get_random_u64(&mut self) -> Result<u64> {
-        let mut bytes = Vec::with_capacity(8);
-        getrandom::getrandom(&mut bytes[..])?;
+//     async fn get_random_u64(&mut self) -> Result<u64> {
+//         let mut bytes = Vec::with_capacity(8);
+//         getrandom::getrandom(&mut bytes[..])?;
 
-        let mut number = 0u64;
-        for (i, &byte) in bytes.iter().enumerate() {
-            number |= (byte as u64) << (i * 8);
-        }
-        Ok(number)
-    }
-}
+//         let mut number = 0u64;
+//         for (i, &byte) in bytes.iter().enumerate() {
+//             number |= (byte as u64) << (i * 8);
+//         }
+//         Ok(number)
+//     }
+// }
 
 ///
 /// create the process API. this is where the functions that a process can use live.
@@ -154,13 +157,6 @@ impl UqProcessImports for ProcessWasi {
         {
             Ok(()) => Ok(()),
             Err(e) => Err(anyhow::anyhow!("fatal: couldn't send to terminal: {:?}", e)),
-        }
-    }
-
-    async fn get_unix_time(&mut self) -> Result<u64> {
-        match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-            Ok(t) => Ok(t.as_secs()),
-            Err(e) => Err(e.into()),
         }
     }
 
@@ -336,6 +332,11 @@ impl UqProcessImports for ProcessWasi {
             node: self.process.metadata.our.node.clone(),
             process: VFS_PROCESS_ID.en_wit(),
         };
+        let our_drive_name = [
+            self.process.metadata.our.process.package(),
+            self.process.metadata.our.process.publisher_node(),
+        ]
+        .join(":");
         let Ok(Ok((_, hash_response))) = send_and_await_response(
             self,
             None,
@@ -345,7 +346,7 @@ impl UqProcessImports for ProcessWasi {
                 expects_response: Some(5),
                 ipc: Some(
                     serde_json::to_string(&t::VfsRequest {
-                        drive: self.process.metadata.our.process.package().to_string(),
+                        drive: our_drive_name.clone(),
                         action: t::VfsAction::GetHash(wasm_path.clone()),
                     })
                     .unwrap(),
@@ -366,7 +367,6 @@ impl UqProcessImports for ProcessWasi {
         let t::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc).unwrap() else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-
         let Ok(Ok(_)) = send_and_await_response(
             self,
             None,
@@ -376,7 +376,7 @@ impl UqProcessImports for ProcessWasi {
                 expects_response: Some(5),
                 ipc: Some(
                     serde_json::to_string(&t::VfsRequest {
-                        drive: self.process.metadata.our.process.package().to_string(),
+                        drive: our_drive_name,
                         action: t::VfsAction::GetEntry(wasm_path.clone()),
                     })
                     .unwrap(),
@@ -389,7 +389,6 @@ impl UqProcessImports for ProcessWasi {
         else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-
         let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
@@ -403,7 +402,6 @@ impl UqProcessImports for ProcessWasi {
             self.process.metadata.our.process.package(),
             self.process.metadata.our.process.publisher_node(),
         );
-
         let Ok(Ok((_, response))) = send_and_await_response(
             self,
             Some(t::Address {
@@ -474,14 +472,12 @@ impl UqProcessImports for ProcessWasi {
         else {
             return Ok(Err(wit::SpawnError::NameTaken));
         };
-
         let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = response else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let t::KernelResponse::StartedProcess = serde_json::from_str(&ipc).unwrap() else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-
         // child processes are always able to Message parent
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.process
@@ -516,7 +512,6 @@ impl UqProcessImports for ProcessWasi {
             .await
             .unwrap();
         let _ = rx.await.unwrap();
-
         Ok(Ok(new_process_id.en_wit().to_owned()))
     }
 
@@ -619,9 +614,8 @@ impl UqProcessImports for ProcessWasi {
                     cap: cap.clone(),
                     responder: tx,
                 })
-                .await
-                .unwrap();
-            let _ = rx.await.unwrap();
+                .await?;
+            let _ = rx.await?;
         }
         Ok(())
     }
@@ -678,8 +672,36 @@ impl UqProcessImports for ProcessWasi {
                 },
                 responder: tx,
             })
-            .await;
-        let _ = rx.await.unwrap();
+            .await?;
+        let _ = rx.await?;
+        Ok(())
+    }
+
+    async fn share_capability(
+        &mut self,
+        to: wit::ProcessId,
+        signed_cap: wit::SignedCapability,
+    ) -> Result<()> {
+        let pk = signature::UnparsedPublicKey::new(
+            &signature::ED25519,
+            self.process.keypair.public_key(),
+        );
+        let cap = t::Capability {
+            issuer: t::Address::de_wit(signed_cap.issuer),
+            params: signed_cap.params,
+        };
+        pk.verify(&bincode::serialize(&cap).unwrap(), &signed_cap.signature)?;
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Add {
+                on: t::ProcessId::de_wit(to),
+                cap,
+                responder: tx,
+            })
+            .await?;
+        let _ = rx.await?;
         Ok(())
     }
     //
@@ -966,7 +988,10 @@ impl Process {
                 mime: p.mime,
                 bytes: p.bytes,
             }),
-            None => None,
+            None => match request.inherit {
+                true => self.last_payload.clone(),
+                false => None,
+            },
         };
 
         // rsvp is set if there was a Request expecting Response
@@ -1007,7 +1032,7 @@ impl Process {
             let self_sender = self.self_sender.clone();
             let timeout_handle = tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)).await;
-                self_sender
+                let _ = self_sender
                     .send(Err(t::WrappedSendError {
                         id: request_id,
                         source: t::Address::de_wit(target.clone()), // TODO check this
@@ -1018,8 +1043,7 @@ impl Process {
                             payload,
                         },
                     }))
-                    .await
-                    .unwrap();
+                    .await;
             });
             self.save_context(kernel_message.id, new_context, timeout_handle)
                 .await;
@@ -1049,6 +1073,11 @@ impl Process {
             }
         };
 
+        let payload = match response.inherit {
+            true => self.last_payload.clone(),
+            false => de_wit_payload(payload),
+        };
+
         self.send_to_loop
             .send(t::KernelMessage {
                 id,
@@ -1060,7 +1089,7 @@ impl Process {
                     // the context will be set by the process receiving this Response.
                     None,
                 )),
-                payload: de_wit_payload(payload),
+                payload,
                 signed_capabilities: None,
             })
             .await
@@ -1106,20 +1135,44 @@ async fn persist_state(
 
 /// create a specific process, and generate a task that will run it.
 async fn make_process_loop(
+    booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     metadata: t::ProcessMetadata,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
-    recv_in_process: ProcessMessageReceiver,
+    mut recv_in_process: ProcessMessageReceiver,
     send_to_process: ProcessMessageSender,
     wasm_bytes: &Vec<u8>,
     caps_oracle: t::CapMessageSender,
     engine: &Engine,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-    // let dir = std::env::current_dir().unwrap();
-    let dir = cap_std::fs::Dir::open_ambient_dir(home_directory_path, cap_std::ambient_authority())
-        .unwrap();
+    // before process can be instantiated, need to await booted message from kernel
+    if !booted.load(Ordering::Relaxed) {
+        let mut pre_boot_queue = Vec::<Result<t::KernelMessage, t::WrappedSendError>>::new();
+        while let Some(message) = recv_in_process.recv().await {
+            if let Err(_) = &message {
+                pre_boot_queue.push(message);
+                continue;
+            }
+            let message = message.unwrap();
+            if (message.source
+                == t::Address {
+                    node: metadata.our.node.clone(),
+                    process: KERNEL_PROCESS_ID.clone(),
+                })
+                && (message.message
+                    == t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        ipc: Some("booted".into()),
+                        metadata: None,
+                    }))
+            {
+                break;
+            }
+            pre_boot_queue.push(Ok(message));
+        }
+    }
 
     let component =
         Component::new(&engine, wasm_bytes).expect("make_process_loop: couldn't read file");
@@ -1128,30 +1181,28 @@ async fn make_process_loop(
     UqProcess::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
 
     let mut table = Table::new();
-    let wasi = WasiCtxBuilder::new()
-        .push_preopened_dir(dir, DirPerms::all(), FilePerms::all(), &"")
-        .build(&mut table)
-        .unwrap();
+    let wasi = WasiCtxBuilder::new().build(&mut table).unwrap();
 
-    // wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
-    wasmtime_wasi::preview2::bindings::clocks::wall_clock::add_to_linker(&mut linker, |t| t)
-        .unwrap();
-    wasmtime_wasi::preview2::bindings::clocks::monotonic_clock::add_to_linker(&mut linker, |t| t)
-        .unwrap();
-    wasmtime_wasi::preview2::bindings::clocks::timezone::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::filesystem::filesystem::add_to_linker(&mut linker, |t| t)
-        .unwrap();
-    wasmtime_wasi::preview2::bindings::poll::poll::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::io::streams::add_to_linker(&mut linker, |t| t).unwrap();
+    wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
+    // wasmtime_wasi::preview2::bindings::clocks::wall_clock::add_to_linker(&mut linker, |t| t)
+    //     .unwrap();
+    // wasmtime_wasi::preview2::bindings::clocks::monotonic_clock::add_to_linker(&mut linker, |t| t)
+    //     .unwrap();
+    // wasmtime_wasi::preview2::bindings::clocks::timezone::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::filesystem::filesystem::add_to_linker(&mut linker, |t| t)
+    //     .unwrap();
+    // wasmtime_wasi::preview2::bindings::poll::poll::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::io::streams::add_to_linker(&mut linker, |t| t).unwrap();
     // wasmtime_wasi::preview2::bindings::random::random::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::exit::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::environment::add_to_linker(&mut linker, |t| t)
-        .unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::preopens::add_to_linker(&mut linker, |t| t)
-        .unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::stdin::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::stdout::add_to_linker(&mut linker, |t| t).unwrap();
-    wasmtime_wasi::preview2::bindings::cli_base::stderr::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::exit::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::environment::add_to_linker(&mut linker, |t| t)
+    //     .unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::preopens::add_to_linker(&mut linker, |t| t)
+    //     .unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::stdin::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::stdout::add_to_linker(&mut linker, |t| t).unwrap();
+    // wasmtime_wasi::preview2::bindings::cli_base::stderr::add_to_linker(&mut linker, |t| t).unwrap();
+
     let mut store = Store::new(
         engine,
         ProcessWasi {
@@ -1194,15 +1245,24 @@ async fn make_process_loop(
 
         // the process will run until it returns from init()
         let is_error = match bindings.call_init(&mut store, &metadata.our.en_wit()).await {
-            Ok(()) => false,
+            Ok(()) => {
+                let _ =
+                    send_to_terminal
+                        .send(t::Printout {
+                            verbosity: 1,
+                            content: format!(
+                                "process {} returned without error",
+                                metadata.our.process,
+                            ),
+                        })
+                        .await;
+                false
+            }
             Err(e) => {
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
-                        content: format!(
-                            "mk: process {:?} ended with error:",
-                            metadata.our.process,
-                        ),
+                        content: format!("process {:?} ended with error:", metadata.our.process,),
                     })
                     .await;
                 for line in format!("{:?}", e).lines() {
@@ -1321,8 +1381,8 @@ async fn make_process_loop(
 /// handle messages sent directly to kernel. source is always our own node.
 async fn handle_kernel_request(
     our_name: String,
+    booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     km: t::KernelMessage,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
@@ -1349,6 +1409,36 @@ async fn handle_kernel_request(
         Ok(c) => c,
     };
     match command {
+        t::KernelCommand::Booted => {
+            for (process_id, process_sender) in senders {
+                let ProcessSender::Userspace(sender) = process_sender else {
+                    continue;
+                };
+                let _ = sender
+                    .send(Ok(t::KernelMessage {
+                        id: rand::random(),
+                        source: t::Address {
+                            node: our_name.clone(),
+                            process: KERNEL_PROCESS_ID.clone(),
+                        },
+                        target: t::Address {
+                            node: our_name.clone(),
+                            process: process_id.clone(),
+                        },
+                        rsvp: None,
+                        message: t::Message::Request(t::Request {
+                            inherit: false,
+                            expects_response: None,
+                            ipc: Some("booted".into()),
+                            metadata: None,
+                        }),
+                        payload: None,
+                        signed_capabilities: None,
+                    }))
+                    .await;
+            }
+            booted.store(true, Ordering::Relaxed);
+        }
         t::KernelCommand::Shutdown => {
             for handle in process_handles.values() {
                 handle.abort();
@@ -1384,6 +1474,7 @@ async fn handle_kernel_request(
                         rsvp: None,
                         message: t::Message::Response((
                             t::Response {
+                                inherit: false,
                                 ipc: Some(
                                     serde_json::to_string(&t::KernelResponse::StartProcessError)
                                         .unwrap(),
@@ -1419,11 +1510,20 @@ async fn handle_kernel_request(
                 valid_capabilities.insert(cap);
             }
 
+            // always give process the messaging cap for itself
+            valid_capabilities.insert(t::Capability {
+                issuer: t::Address {
+                    node: our_name.clone(),
+                    process: id.clone(),
+                },
+                params: "\"messaging\"".into(),
+            });
+
             // fires "success" response back
             start_process(
                 our_name,
+                booted,
                 keypair.clone(),
-                home_directory_path,
                 km.id,
                 &payload.bytes,
                 send_to_loop,
@@ -1540,6 +1640,7 @@ async fn handle_kernel_request(
                     rsvp: None,
                     message: t::Message::Response((
                         t::Response {
+                            inherit: false,
                             ipc: Some(
                                 serde_json::to_string(&t::KernelResponse::KilledProcess(
                                     process_id,
@@ -1566,8 +1667,8 @@ async fn handle_kernel_request(
 // `let meta: StartProcessMetadata ... `
 async fn handle_kernel_response(
     our_name: String,
+    booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     km: t::KernelMessage,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
@@ -1628,8 +1729,8 @@ async fn handle_kernel_response(
 
     start_process(
         our_name,
+        booted,
         keypair.clone(),
-        home_directory_path,
         km.id,
         &payload.bytes,
         send_to_loop,
@@ -1646,8 +1747,8 @@ async fn handle_kernel_response(
 
 async fn start_process(
     our_name: String,
+    booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     km_id: u64,
     km_payload_bytes: &Vec<u8>,
     send_to_loop: t::MessageSender,
@@ -1701,8 +1802,8 @@ async fn start_process(
         process_id.clone(),
         tokio::spawn(
             make_process_loop(
+                booted,
                 keypair.clone(),
-                home_directory_path,
                 metadata.clone(),
                 send_to_loop.clone(),
                 send_to_terminal.clone(),
@@ -1734,6 +1835,7 @@ async fn start_process(
             rsvp: None,
             message: t::Message::Response((
                 t::Response {
+                    inherit: false,
                     ipc: Some(serde_json::to_string(&t::KernelResponse::StartedProcess).unwrap()),
                     metadata: None,
                 },
@@ -1751,7 +1853,6 @@ async fn start_process(
 async fn make_event_loop(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     mut process_map: t::ProcessMap,
     caps_oracle_sender: t::CapMessageSender,
     mut caps_oracle_receiver: t::CapMessageReceiver,
@@ -1769,6 +1870,9 @@ async fn make_event_loop(
     send_to_terminal: t::PrintSender,
     engine: Engine,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
+    // shared global flag to mark if we're finished boot process
+    let booted = Arc::new(AtomicBool::new(false));
+
     Box::pin(async move {
         let mut senders: Senders = HashMap::new();
         senders.insert(
@@ -1839,6 +1943,7 @@ async fn make_event_loop(
             }
             if let t::OnPanic::Requests(requests) = &persisted.on_panic {
                 // if a persisted process had on-death-requests, we should perform them now
+                // TODO check for caps here
                 for (address, request, payload) in requests {
                     // the process that made the request is dead, so never expects response
                     let mut request = request.clone();
@@ -1862,10 +1967,35 @@ async fn make_event_loop(
             }
         }
 
+        // after all bootstrapping messages are handled, send a Booted kernelcommand
+        // to turn it on
+        send_to_loop
+            .send(t::KernelMessage {
+                id: rand::random(),
+                source: t::Address {
+                    node: our_name.clone(),
+                    process: KERNEL_PROCESS_ID.clone(),
+                },
+                target: t::Address {
+                    node: our_name.clone(),
+                    process: KERNEL_PROCESS_ID.clone(),
+                },
+                rsvp: None,
+                message: t::Message::Request(t::Request {
+                    inherit: true,
+                    expects_response: None,
+                    ipc: Some(serde_json::to_string(&t::KernelCommand::Booted).unwrap()),
+                    metadata: None,
+                }),
+                payload: None,
+                signed_capabilities: None,
+            })
+            .await
+            .unwrap();
+
         // main message loop
         loop {
             tokio::select! {
-                // aaa
                 // debug mode toggle: when on, this loop becomes a manual step-through
                 debug = recv_debug_in_loop.recv() => {
                     if let Some(t::DebugCommand::Toggle) = debug {
@@ -1912,7 +2042,8 @@ async fn make_event_loop(
                     //
                     // enforce capabilities by matching from our set based on fixed format
                     // enforce that if message is directed over the network, process has capability to do so
-                    if kernel_message.target.node != our_name {
+                    if kernel_message.source.node == our_name
+                      && kernel_message.target.node != our_name {
                         if !process_map.get(&kernel_message.source.process).unwrap().capabilities.contains(
                                 &t::Capability {
                                     issuer: t::Address {
@@ -1927,50 +2058,74 @@ async fn make_event_loop(
                                 t::Printout {
                                     verbosity: 0,
                                     content: format!(
-                                        "event loop: process {:?} doesn't have capability to send networked messages",
+                                        "event loop: process {} doesn't have capability to send networked messages",
                                         kernel_message.source.process
                                     )
                                 }
                             ).await;
                             continue;
                         }
+                    } else if kernel_message.source.node != our_name {
+                        // note that messaging restrictions only apply to *local* processes, if your
+                        // process has networking capabilities, it can be messaged by any process remotely..
+                        let Some(persisted) = process_map.get(&kernel_message.target.process) else {
+                            println!("kernel: did not find process in process_map: {}\r", kernel_message.target.process);
+                            continue;
+                        };
+                        if !persisted.capabilities.contains(
+                                &t::Capability {
+                                    issuer: t::Address {
+                                    node: our_name.clone(),
+                                    process: KERNEL_PROCESS_ID.clone(),
+                                },
+                                params: "\"network\"".into(),
+                        }) {
+                            // capabilities are not correct! skip this message.
+                            let _ = send_to_terminal.send(
+                                t::Printout {
+                                    verbosity: 0,
+                                    content: format!(
+                                        "event loop: process {} doesn't have capability to receive networked messages",
+                                        kernel_message.target.process
+                                    )
+                                }
+                            ).await;
+                            continue;
+                        }
                     } else {
-                        // enforce that process has capability to message a target process of this name
-                        // kernel and filesystem can ALWAYS message any process
+                        // enforce that local process has capability to message a target process of this name
+                        // kernel and filesystem can ALWAYS message any local process
                         if kernel_message.source.process != *KERNEL_PROCESS_ID
                             && kernel_message.source.process != *FILESYSTEM_PROCESS_ID
                         {
-                            let is_target_public = match process_map.get(&kernel_message.target.process) {
-                                None => false,
-                                Some(p) => p.public,
+                            let Some(persisted_source) = process_map.get(&kernel_message.source.process) else {
+                                println!("kernel: did not find process in process_map: {}\r", kernel_message.source.process);
+                                continue;
                             };
-                            if !is_target_public {
-                                match process_map.get(&kernel_message.source.process) {
-                                    None => {
-                                        println!("kernel: did not find process in process_map: {}\r", kernel_message.source.process);
-                                    }, // this should only get hit by kernel?
-                                    Some(persisted) => {
-                                        if !persisted.capabilities.contains(&t::Capability {
-                                            issuer: t::Address {
-                                                node: our_name.clone(),
-                                                process: kernel_message.target.process.clone(),
-                                            },
-                                            params: "\"messaging\"".into(),
-                                        }) {
-                                            // capabilities are not correct! skip this message.
-                                            // TODO some kind of error thrown back at process
-                                            let _ = send_to_terminal.send(
-                                                t::Printout {
-                                                    verbosity: 0,
-                                                    content: format!(
-                                                        "event loop: process {:?} doesn't have capability to message process {:?}",
-                                                        kernel_message.source.process, kernel_message.target.process
-                                                    )
-                                                }
-                                            ).await;
-                                            continue;
+                            let Some(persisted_target) = process_map.get(&kernel_message.target.process) else {
+                                println!("kernel: did not find process in process_map: {}\r", kernel_message.target.process);
+                                continue;
+                            };
+                            if !persisted_target.public {
+                                if !persisted_source.capabilities.contains(&t::Capability {
+                                    issuer: t::Address {
+                                        node: our_name.clone(),
+                                        process: kernel_message.target.process.clone(),
+                                    },
+                                    params: "\"messaging\"".into(),
+                                }) {
+                                    // capabilities are not correct! skip this message.
+                                    // TODO some kind of error thrown back at process
+                                    let _ = send_to_terminal.send(
+                                        t::Printout {
+                                            verbosity: 0,
+                                            content: format!(
+                                                "event loop: process {} doesn't have capability to message process {}",
+                                                kernel_message.source.process, kernel_message.target.process
+                                            )
                                         }
-                                    }
+                                    ).await;
+                                    continue;
                                 }
                             }
                         }
@@ -2002,8 +2157,8 @@ async fn make_event_loop(
                             t::Message::Request(_) => {
                                 handle_kernel_request(
                                     our_name.clone(),
+                                    booted.clone(),
                                     keypair.clone(),
-                                    home_directory_path.clone(),
                                     kernel_message,
                                     send_to_loop.clone(),
                                     send_to_terminal.clone(),
@@ -2017,8 +2172,8 @@ async fn make_event_loop(
                             t::Message::Response(_) => {
                                 handle_kernel_response(
                                     our_name.clone(),
+                                    booted.clone(),
                                     keypair.clone(),
-                                    home_directory_path.clone(),
                                     kernel_message,
                                     send_to_loop.clone(),
                                     send_to_terminal.clone(),
@@ -2129,7 +2284,6 @@ async fn make_event_loop(
 pub async fn kernel(
     our: t::Identity,
     keypair: Arc<signature::Ed25519KeyPair>,
-    home_directory_path: String,
     process_map: t::ProcessMap,
     caps_oracle_sender: t::CapMessageSender,
     caps_oracle_receiver: t::CapMessageReceiver,
@@ -2157,7 +2311,6 @@ pub async fn kernel(
         make_event_loop(
             our.name,
             keypair,
-            home_directory_path,
             process_map,
             caps_oracle_sender,
             caps_oracle_receiver,

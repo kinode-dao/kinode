@@ -1,7 +1,7 @@
 [
     {
-        "process_name": "app_tracker",
-        "process_wasm_path": "/app_tracker.wasm",
+        "process_name": "main",
+        "process_wasm_path": "/app_store.wasm",
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [
@@ -16,6 +16,6 @@
             "kernel:sys:uqbar",
             "eth_rpc:sys:uqbar"
         ],
-        "grant_messaging": []
+        "public": false
     }
 ]
