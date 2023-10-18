@@ -822,9 +822,7 @@ async fn match_request(
                             message: Message::Request(Request {
                                 inherit: true,
                                 expects_response: Some(5), // TODO evaluate
-                                ipc: Some(
-                                    serde_json::to_string(&FsAction::Write(hash)).unwrap(),
-                                ),
+                                ipc: Some(serde_json::to_string(&FsAction::Write(hash)).unwrap()),
                                 metadata: None,
                             }),
                             payload,
@@ -852,8 +850,7 @@ async fn match_request(
                         panic!("");
                     };
 
-                    let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key)
-                    else {
+                    let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
                         panic!("");
                     };
 
