@@ -117,6 +117,18 @@ impl PartialEq for ProcessId {
     }
 }
 
+impl PartialEq<&str> for ProcessId {
+    fn eq(&self, other: &&str) -> bool {
+        &self.to_string() == other
+    }
+}
+
+impl PartialEq<ProcessId> for &str {
+    fn eq(&self, other: &ProcessId) -> bool {
+        self == &other.to_string()
+    }
+}
+
 #[derive(Debug)]
 pub enum ProcessIdParseError {
     TooManyColons,
@@ -143,6 +155,55 @@ impl std::error::Error for ProcessIdParseError {
             ProcessIdParseError::MissingField => "Missing field in ProcessId string",
         }
     }
+}
+
+impl Address {
+    pub fn from_str(input: &str) -> Result<Self, AddressParseError> {
+        // split string on colons into 4 segments,
+        // first one with @, next 3 with :
+        let mut name_rest = input.split('@');
+        let node = name_rest
+            .next()
+            .ok_or(AddressParseError::MissingField)?
+            .to_string();
+        let mut segments = name_rest
+            .next()
+            .ok_or(AddressParseError::MissingNodeId)?
+            .split(':');
+        let process_name = segments
+            .next()
+            .ok_or(AddressParseError::MissingField)?
+            .to_string();
+        let package_name = segments
+            .next()
+            .ok_or(AddressParseError::MissingField)?
+            .to_string();
+        let publisher_node = segments
+            .next()
+            .ok_or(AddressParseError::MissingField)?
+            .to_string();
+        if segments.next().is_some() {
+            return Err(AddressParseError::TooManyColons);
+        }
+        Ok(Address {
+            node,
+            process: ProcessId {
+                process_name,
+                package_name,
+                publisher_node,
+            },
+        })
+    }
+    pub fn to_string(&self) -> String {
+        [self.node.as_str(), &self.process.to_string()].join("@")
+    }
+}
+
+#[derive(Debug)]
+pub enum AddressParseError {
+    TooManyColons,
+    MissingNodeId,
+    MissingField,
 }
 
 pub fn send_and_await_response(
