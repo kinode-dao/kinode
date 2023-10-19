@@ -16,16 +16,6 @@ const PROXY_HOME_PAGE: &str = include_str!("http_proxy.html");
 
 struct Component;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum FileSystemAction {
-    Read,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FileSystemRequest {
-    pub uri_string: String,
-    pub action: FileSystemAction,
-}
 
 fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
     send_response(
@@ -63,7 +53,7 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
+            process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
         };
 
         // <address, request, option<context>, option<payload>>
@@ -74,15 +64,13 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(
-                        serde_json::json!({
-                            "action": "bind-app",
+                    ipc: Some(json!({
+                        "BindPath": {
                             "path": "/http-proxy",
                             "authenticated": true,
-                            "app": "http_proxy",
-                        })
-                        .to_string(),
-                    ),
+                            "local_only": false
+                        }
+                    }).to_string()),
                     metadata: None,
                 },
                 None,
@@ -93,15 +81,13 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(
-                        serde_json::json!({
-                            "action": "bind-app",
+                    ipc: Some(json!({
+                        "BindPath": {
                             "path": "/http-proxy/static/*",
                             "authenticated": true,
-                            "app": "http_proxy",
-                        })
-                        .to_string(),
-                    ),
+                            "local_only": false
+                        }
+                    }).to_string()),
                     metadata: None,
                 },
                 None,
@@ -112,14 +98,13 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(
-                        serde_json::json!({
-                            "action": "bind-app",
+                    ipc: Some(json!({
+                        "BindPath": {
                             "path": "/http-proxy/list",
-                            "app": "http_proxy",
-                        })
-                        .to_string(),
-                    ),
+                            "authenticated": true,
+                            "local_only": false
+                        }
+                    }).to_string()),
                     metadata: None,
                 },
                 None,
@@ -130,14 +115,13 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(
-                        serde_json::json!({
-                            "action": "bind-app",
+                    ipc: Some(json!({
+                        "BindPath": {
                             "path": "/http-proxy/register",
-                            "app": "http_proxy",
-                        })
-                        .to_string(),
-                    ),
+                            "authenticated": true,
+                            "local_only": false
+                        }
+                    }).to_string()),
                     metadata: None,
                 },
                 None,
@@ -148,14 +132,13 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(
-                        serde_json::json!({
-                            "action": "bind-app",
+                    ipc: Some(json!({
+                        "BindPath": {
                             "path": "/http-proxy/serve/:username/*",
-                            "app": "http_proxy",
-                        })
-                        .to_string(),
-                    ),
+                            "authenticated": true,
+                            "local_only": false
+                        }
+                    }).to_string()),
                     metadata: None,
                 },
                 None,
@@ -386,14 +369,13 @@ impl Guest for Component {
                     send_request(
                         &Address {
                             node: username.into(),
-                            process: ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
+                            process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
                         },
                         &Request {
                             inherit: true,
                             expects_response: None,
                             ipc: Some(
                                 json!({
-                                    "action": "request",
                                     "method": message_json["method"],
                                     "path": proxied_path,
                                     "headers": message_json["headers"],
