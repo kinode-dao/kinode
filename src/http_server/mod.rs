@@ -8,12 +8,12 @@ use futures::SinkExt;
 use futures::StreamExt;
 use serde_urlencoded;
 
+use route_recognizer::Router;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
-use route_recognizer::Router;
 use warp::http::{header::HeaderValue, StatusCode};
 use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
@@ -41,7 +41,7 @@ pub async fn http_server(
     let ws_proxies: WebSocketProxies = Arc::new(Mutex::new(HashMap::new())); // channel_id -> node
 
     // Add RPC paths
-    let mut bindings_map:Router<BoundPath> = Router::new();
+    let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
         app: ProcessId::from_str("rpc:rpc:uqbar").unwrap(),
         authenticated: false,
@@ -228,7 +228,7 @@ async fn http_handle_messages(
 
             match senders.remove(&id) {
                 // if no corresponding entry, nowhere to send response
-                None => { }
+                None => {}
                 Some((path, channel)) => {
                     // if path is /rpc/message, return accordingly with base64 encoded payload
                     if path == "/rpc/message".to_string() {
