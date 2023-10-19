@@ -727,7 +727,7 @@ pub enum HttpServerError {
         json
     )]
     BadJson { json: String, error: String },
-    #[error("http_server: path bindning error:  {:?}", error)]
+    #[error("http_server: path binding error:  {:?}", error)]
     PathBind { error: String },
 }
 
