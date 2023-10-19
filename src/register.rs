@@ -156,12 +156,7 @@ async fn handle_boot(
         }
     }
 
-    let decoded_keyfile = if !encoded_keyfile.is_empty() {
-        match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
-            Ok(k) => k,
-            Err(_) => return Err(warp::reject()),
-        }
-    } else {
+    let decoded_keyfile = if info.reset || encoded_keyfile.is_empty() {
         let seed = SystemRandom::new();
         let mut jwt_secret = [0u8, 32];
         ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
@@ -176,6 +171,12 @@ async fn handle_boot(
                 .unwrap(),
             jwt_secret_bytes: jwt_secret.to_vec(),
             file_key: keygen::generate_file_key(),
+        }
+
+    } else {
+        match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
+            Ok(k) => k,
+            Err(_) => return Err(warp::reject()),
         }
     };
 

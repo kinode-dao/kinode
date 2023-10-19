@@ -80,6 +80,7 @@ pub struct BootInfo {
     pub password: String,
     pub keyfile: String,
     pub username: String,
+    pub reset: bool,
     pub direct: bool,
 }
 
