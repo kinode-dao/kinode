@@ -3,6 +3,7 @@ use futures::stream::SplitSink;
 use hmac::{Hmac, Mac};
 use jwt::{Error, VerifyWithKey};
 use serde::{Deserialize, Serialize};
+use regex::Regex;
 use sha2::Sha256;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
