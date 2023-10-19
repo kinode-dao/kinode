@@ -256,7 +256,7 @@ async fn http_handle_messages(
                             headers: default_headers,
                             body: Some(body),
                         });
-                        // error case here? 
+                        // error case here?
                     } else {
                         //  else try deserializing ipc into a HttpResponse
                         let json = serde_json::from_str::<HttpResponse>(
@@ -286,7 +286,6 @@ async fn http_handle_messages(
                                     && (segments.len() == 1 || segments.len() == 4)
                                     && matches!(segments.last(), Some(&"login"))
                                 {
-
                                     if let Some(auth_cookie) = response.headers.get("set-cookie") {
                                         let mut ws_auth_username = our.clone();
 
@@ -294,7 +293,6 @@ async fn http_handle_messages(
                                             && matches!(segments.get(0), Some(&"http-proxy"))
                                             && matches!(segments.get(1), Some(&"serve"))
                                         {
-
                                             if let Some(segment) = segments.get(2) {
                                                 ws_auth_username = segment.to_string();
                                             }
@@ -303,7 +301,6 @@ async fn http_handle_messages(
                                             jwt_secret_bytes.to_vec().as_slice(),
                                             ws_auth_username.clone(),
                                         ) {
-
                                             let auth_cookie_with_ws = format!(
                                                 "{}; uqbar-ws-auth_{}={};",
                                                 auth_cookie,
