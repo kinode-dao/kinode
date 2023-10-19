@@ -165,7 +165,6 @@ fn parse_command(
                     .insert(PackageId::new(&metadata.package, &metadata.publisher));
                 process_lib::set_state::<AppTrackerState>(&state);
             }
-            print_to_terminal(0, "app tracker senidng response!");
 
             Ok(Some(AppTrackerResponse::New { package: package.to_string() }))
         }
