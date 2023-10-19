@@ -230,10 +230,8 @@ async fn http_handle_messages(
                 // if no corresponding entry, nowhere to send response
                 None => { }
                 Some((path, channel)) => {
-                    println!("have a http_response with path {}", path);
                     // if path is /rpc/message, return accordingly with base64 encoded payload
                     if path == "/rpc/message".to_string() {
-                        println!("got rpc message!!");
                         let payload = payload.map(|p| {
                             let bytes = p.bytes;
                             let base64_bytes = base64::encode(&bytes);
@@ -270,13 +268,7 @@ async fn http_handle_messages(
                                 };
                                 let bytes = payload.bytes;
 
-                                let _ = print_tx
-                                    .send(Printout {
-                                        verbosity: 1,
-                                        content: format!("ID: {}", id.to_string()),
-                                    })
-                                    .await;
-
+                                // for the login case, todo refactor out?
                                 let segments: Vec<&str> = path
                                     .split('/')
                                     .filter(|&segment| !segment.is_empty())
@@ -365,11 +357,13 @@ async fn http_handle_messages(
                             let mut path_bindings = path_bindings.lock().await;
                             let app = source.process.clone().to_string();
 
+                            let mut path = path.clone();
                             if app != "homepage:homepage:uqbar" {
-                                if !path_starts_with(&path, &app) {
-                                    println!("cannot bind");
-                                    return Err(HttpServerError::PathBind { error: "path needs to start with /app:package:publisher/".into() });
-                                }
+                                path = if path.starts_with("/") {
+                                    format!("/{}{}", app, path)
+                                } else {
+                                    format!("/{}/{}", app, path)
+                                };
                             }
 
                             let bound_path = BoundPath {
@@ -714,22 +708,23 @@ async fn handler(
         None => "".to_string(),
     };
 
-    let path = path.as_str().to_string();
+    let raw_path = path.as_str().to_string();
     let id: u64 = rand::random();
     let real_headers = serialize_headers(&headers);
     let path_bindings = path_bindings.lock().await;
 
     let mut km: Option<KernelMessage> = None;
 
-    if let Ok(route) = path_bindings.recognize(&path) {
+    if let Ok(route) = path_bindings.recognize(&raw_path) {
         let bound_path = route.handler();
         let app = bound_path.app.to_string();
         let url_params: HashMap<&str, &str> = route.params().into_iter().collect();
+        let path = remove_process_id(&raw_path);
 
         if bound_path.authenticated {
             let auth_token = real_headers.get("cookie").cloned().unwrap_or_default();
             if !auth_cookie_valid(our.clone(), &auth_token, jwt_secret_bytes) {
-                println!("http_server: no secret, or invalid token");
+                // println!("http_server: no secret, or invalid token");
                 return Ok(
                     warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response()
                 );
@@ -812,7 +807,7 @@ async fn handler(
                         serde_json::json!({
                             "address": address,
                             "method": method.to_string(),
-                            "raw_path": path.clone(),
+                            "raw_path": raw_path.clone(),
                             "path": path.clone(),
                             "headers": serialize_headers(&headers),
                             "query_params": query_params,
@@ -837,7 +832,7 @@ async fn handler(
     http_response_senders
         .lock()
         .await
-        .insert(id, (path, response_sender));
+        .insert(id, (raw_path, response_sender));
 
     let message = km.unwrap(); // DOUBLECHECK
     send_to_loop.send(message).await.unwrap();
