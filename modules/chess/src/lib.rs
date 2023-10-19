@@ -177,7 +177,7 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
+            process: ProcessId::from_str("http_server:server:uqbar").unwrap(),
         };
 
         // <address, request, option<context>, option<payload>>
@@ -188,15 +188,13 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(
-                        serde_json::json!({
-                            "action": "bind-app",
+                    ipc: Some(json!({
+                        "BindPath": {
                             "path": "/chess",
-                            "app": "chess",
                             "authenticated": true,
-                        })
-                        .to_string(),
-                    ),
+                            "local_only": false
+                        }
+                    }).to_string()),
                     metadata: None,
                 },
                 None,
@@ -207,15 +205,13 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(
-                        serde_json::json!({
-                            "action": "bind-app",
+                    ipc: Some(json!({
+                        "BindPath": {
                             "path": "/chess/games",
-                            "app": "chess",
                             "authenticated": true,
-                        })
-                        .to_string(),
-                    ),
+                            "local_only": false
+                        }
+                    }).to_string()),
                     metadata: None,
                 },
                 None,
@@ -479,7 +475,7 @@ impl Guest for Component {
                             continue;
                         }
                     }
-                } else if source.process.to_string() == "http_bindings:http_bindings:uqbar" {
+                } else if source.process.to_string() == "http_server:sys:uqbar" {
                     let path = message_json["path"].as_str().unwrap_or("");
                     let method = message_json["method"].as_str().unwrap_or("");
 
