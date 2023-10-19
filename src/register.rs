@@ -172,7 +172,6 @@ async fn handle_boot(
             jwt_secret_bytes: jwt_secret.to_vec(),
             file_key: keygen::generate_file_key(),
         }
-
     } else {
         match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
             Ok(k) => k,
