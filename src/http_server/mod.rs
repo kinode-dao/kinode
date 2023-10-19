@@ -239,7 +239,7 @@ async fn http_handle_messages(
             let mut senders = http_response_senders.lock().await;
             match senders.remove(&id) {
                 // if no corresponding entry, nowhere to send response
-                None => {}
+                None => { }
                 Some((path, channel)) => {
                     // if path is /rpc/message, return accordingly with base64 encoded payload
                     if path == "/rpc:sys:uqbar/message".to_string() {
