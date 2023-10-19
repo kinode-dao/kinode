@@ -846,6 +846,7 @@ async fn handler(
                                 "address": address,
                                 "method": method.to_string(),
                                 "raw_path": path.clone(),
+                                "path": registered_path.clone(),
                                 "headers": serialize_headers(&headers),
                                 "query_params": query_params,
                                 "url_params": url_params,
