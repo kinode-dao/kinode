@@ -225,105 +225,128 @@ async fn http_handle_messages(
         Message::Response((ref response, _)) => {
             let mut senders = http_response_senders.lock().await;
 
-            let json =
-                serde_json::from_str::<HttpResponse>(&response.ipc.clone().unwrap_or_default());
-
-            match json {
-                Ok(mut response) => {
-                    let Some(payload) = payload else {
-                        return Err(HttpServerError::NoBytes);
-                    };
-
-                    let bytes = payload.bytes;
-
-                    let _ = print_tx
-                        .send(Printout {
-                            verbosity: 1,
-                            content: format!("ID: {}", id.to_string()),
+            match senders.remove(&id) {
+                // if no corresponding entry, nowhere to send response
+                None => {}
+                Some((path, channel)) => {
+                    println!("have a http_response with path {}", path);
+                    // if path is /rpc/message, return accordingly with base64 encoded payload
+                    if path == "/rpc/message".to_string() {
+                        println!("got rpc message!!");
+                        let payload = payload.map(|p| {
+                            let bytes = p.bytes;
+                            let base64_bytes = base64::encode(&bytes);
+                            Payload {
+                                mime: p.mime,
+                                bytes: base64_bytes.into_bytes(),
+                            }
+                        });
+                        let body = serde_json::json!({
+                            "ipc": response.ipc,
+                            "payload": payload
                         })
-                        .await;
-                    for (id, _) in senders.iter() {
-                        let _ = print_tx
-                            .send(Printout {
-                                verbosity: 1,
-                                content: format!("existing: {}", id.to_string()),
-                            })
-                            .await;
-                    }
+                        .to_string()
+                        .as_bytes()
+                        .to_vec();
+                        let mut default_headers = HashMap::new();
+                        default_headers.insert("Content-Type".to_string(), "text/html".to_string());
 
-                    match senders.remove(&id) {
-                        Some((path, channel)) => {
-                            let segments: Vec<&str> = path
-                                .split('/')
-                                .filter(|&segment| !segment.is_empty())
-                                .collect();
+                        let _ = channel.send(HttpResponse {
+                            status: 200,
+                            headers: default_headers,
+                            body: Some(body),
+                        });
+                        // error case here? 
+                    } else {
+                        //  else try deserializing ipc into a HttpResponse
+                        let json = serde_json::from_str::<HttpResponse>(
+                            &response.ipc.clone().unwrap_or_default(),
+                        );
+                        match json {
+                            Ok(mut response) => {
+                                let Some(payload) = payload else {
+                                    return Err(HttpServerError::NoBytes);
+                                };
+                                let bytes = payload.bytes;
 
-                            // If we're getting back a /login from a proxy (or our own node), then we should generate a jwt from the secret + the name of the ship, and then attach it to a header
-                            if response.status < 400
-                                && (segments.len() == 1 || segments.len() == 4)
-                                && matches!(segments.last(), Some(&"login"))
-                            {
-                                if let Some(auth_cookie) = response.headers.get("set-cookie") {
-                                    let mut ws_auth_username = our.clone();
-                                    if segments.len() == 4
-                                        && matches!(segments.get(0), Some(&"http-proxy"))
-                                        && matches!(segments.get(1), Some(&"serve"))
-                                    {
-                                        if let Some(segment) = segments.get(2) {
-                                            ws_auth_username = segment.to_string();
+                                let _ = print_tx
+                                    .send(Printout {
+                                        verbosity: 1,
+                                        content: format!("ID: {}", id.to_string()),
+                                    })
+                                    .await;
+
+                                let segments: Vec<&str> = path
+                                    .split('/')
+                                    .filter(|&segment| !segment.is_empty())
+                                    .collect();
+
+                                // If we're getting back a /login from a proxy (or our own node), then we should generate a jwt from the secret + the name of the ship, and then attach it to a header
+                                if response.status < 400
+                                    && (segments.len() == 1 || segments.len() == 4)
+                                    && matches!(segments.last(), Some(&"login"))
+                                {
+
+                                    if let Some(auth_cookie) = response.headers.get("set-cookie") {
+                                        let mut ws_auth_username = our.clone();
+
+                                        if segments.len() == 4
+                                            && matches!(segments.get(0), Some(&"http-proxy"))
+                                            && matches!(segments.get(1), Some(&"serve"))
+                                        {
+
+                                            if let Some(segment) = segments.get(2) {
+                                                ws_auth_username = segment.to_string();
+                                            }
+                                        }
+                                        if let Some(token) = register::generate_jwt(
+                                            jwt_secret_bytes.to_vec().as_slice(),
+                                            ws_auth_username.clone(),
+                                        ) {
+
+                                            let auth_cookie_with_ws = format!(
+                                                "{}; uqbar-ws-auth_{}={};",
+                                                auth_cookie,
+                                                ws_auth_username.clone(),
+                                                token
+                                            );
+                                            response.headers.insert(
+                                                "set-cookie".to_string(),
+                                                auth_cookie_with_ws,
+                                            );
+
+                                            let _ = print_tx
+                                                .send(Printout {
+                                                    verbosity: 1,
+                                                    content: format!(
+                                                        "SET WS AUTH COOKIE WITH USERNAME: {}",
+                                                        ws_auth_username
+                                                    ),
+                                                })
+                                                .await;
                                         }
                                     }
-                                    if let Some(token) = register::generate_jwt(
-                                        jwt_secret_bytes.to_vec().as_slice(),
-                                        ws_auth_username.clone(),
-                                    ) {
-                                        let auth_cookie_with_ws = format!(
-                                            "{}; uqbar-ws-auth_{}={};",
-                                            auth_cookie,
-                                            ws_auth_username.clone(),
-                                            token
-                                        );
-                                        response
-                                            .headers
-                                            .insert("set-cookie".to_string(), auth_cookie_with_ws);
-                                        let _ = print_tx
-                                            .send(Printout {
-                                                verbosity: 1,
-                                                content: format!(
-                                                    "SET WS AUTH COOKIE WITH USERNAME: {}",
-                                                    ws_auth_username
-                                                ),
-                                            })
-                                            .await;
-                                    }
                                 }
+                                let _ = channel.send(HttpResponse {
+                                    status: response.status,
+                                    headers: response.headers,
+                                    body: Some(bytes),
+                                });
                             }
-                            let _ = channel.send(HttpResponse {
-                                status: response.status,
-                                headers: response.headers,
-                                body: Some(bytes),
-                            });
+                            Err(_json_parsing_err) => {
+                                let mut error_headers = HashMap::new();
+                                error_headers
+                                    .insert("Content-Type".to_string(), "text/html".to_string());
+
+                                let _ = channel.send(HttpResponse {
+                                    status: 503,
+                                    headers: error_headers,
+                                    body: Some(
+                                        format!("Internal Server Error").as_bytes().to_vec(),
+                                    ),
+                                });
+                            }
                         }
-                        None => {
-                            println!(
-                                "http_server: inconsistent state, no key found for id {}",
-                                id
-                            );
-                        }
-                    }
-                }
-                Err(_json_parsing_err) => {
-                    let mut error_headers = HashMap::new();
-                    error_headers.insert("Content-Type".to_string(), "text/html".to_string());
-                    match senders.remove(&id) {
-                        Some((_path, channel)) => {
-                            let _ = channel.send(HttpResponse {
-                                status: 503,
-                                headers: error_headers,
-                                body: Some(format!("Internal Server Error").as_bytes().to_vec()),
-                            });
-                        }
-                        None => {}
                     }
                 }
             }

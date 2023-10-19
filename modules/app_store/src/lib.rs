@@ -165,6 +165,7 @@ fn parse_command(
                     .insert(PackageId::new(&metadata.package, &metadata.publisher));
                 process_lib::set_state::<AppTrackerState>(&state);
             }
+            print_to_terminal(0, "app tracker senidng response!");
 
             Ok(Some(AppTrackerResponse::New { package: package.to_string() }))
         }
@@ -389,7 +390,7 @@ impl Guest for Component {
     fn init(our: Address) {
         assert_eq!(our.process.to_string(), "main:app_store:uqbar");
 
-        // grant messaging caps to http_bindings and terminal
+        // grant messaging caps to http_server and terminal
         let Some(our_messaging_cap) = bindings::get_capability(
             &our,
             &"\"messaging\"".into()
@@ -397,7 +398,7 @@ impl Guest for Component {
             panic!("missing self-messaging cap!")
         };
         bindings::share_capability(
-            &ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
+            &ProcessId::from_str("http_server:sys:uqbar").unwrap(),
             &our_messaging_cap,
         );
         bindings::share_capability(
