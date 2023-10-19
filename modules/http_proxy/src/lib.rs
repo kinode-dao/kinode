@@ -66,7 +66,7 @@ impl Guest for Component {
                     expects_response: None,
                     ipc: Some(json!({
                         "BindPath": {
-                            "path": "/http-proxy",
+                            "path": "/",
                             "authenticated": true,
                             "local_only": false
                         }
@@ -83,7 +83,7 @@ impl Guest for Component {
                     expects_response: None,
                     ipc: Some(json!({
                         "BindPath": {
-                            "path": "/http-proxy/static/*",
+                            "path": "/static/*",
                             "authenticated": true,
                             "local_only": false
                         }
@@ -100,7 +100,7 @@ impl Guest for Component {
                     expects_response: None,
                     ipc: Some(json!({
                         "BindPath": {
-                            "path": "/http-proxy/list",
+                            "path": "/list",
                             "authenticated": true,
                             "local_only": false
                         }
@@ -117,7 +117,7 @@ impl Guest for Component {
                     expects_response: None,
                     ipc: Some(json!({
                         "BindPath": {
-                            "path": "/http-proxy/register",
+                            "path": "/register",
                             "authenticated": true,
                             "local_only": false
                         }
@@ -134,7 +134,7 @@ impl Guest for Component {
                     expects_response: None,
                     ipc: Some(json!({
                         "BindPath": {
-                            "path": "/http-proxy/serve/:username/*",
+                            "path": "/serve/:username/*",
                             "authenticated": true,
                             "local_only": false
                         }
@@ -178,7 +178,7 @@ impl Guest for Component {
                 format!("http_proxy: got request: {}", message_json).as_str(),
             );
 
-            if message_json["path"] == "/http-proxy" && message_json["method"] == "GET" {
+            if message_json["path"] == "/" && message_json["method"] == "GET" {
                 send_response(
                     &Response {
                         inherit: false,
@@ -202,7 +202,7 @@ impl Guest for Component {
                             .to_vec(),
                     }),
                 );
-            } else if message_json["path"] == "/http-proxy/list" && message_json["method"] == "GET"
+            } else if message_json["path"] == "/list" && message_json["method"] == "GET"
             {
                 send_response(
                     &Response {
@@ -227,13 +227,13 @@ impl Guest for Component {
                             .to_vec(),
                     }),
                 );
-            } else if message_json["path"] == "/http-proxy/register"
+            } else if message_json["path"] == "/register"
                 && message_json["method"] == "POST"
             {
                 let mut status = 204;
 
                 let Some(payload) = get_payload() else {
-                    print_to_terminal(1, "/http-proxy/register POST with no bytes");
+                    print_to_terminal(1, "/register POST with no bytes");
                     continue;
                 };
 
@@ -282,10 +282,10 @@ impl Guest for Component {
                         .to_vec(),
                     }),
                 );
-            } else if message_json["path"] == "/http-proxy/register"
+            } else if message_json["path"] == "/register"
                 && message_json["method"] == "DELETE"
             {
-                print_to_terminal(1, "HERE IN /http-proxy/register to delete something");
+                print_to_terminal(1, "HERE IN /register to delete something");
                 let username = message_json["query_params"]["username"]
                     .as_str()
                     .unwrap_or("");
@@ -325,7 +325,7 @@ impl Guest for Component {
                         .to_vec(),
                     }),
                 );
-            } else if message_json["path"] == "/http-proxy/serve/:username/*" {
+            } else if message_json["path"] == "/serve/:username/*" {
                 let username = message_json["url_params"]["username"]
                     .as_str()
                     .unwrap_or("");
