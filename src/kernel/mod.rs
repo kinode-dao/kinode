@@ -1059,7 +1059,6 @@ async fn persist_state(
     process_map: &t::ProcessMap,
 ) -> Result<()> {
     let bytes = bincode::serialize(process_map)?;
-
     send_to_loop
         .send(t::KernelMessage {
             id: rand::random(),
@@ -1074,7 +1073,7 @@ async fn persist_state(
             rsvp: None,
             message: t::Message::Request(t::Request {
                 inherit: true,
-                expects_response: Some(5), // TODO evaluate
+                expects_response: None,
                 ipc: Some(
                     serde_json::to_string(&t::FsAction::SetState(KERNEL_PROCESS_ID.clone()))
                         .unwrap(),
