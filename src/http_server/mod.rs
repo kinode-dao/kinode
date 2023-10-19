@@ -3,10 +3,10 @@ use crate::register;
 use crate::types::*;
 use anyhow::Result;
 
+use base64;
 use futures::SinkExt;
 use futures::StreamExt;
 use serde_urlencoded;
-use base64;
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -336,7 +336,11 @@ async fn http_handle_messages(
             match serde_json::from_str(&json) {
                 Ok(message) => {
                     match message {
-                        HttpServerMessage::BindPath { path, authenticated, local_only } => {
+                        HttpServerMessage::BindPath {
+                            path,
+                            authenticated,
+                            local_only,
+                        } => {
                             let mut path_bindings = path_bindings.lock().await;
                             println!("got bindpath! {} {} {}", path, authenticated, local_only);
                             let app = source.process.clone().to_string();
@@ -347,12 +351,24 @@ async fn http_handle_messages(
 
                             if app != "homepage:homepage:uqbar"
                                 && (path_segments.is_empty()
-                                    || path_segments[0] != app.split(':').next().unwrap_or_default().to_string().replace("_", "-"))
+                                    || path_segments[0]
+                                        != app
+                                            .split(':')
+                                            .next()
+                                            .unwrap_or_default()
+                                            .to_string()
+                                            .replace("_", "-"))
                             {
-                                return Err(HttpServerError::PathBind { error: format!("invalid path: {}", path) })
+                                return Err(HttpServerError::PathBind {
+                                    error: format!("invalid path: {}", path),
+                                });
                             } else {
-                                if !app.clone().ends_with(":sys:uqbar") && path_bindings.contains_key(&path) {
-                                    return Err(HttpServerError::PathBind { error: format!("already bound path!: {}", path) })
+                                if !app.clone().ends_with(":sys:uqbar")
+                                    && path_bindings.contains_key(&path)
+                                {
+                                    return Err(HttpServerError::PathBind {
+                                        error: format!("already bound path!: {}", path),
+                                    });
                                 }
                                 let bound_path = BoundPath {
                                     app: source.process,
@@ -701,8 +717,8 @@ async fn handler(
     let real_headers = serialize_headers(&headers);
 
     let path_bindings = path_bindings.lock().await;
-    
-    // todo: maybe don't loop through each, library help? 
+
+    // todo: maybe don't loop through each, library help?
     let path_segments = path
         .trim_start_matches('/')
         .trim_end_matches('/')
@@ -727,9 +743,7 @@ async fn handler(
         for i in 0..key_segments.len() {
             if key_segments[i] == "*" {
                 break;
-            } else if !(key_segments[i].starts_with(":")
-                || key_segments[i] == path_segments[i])
-            {
+            } else if !(key_segments[i].starts_with(":") || key_segments[i] == path_segments[i]) {
                 paths_match = false;
                 break;
             } else if key_segments[i].starts_with(":") {
@@ -747,44 +761,40 @@ async fn handler(
         url_params = HashMap::new();
     }
 
-    let mut km: Option<KernelMessage> = None; 
+    let mut km: Option<KernelMessage> = None;
 
     if let Some(bound_path) = path_bindings.get(&registered_path) {
         let app = bound_path.app.to_string();
         println!("http_server: got path, app: {}", app);
         if bound_path.authenticated {
-            let auth_token = real_headers.get("cookie").cloned().unwrap_or_default();   
+            let auth_token = real_headers.get("cookie").cloned().unwrap_or_default();
             if !auth_cookie_valid(our.clone(), &auth_token, jwt_secret_bytes) {
                 println!("http_server: no secret, or invalid token");
-                return Ok(warp::reply::with_status(
-                    vec![],
-                    StatusCode::UNAUTHORIZED,
-                ).into_response());
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response()
+                );
             }
         }
 
         if bound_path.local_only && !address.starts_with("127.0.0.1:") {
             // send 403
             let mut headers = HashMap::new();
-            headers.insert(
-                "Content-Type".to_string(),
-                "text/html".to_string(),
-            );
+            headers.insert("Content-Type".to_string(), "text/html".to_string());
         }
 
         // RPC functionality: if path is /rpc/message,
         // we extract message from base64 encoded bytes in data
         // and send it to the correct app.
-        
+
         if app == "rpc:rpc:uqbar".to_string() {
-            let rpc_message: RpcMessage = match serde_json::from_slice(&body) { // to_vec()?
+            let rpc_message: RpcMessage = match serde_json::from_slice(&body) {
+                // to_vec()?
                 Ok(v) => v,
                 Err(_) => {
                     println!("http_server: JSON is not valid RpcMessage");
-                    return Ok(warp::reply::with_status(
-                        vec![],
-                        StatusCode::BAD_REQUEST,
-                    ).into_response());
+                    return Ok(
+                        warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                    );
                 }
             };
 
@@ -796,78 +806,71 @@ async fn handler(
                 Err(_) => None,
             };
 
-            km = Some(
-                KernelMessage {
-                    id, 
-                    source: Address {
-                        node: our.clone(),
-                        process: HTTP_SERVER_PROCESS_ID.clone(),
-                    },
-                    target: Address {
-                        node: rpc_message.node,
-                        process: ProcessId::from_str(&rpc_message.process).unwrap(), // DOUBLECHECK
-                    },
-                    rsvp: Some(Address {
-                        node: our.clone(),
-                        process: HTTP_SERVER_PROCESS_ID.clone(),
-                    }),
-                    message: Message::Request(Request {
-                        inherit: false,
-                        expects_response: Some(30), // TODO evaluate timeout
-                        ipc: rpc_message.ipc,
-                        metadata: rpc_message.metadata,
-                    }),
-                    payload,
-                    signed_capabilities: None,
-                }
-            )
+            km = Some(KernelMessage {
+                id,
+                source: Address {
+                    node: our.clone(),
+                    process: HTTP_SERVER_PROCESS_ID.clone(),
+                },
+                target: Address {
+                    node: rpc_message.node,
+                    process: ProcessId::from_str(&rpc_message.process).unwrap(), // DOUBLECHECK
+                },
+                rsvp: Some(Address {
+                    node: our.clone(),
+                    process: HTTP_SERVER_PROCESS_ID.clone(),
+                }),
+                message: Message::Request(Request {
+                    inherit: false,
+                    expects_response: Some(30), // TODO evaluate timeout
+                    ipc: rpc_message.ipc,
+                    metadata: rpc_message.metadata,
+                }),
+                payload,
+                signed_capabilities: None,
+            })
         } else {
             // otherwise, make a message, to the correct app.
-            km = Some(
-                KernelMessage {
-                    id, 
-                    source: Address {
-                        node: our.clone(),
-                        process: HTTP_SERVER_PROCESS_ID.clone(),
-                    },
-                    target: Address {
-                        node: our.clone(),  
-                        process: bound_path.app.clone(),
-                    },
-                    rsvp: Some(Address {
-                        node: our.clone(),
-                        process: HTTP_SERVER_PROCESS_ID.clone(),
-                    }),
-                    message: Message::Request(Request {
-                        inherit: false,
-                        expects_response: Some(30), // TODO evaluate timeout
-                        ipc: Some(
-                            serde_json::json!({
-                                "address": address,
-                                "method": method.to_string(),
-                                "raw_path": path.clone(),
-                                "path": registered_path.clone(),
-                                "headers": serialize_headers(&headers),
-                                "query_params": query_params,
-                                "url_params": url_params,
-                            })
-                            .to_string(),
-                        ),
-                        metadata: None,
-                    }),
-                    payload: Some(Payload {
-                        mime: Some("application/octet-stream".to_string()), // TODO adjust MIME type as needed
-                        bytes: body.to_vec(),
-                    }),
-                    signed_capabilities: None,
-                }
-            )
+            km = Some(KernelMessage {
+                id,
+                source: Address {
+                    node: our.clone(),
+                    process: HTTP_SERVER_PROCESS_ID.clone(),
+                },
+                target: Address {
+                    node: our.clone(),
+                    process: bound_path.app.clone(),
+                },
+                rsvp: Some(Address {
+                    node: our.clone(),
+                    process: HTTP_SERVER_PROCESS_ID.clone(),
+                }),
+                message: Message::Request(Request {
+                    inherit: false,
+                    expects_response: Some(30), // TODO evaluate timeout
+                    ipc: Some(
+                        serde_json::json!({
+                            "address": address,
+                            "method": method.to_string(),
+                            "raw_path": path.clone(),
+                            "path": registered_path.clone(),
+                            "headers": serialize_headers(&headers),
+                            "query_params": query_params,
+                            "url_params": url_params,
+                        })
+                        .to_string(),
+                    ),
+                    metadata: None,
+                }),
+                payload: Some(Payload {
+                    mime: Some("application/octet-stream".to_string()), // TODO adjust MIME type as needed
+                    bytes: body.to_vec(),
+                }),
+                signed_capabilities: None,
+            })
         }
     } else {
-        return Ok(warp::reply::with_status(
-            vec![],
-            StatusCode::NOT_FOUND,
-        ).into_response());
+        return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
     }
 
     println!("sending km message to somebody");
