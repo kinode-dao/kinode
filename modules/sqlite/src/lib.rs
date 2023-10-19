@@ -3,8 +3,10 @@ cargo_component_bindings::generate!();
 use core::ffi::{c_char, c_int, c_ulonglong, CStr};
 use std::ffi::CString;
 
+use crate::sqlite_types::Deserializable;
+
 use rusqlite::{Connection, types::FromSql, types::FromSqlError, types::ToSql, types::Value, types::ValueRef};
-use serde::{Deserialize, Serialize};
+// use serde::{Deserialize, Serialize};
 
 use bindings::component::uq_process::types::*;
 use bindings::{get_payload, Guest, print_to_terminal, receive, send_and_await_response, send_response};
@@ -12,57 +14,49 @@ use bindings::{get_payload, Guest, print_to_terminal, receive, send_and_await_re
 mod kernel_types;
 use kernel_types as kt;
 mod process_lib;
+mod sqlite_types;
+use sqlite_types as sq;
 
 struct Component;
 
 const PREFIX: &str = "sqlite-";
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-enum SqlValue {
-    Integer(i64),
-    Real(f64),
-    Text(String),
-    Blob(Vec<u8>),
-}
-
-impl ToSql for SqlValue {
+impl ToSql for sq::SqlValue {
     fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput> {
         match self {
-            SqlValue::Integer(i) => i.to_sql(),
-            SqlValue::Real(f) => f.to_sql(),
-            SqlValue::Text(ref s) => s.to_sql(),
-            SqlValue::Blob(ref b) => b.to_sql(),
+            sq::SqlValue::Integer(i) => i.to_sql(),
+            sq::SqlValue::Real(f) => f.to_sql(),
+            sq::SqlValue::Text(ref s) => s.to_sql(),
+            sq::SqlValue::Blob(ref b) => b.to_sql(),
         }
     }
 }
 
-impl FromSql for SqlValue {
+impl FromSql for sq::SqlValue {
     fn column_result(value: ValueRef<'_>) -> Result<Self, FromSqlError> {
         match value {
-            ValueRef::Integer(i) => Ok(SqlValue::Integer(i)),
-            ValueRef::Real(f) => Ok(SqlValue::Real(f)),
+            ValueRef::Integer(i) => Ok(sq::SqlValue::Integer(i)),
+            ValueRef::Real(f) => Ok(sq::SqlValue::Real(f)),
             ValueRef::Text(t) => {
                 let text_str = std::str::from_utf8(t).map_err(|_| FromSqlError::InvalidType)?;
-                Ok(SqlValue::Text(text_str.to_string()))
+                Ok(sq::SqlValue::Text(text_str.to_string()))
             },
-            ValueRef::Blob(b) => Ok(SqlValue::Blob(b.to_vec())),
+            ValueRef::Blob(b) => Ok(sq::SqlValue::Blob(b.to_vec())),
             _ => Err(FromSqlError::InvalidType),
         }
     }
 }
 
-pub trait Deserializable: for<'de> Deserialize<'de> + Sized {
-    fn from_serialized(bytes: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
-        rmp_serde::from_slice(bytes)
-    }
+#[repr(C)]
+pub struct CPreOptionStr {
+    is_empty: c_int,        // 0 -> string is empty
+    string: CString,
 }
-
-impl Deserializable for Vec<SqlValue> {}
 
 #[repr(C)]
 pub struct COptionStr {
     is_empty: c_int,        // 0 -> string is empty
-    string: *const c_char,
+    string: *mut c_char,
 }
 
 #[repr(C)]
@@ -87,19 +81,32 @@ pub struct CProcessId {
 
 #[repr(C)]
 pub struct CIpcMetadata {
-    ipc: *const COptionStr,
-    metadata: *const COptionStr,
+    ipc: *mut COptionStr,
+    metadata: *mut COptionStr,
+}
+
+impl CPreOptionStr {
+    fn new(s: Option<String>) -> Self {
+        let (is_empty, string) = match s {
+            None => (0, CString::new("").unwrap()),
+            Some(s) => (1, CString::new(s).unwrap()),
+        };
+        CPreOptionStr {
+            is_empty,
+            string,
+        }
+    }
 }
 
 impl COptionStr {
     fn new(s: Option<String>) -> Self {
         let (is_empty, string) = match s {
-            None => (0, CString::new("").expect("")),
-            Some(s) => (1, CString::new(s).expect("")),
+            None => (0, CString::new("").unwrap()),
+            Some(s) => (1, CString::new(s).unwrap()),
         };
         COptionStr {
             is_empty,
-            string: string.as_ptr(),
+            string: string.as_ptr() as *mut c_char,
         }
     }
 
@@ -213,15 +220,25 @@ pub extern "C" fn get_payload_wrapped() -> *mut CPayload {
 }
 
 impl CIpcMetadata {
-    fn new(ipc: *const COptionStr, metadata: *const COptionStr) -> Self {
-        CIpcMetadata {
-            ipc,
-            metadata,
+    fn copy_to_ptr(ptr: *mut CIpcMetadata, ipc: CPreOptionStr, metadata: CPreOptionStr) {
+        unsafe {
+            (*(*ptr).ipc).is_empty = ipc.is_empty;
+            if ipc.is_empty == 1 {
+                std::ptr::copy_nonoverlapping(
+                    ipc.string.as_ptr(),
+                    (*(*ptr).ipc).string,
+                    ipc.string.as_bytes_with_nul().len(),
+                );
+            }
+            (*(*ptr).metadata).is_empty = metadata.is_empty;
+            if metadata.is_empty == 1 {
+                std::ptr::copy_nonoverlapping(
+                    metadata.string.as_ptr(),
+                    (*(*ptr).metadata).string,
+                    metadata.string.as_bytes_with_nul().len(),
+                );
+            }
         }
-    }
-
-    fn as_ptr(self) -> *const Self {
-        Box::into_raw(Box::new(self))
     }
 }
 
@@ -233,7 +250,8 @@ pub extern "C" fn send_and_await_response_wrapped(
     request_metadata: *const COptionStr,
     payload: *const CPayload,
     timeout: c_ulonglong,
-) -> *const CIpcMetadata {
+    return_val: *mut CIpcMetadata,
+) {
     let target_node = from_cstr_to_string(target_node);
     let target_process = from_cprocessid_to_processid(target_process);
     let payload = from_cpayload_to_option_payload(payload);
@@ -260,7 +278,10 @@ pub extern "C" fn send_and_await_response_wrapped(
     ).unwrap() else {
         panic!("");
     };
-    CIpcMetadata::new(COptionStr::new(ipc).as_ptr(), COptionStr::new(metadata).as_ptr()).as_ptr()
+    let ipc = CPreOptionStr::new(ipc);
+    let metadata = CPreOptionStr::new(metadata);
+
+    CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
 }
 
 fn handle_message (
@@ -281,7 +302,7 @@ fn handle_message (
         Message::Response(_) => { unimplemented!() },
         Message::Request(Request { ipc, .. }) => {
             match process_lib::parse_message_ipc(ipc.clone())? {
-                kt::SqliteMessage::New { db } => {
+                sq::SqliteMessage::New { db } => {
                     let vfs_address = Address {
                         node: our.node.clone(),
                         process: kt::ProcessId::new("vfs", "sys", "uqbar").en_wit(),
@@ -319,24 +340,41 @@ fn handle_message (
                         },
                     }
                     print_to_terminal(0, "sqlite: New done");
+                    send_response(
+                        &Response {
+                            inherit: false,
+                            ipc,
+                            metadata: None,
+                        },
+                        None,
+                    );
                 },
-                kt::SqliteMessage::Write { ref statement, .. } => {
+                sq::SqliteMessage::Write { ref statement, .. } => {
                     let Some(db_handle) = db_handle else {
                         return Err(anyhow::anyhow!("need New before Write"));
                     };
 
-                    let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
+                    match get_payload() {
+                        None => {
+                            let parameters: Vec<&dyn rusqlite::ToSql> = vec![];
+                            db_handle.execute(
+                                statement,
+                                &parameters[..],
+                            )?;
+                        },
+                        Some(Payload { mime: _, ref bytes }) => {
+                            let parameters = Vec::<sq::SqlValue>::from_serialized(&bytes)?;
+                            let parameters: Vec<&dyn rusqlite::ToSql> = parameters
+                                .iter()
+                                .map(|param| param as &dyn rusqlite::ToSql)
+                                .collect();
 
-                    let parameters = Vec::<SqlValue>::from_serialized(&bytes)?;
-                    let parameters: Vec<&dyn rusqlite::ToSql> = parameters
-                        .iter()
-                        .map(|param| param as &dyn rusqlite::ToSql)
-                        .collect();
-
-                    db_handle.execute(
-                        statement,
-                        &parameters[..],
-                    )?;
+                            db_handle.execute(
+                                statement,
+                                &parameters[..],
+                            )?;
+                        },
+                    }
 
                     send_response(
                         &Response {
@@ -347,7 +385,7 @@ fn handle_message (
                         None,
                     );
                 },
-                kt::SqliteMessage::Read { ref query, .. } => {
+                sq::SqliteMessage::Read { ref query, .. } => {
                     let Some(db_handle) = db_handle else {
                         return Err(anyhow::anyhow!("need New before Write"));
                     };
@@ -359,7 +397,7 @@ fn handle_message (
                         .map(|c| c.to_string())
                         .collect();
                     let number_columns = column_names.len();
-                    let results: Vec<Vec<SqlValue>> = statement
+                    let results: Vec<Vec<sq::SqlValue>> = statement
                         .query_map([], |row| {
                             (0..number_columns)
                                 .map(|i| row.get(i))

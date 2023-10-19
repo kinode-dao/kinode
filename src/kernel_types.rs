@@ -313,13 +313,6 @@ impl VfsError {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum SqliteMessage {
-    New { db: String },
-    Write { db: String, statement: String },
-    Read { db: String, query: String },
-}
-
 //
 // conversions between wit types and kernel types (annoying!)
 //

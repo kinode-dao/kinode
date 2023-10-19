@@ -1,3 +1,0 @@
-[env]
-CC_wasm32_wasi = "~/wasi-sdk/wasi-sdk-20.0/bin/clang"
-CARGO_TARGET_WASM32_WASI_LINKER = "~/wasi-sdk/wasi-sdk-20.0/bin/clang"

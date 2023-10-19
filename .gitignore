@@ -10,3 +10,4 @@ modules/**/pkg/*.wasm
 modules/**/wit
 target.wasm
 world
+modules/sqlite/.cargo/config.toml
