@@ -231,14 +231,14 @@
     </div>
     <script>
       function genFetchRoute(route) {
-        return window.location.pathname.includes('/http-proxy/serve/') ?
-          `/http-proxy/serve/${window.location.pathname.split('/')[3]}/${route}`:
+        return window.location.pathname.includes('/http_proxy:http_proxy:uqbar/serve/') ?
+          `/http_proxy:http_proxy:uqbar/serve/${window.location.pathname.split('/')[3]}/${route}`:
           route
       }
 
       async function getProxies() {
         try {
-          const result = await fetch(genFetchRoute(`/http-proxy/list`)).then(r => r.json()).catch(() => null)
+          const result = await fetch(genFetchRoute(`/http_proxy:http_proxy:uqbar/list`)).then(r => r.json()).catch(() => null)
           if (!result || !result.registrations) return
 
           const proxyList = document.getElementById('proxy-list')
@@ -273,7 +273,7 @@
         try {
           const username = document.querySelector('input[name="username"]').value
           document.querySelector('input[name="username"]').value = ''
-          await fetch(genFetchRoute(`/http-proxy/register`), {
+          await fetch(genFetchRoute(`/http_proxy:http_proxy:uqbar/register`), {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -288,7 +288,7 @@
 
       async function removeProxy(username) {
         try {
-          await fetch(genFetchRoute(`/http-proxy/register?username=${username}`), {
+          await fetch(genFetchRoute(`/http_proxy:http_proxy:uqbar/register?username=${username}`), {
             method: 'DELETE',
           })
           getProxies()

@@ -190,7 +190,7 @@ impl Guest for Component {
                     expects_response: None,
                     ipc: Some(json!({
                         "BindPath": {
-                            "path": "/chess",
+                            "path": "/",
                             "authenticated": true,
                             "local_only": false
                         }
@@ -207,7 +207,7 @@ impl Guest for Component {
                     expects_response: None,
                     ipc: Some(json!({
                         "BindPath": {
-                            "path": "/chess/games",
+                            "path": "/games",
                             "authenticated": true,
                             "local_only": false
                         }
@@ -483,7 +483,7 @@ impl Guest for Component {
                     default_headers.insert("Content-Type".to_string(), "text/html".to_string());
                     // Handle incoming http
                     match path {
-                        "/chess" => {
+                        "/" => {
                             send_http_response(
                                 200,
                                 default_headers.clone(),
@@ -497,7 +497,7 @@ impl Guest for Component {
                                     .to_vec(),
                             );
                         }
-                        "/chess/games" => {
+                        "/games" => {
                             match method {
                                 "GET" => {
                                     send_http_response(
