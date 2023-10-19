@@ -2,6 +2,7 @@ use crate::types::*;
 use futures::stream::SplitSink;
 use hmac::{Hmac, Mac};
 use jwt::{Error, VerifyWithKey};
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -9,7 +10,6 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use warp::http::{header::HeaderName, header::HeaderValue, HeaderMap};
 use warp::ws::WebSocket;
-use serde::{Deserialize, Serialize};
 
 pub type SharedWriteStream = Arc<Mutex<SplitSink<WebSocket, warp::ws::Message>>>;
 pub type WebSockets = Arc<Mutex<HashMap<String, HashMap<String, HashMap<u64, SharedWriteStream>>>>>;
@@ -56,7 +56,9 @@ pub fn auth_cookie_valid(our_node: String, cookie: &str, jwt_secret: Vec<u8>) ->
 
     for cookie_part in cookie_parts {
         let cookie_part_parts: Vec<&str> = cookie_part.split("=").collect();
-        if cookie_part_parts.len() == 2 && cookie_part_parts[0] == format!("uqbar-auth_{}", our_node) {
+        if cookie_part_parts.len() == 2
+            && cookie_part_parts[0] == format!("uqbar-auth_{}", our_node)
+        {
             auth_token = Some(cookie_part_parts[1].to_string());
             break;
         }
