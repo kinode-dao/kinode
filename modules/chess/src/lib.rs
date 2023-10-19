@@ -177,7 +177,7 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::from_str("http_server:server:uqbar").unwrap(),
+            process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
         };
 
         // <address, request, option<context>, option<payload>>
