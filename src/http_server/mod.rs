@@ -13,6 +13,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
+use route_recognizer::Router;
 use warp::http::{header::HeaderValue, StatusCode};
 use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
@@ -22,7 +23,7 @@ mod server_fns;
 // types and constants
 type HttpSender = tokio::sync::oneshot::Sender<HttpResponse>;
 type HttpResponseSenders = Arc<Mutex<HashMap<u64, (String, HttpSender)>>>;
-type PathBindings = Arc<Mutex<HashMap<String, BoundPath>>>;
+type PathBindings = Arc<Mutex<Router<BoundPath>>>;
 
 // node -> ID -> random ID
 
@@ -40,13 +41,13 @@ pub async fn http_server(
     let ws_proxies: WebSocketProxies = Arc::new(Mutex::new(HashMap::new())); // channel_id -> node
 
     // Add RPC paths
-    let mut bindings_map: HashMap<String, BoundPath> = HashMap::new();
+    let mut bindings_map:Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
         app: ProcessId::from_str("rpc:rpc:uqbar").unwrap(),
         authenticated: false,
         local_only: true,
     };
-    bindings_map.insert("/rpc/message".to_string(), rpc_bound_path);
+    bindings_map.add("/rpc/message", rpc_bound_path);
     let path_bindings: PathBindings = Arc::new(Mutex::new(bindings_map));
 
     let _ = tokio::join!(
@@ -227,7 +228,7 @@ async fn http_handle_messages(
 
             match senders.remove(&id) {
                 // if no corresponding entry, nowhere to send response
-                None => {}
+                None => { }
                 Some((path, channel)) => {
                     println!("have a http_response with path {}", path);
                     // if path is /rpc/message, return accordingly with base64 encoded payload
@@ -362,41 +363,22 @@ async fn http_handle_messages(
                             local_only,
                         } => {
                             let mut path_bindings = path_bindings.lock().await;
-                            println!("got bindpath! {} {} {}", path, authenticated, local_only);
                             let app = source.process.clone().to_string();
-                            let path_segments = path
-                                .trim_start_matches('/')
-                                .split("/")
-                                .collect::<Vec<&str>>();
 
-                            if app != "homepage:homepage:uqbar"
-                                && (path_segments.is_empty()
-                                    || path_segments[0]
-                                        != app
-                                            .split(':')
-                                            .next()
-                                            .unwrap_or_default()
-                                            .to_string()
-                                            .replace("_", "-"))
-                            {
-                                return Err(HttpServerError::PathBind {
-                                    error: format!("invalid path: {}", path),
-                                });
-                            } else {
-                                if !app.clone().ends_with(":sys:uqbar")
-                                    && path_bindings.contains_key(&path)
-                                {
-                                    return Err(HttpServerError::PathBind {
-                                        error: format!("already bound path!: {}", path),
-                                    });
+                            if app != "homepage:homepage:uqbar" {
+                                if !path_starts_with(&path, &app) {
+                                    println!("cannot bind");
+                                    return Err(HttpServerError::PathBind { error: "path needs to start with /app:package:publisher/".into() });
                                 }
-                                let bound_path = BoundPath {
-                                    app: source.process,
-                                    authenticated: authenticated,
-                                    local_only: local_only,
-                                };
-                                path_bindings.insert(path, bound_path);
                             }
+
+                            let bound_path = BoundPath {
+                                app: source.process,
+                                authenticated: authenticated,
+                                local_only: local_only,
+                            };
+
+                            path_bindings.add(&path, bound_path);
                         }
                         HttpServerMessage::WebSocketPush(WebSocketPush { target, is_text }) => {
                             let Some(payload) = payload else {
@@ -735,57 +717,15 @@ async fn handler(
     let path = path.as_str().to_string();
     let id: u64 = rand::random();
     let real_headers = serialize_headers(&headers);
-
     let path_bindings = path_bindings.lock().await;
-
-    // todo: maybe don't loop through each, library help?
-    let path_segments = path
-        .trim_start_matches('/')
-        .trim_end_matches('/')
-        .split("/")
-        .collect::<Vec<&str>>();
-    let mut registered_path = path.clone();
-    let mut url_params: HashMap<String, String> = HashMap::new();
-
-    for (key, _value) in &*path_bindings {
-        let key_segments = key
-            .trim_start_matches('/')
-            .trim_end_matches('/')
-            .split("/")
-            .collect::<Vec<&str>>();
-        if key_segments.len() != path_segments.len()
-            && (!key.contains("/.*") || (key_segments.len() - 1) > path_segments.len())
-        {
-            continue;
-        }
-
-        let mut paths_match = true;
-        for i in 0..key_segments.len() {
-            if key_segments[i] == "*" {
-                break;
-            } else if !(key_segments[i].starts_with(":") || key_segments[i] == path_segments[i]) {
-                paths_match = false;
-                break;
-            } else if key_segments[i].starts_with(":") {
-                url_params.insert(
-                    key_segments[i][1..].to_string(),
-                    path_segments[i].to_string(),
-                );
-            }
-        }
-
-        if paths_match {
-            registered_path = key.to_string();
-            break;
-        }
-        url_params = HashMap::new();
-    }
 
     let mut km: Option<KernelMessage> = None;
 
-    if let Some(bound_path) = path_bindings.get(&registered_path) {
+    if let Ok(route) = path_bindings.recognize(&path) {
+        let bound_path = route.handler();
         let app = bound_path.app.to_string();
-        println!("http_server: got path, app: {}", app);
+        let url_params: HashMap<&str, &str> = route.params().into_iter().collect();
+
         if bound_path.authenticated {
             let auth_token = real_headers.get("cookie").cloned().unwrap_or_default();
             if !auth_cookie_valid(our.clone(), &auth_token, jwt_secret_bytes) {
@@ -873,7 +813,7 @@ async fn handler(
                             "address": address,
                             "method": method.to_string(),
                             "raw_path": path.clone(),
-                            "path": registered_path.clone(),
+                            "path": path.clone(),
                             "headers": serialize_headers(&headers),
                             "query_params": query_params,
                             "url_params": url_params,
@@ -893,7 +833,6 @@ async fn handler(
         return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
     }
 
-    println!("sending km message to somebody");
     let (response_sender, response_receiver) = oneshot::channel();
     http_response_senders
         .lock()
