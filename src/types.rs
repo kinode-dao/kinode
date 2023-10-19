@@ -674,8 +674,16 @@ impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {:?},\n    message: {},\n    payload: {}\n}}",
-            self.id, self.source, self.target, self.rsvp, self.message, self.payload.is_some()
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n}}",
+            self.id,
+            self.source,
+            self.target,
+            match &self.rsvp {
+                Some(rsvp) => rsvp.to_string(),
+                None => "None".to_string()
+            },
+            self.message,
+            self.payload.is_some(),
         )
     }
 }
