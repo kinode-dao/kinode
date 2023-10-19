@@ -780,9 +780,11 @@ async fn match_request(
                         panic!("empty path");
                     };
 
-                    {
+                    let hash = {
                         let mut vfs = vfs.lock().await;
-                        if vfs.path_to_key.contains_key(&full_path) {
+                        if !vfs.path_to_key.contains_key(&full_path) {
+                            None
+                        } else {
                             send_to_terminal
                                 .send(Printout {
                                     verbosity: 1,
@@ -790,12 +792,18 @@ async fn match_request(
                                 })
                                 .await
                                 .unwrap();
-                            let Some(old_key) = vfs.path_to_key.remove(&full_path) else {
-                                panic!("");
-                            };
-                            vfs.key_to_entry.remove(&old_key);
-                        };
-                    }
+                            match vfs.path_to_key.remove(&full_path) {
+                                None => None,
+                                Some(key) => {
+                                    let Key::File { id: hash } = key else {
+                                        panic!("");
+                                    };
+                                    Some(hash)
+                                }
+                            }
+                            // vfs.key_to_entry.remove(&old_key);
+                        }
+                    };
 
                     let _ = send_to_loop
                         .send(KernelMessage {
@@ -812,7 +820,7 @@ async fn match_request(
                             message: Message::Request(Request {
                                 inherit: true,
                                 expects_response: Some(5), // TODO evaluate
-                                ipc: Some(serde_json::to_string(&FsAction::Write).unwrap()),
+                                ipc: Some(serde_json::to_string(&FsAction::Write(hash)).unwrap()),
                                 metadata: None,
                             }),
                             payload,
@@ -824,6 +832,7 @@ async fn match_request(
                     let Message::Response((Response { ipc, .. }, None)) = message else {
                         panic!("");
                     };
+
                     let Some(ipc) = ipc else {
                         panic!("");
                     };
@@ -838,9 +847,11 @@ async fn match_request(
                     let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
                         panic!("");
                     };
+
                     let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
                         panic!("");
                     };
+
                     let EntryType::Dir {
                         children: ref mut parent_children,
                         ..
@@ -959,6 +970,30 @@ async fn match_request(
                             (is_file, is_dir, full_path, file_contents)
                         };
                         if is_file {
+                            let hash = {
+                                let vfs = vfs.lock().await;
+                                if !vfs.path_to_key.contains_key(&full_path) {
+                                    None
+                                } else {
+                                    send_to_terminal
+                                        .send(Printout {
+                                            verbosity: 1,
+                                            content: format!("vfs: overwriting file {}", full_path),
+                                        })
+                                        .await
+                                        .unwrap();
+                                    match vfs.path_to_key.get(&full_path) {
+                                        None => None,
+                                        Some(key) => {
+                                            let Key::File { id: hash } = key else {
+                                                panic!("");
+                                            };
+                                            Some(*hash)
+                                        }
+                                    }
+                                    // vfs.key_to_entry.remove(&old_key);
+                                }
+                            };
                             let _ = send_to_loop
                                 .send(KernelMessage {
                                     id,
@@ -974,7 +1009,9 @@ async fn match_request(
                                     message: Message::Request(Request {
                                         inherit: true,
                                         expects_response: Some(5), // TODO evaluate
-                                        ipc: Some(serde_json::to_string(&FsAction::Write).unwrap()),
+                                        ipc: Some(
+                                            serde_json::to_string(&FsAction::Write(hash)).unwrap(),
+                                        ),
                                         metadata: None,
                                     }),
                                     payload: Some(Payload {
