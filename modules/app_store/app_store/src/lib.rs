@@ -15,7 +15,9 @@ use kernel_types as kt;
 mod process_lib;
 use process_lib::PackageId;
 
-mod transfer_lib;
+#[allow(dead_code)]
+mod ft_worker_lib;
+use ft_worker_lib::*;
 
 struct Component;
 
