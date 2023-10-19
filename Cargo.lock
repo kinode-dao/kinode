@@ -3595,6 +3595,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "route-recognizer"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
+
+[[package]]
 name = "rsa"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4858,6 +4864,7 @@ dependencies = [
  "rand",
  "reqwest",
  "ring",
+ "route-recognizer",
  "rsa",
  "rusoto_core",
  "rusoto_credential",

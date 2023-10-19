@@ -82,6 +82,10 @@ pub fn auth_cookie_valid(our_node: String, cookie: &str, jwt_secret: Vec<u8>) ->
     }
 }
 
+pub fn path_starts_with(path: &str, app: &str) -> bool {
+    path.starts_with(app)
+}
+
 pub async fn handle_incoming_ws(
     parsed_msg: WebSocketClientMessage,
     our: String,
