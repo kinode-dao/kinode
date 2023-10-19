@@ -7,7 +7,6 @@ use base64;
 use futures::SinkExt;
 use futures::StreamExt;
 use serde_urlencoded;
-use base64;
 
 use route_recognizer::Router;
 use std::collections::HashMap;
