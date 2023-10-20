@@ -663,19 +663,19 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
+            process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
         };
 
         // <address, request, option<context>, option<payload>>
         let http_endpoint_binding_requests: [(Address, Request, Option<Context>, Option<Payload>);
             7] = [
-            generate_http_binding(bindings_address.clone(), "/orgs", false),
-            generate_http_binding(bindings_address.clone(), "/orgs/static/*", false),
-            generate_http_binding(bindings_address.clone(), "/orgs/my-info", false),
-            generate_http_binding(bindings_address.clone(), "/orgs/list", false),
-            generate_http_binding(bindings_address.clone(), "/orgs/:org_id/members", false),
-            generate_http_binding(bindings_address.clone(), "/orgs/:org_id/chats", false),
-            generate_http_binding(bindings_address.clone(), "/orgs/:platform/bots", false),
+            generate_http_binding(bindings_address.clone(), "/", false),
+            generate_http_binding(bindings_address.clone(), "static/*", false),
+            generate_http_binding(bindings_address.clone(), "/my-info", false),
+            generate_http_binding(bindings_address.clone(), "/list", false),
+            generate_http_binding(bindings_address.clone(), "/:org_id/members", false),
+            generate_http_binding(bindings_address.clone(), "/:org_id/chats", false),
+            generate_http_binding(bindings_address.clone(), "/:platform/bots", false),
         ];
         send_requests(&http_endpoint_binding_requests);
 
@@ -795,7 +795,7 @@ impl Guest for Component {
                             }
                             continue;
                         } else if source.node == our.node
-                            && source.process.to_string() == "http_binding:sys:uqbar"
+                            && source.process.to_string() == "http_server:sys:uqbar"
                         {
                             // Handle http request
                             let mut default_headers = HashMap::new();
@@ -807,13 +807,13 @@ impl Guest for Component {
 
                             match method.as_str() {
                                 "GET" => match path.as_str() {
-                                    "/orgs" => serve_html(our.clone(), default_headers.clone()),
-                                    "/orgs/static/*" => serve_static(
+                                    "/" => serve_html(our.clone(), default_headers.clone()),
+                                    "static/*" => serve_static(
                                         &raw_path,
                                         our.clone(),
                                         default_headers.clone(),
                                     ),
-                                    "/orgs/my-info" => {
+                                    "/my-info" => {
                                         send_http_response(
                                             200,
                                             default_headers.clone(),
@@ -823,7 +823,7 @@ impl Guest for Component {
                                                 .to_vec(),
                                         );
                                     }
-                                    "/orgs/list" => {
+                                    "/list" => {
                                         send_http_response(
                                             200,
                                             {
@@ -837,7 +837,7 @@ impl Guest for Component {
                                             json!(&state.orgs).to_string().as_bytes().to_vec(),
                                         );
                                     }
-                                    "/orgs/:platform/bots" => {
+                                    "/:platform/bots" => {
                                         if url_params["platform"] == "telegram" {
                                             send_http_response(
                                                 200,
@@ -884,7 +884,7 @@ impl Guest for Component {
                                     };
 
                                     match path.as_str() {
-                                        "/orgs" => {
+                                        "/" => {
                                             let Ok(org) = serde_json::from_slice::<serde_json::Value>(
                                                 &payload.bytes,
                                             ) else {
@@ -938,7 +938,7 @@ impl Guest for Component {
                                                 );
                                             }
                                         }
-                                        "/orgs/my-info" => {
+                                        "/my-info" => {
                                             let Ok(my_info) =
                                                 serde_json::from_slice::<HashMap<String, String>>(
                                                     &payload.bytes,
@@ -965,7 +965,7 @@ impl Guest for Component {
                                                 "Created".to_string().as_bytes().to_vec(),
                                             );
                                         }
-                                        "/orgs/:org_id/members" => {
+                                        "/:org_id/members" => {
                                             if !self_is_admin(
                                                 &state.orgs,
                                                 our.node.clone(),
@@ -1112,7 +1112,7 @@ impl Guest for Component {
                                                 );
                                             }
                                         }
-                                        "/orgs/:org_id/chats" => {
+                                        "/:org_id/chats" => {
                                             if !self_is_admin(
                                                 &state.orgs,
                                                 our.node.clone(),
@@ -1322,7 +1322,7 @@ impl Guest for Component {
                                                 );
                                             }
                                         }
-                                        "/orgs/:platform/bots" => {
+                                        "/:platform/bots" => {
                                             if message_json["url_params"]["platform"] == "telegram"
                                             {
                                                 let Ok(token) = String::from_utf8(payload.bytes)
@@ -1485,7 +1485,7 @@ impl Guest for Component {
                                     };
 
                                     match path.as_str() {
-                                        "/orgs" => {}
+                                        "/" => {}
                                         _ => send_http_response(
                                             404,
                                             default_headers.clone(),
@@ -1494,8 +1494,8 @@ impl Guest for Component {
                                     }
                                 }
                                 "DELETE" => match path.as_str() {
-                                    "/orgs" => {}
-                                    "/orgs/:org_id/members" => {
+                                    "/" => {}
+                                    "/:org_id/members" => {
                                         let username =
                                             query_params["username"].as_str().unwrap_or("");
                                         let org_id = match url_params["org_id"]
@@ -1552,7 +1552,7 @@ impl Guest for Component {
                                             );
                                         }
                                     }
-                                    "/orgs/:org_id/chats" => {
+                                    "/:org_id/chats" => {
                                         let platform =
                                             query_params["platform"].as_str().unwrap_or("");
                                         let org_id = match url_params["org_id"]
@@ -1604,7 +1604,7 @@ impl Guest for Component {
                                             );
                                         }
                                     }
-                                    "/orgs/:platform/bots" => {
+                                    "/:platform/bots" => {
                                         let platform =
                                             url_params["platform"].as_str().unwrap_or("");
                                         let bot_id = match url_params["id"]

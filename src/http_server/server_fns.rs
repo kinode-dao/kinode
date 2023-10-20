@@ -96,6 +96,14 @@ pub fn remove_process_id(path: &str) -> String {
     format!("/{}", remaining_path)
 }
 
+pub fn normalize_path(path: &str) -> String {
+    let mut normalized = path.to_string();
+    if normalized != "/" && normalized.ends_with('/') {
+        normalized.pop();
+    }
+    normalized
+}
+
 pub async fn handle_incoming_ws(
     parsed_msg: WebSocketClientMessage,
     our: String,

@@ -376,6 +376,8 @@ async fn http_handle_messages(
                                     format!("/{}/{}", app, path)
                                 };
                             }
+                            // trim trailing "/"
+                            path = normalize_path(&path);
 
                             let bound_path = BoundPath {
                                 app: source.process,
@@ -719,8 +721,8 @@ async fn handler(
         Some(a) => a.to_string(),
         None => "".to_string(),
     };
-
-    let raw_path = path.as_str().to_string();
+    // trim trailing "/"
+    let raw_path = normalize_path(path.as_str());
     let id: u64 = rand::random();
     let real_headers = serialize_headers(&headers);
     let path_bindings = path_bindings.lock().await;
