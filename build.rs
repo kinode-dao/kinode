@@ -125,15 +125,13 @@ fn main() {
         return;
     }
     // only execute if one of the modules has source code changes
-    const WASI_APPS: [&str; 9] = [
+    const WASI_APPS: [&str; 7] = [
         "app_store",
         "chess",
         "homepage",
-        "http_bindings",
         "http_proxy",
         "orgs",
         "qns_indexer",
-        "rpc",
         "terminal",
     ];
     // NOT YET building KV, waiting for deps to be ready
