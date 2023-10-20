@@ -43,19 +43,21 @@ pub async fn http_server(
     // Add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
-        app: ProcessId::from_str("rpc:rpc:uqbar").unwrap(),
+        app: ProcessId::from_str("rpc:sys:uqbar").unwrap(),
         authenticated: false,
         local_only: true,
+        original_path: "/rpc:sys:uqbar/message".to_string(),
     };
-    bindings_map.add("/rpc/message", rpc_bound_path);
+    bindings_map.add("/rpc:sys:uqbar/message", rpc_bound_path);
 
     // Add encryptor binding
     let encryptor_bound_path = BoundPath {
         app: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
         authenticated: false,
         local_only: true,
+        original_path: "/encryptor:sys:uqbar".to_string(),
     };
-    bindings_map.add("/encryptor", encryptor_bound_path);
+    bindings_map.add("/encryptor:sys:uqbar", encryptor_bound_path);
 
     let path_bindings: PathBindings = Arc::new(Mutex::new(bindings_map));
 
@@ -240,7 +242,7 @@ async fn http_handle_messages(
                 None => {}
                 Some((path, channel)) => {
                     // if path is /rpc/message, return accordingly with base64 encoded payload
-                    if path == "/rpc/message".to_string() {
+                    if path == "/rpc:sys:uqbar/message".to_string() {
                         let payload = payload.map(|p| {
                             let bytes = p.bytes;
                             let base64_bytes = base64::encode(&bytes);
@@ -379,6 +381,7 @@ async fn http_handle_messages(
                                 app: source.process,
                                 authenticated: authenticated,
                                 local_only: local_only,
+                                original_path: path.clone(),
                             };
 
                             path_bindings.add(&path, bound_path);
@@ -726,9 +729,11 @@ async fn handler(
 
     if let Ok(route) = path_bindings.recognize(&raw_path) {
         let bound_path = route.handler();
+
         let app = bound_path.app.to_string();
         let url_params: HashMap<&str, &str> = route.params().into_iter().collect();
-        let path = remove_process_id(&raw_path);
+        let raw_path = remove_process_id(&raw_path);
+        let path = remove_process_id(&bound_path.original_path);
 
         if bound_path.authenticated {
             let auth_token = real_headers.get("cookie").cloned().unwrap_or_default();
@@ -745,14 +750,23 @@ async fn handler(
             headers.insert("Content-Type".to_string(), "text/html".to_string());
         }
 
-        // RPC functionality: if path is /rpc/message,
+        // RPC functionality: if path is /rpc:sys:uqbar/message,
         // we extract message from base64 encoded bytes in data
         // and send it to the correct app.
 
-        if app == "rpc:rpc:uqbar".to_string() {
+        if app == "rpc:sys:uqbar".to_string() {
             let rpc_message: RpcMessage = match serde_json::from_slice(&body) {
                 // to_vec()?
                 Ok(v) => v,
+                Err(_) => {
+                    return Ok(
+                        warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                    );
+                }
+            };
+
+            let target_process = match ProcessId::from_str(&rpc_message.process) {
+                Ok(p) => p,
                 Err(_) => {
                     return Ok(
                         warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
@@ -780,7 +794,7 @@ async fn handler(
                 },
                 target: Address {
                     node: node,
-                    process: ProcessId::from_str(&rpc_message.process).unwrap(), // DOUBLECHECK
+                    process: target_process,
                 },
                 rsvp: Some(Address {
                     node: our.clone(),
@@ -798,12 +812,25 @@ async fn handler(
         } else if app == "encryptor:sys:uqbar".to_string() {
             let body_json = match String::from_utf8(body.to_vec()) {
                 Ok(s) => s,
-                Err(_) => String::new(),
+                Err(_) => {
+                    return Ok(
+                        warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                    );
+                }
             };
 
-            let body: serde_json::Value = serde_json::from_str(&body_json).unwrap(); // doublecheck
+            let body: serde_json::Value = match  serde_json::from_str(&body_json) {
+                Ok(v) => v,
+                Err(_) => {
+                    return Ok(
+                        warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                    );
+                }
+            };
+
             let channel_id = body["channel_id"].as_str().unwrap_or("");
             let public_key_hex = body["public_key_hex"].as_str().unwrap_or("");
+
             km = Some(KernelMessage {
                 id,
                 source: Address {
@@ -876,13 +903,20 @@ async fn handler(
         return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
     }
 
+    let message = match km {
+        Some(m) => m,
+        None => {
+            return Ok(warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR)
+                .into_response())
+        }
+    };
+
     let (response_sender, response_receiver) = oneshot::channel();
     http_response_senders
         .lock()
         .await
         .insert(id, (raw_path.clone(), response_sender));
 
-    let message = km.unwrap(); // DOUBLECHECK
     send_to_loop.send(message).await.unwrap();
 
     let from_channel = response_receiver.await.unwrap();
