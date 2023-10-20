@@ -365,7 +365,7 @@ async fn http_handle_messages(
                         } => {
                             let mut path_bindings = path_bindings.lock().await;
                             let app = source.process.clone().to_string();
-                            
+
                             let mut path = path.clone();
                             if app != "homepage:homepage:uqbar" {
                                 path = if path.starts_with("/") {
