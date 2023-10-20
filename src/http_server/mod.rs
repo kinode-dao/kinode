@@ -767,6 +767,10 @@ async fn handler(
                 }),
                 Err(_) => None,
             };
+            let node = match rpc_message.node {
+                Some(node_str) => node_str,
+                None => our.clone(),
+            };
 
             km = Some(KernelMessage {
                 id,
@@ -775,7 +779,7 @@ async fn handler(
                     process: HTTP_SERVER_PROCESS_ID.clone(),
                 },
                 target: Address {
-                    node: rpc_message.node,
+                    node: node,
                     process: ProcessId::from_str(&rpc_message.process).unwrap(), // DOUBLECHECK
                 },
                 rsvp: Some(Address {
