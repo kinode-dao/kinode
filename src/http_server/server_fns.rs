@@ -19,6 +19,7 @@ pub struct BoundPath {
     pub app: ProcessId,
     pub authenticated: bool,
     pub local_only: bool,
+    pub original_path: String,
 }
 
 #[derive(Serialize, Deserialize)]
