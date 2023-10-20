@@ -4868,7 +4868,6 @@ dependencies = [
  "open",
  "public-ip",
  "rand",
- "regex",
  "reqwest",
  "ring",
  "route-recognizer",

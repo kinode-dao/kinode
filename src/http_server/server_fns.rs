@@ -2,7 +2,6 @@ use crate::types::*;
 use futures::stream::SplitSink;
 use hmac::{Hmac, Mac};
 use jwt::{Error, VerifyWithKey};
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::{HashMap, HashSet};
@@ -84,11 +83,16 @@ pub fn auth_cookie_valid(our_node: String, cookie: &str, jwt_secret: Vec<u8>) ->
 }
 
 pub fn remove_process_id(path: &str) -> String {
-    let re = Regex::new(r"^/[^/]+/[^/]+(/.*)?").unwrap();
-    re.captures(path)
-        .and_then(|caps| caps.get(1).map(|m| m.as_str()))
-        .unwrap_or("/")
-        .to_string()
+    // Split the string into parts separated by '/'
+    let mut parts = path.splitn(3, '/');
+    // Skip the first two parts (before and after the first '/')
+    let remaining_path = parts.nth(2).unwrap_or("");
+    // If the result is empty, return "/"
+    if remaining_path.is_empty() {
+        return "/".to_string();
+    }
+    // Otherwise, return the result with a leading "/"
+    format!("/{}", remaining_path)
 }
 
 pub async fn handle_incoming_ws(

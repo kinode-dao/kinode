@@ -40,7 +40,7 @@ pub async fn http_server(
     let websockets: WebSockets = Arc::new(Mutex::new(HashMap::new()));
     let ws_proxies: WebSocketProxies = Arc::new(Mutex::new(HashMap::new())); // channel_id -> node
 
-    // Add RPC paths
+    // Add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
         app: ProcessId::from_str("rpc:rpc:uqbar").unwrap(),
@@ -48,6 +48,15 @@ pub async fn http_server(
         local_only: true,
     };
     bindings_map.add("/rpc/message", rpc_bound_path);
+
+    // Add encryptor binding
+    let encryptor_bound_path = BoundPath {
+        app: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
+        authenticated: false,
+        local_only: true,
+    };
+    bindings_map.add("/encryptor", encryptor_bound_path);
+
     let path_bindings: PathBindings = Arc::new(Mutex::new(bindings_map));
 
     let _ = tokio::join!(
@@ -356,7 +365,7 @@ async fn http_handle_messages(
                         } => {
                             let mut path_bindings = path_bindings.lock().await;
                             let app = source.process.clone().to_string();
-
+                            
                             let mut path = path.clone();
                             if app != "homepage:homepage:uqbar" {
                                 path = if path.starts_with("/") {
@@ -724,7 +733,6 @@ async fn handler(
         if bound_path.authenticated {
             let auth_token = real_headers.get("cookie").cloned().unwrap_or_default();
             if !auth_cookie_valid(our.clone(), &auth_token, jwt_secret_bytes) {
-                // println!("http_server: no secret, or invalid token");
                 return Ok(
                     warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response()
                 );
@@ -746,7 +754,6 @@ async fn handler(
                 // to_vec()?
                 Ok(v) => v,
                 Err(_) => {
-                    println!("http_server: JSON is not valid RpcMessage");
                     return Ok(
                         warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
                     );
@@ -782,6 +789,43 @@ async fn handler(
                     metadata: rpc_message.metadata,
                 }),
                 payload,
+                signed_capabilities: None,
+            })
+        } else if app == "encryptor:sys:uqbar".to_string() {
+            let body_json = match String::from_utf8(body.to_vec()) {
+                Ok(s) => s,
+                Err(_) => String::new(),
+            };
+
+            let body: serde_json::Value = serde_json::from_str(&body_json).unwrap(); // doublecheck
+            let channel_id = body["channel_id"].as_str().unwrap_or("");
+            let public_key_hex = body["public_key_hex"].as_str().unwrap_or("");
+            km = Some(KernelMessage {
+                id,
+                source: Address {
+                    node: our.clone(),
+                    process: HTTP_SERVER_PROCESS_ID.clone(),
+                },
+                target: Address {
+                    node: our.clone(),
+                    process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
+                },
+                rsvp: None, //?
+                message: Message::Request(Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: Some(
+                        serde_json::json!({
+                            "GetKeyAction": {
+                                "channel_id": channel_id,
+                                "public_key_hex": public_key_hex,
+                            }
+                        })
+                        .to_string(),
+                    ),
+                    metadata: None,
+                }),
+                payload: None,
                 signed_capabilities: None,
             })
         } else {
@@ -832,7 +876,7 @@ async fn handler(
     http_response_senders
         .lock()
         .await
-        .insert(id, (raw_path, response_sender));
+        .insert(id, (raw_path.clone(), response_sender));
 
     let message = km.unwrap(); // DOUBLECHECK
     send_to_loop.send(message).await.unwrap();
