@@ -819,7 +819,7 @@ async fn handler(
                 }
             };
 
-            let body: serde_json::Value = match  serde_json::from_str(&body_json) {
+            let body: serde_json::Value = match serde_json::from_str(&body_json) {
                 Ok(v) => v,
                 Err(_) => {
                     return Ok(
@@ -906,8 +906,9 @@ async fn handler(
     let message = match km {
         Some(m) => m,
         None => {
-            return Ok(warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR)
-                .into_response())
+            return Ok(
+                warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR).into_response(),
+            )
         }
     };
 
