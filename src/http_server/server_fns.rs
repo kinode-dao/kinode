@@ -23,7 +23,7 @@ pub struct BoundPath {
 
 #[derive(Serialize, Deserialize)]
 pub struct RpcMessage {
-    pub node: String,
+    pub node: Option<String>,
     pub process: String,
     pub inherit: Option<bool>,
     pub expects_response: Option<u64>,
