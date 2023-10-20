@@ -196,31 +196,33 @@ impl UqProcess for Component {
                 if let Ok(ipc_json) = serde_json::from_str::<serde_json::Value>(
                     &request.ipc.clone().unwrap_or_default(),
                 ) {
-                    if let Some(name) = ipc_json["url_params"]["name"].as_str() {
-                        if let Some(node) = state.nodes.get(name) {
-                            send_response(
-                                &Response {
-                                    inherit: false,
-                                    ipc: Some(
-                                        serde_json::json!({
-                                            "status": 200,
-                                            "headers": {
-                                                "Content-Type": "application/json",
-                                            },
-                                        })
-                                        .to_string(),
-                                    ),
-                                    metadata: None,
-                                },
-                                Some(&Payload {
-                                    mime: Some("application/json".to_string()),
-                                    bytes: serde_json::to_string(&node)
-                                        .unwrap()
-                                        .as_bytes()
-                                        .to_vec(),
-                                }),
-                            );
-                            continue;
+                    if ipc_json["path"].as_str().unwrap_or_default() == "/node/:name" {
+                        if let Some(name) = ipc_json["url_params"]["name"].as_str() {
+                            if let Some(node) = state.nodes.get(name) {
+                                send_response(
+                                    &Response {
+                                        inherit: false,
+                                        ipc: Some(
+                                            serde_json::json!({
+                                                "status": 200,
+                                                "headers": {
+                                                    "Content-Type": "application/json",
+                                                },
+                                            })
+                                            .to_string(),
+                                        ),
+                                        metadata: None,
+                                    },
+                                    Some(&Payload {
+                                        mime: Some("application/json".to_string()),
+                                        bytes: serde_json::to_string(&node)
+                                            .unwrap()
+                                            .as_bytes()
+                                            .to_vec(),
+                                    }),
+                                );
+                                continue;
+                            }
                         }
                     }
                 }
