@@ -82,15 +82,13 @@ fn generate_http_binding(
         Request {
             inherit: false,
             expects_response: None,
-            ipc: Some(
-                json!({
-                    "action": "bind-app",
+            ipc: Some(json!({
+                "BindPath": {
                     "path": path,
-                    "app": "orgs",
-                    "authenticated": authenticated
-                })
-                .to_string(),
-            ),
+                    "authenticated": authenticated,
+                    "local_only": false
+                }
+            }).to_string()),
             metadata: None,
         },
         None,
