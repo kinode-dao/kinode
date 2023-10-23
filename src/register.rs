@@ -106,8 +106,19 @@ pub async fn register(
 }
 
 async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl Reply, Rejection> {
+
+    let keyfile_lock = keyfile.lock().unwrap();
+    let encoded_keyfile = keyfile_lock.as_ref().unwrap();
+    let username: String = match encoded_keyfile.is_empty() {
+        true => "".to_string(),
+        false => {
+            let (user, ..): (String,) = bincode::deserialize(encoded_keyfile).unwrap();
+            user
+        }
+    };
+
     Ok(warp::reply::json(
-        &keyfile.lock().unwrap().as_ref().unwrap().is_empty(),
+        &username
     ))
 }
 
