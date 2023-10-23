@@ -288,7 +288,7 @@ impl Guest for Component {
 
                 print_to_terminal(1, "chess: parsed ipc JSON");
 
-                if source.process.to_string() == "chess:sys:uqbar" {
+                if source.process.to_string() == "chess:chess:uqbar" {
                     let action = message_json["action"].as_str().unwrap_or("");
                     let game_id = source.node.clone();
 
@@ -567,7 +567,7 @@ impl Guest for Component {
                                             let response = send_and_await_response(
                                                 &Address {
                                                     node: game_id.clone(),
-                                                    process: ProcessId::from_str("chess:sys:uqbar")
+                                                    process: ProcessId::from_str("chess:chess:uqbar")
                                                         .unwrap(),
                                                 },
                                                 &Request {
@@ -720,7 +720,7 @@ impl Guest for Component {
                                                         &Address {
                                                             node: game_id.clone(),
                                                             process: ProcessId::from_str(
-                                                                "chess:sys:uqbar",
+                                                                "chess:chess:uqbar",
                                                             )
                                                             .unwrap(),
                                                         },
@@ -871,7 +871,7 @@ impl Guest for Component {
                                             let response = send_and_await_response(
                                                 &Address {
                                                     node: game_id.clone(),
-                                                    process: ProcessId::from_str("chess:sys:uqbar")
+                                                    process: ProcessId::from_str("chess:chess:uqbar")
                                                         .unwrap(),
                                                 },
                                                 &Request {
