@@ -406,7 +406,7 @@ pub async fn handle_encrypted_ws_message(
                         "json": {
                             "forwarded_from": {
                                 "node": our.clone(),
-                                "process": "http_server",
+                                "process": "http_server:sys:uqbar",
                             }
                         },
                     }

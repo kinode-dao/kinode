@@ -145,8 +145,10 @@ impl Guest for Component {
                                                 "forward_to": {
                                                     "node": our.node.clone(),
                                                     "process": {
-                                                        "Name": "http_server"
-                                                    }, // If the message passed in an ID then we could send to just that ID
+                                                        "process_name": "http_server",
+                                                        "package_name": "sys",
+                                                        "publisher_node": "uqbar"
+                                                    }
                                                 }, // node, process
                                                 "json": Some(serde_json::json!({ // this is the JSON to forward
                                                     "WebSocketPush": {
