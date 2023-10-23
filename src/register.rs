@@ -106,11 +106,10 @@ pub async fn register(
 }
 
 async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl Reply, Rejection> {
-
     let keyfile_lock = keyfile.lock().unwrap();
 
-    if keyfile_lock.is_none() { 
-        return Ok(warp::reply::json(&"".to_string()))
+    if keyfile_lock.is_none() {
+        return Ok(warp::reply::json(&"".to_string()));
     }
 
     let encoded_keyfile = keyfile_lock.as_ref().unwrap();
@@ -122,9 +121,7 @@ async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl
         }
     };
 
-    Ok(warp::reply::json(
-        &username
-    ))
+    Ok(warp::reply::json(&username))
 }
 
 async fn handle_keyfile_vet(
@@ -188,7 +185,6 @@ async fn handle_boot(
             jwt_secret_bytes: jwt_secret.to_vec(),
             file_key: keygen::generate_file_key(),
         }
-
     } else {
         match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
             Ok(k) => k,
