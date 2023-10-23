@@ -14,6 +14,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use warp::http::{header::HeaderValue, StatusCode};
 use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
@@ -23,7 +24,7 @@ mod server_fns;
 // types and constants
 type HttpSender = tokio::sync::oneshot::Sender<HttpResponse>;
 type HttpResponseSenders = Arc<Mutex<HashMap<u64, (String, HttpSender)>>>;
-type PathBindings = Arc<Mutex<Router<BoundPath>>>;
+type PathBindings = Arc<RwLock<Router<BoundPath>>>;
 
 // node -> ID -> random ID
 
@@ -59,7 +60,7 @@ pub async fn http_server(
     };
     bindings_map.add("/encryptor:sys:uqbar", encryptor_bound_path);
 
-    let path_bindings: PathBindings = Arc::new(Mutex::new(bindings_map));
+    let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
     let _ = tokio::join!(
         http_serve(
@@ -236,7 +237,6 @@ async fn http_handle_messages(
     match message {
         Message::Response((ref response, _)) => {
             let mut senders = http_response_senders.lock().await;
-
             match senders.remove(&id) {
                 // if no corresponding entry, nowhere to send response
                 None => {}
@@ -365,7 +365,7 @@ async fn http_handle_messages(
                             authenticated,
                             local_only,
                         } => {
-                            let mut path_bindings = path_bindings.lock().await;
+                            let mut path_bindings = path_bindings.write().await;
                             let app = source.process.clone().to_string();
 
                             let mut path = path.clone();
@@ -725,7 +725,7 @@ async fn handler(
     let raw_path = normalize_path(path.as_str());
     let id: u64 = rand::random();
     let real_headers = serialize_headers(&headers);
-    let path_bindings = path_bindings.lock().await;
+    let path_bindings = path_bindings.read().await;
 
     let mut km: Option<KernelMessage> = None;
 
@@ -804,7 +804,7 @@ async fn handler(
                 }),
                 message: Message::Request(Request {
                     inherit: false,
-                    expects_response: Some(30), // TODO evaluate timeout
+                    expects_response: Some(15), // no effect on runtime
                     ipc: rpc_message.ipc,
                     metadata: rpc_message.metadata,
                 }),
@@ -879,7 +879,7 @@ async fn handler(
                 }),
                 message: Message::Request(Request {
                     inherit: false,
-                    expects_response: Some(30), // TODO evaluate timeout
+                    expects_response: Some(15), // no effect on runtime
                     ipc: Some(
                         serde_json::json!({
                             "address": address,
@@ -913,7 +913,6 @@ async fn handler(
             )
         }
     };
-
     let (response_sender, response_receiver) = oneshot::channel();
     http_response_senders
         .lock()
@@ -921,8 +920,19 @@ async fn handler(
         .insert(id, (raw_path.clone(), response_sender));
 
     send_to_loop.send(message).await.unwrap();
+    let timeout_duration = tokio::time::Duration::from_secs(15); // adjust as needed
+    let result = tokio::time::timeout(timeout_duration, response_receiver).await;
 
-    let from_channel = response_receiver.await.unwrap();
+    let from_channel = match result {
+            Ok(Ok(from_channel)) => from_channel,
+            Ok(Err(_)) => {
+                return Ok(warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR).into_response());
+            }
+            Err(_) => {
+                return Ok(warp::reply::with_status(vec![], StatusCode::REQUEST_TIMEOUT).into_response());
+            }
+    };
+
     let reply = warp::reply::with_status(
         match from_channel.body {
             Some(val) => val,
