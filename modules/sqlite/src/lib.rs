@@ -421,7 +421,7 @@ fn handle_message (
                                     db,
                                 ),
                                 flags,
-                                "demo",
+                                "uqbar",
                             )?);
                         },
                     }
