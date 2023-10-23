@@ -22,3 +22,4 @@ pub trait Deserializable: for<'de> Deserialize<'de> + Sized {
 }
 
 impl Deserializable for Vec<SqlValue> {}
+impl Deserializable for Vec<Vec<SqlValue>> {}

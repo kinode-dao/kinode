@@ -68,8 +68,15 @@ struct CBytes {
 #[repr(C)]
 pub struct CPayload {
     is_empty: c_int,          // 0 -> payload is empty
-    mime: *const COptionStr,
+    mime: *mut COptionStr,
     bytes: *mut CBytes,
+}
+
+#[repr(C)]
+pub struct CPrePayload {
+    is_empty: c_int,          // 0 -> payload is empty
+    mime: COptionStr,
+    bytes: CBytes,
 }
 
 #[repr(C)]
@@ -113,9 +120,14 @@ impl COptionStr {
     fn as_ptr(self) -> *const Self {
         Box::into_raw(Box::new(self))
     }
+
+    fn as_mut_ptr(self) -> *mut Self {
+        Box::into_raw(Box::new(self))
+    }
 }
 
 fn from_coptionstr_to_option_string(s: *const COptionStr) -> Option<String> {
+    //print_to_terminal(0, "fctos");
     if unsafe { (*s).is_empty == 0 } {
         None
     } else {
@@ -154,17 +166,19 @@ impl From<CBytes> for Vec<u8> {
 }
 
 fn from_cbytes_to_vec_u8(bytes: *mut CBytes) -> Vec<u8> {
-    let bytes = unsafe { Vec::from_raw_parts((*bytes).data, (*bytes).len, (*bytes).len) };
+    // let bytes = unsafe { Vec::from_raw_parts((*bytes).data, (*bytes).len, (*bytes).len) };
+    let bytes = unsafe { std::slice::from_raw_parts((*bytes).data, (*bytes).len) };
+    let bytes = bytes.to_vec();
     bytes
 }
 
-impl From<Option<Payload>> for CPayload {
+impl From<Option<Payload>> for CPrePayload {
     fn from(p: Option<Payload>) -> Self {
-        let (is_empty, mime, bytes) = match p {
-            None => (0, COptionStr::new(None).as_ptr(), CBytes::new_empty().as_mut_ptr()),
-            Some(Payload { mime, bytes }) => (1, COptionStr::new(mime).as_ptr(), CBytes::new(bytes).as_mut_ptr()),
+        let (is_empty, mut mime, bytes) = match p {
+            None => (0, COptionStr::new(None), CBytes::new_empty()),
+            Some(Payload { mime, bytes }) => (1, COptionStr::new(mime), CBytes::new(bytes)),
         };
-        CPayload {
+        CPrePayload {
             is_empty,
             mime,
             bytes,
@@ -209,14 +223,73 @@ fn from_cprocessid_to_processid(pid: *const CProcessId) -> ProcessId {
 }
 
 fn from_cstr_to_string(s: *const c_char) -> String {
+    // print_to_terminal(0, "fcts 0");
     let cstr = unsafe { CStr::from_ptr(s) };
+    // print_to_terminal(0, "fcts 1");
+    // let a = cstr.to_str();
+    // print_to_terminal(0, "fcts 1a");
+    // let b = a.unwrap();
+    // print_to_terminal(0, &format!("fcts 1b {}", b));
+    // let c = b.to_string();
+    // print_to_terminal(0, "fcts 1c");
+    // c
     cstr.to_str().unwrap().into()
 }
 
 #[no_mangle]
-pub extern "C" fn get_payload_wrapped() -> *mut CPayload {
-    let mut payload = get_payload().into();
-    std::ptr::addr_of_mut!(payload)
+pub extern "C" fn get_payload_wrapped(return_val: *mut CPayload) {
+    print_to_terminal(0, "gpw 0");
+    // TODO: remove this logic; just here to avoid writing to invalid places
+    // in memory due to an fs bug where chunk size may be bigger than requested
+    let max_len = unsafe { (*(*return_val).bytes).len.clone() };
+
+    let payload = get_payload();
+    let mime_len = {
+        match payload {
+            None => None,
+            Some(ref payload) => {
+                match payload.mime {
+                    None => None,
+                    Some(ref mime) => {
+                        Some(mime.len())
+                    },
+                }
+            }
+        }
+    };
+    // print_to_terminal(0, &format!("{:?}", payload));
+    // print_to_terminal(0, &format!("{:?}", opayload));
+    // print_to_terminal(0, &format!("{:?}", unsafe { *(payload.bytes.data) }));
+    // print_to_terminal(0, &format!("gpw: copying {} bytes", unsafe { payload.bytes.len }));
+    unsafe {
+        match payload {
+            None => {},
+            Some(payload) => {
+                (*return_val).is_empty = 1;
+                match payload.mime {
+                    None => {},
+                    Some(mime) => {
+                        (*(*return_val).mime).is_empty = 1;
+                        let Some(mime_len) = mime_len else { panic!("") };
+                        let mime = CString::new(mime).unwrap();
+                        std::ptr::copy_nonoverlapping(
+                            mime.as_ptr(),
+                            (*(*return_val).mime).string,
+                            mime_len + 1,
+                        );
+                    },
+                }
+                (*(*return_val).bytes).len = std::cmp::min(max_len, payload.bytes.len());
+                std::ptr::copy_nonoverlapping(
+                    payload.bytes.as_ptr(),
+                    (*(*return_val).bytes).data,
+                    std::cmp::min(max_len, payload.bytes.len()),
+                );
+                // print_to_terminal(0, &format!("{:?} {}", unsafe { (*(*(*return_val).bytes).data) }, std::cmp::min(max_len, payload.bytes.len())));
+            },
+        }
+    }
+    print_to_terminal(0, "gpw: done copying");
 }
 
 impl CIpcMetadata {
@@ -252,11 +325,17 @@ pub extern "C" fn send_and_await_response_wrapped(
     timeout: c_ulonglong,
     return_val: *mut CIpcMetadata,
 ) {
+    print_to_terminal(0, "saarw: start");
     let target_node = from_cstr_to_string(target_node);
+    print_to_terminal(0, "saarw: a");
     let target_process = from_cprocessid_to_processid(target_process);
+    print_to_terminal(0, "saarw: b");
     let payload = from_cpayload_to_option_payload(payload);
+    print_to_terminal(0, "saarw: c");
     let request_ipc = from_coptionstr_to_option_string(request_ipc);
+    print_to_terminal(0, "saarw: d");
     let request_metadata = from_coptionstr_to_option_string(request_metadata);
+    print_to_terminal(0, "saarw: e");
     let (
         _,
         Message::Response((Response { ipc, metadata, .. }, _)),
@@ -281,7 +360,14 @@ pub extern "C" fn send_and_await_response_wrapped(
     let ipc = CPreOptionStr::new(ipc);
     let metadata = CPreOptionStr::new(metadata);
 
+    print_to_terminal(0, "saarw: copying");
     CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
+    print_to_terminal(0, "saarw: done copying");
+}
+
+#[no_mangle]
+pub extern "C" fn print_to_terminal_wrapped(verbosity: c_int, content: c_int) {
+    print_to_terminal(verbosity as u8, &format!("sqlite(C): {}", content));
 }
 
 fn handle_message (
