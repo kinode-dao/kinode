@@ -312,8 +312,10 @@ fn handle_telegram_update(
                                             "forward_to": {
                                                 "node": our_name.clone(),
                                                 "process": {
-                                                    "Name": "http_server"
-                                                },
+                                                    "process_name": "http_server",
+                                                    "package_name": "sys",
+                                                    "publisher_node": "uqbar"
+                                                }
                                             },
                                             "json": Some(json!({ // this is the JSON to forward
                                                 "WebSocketPush": {

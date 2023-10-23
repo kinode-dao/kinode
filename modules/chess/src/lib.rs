@@ -102,10 +102,10 @@ fn send_http_response(status: u16, headers: HashMap<String, String>, payload_byt
     )
 }
 
-fn send_ws_update(our_name: String, game: Game) {
+fn send_ws_update(our: Address, game: Game) {
     send_request(
         &Address {
-            node: our_name.clone(),
+            node: our.node.clone(),
             process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
         },
         &Request {
@@ -114,17 +114,19 @@ fn send_ws_update(our_name: String, game: Game) {
             ipc: Some(
                 serde_json::json!({
                     "EncryptAndForwardAction": {
-                        "channel_id": "chess",
+                        "channel_id": our.process.to_string(),
                         "forward_to": {
-                            "node": our_name.clone(),
+                            "node": our.node.clone(),
                             "process": {
-                                "Name": "http_server"
-                            }, // If the message passed in an ID then we could send to just that ID
+                                "process_name": "http_server",
+                                "package_name": "sys",
+                                "publisher_node": "uqbar"
+                            }
                         }, // node, process
                         "json": Some(serde_json::json!({ // this is the JSON to forward
                             "WebSocketPush": {
                                 "target": {
-                                    "node": our_name.clone(),
+                                    "node": our.node.clone(),
                                     "id": "chess", // If the message passed in an ID then we could send to just that ID
                                 }
                             }
@@ -323,7 +325,7 @@ impl Guest for Component {
                             };
                             state.games.insert(game_id.clone(), game.clone());
 
-                            send_ws_update(our.node.clone(), game.clone());
+                            send_ws_update(our.clone(), game.clone());
 
                             save_chess_state(state.clone());
 
@@ -400,7 +402,7 @@ impl Guest for Component {
                                     }
                                 }
 
-                                send_ws_update(our.node.clone(), game.clone());
+                                send_ws_update(our.clone(), game.clone());
                                 save_chess_state(state.clone());
 
                                 send_response(
@@ -455,7 +457,7 @@ impl Guest for Component {
                                 state.records.insert(game.id.clone(), (1, 0, 0));
                             }
 
-                            send_ws_update(our.node.clone(), game.clone());
+                            send_ws_update(our.clone(), game.clone());
                             save_chess_state(state.clone());
 
                             send_response(
@@ -489,7 +491,7 @@ impl Guest for Component {
                                 default_headers.clone(),
                                 CHESS_PAGE
                                     .replace("${node}", &our.node)
-                                    .replace("${process}", &source.process.to_string())
+                                    .replace("${process}", &our.process.to_string())
                                     .replace("${js}", CHESS_JS)
                                     .replace("${css}", CHESS_CSS)
                                     .to_string()
