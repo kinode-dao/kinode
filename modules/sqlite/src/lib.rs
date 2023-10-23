@@ -116,14 +116,6 @@ impl COptionStr {
             string: string.as_ptr() as *mut c_char,
         }
     }
-
-    fn as_ptr(self) -> *const Self {
-        Box::into_raw(Box::new(self))
-    }
-
-    fn as_mut_ptr(self) -> *mut Self {
-        Box::into_raw(Box::new(self))
-    }
 }
 
 fn from_coptionstr_to_option_string(s: *const COptionStr) -> Option<String> {
@@ -145,10 +137,6 @@ impl CBytes {
 
     fn new_empty() -> Self {
         CBytes::new(Vec::with_capacity(0))
-    }
-
-    fn as_mut_ptr(self) -> *mut Self {
-        Box::into_raw(Box::new(self))
     }
 }
 
@@ -174,7 +162,7 @@ fn from_cbytes_to_vec_u8(bytes: *mut CBytes) -> Vec<u8> {
 
 impl From<Option<Payload>> for CPrePayload {
     fn from(p: Option<Payload>) -> Self {
-        let (is_empty, mut mime, bytes) = match p {
+        let (is_empty, mime, bytes) = match p {
             None => (0, COptionStr::new(None), CBytes::new_empty()),
             Some(Payload { mime, bytes }) => (1, COptionStr::new(mime), CBytes::new(bytes)),
         };
@@ -223,16 +211,7 @@ fn from_cprocessid_to_processid(pid: *const CProcessId) -> ProcessId {
 }
 
 fn from_cstr_to_string(s: *const c_char) -> String {
-    // print_to_terminal(0, "fcts 0");
     let cstr = unsafe { CStr::from_ptr(s) };
-    // print_to_terminal(0, "fcts 1");
-    // let a = cstr.to_str();
-    // print_to_terminal(0, "fcts 1a");
-    // let b = a.unwrap();
-    // print_to_terminal(0, &format!("fcts 1b {}", b));
-    // let c = b.to_string();
-    // print_to_terminal(0, "fcts 1c");
-    // c
     cstr.to_str().unwrap().into()
 }
 
@@ -257,10 +236,6 @@ pub extern "C" fn get_payload_wrapped(return_val: *mut CPayload) {
             }
         }
     };
-    // print_to_terminal(0, &format!("{:?}", payload));
-    // print_to_terminal(0, &format!("{:?}", opayload));
-    // print_to_terminal(0, &format!("{:?}", unsafe { *(payload.bytes.data) }));
-    // print_to_terminal(0, &format!("gpw: copying {} bytes", unsafe { payload.bytes.len }));
     unsafe {
         match payload {
             None => {},
@@ -285,7 +260,6 @@ pub extern "C" fn get_payload_wrapped(return_val: *mut CPayload) {
                     (*(*return_val).bytes).data,
                     std::cmp::min(max_len, payload.bytes.len()),
                 );
-                // print_to_terminal(0, &format!("{:?} {}", unsafe { (*(*(*return_val).bytes).data) }, std::cmp::min(max_len, payload.bytes.len())));
             },
         }
     }
@@ -325,17 +299,11 @@ pub extern "C" fn send_and_await_response_wrapped(
     timeout: c_ulonglong,
     return_val: *mut CIpcMetadata,
 ) {
-    print_to_terminal(0, "saarw: start");
     let target_node = from_cstr_to_string(target_node);
-    print_to_terminal(0, "saarw: a");
     let target_process = from_cprocessid_to_processid(target_process);
-    print_to_terminal(0, "saarw: b");
     let payload = from_cpayload_to_option_payload(payload);
-    print_to_terminal(0, "saarw: c");
     let request_ipc = from_coptionstr_to_option_string(request_ipc);
-    print_to_terminal(0, "saarw: d");
     let request_metadata = from_coptionstr_to_option_string(request_metadata);
-    print_to_terminal(0, "saarw: e");
     let (
         _,
         Message::Response((Response { ipc, metadata, .. }, _)),
