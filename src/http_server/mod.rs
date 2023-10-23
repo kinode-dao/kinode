@@ -924,13 +924,17 @@ async fn handler(
     let result = tokio::time::timeout(timeout_duration, response_receiver).await;
 
     let from_channel = match result {
-            Ok(Ok(from_channel)) => from_channel,
-            Ok(Err(_)) => {
-                return Ok(warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR).into_response());
-            }
-            Err(_) => {
-                return Ok(warp::reply::with_status(vec![], StatusCode::REQUEST_TIMEOUT).into_response());
-            }
+        Ok(Ok(from_channel)) => from_channel,
+        Ok(Err(_)) => {
+            return Ok(
+                warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR).into_response(),
+            );
+        }
+        Err(_) => {
+            return Ok(
+                warp::reply::with_status(vec![], StatusCode::REQUEST_TIMEOUT).into_response(),
+            );
+        }
     };
 
     let reply = warp::reply::with_status(
