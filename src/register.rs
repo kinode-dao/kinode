@@ -106,7 +106,6 @@ pub async fn register(
 }
 
 async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl Reply, Rejection> {
-
     let keyfile_lock = keyfile.lock().unwrap();
     let encoded_keyfile = keyfile_lock.as_ref().unwrap();
     let username: String = match encoded_keyfile.is_empty() {
@@ -117,9 +116,7 @@ async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl
         }
     };
 
-    Ok(warp::reply::json(
-        &username
-    ))
+    Ok(warp::reply::json(&username))
 }
 
 async fn handle_keyfile_vet(
