@@ -415,8 +415,7 @@ pub struct PackageManifestEntry {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum FsAction {
-    Write,
-    Replace(u128),
+    Write(Option<u128>),
     WriteOffset((u128, u64)),
     Append(Option<u128>),
     Read(u128),

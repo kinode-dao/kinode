@@ -518,6 +518,7 @@ impl Manifest {
         let cipher = &self.cipher;
 
         let mut data = Vec::new();
+        let mut total_bytes_read = 0;
 
         // filter chunks based on start and length if they are defined
         let filtered_chunks = if let (Some(start), Some(length)) = (start, length) {
@@ -619,10 +620,11 @@ impl Manifest {
                 }
             }
             if let Some(length) = length {
-                let end = start.unwrap_or(0) + length;
-                if end < start_chunk + len {
-                    chunk_data.truncate((end - start_chunk) as usize);
+                let remaining_length = length.saturating_sub(total_bytes_read);
+                if remaining_length < chunk_data.len() as u64 {
+                    chunk_data.truncate(remaining_length as usize);
                 }
+                total_bytes_read += chunk_data.len() as u64;
             }
 
             data.append(&mut chunk_data);
@@ -643,6 +645,7 @@ impl Manifest {
         let cipher = &self.cipher;
 
         let mut data = Vec::new();
+        let mut total_bytes_read = 0;
 
         // filter chunks based on start and length if they are defined
         let filtered_chunks = if let (Some(start), Some(length)) = (start, length) {
@@ -745,10 +748,11 @@ impl Manifest {
                 }
             }
             if let Some(length) = length {
-                let end = start.unwrap_or(0) + length;
-                if end < start_chunk + len {
-                    chunk_data.truncate((end - start_chunk) as usize);
+                let remaining_length = length.saturating_sub(total_bytes_read);
+                if remaining_length < chunk_data.len() as u64 {
+                    chunk_data.truncate(remaining_length as usize);
                 }
+                total_bytes_read += chunk_data.len() as u64;
             }
 
             data.append(&mut chunk_data);

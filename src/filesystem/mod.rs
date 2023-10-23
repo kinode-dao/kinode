@@ -535,15 +535,17 @@ async fn handle_request(
     // println!("got action! {:?}", action);
 
     let (ipc, bytes) = match action {
-        FsAction::Write => {
+        FsAction::Write(maybe_file_id) => {
             let Some(ref payload) = payload else {
                 return Err(FsError::BadBytes {
                     action: "Write".into(),
                 });
             };
-            // println!("fs: got write from {:?} with len {:?}", source.process, &payload.bytes.len());
+            let file_uuid = match maybe_file_id {
+                Some(id) => FileIdentifier::UUID(id),
+                None => FileIdentifier::new_uuid(),
+            };
 
-            let file_uuid = FileIdentifier::new_uuid();
             match manifest.write(&file_uuid, &payload.bytes).await {
                 Ok(_) => (),
                 Err(e) => {
@@ -605,26 +607,6 @@ async fn handle_request(
                 }
                 Ok(bytes) => (FsResponse::Read(req.file), Some(bytes)),
             }
-        }
-        FsAction::Replace(old_file_uuid) => {
-            let Some(ref payload) = payload else {
-                return Err(FsError::BadBytes {
-                    action: "Write".into(),
-                });
-            };
-
-            let file = FileIdentifier::UUID(old_file_uuid);
-            match manifest.write(&file, &payload.bytes).await {
-                Ok(_) => (),
-                Err(e) => {
-                    return Err(FsError::WriteFailed {
-                        file: old_file_uuid,
-                        error: format!("replace error: {}", e),
-                    })
-                }
-            }
-
-            (FsResponse::Write(old_file_uuid), None)
         }
         FsAction::Delete(del) => {
             let file = FileIdentifier::UUID(del);

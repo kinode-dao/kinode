@@ -332,6 +332,11 @@ impl UqProcessImports for ProcessWasi {
             node: self.process.metadata.our.node.clone(),
             process: VFS_PROCESS_ID.en_wit(),
         };
+        let our_drive_name = [
+            self.process.metadata.our.process.package(),
+            self.process.metadata.our.process.publisher_node(),
+        ]
+        .join(":");
         let Ok(Ok((_, hash_response))) = send_and_await_response(
             self,
             None,
@@ -341,7 +346,7 @@ impl UqProcessImports for ProcessWasi {
                 expects_response: Some(5),
                 ipc: Some(
                     serde_json::to_string(&t::VfsRequest {
-                        drive: self.process.metadata.our.process.package().to_string(),
+                        drive: our_drive_name.clone(),
                         action: t::VfsAction::GetHash(wasm_path.clone()),
                     })
                     .unwrap(),
@@ -362,7 +367,6 @@ impl UqProcessImports for ProcessWasi {
         let t::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc).unwrap() else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-
         let Ok(Ok(_)) = send_and_await_response(
             self,
             None,
@@ -372,7 +376,7 @@ impl UqProcessImports for ProcessWasi {
                 expects_response: Some(5),
                 ipc: Some(
                     serde_json::to_string(&t::VfsRequest {
-                        drive: self.process.metadata.our.process.package().to_string(),
+                        drive: our_drive_name,
                         action: t::VfsAction::GetEntry(wasm_path.clone()),
                     })
                     .unwrap(),
@@ -385,7 +389,6 @@ impl UqProcessImports for ProcessWasi {
         else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-
         let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
@@ -399,7 +402,6 @@ impl UqProcessImports for ProcessWasi {
             self.process.metadata.our.process.package(),
             self.process.metadata.our.process.publisher_node(),
         );
-
         let Ok(Ok((_, response))) = send_and_await_response(
             self,
             Some(t::Address {
@@ -470,14 +472,12 @@ impl UqProcessImports for ProcessWasi {
         else {
             return Ok(Err(wit::SpawnError::NameTaken));
         };
-
         let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = response else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let t::KernelResponse::StartedProcess = serde_json::from_str(&ipc).unwrap() else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-
         // child processes are always able to Message parent
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.process
@@ -512,7 +512,6 @@ impl UqProcessImports for ProcessWasi {
             .await
             .unwrap();
         let _ = rx.await.unwrap();
-
         Ok(Ok(new_process_id.en_wit().to_owned()))
     }
 
@@ -1033,7 +1032,7 @@ impl Process {
             let self_sender = self.self_sender.clone();
             let timeout_handle = tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)).await;
-                self_sender
+                let _ = self_sender
                     .send(Err(t::WrappedSendError {
                         id: request_id,
                         source: t::Address::de_wit(target.clone()), // TODO check this
@@ -1044,8 +1043,7 @@ impl Process {
                             payload,
                         },
                     }))
-                    .await
-                    .unwrap();
+                    .await;
             });
             self.save_context(kernel_message.id, new_context, timeout_handle)
                 .await;
@@ -1248,15 +1246,16 @@ async fn make_process_loop(
         // the process will run until it returns from init()
         let is_error = match bindings.call_init(&mut store, &metadata.our.en_wit()).await {
             Ok(()) => {
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: format!(
-                            "process {:?} returned without error",
-                            metadata.our.process,
-                        ),
-                    })
-                    .await;
+                let _ =
+                    send_to_terminal
+                        .send(t::Printout {
+                            verbosity: 1,
+                            content: format!(
+                                "process {} returned without error",
+                                metadata.our.process,
+                            ),
+                        })
+                        .await;
                 false
             }
             Err(e) => {
@@ -2043,7 +2042,8 @@ async fn make_event_loop(
                     //
                     // enforce capabilities by matching from our set based on fixed format
                     // enforce that if message is directed over the network, process has capability to do so
-                    if kernel_message.target.node != our_name {
+                    if kernel_message.source.node == our_name
+                      && kernel_message.target.node != our_name {
                         if !process_map.get(&kernel_message.source.process).unwrap().capabilities.contains(
                                 &t::Capability {
                                     issuer: t::Address {
@@ -2065,43 +2065,67 @@ async fn make_event_loop(
                             ).await;
                             continue;
                         }
+                    } else if kernel_message.source.node != our_name {
+                        // note that messaging restrictions only apply to *local* processes, if your
+                        // process has networking capabilities, it can be messaged by any process remotely..
+                        let Some(persisted) = process_map.get(&kernel_message.target.process) else {
+                            println!("kernel: did not find process in process_map: {}\r", kernel_message.target.process);
+                            continue;
+                        };
+                        if !persisted.capabilities.contains(
+                                &t::Capability {
+                                    issuer: t::Address {
+                                    node: our_name.clone(),
+                                    process: KERNEL_PROCESS_ID.clone(),
+                                },
+                                params: "\"network\"".into(),
+                        }) {
+                            // capabilities are not correct! skip this message.
+                            let _ = send_to_terminal.send(
+                                t::Printout {
+                                    verbosity: 0,
+                                    content: format!(
+                                        "event loop: process {} doesn't have capability to receive networked messages",
+                                        kernel_message.target.process
+                                    )
+                                }
+                            ).await;
+                            continue;
+                        }
                     } else {
-                        // enforce that process has capability to message a target process of this name
-                        // kernel and filesystem can ALWAYS message any process
+                        // enforce that local process has capability to message a target process of this name
+                        // kernel and filesystem can ALWAYS message any local process
                         if kernel_message.source.process != *KERNEL_PROCESS_ID
                             && kernel_message.source.process != *FILESYSTEM_PROCESS_ID
                         {
-                            let is_target_public = match process_map.get(&kernel_message.target.process) {
-                                None => false,
-                                Some(p) => p.public,
+                            let Some(persisted_source) = process_map.get(&kernel_message.source.process) else {
+                                println!("kernel: did not find process in process_map: {}\r", kernel_message.source.process);
+                                continue;
                             };
-                            if !is_target_public {
-                                match process_map.get(&kernel_message.source.process) {
-                                    None => {
-                                        println!("kernel: did not find process in process_map: {}\r", kernel_message.source.process);
-                                    }, // this should only get hit by kernel?
-                                    Some(persisted) => {
-                                        if !persisted.capabilities.contains(&t::Capability {
-                                            issuer: t::Address {
-                                                node: our_name.clone(),
-                                                process: kernel_message.target.process.clone(),
-                                            },
-                                            params: "\"messaging\"".into(),
-                                        }) {
-                                            // capabilities are not correct! skip this message.
-                                            // TODO some kind of error thrown back at process
-                                            let _ = send_to_terminal.send(
-                                                t::Printout {
-                                                    verbosity: 0,
-                                                    content: format!(
-                                                        "event loop: process {} doesn't have capability to message process {}",
-                                                        kernel_message.source.process, kernel_message.target.process
-                                                    )
-                                                }
-                                            ).await;
-                                            continue;
+                            let Some(persisted_target) = process_map.get(&kernel_message.target.process) else {
+                                println!("kernel: did not find process in process_map: {}\r", kernel_message.target.process);
+                                continue;
+                            };
+                            if !persisted_target.public {
+                                if !persisted_source.capabilities.contains(&t::Capability {
+                                    issuer: t::Address {
+                                        node: our_name.clone(),
+                                        process: kernel_message.target.process.clone(),
+                                    },
+                                    params: "\"messaging\"".into(),
+                                }) {
+                                    // capabilities are not correct! skip this message.
+                                    // TODO some kind of error thrown back at process
+                                    let _ = send_to_terminal.send(
+                                        t::Printout {
+                                            verbosity: 0,
+                                            content: format!(
+                                                "event loop: process {} doesn't have capability to message process {}",
+                                                kernel_message.source.process, kernel_message.target.process
+                                            )
                                         }
-                                    }
+                                    ).await;
+                                    continue;
                                 }
                             }
                         }
