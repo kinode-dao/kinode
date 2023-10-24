@@ -150,7 +150,38 @@ async fn bootstrap(
 
     for (package_name, mut package) in packages {
         println!("fs: handling package {package_name}...\r");
+        // get and read metadata.json
+        let Ok(mut package_metadata_zip) = package.by_name("metadata.json") else {
+            println!(
+                "fs: missing metadata for package {}, skipping",
+                package_name
+            );
+            continue;
+        };
+        let mut metadata_content = Vec::new();
+        package_metadata_zip
+            .read_to_end(&mut metadata_content)
+            .unwrap();
+        drop(package_metadata_zip);
+        let package_metadata: serde_json::Value =
+            serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
+
+        println!("fs: found package metadata: {:?}\r", package_metadata);
+
+        let package_name = package_metadata["package"]
+            .as_str()
+            .expect("fs: metadata parse error: bad package name");
+
+        let package_publisher = package_metadata["publisher"]
+            .as_str()
+            .expect("fs: metadata parse error: bad publisher name");
+
         // create a new package in VFS
+        let our_drive_name = [
+            package_name,
+            package_publisher,
+        ]
+        .join(":");
         vfs_messages.push(KernelMessage {
             id: rand::random(),
             source: Address {
@@ -167,7 +198,7 @@ async fn bootstrap(
                 expects_response: None,
                 ipc: Some(
                     serde_json::to_string::<VfsRequest>(&VfsRequest {
-                        drive: package_name.clone(),
+                        drive: our_drive_name.clone(),
                         action: VfsAction::New,
                     })
                     .unwrap(),
@@ -208,7 +239,7 @@ async fn bootstrap(
                         expects_response: None,
                         ipc: Some(
                             serde_json::to_string::<VfsRequest>(&VfsRequest {
-                                drive: package_name.clone(),
+                                drive: our_drive_name.clone(),
                                 action: VfsAction::Add {
                                     full_path: file_path,
                                     entry_type: AddEntryType::NewFile,
@@ -226,32 +257,6 @@ async fn bootstrap(
                 });
             }
         }
-
-        // get and read metadata.json
-        let Ok(mut package_metadata_zip) = package.by_name("metadata.json") else {
-            println!(
-                "fs: missing metadata for package {}, skipping",
-                package_name
-            );
-            continue;
-        };
-        let mut metadata_content = Vec::new();
-        package_metadata_zip
-            .read_to_end(&mut metadata_content)
-            .unwrap();
-        drop(package_metadata_zip);
-        let package_metadata: serde_json::Value =
-            serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
-
-        println!("fs: found package metadata: {:?}\r", package_metadata);
-
-        let package_name = package_metadata["package"]
-            .as_str()
-            .expect("fs: metadata parse error: bad package name");
-
-        let package_publisher = package_metadata["publisher"]
-            .as_str()
-            .expect("fs: metadata parse error: bad publisher name");
 
         // get and read manifest.json
         let Ok(mut package_manifest_zip) = package.by_name("manifest.json") else {
@@ -319,7 +324,7 @@ async fn bootstrap(
                 },
                 params: serde_json::to_string(&serde_json::json!({
                     "kind": "read",
-                    "drive": package_name,
+                    "drive": our_drive_name,
                 }))
                 .unwrap(),
             });
@@ -330,7 +335,7 @@ async fn bootstrap(
                 },
                 params: serde_json::to_string(&serde_json::json!({
                     "kind": "write",
-                    "drive": package_name,
+                    "drive": our_drive_name,
                 }))
                 .unwrap(),
             });
