@@ -11,6 +11,8 @@ use ring::signature::{self, KeyPair};
 use ring::{digest as ring_digest, rand::SecureRandom};
 use std::num::NonZeroU32;
 
+use crate::types::Keyfile;
+
 type DiskKey = [u8; CREDENTIAL_LEN];
 
 pub const CREDENTIAL_LEN: usize = ring_digest::SHA256_OUTPUT_LEN;
@@ -25,7 +27,6 @@ pub fn encode_keyfile(
     jwt: Vec<u8>,
     file_key: Vec<u8>,
 ) -> Vec<u8> {
-    println!("generating disk encryption keys...");
     let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
 
     let rng = SystemRandom::new();
@@ -65,19 +66,10 @@ pub fn encode_keyfile(
     .unwrap()
 }
 
-pub fn decode_keyfile(
-    keyfile: Vec<u8>,
-    password: &str,
-) -> (
-    String,
-    Vec<String>,
-    signature::Ed25519KeyPair,
-    Vec<u8>,
-    Vec<u8>,
-) {
+pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'static str> {
     let (username, routers, salt, key_enc, jtw_enc, file_enc) =
         bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(&keyfile)
-            .unwrap();
+            .map_err(|_| "failed to deserialize keyfile")?;
 
     // rederive disk key
     let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
@@ -96,38 +88,28 @@ pub fn decode_keyfile(
     let jwt_nonce = generic_array::GenericArray::from_slice(&jtw_enc[..12]);
     let file_nonce = generic_array::GenericArray::from_slice(&file_enc[..12]);
 
-    println!("decrypting saved networking key...");
-    let serialized_networking_keypair: Vec<u8> = match cipher.decrypt(net_nonce, &key_enc[12..]) {
-        Ok(p) => p,
-        Err(e) => {
-            panic!("failed to decrypt networking keys: {}", e);
-        }
-    };
-    let networking_keypair =
-        match signature::Ed25519KeyPair::from_pkcs8(&serialized_networking_keypair) {
-            Ok(k) => k,
-            Err(_) => panic!("failed to parse networking keys"),
-        };
+    let serialized_networking_keypair: Vec<u8> = cipher
+        .decrypt(net_nonce, &key_enc[12..])
+        .map_err(|_| "failed to decrypt networking keys")?;
 
-    // TODO: check if jwt_secret_file is valid and then proceed to unwrap and decrypt. If there is a failure, generate a new jwt_secret and save it
-    // use password to decrypt jwt secret
-    println!("decrypting saved jwt secret...");
+    let networking_keypair = signature::Ed25519KeyPair::from_pkcs8(&serialized_networking_keypair)
+        .map_err(|_| "failed to parse networking keys")?;
 
-    let jwt: Vec<u8> = match cipher.decrypt(jwt_nonce, &jtw_enc[12..]) {
-        Ok(p) => p,
-        Err(e) => {
-            panic!("failed to decrypt jwt secret: {}", e);
-        }
-    };
+    let jwt_secret_bytes: Vec<u8> = cipher
+        .decrypt(jwt_nonce, &jtw_enc[12..])
+        .map_err(|_| "failed to decrypt jwt secret")?;
 
-    let file_key: Vec<u8> = match cipher.decrypt(file_nonce, &file_enc[12..]) {
-        Ok(p) => p,
-        Err(e) => {
-            panic!("failed to decrypt file key: {}", e);
-        }
-    };
+    let file_key: Vec<u8> = cipher
+        .decrypt(file_nonce, &file_enc[12..])
+        .map_err(|_| "failed to decrypt file key")?;
 
-    (username, routers, networking_keypair, jwt, file_key)
+    Ok(Keyfile {
+        username,
+        routers,
+        networking_keypair,
+        jwt_secret_bytes,
+        file_key,
+    })
 }
 
 /// # Returns
