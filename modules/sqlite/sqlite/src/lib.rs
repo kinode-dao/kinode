@@ -2,20 +2,18 @@ cargo_component_bindings::generate!();
 
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
-
 use bindings::component::uq_process::types::*;
-use bindings::{create_capability, get_capability, has_capability, Guest, print_to_terminal, receive, send_request, send_response, spawn};
+use bindings::{create_capability, get_capability, Guest, has_capability, print_to_terminal, receive, send_request, send_response, spawn};
 
 mod kernel_types;
 use kernel_types as kt;
-mod key_value_types;
-use key_value_types as kv;
+mod sqlite_types;
+use sqlite_types as sq;
 mod process_lib;
 
 struct Component;
 
-const PREFIX: &str = "key_value-";
+const PREFIX: &str = "sqlite-";
 
 type DbToProcess = HashMap<String, ProcessId>;
 
@@ -44,7 +42,7 @@ fn forward_if_have_cap(
     if has_capability(&make_db_cap(operation_type, db)) {
         //  forward
         let Some(process_id) = db_to_process.get(db) else {
-            return Err(kv::KeyValueError::DbDoesNotExist.into());
+            return Err(sq::SqliteError::DbDoesNotExist.into());
         };
         send_request(
             &Address {
@@ -63,7 +61,7 @@ fn forward_if_have_cap(
         return Ok(());
     } else {
         //  reject
-        return Err(kv::KeyValueError::NoCap.into());
+        return Err(sq::SqliteError::NoCap.into());
     }
 }
 
@@ -75,16 +73,16 @@ fn handle_message (
     // let (source, message) = receive()?;
 
     if our.node != source.node {
-        return Err(kv::KeyValueError::RejectForeign.into());
+        return Err(sq::SqliteError::RejectForeign.into());
     }
 
     match message {
         Message::Response(_) => {
-            return Err(kv::KeyValueError::UnexpectedResponse.into());
+            return Err(sq::SqliteError::UnexpectedResponse.into());
         },
         Message::Request(Request { ipc, .. }) => {
             match process_lib::parse_message_ipc(ipc.clone())? {
-                kv::KeyValueMessage::New { ref db } => {
+                sq::SqliteMessage::New { ref db } => {
                     //  TODO: make atomic
                     //  (1): create vfs drive
                     //  (2): spin up worker, granting vfs caps
@@ -92,7 +90,7 @@ fn handle_message (
                     //  (4): persist
 
                     if db_to_process.contains_key(db) {
-                        return Err(kv::KeyValueError::DbAlreadyExists.into());
+                        return Err(sq::SqliteError::DbAlreadyExists.into());
                     }
 
                     //  (1)
@@ -124,7 +122,7 @@ fn handle_message (
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
                     let spawned_process_id = match spawn(
                         None,
-                        "/key_value_worker.wasm",
+                        "/sqlite_worker.wasm",
                         &OnPanic::None,  //  TODO: notify us
                         &Capabilities::Some(vec![vfs_read, vfs_write]),
                         false, // not public
@@ -167,15 +165,12 @@ fn handle_message (
                         None,
                     );
                 },
-                kv::KeyValueMessage::Write { ref db, .. } => {
+                sq::SqliteMessage::Write { ref db, .. } => {
                     forward_if_have_cap(our, "write", db, ipc, db_to_process)?;
                 },
-                kv::KeyValueMessage::Read { ref db, .. } => {
+                sq::SqliteMessage::Read { ref db, .. } => {
                     forward_if_have_cap(our, "read", db, ipc, db_to_process)?;
                 },
-                kv::KeyValueMessage::Err { error } => {
-                    return Err(error.into());
-                }
             }
 
             Ok(())
@@ -185,7 +180,7 @@ fn handle_message (
 
 impl Guest for Component {
     fn init(our: Address) {
-        print_to_terminal(0, "key_value: begin");
+        print_to_terminal(0, "sqlite: begin");
 
         let mut db_to_process: DbToProcess = HashMap::new();
 
@@ -194,10 +189,10 @@ impl Guest for Component {
                 Ok(()) => {},
                 Err(e) => {
                     print_to_terminal(0, format!(
-                        "key_value: error: {:?}",
+                        "sqlite: error: {:?}",
                         e,
                     ).as_str());
-                    if let Some(e) = e.downcast_ref::<kv::KeyValueError>() {
+                    if let Some(e) = e.downcast_ref::<sq::SqliteError>() {
                         send_response(
                             &Response {
                                 inherit: false,
