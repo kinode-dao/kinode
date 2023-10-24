@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# export CC_wasm32_wasi="$(realpath ~/wasi-sdk/wasi-sdk-20.0/bin/clang)" && export CARGO_TARGET_WASM32_WASI_LINKER="$(realpath ~/wasi-sdk/wasi-sdk-20.0/bin/clang)" && export RUSTFLAGS="-C target-feature=-crt-static -C link-arg=-Wl,--no-entry,--export=init,--export=cabi_realloc" && cargo build --release --no-default-features --target wasm32-wasi
-# RUSTFLAGS="-C target-feature=-crt-static -C link-arg=-Wl,--no-entry,--export=init,--export=cabi_realloc" cargo build --release --no-default-features --target wasm32-wasi
+cd sqlite
+cargo build --release --no-default-features --target wasm32-wasi
+
+cd ../sqlite_worker
 
 # We write env vars to `.cargo/config.toml` here because:
 # 1. Doing `export foo=/path && export bar=/path2 && RUSTFLAGS=baz cargo build ...`

@@ -346,10 +346,7 @@ fn handle_message (
     // let (source, message) = receive()?;
 
     if our.node != source.node {
-        return Err(anyhow::anyhow!(
-            "rejecting foreign Message from {:?}",
-            source,
-        ));
+        return Err(sq::SqliteError::RejectForeign.into());
     }
 
     match message {
@@ -362,18 +359,6 @@ fn handle_message (
                         process: kt::ProcessId::new("vfs", "sys", "uqbar").en_wit(),
                     };
                     let vfs_drive = format!("{}{}", PREFIX, db);
-
-                    let _ = process_lib::send_and_await_response(
-                        &vfs_address,
-                        false,
-                        Some(serde_json::to_string(&kt::VfsRequest {
-                            drive: vfs_drive.clone(),
-                            action: kt::VfsAction::New,
-                        }).unwrap()),
-                        None,
-                        None,
-                        15,
-                    ).unwrap();
 
                     match db_handle {
                         Some(_) => {
@@ -393,15 +378,6 @@ fn handle_message (
                             )?);
                         },
                     }
-                    print_to_terminal(0, "sqlite: New done");
-                    send_response(
-                        &Response {
-                            inherit: false,
-                            ipc,
-                            metadata: None,
-                        },
-                        None,
-                    );
                 },
                 sq::SqliteMessage::Write { ref statement, .. } => {
                     let Some(db_handle) = db_handle else {
@@ -493,7 +469,7 @@ impl Guest for Component {
                 Err(e) => {
                     //  TODO: should we send an error on failure?
                     print_to_terminal(0, format!(
-                        "sqlite: error: {:?}",
+                        "sqlite_worker: error: {:?}",
                         e,
                     ).as_str());
                 },

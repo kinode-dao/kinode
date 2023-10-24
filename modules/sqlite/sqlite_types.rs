@@ -23,3 +23,18 @@ pub trait Deserializable: for<'de> Deserialize<'de> + Sized {
 
 impl Deserializable for Vec<SqlValue> {}
 impl Deserializable for Vec<Vec<SqlValue>> {}
+
+
+#[derive(Debug, Serialize, Deserialize, thiserror::Error)]
+pub enum SqliteError {
+    #[error("DbDoesNotExist")]
+    DbDoesNotExist,
+    #[error("DbAlreadyExists")]
+    DbAlreadyExists,
+    #[error("NoCap")]
+    NoCap,
+    #[error("RejectForeign")]
+    RejectForeign,
+    #[error("UnexpectedResponse")]
+    UnexpectedResponse,
+}

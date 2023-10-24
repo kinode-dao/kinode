@@ -144,9 +144,11 @@ fn main() {
         "terminal",
     ];
     // NOT YET building KV, waiting for deps to be ready
-    const NESTED_WASI_APPS: [(&str, &str); 2] = [
+    const NESTED_WASI_APPS: [(&str, &str); 4] = [
         ("key_value", "key_value"),
         ("key_value", "key_value_worker"),
+        ("sqlite", "sqlite"),
+        ("sqlite", "sqlite_worker"),
     ];
 
     if std::env::var("REBUILD_ALL").is_ok() {
