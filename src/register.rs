@@ -140,7 +140,8 @@ async fn handle_keyfile_vet(
 
     let keyfile_vetted = KeyfileVetted {
         username: decoded_keyfile.username,
-        networking_key: hex::encode(decoded_keyfile.networking_keypair.public_key().as_ref()),
+        networking_key: format!("0x{}", hex::encode
+            (decoded_keyfile.networking_keypair.public_key().as_ref())),
         routers: decoded_keyfile.routers,
     };
 
@@ -162,6 +163,7 @@ async fn handle_boot(
         our.ws_routing = None;
     }
 
+    // if keyfile was not present in node and is present from user upload
     if encoded_keyfile.is_empty() && !info.keyfile.clone().is_empty() {
         match base64::decode(info.keyfile.clone()) {
             Ok(k) => encoded_keyfile = k,
@@ -169,6 +171,7 @@ async fn handle_boot(
         }
     }
 
+    // if keyfile was not in node or upload or if networking required reset
     let decoded_keyfile = if info.reset || encoded_keyfile.is_empty() {
         let seed = SystemRandom::new();
         let mut jwt_secret = [0u8, 32];
@@ -177,14 +180,18 @@ async fn handle_boot(
         Keyfile {
             username: our.name.clone(),
             routers: our.allowed_routers.clone(),
-            networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
-                .unwrap(),
+            networking_keypair: signature::Ed25519KeyPair
+                ::from_pkcs8(networking_keypair.as_ref()).unwrap(),
             jwt_secret_bytes: jwt_secret.to_vec(),
             file_key: keygen::generate_file_key(),
         }
     } else {
         match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
-            Ok(k) => k,
+            Ok(k) => {
+                our.networking_key = format!("0x{}", hex::encode
+                    (k.networking_keypair.public_key().as_ref()));
+                k
+            }
             Err(_) => return Err(warp::reject()),
         }
     };
@@ -246,7 +253,7 @@ async fn handle_info(
     let ws_port = http_server::find_open_port(9000).await.unwrap();
 
     let our = Identity {
-        networking_key: public_key,
+        networking_key: format!("0x{}", public_key),
         name: String::new(),
         ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
