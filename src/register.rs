@@ -216,7 +216,7 @@ async fn handle_boot(
     };
 
     let mut response =
-        warp::reply::with_status(warp::reply::json(&encoded_keyfile_str), StatusCode::FOUND)
+        warp::reply::with_status(warp::reply::json(&encoded_keyfile_str), StatusCode::OK)
             .into_response();
 
     let headers = response.headers_mut();
