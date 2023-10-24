@@ -459,7 +459,7 @@ fn handle_message (
 
 impl Guest for Component {
     fn init(our: Address) {
-        print_to_terminal(0, "sqlite: begin");
+        print_to_terminal(1, "sqlite_worker: begin");
 
         let mut db_handle: Option<rusqlite::Connection> = None;
 
