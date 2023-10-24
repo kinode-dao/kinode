@@ -1,9 +1,6 @@
 use anyhow::Result;
 use dotenv;
-use ethers::prelude::{abigen, namehash, Address as EthAddress, Provider, U256};
-use ethers_providers::{Middleware, Ws};
-use ring::pkcs8::Document;
-use ring::signature::{self, KeyPair};
+use ethers::prelude::{abigen, namehash};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -36,7 +33,7 @@ const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 
-const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
+// const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -196,7 +193,7 @@ async fn main() {
     };
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
-    let (mut our, decoded_keyfile, encoded_keyfile) = tokio::select! {
+    let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
         _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, disk_keyfile)
             => panic!("registration failed"),
         (our, decoded_keyfile, encoded_keyfile) = async {

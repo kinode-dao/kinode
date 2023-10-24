@@ -174,9 +174,6 @@ async fn handle_boot(
         let mut jwt_secret = [0u8, 32];
         ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
 
-        let networking_pair =
-            signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref()).unwrap();
-
         Keyfile {
             username: our.name.clone(),
             routers: our.allowed_routers.clone(),
@@ -219,7 +216,7 @@ async fn handle_boot(
     };
 
     let mut response =
-        warp::reply::with_status(warp::reply::json((&encoded_keyfile_str)), StatusCode::OK)
+        warp::reply::with_status(warp::reply::json(&encoded_keyfile_str), StatusCode::FOUND)
             .into_response();
 
     let headers = response.headers_mut();
