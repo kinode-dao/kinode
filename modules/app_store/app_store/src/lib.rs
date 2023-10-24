@@ -4,7 +4,7 @@ use bindings::{
     send_request, send_response, Guest,
 };
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256, Sha512};
+use sha2::Digest;
 use std::collections::{HashMap, HashSet};
 
 #[allow(dead_code)]
@@ -47,7 +47,7 @@ struct Component;
 #[derive(Debug, Serialize, Deserialize)]
 struct State {
     pub packages: HashMap<PackageId, PackageState>,
-    pub requested_packages: HashMap<PackageId, NodeId>,
+    pub requested_packages: HashSet<PackageId>,
 }
 
 /// state of an individual package we have downloaded
@@ -80,6 +80,7 @@ pub enum Req {
     LocalRequest(LocalRequest),
     RemoteRequest(RemoteRequest),
     FTWorkerCommand(FTWorkerCommand),
+    FTWorkerResult(FTWorkerResult),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -179,7 +180,7 @@ impl Guest for Component {
         // load in our saved state or initalize a new one if none exists
         let mut state = process_lib::get_state::<State>().unwrap_or(State {
             packages: HashMap::new(),
-            requested_packages: HashMap::new(),
+            requested_packages: HashSet::new(),
         });
 
         // active the main messaging loop: handle requests and responses
@@ -192,10 +193,6 @@ impl Guest for Component {
                     continue;
                 }
             };
-            print_to_terminal(
-                0,
-                &format!("app-store: got message from {}: {:?}", source.to_string(), message),
-            );
             match message {
                 Message::Request(req) => {
                     let Some(ref ipc) = req.ipc else {
@@ -248,6 +245,47 @@ impl Guest for Component {
                                 }
                             }
                         }
+                        Ok(Req::FTWorkerResult(FTWorkerResult::ReceiveSuccess(name))) => {
+                            // do with file what you'd like here
+                            print_to_terminal(
+                                0,
+                                &format!("file_transfer: successfully received {:?}", name,),
+                            );
+                            // remove leading / and .zip from file name to get package ID
+                            let package_id =
+                                match PackageId::from_str(name[1..].trim_end_matches(".zip")) {
+                                    Ok(package_id) => package_id,
+                                    Err(_) => {
+                                        print_to_terminal(
+                                            0,
+                                            &format!("app store: bad package filename: {}", name),
+                                        );
+                                        continue;
+                                    }
+                                };
+                            if state.requested_packages.remove(&package_id) {
+                                // auto-take zip from payload and request ourself with New
+                                let _ = send_request(
+                                    &our,
+                                    &Request {
+                                        inherit: true, // will inherit payload!
+                                        expects_response: None,
+                                        ipc: Some(
+                                            serde_json::to_string(&Req::LocalRequest(
+                                                LocalRequest::NewPackage {
+                                                    package: package_id,
+                                                    mirror: true,
+                                                },
+                                            ))
+                                            .unwrap(),
+                                        ),
+                                        metadata: None,
+                                    },
+                                    None,
+                                    None,
+                                );
+                            }
+                        }
                         Ok(Req::FTWorkerCommand(_)) => {
                             spawn_receive_transfer(&our, ipc);
                         }
@@ -298,63 +336,7 @@ impl Guest for Component {
                                         ),
                                     );
                                 }
-                                FTWorkerResult::ReceiveSuccess(name) => {
-                                    // do with file what you'd like here
-                                    print_to_terminal(
-                                        0,
-                                        &format!("file_transfer: successfully received {:?}", name,),
-                                    );
-                                    // remove .zip from name
-                                    let package_id =
-                                        match PackageId::from_str(name.trim_end_matches(".zip")) {
-                                            Ok(package_id) => package_id,
-                                            Err(_) => {
-                                                print_to_terminal(
-                                                    0,
-                                                    &format!(
-                                                        "app store: bad package filename: {}",
-                                                        name
-                                                    ),
-                                                );
-                                                continue;
-                                            }
-                                        };
-                                    if let Some(install_from) =
-                                        state.requested_packages.remove(&package_id)
-                                    {
-                                        if install_from == source.node {
-                                            // auto-take zip from payload and request ourself with New
-                                            let _ = send_request(
-                                                &our,
-                                                &Request {
-                                                    inherit: true, // will inherit payload!
-                                                    expects_response: None,
-                                                    ipc: Some(
-                                                        serde_json::to_string(&Req::LocalRequest(
-                                                            LocalRequest::NewPackage {
-                                                                package: package_id,
-                                                                mirror: true,
-                                                            },
-                                                        ))
-                                                        .unwrap(),
-                                                    ),
-                                                    metadata: None,
-                                                },
-                                                None,
-                                                None,
-                                            );
-                                        } else {
-                                            print_to_terminal(
-                                                0,
-                                                &format!(
-                                            "app-store: got install response from bad source: {}",
-                                            install_from
-                                        ),
-                                            );
-                                        }
-                                    }
-                                }
-                                FTWorkerResult::Err(e) => {
+                                e => {
                                     print_to_terminal(
                                         0,
                                         &format!("app store file transfer: error {:?}", e),
@@ -505,9 +487,7 @@ fn handle_local_request(
                     let resp = serde_json::from_str::<Resp>(&ipc)?;
                     match resp {
                         Resp::RemoteResponse(RemoteResponse::DownloadApproved) => {
-                            state
-                                .requested_packages
-                                .insert(package.clone(), install_from.to_string());
+                            state.requested_packages.insert(package.clone());
                             process_lib::set_state::<State>(&state);
                             DownloadResponse::Started
                         }
@@ -692,8 +672,6 @@ fn handle_remote_request(
 ) -> anyhow::Result<Option<Resp>> {
     match request {
         RemoteRequest::Download(package) => {
-            print_to_terminal(0, &format!("app store: got download request for {:?}", package));
-            print_to_terminal(0, &format!("app store: state: {:?}", state));
             let Some(package_state) = state.packages.get(&package) else {
                 return Ok(Some(Resp::RemoteResponse(RemoteResponse::DownloadDenied)))
             };
