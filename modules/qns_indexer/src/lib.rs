@@ -154,24 +154,24 @@ impl UqProcess for Component {
             None,
         );
 
-        let http_bindings_process_id_str = "http_bindings:http_bindings:uqbar";
-        let http_bindings_process_id = ProcessId::from_str(http_bindings_process_id_str).unwrap();
+        let http_server_address = ProcessId::from_str("http_server:sys:uqbar").unwrap();
 
         let _register_endpoint = send_request(
             &Address {
                 node: our.node.clone(),
-                process: http_bindings_process_id.clone(),
+                process: http_server_address.clone(),
             },
             &Request {
                 inherit: false,
                 expects_response: None,
                 metadata: None,
                 ipc: Some(
-                    serde_json::json!({
-                        "action": "bind-app",
-                        "path": "/qns-indexer/node/:name",
-                        "app": "qns_indexer",
-                        "authenticated": true,
+                    json!({
+                        "BindPath": {
+                            "path": "/node/:name",
+                            "authenticated": false,
+                            "local_only": false
+                        }
                     })
                     .to_string(),
                 ),
@@ -192,11 +192,11 @@ impl UqProcess for Component {
                 continue;
             };
 
-            if source.process.to_string() == http_bindings_process_id_str {
+            if source.process == http_server_address {
                 if let Ok(ipc_json) = serde_json::from_str::<serde_json::Value>(
                     &request.ipc.clone().unwrap_or_default(),
                 ) {
-                    if ipc_json["path"].as_str().unwrap_or_default() == "/qns-indexer/node/:name" {
+                    if ipc_json["path"].as_str().unwrap_or_default() == "/node/:name" {
                         if let Some(name) = ipc_json["url_params"]["name"].as_str() {
                             if let Some(node) = state.nodes.get(name) {
                                 send_response(
@@ -249,7 +249,13 @@ impl UqProcess for Component {
             }
 
             let Ok(msg) = serde_json::from_str::<AllActions>(request.ipc.as_ref().unwrap()) else {
-                print_to_terminal(0, &format!("qns_indexer: got invalid message: {}", request.ipc.unwrap_or_default()));
+                print_to_terminal(
+                    0,
+                    &format!(
+                        "qns_indexer: got invalid message: {}",
+                        request.ipc.unwrap_or_default()
+                    ),
+                );
                 continue;
             };
 
@@ -261,19 +267,25 @@ impl UqProcess for Component {
                         NodeRegistered::SIGNATURE_HASH => {
                             // bindings::print_to_terminal(0, format!("qns_indexer: got NodeRegistered event: {:?}", e).as_str());
 
-                            let node       = &e.topics[1];
-                            let decoded    = NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                            let node = &e.topics[1];
+                            let decoded =
+                                NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true)
+                                    .unwrap();
                             let Ok(name) = dnswire_decode(decoded.0.clone()) else {
-                                bindings::print_to_terminal(1, &format!("qns_indexer: failed to decode name: {:?}", decoded.0));
+                                bindings::print_to_terminal(
+                                    1,
+                                    &format!("qns_indexer: failed to decode name: {:?}", decoded.0),
+                                );
                                 continue;
                             };
 
                             state.names.insert(node.to_string(), name);
                         }
                         WsChanged::SIGNATURE_HASH => {
-                            let node       = &e.topics[1];
-                            let decoded     = WsChanged::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                            let public_key  = hex::encode(decoded.0);
+                            let node = &e.topics[1];
+                            let decoded =
+                                WsChanged::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                            let public_key = hex::encode(decoded.0);
                             let ip = decoded.1;
                             let port = decoded.2;
                             let routers_raw = decoded.3;
@@ -395,7 +407,7 @@ fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {
 
     // Remove the trailing '.' if it exists (it should always exist)
     if name.ends_with('.') {
-        Ok(name[0..name.len()-1].to_string())
+        Ok(name[0..name.len() - 1].to_string())
     } else {
         Ok(name)
     }

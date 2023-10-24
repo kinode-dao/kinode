@@ -3,15 +3,18 @@ use crate::register;
 use crate::types::*;
 use anyhow::Result;
 
+use base64;
 use futures::SinkExt;
 use futures::StreamExt;
 use serde_urlencoded;
 
+use route_recognizer::Router;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use warp::http::{header::HeaderValue, StatusCode};
 use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
@@ -21,6 +24,7 @@ mod server_fns;
 // types and constants
 type HttpSender = tokio::sync::oneshot::Sender<HttpResponse>;
 type HttpResponseSenders = Arc<Mutex<HashMap<u64, (String, HttpSender)>>>;
+type PathBindings = Arc<RwLock<Router<BoundPath>>>;
 
 // node -> ID -> random ID
 
@@ -37,11 +41,33 @@ pub async fn http_server(
     let websockets: WebSockets = Arc::new(Mutex::new(HashMap::new()));
     let ws_proxies: WebSocketProxies = Arc::new(Mutex::new(HashMap::new())); // channel_id -> node
 
+    // Add RPC path
+    let mut bindings_map: Router<BoundPath> = Router::new();
+    let rpc_bound_path = BoundPath {
+        app: ProcessId::from_str("rpc:sys:uqbar").unwrap(),
+        authenticated: false,
+        local_only: true,
+        original_path: "/rpc:sys:uqbar/message".to_string(),
+    };
+    bindings_map.add("/rpc:sys:uqbar/message", rpc_bound_path);
+
+    // Add encryptor binding
+    let encryptor_bound_path = BoundPath {
+        app: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
+        authenticated: false,
+        local_only: true,
+        original_path: "/encryptor:sys:uqbar".to_string(),
+    };
+    bindings_map.add("/encryptor:sys:uqbar", encryptor_bound_path);
+
+    let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
+
     let _ = tokio::join!(
         http_serve(
             our_name.clone(),
             our_port,
             http_response_senders.clone(),
+            path_bindings.clone(),
             websockets.clone(),
             jwt_secret_bytes.clone(),
             send_to_loop.clone(),
@@ -64,6 +90,7 @@ pub async fn http_server(
                     message,
                     payload,
                     http_response_senders.clone(),
+                    path_bindings.clone(),
                     websockets.clone(),
                     ws_proxies.clone(),
                     jwt_secret_bytes.clone(),
@@ -200,6 +227,7 @@ async fn http_handle_messages(
     message: Message,
     payload: Option<Payload>,
     http_response_senders: HttpResponseSenders,
+    path_bindings: PathBindings,
     websockets: WebSockets,
     ws_proxies: WebSocketProxies,
     jwt_secret_bytes: Vec<u8>,
@@ -209,106 +237,117 @@ async fn http_handle_messages(
     match message {
         Message::Response((ref response, _)) => {
             let mut senders = http_response_senders.lock().await;
-
-            let json =
-                serde_json::from_str::<HttpResponse>(&response.ipc.clone().unwrap_or_default());
-
-            match json {
-                Ok(mut response) => {
-                    let Some(payload) = payload else {
-                        return Err(HttpServerError::NoBytes);
-                    };
-
-                    let bytes = payload.bytes;
-
-                    let _ = print_tx
-                        .send(Printout {
-                            verbosity: 1,
-                            content: format!("ID: {}", id.to_string()),
+            match senders.remove(&id) {
+                // if no corresponding entry, nowhere to send response
+                None => {}
+                Some((path, channel)) => {
+                    // if path is /rpc/message, return accordingly with base64 encoded payload
+                    if path == "/rpc:sys:uqbar/message".to_string() {
+                        let payload = payload.map(|p| {
+                            let bytes = p.bytes;
+                            let base64_bytes = base64::encode(&bytes);
+                            Payload {
+                                mime: p.mime,
+                                bytes: base64_bytes.into_bytes(),
+                            }
+                        });
+                        let body = serde_json::json!({
+                            "ipc": response.ipc,
+                            "payload": payload
                         })
-                        .await;
-                    for (id, _) in senders.iter() {
-                        let _ = print_tx
-                            .send(Printout {
-                                verbosity: 1,
-                                content: format!("existing: {}", id.to_string()),
-                            })
-                            .await;
-                    }
+                        .to_string()
+                        .as_bytes()
+                        .to_vec();
+                        let mut default_headers = HashMap::new();
+                        default_headers.insert("Content-Type".to_string(), "text/html".to_string());
 
-                    match senders.remove(&id) {
-                        Some((path, channel)) => {
-                            let segments: Vec<&str> = path
-                                .split('/')
-                                .filter(|&segment| !segment.is_empty())
-                                .collect();
+                        let _ = channel.send(HttpResponse {
+                            status: 200,
+                            headers: default_headers,
+                            body: Some(body),
+                        });
+                        // error case here?
+                    } else {
+                        //  else try deserializing ipc into a HttpResponse
+                        let json = serde_json::from_str::<HttpResponse>(
+                            &response.ipc.clone().unwrap_or_default(),
+                        );
+                        match json {
+                            Ok(mut response) => {
+                                let Some(payload) = payload else {
+                                    return Err(HttpServerError::NoBytes);
+                                };
+                                let bytes = payload.bytes;
 
-                            // If we're getting back a /login from a proxy (or our own node), then we should generate a jwt from the secret + the name of the ship, and then attach it to a header
-                            if response.status < 400
-                                && (segments.len() == 1 || segments.len() == 4)
-                                && matches!(segments.last(), Some(&"login"))
-                            {
-                                if let Some(auth_cookie) = response.headers.get("set-cookie") {
-                                    let mut ws_auth_username = our.clone();
-                                    if segments.len() == 4
-                                        && matches!(segments.get(0), Some(&"http-proxy"))
-                                        && matches!(segments.get(1), Some(&"serve"))
-                                    {
-                                        if let Some(segment) = segments.get(2) {
-                                            ws_auth_username = segment.to_string();
+                                // for the login case, todo refactor out?
+                                let segments: Vec<&str> = path
+                                    .split('/')
+                                    .filter(|&segment| !segment.is_empty())
+                                    .collect();
+
+                                // If we're getting back a /login from a proxy (or our own node), then we should generate a jwt from the secret + the name of the ship, and then attach it to a header
+                                if response.status < 400
+                                    && (segments.len() == 1 || segments.len() == 4)
+                                    && matches!(segments.last(), Some(&"login"))
+                                {
+                                    if let Some(auth_cookie) = response.headers.get("set-cookie") {
+                                        let mut ws_auth_username = our.clone();
+
+                                        if segments.len() == 4
+                                            && matches!(segments.get(0), Some(&"http-proxy"))
+                                            && matches!(segments.get(1), Some(&"serve"))
+                                        {
+                                            if let Some(segment) = segments.get(2) {
+                                                ws_auth_username = segment.to_string();
+                                            }
+                                        }
+                                        if let Some(token) = register::generate_jwt(
+                                            jwt_secret_bytes.to_vec().as_slice(),
+                                            ws_auth_username.clone(),
+                                        ) {
+                                            let auth_cookie_with_ws = format!(
+                                                "{}; uqbar-ws-auth_{}={};",
+                                                auth_cookie,
+                                                ws_auth_username.clone(),
+                                                token
+                                            );
+                                            response.headers.insert(
+                                                "set-cookie".to_string(),
+                                                auth_cookie_with_ws,
+                                            );
+
+                                            let _ = print_tx
+                                                .send(Printout {
+                                                    verbosity: 1,
+                                                    content: format!(
+                                                        "SET WS AUTH COOKIE WITH USERNAME: {}",
+                                                        ws_auth_username
+                                                    ),
+                                                })
+                                                .await;
                                         }
                                     }
-                                    if let Some(token) = register::generate_jwt(
-                                        jwt_secret_bytes.to_vec().as_slice(),
-                                        ws_auth_username.clone(),
-                                    ) {
-                                        let auth_cookie_with_ws = format!(
-                                            "{}; uqbar-ws-auth_{}={};",
-                                            auth_cookie,
-                                            ws_auth_username.clone(),
-                                            token
-                                        );
-                                        response
-                                            .headers
-                                            .insert("set-cookie".to_string(), auth_cookie_with_ws);
-                                        let _ = print_tx
-                                            .send(Printout {
-                                                verbosity: 1,
-                                                content: format!(
-                                                    "SET WS AUTH COOKIE WITH USERNAME: {}",
-                                                    ws_auth_username
-                                                ),
-                                            })
-                                            .await;
-                                    }
                                 }
+                                let _ = channel.send(HttpResponse {
+                                    status: response.status,
+                                    headers: response.headers,
+                                    body: Some(bytes),
+                                });
                             }
-                            let _ = channel.send(HttpResponse {
-                                status: response.status,
-                                headers: response.headers,
-                                body: Some(bytes),
-                            });
+                            Err(_json_parsing_err) => {
+                                let mut error_headers = HashMap::new();
+                                error_headers
+                                    .insert("Content-Type".to_string(), "text/html".to_string());
+
+                                let _ = channel.send(HttpResponse {
+                                    status: 503,
+                                    headers: error_headers,
+                                    body: Some(
+                                        format!("Internal Server Error").as_bytes().to_vec(),
+                                    ),
+                                });
+                            }
                         }
-                        None => {
-                            println!(
-                                "http_server: inconsistent state, no key found for id {}",
-                                id
-                            );
-                        }
-                    }
-                }
-                Err(_json_parsing_err) => {
-                    let mut error_headers = HashMap::new();
-                    error_headers.insert("Content-Type".to_string(), "text/html".to_string());
-                    match senders.remove(&id) {
-                        Some((_path, channel)) => {
-                            let _ = channel.send(HttpResponse {
-                                status: 503,
-                                headers: error_headers,
-                                body: Some(format!("Internal Server Error").as_bytes().to_vec()),
-                            });
-                        }
-                        None => {}
                     }
                 }
             }
@@ -321,6 +360,34 @@ async fn http_handle_messages(
             match serde_json::from_str(&json) {
                 Ok(message) => {
                     match message {
+                        HttpServerMessage::BindPath {
+                            path,
+                            authenticated,
+                            local_only,
+                        } => {
+                            let mut path_bindings = path_bindings.write().await;
+                            let app = source.process.clone().to_string();
+
+                            let mut path = path.clone();
+                            if app != "homepage:homepage:uqbar" {
+                                path = if path.starts_with("/") {
+                                    format!("/{}{}", app, path)
+                                } else {
+                                    format!("/{}/{}", app, path)
+                                };
+                            }
+                            // trim trailing "/"
+                            path = normalize_path(&path);
+
+                            let bound_path = BoundPath {
+                                app: source.process,
+                                authenticated: authenticated,
+                                local_only: local_only,
+                                original_path: path.clone(),
+                            };
+
+                            path_bindings.add(&path, bound_path);
+                        }
                         HttpServerMessage::WebSocketPush(WebSocketPush { target, is_text }) => {
                             let Some(payload) = payload else {
                                 return Err(HttpServerError::NoBytes);
@@ -556,6 +623,7 @@ async fn http_serve(
     our: String,
     our_port: u16,
     http_response_senders: HttpResponseSenders,
+    path_bindings: PathBindings,
     websockets: WebSockets,
     jwt_secret_bytes: Vec<u8>,
     send_to_loop: MessageSender,
@@ -616,6 +684,8 @@ async fn http_serve(
         .and(warp::filters::body::bytes())
         .and(warp::any().map(move || our.clone()))
         .and(warp::any().map(move || http_response_senders.clone()))
+        .and(warp::any().map(move || path_bindings.clone()))
+        .and(warp::any().map(move || jwt_secret_bytes.clone()))
         .and(warp::any().map(move || send_to_loop.clone()))
         .and(warp::any().map(move || print_tx_move.clone()))
         .and_then(handler);
@@ -642,6 +712,8 @@ async fn handler(
     body: warp::hyper::body::Bytes,
     our: String,
     http_response_senders: HttpResponseSenders,
+    path_bindings: PathBindings,
+    jwt_secret_bytes: Vec<u8>,
     send_to_loop: MessageSender,
     _print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
@@ -649,54 +721,209 @@ async fn handler(
         Some(a) => a.to_string(),
         None => "".to_string(),
     };
-
-    let path_str = path.as_str().to_string();
+    // trim trailing "/"
+    let raw_path = normalize_path(path.as_str());
     let id: u64 = rand::random();
-    let message = KernelMessage {
-        id: id.clone(),
-        source: Address {
-            node: our.clone(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        target: Address {
-            node: our.clone(),
-            process: ProcessId::new(Some("http_bindings"), "http_bindings", "uqbar"),
-        },
-        rsvp: Some(Address {
-            node: our.clone(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        }),
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: Some(30), // TODO evaluate timeout
-            ipc: Some(
-                serde_json::json!({
-                    "action": "request".to_string(),
-                    "address": address,
-                    "method": method.to_string(),
-                    "path": path_str.clone(),
-                    "headers": serialize_headers(&headers),
-                    "query_params": query_params,
-                })
-                .to_string(),
-            ),
-            metadata: None,
-        }),
-        payload: Some(Payload {
-            mime: Some("application/octet-stream".to_string()), // TODO adjust MIME type as needed
-            bytes: body.to_vec(),
-        }),
-        signed_capabilities: None,
+    let real_headers = serialize_headers(&headers);
+    let path_bindings = path_bindings.read().await;
+
+    let Ok(route) = path_bindings.recognize(&raw_path) else {
+        return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
+    };
+    let bound_path = route.handler();
+
+    let app = bound_path.app.to_string();
+    let url_params: HashMap<&str, &str> = route.params().into_iter().collect();
+    let raw_path = remove_process_id(&raw_path);
+    let path = remove_process_id(&bound_path.original_path);
+
+    if bound_path.authenticated {
+        let auth_token = real_headers.get("cookie").cloned().unwrap_or_default();
+        if !auth_cookie_valid(our.clone(), &auth_token, jwt_secret_bytes) {
+            // send 401
+            return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
+        }
+    }
+
+    if bound_path.local_only && !address.starts_with("127.0.0.1:") {
+        // send 403
+        return Ok(warp::reply::with_status(vec![], StatusCode::FORBIDDEN).into_response());
+    }
+
+    // RPC functionality: if path is /rpc:sys:uqbar/message,
+    // we extract message from base64 encoded bytes in data
+    // and send it to the correct app.
+
+    let message = if app == "rpc:sys:uqbar".to_string() {
+        let rpc_message: RpcMessage = match serde_json::from_slice(&body) {
+            // to_vec()?
+            Ok(v) => v,
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                );
+            }
+        };
+
+        let target_process = match ProcessId::from_str(&rpc_message.process) {
+            Ok(p) => p,
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                );
+            }
+        };
+
+        let payload = match base64::decode(&rpc_message.data.unwrap_or("".to_string())) {
+            Ok(bytes) => Some(Payload {
+                mime: rpc_message.mime,
+                bytes,
+            }),
+            Err(_) => None,
+        };
+        let node = match rpc_message.node {
+            Some(node_str) => node_str,
+            None => our.clone(),
+        };
+
+        KernelMessage {
+            id,
+            source: Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node,
+                process: target_process,
+            },
+            rsvp: Some(Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            }),
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: Some(15), // no effect on runtime
+                ipc: rpc_message.ipc,
+                metadata: rpc_message.metadata,
+            }),
+            payload,
+            signed_capabilities: None,
+        }
+    } else if app == "encryptor:sys:uqbar".to_string() {
+        let body_json = match String::from_utf8(body.to_vec()) {
+            Ok(s) => s,
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                );
+            }
+        };
+
+        let body: serde_json::Value = match serde_json::from_str(&body_json) {
+            Ok(v) => v,
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                );
+            }
+        };
+
+        let channel_id = body["channel_id"].as_str().unwrap_or("");
+        let public_key_hex = body["public_key_hex"].as_str().unwrap_or("");
+
+        KernelMessage {
+            id,
+            source: Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node: our.clone(),
+                process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
+            },
+            rsvp: None, //?
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: None,
+                ipc: Some(
+                    serde_json::json!({
+                        "GetKeyAction": {
+                            "channel_id": channel_id,
+                            "public_key_hex": public_key_hex,
+                        }
+                    })
+                    .to_string(),
+                ),
+                metadata: None,
+            }),
+            payload: None,
+            signed_capabilities: None,
+        }
+    } else {
+        // otherwise, make a message, to the correct app.
+        KernelMessage {
+            id,
+            source: Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node: our.clone(),
+                process: bound_path.app.clone(),
+            },
+            rsvp: Some(Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            }),
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: Some(15), // no effect on runtime
+                ipc: Some(
+                    serde_json::json!({
+                        "address": address,
+                        "method": method.to_string(),
+                        "raw_path": raw_path.clone(),
+                        "path": path.clone(),
+                        "headers": serialize_headers(&headers),
+                        "query_params": query_params,
+                        "url_params": url_params,
+                    })
+                    .to_string(),
+                ),
+                metadata: None,
+            }),
+            payload: Some(Payload {
+                mime: Some("application/octet-stream".to_string()), // TODO adjust MIME type as needed
+                bytes: body.to_vec(),
+            }),
+            signed_capabilities: None,
+        }
     };
 
     let (response_sender, response_receiver) = oneshot::channel();
     http_response_senders
         .lock()
         .await
-        .insert(id, (path_str, response_sender));
+        .insert(id, (raw_path.clone(), response_sender));
 
     send_to_loop.send(message).await.unwrap();
-    let from_channel = response_receiver.await.unwrap();
+    let timeout_duration = tokio::time::Duration::from_secs(15); // adjust as needed
+    let result = tokio::time::timeout(timeout_duration, response_receiver).await;
+
+    let from_channel = match result {
+        Ok(Ok(from_channel)) => from_channel,
+        Ok(Err(_)) => {
+            return Ok(
+                warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR).into_response(),
+            );
+        }
+        Err(_) => {
+            return Ok(
+                warp::reply::with_status(vec![], StatusCode::REQUEST_TIMEOUT).into_response(),
+            );
+        }
+    };
+
     let reply = warp::reply::with_status(
         match from_channel.body {
             Some(val) => val,
