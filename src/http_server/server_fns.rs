@@ -2,6 +2,7 @@ use crate::types::*;
 use futures::stream::SplitSink;
 use hmac::{Hmac, Mac};
 use jwt::{Error, VerifyWithKey};
+use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -13,6 +14,26 @@ use warp::ws::WebSocket;
 pub type SharedWriteStream = Arc<Mutex<SplitSink<WebSocket, warp::ws::Message>>>;
 pub type WebSockets = Arc<Mutex<HashMap<String, HashMap<String, HashMap<u64, SharedWriteStream>>>>>;
 pub type WebSocketProxies = Arc<Mutex<HashMap<String, HashSet<String>>>>;
+
+pub struct BoundPath {
+    pub app: ProcessId,
+    pub authenticated: bool,
+    pub local_only: bool,
+    pub original_path: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RpcMessage {
+    pub node: Option<String>,
+    pub process: String,
+    pub inherit: Option<bool>,
+    pub expects_response: Option<u64>,
+    pub ipc: Option<String>,
+    pub metadata: Option<String>,
+    pub context: Option<String>,
+    pub mime: Option<String>,
+    pub data: Option<String>,
+}
 
 pub fn parse_auth_token(auth_token: String, jwt_secret: Vec<u8>) -> Result<String, Error> {
     let secret: Hmac<Sha256> = match Hmac::new_from_slice(&jwt_secret.as_slice()) {
@@ -28,6 +49,59 @@ pub fn parse_auth_token(auth_token: String, jwt_secret: Vec<u8>) -> Result<Strin
         Ok(data) => Ok(data.username),
         Err(err) => Err(err),
     }
+}
+
+pub fn auth_cookie_valid(our_node: String, cookie: &str, jwt_secret: Vec<u8>) -> bool {
+    let cookie_parts: Vec<&str> = cookie.split("; ").collect();
+    let mut auth_token = None;
+
+    for cookie_part in cookie_parts {
+        let cookie_part_parts: Vec<&str> = cookie_part.split("=").collect();
+        if cookie_part_parts.len() == 2
+            && cookie_part_parts[0] == format!("uqbar-auth_{}", our_node)
+        {
+            auth_token = Some(cookie_part_parts[1].to_string());
+            break;
+        }
+    }
+
+    let auth_token = match auth_token {
+        Some(token) if !token.is_empty() => token,
+        _ => return false,
+    };
+
+    let secret = match Hmac::<Sha256>::new_from_slice(&jwt_secret) {
+        Ok(secret) => secret,
+        Err(_) => return false,
+    };
+
+    let claims: Result<JwtClaims, _> = auth_token.verify_with_key(&secret);
+
+    match claims {
+        Ok(data) => data.username == our_node,
+        Err(_) => false,
+    }
+}
+
+pub fn remove_process_id(path: &str) -> String {
+    // Split the string into parts separated by '/'
+    let mut parts = path.splitn(3, '/');
+    // Skip the first two parts (before and after the first '/')
+    let remaining_path = parts.nth(2).unwrap_or("");
+    // If the result is empty, return "/"
+    if remaining_path.is_empty() {
+        return "/".to_string();
+    }
+    // Otherwise, return the result with a leading "/"
+    format!("/{}", remaining_path)
+}
+
+pub fn normalize_path(path: &str) -> String {
+    let mut normalized = path.to_string();
+    if normalized != "/" && normalized.ends_with('/') {
+        normalized.pop();
+    }
+    normalized
 }
 
 pub async fn handle_incoming_ws(
@@ -332,7 +406,7 @@ pub async fn handle_encrypted_ws_message(
                         "json": {
                             "forwarded_from": {
                                 "node": our.clone(),
-                                "process": "http_server",
+                                "process": "http_server:sys:uqbar",
                             }
                         },
                     }

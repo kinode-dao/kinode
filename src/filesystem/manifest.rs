@@ -2,14 +2,14 @@ use crate::types::*;
 use crate::types::{FsError, ProcessId};
 use blake3::Hasher;
 use chacha20poly1305::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, KeyInit},
     XChaCha20Poly1305, XNonce,
 };
 use rand::RngCore;
 use rusoto_core::{Region, RusotoError};
 use rusoto_s3::{
-    DeleteObjectError, DeleteObjectRequest, GetObjectError, GetObjectRequest, ListObjectsV2Error,
-    ListObjectsV2Request, PutObjectError, PutObjectRequest, S3Client, StreamingBody, S3,
+    DeleteObjectError, GetObjectError, GetObjectRequest, ListObjectsV2Error, PutObjectError,
+    PutObjectRequest, S3Client, StreamingBody, S3,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -263,7 +263,7 @@ impl Manifest {
         read_lock.get(hash).cloned()
     }
 
-    pub async fn get_chunk_hashes(&self) -> HashSet<[u8; 32]> {
+    pub async fn _get_chunk_hashes(&self) -> HashSet<[u8; 32]> {
         let mut in_use_hashes = HashSet::new();
         for file in self.manifest.read().await.values() {
             for (_start, (hash, _length, _wal_position, _encrypted)) in &file.chunks {
@@ -281,7 +281,7 @@ impl Manifest {
         file_hashes
     }
 
-    pub async fn get_uuid_by_hash(&self, hash: &[u8; 32]) -> Option<u128> {
+    pub async fn _get_uuid_by_hash(&self, hash: &[u8; 32]) -> Option<u128> {
         let read_lock = self.hash_index.read().await;
         if let Some(file_id) = read_lock.get(hash) {
             file_id.to_uuid()
@@ -1129,8 +1129,8 @@ impl Manifest {
         Ok(())
     }
 
-    pub async fn cleanup(&self) -> Result<(), FsError> {
-        let in_use_hashes = self.get_chunk_hashes().await;
+    pub async fn _cleanup(&self) -> Result<(), FsError> {
+        let in_use_hashes = self._get_chunk_hashes().await;
 
         // loop through all chunks on disk
         let mut entries = fs::read_dir(&self.fs_directory_path).await?;

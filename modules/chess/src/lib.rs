@@ -102,10 +102,10 @@ fn send_http_response(status: u16, headers: HashMap<String, String>, payload_byt
     )
 }
 
-fn send_ws_update(our_name: String, game: Game) {
+fn send_ws_update(our: Address, game: Game) {
     send_request(
         &Address {
-            node: our_name.clone(),
+            node: our.node.clone(),
             process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
         },
         &Request {
@@ -114,17 +114,19 @@ fn send_ws_update(our_name: String, game: Game) {
             ipc: Some(
                 serde_json::json!({
                     "EncryptAndForwardAction": {
-                        "channel_id": "chess",
+                        "channel_id": our.process.to_string(),
                         "forward_to": {
-                            "node": our_name.clone(),
+                            "node": our.node.clone(),
                             "process": {
-                                "Name": "http_server"
-                            }, // If the message passed in an ID then we could send to just that ID
+                                "process_name": "http_server",
+                                "package_name": "sys",
+                                "publisher_node": "uqbar"
+                            }
                         }, // node, process
                         "json": Some(serde_json::json!({ // this is the JSON to forward
                             "WebSocketPush": {
                                 "target": {
-                                    "node": our_name.clone(),
+                                    "node": our.node.clone(),
                                     "id": "chess", // If the message passed in an ID then we could send to just that ID
                                 }
                             }
@@ -177,7 +179,7 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
+            process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
         };
 
         // <address, request, option<context>, option<payload>>
@@ -188,15 +190,13 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(
-                        serde_json::json!({
-                            "action": "bind-app",
-                            "path": "/chess",
-                            "app": "chess",
+                    ipc: Some(json!({
+                        "BindPath": {
+                            "path": "/",
                             "authenticated": true,
-                        })
-                        .to_string(),
-                    ),
+                            "local_only": false
+                        }
+                    }).to_string()),
                     metadata: None,
                 },
                 None,
@@ -207,15 +207,13 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(
-                        serde_json::json!({
-                            "action": "bind-app",
-                            "path": "/chess/games",
-                            "app": "chess",
+                    ipc: Some(json!({
+                        "BindPath": {
+                            "path": "/games",
                             "authenticated": true,
-                        })
-                        .to_string(),
-                    ),
+                            "local_only": false
+                        }
+                    }).to_string()),
                     metadata: None,
                 },
                 None,
@@ -327,7 +325,7 @@ impl Guest for Component {
                             };
                             state.games.insert(game_id.clone(), game.clone());
 
-                            send_ws_update(our.node.clone(), game.clone());
+                            send_ws_update(our.clone(), game.clone());
 
                             save_chess_state(state.clone());
 
@@ -404,7 +402,7 @@ impl Guest for Component {
                                     }
                                 }
 
-                                send_ws_update(our.node.clone(), game.clone());
+                                send_ws_update(our.clone(), game.clone());
                                 save_chess_state(state.clone());
 
                                 send_response(
@@ -459,7 +457,7 @@ impl Guest for Component {
                                 state.records.insert(game.id.clone(), (1, 0, 0));
                             }
 
-                            send_ws_update(our.node.clone(), game.clone());
+                            send_ws_update(our.clone(), game.clone());
                             save_chess_state(state.clone());
 
                             send_response(
@@ -479,7 +477,7 @@ impl Guest for Component {
                             continue;
                         }
                     }
-                } else if source.process.to_string() == "http_bindings:http_bindings:uqbar" {
+                } else if source.process.to_string() == "http_server:sys:uqbar" {
                     let path = message_json["path"].as_str().unwrap_or("");
                     let method = message_json["method"].as_str().unwrap_or("");
 
@@ -487,13 +485,13 @@ impl Guest for Component {
                     default_headers.insert("Content-Type".to_string(), "text/html".to_string());
                     // Handle incoming http
                     match path {
-                        "/chess" => {
+                        "/" => {
                             send_http_response(
                                 200,
                                 default_headers.clone(),
                                 CHESS_PAGE
                                     .replace("${node}", &our.node)
-                                    .replace("${process}", &source.process.to_string())
+                                    .replace("${process}", &our.process.to_string())
                                     .replace("${js}", CHESS_JS)
                                     .replace("${css}", CHESS_CSS)
                                     .to_string()
@@ -501,7 +499,7 @@ impl Guest for Component {
                                     .to_vec(),
                             );
                         }
-                        "/chess/games" => {
+                        "/games" => {
                             match method {
                                 "GET" => {
                                     send_http_response(
