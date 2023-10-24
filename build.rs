@@ -36,16 +36,17 @@ where
 fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
     let pwd = std::env::current_dir().unwrap();
 
-    println!("cargo:warning=building {}", target_path);
+    let start = std::time::Instant::now();
 
-    // Copy in newly-made wit IF old one is outdated
+    // if and only if module's wit is outdated, re-set-up build environment
     if file_outdated(
-        format!("{}/wit/", pwd.display()),
-        format!("{}/modules/{}/wit/", target_path, name),
+        format!("{}/wit/uqbar.wit", pwd.display()),
+        format!("{}/wit/uqbar.wit", target_path),
     )
     .unwrap_or(true)
     {
-        run_command(Command::new("cp").args(&["-r", "wit", target_path])).unwrap();
+        println!("cargo:warning=wit outdated, rebuilding");
+        run_command(Command::new("cp").args(&["wit/uqbar.wit", &format!("{}/wit", target_path)])).unwrap();
         // create target/bindings directory
         fs::create_dir_all(&format!("{}/target/bindings/{}", target_path, name,)).unwrap();
         // copy newly-made target.wasm into target/bindings
@@ -63,6 +64,7 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
     }
     // Build the module targeting wasm32-wasi
     run_command(Command::new("cargo").args(&[
+        "+nightly",
         "build",
         "--release",
         "--no-default-features",
@@ -71,6 +73,7 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
         "wasm32-wasi",
     ]))
     .unwrap();
+
     // Adapt module to component with adapter based on wasi_snapshot_preview1.wasm
     run_command(Command::new("wasm-tools").args(&[
         "component",
@@ -110,53 +113,19 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
         &wasm_dest_path,
     ]))
     .unwrap();
+
+    let end = std::time::Instant::now();
+    println!(
+        "cargo:warning=building {} took {:?}",
+        target_path,
+        end.duration_since(start)
+    );
 }
 
 fn main() {
     if std::env::var("SKIP_BUILD_SCRIPT").is_ok() {
         println!("Skipping build script");
         return;
-    }
-    let build_enabled = std::env::var("BUILD_APPS")
-        .map(|v| v == "true")
-        .unwrap_or(true); // run by default
-
-    if !build_enabled {
-        return;
-    }
-    // only execute if one of the modules has source code changes
-    const WASI_APPS: [&str; 7] = [
-        "app_store",
-        "chess",
-        "homepage",
-        "http_proxy",
-        "orgs",
-        "qns_indexer",
-        "terminal",
-    ];
-    // NOT YET building KV, waiting for deps to be ready
-    const NESTED_WASI_APPS: [(&str, &str); 2] = [
-        ("key_value", "key_value"),
-        ("key_value", "key_value_worker"),
-    ];
-
-    if std::env::var("REBUILD_ALL").is_ok() {
-    } else {
-        for name in &WASI_APPS {
-            println!("cargo:rerun-if-changed=modules/{}/src", name);
-            println!("cargo:rerun-if-changed=modules/{}/Cargo.toml", name);
-            println!("cargo:rerun-if-changed=modules/{}/pkg/manifest.json", name);
-            println!("cargo:rerun-if-changed=modules/{}/pkg/metadata.json", name);
-        }
-        for (outer, inner) in &NESTED_WASI_APPS {
-            println!("cargo:rerun-if-changed=modules/{}/{}/src", outer, inner);
-            println!(
-                "cargo:rerun-if-changed=modules/{}/{}/Cargo.toml",
-                outer, inner
-            );
-            println!("cargo:rerun-if-changed=modules/{}/pkg/manifest.json", outer);
-            println!("cargo:rerun-if-changed=modules/{}/pkg/metadata.json", outer);
-        }
     }
 
     let pwd = std::env::current_dir().unwrap();
@@ -177,11 +146,6 @@ fn main() {
     for entry in std::fs::read_dir(&modules_dir).unwrap() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
-
-        // NOT YET building KV, waiting for deps to be ready
-        if package_name == "key_value" {
-            continue;
-        }
 
         // If Cargo.toml is present, build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());

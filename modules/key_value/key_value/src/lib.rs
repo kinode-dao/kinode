@@ -191,6 +191,7 @@ impl Guest for Component {
                     if let Some(e) = e.downcast_ref::<kv::KeyValueError>() {
                         send_response(
                             &Response {
+                                inherit: false,
                                 ipc: Some(serde_json::to_string(&e).unwrap()),
                                 metadata: None,
                             },

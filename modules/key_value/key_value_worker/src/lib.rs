@@ -42,7 +42,7 @@ fn send_and_await_response_wrapped(
     };
     let (
         _,
-        Message::Response((Response { ipc, metadata }, _)),
+        Message::Response((Response { ipc, metadata, .. }, _)),
     ) = send_and_await_response(
         &Address {
             node: target_node,
@@ -118,6 +118,7 @@ fn handle_message (
 
                     send_response(
                         &Response {
+                            inherit: false,
                             ipc,
                             metadata: None,
                         },
@@ -137,6 +138,7 @@ fn handle_message (
                         None => {
                             send_response(
                                 &Response {
+                                    inherit: false,
                                     ipc,
                                     metadata: None,
                                 },
@@ -155,6 +157,7 @@ fn handle_message (
                             );
                             send_response(
                                 &Response {
+                                    inherit: false,
                                     ipc,
                                     metadata: None,
                                 },
@@ -193,6 +196,7 @@ impl Guest for Component {
                     if let Some(e) = e.downcast_ref::<kv::KeyValueError>() {
                         send_response(
                             &Response {
+                                inherit: false,
                                 ipc: Some(serde_json::to_string(&e).unwrap()),
                                 metadata: None,
                             },
