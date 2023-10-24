@@ -67,7 +67,7 @@ pub fn encode_keyfile(
 }
 
 pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'static str> {
-    let (username, routers, salt, key_enc, jtw_enc, file_enc) =
+    let (username, routers, salt, key_enc, jwt_enc, file_enc) =
         bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(&keyfile)
             .map_err(|_| "failed to deserialize keyfile")?;
 
@@ -85,7 +85,7 @@ pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'sta
     let cipher = Aes256Gcm::new(&cipher_key);
 
     let net_nonce = generic_array::GenericArray::from_slice(&key_enc[..12]);
-    let jwt_nonce = generic_array::GenericArray::from_slice(&jtw_enc[..12]);
+    let jwt_nonce = generic_array::GenericArray::from_slice(&jwt_enc[..12]);
     let file_nonce = generic_array::GenericArray::from_slice(&file_enc[..12]);
 
     let serialized_networking_keypair: Vec<u8> = cipher
@@ -96,7 +96,7 @@ pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'sta
         .map_err(|_| "failed to parse networking keys")?;
 
     let jwt_secret_bytes: Vec<u8> = cipher
-        .decrypt(jwt_nonce, &jtw_enc[12..])
+        .decrypt(jwt_nonce, &jwt_enc[12..])
         .map_err(|_| "failed to decrypt jwt secret")?;
 
     let file_key: Vec<u8> = cipher
