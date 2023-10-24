@@ -38,7 +38,8 @@ impl Guest for Component {
             } => {
                 let transfer_id: u64 = our.process.process().parse().unwrap();
                 let Some(payload) = get_payload() else {
-                    panic!("ft_worker: got empty payload");
+                    print_to_terminal(0, "FTWorker wasn't given payload, exiting");
+                    return
                 };
                 let file_bytes = payload.bytes;
                 let mut file_size = file_bytes.len() as u64;

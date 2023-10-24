@@ -282,6 +282,8 @@ impl UqProcessImports for ProcessWasi {
         capabilities: wit::Capabilities,
         public: bool,
     ) -> Result<Result<wit::ProcessId, wit::SpawnError>> {
+        // save existing payload to restore later
+        let old_last_payload = self.process.last_payload.clone();
         let vfs_address = wit::Address {
             node: self.process.metadata.our.node.clone(),
             process: VFS_PROCESS_ID.en_wit(),
@@ -312,13 +314,19 @@ impl UqProcessImports for ProcessWasi {
         .await
         else {
             println!("spawn: GetHash fail");
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = hash_response
         else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let t::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc).unwrap() else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let Ok(Ok(_)) = send_and_await_response(
@@ -341,9 +349,13 @@ impl UqProcessImports for ProcessWasi {
         )
         .await
         else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
@@ -424,8 +436,12 @@ impl UqProcessImports for ProcessWasi {
         )
         .await
         else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NameTaken));
         };
+        // reset payload to what it was
+        self.process.last_payload = old_last_payload;
         let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = response else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
