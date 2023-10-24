@@ -1,6 +1,6 @@
 use anyhow::Result;
 use dotenv;
-use ethers::prelude::{abigen, namehash};
+use ethers::prelude::{namehash};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -36,8 +36,6 @@ const CAP_CHANNEL_CAPACITY: usize = 1_000;
 // const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-abigen!(QNSRegistry, "src/QNSRegistry.json");
 
 #[tokio::main]
 async fn main() {
