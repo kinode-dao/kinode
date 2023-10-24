@@ -17,6 +17,7 @@ cargo-component-bindings = { git = "https://github.com/bytecodealliance/cargo-co
 rand = "0.8.5"
 serde = {version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10.8"
 wit-bindgen = { version = "0.11.0", default_features = false }
 
 [lib]
