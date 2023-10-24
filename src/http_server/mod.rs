@@ -722,19 +722,19 @@ async fn handler(
         None => "".to_string(),
     };
     // trim trailing "/"
-    let raw_path = normalize_path(path.as_str());
+    let original_path = normalize_path(path.as_str());
     let id: u64 = rand::random();
     let real_headers = serialize_headers(&headers);
     let path_bindings = path_bindings.read().await;
 
-    let Ok(route) = path_bindings.recognize(&raw_path) else {
+    let Ok(route) = path_bindings.recognize(&original_path) else {
         return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
     };
     let bound_path = route.handler();
 
     let app = bound_path.app.to_string();
     let url_params: HashMap<&str, &str> = route.params().into_iter().collect();
-    let raw_path = remove_process_id(&raw_path);
+    let raw_path = remove_process_id(&original_path);
     let path = remove_process_id(&bound_path.original_path);
 
     if bound_path.authenticated {
@@ -899,12 +899,11 @@ async fn handler(
             signed_capabilities: None,
         }
     };
-
     let (response_sender, response_receiver) = oneshot::channel();
     http_response_senders
         .lock()
         .await
-        .insert(id, (raw_path.clone(), response_sender));
+        .insert(id, (original_path.clone(), response_sender));
 
     send_to_loop.send(message).await.unwrap();
     let timeout_duration = tokio::time::Duration::from_secs(15); // adjust as needed
