@@ -1,5 +1,4 @@
 use crate::kernel::component::uq_process::types as wit;
-use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -50,37 +49,6 @@ pub type OnchainPKI = Arc<RwLock<HashMap<String, Identity>>>;
 pub struct Registration {
     pub username: NodeId,
     pub password: String,
-    pub direct: bool,
-}
-
-#[derive(Debug)]
-pub struct Keyfile {
-    pub username: String,
-    pub routers: Vec<String>,
-    pub networking_keypair: signature::Ed25519KeyPair,
-    pub jwt_secret_bytes: Vec<u8>,
-    pub file_key: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyfileVet {
-    pub password: String,
-    pub keyfile: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyfileVetted {
-    pub username: String,
-    pub networking_key: String,
-    pub routers: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BootInfo {
-    pub password: String,
-    pub keyfile: String,
-    pub username: String,
-    pub reset: bool,
     pub direct: bool,
 }
 

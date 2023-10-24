@@ -1,19 +1,14 @@
 use aes_gcm::aead::KeyInit;
-use base64;
 use hmac::Hmac;
 use jwt::SignWithKey;
 use ring::pkcs8::Document;
 use ring::rand::SystemRandom;
 use ring::signature;
-use ring::signature::KeyPair;
 use sha2::Sha256;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{mpsc, oneshot};
 use warp::{
-    http::{
-        header::{HeaderValue, SET_COOKIE},
-        StatusCode,
-    },
+    http::header::{HeaderValue, SET_COOKIE},
     Filter, Rejection, Reply,
 };
 
@@ -21,7 +16,7 @@ use crate::http_server;
 use crate::keygen;
 use crate::types::*;
 
-type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
+type RegistrationSender = mpsc::Sender<(Identity, String, Document, Vec<u8>)>;
 
 pub fn generate_jwt(jwt_secret_bytes: &[u8], username: String) -> Option<String> {
     let jwt_secret: Hmac<Sha256> = match Hmac::new_from_slice(&jwt_secret_bytes) {
@@ -46,53 +41,41 @@ pub async fn register(
     kill_rx: oneshot::Receiver<bool>,
     ip: String,
     port: u16,
-    keyfile: Vec<u8>,
+    redir_port: u16,
 ) {
-    let our_arc = Arc::new(Mutex::new(None));
-    let our_ws_info = our_arc.clone();
+    let our = Arc::new(Mutex::new(None));
+    let pw = Arc::new(Mutex::new(None));
+    let networking_keypair = Arc::new(Mutex::new(None));
 
-    let net_keypair_arc = Arc::new(Mutex::new(None));
-    let net_keypair_ws_info = net_keypair_arc.clone();
+    let our_post = our.clone();
+    let pw_post = pw.clone();
+    let networking_keypair_post = networking_keypair.clone();
 
-    let keyfile_arc = Arc::new(Mutex::new(Some(keyfile)));
-    let keyfile_has = keyfile_arc.clone();
-    let keyfile_vet = keyfile_arc.clone();
-
-    let static_files = warp::path("static").and(warp::fs::dir("./src/register/build/static/"));
+    let static_files = warp::path("static").and(warp::fs::dir("./src/register_app/static/"));
     let react_app = warp::path::end()
         .and(warp::get())
-        .and(warp::fs::file("./src/register/build/index.html"));
+        .and(warp::fs::file("./src/register_app/index.html"));
 
-    let api = warp::path("has-keyfile")
-        .and(
-            warp::get()
-                .and(warp::any().map(move || keyfile_has.clone()))
-                .and_then(handle_has_keyfile),
-        )
-        .or(warp::path("info").and(
-            warp::get()
-                .and(warp::any().map(move || ip.clone()))
-                .and(warp::any().map(move || our_ws_info.clone()))
-                .and(warp::any().map(move || net_keypair_ws_info.clone()))
-                .and_then(handle_info),
-        ))
-        .or(warp::path("vet-keyfile").and(
-            warp::post()
+    let api = warp::path("get-ws-info").and(
+        // 1. Get uqname (already on chain) and return networking information
+        warp::post()
+            .and(warp::body::content_length_limit(1024 * 16))
+            .and(warp::body::json())
+            .and(warp::any().map(move || ip.clone()))
+            .and(warp::any().map(move || our_post.clone()))
+            .and(warp::any().map(move || pw_post.clone()))
+            .and(warp::any().map(move || networking_keypair_post.clone()))
+            .and_then(handle_post)
+            // 2. trigger for finalizing registration once on-chain actions are done
+            .or(warp::put()
                 .and(warp::body::content_length_limit(1024 * 16))
-                .and(warp::body::json())
-                .and(warp::any().map(move || keyfile_vet.clone()))
-                .and_then(handle_keyfile_vet),
-        ))
-        .or(warp::path("boot").and(
-            warp::put()
-                .and(warp::body::content_length_limit(1024 * 16))
-                .and(warp::body::json())
                 .and(warp::any().map(move || tx.clone()))
-                .and(warp::any().map(move || our_arc.lock().unwrap().take().unwrap()))
-                .and(warp::any().map(move || net_keypair_arc.lock().unwrap().take().unwrap()))
-                .and(warp::any().map(move || keyfile_arc.lock().unwrap().take().unwrap()))
-                .and_then(handle_boot),
-        ));
+                .and(warp::any().map(move || our.lock().unwrap().take().unwrap()))
+                .and(warp::any().map(move || pw.lock().unwrap().take().unwrap()))
+                .and(warp::any().map(move || networking_keypair.lock().unwrap().take().unwrap()))
+                .and(warp::any().map(move || redir_port))
+                .and_then(handle_put)),
+    );
 
     let routes = static_files.or(react_app).or(api);
 
@@ -105,158 +88,153 @@ pub async fn register(
         .await;
 }
 
-async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl Reply, Rejection> {
-    let keyfile_lock = keyfile.lock().unwrap();
-
-    if keyfile_lock.is_none() {
-        return Ok(warp::reply::json(&"".to_string()));
-    }
-
-    let encoded_keyfile = keyfile_lock.as_ref().unwrap();
-    let username: String = match encoded_keyfile.is_empty() {
-        true => "".to_string(),
-        false => {
-            let (user, ..): (String,) = bincode::deserialize(encoded_keyfile).unwrap();
-            user
-        }
-    };
-
-    Ok(warp::reply::json(&username))
-}
-
-async fn handle_keyfile_vet(
-    payload: KeyfileVet,
-    keyfile_arc: Arc<Mutex<Option<Vec<u8>>>>,
-) -> Result<impl Reply, Rejection> {
-    let encoded_keyfile = match payload.keyfile.is_empty() {
-        true => keyfile_arc.lock().unwrap().clone().unwrap(),
-        false => base64::decode(payload.keyfile).unwrap(),
-    };
-
-    let decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile, &payload.password) {
-        Ok(k) => k,
-        Err(_) => return Err(warp::reject()),
-    };
-
-    let keyfile_vetted = KeyfileVetted {
-        username: decoded_keyfile.username,
-        networking_key: hex::encode(decoded_keyfile.networking_keypair.public_key().as_ref()),
-        routers: decoded_keyfile.routers,
-    };
-
-    Ok(warp::reply::json(&keyfile_vetted))
-}
-
-async fn handle_boot(
-    info: BootInfo,
-    sender: RegistrationSender,
-    mut our: Identity,
-    networking_keypair: Document,
-    mut encoded_keyfile: Vec<u8>,
-) -> Result<impl Reply, Rejection> {
-    our.name = info.username;
-
-    if info.direct {
-        our.allowed_routers = vec![];
-    } else {
-        our.ws_routing = None;
-    }
-
-    if encoded_keyfile.is_empty() && !info.keyfile.clone().is_empty() {
-        match base64::decode(info.keyfile.clone()) {
-            Ok(k) => encoded_keyfile = k,
-            Err(_) => return Err(warp::reject()),
-        }
-    }
-
-    let decoded_keyfile = if info.reset || encoded_keyfile.is_empty() {
-        let seed = SystemRandom::new();
-        let mut jwt_secret = [0u8, 32];
-        ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
-
-        Keyfile {
-            username: our.name.clone(),
-            routers: our.allowed_routers.clone(),
-            networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
-                .unwrap(),
-            jwt_secret_bytes: jwt_secret.to_vec(),
-            file_key: keygen::generate_file_key(),
-        }
-    } else {
-        match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
-            Ok(k) => k,
-            Err(_) => return Err(warp::reject()),
-        }
-    };
-
-    if encoded_keyfile.is_empty() {
-        encoded_keyfile = keygen::encode_keyfile(
-            info.password,
-            decoded_keyfile.username.clone(),
-            decoded_keyfile.routers.clone(),
-            networking_keypair,
-            decoded_keyfile.jwt_secret_bytes.clone(),
-            decoded_keyfile.file_key.clone(),
-        );
-    }
-
-    let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, our.name.clone()) {
-        Some(token) => token,
-        None => return Err(warp::reject()),
-    };
-
-    sender
-        .send((our.clone(), decoded_keyfile, encoded_keyfile.clone()))
-        .await
-        .unwrap();
-
-    let encoded_keyfile_str = match info.keyfile.clone().is_empty() {
-        true => base64::encode(encoded_keyfile),
-        false => info.keyfile.clone(),
-    };
-
-    let mut response =
-        warp::reply::with_status(warp::reply::json(&encoded_keyfile_str), StatusCode::FOUND)
-            .into_response();
-
-    let headers = response.headers_mut();
-    headers.append(
-        SET_COOKIE,
-        HeaderValue::from_str(&format!("uqbar-auth_{}={};", &our.name, &token)).unwrap(),
-    );
-    headers.append(
-        SET_COOKIE,
-        HeaderValue::from_str(&format!("uqbar-ws-auth_{}={};", &our.name, &token)).unwrap(),
-    );
-
-    Ok(response)
-}
-
-async fn handle_info(
+async fn handle_post(
+    info: Registration,
     ip: String,
-    our_arc: Arc<Mutex<Option<Identity>>>,
-    networking_keypair_arc: Arc<Mutex<Option<Document>>>,
+    our_post: Arc<Mutex<Option<Identity>>>,
+    pw_post: Arc<Mutex<Option<String>>>,
+    networking_keypair_post: Arc<Mutex<Option<Document>>>,
 ) -> Result<impl Reply, Rejection> {
     // 1. Generate networking keys
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
-    *networking_keypair_arc.lock().unwrap() = Some(serialized_networking_keypair);
+    *networking_keypair_post.lock().unwrap() = Some(serialized_networking_keypair);
 
-    // 2. set our...
+    // 2. generate ws and routing information
     // TODO: if IP is localhost, assign a router...
     let ws_port = http_server::find_open_port(9000).await.unwrap();
-
     let our = Identity {
+        name: info.username.clone(),
         networking_key: public_key,
-        name: String::new(),
-        ws_routing: Some((ip.clone(), ws_port)),
-        allowed_routers: vec![
-            "uqbar-router-1.uq".into(), // "0x8d9e54427c50660c6d4802f63edca86a9ca5fd6a78070c4635950e9d149ed441".into(),
-            "uqbar-router-2.uq".into(), // "0x06d331ed65843ecf0860c73292005d8103af20820546b2f8f9007d01f60595b1".into(),
-            "uqbar-router-3.uq".into(), // "0xe6ab611eb62e8aee0460295667f8179cda4315982717db4b0b3da6022deecac1".into(),
-        ],
+        ws_routing: if ip == "localhost" || !info.direct {
+            None
+        } else {
+            Some((ip.clone(), ws_port))
+        },
+        allowed_routers: if ip == "localhost" || !info.direct {
+            vec![
+                "uqbar-router-1.uq".into(), // "0x8d9e54427c50660c6d4802f63edca86a9ca5fd6a78070c4635950e9d149ed441".into(),
+                "uqbar-router-2.uq".into(), // "0x06d331ed65843ecf0860c73292005d8103af20820546b2f8f9007d01f60595b1".into(),
+                "uqbar-router-3.uq".into(), // "0xe6ab611eb62e8aee0460295667f8179cda4315982717db4b0b3da6022deecac1".into(),
+            ]
+        } else {
+            vec![]
+        },
     };
-
-    *our_arc.lock().unwrap() = Some(our.clone());
-
+    *our_post.lock().unwrap() = Some(our.clone());
+    *pw_post.lock().unwrap() = Some(info.password);
+    // Return a response containing all networking information
     Ok(warp::reply::json(&our))
+}
+
+async fn handle_put(
+    sender: RegistrationSender,
+    our: Identity,
+    pw: String,
+    networking_keypair: Document,
+    _redir_port: u16,
+) -> Result<impl Reply, Rejection> {
+    let seed = SystemRandom::new();
+    let mut jwt_secret = [0u8; 32];
+    ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
+
+    let token = match generate_jwt(&jwt_secret, our.name.clone()) {
+        Some(token) => token,
+        None => return Err(warp::reject()),
+    };
+    let cookie_value = format!("uqbar-auth_{}={};", &our.name, &token);
+    let ws_cookie_value = format!("uqbar-ws-auth_{}={};", &our.name, &token);
+
+    let mut response = warp::reply::html("Success".to_string()).into_response();
+
+    let headers = response.headers_mut();
+    headers.append(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
+    headers.append(SET_COOKIE, HeaderValue::from_str(&ws_cookie_value).unwrap());
+
+    sender
+        .send((our, pw, networking_keypair, jwt_secret.to_vec()))
+        .await
+        .unwrap();
+    Ok(response)
+}
+
+/// Serve the login page, just get a password
+pub async fn login(
+    tx: mpsc::Sender<(
+        String,
+        Vec<String>,
+        signature::Ed25519KeyPair,
+        Vec<u8>,
+        Vec<u8>,
+    )>,
+    kill_rx: oneshot::Receiver<bool>,
+    keyfile: Vec<u8>,
+    port: u16,
+) {
+    let login_page = include_str!("login.html");
+    let routes = warp::path("login").and(
+        // 1. serve login.html right here
+        warp::get()
+            .map(move || warp::reply::html(login_page))
+            // 2. await a single POST
+            //    - password
+            .or(warp::post()
+                .and(warp::body::content_length_limit(1024 * 16))
+                .and(warp::body::json())
+                .and(warp::any().map(move || keyfile.clone()))
+                .and(warp::any().map(move || tx.clone()))
+                .and_then(handle_password)),
+    );
+
+    let _ = open::that(format!("http://localhost:{}/login", port));
+    warp::serve(routes)
+        .bind_with_graceful_shutdown(([0, 0, 0, 0], port), async {
+            kill_rx.await.ok();
+        })
+        .1
+        .await;
+}
+
+async fn handle_password(
+    password: serde_json::Value,
+    keyfile: Vec<u8>,
+    tx: mpsc::Sender<(
+        String,
+        Vec<String>,
+        signature::Ed25519KeyPair,
+        Vec<u8>,
+        Vec<u8>,
+    )>,
+) -> Result<impl Reply, Rejection> {
+    let password = match password["password"].as_str() {
+        Some(p) => p,
+        None => return Err(warp::reject()),
+    };
+    // use password to decrypt networking keys
+    let (username, routers, networking_keypair, jwt_secret_bytes, file_key) =
+        keygen::decode_keyfile(keyfile, password);
+
+    let token = match generate_jwt(&jwt_secret_bytes, username.clone()) {
+        Some(token) => token,
+        None => return Err(warp::reject()),
+    };
+    let cookie_value = format!("uqbar-auth_{}={};", &username, &token);
+    let ws_cookie_value = format!("uqbar-ws-auth_{}={};", &username, &token);
+
+    let mut response = warp::reply::html("Success".to_string()).into_response();
+
+    let headers = response.headers_mut();
+    headers.append(SET_COOKIE, HeaderValue::from_str(&cookie_value).unwrap());
+    headers.append(SET_COOKIE, HeaderValue::from_str(&ws_cookie_value).unwrap());
+
+    tx.send((
+        username,
+        routers,
+        networking_keypair,
+        jwt_secret_bytes.to_vec(),
+        file_key.to_vec(),
+    ))
+    .await
+    .unwrap();
+    // TODO unhappy paths where key has changed / can't be decrypted
+    Ok(response)
 }
