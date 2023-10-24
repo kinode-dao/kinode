@@ -177,11 +177,7 @@ async fn bootstrap(
             .expect("fs: metadata parse error: bad publisher name");
 
         // create a new package in VFS
-        let our_drive_name = [
-            package_name,
-            package_publisher,
-        ]
-        .join(":");
+        let our_drive_name = [package_name, package_publisher].join(":");
         vfs_messages.push(KernelMessage {
             id: rand::random(),
             source: Address {
