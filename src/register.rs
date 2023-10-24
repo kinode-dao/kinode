@@ -140,8 +140,10 @@ async fn handle_keyfile_vet(
 
     let keyfile_vetted = KeyfileVetted {
         username: decoded_keyfile.username,
-        networking_key: format!("0x{}", hex::encode
-            (decoded_keyfile.networking_keypair.public_key().as_ref())),
+        networking_key: format!(
+            "0x{}",
+            hex::encode(decoded_keyfile.networking_keypair.public_key().as_ref())
+        ),
         routers: decoded_keyfile.routers,
     };
 
@@ -180,16 +182,18 @@ async fn handle_boot(
         Keyfile {
             username: our.name.clone(),
             routers: our.allowed_routers.clone(),
-            networking_keypair: signature::Ed25519KeyPair
-                ::from_pkcs8(networking_keypair.as_ref()).unwrap(),
+            networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
+                .unwrap(),
             jwt_secret_bytes: jwt_secret.to_vec(),
             file_key: keygen::generate_file_key(),
         }
     } else {
         match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
             Ok(k) => {
-                our.networking_key = format!("0x{}", hex::encode
-                    (k.networking_keypair.public_key().as_ref()));
+                our.networking_key = format!(
+                    "0x{}",
+                    hex::encode(k.networking_keypair.public_key().as_ref())
+                );
                 k
             }
             Err(_) => return Err(warp::reject()),

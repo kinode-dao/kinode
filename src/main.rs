@@ -1,6 +1,6 @@
 use anyhow::Result;
 use dotenv;
-use ethers::prelude::{namehash};
+use ethers::prelude::namehash;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
