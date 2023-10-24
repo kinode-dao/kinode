@@ -727,192 +727,179 @@ async fn handler(
     let real_headers = serialize_headers(&headers);
     let path_bindings = path_bindings.read().await;
 
-    let mut km: Option<KernelMessage> = None;
-
-    if let Ok(route) = path_bindings.recognize(&raw_path) {
-        let bound_path = route.handler();
-
-        let app = bound_path.app.to_string();
-        let url_params: HashMap<&str, &str> = route.params().into_iter().collect();
-        let raw_path = remove_process_id(&raw_path);
-        let path = remove_process_id(&bound_path.original_path);
-
-        if bound_path.authenticated {
-            let auth_token = real_headers.get("cookie").cloned().unwrap_or_default();
-            if !auth_cookie_valid(our.clone(), &auth_token, jwt_secret_bytes) {
-                return Ok(
-                    warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response()
-                );
-            }
-        }
-
-        if bound_path.local_only && !address.starts_with("127.0.0.1:") {
-            // send 403
-            let mut headers = HashMap::new();
-            headers.insert("Content-Type".to_string(), "text/html".to_string());
-        }
-
-        // RPC functionality: if path is /rpc:sys:uqbar/message,
-        // we extract message from base64 encoded bytes in data
-        // and send it to the correct app.
-
-        if app == "rpc:sys:uqbar".to_string() {
-            let rpc_message: RpcMessage = match serde_json::from_slice(&body) {
-                // to_vec()?
-                Ok(v) => v,
-                Err(_) => {
-                    return Ok(
-                        warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
-                    );
-                }
-            };
-
-            let target_process = match ProcessId::from_str(&rpc_message.process) {
-                Ok(p) => p,
-                Err(_) => {
-                    return Ok(
-                        warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
-                    );
-                }
-            };
-
-            let payload = match base64::decode(&rpc_message.data.unwrap_or("".to_string())) {
-                Ok(bytes) => Some(Payload {
-                    mime: rpc_message.mime,
-                    bytes,
-                }),
-                Err(_) => None,
-            };
-            let node = match rpc_message.node {
-                Some(node_str) => node_str,
-                None => our.clone(),
-            };
-
-            km = Some(KernelMessage {
-                id,
-                source: Address {
-                    node: our.clone(),
-                    process: HTTP_SERVER_PROCESS_ID.clone(),
-                },
-                target: Address {
-                    node: node,
-                    process: target_process,
-                },
-                rsvp: Some(Address {
-                    node: our.clone(),
-                    process: HTTP_SERVER_PROCESS_ID.clone(),
-                }),
-                message: Message::Request(Request {
-                    inherit: false,
-                    expects_response: Some(15), // no effect on runtime
-                    ipc: rpc_message.ipc,
-                    metadata: rpc_message.metadata,
-                }),
-                payload,
-                signed_capabilities: None,
-            })
-        } else if app == "encryptor:sys:uqbar".to_string() {
-            let body_json = match String::from_utf8(body.to_vec()) {
-                Ok(s) => s,
-                Err(_) => {
-                    return Ok(
-                        warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
-                    );
-                }
-            };
-
-            let body: serde_json::Value = match serde_json::from_str(&body_json) {
-                Ok(v) => v,
-                Err(_) => {
-                    return Ok(
-                        warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
-                    );
-                }
-            };
-
-            let channel_id = body["channel_id"].as_str().unwrap_or("");
-            let public_key_hex = body["public_key_hex"].as_str().unwrap_or("");
-
-            km = Some(KernelMessage {
-                id,
-                source: Address {
-                    node: our.clone(),
-                    process: HTTP_SERVER_PROCESS_ID.clone(),
-                },
-                target: Address {
-                    node: our.clone(),
-                    process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
-                },
-                rsvp: None, //?
-                message: Message::Request(Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: Some(
-                        serde_json::json!({
-                            "GetKeyAction": {
-                                "channel_id": channel_id,
-                                "public_key_hex": public_key_hex,
-                            }
-                        })
-                        .to_string(),
-                    ),
-                    metadata: None,
-                }),
-                payload: None,
-                signed_capabilities: None,
-            })
-        } else {
-            // otherwise, make a message, to the correct app.
-            km = Some(KernelMessage {
-                id,
-                source: Address {
-                    node: our.clone(),
-                    process: HTTP_SERVER_PROCESS_ID.clone(),
-                },
-                target: Address {
-                    node: our.clone(),
-                    process: bound_path.app.clone(),
-                },
-                rsvp: Some(Address {
-                    node: our.clone(),
-                    process: HTTP_SERVER_PROCESS_ID.clone(),
-                }),
-                message: Message::Request(Request {
-                    inherit: false,
-                    expects_response: Some(15), // no effect on runtime
-                    ipc: Some(
-                        serde_json::json!({
-                            "address": address,
-                            "method": method.to_string(),
-                            "raw_path": raw_path.clone(),
-                            "path": path.clone(),
-                            "headers": serialize_headers(&headers),
-                            "query_params": query_params,
-                            "url_params": url_params,
-                        })
-                        .to_string(),
-                    ),
-                    metadata: None,
-                }),
-                payload: Some(Payload {
-                    mime: Some("application/octet-stream".to_string()), // TODO adjust MIME type as needed
-                    bytes: body.to_vec(),
-                }),
-                signed_capabilities: None,
-            })
-        }
-    } else {
+    let Ok(route) = path_bindings.recognize(&raw_path) else {
         return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
+    };
+    let bound_path = route.handler();
+
+    let app = bound_path.app.to_string();
+    let url_params: HashMap<&str, &str> = route.params().into_iter().collect();
+    let raw_path = remove_process_id(&raw_path);
+    let path = remove_process_id(&bound_path.original_path);
+
+    if bound_path.authenticated {
+        let auth_token = real_headers.get("cookie").cloned().unwrap_or_default();
+        if !auth_cookie_valid(our.clone(), &auth_token, jwt_secret_bytes) {
+            // send 401
+            return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
+        }
     }
 
-    let message = match km {
-        Some(m) => m,
-        None => {
-            return Ok(
-                warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR).into_response(),
-            )
+    if bound_path.local_only && !address.starts_with("127.0.0.1:") {
+        // send 403
+        return Ok(warp::reply::with_status(vec![], StatusCode::FORBIDDEN).into_response());
+    }
+
+    // RPC functionality: if path is /rpc:sys:uqbar/message,
+    // we extract message from base64 encoded bytes in data
+    // and send it to the correct app.
+
+    let message = if app == "rpc:sys:uqbar".to_string() {
+        let rpc_message: RpcMessage = match serde_json::from_slice(&body) {
+            // to_vec()?
+            Ok(v) => v,
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                );
+            }
+        };
+
+        let target_process = match ProcessId::from_str(&rpc_message.process) {
+            Ok(p) => p,
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                );
+            }
+        };
+
+        let payload = match base64::decode(&rpc_message.data.unwrap_or("".to_string())) {
+            Ok(bytes) => Some(Payload {
+                mime: rpc_message.mime,
+                bytes,
+            }),
+            Err(_) => None,
+        };
+        let node = match rpc_message.node {
+            Some(node_str) => node_str,
+            None => our.clone(),
+        };
+
+        KernelMessage {
+            id,
+            source: Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node,
+                process: target_process,
+            },
+            rsvp: Some(Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            }),
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: Some(15), // no effect on runtime
+                ipc: rpc_message.ipc,
+                metadata: rpc_message.metadata,
+            }),
+            payload,
+            signed_capabilities: None,
+        }
+    } else if app == "encryptor:sys:uqbar".to_string() {
+        let body_json = match String::from_utf8(body.to_vec()) {
+            Ok(s) => s,
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                );
+            }
+        };
+
+        let body: serde_json::Value = match serde_json::from_str(&body_json) {
+            Ok(v) => v,
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::BAD_REQUEST).into_response()
+                );
+            }
+        };
+
+        let channel_id = body["channel_id"].as_str().unwrap_or("");
+        let public_key_hex = body["public_key_hex"].as_str().unwrap_or("");
+
+        KernelMessage {
+            id,
+            source: Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node: our.clone(),
+                process: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
+            },
+            rsvp: None, //?
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: None,
+                ipc: Some(
+                    serde_json::json!({
+                        "GetKeyAction": {
+                            "channel_id": channel_id,
+                            "public_key_hex": public_key_hex,
+                        }
+                    })
+                    .to_string(),
+                ),
+                metadata: None,
+            }),
+            payload: None,
+            signed_capabilities: None,
+        }
+    } else {
+        // otherwise, make a message, to the correct app.
+        KernelMessage {
+            id,
+            source: Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node: our.clone(),
+                process: bound_path.app.clone(),
+            },
+            rsvp: Some(Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            }),
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: Some(15), // no effect on runtime
+                ipc: Some(
+                    serde_json::json!({
+                        "address": address,
+                        "method": method.to_string(),
+                        "raw_path": raw_path.clone(),
+                        "path": path.clone(),
+                        "headers": serialize_headers(&headers),
+                        "query_params": query_params,
+                        "url_params": url_params,
+                    })
+                    .to_string(),
+                ),
+                metadata: None,
+            }),
+            payload: Some(Payload {
+                mime: Some("application/octet-stream".to_string()), // TODO adjust MIME type as needed
+                bytes: body.to_vec(),
+            }),
+            signed_capabilities: None,
         }
     };
+
     let (response_sender, response_receiver) = oneshot::channel();
     http_response_senders
         .lock()
