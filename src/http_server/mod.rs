@@ -899,6 +899,7 @@ async fn handler(
             signed_capabilities: None,
         }
     };
+
     let (response_sender, response_receiver) = oneshot::channel();
     http_response_senders
         .lock()
