@@ -1,11 +1,11 @@
 use super::bindings::component::uq_process::types::*;
-use super::bindings::{Address, Payload, print_to_terminal, send_request, spawn};
+use super::bindings::{print_to_terminal, send_request, spawn, Address, Payload};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileTransferContext {
     pub file_name: String,
-    pub file_size: u64,
+    pub file_size: Option<u64>,
     pub start_time: std::time::SystemTime,
 }
 
@@ -48,7 +48,7 @@ pub enum TransferError {
 pub fn spawn_transfer(
     our: &Address,
     file_name: &str,
-    file_bytes: Vec<u8>,
+    file_bytes: Option<Vec<u8>>, // if None, expects to inherit payload!
     to_addr: &Address,
 ) {
     let transfer_id: u64 = rand::random();
@@ -64,13 +64,17 @@ pub fn spawn_transfer(
         return;
     };
     // tell the worker what to do
+    let payload_or_inherit = match file_bytes {
+        Some(bytes) => Some(Payload { mime: None, bytes }),
+        None => None,
+    };
     send_request(
         &Address {
             node: our.node.clone(),
             process: worker_process_id,
         },
         &Request {
-            inherit: false,
+            inherit: !payload_or_inherit.is_some(),
             expects_response: Some(61),
             ipc: Some(
                 serde_json::to_string(&FTWorkerCommand::Send {
@@ -85,19 +89,19 @@ pub fn spawn_transfer(
         Some(
             &serde_json::to_string(&FileTransferContext {
                 file_name: file_name.into(),
-                file_size: file_bytes.len() as u64,
+                file_size: match &payload_or_inherit {
+                    Some(p) => Some(p.bytes.len() as u64),
+                    None => None, // TODO
+                },
                 start_time: std::time::SystemTime::now(),
             })
             .unwrap(),
         ),
-        Some(&Payload { mime: None, bytes: file_bytes }),
+        payload_or_inherit.as_ref(),
     );
 }
 
-pub fn spawn_receive_transfer(
-    our: &Address,
-    ipc: &str,
-) {
+pub fn spawn_receive_transfer(our: &Address, ipc: &str) {
     let Ok(FTWorkerCommand::Receive { transfer_id, .. }) = serde_json::from_str(ipc) else {
         print_to_terminal(0, "file_transfer: got weird request");
         return;

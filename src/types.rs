@@ -403,12 +403,14 @@ pub struct ProcessContext {
 // filesystem.rs types
 //
 
+pub type PackageVersion = (u32, u32, u32);
+
 /// the type that gets deserialized from `metadata.json` in a package
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PackageMetadata {
     pub package: String,
     pub publisher: String,
-    pub version: Version,
+    pub version: PackageVersion,
     pub description: Option<String>,
     pub website: Option<String>,
 }
@@ -418,7 +420,7 @@ pub struct PackageMetadata {
 pub struct PackageManifestEntry {
     pub process_name: String,
     pub process_wasm_path: String,
-    pub on_panic: kt::OnPanic,
+    pub on_panic: OnPanic,
     pub request_networking: bool,
     pub request_messaging: Vec<String>,
     pub public: bool,
