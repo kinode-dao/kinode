@@ -17,11 +17,12 @@ fn generate_http_binding(add: Address, path: &str, authenticated: bool) -> (Addr
         Request {
             inherit: false,
             expects_response: None,
-            ipc: Some(serde_json::json!({
-                "action": "bind-app",
-                "path": path,
-                "app": "homepage",
-                "authenticated": authenticated
+            ipc: Some(json!({
+                "BindPath": {
+                    "path": path,
+                    "authenticated": authenticated,
+                    "local_only": false
+                }
             }).to_string()),
             metadata: None,
         },
@@ -36,7 +37,7 @@ impl Guest for Component {
 
         let bindings_address = Address {
             node: our.node.clone(),
-            process: ProcessId::from_str("http_bindings:http_bindings:uqbar").unwrap(),
+            process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
         };
 
         // <address, request, option<context>, option<payload>>
@@ -144,8 +145,10 @@ impl Guest for Component {
                                                 "forward_to": {
                                                     "node": our.node.clone(),
                                                     "process": {
-                                                        "Name": "http_server"
-                                                    }, // If the message passed in an ID then we could send to just that ID
+                                                        "process_name": "http_server",
+                                                        "package_name": "sys",
+                                                        "publisher_node": "uqbar"
+                                                    }
                                                 }, // node, process
                                                 "json": Some(serde_json::json!({ // this is the JSON to forward
                                                     "WebSocketPush": {
