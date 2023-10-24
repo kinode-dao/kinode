@@ -8,8 +8,8 @@ use chacha20poly1305::{
 use rand::RngCore;
 use rusoto_core::{Region, RusotoError};
 use rusoto_s3::{
-    DeleteObjectError, GetObjectError, GetObjectRequest, ListObjectsV2Error,
-    PutObjectError, PutObjectRequest, S3Client, StreamingBody, S3,
+    DeleteObjectError, GetObjectError, GetObjectRequest, ListObjectsV2Error, PutObjectError,
+    PutObjectRequest, S3Client, StreamingBody, S3,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
