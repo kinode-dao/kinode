@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::bindings::component::uq_process::types::*;
-use super::bindings::{Address, Payload, ProcessId, SendError};
+use super::bindings::{get_capability, share_capability, Address, Payload, ProcessId, SendError};
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct PackageId {
@@ -274,6 +274,18 @@ where
             .as_str(),
     )?;
     Ok(parsed)
+}
+
+pub fn grant_messaging(our: &Address, grant_to: &Vec<ProcessId>) {
+    let Some(our_messaging_cap) = get_capability(
+        our,
+        &"\"messaging\"".into()
+    ) else {
+        panic!("missing self-messaging cap!")
+    };
+    for process in grant_to {
+        share_capability(&process, &our_messaging_cap);
+    }
 }
 
 //  move these to better place!

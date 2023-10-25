@@ -1,4 +1,5 @@
 {
     "package": "qns_indexer",
-    "publisher": "uqbar"
+    "publisher": "uqbar",
+    "version": [0, 1, 0]
 }
