@@ -603,20 +603,28 @@ pub enum VfsResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsError {
+    BadJson,
+    BadPayload,
     BadDriveName,
     BadDescriptor,
     NoCap,
     EntryNotFound,
+    PersistError,
+    InternalError,
 }
 
 #[allow(dead_code)]
 impl VfsError {
     pub fn kind(&self) -> &str {
         match *self {
+            VfsError::BadJson => "BadJson",
+            VfsError::BadPayload => "BadPayload",
             VfsError::BadDriveName => "BadDriveName",
             VfsError::BadDescriptor => "BadDescriptor",
             VfsError::NoCap => "NoCap",
             VfsError::EntryNotFound => "EntryNotFound",
+            VfsError::PersistError => "PersistError",
+            VfsError::InternalError => "InternalError",
         }
     }
 }

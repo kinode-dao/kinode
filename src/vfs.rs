@@ -179,21 +179,19 @@ async fn persist_state(
     send_to_persist: &tokio::sync::mpsc::Sender<u64>,
     recv_response: &mut MessageReceiver,
     id: u64,
-) {
-    send_to_persist.send(id).await.unwrap();
-    let persist_response = recv_response.recv().await.unwrap();
+) -> Result<(), VfsError> {
+    send_to_persist.send(id).await.map_err(|_| VfsError::PersistError)?;
+    let persist_response = recv_response.recv().await.ok_or(VfsError::PersistError)?;
     let KernelMessage { message, .. } = persist_response;
     let Message::Response((Response { ipc, .. }, None)) = message else {
-        panic!("");
+        return Err(VfsError::PersistError);
     };
-    let Some(ipc) = ipc else {
-        panic!("");
-    };
-    let Ok(FsResponse::SetState) =
-        serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
-    else {
-        panic!("");
-    };
+    let ipc = ipc.ok_or(VfsError::PersistError)?;
+    let response = serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).map_err(|_| VfsError::PersistError)?;
+    match response {
+        Ok(FsResponse::SetState) => Ok(()),
+        _ => Err(VfsError::PersistError),
+    }
 }
 
 async fn load_state_from_reboot(
@@ -243,7 +241,7 @@ async fn load_state_from_reboot(
         return ();
     };
     let Some(payload) = payload else {
-        panic!("");
+        return ();
     };
     bytes_to_state(&payload.bytes, drive_to_vfs);
 }
@@ -256,7 +254,6 @@ pub async fn vfs(
     send_to_caps_oracle: CapMessageSender,
     vfs_messages: Vec<KernelMessage>,
 ) -> anyhow::Result<()> {
-    println!("vfs: begin\r");
     let mut drive_to_vfs: DriveToVfs = HashMap::new();
     let drive_to_queue: DriveToQueue = Arc::new(Mutex::new(HashMap::new()));
     let mut response_router: ResponseRouter = HashMap::new();
@@ -690,8 +687,11 @@ async fn match_request(
                     .unwrap();
                 let _ = recv_cap_bool.await.unwrap();
             }
-            persist_state(send_to_persist, &mut recv_response, id).await;
-            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
+            match persist_state(send_to_persist, &mut recv_response, id).await {
+                Err(_) => return Err(VfsError::PersistError),
+                Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None))
+            }
+            
         }
         VfsAction::Add {
             full_path,
@@ -843,6 +843,7 @@ async fn match_request(
                     };
 
                     let (name, parent_path) = make_file_name(&full_path);
+                    println!("name, parent_path, full_path: {}, {}, {}", name, parent_path, full_path);
                     let mut vfs = vfs.lock().await;
                     let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
                         panic!("");
@@ -903,23 +904,24 @@ async fn match_request(
                             .await
                             .unwrap();
                         let Some(old_key) = vfs.path_to_key.remove(&full_path) else {
-                            panic!("no old key");
+                            println!("no old key");
+                            return Err(VfsError::InternalError);
                         };
                         vfs.key_to_entry.remove(&old_key);
                     };
                     let (name, parent_path) = make_file_name(&full_path);
                     let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
-                        panic!("");
+                        return Err(VfsError::InternalError);
                     };
                     let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
-                        panic!("");
+                        return Err(VfsError::InternalError);
                     };
                     let EntryType::Dir {
                         children: ref mut parent_children,
                         ..
                     } = parent_entry.entry_type
                     else {
-                        panic!("");
+                        return Err(VfsError::InternalError);
                     };
                     let key = Key::File { id: hash };
                     vfs.key_to_entry.insert(
@@ -939,13 +941,13 @@ async fn match_request(
                 }
                 AddEntryType::ZipArchive => {
                     let Some(payload) = payload else {
-                        panic!("");
+                        return Err(VfsError::InternalError);
                     };
                     let Some(mime) = payload.mime else {
-                        panic!("");
+                        return Err(VfsError::InternalError);
                     };
                     if "application/zip" != mime {
-                        panic!("");
+                        return Err(VfsError::InternalError);
                     }
                     let file = std::io::Cursor::new(&payload.bytes);
                     let mut zip = match zip::ZipArchive::new(file) {
@@ -1033,29 +1035,29 @@ async fn match_request(
                                 panic!("")
                             };
                             let Some(ipc) = ipc else {
-                                panic!("");
+                                return Err(VfsError::InternalError);
                             };
                             let Ok(FsResponse::Write(hash)) =
                                 serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
                             else {
-                                panic!("");
+                                return Err(VfsError::InternalError);
                             };
 
                             let (name, parent_path) = make_file_name(&full_path);
                             let mut vfs = vfs.lock().await;
                             let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
-                                panic!("");
+                                return Err(VfsError::InternalError);
                             };
                             let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key)
                             else {
-                                panic!("");
+                                return Err(VfsError::InternalError);
                             };
                             let EntryType::Dir {
                                 children: ref mut parent_children,
                                 ..
                             } = parent_entry.entry_type
                             else {
-                                panic!("");
+                                return Err(VfsError::InternalError);
                             };
                             let key = Key::File { id: hash };
                             vfs.key_to_entry.insert(
@@ -1073,15 +1075,19 @@ async fn match_request(
                             vfs.key_to_entry.insert(parent_key, parent_entry);
                             vfs.path_to_key.insert(full_path.clone(), key.clone());
                         } else if is_dir {
-                            panic!("vfs: zip dir not yet implemented");
+                            println!("vfs: zip dir not yet implemented");
+                            return Err(VfsError::InternalError);
                         } else {
-                            panic!("vfs: zip with non-file non-dir");
+                            println!("vfs: zip with non-file non-dir");
+                            return Err(VfsError::InternalError);
                         };
                     }
                 }
             }
-            persist_state(send_to_persist, &mut recv_response, id).await;
-            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
+            match persist_state(send_to_persist, &mut recv_response, id).await {
+                Err(_) => return Err(VfsError::PersistError),
+                Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None))
+            }
         }
         VfsAction::Rename {
             full_path,
@@ -1203,7 +1209,7 @@ async fn match_request(
                                 })
                                 .await
                                 .unwrap();
-                            panic!("");
+                            return Err(VfsError::InternalError);
                         }
                         Some(parent) => {
                             let EntryType::Dir {
@@ -1211,7 +1217,7 @@ async fn match_request(
                                 ref mut children,
                             } = parent.entry_type
                             else {
-                                panic!("");
+                                return Err(VfsError::InternalError);
                             };
                             //  TODO: does this work?
                             children.remove(&key);
@@ -1219,8 +1225,10 @@ async fn match_request(
                     }
                 }
             }
-            persist_state(send_to_persist, &mut recv_response, id).await;
-            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
+            match persist_state(send_to_persist, &mut recv_response, id).await {
+                Err(_) => return Err(VfsError::PersistError),
+                Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
+            }
         }
         VfsAction::WriteOffset { full_path, offset } => {
             let file_hash = {
@@ -1263,18 +1271,20 @@ async fn match_request(
             let write_response = recv_response.recv().await.unwrap();
             let KernelMessage { message, .. } = write_response;
             let Message::Response((Response { ipc, .. }, None)) = message else {
-                panic!("")
+                return Err(VfsError::InternalError);
             };
             let Some(ipc) = ipc else {
-                panic!("");
+                return Err(VfsError::InternalError);
             };
             let Ok(FsResponse::Write(_)) =
                 serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
             else {
-                panic!("");
+                return Err(VfsError::InternalError);
             };
-            persist_state(send_to_persist, &mut recv_response, id).await;
-            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
+            match persist_state(send_to_persist, &mut recv_response, id).await {
+                Err(_) => return Err(VfsError::PersistError),
+                Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
+            }
         }
         VfsAction::SetSize { full_path, size } => {
             let file_hash = {
@@ -1284,7 +1294,7 @@ async fn match_request(
                 };
                 let key2 = key.clone();
                 let Key::File { id: file_hash } = key2 else {
-                    panic!(""); //  TODO
+                    return Err(VfsError::InternalError);
                 };
                 vfs.path_to_key.insert(full_path.clone(), key);
                 file_hash
@@ -1318,19 +1328,23 @@ async fn match_request(
             let write_response = recv_response.recv().await.unwrap();
             let KernelMessage { message, .. } = write_response;
             let Message::Response((Response { ipc, .. }, None)) = message else {
-                panic!("")
+                return Err(VfsError::InternalError);
             };
             let Some(ipc) = ipc else {
-                panic!("");
+                return Err(VfsError::InternalError);
             };
             let Ok(FsResponse::Length(length)) =
                 serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
             else {
-                panic!("");
+                return Err(VfsError::InternalError);
             };
-            assert_eq!(size, length);
-            persist_state(send_to_persist, &mut recv_response, id).await;
-            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
+            if length != size {
+                return Err(VfsError::InternalError);
+            };
+            match persist_state(send_to_persist, &mut recv_response, id).await {
+                Err(_) => return Err(VfsError::PersistError),
+                Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
+            }
         }
         VfsAction::GetPath(hash) => {
             let mut vfs = vfs.lock().await;
@@ -1428,7 +1442,7 @@ async fn match_request(
                         ),
                         EntryType::File { parent: _ } => {
                             let Key::File { id: file_hash } = key else {
-                                panic!("");
+                                return Err(VfsError::InternalError);
                             };
                             let _ = send_to_loop
                                 .send(KernelMessage {
@@ -1462,21 +1476,19 @@ async fn match_request(
                                 message, payload, ..
                             } = read_response;
                             let Message::Response((Response { ipc, .. }, None)) = message else {
-                                panic!("");
+                                return Err(VfsError::InternalError);
                             };
                             let Some(ipc) = ipc else {
-                                panic!("");
+                                return Err(VfsError::InternalError);
                             };
-                            let Ok(FsResponse::Read(read_hash)) =
+                            let Ok(FsResponse::Read(_read_hash)) =
                                 serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
                             else {
                                 println!("vfs: GetEntry fail fs error: {}\r", ipc);
                                 panic!("");
                             };
-                            // TODO get rid of PANICS!
-                            assert_eq!(file_hash, read_hash);
                             let Some(payload) = payload else {
-                                panic!("");
+                                return Err(VfsError::InternalError);
                             };
                             (
                                 Some(
@@ -1505,7 +1517,7 @@ async fn match_request(
                 };
                 let key2 = key.clone();
                 let Key::File { id: file_hash } = key2 else {
-                    panic!(""); //  TODO
+                    return Err(VfsError::InternalError);
                 };
                 vfs.path_to_key.insert(full_path.clone(), key);
                 file_hash
@@ -1545,19 +1557,19 @@ async fn match_request(
                 message, payload, ..
             } = read_response;
             let Message::Response((Response { ipc, .. }, None)) = message else {
-                panic!("")
+                return Err(VfsError::InternalError);
             };
             let Some(ipc) = ipc else {
-                panic!("");
+                return Err(VfsError::InternalError);
             };
             let Ok(FsResponse::Read(read_hash)) =
                 serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
             else {
-                panic!("");
+                return Err(VfsError::InternalError);
             };
             assert_eq!(file_hash, read_hash);
             let Some(payload) = payload else {
-                panic!("");
+                return Err(VfsError::InternalError);
             };
 
             (
@@ -1579,7 +1591,7 @@ async fn match_request(
                     };
                     let key2 = key.clone();
                     let Key::File { id: file_hash } = key2 else {
-                        panic!(""); //  TODO
+                        return Err(VfsError::InternalError);
                     };
                     vfs.path_to_key.insert(full_path.clone(), key);
                     file_hash
@@ -1610,15 +1622,15 @@ async fn match_request(
                 let length_response = recv_response.recv().await.unwrap();
                 let KernelMessage { message, .. } = length_response;
                 let Message::Response((Response { ipc, .. }, None)) = message else {
-                    panic!("")
+                    return Err(VfsError::InternalError);
                 };
                 let Some(ipc) = ipc else {
-                    panic!("");
+                    return Err(VfsError::InternalError);
                 };
                 let Ok(FsResponse::Length(length)) =
                     serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
                 else {
-                    panic!("");
+                    return Err(VfsError::InternalError);
                 };
 
                 (
