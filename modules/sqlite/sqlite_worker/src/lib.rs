@@ -362,7 +362,7 @@ fn handle_message (
 
                     match db_handle {
                         Some(_) => {
-                            return Err(anyhow::anyhow!("cannot send New more than once"));
+                            return Err(sq::SqliteError::DbAlreadyExists.into());
                         },
                         None => {
                             let flags = rusqlite::OpenFlags::default();
@@ -381,7 +381,7 @@ fn handle_message (
                 },
                 sq::SqliteMessage::Write { ref statement, .. } => {
                     let Some(db_handle) = db_handle else {
-                        return Err(anyhow::anyhow!("need New before Write"));
+                        return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
                     match get_payload() {
@@ -417,7 +417,7 @@ fn handle_message (
                 },
                 sq::SqliteMessage::Read { ref query, .. } => {
                     let Some(db_handle) = db_handle else {
-                        return Err(anyhow::anyhow!("need New before Write"));
+                        return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
                     let mut statement = db_handle.prepare(query)?;

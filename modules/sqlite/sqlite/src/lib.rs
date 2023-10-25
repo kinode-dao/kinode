@@ -1,6 +1,6 @@
 cargo_component_bindings::generate!();
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use bindings::component::uq_process::types::*;
 use bindings::{create_capability, get_capability, Guest, has_capability, print_to_terminal, receive, send_request, send_response, spawn};
@@ -68,6 +68,8 @@ fn forward_if_have_cap(
 fn handle_message (
     our: &Address,
     db_to_process: &mut DbToProcess,
+    read_keywords: &HashSet<String>,
+    write_keywords: &HashSet<String>,
 ) -> anyhow::Result<()> {
     let (source, message) = receive().unwrap();
     // let (source, message) = receive()?;
@@ -165,10 +167,26 @@ fn handle_message (
                         None,
                     );
                 },
-                sq::SqliteMessage::Write { ref db, .. } => {
+                sq::SqliteMessage::Write { ref db, ref statement } => {
+                    let first_word = statement
+                        .split_whitespace()
+                        .next()
+                        .map(|word| word.to_uppercase())
+                        .unwrap_or("".to_string());
+                    if !write_keywords.contains(&first_word) {
+                        return Err(sq::SqliteError::NotAWriteKeyword.into())
+                    }
                     forward_if_have_cap(our, "write", db, ipc, db_to_process)?;
                 },
-                sq::SqliteMessage::Read { ref db, .. } => {
+                sq::SqliteMessage::Read { ref db, ref query } => {
+                    let first_word = query
+                        .split_whitespace()
+                        .next()
+                        .map(|word| word.to_uppercase())
+                        .unwrap_or("".to_string());
+                    if !read_keywords.contains(&first_word) {
+                        return Err(sq::SqliteError::NotAReadKeyword.into())
+                    }
                     forward_if_have_cap(our, "read", db, ipc, db_to_process)?;
                 },
             }
@@ -183,9 +201,44 @@ impl Guest for Component {
         print_to_terminal(0, "sqlite: begin");
 
         let mut db_to_process: DbToProcess = HashMap::new();
+        let read_keywords: HashSet<String> = [
+            "ANALYZE",
+            "ATTACH",
+            "BEGIN",
+            "EXPLAIN",
+            "PRAGMA",
+            "SELECT",
+            "VALUES",
+            "WITH",
+        ]
+            .iter()
+            .map(|x| x.to_string())
+            .collect();
+        let write_keywords: HashSet<String> = [
+            "ALTER",
+            "ANALYZE",
+            "COMMIT",
+            "CREATE",
+            "DELETE",
+            "DETACH",
+            "DROP",
+            "END",
+            "INSERT",
+            "REINDEX",
+            "RELEASE",
+            "RENAME",
+            "REPLACE",
+            "ROLLBACK",
+            "SAVEPOINT",
+            "UPDATE",
+            "VACUUM",
+        ]
+            .iter()
+            .map(|x| x.to_string())
+            .collect();
 
         loop {
-            match handle_message(&our, &mut db_to_process) {
+            match handle_message(&our, &mut db_to_process, &read_keywords, &write_keywords) {
                 Ok(()) => {},
                 Err(e) => {
                     print_to_terminal(0, format!(

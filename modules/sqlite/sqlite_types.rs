@@ -37,4 +37,8 @@ pub enum SqliteError {
     RejectForeign,
     #[error("UnexpectedResponse")]
     UnexpectedResponse,
+    #[error("NotAWriteKeyword")]
+    NotAWriteKeyword,
+    #[error("NotAReadKeyword")]
+    NotAReadKeyword,
 }
