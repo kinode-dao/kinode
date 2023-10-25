@@ -131,9 +131,6 @@ fn main() {
 
     let pwd = std::env::current_dir().unwrap();
 
-    // build the register app
-    run_command(Command::new("./build_all.sh").current_dir("src/register")).unwrap();
-
     // create target.wasm (compiled .wit) & world
     run_command(Command::new("wasm-tools").args(&[
         "component",
