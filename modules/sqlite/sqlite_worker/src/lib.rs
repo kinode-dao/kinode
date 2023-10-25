@@ -5,7 +5,7 @@ use std::ffi::CString;
 
 use crate::sqlite_types::Deserializable;
 
-use rusqlite::{Connection, types::FromSql, types::FromSqlError, types::ToSql, types::Value, types::ValueRef};
+use rusqlite::{types::FromSql, types::FromSqlError, types::ToSql, types::ValueRef};
 // use serde::{Deserialize, Serialize};
 
 use bindings::component::uq_process::types::*;
@@ -119,7 +119,6 @@ impl COptionStr {
 }
 
 fn from_coptionstr_to_option_string(s: *const COptionStr) -> Option<String> {
-    //print_to_terminal(0, "fctos");
     if unsafe { (*s).is_empty == 0 } {
         None
     } else {
@@ -217,7 +216,6 @@ fn from_cstr_to_string(s: *const c_char) -> String {
 
 #[no_mangle]
 pub extern "C" fn get_payload_wrapped(return_val: *mut CPayload) {
-    print_to_terminal(0, "gpw 0");
     // TODO: remove this logic; just here to avoid writing to invalid places
     // in memory due to an fs bug where chunk size may be bigger than requested
     let max_len = unsafe { (*(*return_val).bytes).len.clone() };
@@ -263,7 +261,6 @@ pub extern "C" fn get_payload_wrapped(return_val: *mut CPayload) {
             },
         }
     }
-    print_to_terminal(0, "gpw: done copying");
 }
 
 impl CIpcMetadata {
@@ -328,14 +325,7 @@ pub extern "C" fn send_and_await_response_wrapped(
     let ipc = CPreOptionStr::new(ipc);
     let metadata = CPreOptionStr::new(metadata);
 
-    print_to_terminal(0, "saarw: copying");
     CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
-    print_to_terminal(0, "saarw: done copying");
-}
-
-#[no_mangle]
-pub extern "C" fn print_to_terminal_wrapped(verbosity: c_int, content: c_int) {
-    print_to_terminal(verbosity as u8, &format!("sqlite(C): {}", content));
 }
 
 fn handle_message (
