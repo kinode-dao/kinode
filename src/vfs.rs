@@ -292,14 +292,12 @@ pub async fn vfs(
                 let our_node = our_node.clone();
                 let send_to_loop = send_to_loop.clone();
                 let serialized_state = state_to_bytes(&drive_to_vfs).await;
-                tokio::spawn(
-                    send_persist_state_message(
-                        our_node.clone(),
-                        send_to_loop,
-                        respond_to_id,
-                        serialized_state,
-                    )
-                );
+                send_persist_state_message(
+                    our_node.clone(),
+                    send_to_loop,
+                    respond_to_id,
+                    serialized_state,
+                ).await;
             },
             km = recv_from_loop.recv() => {
                 let Some(km) = km else {

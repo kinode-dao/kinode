@@ -312,6 +312,33 @@ impl VfsError {
 }
 
 //
+// package types
+//
+
+pub type PackageVersion = (u32, u32, u32);
+
+/// the type that gets deserialized from `metadata.json` in a package
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageMetadata {
+    pub package: String,
+    pub publisher: String,
+    pub version: PackageVersion,
+    pub description: Option<String>,
+    pub website: Option<String>,
+}
+
+/// the type that gets deserialized from each entry in the array in `manifest.json`
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageManifestEntry {
+    pub process_name: String,
+    pub process_wasm_path: String,
+    pub on_panic: OnPanic,
+    pub request_networking: bool,
+    pub request_messaging: Vec<String>,
+    pub public: bool,
+}
+
+//
 // conversions between wit types and kernel types (annoying!)
 //
 
