@@ -606,6 +606,7 @@ pub enum VfsError {
     BadDriveName,
     BadDescriptor,
     NoCap,
+    EntryNotFound,
 }
 
 #[allow(dead_code)]
@@ -615,6 +616,7 @@ impl VfsError {
             VfsError::BadDriveName => "BadDriveName",
             VfsError::BadDescriptor => "BadDescriptor",
             VfsError::NoCap => "NoCap",
+            VfsError::EntryNotFound => "EntryNotFound",
         }
     }
 }

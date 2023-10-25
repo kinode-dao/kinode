@@ -8,6 +8,7 @@ Last updated: 10/16/23
 
 git clone git@github.com:uqbar-dao/uqbar.git
 git clone git@github.com:uqbar-dao/redb.git
+git clone git@github.com:uqbar-dao/rusqlite.git
 
 Make sure the two repos are next to each other in your directory structure.
 
