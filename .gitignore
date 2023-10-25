@@ -11,3 +11,4 @@ modules/**/wit
 target.wasm
 world
 .env
+modules/sqlite/sqlite_worker/.cargo/config.toml

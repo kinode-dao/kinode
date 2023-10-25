@@ -30,6 +30,3 @@ package = "component:uq-process"
 path = "wit"
 
 [package.metadata.component.dependencies]
-
-[package.metadata.component.target.dependencies]
-"redb:redb" = { path = "../../../../redb/wit" }

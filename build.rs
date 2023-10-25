@@ -64,17 +64,24 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
         .unwrap();
     }
     // Build the module targeting wasm32-wasi
-    run_command(Command::new("cargo").args(&[
-        "+nightly",
-        "build",
-        "--release",
-        "--no-default-features",
-        &format!("--manifest-path={}/Cargo.toml", target_path),
-        "--target",
-        "wasm32-wasi",
-    ]))
-    .unwrap();
-
+    let bash_build_path = &format!("{}/build.sh", target_path);
+    if std::path::Path::new(&bash_build_path).exists() {
+        let cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(target_path).unwrap();
+        run_command(&mut Command::new("/bin/bash").arg("build.sh")).unwrap();
+        std::env::set_current_dir(cwd).unwrap();
+    } else {
+        run_command(Command::new("cargo").args(&[
+            "+nightly",
+            "build",
+            "--release",
+            "--no-default-features",
+            &format!("--manifest-path={}/Cargo.toml", target_path),
+            "--target",
+            "wasm32-wasi",
+        ]))
+        .unwrap();
+    }
     // Adapt module to component with adapter based on wasi_snapshot_preview1.wasm
     run_command(Command::new("wasm-tools").args(&[
         "component",
@@ -131,7 +138,7 @@ fn main() {
 
     let pwd = std::env::current_dir().unwrap();
 
-    // create target.wasm (compiled .wit) & world
+    // Create target.wasm (compiled .wit) & world
     run_command(Command::new("wasm-tools").args(&[
         "component",
         "wit",
