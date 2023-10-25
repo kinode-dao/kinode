@@ -95,52 +95,6 @@ impl WasiView for ProcessWasi {
 }
 
 ///
-/// intercept wasi random
-///
-
-// #[async_trait::async_trait]
-// impl wasi::random::insecure::Host for ProcessWasi {
-//     async fn get_insecure_random_bytes(&mut self, len: u64) -> Result<Vec<u8>> {
-//         let mut bytes = Vec::with_capacity(len as usize);
-//         for _ in 0..len {
-//             bytes.push(rand::random());
-//         }
-//         Ok(bytes)
-//     }
-
-//     async fn get_insecure_random_u64(&mut self) -> Result<u64> {
-//         Ok(rand::random())
-//     }
-// }
-
-// #[async_trait::async_trait]
-// impl wasi::random::insecure_seed::Host for ProcessWasi {
-//     async fn insecure_seed(&mut self) -> Result<(u64, u64)> {
-//         Ok((rand::random(), rand::random()))
-//     }
-// }
-
-// #[async_trait::async_trait]
-// impl wasi::random::random::Host for ProcessWasi {
-//     async fn get_random_bytes(&mut self, len: u64) -> Result<Vec<u8>> {
-//         let mut bytes = Vec::with_capacity(len as usize);
-//         getrandom::getrandom(&mut bytes[..])?;
-//         Ok(bytes)
-//     }
-
-//     async fn get_random_u64(&mut self) -> Result<u64> {
-//         let mut bytes = Vec::with_capacity(8);
-//         getrandom::getrandom(&mut bytes[..])?;
-
-//         let mut number = 0u64;
-//         for (i, &byte) in bytes.iter().enumerate() {
-//             number |= (byte as u64) << (i * 8);
-//         }
-//         Ok(number)
-//     }
-// }
-
-///
 /// create the process API. this is where the functions that a process can use live.
 ///
 #[async_trait::async_trait]
@@ -328,6 +282,8 @@ impl UqProcessImports for ProcessWasi {
         capabilities: wit::Capabilities,
         public: bool,
     ) -> Result<Result<wit::ProcessId, wit::SpawnError>> {
+        // save existing payload to restore later
+        let old_last_payload = self.process.last_payload.clone();
         let vfs_address = wit::Address {
             node: self.process.metadata.our.node.clone(),
             process: VFS_PROCESS_ID.en_wit(),
@@ -358,13 +314,19 @@ impl UqProcessImports for ProcessWasi {
         .await
         else {
             println!("spawn: GetHash fail");
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = hash_response
         else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let t::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc).unwrap() else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let Ok(Ok(_)) = send_and_await_response(
@@ -387,9 +349,13 @@ impl UqProcessImports for ProcessWasi {
         )
         .await
         else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
@@ -470,8 +436,12 @@ impl UqProcessImports for ProcessWasi {
         )
         .await
         else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NameTaken));
         };
+        // reset payload to what it was
+        self.process.last_payload = old_last_payload;
         let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = response else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
@@ -1098,13 +1068,13 @@ impl Process {
 }
 
 /// persist process_map state for next bootup
+/// and wait for filesystem to respond in the affirmative
 async fn persist_state(
     our_name: &String,
     send_to_loop: &t::MessageSender,
     process_map: &t::ProcessMap,
 ) -> Result<()> {
     let bytes = bincode::serialize(process_map)?;
-
     send_to_loop
         .send(t::KernelMessage {
             id: rand::random(),
@@ -1119,7 +1089,7 @@ async fn persist_state(
             rsvp: None,
             message: t::Message::Request(t::Request {
                 inherit: true,
-                expects_response: Some(5), // TODO evaluate
+                expects_response: None,
                 ipc: Some(
                     serde_json::to_string(&t::FsAction::SetState(KERNEL_PROCESS_ID.clone()))
                         .unwrap(),
@@ -1818,7 +1788,6 @@ async fn start_process(
     );
 
     process_map.insert(process_id, process_metadata.persisted);
-
     if !process_metadata.reboot {
         // if new, persist
         let _ = persist_state(&our_name, &send_to_loop, &process_map).await;

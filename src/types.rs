@@ -435,6 +435,19 @@ pub struct ProcessContext {
 // filesystem.rs types
 //
 
+pub type PackageVersion = (u32, u32, u32);
+
+/// the type that gets deserialized from `metadata.json` in a package
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PackageMetadata {
+    pub package: String,
+    pub publisher: String,
+    pub version: PackageVersion,
+    pub description: Option<String>,
+    pub website: Option<String>,
+}
+
+/// the type that gets deserialized from each entry in the array in `manifest.json`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PackageManifestEntry {
     pub process_name: String,
@@ -705,8 +718,16 @@ impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {:?},\n    message: {},\n    payload: {}\n}}",
-            self.id, self.source, self.target, self.rsvp, self.message, self.payload.is_some()
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n}}",
+            self.id,
+            self.source,
+            self.target,
+            match &self.rsvp {
+                Some(rsvp) => rsvp.to_string(),
+                None => "None".to_string()
+            },
+            self.message,
+            self.payload.is_some(),
         )
     }
 }
