@@ -180,14 +180,18 @@ async fn persist_state(
     recv_response: &mut MessageReceiver,
     id: u64,
 ) -> Result<(), VfsError> {
-    send_to_persist.send(id).await.map_err(|_| VfsError::PersistError)?;
+    send_to_persist
+        .send(id)
+        .await
+        .map_err(|_| VfsError::PersistError)?;
     let persist_response = recv_response.recv().await.ok_or(VfsError::PersistError)?;
     let KernelMessage { message, .. } = persist_response;
     let Message::Response((Response { ipc, .. }, None)) = message else {
         return Err(VfsError::PersistError);
     };
     let ipc = ipc.ok_or(VfsError::PersistError)?;
-    let response = serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).map_err(|_| VfsError::PersistError)?;
+    let response = serde_json::from_str::<Result<FsResponse, FsError>>(&ipc)
+        .map_err(|_| VfsError::PersistError)?;
     match response {
         Ok(FsResponse::SetState) => Ok(()),
         _ => Err(VfsError::PersistError),
@@ -689,9 +693,8 @@ async fn match_request(
             }
             match persist_state(send_to_persist, &mut recv_response, id).await {
                 Err(_) => return Err(VfsError::PersistError),
-                Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None))
+                Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
             }
-            
         }
         VfsAction::Add {
             mut full_path,
@@ -702,7 +705,7 @@ async fn match_request(
                     if !full_path.starts_with('/') {
                         full_path.insert(0, '/');
                     }
-                    
+
                     let mut vfs = vfs.lock().await;
                     if vfs.path_to_key.contains_key(&full_path) {
                         send_to_terminal
@@ -818,7 +821,10 @@ async fn match_request(
                     };
 
                     let (name, parent_path) = make_file_name(&full_path);
-                    println!("name, parent_path, full_path: {}, {}, {}", name, parent_path, full_path);
+                    println!(
+                        "name, parent_path, full_path: {}, {}, {}",
+                        name, parent_path, full_path
+                    );
                     let mut vfs = vfs.lock().await;
                     let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
                         return Err(VfsError::InternalError);
@@ -858,7 +864,7 @@ async fn match_request(
                     while full_path.ends_with('/') && full_path.len() > 1 {
                         full_path.pop();
                     }
-                    
+
                     let mut vfs = vfs.lock().await;
                     if vfs.path_to_key.contains_key(&full_path) {
                         send_to_terminal
@@ -1051,7 +1057,7 @@ async fn match_request(
             }
             match persist_state(send_to_persist, &mut recv_response, id).await {
                 Err(_) => return Err(VfsError::PersistError),
-                Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None))
+                Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
             }
         }
         VfsAction::Rename {
