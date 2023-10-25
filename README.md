@@ -22,13 +22,14 @@ rustup target add wasm32-wasi --toolchain nightly
 cargo install cargo-wasi
 cargo install --git https://github.com/bytecodealliance/cargo-component --locked cargo-component
 
+# Initialize submodules, in particular the register app
+git submodule update --init --recursive
+# Build the register app
+cd src/register && ./build_all.sh && cd ../..
+
 # Build the runtime, along with a number of booted-at-startup WASM modules including terminal and key_value
 # OPTIONAL: --release flag
 cargo +nightly build --release
-
-# Create the home directory for your node
-# If you boot multiple nodes, make sure each has their own home directory.
-mkdir home
 ```
 
 ### Boot
