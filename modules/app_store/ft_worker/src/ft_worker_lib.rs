@@ -76,33 +76,29 @@ pub fn spawn_transfer(
         &Request {
             inherit: !payload_or_inherit.is_some(),
             expects_response: Some(61),
-            ipc: Some(
-                serde_json::to_string(&FTWorkerCommand::Send {
-                    target: to_addr.to_string(),
-                    file_name: file_name.into(),
-                    timeout: 60,
-                })
-                .unwrap(),
-            ),
-            metadata: None,
-        },
-        Some(
-            &serde_json::to_string(&FileTransferContext {
+            ipc: serde_json::to_vec(&FTWorkerCommand::Send {
+                target: to_addr.to_string(),
                 file_name: file_name.into(),
-                file_size: match &payload_or_inherit {
-                    Some(p) => Some(p.bytes.len() as u64),
-                    None => None, // TODO
-                },
-                start_time: std::time::SystemTime::now(),
+                timeout: 60,
             })
             .unwrap(),
-        ),
+            metadata: None,
+        },
+        Some(&serde_json::to_vec(&FileTransferContext {
+            file_name: file_name.into(),
+            file_size: match &payload_or_inherit {
+                Some(p) => Some(p.bytes.len() as u64),
+                None => None, // TODO
+            },
+            start_time: std::time::SystemTime::now(),
+        })
+        .unwrap()),
         payload_or_inherit.as_ref(),
     );
 }
 
-pub fn spawn_receive_transfer(our: &Address, ipc: &str) {
-    let Ok(FTWorkerCommand::Receive { transfer_id, .. }) = serde_json::from_str(ipc) else {
+pub fn spawn_receive_transfer(our: &Address, ipc: &[u8]) {
+    let Ok(FTWorkerCommand::Receive { transfer_id, .. }) = serde_json::from_slice(ipc) else {
         print_to_terminal(0, "file_transfer: got weird request");
         return;
     };
@@ -125,7 +121,7 @@ pub fn spawn_receive_transfer(our: &Address, ipc: &str) {
         &Request {
             inherit: true,
             expects_response: None,
-            ipc: Some(ipc.to_string()),
+            ipc: ipc.to_vec(),
             metadata: None,
         },
         None,

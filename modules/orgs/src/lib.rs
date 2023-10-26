@@ -82,13 +82,16 @@ fn generate_http_binding(
         Request {
             inherit: false,
             expects_response: None,
-            ipc: Some(json!({
+            ipc: json!({
                 "BindPath": {
                     "path": path,
                     "authenticated": authenticated,
                     "local_only": false
                 }
-            }).to_string()),
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
             metadata: None,
         },
         None,
@@ -120,13 +123,13 @@ fn send_http_response(status: u16, headers: HashMap<String, String>, payload_byt
     send_response(
         &Response {
             inherit: false,
-            ipc: Some(
-                json!({
-                    "status": status,
-                    "headers": headers,
-                })
-                .to_string(),
-            ),
+            ipc: json!({
+                "status": status,
+                "headers": headers,
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
             metadata: None,
         },
         Some(&Payload {
@@ -138,20 +141,16 @@ fn send_http_response(status: u16, headers: HashMap<String, String>, payload_byt
 
 fn get_response_info(
     response: Result<(Address, Message), SendError>,
-) -> (Option<String>, Option<Payload>, Option<String>) {
+) -> (Vec<u8>, Option<Payload>, Option<Vec<u8>>) {
     match response {
         Ok((_source, message)) => {
             if let Message::Response((response, context)) = message {
-                let ipc = match response.ipc {
-                    Some(ipc) => Some(ipc.to_string()),
-                    None => None,
-                };
-                (ipc, get_payload(), context)
+                (response.ipc, get_payload(), context)
             } else {
-                (None, None, None)
+                (vec![], None, None)
             }
         }
-        Err(_) => (None, None, None),
+        Err(_) => (vec![], None, None),
     }
 }
 
@@ -161,7 +160,7 @@ fn send_http_client_request(
     method: &str,
     headers: HashMap<String, String>,
     body: Vec<u8>,
-    context: Option<String>,
+    context: Option<&Vec<u8>>,
 ) {
     send_request(
         &Address {
@@ -171,17 +170,17 @@ fn send_http_client_request(
         &Request {
             inherit: false,
             expects_response: Some(5), // TODO evaluate timeout
-            ipc: Some(
-                json!({
-                    "method": method,
-                    "uri": url,
-                    "headers": headers,
-                })
-                .to_string(),
-            ),
+            ipc: json!({
+                "method": method,
+                "uri": url,
+                "headers": headers,
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
             metadata: None,
         },
-        context.as_ref(),
+        context,
         Some(&Payload {
             mime: Some("application/octet-stream".to_string()),
             bytes: body,
@@ -305,31 +304,31 @@ fn handle_telegram_update(
                             &Request {
                                 inherit: false,
                                 expects_response: None,
-                                ipc: Some(
-                                    json!({
-                                        "EncryptAndForwardAction": {
-                                            "channel_id": "orgs",
-                                            "forward_to": {
-                                                "node": our_name.clone(),
-                                                "process": {
-                                                    "process_name": "http_server",
-                                                    "package_name": "sys",
-                                                    "publisher_node": "uqbar"
+                                ipc: json!({
+                                    "EncryptAndForwardAction": {
+                                        "channel_id": "orgs",
+                                        "forward_to": {
+                                            "node": our_name.clone(),
+                                            "process": {
+                                                "process_name": "http_server",
+                                                "package_name": "sys",
+                                                "publisher_node": "uqbar"
+                                            }
+                                        },
+                                        "json": Some(json!({ // this is the JSON to forward
+                                            "WebSocketPush": {
+                                                "target": {
+                                                    "node": our_name.clone(),
+                                                    "id": "orgs", // If the message passed in an ID then we could send to just that ID
                                                 }
-                                            },
-                                            "json": Some(json!({ // this is the JSON to forward
-                                                "WebSocketPush": {
-                                                    "target": {
-                                                        "node": our_name.clone(),
-                                                        "id": "orgs", // If the message passed in an ID then we could send to just that ID
-                                                    }
-                                                }
-                                            })),
-                                        }
+                                            }
+                                        })),
+                                    }
 
-                                    })
-                                    .to_string(),
-                                ),
+                                })
+                                .to_string()
+                                .as_bytes()
+                                .to_vec(),
                                 metadata: None,
                             },
                             None,
@@ -356,13 +355,13 @@ fn handle_telegram_update(
                             &Request {
                                 inherit: false,
                                 expects_response: Some(5), // TODO evaluate timeout
-                                ipc: Some(json!({
+                                ipc: json!({
                                     "method": "GET",
                                     "uri": format!("https://api.telegram.org/bot{}/getChatAdministrators", bot_data.token),
                                     "headers": {
                                         "Content-Type": "application/json",
                                     },
-                                }).to_string()),
+                                }).to_string().as_bytes().to_vec(),
                                 metadata: None,
                             },
                             Some(&Payload {
@@ -374,7 +373,7 @@ fn handle_telegram_update(
                         );
 
                         match get_response_info(response) {
-                            (Some(ipc), Some(payload), _) => {
+                            (ipc, Some(payload), _) => {
                                 let json =
                                     serde_json::from_slice::<serde_json::Value>(&payload.bytes)
                                         .unwrap();
@@ -555,15 +554,15 @@ fn serve_html(our: Address, default_headers: HashMap<String, String>) {
         &Request {
             inherit: false,
             expects_response: Some(5), // TODO evaluate timeout
-            ipc: Some(
-                json!({
-                    "GetEntry": {
-                        "drive": "orgs_static",
-                        "full_path": "/index.html"
-                    }
-                })
-                .to_string(),
-            ),
+            ipc: json!({
+                "GetEntry": {
+                    "drive": "orgs_static",
+                    "full_path": "/index.html"
+                }
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
             metadata: None,
         },
         None,
@@ -603,15 +602,15 @@ fn serve_static(raw_path: &str, our: Address, default_headers: HashMap<String, S
             &Request {
                 inherit: false,
                 expects_response: Some(5), // TODO evaluate timeout
-                ipc: Some(
-                    json!({
-                        "GetEntry": {
-                            "drive": "orgs_static",
-                            "full_path": file_path // everything after "/orgs/static"
-                        }
-                    })
-                    .to_string(),
-                ),
+                ipc: json!({
+                    "GetEntry": {
+                        "drive": "orgs_static",
+                        "full_path": file_path // everything after "/orgs/static"
+                    }
+                })
+                .to_string()
+                .as_bytes()
+                .to_vec(),
                 metadata: None,
             },
             None,
@@ -688,142 +687,158 @@ impl Guest for Component {
             // TODO: handle the Message::Response case. This will be for telegram bot messages sent to http_client
             match message {
                 Message::Request(request) => {
-                    if let Some(json) = request.ipc {
-                        print_to_terminal(1, format!("orgs: JSON {}", json).as_str());
-                        let message_json: serde_json::Value = match serde_json::from_str(&json) {
-                            Ok(v) => v,
-                            Err(_) => {
-                                print_to_terminal(0, "orgs: failed to parse ipc JSON, skipping");
+                    let message_json: serde_json::Value = match serde_json::from_slice(&request.ipc)
+                    {
+                        Ok(v) => v,
+                        Err(_) => {
+                            print_to_terminal(0, "orgs: failed to parse ipc JSON, skipping");
+                            continue;
+                        }
+                    };
+
+                    if message_json["action"] == "transfer_capability" {
+                        print_to_terminal(1, "orgs: transfer_capability");
+                        if let Some(payload) = get_payload() {
+                            let signature = payload.bytes;
+                            let node = message_json["info"]["issuer"]["node"]
+                                .as_str()
+                                .unwrap_or("")
+                                .to_string();
+                            let process = message_json["info"]["issuer"]["process"]
+                                .as_str()
+                                .unwrap_or("")
+                                .to_string();
+                            let params = message_json["info"]["params"]
+                                .as_str()
+                                .unwrap_or("")
+                                .to_string();
+
+                            if node == "" || process == "" || params == "" {
+                                print_to_terminal(
+                                    1,
+                                    "orgs: transfer_capability: missing node, process, or params",
+                                );
                                 continue;
                             }
-                        };
 
-                        if message_json["action"] == "transfer_capability" {
-                            print_to_terminal(1, "orgs: transfer_capability");
-                            if let Some(payload) = get_payload() {
-                                let signature = payload.bytes;
-                                let node = message_json["info"]["issuer"]["node"]
-                                    .as_str()
-                                    .unwrap_or("")
-                                    .to_string();
-                                let process = message_json["info"]["issuer"]["process"]
-                                    .as_str()
-                                    .unwrap_or("")
-                                    .to_string();
-                                let params = message_json["info"]["params"]
-                                    .as_str()
-                                    .unwrap_or("")
-                                    .to_string();
-
-                                if node == "" || process == "" || params == "" {
-                                    print_to_terminal(
-                                        1,
-                                        "orgs: transfer_capability: missing node, process, or params",
-                                    );
-                                    continue;
-                                }
-
-                                save_capabilities(&[SignedCapability {
-                                    issuer: Address {
-                                        node,
-                                        process: ProcessId::from_str(&process).unwrap(),
-                                    },
-                                    params,
-                                    signature,
-                                }]);
-                            }
-                        } else if message_json["action"] == "get_contact_info" {
-                            print_to_terminal(1, "orgs: get_contact_info");
-                            send_response(
-                                &Response {
-                                    inherit: false,
-                                    ipc: Some(
-                                        json!({
-                                            "action": "get_contact_info",
-                                        })
-                                        .to_string(),
-                                    ),
-                                    metadata: None,
+                            save_capabilities(&[SignedCapability {
+                                issuer: Address {
+                                    node,
+                                    process: ProcessId::from_str(&process).unwrap(),
                                 },
-                                Some(&Payload {
-                                    mime: Some("application/json".to_string()),
-                                    bytes: json!(&state.our_contact_info).to_string().as_bytes().to_vec(),
-                                }),
-                            );
-                            continue;
-                        } else if message_json["action"] == "update_contact_info" {
-                            if let Some(payload) = get_payload() {
-                                if let Ok(contact_info) =
-                                    serde_json::from_slice::<Contact>(&payload.bytes)
-                                {
-                                    state.address_book.insert(source.node.clone(), contact_info.clone());
-                                    bindings::set_state(&to_vec(&state).unwrap());
-                                    send_response(
-                                        &Response {
-                                            inherit: false,
-                                            ipc: Some(
-                                                json!({
-                                                    "action": "update_contact_info",
-                                                })
-                                                .to_string(),
-                                            ),
-                                            metadata: None,
-                                        },
-                                        None,
-                                    );
-                                };
-                            }
-                            continue;
-                        } else if message_json["action"] == "update_orgs" {
-                            if let Some(payload) = get_payload() {
-                                if let Ok(org) = serde_json::from_slice::<Org>(&payload.bytes) {
-                                    state.orgs.insert(org.id, org);
-                                    send_response(
-                                        &Response {
-                                            inherit: false,
-                                            ipc: Some(
-                                                json!({
-                                                    "action": "update_orgs",
-                                                })
-                                                .to_string(),
-                                            ),
-                                            metadata: None,
-                                        },
-                                        None,
-                                    );
-                                };
-                            }
-                            continue;
-                        } else if source.node == our.node
-                            && source.process.to_string() == "http_server:sys:uqbar"
-                        {
-                            // Handle http request
-                            let mut default_headers = HashMap::new();
-                            default_headers
-                                .insert("Content-Type".to_string(), "text/html".to_string());
+                                params,
+                                signature,
+                            }]);
+                        }
+                    } else if message_json["action"] == "get_contact_info" {
+                        print_to_terminal(1, "orgs: get_contact_info");
+                        send_response(
+                            &Response {
+                                inherit: false,
+                                ipc: json!({
+                                    "action": "get_contact_info",
+                                })
+                                .to_string()
+                                .as_bytes()
+                                .to_vec(),
+                                metadata: None,
+                            },
+                            Some(&Payload {
+                                mime: Some("application/json".to_string()),
+                                bytes: json!(&state.our_contact_info)
+                                    .to_string()
+                                    .as_bytes()
+                                    .to_vec(),
+                            }),
+                        );
+                        continue;
+                    } else if message_json["action"] == "update_contact_info" {
+                        if let Some(payload) = get_payload() {
+                            if let Ok(contact_info) =
+                                serde_json::from_slice::<Contact>(&payload.bytes)
+                            {
+                                state
+                                    .address_book
+                                    .insert(source.node.clone(), contact_info.clone());
+                                bindings::set_state(&to_vec(&state).unwrap());
+                                send_response(
+                                    &Response {
+                                        inherit: false,
+                                        ipc: json!({
+                                            "action": "update_contact_info",
+                                        })
+                                        .to_string()
+                                        .as_bytes()
+                                        .to_vec(),
+                                        metadata: None,
+                                    },
+                                    None,
+                                );
+                            };
+                        }
+                        continue;
+                    } else if message_json["action"] == "update_orgs" {
+                        if let Some(payload) = get_payload() {
+                            if let Ok(org) = serde_json::from_slice::<Org>(&payload.bytes) {
+                                state.orgs.insert(org.id, org);
+                                send_response(
+                                    &Response {
+                                        inherit: false,
+                                        ipc: json!({
+                                            "action": "update_orgs",
+                                        })
+                                        .to_string()
+                                        .as_bytes()
+                                        .to_vec(),
+                                        metadata: None,
+                                    },
+                                    None,
+                                );
+                            };
+                        }
+                        continue;
+                    } else if source.node == our.node
+                        && source.process.to_string() == "http_server:sys:uqbar"
+                    {
+                        // Handle http request
+                        let mut default_headers = HashMap::new();
+                        default_headers.insert("Content-Type".to_string(), "text/html".to_string());
 
-                            let (method, path, raw_path, headers, url_params, query_params) =
-                                get_http_request_info(message_json.clone());
+                        let (method, path, raw_path, headers, url_params, query_params) =
+                            get_http_request_info(message_json.clone());
 
-                            match method.as_str() {
-                                "GET" => match path.as_str() {
-                                    "/" => serve_html(our.clone(), default_headers.clone()),
-                                    "static/*" => serve_static(
-                                        &raw_path,
-                                        our.clone(),
+                        match method.as_str() {
+                            "GET" => match path.as_str() {
+                                "/" => serve_html(our.clone(), default_headers.clone()),
+                                "static/*" => {
+                                    serve_static(&raw_path, our.clone(), default_headers.clone())
+                                }
+                                "/my-info" => {
+                                    send_http_response(
+                                        200,
                                         default_headers.clone(),
-                                    ),
-                                    "/my-info" => {
-                                        send_http_response(
-                                            200,
-                                            default_headers.clone(),
-                                            json!(&state.our_contact_info)
-                                                .to_string()
-                                                .as_bytes()
-                                                .to_vec(),
-                                        );
-                                    }
-                                    "/list" => {
+                                        json!(&state.our_contact_info)
+                                            .to_string()
+                                            .as_bytes()
+                                            .to_vec(),
+                                    );
+                                }
+                                "/list" => {
+                                    send_http_response(
+                                        200,
+                                        {
+                                            let mut headers = HashMap::new();
+                                            headers.insert(
+                                                "Content-Type".to_string(),
+                                                "application/json".to_string(),
+                                            );
+                                            headers
+                                        },
+                                        json!(&state.orgs).to_string().as_bytes().to_vec(),
+                                    );
+                                }
+                                "/:platform/bots" => {
+                                    if url_params["platform"] == "telegram" {
                                         send_http_response(
                                             200,
                                             {
@@ -834,43 +849,28 @@ impl Guest for Component {
                                                 );
                                                 headers
                                             },
-                                            json!(&state.orgs).to_string().as_bytes().to_vec(),
+                                            json!(&state.telegram_bots)
+                                                .to_string()
+                                                .as_bytes()
+                                                .to_vec(),
+                                        );
+                                    } else {
+                                        send_http_response(
+                                            404,
+                                            default_headers.clone(),
+                                            "Not Found".to_string().as_bytes().to_vec(),
                                         );
                                     }
-                                    "/:platform/bots" => {
-                                        if url_params["platform"] == "telegram" {
-                                            send_http_response(
-                                                200,
-                                                {
-                                                    let mut headers = HashMap::new();
-                                                    headers.insert(
-                                                        "Content-Type".to_string(),
-                                                        "application/json".to_string(),
-                                                    );
-                                                    headers
-                                                },
-                                                json!(&state.telegram_bots)
-                                                    .to_string()
-                                                    .as_bytes()
-                                                    .to_vec(),
-                                            );
-                                        } else {
-                                            send_http_response(
-                                                404,
-                                                default_headers.clone(),
-                                                "Not Found".to_string().as_bytes().to_vec(),
-                                            );
-                                        }
-                                    }
-                                    _ => send_http_response(
-                                        404,
-                                        default_headers.clone(),
-                                        "Not Found".to_string().as_bytes().to_vec(),
-                                    ),
-                                },
-                                "POST" => {
-                                    print_to_terminal(0, format!("POST: {}", path).as_str());
-                                    let Some(payload) = get_payload() else {
+                                }
+                                _ => send_http_response(
+                                    404,
+                                    default_headers.clone(),
+                                    "Not Found".to_string().as_bytes().to_vec(),
+                                ),
+                            },
+                            "POST" => {
+                                print_to_terminal(0, format!("POST: {}", path).as_str());
+                                let Some(payload) = get_payload() else {
                                         print_to_terminal(
                                             0,
                                             "orgs: no bytes in payload, skipping...",
@@ -883,9 +883,9 @@ impl Guest for Component {
                                         continue;
                                     };
 
-                                    match path.as_str() {
-                                        "/" => {
-                                            let Ok(org) = serde_json::from_slice::<serde_json::Value>(
+                                match path.as_str() {
+                                    "/" => {
+                                        let Ok(org) = serde_json::from_slice::<serde_json::Value>(
                                                 &payload.bytes,
                                             ) else {
                                                 print_to_terminal(0, "orgs: JSON is not valid");
@@ -897,49 +897,46 @@ impl Guest for Component {
                                                 continue;
                                             };
 
-                                            if let Some(name) = org["name"].as_str() {
-                                                let org_id = sum_char_codes(name);
+                                        if let Some(name) = org["name"].as_str() {
+                                            let org_id = sum_char_codes(name);
 
-                                                let mut org = Org {
-                                                    id: sum_char_codes(name),
-                                                    owner: our.node.clone(),
-                                                    name: name.to_string(),
-                                                    description: org["description"]
-                                                        .as_str()
-                                                        .unwrap_or("")
-                                                        .to_string(),
-                                                    members: HashMap::new(),
-                                                    chats: HashMap::new(),
-                                                    created: 0,
-                                                    updated: 0,
-                                                };
-                                                org.members.insert(
-                                                    our.node.clone(),
-                                                    Member {
-                                                        username: our.node.clone(),
-                                                        is_admin: true,
-                                                    },
-                                                );
+                                            let mut org = Org {
+                                                id: sum_char_codes(name),
+                                                owner: our.node.clone(),
+                                                name: name.to_string(),
+                                                description: org["description"]
+                                                    .as_str()
+                                                    .unwrap_or("")
+                                                    .to_string(),
+                                                members: HashMap::new(),
+                                                chats: HashMap::new(),
+                                                created: 0,
+                                                updated: 0,
+                                            };
+                                            org.members.insert(
+                                                our.node.clone(),
+                                                Member {
+                                                    username: our.node.clone(),
+                                                    is_admin: true,
+                                                },
+                                            );
 
-                                                state.orgs.insert(org.id.clone(), org.clone());
-                                                send_http_response(
-                                                    201,
-                                                    default_headers.clone(),
-                                                    json!(org).to_string().as_bytes().to_vec(),
-                                                );
-                                            } else {
-                                                send_http_response(
-                                                    400,
-                                                    default_headers.clone(),
-                                                    "Invalid Org Name"
-                                                        .to_string()
-                                                        .as_bytes()
-                                                        .to_vec(),
-                                                );
-                                            }
+                                            state.orgs.insert(org.id.clone(), org.clone());
+                                            send_http_response(
+                                                201,
+                                                default_headers.clone(),
+                                                json!(org).to_string().as_bytes().to_vec(),
+                                            );
+                                        } else {
+                                            send_http_response(
+                                                400,
+                                                default_headers.clone(),
+                                                "Invalid Org Name".to_string().as_bytes().to_vec(),
+                                            );
                                         }
-                                        "/my-info" => {
-                                            let Ok(my_info) =
+                                    }
+                                    "/my-info" => {
+                                        let Ok(my_info) =
                                                 serde_json::from_slice::<HashMap<String, String>>(
                                                     &payload.bytes,
                                                 )
@@ -953,36 +950,36 @@ impl Guest for Component {
                                                 continue;
                                             };
 
-                                            for (key, value) in my_info {
-                                                state.our_contact_info.insert(key, value);
-                                            }
-
-                                            bindings::set_state(&to_vec(&state).unwrap());
-
-                                            send_http_response(
-                                                201,
-                                                default_headers.clone(),
-                                                "Created".to_string().as_bytes().to_vec(),
-                                            );
+                                        for (key, value) in my_info {
+                                            state.our_contact_info.insert(key, value);
                                         }
-                                        "/:org_id/members" => {
-                                            if !self_is_admin(
-                                                &state.orgs,
-                                                our.node.clone(),
-                                                url_params["org_id"]
-                                                    .as_str()
-                                                    .unwrap_or("")
-                                                    .parse::<u64>()
-                                                    .unwrap_or(0),
-                                            ) {
-                                                send_http_response(
-                                                    403,
-                                                    default_headers.clone(),
-                                                    "Forbidden".to_string().as_bytes().to_vec(),
-                                                );
-                                                continue;
-                                            }
-                                            let Ok(json) =
+
+                                        bindings::set_state(&to_vec(&state).unwrap());
+
+                                        send_http_response(
+                                            201,
+                                            default_headers.clone(),
+                                            "Created".to_string().as_bytes().to_vec(),
+                                        );
+                                    }
+                                    "/:org_id/members" => {
+                                        if !self_is_admin(
+                                            &state.orgs,
+                                            our.node.clone(),
+                                            url_params["org_id"]
+                                                .as_str()
+                                                .unwrap_or("")
+                                                .parse::<u64>()
+                                                .unwrap_or(0),
+                                        ) {
+                                            send_http_response(
+                                                403,
+                                                default_headers.clone(),
+                                                "Forbidden".to_string().as_bytes().to_vec(),
+                                            );
+                                            continue;
+                                        }
+                                        let Ok(json) =
                                                 serde_json::from_slice::<serde_json::Value>(
                                                     &payload.bytes,
                                                 )
@@ -999,7 +996,7 @@ impl Guest for Component {
                                                 continue;
                                             };
 
-                                            let Some(username_str) = json["member"].as_str() else {
+                                        let Some(username_str) = json["member"].as_str() else {
                                                 print_to_terminal(0, "orgs: Username is not valid");
                                                 send_http_response(
                                                     400,
@@ -1011,97 +1008,21 @@ impl Guest for Component {
                                                 );
                                                 continue;
                                             };
-                                            let username = username_str.to_string();
-                                            let is_admin =
-                                                json["is_admin"].as_bool().unwrap_or(false);
+                                        let username = username_str.to_string();
+                                        let is_admin = json["is_admin"].as_bool().unwrap_or(false);
 
-                                            let org_id = match url_params["org_id"]
-                                                .as_str()
-                                                .unwrap_or("0")
-                                                .parse::<u64>()
-                                            {
-                                                Ok(value) => value,
-                                                Err(e) => {
-                                                    print_to_terminal(
-                                                        1,
-                                                        format!(
-                                                            "orgs: failed to parse org_id: {}",
-                                                            e
-                                                        )
+                                        let org_id = match url_params["org_id"]
+                                            .as_str()
+                                            .unwrap_or("0")
+                                            .parse::<u64>()
+                                        {
+                                            Ok(value) => value,
+                                            Err(e) => {
+                                                print_to_terminal(
+                                                    1,
+                                                    format!("orgs: failed to parse org_id: {}", e)
                                                         .as_str(),
-                                                    );
-                                                    send_http_response(
-                                                        400,
-                                                        default_headers.clone(),
-                                                        "Invalid Org ID"
-                                                            .to_string()
-                                                            .as_bytes()
-                                                            .to_vec(),
-                                                    );
-                                                    continue;
-                                                }
-                                            };
-
-                                            if let Some(org) = state.orgs.get_mut(&org_id) {
-                                                org.members.insert(
-                                                    username.clone(),
-                                                    Member {
-                                                        username: username.clone(),
-                                                        is_admin,
-                                                    },
                                                 );
-                                                // Get contact info for the user
-                                                send_request(
-                                                    &Address {
-                                                        node: username.clone(),
-                                                        process: ProcessId::from_str("orgs:sys:uqbar").unwrap(),
-                                                    },
-                                                    &Request {
-                                                        inherit: false,
-                                                        expects_response: Some(5), // TODO evaluate timeout
-                                                        ipc: Some(
-                                                            json!({
-                                                                "action": "get_contact_info",
-                                                            })
-                                                            .to_string(),
-                                                        ),
-                                                        metadata: None,
-                                                    },
-                                                    None,
-                                                    None,
-                                                );
-                                                // Send the org to the user
-                                                send_request(
-                                                    &Address {
-                                                        node: username.clone(),
-                                                        process: ProcessId::from_str("orgs:sys:uqbar").unwrap(),
-                                                    },
-                                                    &Request {
-                                                        inherit: false,
-                                                        expects_response: Some(15), // TODO evaluate timeout
-                                                        ipc: Some(
-                                                            json!({
-                                                                "action": "update_orgs",
-                                                            })
-                                                            .to_string(),
-                                                        ),
-                                                        metadata: None,
-                                                    },
-                                                    None,
-                                                    Some(&Payload {
-                                                        mime: Some("application/json".to_string()),
-                                                        bytes: json!(&org)
-                                                            .to_string()
-                                                            .as_bytes()
-                                                            .to_vec(),
-                                                    }),
-                                                );
-                                                send_http_response(
-                                                    201,
-                                                    default_headers.clone(),
-                                                    "Created".to_string().as_bytes().to_vec(),
-                                                );
-                                            } else {
                                                 send_http_response(
                                                     400,
                                                     default_headers.clone(),
@@ -1110,26 +1031,97 @@ impl Guest for Component {
                                                         .as_bytes()
                                                         .to_vec(),
                                                 );
-                                            }
-                                        }
-                                        "/:org_id/chats" => {
-                                            if !self_is_admin(
-                                                &state.orgs,
-                                                our.node.clone(),
-                                                url_params["org_id"]
-                                                    .as_str()
-                                                    .unwrap_or("")
-                                                    .parse::<u64>()
-                                                    .unwrap_or(0),
-                                            ) {
-                                                send_http_response(
-                                                    403,
-                                                    default_headers.clone(),
-                                                    "Forbidden".to_string().as_bytes().to_vec(),
-                                                );
                                                 continue;
                                             }
-                                            let Ok(body) =
+                                        };
+
+                                        if let Some(org) = state.orgs.get_mut(&org_id) {
+                                            org.members.insert(
+                                                username.clone(),
+                                                Member {
+                                                    username: username.clone(),
+                                                    is_admin,
+                                                },
+                                            );
+                                            // Get contact info for the user
+                                            send_request(
+                                                &Address {
+                                                    node: username.clone(),
+                                                    process: ProcessId::from_str("orgs:sys:uqbar")
+                                                        .unwrap(),
+                                                },
+                                                &Request {
+                                                    inherit: false,
+                                                    expects_response: Some(5), // TODO evaluate timeout
+                                                    ipc: json!({
+                                                        "action": "get_contact_info",
+                                                    })
+                                                    .to_string()
+                                                    .as_bytes()
+                                                    .to_vec(),
+                                                    metadata: None,
+                                                },
+                                                None,
+                                                None,
+                                            );
+                                            // Send the org to the user
+                                            send_request(
+                                                &Address {
+                                                    node: username.clone(),
+                                                    process: ProcessId::from_str("orgs:sys:uqbar")
+                                                        .unwrap(),
+                                                },
+                                                &Request {
+                                                    inherit: false,
+                                                    expects_response: Some(15), // TODO evaluate timeout
+                                                    ipc: json!({
+                                                        "action": "update_orgs",
+                                                    })
+                                                    .to_string()
+                                                    .as_bytes()
+                                                    .to_vec(),
+                                                    metadata: None,
+                                                },
+                                                None,
+                                                Some(&Payload {
+                                                    mime: Some("application/json".to_string()),
+                                                    bytes: json!(&org)
+                                                        .to_string()
+                                                        .as_bytes()
+                                                        .to_vec(),
+                                                }),
+                                            );
+                                            send_http_response(
+                                                201,
+                                                default_headers.clone(),
+                                                "Created".to_string().as_bytes().to_vec(),
+                                            );
+                                        } else {
+                                            send_http_response(
+                                                400,
+                                                default_headers.clone(),
+                                                "Invalid Org ID".to_string().as_bytes().to_vec(),
+                                            );
+                                        }
+                                    }
+                                    "/:org_id/chats" => {
+                                        if !self_is_admin(
+                                            &state.orgs,
+                                            our.node.clone(),
+                                            url_params["org_id"]
+                                                .as_str()
+                                                .unwrap_or("")
+                                                .parse::<u64>()
+                                                .unwrap_or(0),
+                                        ) {
+                                            send_http_response(
+                                                403,
+                                                default_headers.clone(),
+                                                "Forbidden".to_string().as_bytes().to_vec(),
+                                            );
+                                            continue;
+                                        }
+                                        let Ok(body) =
                                                 serde_json::from_slice::<serde_json::Value>(
                                                     &payload.bytes,
                                                 )
@@ -1142,47 +1134,44 @@ impl Guest for Component {
                                                 );
                                                 continue;
                                             };
-                                            let org_id = match url_params["org_id"]
-                                                .as_str()
-                                                .unwrap_or("0")
-                                                .parse::<u64>()
-                                            {
-                                                Ok(value) => value,
-                                                Err(e) => {
-                                                    print_to_terminal(
-                                                        1,
-                                                        format!(
-                                                            "orgs: failed to parse org_id: {}",
-                                                            e
-                                                        )
+                                        let org_id = match url_params["org_id"]
+                                            .as_str()
+                                            .unwrap_or("0")
+                                            .parse::<u64>()
+                                        {
+                                            Ok(value) => value,
+                                            Err(e) => {
+                                                print_to_terminal(
+                                                    1,
+                                                    format!("orgs: failed to parse org_id: {}", e)
                                                         .as_str(),
-                                                    );
-                                                    send_http_response(
-                                                        400,
-                                                        default_headers.clone(),
-                                                        "Invalid Org ID"
-                                                            .to_string()
-                                                            .as_bytes()
-                                                            .to_vec(),
-                                                    );
-                                                    continue;
-                                                }
-                                            };
-
-                                            let chat_id = body["id"].as_i64().unwrap_or_default();
-                                            let platform =
-                                                body["platform"].as_str().unwrap_or_default();
-
-                                            let mut bot: Option<TelegramBot> = None;
-                                            for b in state.telegram_bots.values() {
-                                                if b.chats.contains_key(&chat_id) {
-                                                    bot = Some(b.clone());
-                                                    break;
-                                                }
+                                                );
+                                                send_http_response(
+                                                    400,
+                                                    default_headers.clone(),
+                                                    "Invalid Org ID"
+                                                        .to_string()
+                                                        .as_bytes()
+                                                        .to_vec(),
+                                                );
+                                                continue;
                                             }
+                                        };
 
-                                            if let Some(bot) = bot {
-                                                let response = send_and_await_response(
+                                        let chat_id = body["id"].as_i64().unwrap_or_default();
+                                        let platform =
+                                            body["platform"].as_str().unwrap_or_default();
+
+                                        let mut bot: Option<TelegramBot> = None;
+                                        for b in state.telegram_bots.values() {
+                                            if b.chats.contains_key(&chat_id) {
+                                                bot = Some(b.clone());
+                                                break;
+                                            }
+                                        }
+
+                                        if let Some(bot) = bot {
+                                            let response = send_and_await_response(
                                                     &Address {
                                                         node: our.node.clone(),
                                                         process: ProcessId::from_str("http_client:sys:uqbar").unwrap(),
@@ -1190,13 +1179,13 @@ impl Guest for Component {
                                                     &Request {
                                                         inherit: false,
                                                         expects_response: Some(5), // TODO evaluate timeout
-                                                        ipc: Some(json!({
+                                                        ipc: json!({
                                                             "method": "GET",
                                                             "uri": format!("https://api.telegram.org/bot{}/getChat", bot.token.clone()),
                                                             "headers": {
                                                                 "Content-Type": "application/json",
                                                             },
-                                                        }).to_string()),
+                                                        }).to_string().as_bytes().to_vec(),
                                                         metadata: None,
                                                     },
                                                     Some(&Payload {
@@ -1206,9 +1195,9 @@ impl Guest for Component {
                                                         }).to_string().as_bytes().to_vec(),
                                                     }),
                                                 );
-                                                print_to_terminal(0, "2");
+                                            print_to_terminal(0, "2");
 
-                                                let Some(response_payload) = get_payload() else {
+                                            let Some(response_payload) = get_payload() else {
                                                     print_to_terminal(
                                                         0,
                                                         "orgs: no payload in response",
@@ -1224,83 +1213,65 @@ impl Guest for Component {
                                                     continue;
                                                 };
 
-                                                let json =
-                                                    serde_json::from_slice::<serde_json::Value>(
-                                                        &response_payload.bytes,
-                                                    );
-                                                print_to_terminal(0, "3");
+                                            let json = serde_json::from_slice::<serde_json::Value>(
+                                                &response_payload.bytes,
+                                            );
+                                            print_to_terminal(0, "3");
 
-                                                if let Ok(result_json) = json {
-                                                    let invite_link = result_json["result"]
-                                                        ["invite_link"]
-                                                        .as_str()
-                                                        .unwrap_or_default()
-                                                        .to_string();
-                                                    // print invite_link
-                                                    print_to_terminal(
-                                                        1,
-                                                        format!(
-                                                            "orgs: invite link {}",
-                                                            invite_link
-                                                        )
+                                            if let Ok(result_json) = json {
+                                                let invite_link = result_json["result"]
+                                                    ["invite_link"]
+                                                    .as_str()
+                                                    .unwrap_or_default()
+                                                    .to_string();
+                                                // print invite_link
+                                                print_to_terminal(
+                                                    1,
+                                                    format!("orgs: invite link {}", invite_link)
                                                         .as_str(),
+                                                );
+                                                // print org_id
+                                                print_to_terminal(
+                                                    1,
+                                                    format!("orgs: org_id {}", org_id).as_str(),
+                                                );
+                                                if let Some(org) = state.orgs.get_mut(&org_id) {
+                                                    org.chats.insert(
+                                                        platform.to_string(),
+                                                        OrgChat {
+                                                            id: chat_id,
+                                                            invite_link: invite_link,
+                                                        },
                                                     );
-                                                    // print org_id
-                                                    print_to_terminal(
-                                                        1,
-                                                        format!("orgs: org_id {}", org_id).as_str(),
-                                                    );
-                                                    if let Some(org) = state.orgs.get_mut(&org_id) {
-                                                        org.chats.insert(
-                                                            platform.to_string(),
-                                                            OrgChat {
-                                                                id: chat_id,
-                                                                invite_link: invite_link,
-                                                            },
-                                                        );
-                                                        print_to_terminal(0, "4");
+                                                    print_to_terminal(0, "4");
 
-                                                        for (member, _) in &org.members {
-                                                            if let Some(contact) =
-                                                                state.address_book.get(member)
+                                                    for (member, _) in &org.members {
+                                                        if let Some(contact) =
+                                                            state.address_book.get(member)
+                                                        {
+                                                            if let Some(telegram_username) =
+                                                                contact.get("telegram_username")
                                                             {
-                                                                if let Some(telegram_username) =
-                                                                    contact.get("telegram_username")
-                                                                {
-                                                                    call_telegram_api(
-                                                                        our.node.clone(),
-                                                                        bot.token.clone(),
-                                                                        "unbanChatMember"
-                                                                            .to_string(),
-                                                                        "POST",
-                                                                        json!({
-                                                                            "chat_id": chat_id,
-                                                                            "user_id": telegram_username,
-                                                                        }),
-                                                                    );
-                                                                }
+                                                                call_telegram_api(
+                                                                    our.node.clone(),
+                                                                    bot.token.clone(),
+                                                                    "unbanChatMember".to_string(),
+                                                                    "POST",
+                                                                    json!({
+                                                                        "chat_id": chat_id,
+                                                                        "user_id": telegram_username,
+                                                                    }),
+                                                                );
                                                             }
                                                         }
-                                                        print_to_terminal(0, "5");
-
-                                                        send_http_response(
-                                                            201,
-                                                            default_headers.clone(),
-                                                            json!(org)
-                                                                .to_string()
-                                                                .as_bytes()
-                                                                .to_vec(),
-                                                        );
-                                                    } else {
-                                                        send_http_response(
-                                                            500,
-                                                            default_headers.clone(),
-                                                            "Unable to get chat invite link"
-                                                                .to_string()
-                                                                .as_bytes()
-                                                                .to_vec(),
-                                                        );
                                                     }
+                                                    print_to_terminal(0, "5");
+
+                                                    send_http_response(
+                                                        201,
+                                                        default_headers.clone(),
+                                                        json!(org).to_string().as_bytes().to_vec(),
+                                                    );
                                                 } else {
                                                     send_http_response(
                                                         500,
@@ -1313,19 +1284,25 @@ impl Guest for Component {
                                                 }
                                             } else {
                                                 send_http_response(
-                                                    400,
+                                                    500,
                                                     default_headers.clone(),
-                                                    "Invalid Chat ID"
+                                                    "Unable to get chat invite link"
                                                         .to_string()
                                                         .as_bytes()
                                                         .to_vec(),
                                                 );
                                             }
+                                        } else {
+                                            send_http_response(
+                                                400,
+                                                default_headers.clone(),
+                                                "Invalid Chat ID".to_string().as_bytes().to_vec(),
+                                            );
                                         }
-                                        "/:platform/bots" => {
-                                            if message_json["url_params"]["platform"] == "telegram"
-                                            {
-                                                let Ok(token) = String::from_utf8(payload.bytes)
+                                    }
+                                    "/:platform/bots" => {
+                                        if message_json["url_params"]["platform"] == "telegram" {
+                                            let Ok(token) = String::from_utf8(payload.bytes)
                                                 else {
                                                     print_to_terminal(0, "orgs: no token for bot");
                                                     send_http_response(
@@ -1339,8 +1316,8 @@ impl Guest for Component {
                                                     continue;
                                                 };
 
-                                                // Check if the bot already exists
-                                                let response = send_and_await_response(
+                                            // Check if the bot already exists
+                                            let response = send_and_await_response(
                                                     &Address {
                                                         node: our.node.clone(),
                                                         process: ProcessId::from_str("http_client:sys:uqbar").unwrap(),
@@ -1348,33 +1325,32 @@ impl Guest for Component {
                                                     &Request {
                                                         inherit: false,
                                                         expects_response: Some(5), // TODO evaluate timeout
-                                                        ipc: Some(json!({
+                                                        ipc: json!({
                                                             "method": "GET",
                                                             "uri": format!("https://api.telegram.org/bot{}/getMe", token),
                                                             "headers": {
                                                                 "Content-Type": "application/json",
                                                             },
-                                                        }).to_string()),
+                                                        }).to_string().as_bytes().to_vec(),
                                                         metadata: None,
                                                     },
                                                     None,
                                                 );
 
-                                                let bot: Option<TelegramBot> =
-                                                    match get_response_info(response) {
-                                                        (Some(ipc), Some(payload), _) => {
-                                                            let json = serde_json::from_str::<
-                                                                serde_json::Value,
-                                                            >(
-                                                                &ipc
-                                                            )
-                                                            .unwrap();
-                                                            if json["status"]
-                                                                .as_u64()
-                                                                .unwrap_or_default()
-                                                                < 300
-                                                            {
-                                                                match serde_json::from_slice::<
+                                            let bot: Option<TelegramBot> = match get_response_info(
+                                                response,
+                                            ) {
+                                                (ipc, Some(payload), _) => {
+                                                    let json = serde_json::from_slice::<
+                                                        serde_json::Value,
+                                                    >(
+                                                        &ipc
+                                                    )
+                                                    .unwrap();
+                                                    if json["status"].as_u64().unwrap_or_default()
+                                                        < 300
+                                                    {
+                                                        match serde_json::from_slice::<
                                                                 serde_json::Value,
                                                             >(
                                                                 &payload.bytes
@@ -1394,72 +1370,73 @@ impl Guest for Component {
                                                                 }
                                                                 Err(_) => None,
                                                             }
-                                                            } else {
-                                                                None
-                                                            }
-                                                        }
-                                                        _ => None,
-                                                    };
-
-                                                if let Some(bot) = bot {
-                                                    let bot_id = bot.id.clone();
-                                                    let bot_token = bot.token.clone();
-                                                    state.telegram_bots
-                                                        .insert(bot_id.clone(), bot.clone());
-                                                    send_http_client_request(
-                                                        our.node.clone(),
-                                                        format!(
-                                                            "https://api.telegram.org/bot{}/getUpdates",
-                                                            bot_token
-                                                        ),
-                                                        "GET",
-                                                        HashMap::new(),
-                                                        Vec::new(),
-                                                        Some(
-                                                            json!({
-                                                                "telegram_bot_id": bot_id
-                                                            })
-                                                            .to_string(),
-                                                        ),
-                                                    );
-                                                    send_http_response(
-                                                        201,
-                                                        default_headers.clone(),
-                                                        serde_json::to_string(&bot)
-                                                            .unwrap_or_default()
-                                                            .as_bytes()
-                                                            .to_vec(),
-                                                    );
-                                                } else {
-                                                    send_http_response(
-                                                        500,
-                                                        default_headers.clone(),
-                                                        "Unable to create bot"
-                                                            .to_string()
-                                                            .as_bytes()
-                                                            .to_vec(),
-                                                    );
+                                                    } else {
+                                                        None
+                                                    }
                                                 }
+                                                _ => None,
+                                            };
+
+                                            if let Some(bot) = bot {
+                                                let bot_id = bot.id.clone();
+                                                let bot_token = bot.token.clone();
+                                                state
+                                                    .telegram_bots
+                                                    .insert(bot_id.clone(), bot.clone());
+                                                send_http_client_request(
+                                                    our.node.clone(),
+                                                    format!(
+                                                        "https://api.telegram.org/bot{}/getUpdates",
+                                                        bot_token
+                                                    ),
+                                                    "GET",
+                                                    HashMap::new(),
+                                                    Vec::new(),
+                                                    Some(&json!({
+                                                        "telegram_bot_id": bot_id
+                                                    })
+                                                    .to_string()
+                                                    .as_bytes()
+                                                    .to_vec()),
+                                                );
+                                                send_http_response(
+                                                    201,
+                                                    default_headers.clone(),
+                                                    serde_json::to_string(&bot)
+                                                        .unwrap_or_default()
+                                                        .as_bytes()
+                                                        .to_vec(),
+                                                );
                                             } else {
                                                 send_http_response(
-                                                    400,
+                                                    500,
                                                     default_headers.clone(),
-                                                    "Invalid Bot Platform"
+                                                    "Unable to create bot"
                                                         .to_string()
                                                         .as_bytes()
                                                         .to_vec(),
                                                 );
                                             }
+                                        } else {
+                                            send_http_response(
+                                                400,
+                                                default_headers.clone(),
+                                                "Invalid Bot Platform"
+                                                    .to_string()
+                                                    .as_bytes()
+                                                    .to_vec(),
+                                            );
                                         }
-                                        _ => send_http_response(
-                                            404,
-                                            default_headers.clone(),
-                                            "Not Found".to_string().as_bytes().to_vec(),
-                                        ),
                                     }
+                                    _ => send_http_response(
+                                        404,
+                                        default_headers.clone(),
+                                        "Not Found".to_string().as_bytes().to_vec(),
+                                    ),
                                 }
-                                "PUT" => {
-                                    let Some(payload) = get_payload() else {
+                            }
+                            "PUT" => {
+                                let Some(payload) = get_payload() else {
                                         print_to_terminal(
                                             0,
                                             "orgs: no bytes in payload, skipping...",
@@ -1471,74 +1448,108 @@ impl Guest for Component {
                                         );
                                         continue;
                                     };
-                                    let body_json = match serde_json::from_slice(&payload.bytes) {
-                                        Ok(v) => v,
-                                        Err(_) => {
-                                            print_to_terminal(0, "orgs: JSON is not valid");
+                                let body_json = match serde_json::from_slice(&payload.bytes) {
+                                    Ok(v) => v,
+                                    Err(_) => {
+                                        print_to_terminal(0, "orgs: JSON is not valid");
+                                        send_http_response(
+                                            400,
+                                            default_headers.clone(),
+                                            "Invalid JSON".to_string().as_bytes().to_vec(),
+                                        );
+                                        continue;
+                                    }
+                                };
+
+                                match path.as_str() {
+                                    "/" => {}
+                                    _ => send_http_response(
+                                        404,
+                                        default_headers.clone(),
+                                        "Not Found".to_string().as_bytes().to_vec(),
+                                    ),
+                                }
+                            }
+                            "DELETE" => match path.as_str() {
+                                "/" => {}
+                                "/:org_id/members" => {
+                                    let username = query_params["username"].as_str().unwrap_or("");
+                                    let org_id = match url_params["org_id"]
+                                        .as_str()
+                                        .unwrap_or("0")
+                                        .parse::<u64>()
+                                    {
+                                        Ok(value) => value,
+                                        Err(e) => {
+                                            print_to_terminal(
+                                                1,
+                                                format!("orgs: failed to parse org_id: {}", e)
+                                                    .as_str(),
+                                            );
                                             send_http_response(
                                                 400,
                                                 default_headers.clone(),
-                                                "Invalid JSON".to_string().as_bytes().to_vec(),
+                                                "Invalid Org ID".to_string().as_bytes().to_vec(),
                                             );
                                             continue;
                                         }
                                     };
-
-                                    match path.as_str() {
-                                        "/" => {}
-                                        _ => send_http_response(
-                                            404,
+                                    if let Some(org) = state.orgs.get_mut(&org_id) {
+                                        modify_telegram_membership(
+                                            org,
+                                            our.node.clone(),
+                                            &state.telegram_bots,
+                                            &state.address_book,
+                                            username.to_string(),
+                                            "banChatMember",
+                                        );
+                                        modify_telegram_membership(
+                                            org,
+                                            our.node.clone(),
+                                            &state.telegram_bots,
+                                            &state.address_book,
+                                            username.to_string(),
+                                            "unbanChatMember",
+                                        );
+                                        org.members.remove(username);
+                                        send_http_response(
+                                            200,
                                             default_headers.clone(),
-                                            "Not Found".to_string().as_bytes().to_vec(),
-                                        ),
+                                            "OK".to_string().as_bytes().to_vec(),
+                                        );
+                                    } else {
+                                        send_http_response(
+                                            400,
+                                            default_headers.clone(),
+                                            "Invalid Org ID".to_string().as_bytes().to_vec(),
+                                        );
                                     }
                                 }
-                                "DELETE" => match path.as_str() {
-                                    "/" => {}
-                                    "/:org_id/members" => {
-                                        let username =
-                                            query_params["username"].as_str().unwrap_or("");
-                                        let org_id = match url_params["org_id"]
-                                            .as_str()
-                                            .unwrap_or("0")
-                                            .parse::<u64>()
-                                        {
-                                            Ok(value) => value,
-                                            Err(e) => {
-                                                print_to_terminal(
-                                                    1,
-                                                    format!("orgs: failed to parse org_id: {}", e)
-                                                        .as_str(),
-                                                );
-                                                send_http_response(
-                                                    400,
-                                                    default_headers.clone(),
-                                                    "Invalid Org ID"
-                                                        .to_string()
-                                                        .as_bytes()
-                                                        .to_vec(),
-                                                );
-                                                continue;
-                                            }
-                                        };
-                                        if let Some(org) = state.orgs.get_mut(&org_id) {
-                                            modify_telegram_membership(
-                                                org,
-                                                our.node.clone(),
-                                                &state.telegram_bots,
-                                                &state.address_book,
-                                                username.to_string(),
-                                                "banChatMember",
+                                "/:org_id/chats" => {
+                                    let platform = query_params["platform"].as_str().unwrap_or("");
+                                    let org_id = match url_params["org_id"]
+                                        .as_str()
+                                        .unwrap_or("0")
+                                        .parse::<u64>()
+                                    {
+                                        Ok(value) => value,
+                                        Err(e) => {
+                                            print_to_terminal(
+                                                1,
+                                                format!("orgs: failed to parse org_id: {}", e)
+                                                    .as_str(),
                                             );
-                                            modify_telegram_membership(
-                                                org,
-                                                our.node.clone(),
-                                                &state.telegram_bots,
-                                                &state.address_book,
-                                                username.to_string(),
-                                                "unbanChatMember",
+                                            send_http_response(
+                                                400,
+                                                default_headers.clone(),
+                                                "Invalid Org ID".to_string().as_bytes().to_vec(),
                                             );
-                                            org.members.remove(username);
+                                            continue;
+                                        }
+                                    };
+                                    if let Some(org) = state.orgs.get_mut(&org_id) {
+                                        if let Some(chat) = org.chats.get(platform) {
+                                            org.chats.remove(platform);
                                             send_http_response(
                                                 200,
                                                 default_headers.clone(),
@@ -1548,115 +1559,60 @@ impl Guest for Component {
                                             send_http_response(
                                                 400,
                                                 default_headers.clone(),
-                                                "Invalid Org ID".to_string().as_bytes().to_vec(),
+                                                "Invalid Chat Platform"
+                                                    .to_string()
+                                                    .as_bytes()
+                                                    .to_vec(),
                                             );
                                         }
+                                    } else {
+                                        send_http_response(
+                                            400,
+                                            default_headers.clone(),
+                                            "Invalid Org ID".to_string().as_bytes().to_vec(),
+                                        );
                                     }
-                                    "/:org_id/chats" => {
-                                        let platform =
-                                            query_params["platform"].as_str().unwrap_or("");
-                                        let org_id = match url_params["org_id"]
-                                            .as_str()
-                                            .unwrap_or("0")
-                                            .parse::<u64>()
-                                        {
-                                            Ok(value) => value,
-                                            Err(e) => {
-                                                print_to_terminal(
-                                                    1,
-                                                    format!("orgs: failed to parse org_id: {}", e)
-                                                        .as_str(),
-                                                );
-                                                send_http_response(
-                                                    400,
-                                                    default_headers.clone(),
-                                                    "Invalid Org ID"
-                                                        .to_string()
-                                                        .as_bytes()
-                                                        .to_vec(),
-                                                );
-                                                continue;
-                                            }
-                                        };
-                                        if let Some(org) = state.orgs.get_mut(&org_id) {
-                                            if let Some(chat) = org.chats.get(platform) {
-                                                org.chats.remove(platform);
-                                                send_http_response(
-                                                    200,
-                                                    default_headers.clone(),
-                                                    "OK".to_string().as_bytes().to_vec(),
-                                                );
-                                            } else {
-                                                send_http_response(
-                                                    400,
-                                                    default_headers.clone(),
-                                                    "Invalid Chat Platform"
-                                                        .to_string()
-                                                        .as_bytes()
-                                                        .to_vec(),
-                                                );
-                                            }
-                                        } else {
+                                }
+                                "/:platform/bots" => {
+                                    let platform = url_params["platform"].as_str().unwrap_or("");
+                                    let bot_id = match url_params["id"]
+                                        .as_str()
+                                        .unwrap_or("")
+                                        .parse::<u64>()
+                                    {
+                                        Ok(value) => value,
+                                        Err(e) => {
+                                            print_to_terminal(
+                                                1,
+                                                format!("orgs: failed to parse bot_id: {}", e)
+                                                    .as_str(),
+                                            );
                                             send_http_response(
                                                 400,
                                                 default_headers.clone(),
-                                                "Invalid Org ID".to_string().as_bytes().to_vec(),
+                                                "Invalid Bot ID".to_string().as_bytes().to_vec(),
                                             );
+                                            continue;
                                         }
-                                    }
-                                    "/:platform/bots" => {
-                                        let platform =
-                                            url_params["platform"].as_str().unwrap_or("");
-                                        let bot_id = match url_params["id"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .parse::<u64>()
-                                        {
-                                            Ok(value) => value,
-                                            Err(e) => {
-                                                print_to_terminal(
-                                                    1,
-                                                    format!("orgs: failed to parse bot_id: {}", e)
-                                                        .as_str(),
-                                                );
-                                                send_http_response(
-                                                    400,
-                                                    default_headers.clone(),
-                                                    "Invalid Bot ID"
-                                                        .to_string()
-                                                        .as_bytes()
-                                                        .to_vec(),
-                                                );
-                                                continue;
-                                            }
-                                        };
-                                        // 1. Delete all chats in all orgs managed by this bot
-                                        for org in state.orgs.values_mut() {
-                                            let mut has_chat = false;
-                                            if let Some(chat) = org.chats.get_mut(platform) {
-                                                for bot in state.telegram_bots.values() {
-                                                    if bot.chats.contains_key(&chat.id) {
-                                                        has_chat = true;
-                                                        break;
-                                                    }
+                                    };
+                                    // 1. Delete all chats in all orgs managed by this bot
+                                    for org in state.orgs.values_mut() {
+                                        let mut has_chat = false;
+                                        if let Some(chat) = org.chats.get_mut(platform) {
+                                            for bot in state.telegram_bots.values() {
+                                                if bot.chats.contains_key(&chat.id) {
+                                                    has_chat = true;
+                                                    break;
                                                 }
                                             }
-                                            if has_chat {
-                                                org.chats.remove(platform);
-                                            }
                                         }
-                                        // 2. Delete the bot from bots
-                                        state.telegram_bots.remove(&bot_id);
+                                        if has_chat {
+                                            org.chats.remove(platform);
+                                        }
                                     }
-                                    _ => {
-                                        send_http_response(
-                                            404,
-                                            default_headers.clone(),
-                                            "Not Found".to_string().as_bytes().to_vec(),
-                                        );
-                                        continue;
-                                    }
-                                },
+                                    // 2. Delete the bot from bots
+                                    state.telegram_bots.remove(&bot_id);
+                                }
                                 _ => {
                                     send_http_response(
                                         404,
@@ -1665,6 +1621,14 @@ impl Guest for Component {
                                     );
                                     continue;
                                 }
+                            },
+                            _ => {
+                                send_http_response(
+                                    404,
+                                    default_headers.clone(),
+                                    "Not Found".to_string().as_bytes().to_vec(),
+                                );
+                                continue;
                             }
                         }
                     } else {
@@ -1682,12 +1646,11 @@ impl Guest for Component {
                 }
                 Message::Response((response, context)) => {
                     if source.process.to_string() == "http_client:sys:uqbar" {
-                        let Some(bot_id_string) = context else {
+                        let Some(context) = context else {
                             print_to_terminal(0, "orgs: got response without context");
                             continue;
                         };
-
-                        let Ok(context) = serde_json::from_str::<serde_json::Value>(&bot_id_string)
+                        let Ok(context) = serde_json::from_slice::<serde_json::Value>(&context)
                         else {
                             print_to_terminal(0, "orgs: context is not valid JSON");
                             continue;
@@ -1723,7 +1686,12 @@ impl Guest for Component {
                                 &mut state.telegram_bots,
                                 &mut state.address_book,
                             );
-                            let token = state.telegram_bots.get(&telegram_bot_id).unwrap().token.clone();
+                            let token = state
+                                .telegram_bots
+                                .get(&telegram_bot_id)
+                                .unwrap()
+                                .token
+                                .clone();
 
                             let uri = match update_id {
                                 Some(id) => format!(
@@ -1742,18 +1710,19 @@ impl Guest for Component {
                                     HashMap::new(),
                                     Vec::new(),
                                     Some(
-                                        serde_json::json!({
+                                        &serde_json::json!({
                                             "telegram_bot_id": telegram_bot_id
                                         })
-                                        .to_string(),
+                                        .to_string()
+                                        .as_bytes()
+                                        .to_vec(),
                                     ),
                                 );
                             }
                         }
                     } else if source.process.to_string() == "orgs:sys:uqbar" {
-                        if let Some(json) = response.ipc {
-                            let message_json: serde_json::Value = match serde_json::from_str(&json)
-                            {
+                        let message_json: serde_json::Value =
+                            match serde_json::from_slice(&response.ipc) {
                                 Ok(v) => v,
                                 Err(_) => {
                                     print_to_terminal(0, "orgs: failed to parse ipc JSON");
@@ -1761,8 +1730,8 @@ impl Guest for Component {
                                 }
                             };
 
-                            if message_json["action"] == "get_contact_info" {
-                                let Some(payload) = get_payload() else {
+                        if message_json["action"] == "get_contact_info" {
+                            let Some(payload) = get_payload() else {
                                     print_to_terminal(
                                         0,
                                         "orgs: no bytes in response payload, skipping...",
@@ -1770,17 +1739,18 @@ impl Guest for Component {
                                     continue;
                                 };
 
-                                let contact_info =
-                                    match serde_json::from_slice::<Contact>(&payload.bytes) {
-                                        Ok(v) => v,
-                                        Err(_) => {
-                                            print_to_terminal(0, "orgs: failed to parse contact");
-                                            continue;
-                                        }
-                                    };
+                            let contact_info =
+                                match serde_json::from_slice::<Contact>(&payload.bytes) {
+                                    Ok(v) => v,
+                                    Err(_) => {
+                                        print_to_terminal(0, "orgs: failed to parse contact");
+                                        continue;
+                                    }
+                                };
 
-                                state.address_book.insert(source.node.clone(), contact_info.clone());
-                            }
+                            state
+                                .address_book
+                                .insert(source.node.clone(), contact_info.clone());
                         }
                     } else {
                         print_to_terminal(0, "orgs: got unexpected response");

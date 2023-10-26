@@ -36,7 +36,7 @@ fn forward_if_have_cap(
     operation_type: &str,
     // operation_type: OperationType,
     db: &str,
-    ipc: Option<String>,
+    ipc: Vec<u8>,
     db_to_process: &mut DbToProcess,
 ) -> anyhow::Result<()> {
     if has_capability(&make_db_cap(operation_type, db)) {
@@ -83,7 +83,7 @@ fn handle_message (
             return Err(sq::SqliteError::UnexpectedResponse.into());
         },
         Message::Request(Request { ipc, .. }) => {
-            match process_lib::parse_message_ipc(ipc.clone())? {
+            match process_lib::parse_message_ipc(&ipc)? {
                 sq::SqliteMessage::New { ref db } => {
                     //  TODO: make atomic
                     //  (1): create vfs drive
@@ -104,10 +104,10 @@ fn handle_message (
                     let _ = process_lib::send_and_await_response(
                         &vfs_address,
                         false,
-                        Some(serde_json::to_string(&kt::VfsRequest {
+                        serde_json::to_vec(&kt::VfsRequest {
                             drive: vfs_drive.clone(),
                             action: kt::VfsAction::New,
-                        }).unwrap()),
+                        }).unwrap(),
                         None,
                         None,
                         15,
@@ -249,7 +249,7 @@ impl Guest for Component {
                         send_response(
                             &Response {
                                 inherit: false,
-                                ipc: Some(serde_json::to_string(&e).unwrap()),
+                                ipc: serde_json::to_vec(&e).unwrap(),
                                 metadata: None,
                             },
                             None,

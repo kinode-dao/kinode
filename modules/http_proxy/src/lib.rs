@@ -16,18 +16,17 @@ const PROXY_HOME_PAGE: &str = include_str!("http_proxy.html");
 
 struct Component;
 
-
 fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
     send_response(
         &Response {
             inherit: false,
-            ipc: Some(
-                serde_json::json!({
-                    "status": status,
-                    "headers": headers,
-                })
-                .to_string(),
-            ),
+            ipc: serde_json::json!({
+                "status": status,
+                "headers": headers,
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
             metadata: None,
         },
         Some(&Payload {
@@ -64,13 +63,16 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(json!({
+                    ipc: json!({
                         "BindPath": {
                             "path": "/",
                             "authenticated": true,
                             "local_only": false
                         }
-                    }).to_string()),
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
                     metadata: None,
                 },
                 None,
@@ -81,13 +83,16 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(json!({
+                    ipc: json!({
                         "BindPath": {
                             "path": "/static/*",
                             "authenticated": true,
                             "local_only": false
                         }
-                    }).to_string()),
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
                     metadata: None,
                 },
                 None,
@@ -98,13 +103,16 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(json!({
+                    ipc: json!({
                         "BindPath": {
                             "path": "/list",
                             "authenticated": true,
                             "local_only": false
                         }
-                    }).to_string()),
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
                     metadata: None,
                 },
                 None,
@@ -115,13 +123,16 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(json!({
+                    ipc: json!({
                         "BindPath": {
                             "path": "/register",
                             "authenticated": true,
                             "local_only": false
                         }
-                    }).to_string()),
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
                     metadata: None,
                 },
                 None,
@@ -132,13 +143,16 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(json!({
+                    ipc: json!({
                         "BindPath": {
                             "path": "/serve/:username/*",
                             "authenticated": true,
                             "local_only": false
                         }
-                    }).to_string()),
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
                     metadata: None,
                 },
                 None,
@@ -160,12 +174,7 @@ impl Guest for Component {
                 continue;
             };
 
-            let Some(json) = request.ipc else {
-                print_to_terminal(1, "http_proxy: no ipc json");
-                continue;
-            };
-
-            let message_json: serde_json::Value = match serde_json::from_str(&json) {
+            let message_json: serde_json::Value = match serde_json::from_slice(&request.ipc) {
                 Ok(v) => v,
                 Err(_) => {
                     print_to_terminal(1, "http_proxy: failed to parse ipc JSON, skipping");
@@ -182,16 +191,16 @@ impl Guest for Component {
                 send_response(
                     &Response {
                         inherit: false,
-                        ipc: Some(
-                            serde_json::json!({
-                                "action": "response",
-                                "status": 200,
-                                "headers": {
-                                    "Content-Type": "text/html",
-                                },
-                            })
-                            .to_string(),
-                        ),
+                        ipc: serde_json::json!({
+                            "action": "response",
+                            "status": 200,
+                            "headers": {
+                                "Content-Type": "text/html",
+                            },
+                        })
+                        .to_string()
+                        .as_bytes()
+                        .to_vec(),
                         metadata: None,
                     },
                     Some(&Payload {
@@ -202,21 +211,20 @@ impl Guest for Component {
                             .to_vec(),
                     }),
                 );
-            } else if message_json["path"] == "/list" && message_json["method"] == "GET"
-            {
+            } else if message_json["path"] == "/list" && message_json["method"] == "GET" {
                 send_response(
                     &Response {
                         inherit: false,
-                        ipc: Some(
-                            serde_json::json!({
-                                "action": "response",
-                                "status": 200,
-                                "headers": {
-                                    "Content-Type": "application/json",
-                                },
-                            })
-                            .to_string(),
-                        ),
+                        ipc: serde_json::json!({
+                            "action": "response",
+                            "status": 200,
+                            "headers": {
+                                "Content-Type": "application/json",
+                            },
+                        })
+                        .to_string()
+                        .as_bytes()
+                        .to_vec(),
                         metadata: None,
                     },
                     Some(&Payload {
@@ -227,9 +235,7 @@ impl Guest for Component {
                             .to_vec(),
                     }),
                 );
-            } else if message_json["path"] == "/register"
-                && message_json["method"] == "POST"
-            {
+            } else if message_json["path"] == "/register" && message_json["method"] == "POST" {
                 let mut status = 204;
 
                 let Some(payload) = get_payload() else {
@@ -258,16 +264,16 @@ impl Guest for Component {
                 send_response(
                     &Response {
                         inherit: false,
-                        ipc: Some(
-                            serde_json::json!({
-                                "action": "response",
-                                "status": status,
-                                "headers": {
-                                    "Content-Type": "text/html",
-                                },
-                            })
-                            .to_string(),
-                        ),
+                        ipc: serde_json::json!({
+                            "action": "response",
+                            "status": status,
+                            "headers": {
+                                "Content-Type": "text/html",
+                            },
+                        })
+                        .to_string()
+                        .as_bytes()
+                        .to_vec(),
                         metadata: None,
                     },
                     Some(&Payload {
@@ -282,9 +288,7 @@ impl Guest for Component {
                         .to_vec(),
                     }),
                 );
-            } else if message_json["path"] == "/register"
-                && message_json["method"] == "DELETE"
-            {
+            } else if message_json["path"] == "/register" && message_json["method"] == "DELETE" {
                 print_to_terminal(1, "HERE IN /register to delete something");
                 let username = message_json["query_params"]["username"]
                     .as_str()
@@ -301,16 +305,16 @@ impl Guest for Component {
                 send_response(
                     &Response {
                         inherit: false,
-                        ipc: Some(
-                            serde_json::json!({
-                                "action": "response",
-                                "status": status,
-                                "headers": {
-                                    "Content-Type": "text/html",
-                                },
-                            })
-                            .to_string(),
-                        ),
+                        ipc: serde_json::json!({
+                            "action": "response",
+                            "status": status,
+                            "headers": {
+                                "Content-Type": "text/html",
+                            },
+                        })
+                        .to_string()
+                        .as_bytes()
+                        .to_vec(),
                         metadata: None,
                     },
                     Some(&Payload {
@@ -338,16 +342,16 @@ impl Guest for Component {
                     send_response(
                         &Response {
                             inherit: false,
-                            ipc: Some(
-                                json!({
-                                    "action": "response",
-                                    "status": 403,
-                                    "headers": {
-                                        "Content-Type": "text/html",
-                                    },
-                                })
-                                .to_string(),
-                            ),
+                            ipc: json!({
+                                "action": "response",
+                                "status": 403,
+                                "headers": {
+                                    "Content-Type": "text/html",
+                                },
+                            })
+                            .to_string()
+                            .as_bytes()
+                            .to_vec(),
                             metadata: None,
                         },
                         Some(&Payload {
@@ -374,16 +378,16 @@ impl Guest for Component {
                         &Request {
                             inherit: true,
                             expects_response: None,
-                            ipc: Some(
-                                json!({
-                                    "method": message_json["method"],
-                                    "path": proxied_path,
-                                    "headers": message_json["headers"],
-                                    "proxy_path": raw_path,
-                                    "query_params": message_json["query_params"],
-                                })
-                                .to_string(),
-                            ),
+                            ipc: json!({
+                                "method": message_json["method"],
+                                "path": proxied_path,
+                                "headers": message_json["headers"],
+                                "proxy_path": raw_path,
+                                "query_params": message_json["query_params"],
+                            })
+                            .to_string()
+                            .as_bytes()
+                            .to_vec(),
                             metadata: None,
                         },
                         None,

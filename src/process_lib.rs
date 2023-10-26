@@ -264,15 +264,11 @@ where
     super::bindings::set_state(&bincode::serialize(state).unwrap());
 }
 
-pub fn parse_message_ipc<T>(json_string: Option<String>) -> anyhow::Result<T>
+pub fn parse_message_ipc<T>(json_bytes: &[u8]) -> anyhow::Result<T>
 where
     for<'a> T: serde::Deserialize<'a>,
 {
-    let parsed: T = serde_json::from_str(
-        json_string
-            .ok_or(anyhow::anyhow!("json payload empty"))?
-            .as_str(),
-    )?;
+    let parsed: T = serde_json::from_slice(json_bytes)?;
     Ok(parsed)
 }
 

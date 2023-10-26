@@ -25,10 +25,8 @@ impl Guest for Component {
             panic!("ft_worker: got bad init message");
         };
 
-        let command = serde_json::from_str::<FTWorkerCommand>(
-            &req.ipc.expect("ft_worker: got empty init message"),
-        )
-        .expect("ft_worker: got unparseable init message");
+        let command = serde_json::from_slice::<FTWorkerCommand>(&req.ipc)
+            .expect("ft_worker: got unparseable init message");
 
         match command {
             FTWorkerCommand::Send {
@@ -56,16 +54,14 @@ impl Guest for Component {
                     &Request {
                         inherit: false,
                         expects_response: Some(timeout),
-                        ipc: Some(
-                            serde_json::to_string(&FTWorkerCommand::Receive {
-                                transfer_id,
-                                file_name,
-                                file_size,
-                                total_chunks,
-                                timeout,
-                            })
-                            .unwrap(),
-                        ),
+                        ipc: serde_json::to_vec(&FTWorkerCommand::Receive {
+                            transfer_id,
+                            file_name,
+                            file_size,
+                            total_chunks,
+                            timeout,
+                        })
+                        .unwrap(),
                         metadata: None,
                     },
                     None,
@@ -77,7 +73,7 @@ impl Guest for Component {
                         }))
                     }
                     Ok((opp_worker, Message::Response((response, _)))) => {
-                        let Ok(FTWorkerProtocol::Ready) = serde_json::from_str(&response.ipc.expect("ft_worker: got empty response")) else {
+                        let Ok(FTWorkerProtocol::Ready) = serde_json::from_slice(&response.ipc) else {
                             respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected));
                             return;
                         };
@@ -97,7 +93,7 @@ impl Guest for Component {
                                     &Request {
                                         inherit: false,
                                         expects_response: Some(timeout),
-                                        ipc: None,
+                                        ipc: vec![],
                                         metadata: None,
                                     },
                                     None,
@@ -116,7 +112,7 @@ impl Guest for Component {
                                 &Request {
                                     inherit: false,
                                     expects_response: None,
-                                    ipc: None,
+                                    ipc: vec![],
                                     metadata: None,
                                 },
                                 None,
@@ -130,9 +126,7 @@ impl Guest for Component {
                             respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected));
                             return;
                         };
-                        let Ok(FTWorkerProtocol::Finished) = serde_json::from_str(
-                            &resp.ipc.expect("ft_worker: got empty response"),
-                        ) else {
+                        let Ok(FTWorkerProtocol::Finished) = serde_json::from_slice(&resp.ipc) else {
                             respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected));
                             return;
                         };
@@ -153,7 +147,7 @@ impl Guest for Component {
                 send_response(
                     &Response {
                         inherit: false,
-                        ipc: Some(serde_json::to_string(&FTWorkerProtocol::Ready).unwrap()),
+                        ipc: serde_json::to_vec(&FTWorkerProtocol::Ready).unwrap(),
                         metadata: None,
                     },
                     None,
@@ -187,7 +181,7 @@ impl Guest for Component {
                 send_response(
                     &Response {
                         inherit: false,
-                        ipc: Some(serde_json::to_string(&FTWorkerProtocol::Finished).unwrap()),
+                        ipc: serde_json::to_vec(&FTWorkerProtocol::Finished).unwrap(),
                         metadata: None,
                     },
                     None,
@@ -198,10 +192,8 @@ impl Guest for Component {
                     &Request {
                         inherit: false,
                         expects_response: None,
-                        ipc: Some(
-                            serde_json::to_string(&FTWorkerResult::ReceiveSuccess(file_name))
-                                .unwrap(),
-                        ),
+                        ipc: serde_json::to_vec(&FTWorkerResult::ReceiveSuccess(file_name))
+                            .unwrap(),
                         metadata: None,
                     },
                     None,
@@ -219,7 +211,7 @@ fn respond_to_parent(result: FTWorkerResult) {
     send_response(
         &Response {
             inherit: false,
-            ipc: Some(serde_json::to_string(&result).unwrap()),
+            ipc: serde_json::to_vec(&result).unwrap(),
             metadata: None,
         },
         None,

@@ -55,7 +55,7 @@ fn send_and_await_response_wrapped(
         &Request {
             inherit: false,
             expects_response: Some(timeout),
-            ipc: request_ipc,
+            ipc: request_ipc.unwrap_or_default().into_bytes(),
             metadata: request_metadata,
         },
         match payload {
@@ -65,7 +65,7 @@ fn send_and_await_response_wrapped(
     ).unwrap() else {
         panic!("");
     };
-    (ipc, metadata)
+    (serde_json::from_slice(&ipc).ok(), metadata)
 }
 
 fn handle_message (
@@ -82,7 +82,7 @@ fn handle_message (
     match message {
         Message::Response(_) => { unimplemented!() },
         Message::Request(Request { inherit: _ , expects_response: _, ipc, metadata: _ }) => {
-            match process_lib::parse_message_ipc(ipc.clone())? {
+            match process_lib::parse_message_ipc(&ipc)? {
                 kv::KeyValueMessage::New { db } => {
                     let vfs_drive = format!("{}{}", PREFIX, db);
                     match db_handle {
@@ -197,7 +197,7 @@ impl Guest for Component {
                         send_response(
                             &Response {
                                 inherit: false,
-                                ipc: Some(serde_json::to_string(&e).unwrap()),
+                                ipc: serde_json::to_vec(&e).unwrap(),
                                 metadata: None,
                             },
                             None,
