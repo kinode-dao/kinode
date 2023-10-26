@@ -131,7 +131,7 @@ version = "0.1.0"
 source = "git+https://github.com/bytecodealliance/cargo-component#d14cef65719d0d186218d1dfe5f04bbbf295dc80"
 dependencies = [
  "cargo-component-macro",
- "wit-bindgen",
+ "wit-bindgen 0.9.0",
 ]
 
 [[package]]
@@ -456,7 +456,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
- "wit-bindgen",
+ "wit-bindgen 0.11.0",
 ]
 
 [[package]]
@@ -968,6 +968,15 @@ checksum = "f5c3d15a04ce994fad2c5442a754b404ab1fee23c903a04a560f84f94fdf63c0"
 dependencies = [
  "bitflags 2.3.3",
  "wit-bindgen-rust-macro",
+]
+
+[[package]]
+name = "wit-bindgen"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8a3e8e965dc50e6eb4410d9a11720719fadc6a1713803ea5f3be390b81c8279"
+dependencies = [
+ "bitflags 2.3.3",
 ]
 
 [[package]]
