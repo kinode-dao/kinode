@@ -56,7 +56,7 @@ version = "0.1.0"
 source = "git+https://github.com/bytecodealliance/cargo-component#36c221e41db3e87dec4c82eadcb9bc8f37626533"
 dependencies = [
  "cargo-component-macro",
- "wit-bindgen 0.11.0",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -91,7 +91,7 @@ dependencies = [
  "pleco",
  "serde",
  "serde_json",
- "wit-bindgen 0.9.0",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -660,15 +660,6 @@ name = "winapi-x86_64-pc-windows-gnu"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
-
-[[package]]
-name = "wit-bindgen"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5c3d15a04ce994fad2c5442a754b404ab1fee23c903a04a560f84f94fdf63c0"
-dependencies = [
- "bitflags 2.4.0",
-]
 
 [[package]]
 name = "wit-bindgen"
