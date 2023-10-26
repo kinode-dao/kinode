@@ -269,9 +269,7 @@ async fn http_handle_messages(
                         // error case here?
                     } else {
                         //  else try deserializing ipc into a HttpResponse
-                        let json = serde_json::from_str::<HttpResponse>(
-                            &response.ipc.clone().unwrap_or_default(),
-                        );
+                        let json = serde_json::from_slice::<HttpResponse>(&response.ipc);
                         match json {
                             Ok(mut response) => {
                                 let Some(payload) = payload else {
@@ -353,11 +351,7 @@ async fn http_handle_messages(
             }
         }
         Message::Request(Request { ipc, .. }) => {
-            let Some(json) = ipc else {
-                return Err(HttpServerError::NoJson);
-            };
-
-            match serde_json::from_str(&json) {
+            match serde_json::from_slice(&ipc) {
                 Ok(message) => {
                     match message {
                         HttpServerMessage::BindPath {
@@ -428,7 +422,7 @@ async fn http_handle_messages(
                                             message: Message::Request(Request {
                                                 inherit: false,
                                                 expects_response: None,
-                                                ipc: Some(serde_json::json!({ // this is the JSON to forward
+                                                ipc: serde_json::json!({ // this is the JSON to forward
                                                     "WebSocketPush": {
                                                         "target": {
                                                             "node": our.clone(), // it's ultimately for us, but through the proxy
@@ -436,7 +430,7 @@ async fn http_handle_messages(
                                                         },
                                                         "is_text": send_text,
                                                     }
-                                                }).to_string()),
+                                                }).to_string().into_bytes(),
                                                 metadata: None,
                                             }),
                                             payload: Some(Payload {
@@ -505,12 +499,11 @@ async fn http_handle_messages(
                                     message: Message::Request(Request {
                                         inherit: false,
                                         expects_response: None,
-                                        ipc: Some(
-                                            serde_json::json!({
-                                                "action": "set-jwt-secret"
-                                            })
-                                            .to_string(),
-                                        ),
+                                        ipc: serde_json::json!({
+                                            "action": "set-jwt-secret"
+                                        })
+                                        .to_string()
+                                        .into_bytes(),
                                         metadata: None,
                                     }),
                                     payload: Some(Payload {
@@ -845,15 +838,14 @@ async fn handler(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: Some(
-                    serde_json::json!({
-                        "GetKeyAction": {
-                            "channel_id": channel_id,
-                            "public_key_hex": public_key_hex,
-                        }
-                    })
-                    .to_string(),
-                ),
+                ipc: serde_json::json!({
+                    "GetKeyAction": {
+                        "channel_id": channel_id,
+                        "public_key_hex": public_key_hex,
+                    }
+                })
+                .to_string()
+                .into_bytes(),
                 metadata: None,
             }),
             payload: None,
@@ -878,18 +870,17 @@ async fn handler(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: Some(15), // no effect on runtime
-                ipc: Some(
-                    serde_json::json!({
-                        "address": address,
-                        "method": method.to_string(),
-                        "raw_path": raw_path.clone(),
-                        "path": path.clone(),
-                        "headers": serialize_headers(&headers),
-                        "query_params": query_params,
-                        "url_params": url_params,
-                    })
-                    .to_string(),
-                ),
+                ipc: serde_json::json!({
+                    "address": address,
+                    "method": method.to_string(),
+                    "raw_path": raw_path.clone(),
+                    "path": path.clone(),
+                    "headers": serialize_headers(&headers),
+                    "query_params": query_params,
+                    "url_params": url_params,
+                })
+                .to_string()
+                .into_bytes(),
                 metadata: None,
             }),
             payload: Some(Payload {

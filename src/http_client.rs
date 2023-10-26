@@ -22,7 +22,7 @@ pub async fn http_client(
             message:
                 Message::Request(Request {
                     expects_response,
-                    ipc: json,
+                    ipc,
                     ..
                 }),
             payload,
@@ -44,7 +44,7 @@ pub async fn http_client(
                 rsvp,
                 expects_response,
                 source.clone(),
-                json,
+                ipc,
                 {
                     if let Some(payload) = payload {
                         Some(payload.bytes)
@@ -73,7 +73,7 @@ async fn handle_message(
     rsvp: Option<Address>,
     expects_response: Option<u64>,
     source: Address,
-    json: Option<String>,
+    json: Vec<u8>,
     body: Option<Vec<u8>>,
     _print_tx: PrintSender,
 ) -> Result<(), HttpClientError> {
@@ -86,15 +86,11 @@ async fn handle_message(
         rsvp.clone()
     };
 
-    let Some(ref json) = json else {
-        return Err(HttpClientError::NoJson);
-    };
-
-    let req: HttpClientRequest = match serde_json::from_str(json) {
+    let req: HttpClientRequest = match serde_json::from_slice(&json) {
         Ok(req) => req,
         Err(e) => {
             return Err(HttpClientError::BadJson {
-                json: json.to_string(),
+                json: String::from_utf8(json).unwrap_or_default(),
                 error: format!("{}", e),
             })
         }
@@ -145,12 +141,10 @@ async fn handle_message(
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: Some(
-                    serde_json::to_string::<Result<HttpClientResponse, HttpClientError>>(&Ok(
-                        http_client_response,
-                    ))
-                    .unwrap(),
-                ),
+                ipc: serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(&Ok(
+                    http_client_response,
+                ))
+                .unwrap(),
                 metadata: None,
             },
             None,
@@ -221,12 +215,8 @@ fn make_error_message(
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: Some(
-                    serde_json::to_string::<Result<HttpClientResponse, HttpClientError>>(&Err(
-                        error,
-                    ))
+                ipc: serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(&Err(error))
                     .unwrap(),
-                ), //  TODO: handle error?
                 metadata: None,
             },
             None,

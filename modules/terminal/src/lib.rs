@@ -6,7 +6,7 @@ mod process_lib;
 
 struct Component;
 
-fn parse_command(our_name: &str, line: String) {
+fn parse_command(our_name: &str, line: &str) {
     let (head, tail) = line.split_once(" ").unwrap_or((&line, ""));
     match head {
         "" | " " => {}
@@ -30,7 +30,7 @@ fn parse_command(our_name: &str, line: String) {
                 &Request {
                     inherit: false,
                     expects_response: Some(5),
-                    ipc: Some(message.into()),
+                    ipc: message.into(),
                     metadata: None,
                 },
                 None,
@@ -69,7 +69,7 @@ fn parse_command(our_name: &str, line: String) {
                 &Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(ipc.into()),
+                    ipc: ipc.into(),
                     metadata: None,
                 },
                 None,
@@ -103,13 +103,10 @@ impl Guest for Component {
                     if our.node != source.node || our.process != source.process {
                         continue;
                     }
-                    let Some(command) = ipc else {
-                        continue;
-                    };
-                    parse_command(&our.node, command);
+                    parse_command(&our.node, std::str::from_utf8(&ipc).unwrap_or_default());
                 }
                 Message::Response((Response { ipc, metadata, .. }, _)) => {
-                    if let Some(txt) = &ipc {
+                    if let Ok(txt) = std::str::from_utf8(&ipc) {
                         print_to_terminal(0, &format!("net response: {}", txt));
                     }
                 }

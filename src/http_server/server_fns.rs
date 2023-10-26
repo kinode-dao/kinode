@@ -28,7 +28,7 @@ pub struct RpcMessage {
     pub process: String,
     pub inherit: Option<bool>,
     pub expects_response: Option<u64>,
-    pub ipc: Option<String>,
+    pub ipc: Vec<u8>,
     pub metadata: Option<String>,
     pub context: Option<String>,
     pub mime: Option<String>,
@@ -307,7 +307,7 @@ pub async fn handle_ws_register(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: Some(serde_json::json!(parsed_msg).to_string()),
+                ipc: serde_json::json!(parsed_msg).to_string().into_bytes(),
                 metadata: None,
             }),
             payload: Some(Payload {
@@ -353,7 +353,7 @@ pub async fn handle_ws_message(
         message: Message::Request(Request {
             inherit: false,
             expects_response: None,
-            ipc: None,
+            ipc: vec![],
             metadata: None,
         }),
         payload: Some(Payload {
@@ -398,21 +398,20 @@ pub async fn handle_encrypted_ws_message(
         message: Message::Request(Request {
             inherit: false,
             expects_response: None,
-            ipc: Some(
-                serde_json::json!({
-                    "DecryptAndForwardAction": {
-                        "channel_id": channel_id.clone(),
-                        "forward_to": target.clone(),
-                        "json": {
-                            "forwarded_from": {
-                                "node": our.clone(),
-                                "process": "http_server:sys:uqbar",
-                            }
-                        },
-                    }
-                })
-                .to_string(),
-            ),
+            ipc: serde_json::json!({
+                "DecryptAndForwardAction": {
+                    "channel_id": channel_id.clone(),
+                    "forward_to": target.clone(),
+                    "json": {
+                        "forwarded_from": {
+                            "node": our.clone(),
+                            "process": "http_server:sys:uqbar",
+                        }
+                    },
+                }
+            })
+            .to_string()
+            .into_bytes(),
             metadata: None,
         }),
         payload: Some(Payload {
@@ -447,7 +446,7 @@ pub async fn proxy_ws_message(
         message: Message::Request(Request {
             inherit: false,
             expects_response: None,
-            ipc: Some(serde_json::json!(parsed_msg).to_string()),
+            ipc: serde_json::json!(parsed_msg).to_string().into_bytes(),
             metadata: None,
         }),
         payload: Some(Payload {
@@ -495,14 +494,13 @@ pub async fn send_ws_disconnect(
         message: Message::Request(Request {
             inherit: false,
             expects_response: None,
-            ipc: Some(
-                serde_json::json!({
-                    "WsProxyDisconnect": {
-                        "channel_id": channel_id.clone(),
-                    }
-                })
-                .to_string(),
-            ),
+            ipc: serde_json::json!({
+                "WsProxyDisconnect": {
+                    "channel_id": channel_id.clone(),
+                }
+            })
+            .to_string()
+            .into_bytes(),
             metadata: None,
         }),
         payload: Some(Payload {
@@ -532,7 +530,7 @@ pub fn make_error_message(
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: Some(serde_json::to_string(&error).unwrap()),
+                ipc: serde_json::to_vec(&error).unwrap(),
                 metadata: None,
             },
             None,

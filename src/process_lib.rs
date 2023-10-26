@@ -209,7 +209,7 @@ pub enum AddressParseError {
 pub fn send_and_await_response(
     target: &Address,
     inherit: bool,
-    ipc: Option<Json>,
+    ipc: Vec<u8>,
     metadata: Option<Json>,
     payload: Option<&Payload>,
     timeout: u64,
@@ -229,9 +229,9 @@ pub fn send_and_await_response(
 pub fn send_request(
     target: &Address,
     inherit: bool,
-    ipc: Option<Json>,
+    ipc: Vec<u8>,
     metadata: Option<Json>,
-    context: Option<&Json>,
+    context: Option<&Vec<u8>>,
     payload: Option<&Payload>,
 ) {
     super::bindings::send_request(

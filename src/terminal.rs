@@ -609,7 +609,7 @@ pub async fn terminal(
                                             message: Message::Request(Request {
                                                 inherit: false,
                                                 expects_response: None,
-                                                ipc: Some(command),
+                                                ipc: command.into_bytes(),
                                                 metadata: None,
                                             }),
                                             payload: None,

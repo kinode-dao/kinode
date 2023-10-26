@@ -163,12 +163,10 @@ impl UqProcessImports for ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: Some(
-                    serde_json::to_string(&t::FsAction::GetState(
-                        self.process.metadata.our.process.clone(),
-                    ))
-                    .unwrap(),
-                ),
+                ipc: serde_json::to_vec(&t::FsAction::GetState(
+                    self.process.metadata.our.process.clone(),
+                ))
+                .unwrap(),
                 metadata: None,
             },
             None,
@@ -206,12 +204,10 @@ impl UqProcessImports for ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: Some(
-                    serde_json::to_string(&t::FsAction::SetState(
-                        self.process.metadata.our.process.clone(),
-                    ))
-                    .unwrap(),
-                ),
+                ipc: serde_json::to_vec(&t::FsAction::SetState(
+                    self.process.metadata.our.process.clone(),
+                ))
+                .unwrap(),
                 metadata: None,
             },
             Some(Payload { mime: None, bytes }),
@@ -247,12 +243,10 @@ impl UqProcessImports for ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: Some(
-                    serde_json::to_string(&t::FsAction::DeleteState(
-                        self.process.metadata.our.process.clone(),
-                    ))
-                    .unwrap(),
-                ),
+                ipc: serde_json::to_vec(&t::FsAction::DeleteState(
+                    self.process.metadata.our.process.clone(),
+                ))
+                .unwrap(),
                 metadata: None,
             },
             None,
@@ -300,13 +294,11 @@ impl UqProcessImports for ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: Some(
-                    serde_json::to_string(&t::VfsRequest {
+                ipc: serde_json::to_vec(&t::VfsRequest {
                         drive: our_drive_name.clone(),
                         action: t::VfsAction::GetHash(wasm_path.clone()),
                     })
                     .unwrap(),
-                ),
                 metadata: None,
             },
             None,
@@ -318,13 +310,13 @@ impl UqProcessImports for ProcessWasi {
             self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = hash_response
+        let wit::Message::Response((wit::Response { ipc, .. }, _)) = hash_response
         else {
             // reset payload to what it was
             self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let t::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc).unwrap() else {
+        let t::VfsResponse::GetHash(Some(hash)) = serde_json::from_slice(&ipc).unwrap() else {
             // reset payload to what it was
             self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
@@ -336,13 +328,11 @@ impl UqProcessImports for ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: Some(
-                    serde_json::to_string(&t::VfsRequest {
+                ipc: serde_json::to_vec(&t::VfsRequest {
                         drive: our_drive_name,
                         action: t::VfsAction::GetEntry(wasm_path.clone()),
                     })
                     .unwrap(),
-                ),
                 metadata: None,
             },
             None,
@@ -381,8 +371,7 @@ impl UqProcessImports for ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5), // TODO evaluate
-                ipc: Some(
-                    serde_json::to_string(&t::KernelCommand::StartProcess {
+                ipc: serde_json::to_vec(&t::KernelCommand::StartProcess {
                         id: new_process_id.clone(),
                         wasm_bytes_handle: hash,
                         on_panic: de_wit_on_panic(on_panic),
@@ -426,7 +415,6 @@ impl UqProcessImports for ProcessWasi {
                         public,
                     })
                     .unwrap(),
-                ),
                 metadata: None,
             },
             Some(wit::Payload {
@@ -442,10 +430,10 @@ impl UqProcessImports for ProcessWasi {
         };
         // reset payload to what it was
         self.process.last_payload = old_last_payload;
-        let wit::Message::Response((wit::Response { ipc: Some(ipc), .. }, _)) = response else {
+        let wit::Message::Response((wit::Response { ipc, .. }, _)) = response else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let t::KernelResponse::StartedProcess = serde_json::from_str(&ipc).unwrap() else {
+        let t::KernelResponse::StartedProcess = serde_json::from_slice(&ipc).unwrap() else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         // child processes are always able to Message parent
@@ -1090,10 +1078,7 @@ async fn persist_state(
             message: t::Message::Request(t::Request {
                 inherit: true,
                 expects_response: None,
-                ipc: Some(
-                    serde_json::to_string(&t::FsAction::SetState(KERNEL_PROCESS_ID.clone()))
-                        .unwrap(),
-                ),
+                ipc: serde_json::to_vec(&t::FsAction::SetState(KERNEL_PROCESS_ID.clone())).unwrap(),
                 metadata: None,
             }),
             payload: Some(t::Payload { mime: None, bytes }),
@@ -1134,7 +1119,7 @@ async fn make_process_loop(
                     == t::Message::Request(t::Request {
                         inherit: false,
                         expects_response: None,
-                        ipc: Some("booted".into()),
+                        ipc: "booted".as_bytes().to_vec(),
                         metadata: None,
                     }))
             {
@@ -1274,12 +1259,10 @@ async fn make_process_loop(
                     message: t::Message::Request(t::Request {
                         inherit: false,
                         expects_response: None,
-                        ipc: Some(
-                            serde_json::to_string(&t::KernelCommand::KillProcess(
-                                metadata.our.process.clone(),
-                            ))
-                            .unwrap(),
-                        ),
+                        ipc: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                            metadata.our.process.clone(),
+                        ))
+                        .unwrap(),
                         metadata: None,
                     }),
                     payload: None,
@@ -1302,18 +1285,16 @@ async fn make_process_loop(
                             message: t::Message::Request(t::Request {
                                 inherit: false,
                                 expects_response: None,
-                                ipc: Some(
-                                    serde_json::to_string(&t::KernelCommand::RebootProcess {
-                                        process_id: metadata.our.process.clone(),
-                                        persisted: t::PersistedProcess {
-                                            wasm_bytes_handle: metadata.wasm_bytes_handle,
-                                            on_panic: metadata.on_panic,
-                                            capabilities: initial_capabilities,
-                                            public: metadata.public,
-                                        },
-                                    })
-                                    .unwrap(),
-                                ),
+                                ipc: serde_json::to_vec(&t::KernelCommand::RebootProcess {
+                                    process_id: metadata.our.process.clone(),
+                                    persisted: t::PersistedProcess {
+                                        wasm_bytes_handle: metadata.wasm_bytes_handle,
+                                        on_panic: metadata.on_panic,
+                                        capabilities: initial_capabilities,
+                                        public: metadata.public,
+                                    },
+                                })
+                                .unwrap(),
                                 metadata: None,
                             }),
                             payload: None,
@@ -1365,7 +1346,7 @@ async fn handle_kernel_request(
     let t::Message::Request(request) = km.message else {
         return;
     };
-    let command: t::KernelCommand = match serde_json::from_str(&request.ipc.unwrap_or_default()) {
+    let command: t::KernelCommand = match serde_json::from_slice(&request.ipc) {
         Err(e) => {
             send_to_terminal
                 .send(t::Printout {
@@ -1399,7 +1380,7 @@ async fn handle_kernel_request(
                         message: t::Message::Request(t::Request {
                             inherit: false,
                             expects_response: None,
-                            ipc: Some("booted".into()),
+                            ipc: "booted".as_bytes().to_vec(),
                             metadata: None,
                         }),
                         payload: None,
@@ -1445,10 +1426,8 @@ async fn handle_kernel_request(
                         message: t::Message::Response((
                             t::Response {
                                 inherit: false,
-                                ipc: Some(
-                                    serde_json::to_string(&t::KernelResponse::StartProcessError)
+                                ipc: serde_json::to_vec(&t::KernelResponse::StartProcessError)
                                         .unwrap(),
-                                ),
                                 metadata: None,
                             },
                             None,
@@ -1545,10 +1524,8 @@ async fn handle_kernel_request(
                     message: t::Message::Request(t::Request {
                         inherit: true,
                         expects_response: Some(5), // TODO evaluate
-                        ipc: Some(
-                            serde_json::to_string(&t::FsAction::Read(persisted.wasm_bytes_handle))
-                                .unwrap(),
-                        ),
+                        ipc: serde_json::to_vec(&t::FsAction::Read(persisted.wasm_bytes_handle))
+                            .unwrap(),
                         metadata: Some(
                             serde_json::to_string(&StartProcessMetadata {
                                 source: km.source,
@@ -1611,12 +1588,8 @@ async fn handle_kernel_request(
                     message: t::Message::Response((
                         t::Response {
                             inherit: false,
-                            ipc: Some(
-                                serde_json::to_string(&t::KernelResponse::KilledProcess(
-                                    process_id,
-                                ))
+                            ipc: serde_json::to_vec(&t::KernelResponse::KilledProcess(process_id))
                                 .unwrap(),
-                            ),
                             metadata: None,
                         },
                         None,
@@ -1805,7 +1778,7 @@ async fn start_process(
             message: t::Message::Response((
                 t::Response {
                     inherit: false,
-                    ipc: Some(serde_json::to_string(&t::KernelResponse::StartedProcess).unwrap()),
+                    ipc: serde_json::to_vec(&t::KernelResponse::StartedProcess).unwrap(),
                     metadata: None,
                 },
                 None,
@@ -1895,13 +1868,11 @@ async fn make_event_loop(
                         message: t::Message::Request(t::Request {
                             inherit: false,
                             expects_response: None,
-                            ipc: Some(
-                                serde_json::to_string(&t::KernelCommand::RebootProcess {
-                                    process_id: process_id.clone(),
-                                    persisted: persisted.clone(),
-                                })
-                                .unwrap(),
-                            ),
+                            ipc: serde_json::to_vec(&t::KernelCommand::RebootProcess {
+                                process_id: process_id.clone(),
+                                persisted: persisted.clone(),
+                            })
+                            .unwrap(),
                             metadata: None,
                         }),
                         payload: None,
@@ -1953,7 +1924,7 @@ async fn make_event_loop(
                 message: t::Message::Request(t::Request {
                     inherit: true,
                     expects_response: None,
-                    ipc: Some(serde_json::to_string(&t::KernelCommand::Booted).unwrap()),
+                    ipc: serde_json::to_vec(&t::KernelCommand::Booted).unwrap(),
                     metadata: None,
                 }),
                 payload: None,
