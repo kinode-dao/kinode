@@ -31,11 +31,11 @@ fn send_and_await_response_wrapped(
     target_process: String,
     target_package: String,
     target_publisher: String,
-    request_ipc: Option<String>,
+    request_ipc: Vec<u8>,
     request_metadata: Option<String>,
     payload: Option<(Option<String>, Vec<u8>)>,
     timeout: u64,
-) -> (Option<String>, Option<String>) {
+) -> (Vec<u8>, Option<String>) {
     let payload = match payload {
         None => None,
         Some((mime, bytes)) => Some(Payload { mime, bytes }),
@@ -55,7 +55,7 @@ fn send_and_await_response_wrapped(
         &Request {
             inherit: false,
             expects_response: Some(timeout),
-            ipc: request_ipc.unwrap_or_default().into_bytes(),
+            ipc: request_ipc,
             metadata: request_metadata,
         },
         match payload {
@@ -65,7 +65,7 @@ fn send_and_await_response_wrapped(
     ).unwrap() else {
         panic!("");
     };
-    (serde_json::from_slice(&ipc).ok(), metadata)
+    (ipc, metadata)
 }
 
 fn handle_message (
