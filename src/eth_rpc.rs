@@ -123,9 +123,9 @@ pub async fn eth_rpc(
                         message: Message::Response((
                             Response {
                                 inherit: false,
-                                ipc: serde_json::to_vec::<Result<u64, EthRpcError>>(&Ok(
-                                    message.id,
-                                ))
+                                ipc: serde_json::to_vec::<Result<u64, EthRpcError>>(
+                                    &Ok(message.id),
+                                )
                                 .unwrap(),
                                 metadata: None,
                             },

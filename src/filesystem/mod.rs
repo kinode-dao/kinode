@@ -193,10 +193,10 @@ async fn bootstrap(
                 inherit: false,
                 expects_response: None,
                 ipc: serde_json::to_vec::<VfsRequest>(&VfsRequest {
-                        drive: our_drive_name.clone(),
-                        action: VfsAction::New,
-                    })
-                    .unwrap(),
+                    drive: our_drive_name.clone(),
+                    action: VfsAction::New,
+                })
+                .unwrap(),
                 metadata: None,
             }),
             payload: None,
@@ -232,13 +232,13 @@ async fn bootstrap(
                         inherit: false,
                         expects_response: None,
                         ipc: serde_json::to_vec::<VfsRequest>(&VfsRequest {
-                                drive: our_drive_name.clone(),
-                                action: VfsAction::Add {
-                                    full_path: file_path,
-                                    entry_type: AddEntryType::NewFile,
-                                },
-                            })
-                            .unwrap(),
+                            drive: our_drive_name.clone(),
+                            action: VfsAction::Add {
+                                full_path: file_path,
+                                entry_type: AddEntryType::NewFile,
+                            },
+                        })
+                        .unwrap(),
                         metadata: None,
                     }),
                     payload: Some(Payload {

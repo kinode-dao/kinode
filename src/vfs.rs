@@ -230,8 +230,7 @@ async fn load_state_from_reboot(
     let Message::Response((Response { ipc, .. }, None)) = message else {
         return ();
     };
-    let Ok(Ok(FsResponse::GetState)) =
-        serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
+    let Ok(Ok(FsResponse::GetState)) = serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
     else {
         return ();
     };
@@ -1020,7 +1019,8 @@ async fn match_request(
                                 panic!("")
                             };
                             let Ok(FsResponse::Write(hash)) =
-                                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
+                                    .unwrap()
                             else {
                                 panic!("");
                             };
@@ -1430,7 +1430,8 @@ async fn match_request(
                                 panic!("");
                             };
                             let Ok(FsResponse::Read(read_hash)) =
-                                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
+                                    .unwrap()
                             else {
                                 println!("vfs: GetEntry fail fs error\r");
                                 panic!("");

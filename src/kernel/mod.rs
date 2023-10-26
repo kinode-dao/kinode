@@ -295,10 +295,10 @@ impl UqProcessImports for ProcessWasi {
                 inherit: false,
                 expects_response: Some(5),
                 ipc: serde_json::to_vec(&t::VfsRequest {
-                        drive: our_drive_name.clone(),
-                        action: t::VfsAction::GetHash(wasm_path.clone()),
-                    })
-                    .unwrap(),
+                    drive: our_drive_name.clone(),
+                    action: t::VfsAction::GetHash(wasm_path.clone()),
+                })
+                .unwrap(),
                 metadata: None,
             },
             None,
@@ -310,8 +310,7 @@ impl UqProcessImports for ProcessWasi {
             self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let wit::Message::Response((wit::Response { ipc, .. }, _)) = hash_response
-        else {
+        let wit::Message::Response((wit::Response { ipc, .. }, _)) = hash_response else {
             // reset payload to what it was
             self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
@@ -329,10 +328,10 @@ impl UqProcessImports for ProcessWasi {
                 inherit: false,
                 expects_response: Some(5),
                 ipc: serde_json::to_vec(&t::VfsRequest {
-                        drive: our_drive_name,
-                        action: t::VfsAction::GetEntry(wasm_path.clone()),
-                    })
-                    .unwrap(),
+                    drive: our_drive_name,
+                    action: t::VfsAction::GetEntry(wasm_path.clone()),
+                })
+                .unwrap(),
                 metadata: None,
             },
             None,
@@ -372,49 +371,49 @@ impl UqProcessImports for ProcessWasi {
                 inherit: false,
                 expects_response: Some(5), // TODO evaluate
                 ipc: serde_json::to_vec(&t::KernelCommand::StartProcess {
-                        id: new_process_id.clone(),
-                        wasm_bytes_handle: hash,
-                        on_panic: de_wit_on_panic(on_panic),
-                        // TODO
-                        initial_capabilities: match capabilities {
-                            wit::Capabilities::None => HashSet::new(),
-                            wit::Capabilities::All => {
-                                let (tx, rx) = tokio::sync::oneshot::channel();
-                                let _ = self
-                                    .process
-                                    .caps_oracle
-                                    .send(t::CapMessage::GetAll {
-                                        on: self.process.metadata.our.process.clone(),
-                                        responder: tx,
-                                    })
-                                    .await;
-                                rx.await
-                                    .unwrap()
-                                    .into_iter()
-                                    .map(|cap| t::SignedCapability {
-                                        issuer: cap.issuer.clone(),
-                                        params: cap.params.clone(),
-                                        signature: self
-                                            .process
-                                            .keypair
-                                            .sign(&bincode::serialize(&cap).unwrap())
-                                            .as_ref()
-                                            .to_vec(),
-                                    })
-                                    .collect()
-                            }
-                            wit::Capabilities::Some(caps) => caps
+                    id: new_process_id.clone(),
+                    wasm_bytes_handle: hash,
+                    on_panic: de_wit_on_panic(on_panic),
+                    // TODO
+                    initial_capabilities: match capabilities {
+                        wit::Capabilities::None => HashSet::new(),
+                        wit::Capabilities::All => {
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            let _ = self
+                                .process
+                                .caps_oracle
+                                .send(t::CapMessage::GetAll {
+                                    on: self.process.metadata.our.process.clone(),
+                                    responder: tx,
+                                })
+                                .await;
+                            rx.await
+                                .unwrap()
                                 .into_iter()
                                 .map(|cap| t::SignedCapability {
-                                    issuer: t::Address::de_wit(cap.issuer),
-                                    params: cap.params,
-                                    signature: cap.signature,
+                                    issuer: cap.issuer.clone(),
+                                    params: cap.params.clone(),
+                                    signature: self
+                                        .process
+                                        .keypair
+                                        .sign(&bincode::serialize(&cap).unwrap())
+                                        .as_ref()
+                                        .to_vec(),
                                 })
-                                .collect(),
-                        },
-                        public,
-                    })
-                    .unwrap(),
+                                .collect()
+                        }
+                        wit::Capabilities::Some(caps) => caps
+                            .into_iter()
+                            .map(|cap| t::SignedCapability {
+                                issuer: t::Address::de_wit(cap.issuer),
+                                params: cap.params,
+                                signature: cap.signature,
+                            })
+                            .collect(),
+                    },
+                    public,
+                })
+                .unwrap(),
                 metadata: None,
             },
             Some(wit::Payload {
@@ -1427,7 +1426,7 @@ async fn handle_kernel_request(
                             t::Response {
                                 inherit: false,
                                 ipc: serde_json::to_vec(&t::KernelResponse::StartProcessError)
-                                        .unwrap(),
+                                    .unwrap(),
                                 metadata: None,
                             },
                             None,
