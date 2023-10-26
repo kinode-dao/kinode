@@ -34,15 +34,15 @@ type DriveToQueue = Arc<Mutex<HashMap<String, RequestQueue>>>;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Entry {
     name: String,
-    full_path: String, //  full_path, ending with `/` for dir
+    full_path: String, 
     entry_type: EntryType,
     // ...  //  general metadata?
 }
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 enum EntryType {
     Dir { parent: Key, children: HashSet<Key> },
     File { parent: Key }, //  hash could be generalized to `location` if we want to be able to point at, e.g., remote files
-                          // ...  //  symlinks?
 }
 
 impl Vfs {
@@ -70,31 +70,76 @@ impl Vfs {
     }
 }
 
-fn make_dir_name(full_path: &str) -> (String, String) {
-    if full_path == "/" {
-        return ("/".into(), "".into()); //  root case
-    }
-    let mut split_path: Vec<&str> = full_path.split("/").collect();
-    let _ = split_path.pop();
-    let name = format!("{}/", split_path.pop().unwrap());
-    let path = split_path.join("/");
-    let path = if path == "" {
-        "/".into()
-    } else {
-        format!("{}/", path)
-    };
-    (name, path)
+fn clean_path(path: &str) -> String {
+    let cleaned = path.trim_start_matches('/').trim_end_matches('/');
+    format!("/{}", cleaned)
 }
 
-fn make_file_name(full_path: &str) -> (String, String) {
-    let mut split_path: Vec<&str> = full_path.split("/").collect();
-    let name = split_path.pop().unwrap_or("").to_string();
-    let path = if split_path.is_empty() {
-        String::new()
+fn get_parent_path(path: &str) -> String {
+    let mut split_path: Vec<&str> = path.split("/").collect();
+    split_path.pop();
+    let parent_path = split_path.join("/");
+    if parent_path.is_empty() {
+        "/".to_string()
     } else {
-        format!("{}/", split_path.join("/"))
+        parent_path
+    }
+}
+
+async fn create_entry(vfs: &mut MutexGuard<Vfs>, path: &str, entry_type: EntryType) -> Result<Key, VfsError> {
+    if let Some(key) = vfs.path_to_key.get(path) {
+        return Ok(key.clone());
+    }
+
+    let parent_path = get_parent_path(path);
+    let parent_key = create_entry(vfs, &parent_path, EntryType::Dir { parent: Key::Dir { id: 0 }, children: HashSet::new() }).await?;
+
+    let key = match entry_type {
+        EntryType::Dir { .. } => Key::Dir { id: rand::random() },
+        EntryType::File { .. } => Key::File { id: rand::random() },
     };
-    (name, path)
+    let entry = Entry {
+        name: path.split("/").last().unwrap().to_string(),
+        full_path: path.to_string(),
+        entry_type: entry_type,
+    };
+    vfs.key_to_entry.insert(key.clone(), entry);
+    vfs.path_to_key.insert(path.to_string(), key.clone());
+
+    if let Some(parent_entry) = vfs.key_to_entry.get_mut(&parent_key) {
+        if let EntryType::Dir { children, .. } = &mut parent_entry.entry_type {
+            children.insert(key.clone());
+        }
+    }
+
+    Ok(key)
+}
+
+async fn rename_entry(vfs: &mut MutexGuard<Vfs>, old_path: &str, new_path: &str) -> Result<(), VfsError> {
+    let key = match vfs.path_to_key.remove(old_path) {
+        Some(key) => key,
+        None => return Err(VfsError::EntryNotFound),
+    };
+    let mut entry = match vfs.key_to_entry.remove(&key) {
+        Some(entry) => entry,
+        None => return Err(VfsError::EntryNotFound),
+    };
+    entry.name = new_path.split("/").last().unwrap().to_string();
+    entry.full_path = new_path.to_string();
+    vfs.key_to_entry.insert(key.clone(), entry);
+    vfs.path_to_key.insert(new_path.to_string(), key);
+
+    // if the entry is a directory, recursively update the paths of its children
+    if let EntryType::Dir { children, .. } = &vfs.key_to_entry.get(&key).unwrap().entry_type {
+        for child_key in children {
+            let child_entry = vfs.key_to_entry.get(child_key).unwrap();
+            let old_child_path = child_entry.full_path.clone();
+            let new_child_path = old_child_path.replace(old_path, new_path);
+            rename_entry(vfs, &old_child_path, &new_child_path).await?;
+        }
+    }
+
+    Ok(())
 }
 
 fn make_error_message(
@@ -530,7 +575,6 @@ pub async fn vfs(
     }
 }
 
-//  TODO: error handling: send error messages to caller
 async fn handle_request(
     our_node: String,
     id: u64,
@@ -702,9 +746,7 @@ async fn match_request(
         } => {
             match entry_type {
                 AddEntryType::Dir => {
-                    if !full_path.starts_with('/') {
-                        full_path.insert(0, '/');
-                    }
+                    full_path = clean_path(&full_path);
 
                     let mut vfs = vfs.lock().await;
                     if vfs.path_to_key.contains_key(&full_path) {
@@ -717,46 +759,15 @@ async fn match_request(
                             .unwrap();
                         return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None));
                     };
-
-                    let (name, parent_path) = make_dir_name(&full_path);
-                    let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
-                        println!("fp, pp: {}, {}", full_path, parent_path);
-                        return Err(VfsError::InternalError);
-                    };
-                    let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
-                        return Err(VfsError::InternalError);
-                    };
-                    let EntryType::Dir {
-                        children: ref mut parent_children,
-                        ..
-                    } = parent_entry.entry_type
-                    else {
-                        return Err(VfsError::InternalError);
-                    };
-                    let key = Key::Dir { id: rand::random() };
-                    vfs.key_to_entry.insert(
-                        key.clone(),
-                        Entry {
-                            name,
-                            full_path: full_path.clone(),
-                            entry_type: EntryType::Dir {
-                                parent: parent_key.clone(),
-                                children: HashSet::new(),
-                            },
+                    match create_entry(&mut vfs, &full_path, EntryType::Dir { parent: Key::Dir { id: 0 }, children: HashSet::new() }).await {
+                        Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
+                        Err(e) => {
+                            return Err(e);
                         },
-                    );
-                    parent_children.insert(key.clone());
-                    vfs.path_to_key.insert(parent_path, parent_key.clone());
-                    vfs.key_to_entry.insert(parent_key, parent_entry);
-                    vfs.path_to_key.insert(full_path.clone(), key.clone());
+                    }
                 }
                 AddEntryType::NewFile => {
-                    if !full_path.starts_with('/') {
-                        full_path.insert(0, '/');
-                    }
-                    while full_path.ends_with('/') && full_path.len() > 1 {
-                        full_path.pop();
-                    }
+                    fullpath = clean_path(&fullpath);
 
                     let hash = {
                         let mut vfs = vfs.lock().await;
@@ -819,51 +830,15 @@ async fn match_request(
                     else {
                         return Err(VfsError::InternalError);
                     };
-
-                    let (name, parent_path) = make_file_name(&full_path);
-                    println!(
-                        "name, parent_path, full_path: {}, {}, {}",
-                        name, parent_path, full_path
-                    );
-                    let mut vfs = vfs.lock().await;
-                    let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
-                        return Err(VfsError::InternalError);
-                    };
-
-                    let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
-                        return Err(VfsError::InternalError);
-                    };
-
-                    let EntryType::Dir {
-                        children: ref mut parent_children,
-                        ..
-                    } = parent_entry.entry_type
-                    else {
-                        return Err(VfsError::InternalError);
-                    };
-                    let key = Key::File { id: hash };
-                    vfs.key_to_entry.insert(
-                        key.clone(),
-                        Entry {
-                            name,
-                            full_path: full_path.clone(),
-                            entry_type: EntryType::File {
-                                parent: parent_key.clone(),
-                            },
+                    match create_entry(&mut vfs, &full_path, EntryType::File { parent: Key::File { id: hash } }).await {
+                        Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
+                        Err(e) => {
+                            return Err(e);
                         },
-                    );
-                    parent_children.insert(key.clone());
-                    vfs.path_to_key.insert(parent_path, parent_key.clone());
-                    vfs.key_to_entry.insert(parent_key, parent_entry);
-                    vfs.path_to_key.insert(full_path.clone(), key.clone());
+                    }
                 }
                 AddEntryType::ExistingFile { hash } => {
-                    if !full_path.starts_with('/') {
-                        full_path.insert(0, '/');
-                    }
-                    while full_path.ends_with('/') && full_path.len() > 1 {
-                        full_path.pop();
-                    }
+                    full_path = clean_path(&full_path);
 
                     let mut vfs = vfs.lock().await;
                     if vfs.path_to_key.contains_key(&full_path) {
@@ -880,35 +855,12 @@ async fn match_request(
                         };
                         vfs.key_to_entry.remove(&old_key);
                     };
-                    let (name, parent_path) = make_file_name(&full_path);
-                    let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
-                        return Err(VfsError::InternalError);
-                    };
-                    let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key) else {
-                        return Err(VfsError::InternalError);
-                    };
-                    let EntryType::Dir {
-                        children: ref mut parent_children,
-                        ..
-                    } = parent_entry.entry_type
-                    else {
-                        return Err(VfsError::InternalError);
-                    };
-                    let key = Key::File { id: hash };
-                    vfs.key_to_entry.insert(
-                        key.clone(),
-                        Entry {
-                            name,
-                            full_path: full_path.clone(),
-                            entry_type: EntryType::File {
-                                parent: parent_key.clone(),
-                            },
+                    match create_entry(&mut vfs, &full_path, EntryType::File { parent: Key::File { id: hash } }).await {
+                        Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
+                        Err(e) => {
+                            return Err(e);
                         },
-                    );
-                    parent_children.insert(key.clone());
-                    vfs.path_to_key.insert(parent_path, parent_key.clone());
-                    vfs.key_to_entry.insert(parent_key, parent_entry);
-                    vfs.path_to_key.insert(full_path.clone(), key.clone());
+                    }
                 }
                 AddEntryType::ZipArchive => {
                     let Some(payload) = payload else {
@@ -1062,70 +1014,23 @@ async fn match_request(
         }
         VfsAction::Rename {
             mut full_path,
-            new_full_path,
+            mut new_full_path,
         } => {
+            full_path = clean_path(&full_path);
+            new_full_path = clean_path(&new_full_path);
+
             let mut vfs = vfs.lock().await;
-            let Some(key) = vfs.path_to_key.remove(&full_path) else {
-                send_to_terminal
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!("vfs: can't rename: nonexistent file {}", full_path),
-                    })
-                    .await
-                    .unwrap();
-                return Err(VfsError::EntryNotFound);
-            };
-            let Some(mut entry) = vfs.key_to_entry.remove(&key) else {
-                send_to_terminal
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!("vfs: can't rename: nonexistent file {}", full_path),
-                    })
-                    .await
-                    .unwrap();
-                return Err(VfsError::EntryNotFound);
-            };
-            match entry.entry_type {
-                EntryType::Dir { .. } => {
-                    if vfs.path_to_key.contains_key(&new_full_path) {
-                        send_to_terminal
-                            .send(Printout {
-                                verbosity: 0,
-                                content: format!("vfs: not overwriting dir {}", new_full_path),
-                            })
-                            .await
-                            .unwrap();
-                        vfs.path_to_key.insert(full_path, key);
-                        return Err(VfsError::InternalError);
-                    };
-                    let (name, _) = make_dir_name(&new_full_path);
-                    entry.name = name;
-                    entry.full_path = new_full_path.clone();
-                    vfs.path_to_key.insert(new_full_path.clone(), key.clone());
-                    vfs.key_to_entry.insert(key, entry);
-                    //  TODO: recursively apply path update to all children
-                    //  update_child_paths(full_path, new_full_path, children);
-                }
-                EntryType::File { parent: _ } => {
-                    if vfs.path_to_key.contains_key(&new_full_path) {
-                        let _ = send_to_terminal
-                            .send(Printout {
-                                verbosity: 1,
-                                content: format!("vfs: overwriting file {}", new_full_path),
-                            })
-                            .await;
-                    };
-                    let (name, _) = make_file_name(&new_full_path);
-                    entry.name = name;
-                    entry.full_path = new_full_path.clone();
-                    vfs.path_to_key.insert(new_full_path.clone(), key.clone());
-                    vfs.key_to_entry.insert(key, entry);
-                }
+            match rename_entry(&mut vfs, &full_path, &new_full_path).await {
+                Ok(_) => {},
+                Err(e) => {
+                    return Err(e);
+                },
             }
+
             persist_state(send_to_persist, &mut recv_response, id).await;
             (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
-        VfsAction::Delete(full_path) => {
+        VfsAction::Delete(mut full_path) => {
             let mut vfs = vfs.lock().await;
             let Some(key) = vfs.path_to_key.remove(&full_path) else {
                 send_to_terminal
@@ -1201,7 +1106,9 @@ async fn match_request(
                 Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
             }
         }
-        VfsAction::WriteOffset { full_path, offset } => {
+        VfsAction::WriteOffset { mut full_path, offset } => {
+            full_path = clean_path(&full_path);
+
             let file_hash = {
                 let mut vfs = vfs.lock().await;
                 let Some(key) = vfs.path_to_key.remove(&full_path) else {
@@ -1257,7 +1164,9 @@ async fn match_request(
                 Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
             }
         }
-        VfsAction::SetSize { full_path, size } => {
+        VfsAction::SetSize { mut full_path, size } => {
+            full_path = clean_path(&full_path);
+
             let file_hash = {
                 let mut vfs = vfs.lock().await;
                 let Some(key) = vfs.path_to_key.remove(&full_path) else {
@@ -1347,133 +1256,99 @@ async fn match_request(
             );
             (ipc, None)
         }
-        VfsAction::GetEntry(ref full_path) => {
-            let (key, entry, paths) = {
-                let mut vfs = vfs.lock().await;
-                let key = vfs.path_to_key.remove(full_path);
-                match key {
-                    None => (None, None, vec![]),
-                    Some(key) => {
-                        vfs.path_to_key.insert(full_path.clone(), key.clone());
-                        let entry = vfs.key_to_entry.remove(&key);
-                        match entry {
-                            None => (Some(key), None, vec![]),
-                            Some(ref e) => {
-                                vfs.key_to_entry.insert(key.clone(), e.clone());
-                                match e.entry_type {
-                                    EntryType::File { parent: _ } => (Some(key), entry, vec![]),
-                                    EntryType::Dir {
-                                        parent: _,
-                                        ref children,
-                                    } => {
-                                        let mut paths: Vec<String> = Vec::new();
-                                        for child in children {
-                                            let Some(child) = vfs.key_to_entry.get(&child) else {
-                                                send_to_terminal
-                                                    .send(Printout {
-                                                        verbosity: 0,
-                                                        content: format!(
-                                                            "vfs: child missing for: {}",
-                                                            full_path
-                                                        ),
-                                                    })
-                                                    .await
-                                                    .unwrap();
-                                                continue;
-                                            };
-                                            paths.push(child.full_path.clone());
-                                        }
-                                        paths.sort();
-                                        (Some(key), entry, paths)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            };
-
+        VfsAction::GetEntry(mut full_path) => {
+            full_path = clean_path(&full_path);
+            let vfs = vfs.lock().await;
+            let key = vfs.path_to_key.get(&full_path);
             match key {
                 None => return Err(VfsError::EntryNotFound),
-                Some(key) => match entry {
-                    None => return Err(VfsError::EntryNotFound),
-                    Some(entry) => match entry.entry_type {
-                        EntryType::Dir {
-                            parent: _,
-                            children: _,
-                        } => (
-                            Some(
-                                serde_json::to_string(&VfsResponse::GetEntry {
-                                    is_file: false,
-                                    children: paths,
-                                })
-                                .unwrap(),
-                            ),
-                            None,
-                        ),
-                        EntryType::File { parent: _ } => {
-                            let Key::File { id: file_hash } = key else {
-                                return Err(VfsError::InternalError);
-                            };
-                            let _ = send_to_loop
-                                .send(KernelMessage {
-                                    id,
-                                    source: Address {
-                                        node: our_node.clone(),
-                                        process: VFS_PROCESS_ID.clone(),
-                                    },
-                                    target: Address {
-                                        node: our_node.clone(),
-                                        process: FILESYSTEM_PROCESS_ID.clone(),
-                                    },
-                                    rsvp: None,
-                                    message: Message::Request(Request {
-                                        inherit: true,
-                                        expects_response: Some(5), // TODO evaluate
-                                        ipc: Some(
-                                            serde_json::to_string(&FsAction::Read(
-                                                file_hash.clone(),
-                                            ))
-                                            .unwrap(),
-                                        ),
-                                        metadata: None,
-                                    }),
-                                    payload: None,
-                                    signed_capabilities: None,
-                                })
-                                .await;
-                            let read_response = recv_response.recv().await.unwrap();
-                            let KernelMessage {
-                                message, payload, ..
-                            } = read_response;
-                            let Message::Response((Response { ipc, .. }, None)) = message else {
-                                return Err(VfsError::InternalError);
-                            };
-                            let Some(ipc) = ipc else {
-                                return Err(VfsError::InternalError);
-                            };
-                            let Ok(FsResponse::Read(_read_hash)) =
-                                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
-                            else {
-                                println!("vfs: GetEntry fail fs error: {}\r", ipc);
-                                return Err(VfsError::InternalError);
-                            };
-                            let Some(payload) = payload else {
-                                return Err(VfsError::InternalError);
-                            };
-                            (
-                                Some(
-                                    serde_json::to_string(&VfsResponse::GetEntry {
-                                        is_file: true,
-                                        children: vec![],
+                Some(key) => {
+                    let entry = vfs.key_to_entry.get(key);
+                    match entry {
+                        None => return Err(VfsError::EntryNotFound),
+                        Some(entry) => match &entry.entry_type {
+                            EntryType::Dir { children, .. } => {
+                                let paths: Vec<String> = children
+                                    .iter()
+                                    .filter_map(|child_key| {
+                                        vfs.key_to_entry.get(child_key).map(|child| child.full_path.clone())
                                     })
-                                    .unwrap(),
-                                ),
-                                Some(payload.bytes),
-                            )
-                        }
-                    },
-                },
+                                    .collect();
+                                (
+                                    Some(
+                                        serde_json::to_string(&VfsResponse::GetEntry {
+                                            is_file: false,
+                                            children: paths,
+                                        })
+                                        .unwrap(),
+                                    ),
+                                    None,
+                                )
+                            }
+                            EntryType::File { parent: _ } => {
+                                let Key::File { id: file_hash } = key else {
+                                    return Err(VfsError::InternalError);
+                                };
+                                let _ = send_to_loop
+                                    .send(KernelMessage {
+                                        id,
+                                        source: Address {
+                                            node: our_node.clone(),
+                                            process: VFS_PROCESS_ID.clone(),
+                                        },
+                                        target: Address {
+                                            node: our_node.clone(),
+                                            process: FILESYSTEM_PROCESS_ID.clone(),
+                                        },
+                                        rsvp: None,
+                                        message: Message::Request(Request {
+                                            inherit: true,
+                                            expects_response: Some(5), // TODO evaluate
+                                            ipc: Some(
+                                                serde_json::to_string(&FsAction::Read(
+                                                    file_hash.clone(),
+                                                ))
+                                                .unwrap(),
+                                            ),
+                                            metadata: None,
+                                        }),
+                                        payload: None,
+                                        signed_capabilities: None,
+                                    })
+                                    .await;
+                                let read_response = recv_response.recv().await.unwrap();
+                                let KernelMessage {
+                                    message, payload, ..
+                                } = read_response;
+                                let Message::Response((Response { ipc, .. }, None)) = message else {
+                                    return Err(VfsError::InternalError);
+                                };
+                                let Some(ipc) = ipc else {
+                                    return Err(VfsError::InternalError);
+                                };
+                                let Ok(FsResponse::Read(_read_hash)) =
+                                    serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                                else {
+                                    println!("vfs: GetEntry fail fs error: {}\r", ipc);
+                                    return Err(VfsError::InternalError);
+                                };
+                                let Some(payload) = payload else {
+                                    return Err(VfsError::InternalError);
+                                };
+                                (
+                                    Some(
+                                        serde_json::to_string(&VfsResponse::GetEntry {
+                                            is_file: true,
+                                            children: vec![],
+                                        })
+                                        .unwrap(),
+                                    ),
+                                    Some(payload.bytes),
+                                )
+                            }
+                        },
+                    }
+                }
             }
         }
         VfsAction::GetFileChunk {
