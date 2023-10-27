@@ -28,7 +28,7 @@ pub struct RpcMessage {
     pub process: String,
     pub inherit: Option<bool>,
     pub expects_response: Option<u64>,
-    pub ipc: Vec<u8>,
+    pub ipc: Option<String>,
     pub metadata: Option<String>,
     pub context: Option<String>,
     pub mime: Option<String>,

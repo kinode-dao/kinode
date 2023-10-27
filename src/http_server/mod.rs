@@ -779,6 +779,11 @@ async fn handler(
             None => our.clone(),
         };
 
+        let ipc_bytes: Vec<u8> = match rpc_message.ipc {
+            Some(ipc_string) => ipc_string.into_bytes(),
+            None => Vec::new(),
+        };
+
         KernelMessage {
             id,
             source: Address {
@@ -796,7 +801,7 @@ async fn handler(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: Some(15), // no effect on runtime
-                ipc: rpc_message.ipc,
+                ipc: ipc_bytes,
                 metadata: rpc_message.metadata,
             }),
             payload,
