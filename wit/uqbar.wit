@@ -1,4 +1,4 @@
-package component:uq-process@0.1.0
+package component:uq-process@0.2.0
 
 interface types {
     // JSON is passed over WASM boundary as a string.
@@ -6,11 +6,11 @@ interface types {
 
     type node-id = string
 
-    // context is a string of UTF-8 JSON.
+    // context, like ipc, is a protocol-defined cap'n proto schema
     // it is used when building a Request to save information
     // that will not be part of a Response, in order to more
     // easily handle ("contextualize") that Response.
-    type context = json
+    type context = list<u8>
 
     record process-id {
         process-name: string,
@@ -35,14 +35,14 @@ interface types {
         inherit: bool,
         // if Some, this request expects a response in the number of seconds given
         expects-response: option<u64>,
-        ipc: option<json>,
+        ipc: list<u8>,
         metadata: option<json>,
         // to grab payload, use get_payload()
     }
 
     record response {
         inherit: bool,
-        ipc: option<json>,
+        ipc: list<u8>,
         metadata: option<json>,
         // to grab payload, use get_payload()
     }

@@ -75,7 +75,7 @@ sol! {
     event NodeRegistered(uint256 indexed node, bytes name);
 }
 
-fn subscribe_to_qns(from_block: u64) -> String {
+fn subscribe_to_qns(from_block: u64) -> Vec<u8> {
     json!({
         "SubscribeEvents": {
             "addresses": [
@@ -94,6 +94,8 @@ fn subscribe_to_qns(from_block: u64) -> String {
         }
     })
     .to_string()
+    .as_bytes()
+    .to_vec()
 }
 
 impl UqProcess for Component {
@@ -127,12 +129,10 @@ impl UqProcess for Component {
                 inherit: false,
                 expects_response: None,
                 metadata: None,
-                ipc: Some(
-                    serde_json::to_string(&NetActions::QnsBatchUpdate(
-                        state.nodes.values().cloned().collect::<Vec<_>>(),
-                    ))
-                    .unwrap(),
-                ),
+                ipc: serde_json::to_vec(&NetActions::QnsBatchUpdate(
+                    state.nodes.values().cloned().collect::<Vec<_>>(),
+                ))
+                .unwrap(),
             },
             None,
             None,
@@ -148,7 +148,7 @@ impl UqProcess for Component {
                 expects_response: Some(5), // TODO evaluate
                 metadata: None,
                 // -1 because there could be other events in the last processed block
-                ipc: Some(subscribe_to_qns(state.block - 1)),
+                ipc: subscribe_to_qns(state.block - 1),
             },
             None,
             None,
@@ -165,16 +165,16 @@ impl UqProcess for Component {
                 inherit: false,
                 expects_response: None,
                 metadata: None,
-                ipc: Some(
-                    json!({
-                        "BindPath": {
-                            "path": "/node/:name",
-                            "authenticated": false,
-                            "local_only": false
-                        }
-                    })
-                    .to_string(),
-                ),
+                ipc: json!({
+                    "BindPath": {
+                        "path": "/node/:name",
+                        "authenticated": false,
+                        "local_only": false
+                    }
+                })
+                .to_string()
+                .as_bytes()
+                .to_vec(),
             },
             None,
             None,
@@ -193,24 +193,24 @@ impl UqProcess for Component {
             };
 
             if source.process == http_server_address {
-                if let Ok(ipc_json) = serde_json::from_str::<serde_json::Value>(
-                    &request.ipc.clone().unwrap_or_default(),
-                ) {
+                if let Ok(ipc_json) =
+                    serde_json::from_slice::<serde_json::Value>(&request.ipc)
+                {
                     if ipc_json["path"].as_str().unwrap_or_default() == "/node/:name" {
                         if let Some(name) = ipc_json["url_params"]["name"].as_str() {
                             if let Some(node) = state.nodes.get(name) {
                                 send_response(
                                     &Response {
                                         inherit: false,
-                                        ipc: Some(
-                                            serde_json::json!({
-                                                "status": 200,
-                                                "headers": {
-                                                    "Content-Type": "application/json",
-                                                },
-                                            })
-                                            .to_string(),
-                                        ),
+                                        ipc: serde_json::json!({
+                                            "status": 200,
+                                            "headers": {
+                                                "Content-Type": "application/json",
+                                            },
+                                        })
+                                        .to_string()
+                                        .as_bytes()
+                                        .to_vec(),
                                         metadata: None,
                                     },
                                     Some(&Payload {
@@ -229,15 +229,15 @@ impl UqProcess for Component {
                 send_response(
                     &Response {
                         inherit: false,
-                        ipc: Some(
-                            serde_json::json!({
-                                "status": 404,
-                                "headers": {
-                                    "Content-Type": "application/json",
-                                },
-                            })
-                            .to_string(),
-                        ),
+                        ipc: serde_json::json!({
+                            "status": 404,
+                            "headers": {
+                                "Content-Type": "application/json",
+                            },
+                        })
+                        .to_string()
+                        .as_bytes()
+                        .to_vec(),
                         metadata: None,
                     },
                     Some(&Payload {
@@ -248,14 +248,8 @@ impl UqProcess for Component {
                 continue;
             }
 
-            let Ok(msg) = serde_json::from_str::<AllActions>(request.ipc.as_ref().unwrap()) else {
-                print_to_terminal(
-                    0,
-                    &format!(
-                        "qns_indexer: got invalid message: {}",
-                        request.ipc.unwrap_or_default()
-                    ),
-                );
+            let Ok(msg) = serde_json::from_slice::<AllActions>(&request.ipc) else {
+                print_to_terminal(0, "qns_indexer: got invalid message");
                 continue;
             };
 
@@ -332,12 +326,8 @@ impl UqProcess for Component {
                                     inherit: false,
                                     expects_response: None,
                                     metadata: None,
-                                    ipc: Some(
-                                        serde_json::to_string(&NetActions::QnsUpdate(
-                                            update.clone(),
-                                        ))
+                                    ipc: serde_json::to_vec(&NetActions::QnsUpdate(update.clone()))
                                         .unwrap(),
-                                    ),
                                 },
                                 None,
                                 None,

@@ -5,7 +5,10 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 use bindings::component::uq_process::types::*;
-use bindings::{create_capability, get_capability, has_capability, Guest, print_to_terminal, receive, send_request, send_response, spawn};
+use bindings::{
+    create_capability, get_capability, has_capability, print_to_terminal, receive, send_request,
+    send_response, spawn, Guest,
+};
 
 mod kernel_types;
 use kernel_types as kt;
@@ -23,14 +26,16 @@ fn make_vfs_cap(kind: &str, drive: &str) -> String {
     serde_json::to_string(&serde_json::json!({
         "kind": kind,
         "drive": drive,
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
 fn make_db_cap(kind: &str, db: &str) -> String {
     serde_json::to_string(&serde_json::json!({
         "kind": kind,
         "db": db,
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
 fn forward_if_have_cap(
@@ -38,7 +43,7 @@ fn forward_if_have_cap(
     operation_type: &str,
     // operation_type: OperationType,
     db: &str,
-    ipc: Option<String>,
+    ipc: Vec<u8>,
     db_to_process: &mut DbToProcess,
 ) -> anyhow::Result<()> {
     if has_capability(&make_db_cap(operation_type, db)) {
@@ -67,10 +72,7 @@ fn forward_if_have_cap(
     }
 }
 
-fn handle_message (
-    our: &Address,
-    db_to_process: &mut DbToProcess,
-) -> anyhow::Result<()> {
+fn handle_message(our: &Address, db_to_process: &mut DbToProcess) -> anyhow::Result<()> {
     let (source, message) = receive().unwrap();
     // let (source, message) = receive()?;
 
@@ -81,9 +83,9 @@ fn handle_message (
     match message {
         Message::Response(_) => {
             return Err(kv::KeyValueError::UnexpectedResponse.into());
-        },
+        }
         Message::Request(Request { ipc, .. }) => {
-            match process_lib::parse_message_ipc(ipc.clone())? {
+            match process_lib::parse_message_ipc(&ipc)? {
                 kv::KeyValueMessage::New { ref db } => {
                     //  TODO: make atomic
                     //  (1): create vfs drive
@@ -104,36 +106,38 @@ fn handle_message (
                     let _ = process_lib::send_and_await_response(
                         &vfs_address,
                         false,
-                        Some(serde_json::to_string(&kt::VfsRequest {
+                        serde_json::to_vec(&kt::VfsRequest {
                             drive: vfs_drive.clone(),
                             action: kt::VfsAction::New,
-                        }).unwrap()),
+                        })
+                        .unwrap(),
                         None,
                         None,
                         15,
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     //  (2)
-                    let vfs_read = get_capability(
-                        &vfs_address,
-                        &make_vfs_cap("read", &vfs_drive),
-                    ).ok_or(anyhow::anyhow!("New failed: no vfs 'read' capability found"))?;
-                    let vfs_write = get_capability(
-                        &vfs_address,
-                        &make_vfs_cap("write", &vfs_drive),
-                    ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
+                    let vfs_read = get_capability(&vfs_address, &make_vfs_cap("read", &vfs_drive))
+                        .ok_or(anyhow::anyhow!(
+                            "New failed: no vfs 'read' capability found"
+                        ))?;
+                    let vfs_write =
+                        get_capability(&vfs_address, &make_vfs_cap("write", &vfs_drive)).ok_or(
+                            anyhow::anyhow!("New failed: no vfs 'write' capability found"),
+                        )?;
                     let spawned_process_id = match spawn(
                         None,
                         "/key_value_worker.wasm",
-                        &OnPanic::None,  //  TODO: notify us
+                        &OnPanic::None, //  TODO: notify us
                         &Capabilities::Some(vec![vfs_read, vfs_write]),
                         false, // not public
                     ) {
                         Ok(spawned_process_id) => spawned_process_id,
                         Err(e) => {
                             print_to_terminal(0, &format!("couldn't spawn: {}", e));
-                            panic!("couldn't spawn");  //  TODO
-                        },
+                            panic!("couldn't spawn"); //  TODO
+                        }
                     };
                     //  grant caps
                     create_capability(&source.process, &make_db_cap("read", db));
@@ -166,20 +170,20 @@ fn handle_message (
                         },
                         None,
                     );
-                },
+                }
                 kv::KeyValueMessage::Write { ref db, .. } => {
                     forward_if_have_cap(our, "write", db, ipc, db_to_process)?;
-                },
+                }
                 kv::KeyValueMessage::Read { ref db, .. } => {
                     forward_if_have_cap(our, "read", db, ipc, db_to_process)?;
-                },
+                }
                 kv::KeyValueMessage::Err { error } => {
                     return Err(error.into());
                 }
             }
 
             Ok(())
-        },
+        }
     }
 }
 
@@ -191,23 +195,20 @@ impl Guest for Component {
 
         loop {
             match handle_message(&our, &mut db_to_process) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) => {
-                    print_to_terminal(0, format!(
-                        "key_value: error: {:?}",
-                        e,
-                    ).as_str());
+                    print_to_terminal(0, format!("key_value: error: {:?}", e,).as_str());
                     if let Some(e) = e.downcast_ref::<kv::KeyValueError>() {
                         send_response(
                             &Response {
                                 inherit: false,
-                                ipc: Some(serde_json::to_string(&e).unwrap()),
+                                ipc: serde_json::to_vec(&e).unwrap(),
                                 metadata: None,
                             },
                             None,
                         );
                     }
-                },
+                }
             };
         }
     }

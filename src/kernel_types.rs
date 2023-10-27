@@ -8,7 +8,7 @@ use std::collections::HashSet;
 // matches types in uqbar.wit
 //
 
-pub type Context = String; // JSON-string
+pub type Context = Vec<u8>;
 pub type NodeId = String; // QNS domain name
 
 /// process ID is a formatted unique identifier that contains
@@ -127,22 +127,22 @@ pub struct Payload {
     pub bytes: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Request {
     pub inherit: bool,
     pub expects_response: Option<u64>, // number of seconds until timeout
-    pub ipc: Option<String>,           // JSON-string
-    pub metadata: Option<String>,      // JSON-string
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Response {
-    pub inherit: bool,
-    pub ipc: Option<String>,      // JSON-string
+    pub ipc: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Response {
+    pub inherit: bool,
+    pub ipc: Vec<u8>,
+    pub metadata: Option<String>, // JSON-string
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Message {
     Request(Request),
     Response((Response, Option<Context>)),

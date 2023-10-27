@@ -31,11 +31,11 @@ fn send_and_await_response_wrapped(
     target_process: String,
     target_package: String,
     target_publisher: String,
-    request_ipc: Option<String>,
+    request_ipc: Vec<u8>,
     request_metadata: Option<String>,
     payload: Option<(Option<String>, Vec<u8>)>,
     timeout: u64,
-) -> (Option<String>, Option<String>) {
+) -> (Vec<u8>, Option<String>) {
     let payload = match payload {
         None => None,
         Some((mime, bytes)) => Some(Payload { mime, bytes }),
@@ -82,7 +82,7 @@ fn handle_message (
     match message {
         Message::Response(_) => { unimplemented!() },
         Message::Request(Request { inherit: _ , expects_response: _, ipc, metadata: _ }) => {
-            match process_lib::parse_message_ipc(ipc.clone())? {
+            match process_lib::parse_message_ipc(&ipc)? {
                 kv::KeyValueMessage::New { db } => {
                     let vfs_drive = format!("{}{}", PREFIX, db);
                     match db_handle {
@@ -197,7 +197,7 @@ impl Guest for Component {
                         send_response(
                             &Response {
                                 inherit: false,
-                                ipc: Some(serde_json::to_string(&e).unwrap()),
+                                ipc: serde_json::to_vec(&e).unwrap(),
                                 metadata: None,
                             },
                             None,

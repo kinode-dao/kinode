@@ -195,10 +195,7 @@ impl Guest for Component {
             };
             match message {
                 Message::Request(req) => {
-                    let Some(ref ipc) = req.ipc else {
-                        continue;
-                    };
-                    match &serde_json::from_str::<Req>(ipc) {
+                    match &serde_json::from_slice::<Req>(&req.ipc) {
                         Ok(Req::LocalRequest(local_request)) => {
                             match handle_local_request(&our, &source, local_request, &mut state) {
                                 Ok(None) => continue,
@@ -207,7 +204,7 @@ impl Guest for Component {
                                         send_response(
                                             &Response {
                                                 inherit: false,
-                                                ipc: Some(serde_json::to_string(&resp).unwrap()),
+                                                ipc: serde_json::to_vec(&resp).unwrap(),
                                                 metadata: None,
                                             },
                                             None,
@@ -230,7 +227,7 @@ impl Guest for Component {
                                         send_response(
                                             &Response {
                                                 inherit: false,
-                                                ipc: Some(serde_json::to_string(&resp).unwrap()),
+                                                ipc: serde_json::to_vec(&resp).unwrap(),
                                                 metadata: None,
                                             },
                                             None,
@@ -270,15 +267,13 @@ impl Guest for Component {
                                     &Request {
                                         inherit: true, // will inherit payload!
                                         expects_response: None,
-                                        ipc: Some(
-                                            serde_json::to_string(&Req::LocalRequest(
-                                                LocalRequest::NewPackage {
-                                                    package: package_id,
-                                                    mirror: true,
-                                                },
-                                            ))
-                                            .unwrap(),
-                                        ),
+                                        ipc: serde_json::to_vec(&Req::LocalRequest(
+                                            LocalRequest::NewPackage {
+                                                package: package_id,
+                                                mirror: true,
+                                            },
+                                        ))
+                                        .unwrap(),
                                         metadata: None,
                                     },
                                     None,
@@ -287,22 +282,19 @@ impl Guest for Component {
                             }
                         }
                         Ok(Req::FTWorkerCommand(_)) => {
-                            spawn_receive_transfer(&our, ipc);
+                            spawn_receive_transfer(&our, &req.ipc);
                         }
                         e => {
                             print_to_terminal(
                                 0,
-                                &format!("app store bad request: {}, error {:?}", ipc, e),
+                                &format!("app store bad request: {:?}, error {:?}", req.ipc, e),
                             );
                             continue;
                         }
                     }
                 }
                 Message::Response((response, context)) => {
-                    let Some(ref ipc) = response.ipc else {
-                        continue;
-                    };
-                    match &serde_json::from_str::<Resp>(ipc) {
+                    match &serde_json::from_slice::<Resp>(&response.ipc) {
                         Ok(Resp::RemoteResponse(remote_response)) => match remote_response {
                             RemoteResponse::DownloadApproved => {
                                 print_to_terminal(
@@ -318,7 +310,7 @@ impl Guest for Component {
                             }
                         },
                         Ok(Resp::FTWorkerResult(ft_worker_result)) => {
-                            let Ok(context) = serde_json::from_str::<FileTransferContext>(&context.unwrap_or_default()) else {
+                            let Ok(context) = serde_json::from_slice::<FileTransferContext>(&context.unwrap_or_default()) else {
                                 print_to_terminal(0, "file_transfer: got weird local request");
                                 continue;
                             };
@@ -347,7 +339,10 @@ impl Guest for Component {
                         e => {
                             print_to_terminal(
                                 0,
-                                &format!("app store bad response: {}, error {:?}", ipc, e),
+                                &format!(
+                                    "app store bad response: {:?}, error {:?}",
+                                    response.ipc, e
+                                ),
                             );
                             continue;
                         }
@@ -385,10 +380,10 @@ fn handle_local_request(
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
                 false,
-                Some(serde_json::to_string(&kt::VfsRequest {
+                serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::New,
-                })?),
+                })?,
                 None,
                 None,
                 5,
@@ -399,13 +394,13 @@ fn handle_local_request(
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
                 true,
-                Some(serde_json::to_string(&kt::VfsRequest {
+                serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::Add {
                         full_path: package.to_string(),
                         entry_type: kt::AddEntryType::ZipArchive,
                     },
-                })?),
+                })?,
                 None,
                 Some(&payload),
                 5,
@@ -416,13 +411,13 @@ fn handle_local_request(
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
                 true,
-                Some(serde_json::to_string(&kt::VfsRequest {
+                serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::Add {
                         full_path: format!("/{}.zip", package.to_string()),
                         entry_type: kt::AddEntryType::NewFile,
                     },
-                })?),
+                })?,
                 None,
                 Some(&payload),
                 5,
@@ -431,10 +426,10 @@ fn handle_local_request(
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
                 false,
-                Some(serde_json::to_string(&kt::VfsRequest {
+                serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry("/metadata.json".into()),
-                })?),
+                })?,
                 None,
                 None,
                 5,
@@ -473,18 +468,13 @@ fn handle_local_request(
                     process: our.process.clone(),
                 },
                 true,
-                Some(serde_json::to_string(&RemoteRequest::Download(
-                    package.clone(),
-                ))?),
+                serde_json::to_vec(&RemoteRequest::Download(package.clone()))?,
                 None,
                 None,
                 5,
             ) {
                 Ok((_source, Message::Response((resp, _context)))) => {
-                    let Some(ipc) = resp.ipc else {
-                            return Err(anyhow::anyhow!("no ipc in response"))
-                        };
-                    let resp = serde_json::from_str::<Resp>(&ipc)?;
+                    let resp = serde_json::from_slice::<Resp>(&resp.ipc)?;
                     match resp {
                         Resp::RemoteResponse(RemoteResponse::DownloadApproved) => {
                             state.requested_packages.insert(package.clone());
@@ -505,10 +495,10 @@ fn handle_local_request(
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
                 false,
-                Some(serde_json::to_string(&kt::VfsRequest {
+                serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry("/manifest.json".into()),
-                })?),
+                })?,
                 None,
                 None,
                 5,
@@ -528,19 +518,19 @@ fn handle_local_request(
                 let (_, hash_response) = process_lib::send_and_await_response(
                     &vfs_address,
                     false,
-                    Some(serde_json::to_string(&kt::VfsRequest {
+                    serde_json::to_vec(&kt::VfsRequest {
                         drive: package.to_string(),
                         action: kt::VfsAction::GetHash(path.clone()),
-                    })?),
+                    })?,
                     None,
                     None,
                     5,
                 )?;
 
-                let Message::Response((Response { ipc: Some(ipc), .. }, _)) = hash_response else {
+                let Message::Response((Response { ipc, .. }, _)) = hash_response else {
                     return Err(anyhow::anyhow!("bad vfs response"));
                 };
-                let kt::VfsResponse::GetHash(Some(hash)) = serde_json::from_str(&ipc)? else {
+                let kt::VfsResponse::GetHash(Some(hash)) = serde_json::from_slice(&ipc)? else {
                     return Err(anyhow::anyhow!("no hash in vfs"));
                 };
 
@@ -607,9 +597,9 @@ fn handle_local_request(
                         process: ProcessId::from_str("kernel:sys:uqbar")?,
                     },
                     false,
-                    Some(serde_json::to_string(&kt::KernelCommand::KillProcess(
-                        kt::ProcessId::de_wit(parsed_new_process_id.clone()),
-                    ))?),
+                    serde_json::to_vec(&kt::KernelCommand::KillProcess(kt::ProcessId::de_wit(
+                        parsed_new_process_id.clone(),
+                    )))?,
                     None,
                     None,
                     None,
@@ -620,10 +610,10 @@ fn handle_local_request(
                 let (_, _bytes_response) = process_lib::send_and_await_response(
                     &vfs_address,
                     false,
-                    Some(serde_json::to_string(&kt::VfsRequest {
+                    serde_json::to_vec(&kt::VfsRequest {
                         drive: package.to_string(),
                         action: kt::VfsAction::GetEntry(path),
-                    })?),
+                    })?,
                     None,
                     None,
                     5,
@@ -639,13 +629,13 @@ fn handle_local_request(
                         process: ProcessId::from_str("kernel:sys:uqbar")?,
                     },
                     false,
-                    Some(serde_json::to_string(&kt::KernelCommand::StartProcess {
+                    serde_json::to_vec(&kt::KernelCommand::StartProcess {
                         id: kt::ProcessId::de_wit(parsed_new_process_id),
                         wasm_bytes_handle: hash,
                         on_panic: entry.on_panic,
                         initial_capabilities,
                         public: entry.public,
-                    })?),
+                    })?,
                     None,
                     Some(&payload),
                     5,
@@ -687,10 +677,10 @@ fn handle_remote_request(
             let _ = process_lib::send_and_await_response(
                 &vfs_address,
                 false,
-                Some(serde_json::to_string(&kt::VfsRequest {
+                serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry(file_name.clone()),
-                })?),
+                })?,
                 None,
                 None,
                 5,
