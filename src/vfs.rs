@@ -1022,11 +1022,19 @@ async fn match_request(
                                 return Err(VfsError::InternalError);
                             };
 
-                            match create_entry(&mut vfs.lock().await, &full_path, EntryType::File { parent: Key::File { id: hash } }).await {
-                                Ok(_) => {},
+                            match create_entry(
+                                &mut vfs.lock().await,
+                                &full_path,
+                                EntryType::File {
+                                    parent: Key::File { id: hash },
+                                },
+                            )
+                            .await
+                            {
+                                Ok(_) => {}
                                 Err(e) => {
                                     return Err(e);
-                                },
+                                }
                             }
                         } else if is_dir {
                             println!("vfs: zip dir not yet implemented");
