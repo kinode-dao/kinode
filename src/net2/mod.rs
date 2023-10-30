@@ -360,13 +360,13 @@ async fn init_connection(
     let (mut noise, our_static_key) = build_initiator();
 
     let Some((ref ip, ref port)) = peer_id.ws_routing else {
-        return Err(anyhow!("target has no routing information"))
+        return Err(anyhow!("target has no routing information"));
     };
     let Ok(ws_url) = make_ws_url(our_ip, ip, port) else {
-        return Err(anyhow!("failed to parse websocket url"))
+        return Err(anyhow!("failed to parse websocket url"));
     };
     let Ok(Ok((websocket, _response))) = timeout(TIMEOUT, connect_async(ws_url)).await else {
-        return Err(anyhow!("failed to connect to target"))
+        return Err(anyhow!("failed to connect to target"));
     };
     let (mut write_stream, mut read_stream) = websocket.split();
 
@@ -438,7 +438,8 @@ async fn send_uqbar_message(km: &KernelMessage, conn: &mut OpenConnection) -> Re
     let len = (serialized.len() as u32).to_be_bytes();
     let with_length_prefix = [len.to_vec(), serialized].concat();
 
-    for payload in with_length_prefix.chunks(65519) { // 65535 - 16 (TAGLEN)
+    for payload in with_length_prefix.chunks(65519) {
+        // 65535 - 16 (TAGLEN)
         let len = conn.noise.write_message(payload, &mut conn.buf)?;
         ws_send(&mut conn.write_stream, &conn.buf[..len]).await?;
     }
