@@ -1,7 +1,6 @@
 use crate::types::*;
 use anyhow::Result;
 use dotenv;
-use ethers::prelude::namehash;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -14,7 +13,7 @@ mod http_client;
 mod http_server;
 mod kernel;
 mod keygen;
-mod net;
+mod net2;
 mod register;
 mod terminal;
 mod types;
@@ -255,7 +254,7 @@ async fn main() {
         vfs_message_sender,
         encryptor_sender,
     ));
-    tasks.spawn(net::networking(
+    tasks.spawn(net2::networking(
         our.clone(),
         our_ip.to_string(),
         networking_keypair_arc.clone(),
