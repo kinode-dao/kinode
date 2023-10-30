@@ -610,7 +610,7 @@ pub enum VfsError {
     NoCap,
     EntryNotFound,
     PersistError,
-    InternalError(String),
+    InternalError, // String
 }
 
 #[allow(dead_code)]

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::prelude::*;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, MutexGuard};
 
 use crate::types::*;
 
@@ -143,12 +143,12 @@ async fn rename_entry(
     entry.name = new_path.split("/").last().unwrap().to_string();
     entry.full_path = new_path.to_string();
     vfs.key_to_entry.insert(key.clone(), entry);
-    vfs.path_to_key.insert(new_path.to_string(), key);
+    vfs.path_to_key.insert(new_path.to_string(), key.clone());
 
     // if the entry is a directory, recursively update the paths of its children
     if let EntryType::Dir { children, .. } = &vfs.key_to_entry.get(&key).unwrap().entry_type {
-        for child_key in children {
-            let child_entry = vfs.key_to_entry.get(child_key).unwrap();
+        for child_key in children.clone() {
+            let child_entry = vfs.key_to_entry.get(&child_key).unwrap();
             let old_child_path = child_entry.full_path.clone();
             let new_child_path = old_child_path.replace(old_path, new_path);
             rename_entry(vfs, &old_child_path, &new_child_path).await?;
@@ -797,7 +797,7 @@ async fn match_request(
                     }
                 }
                 AddEntryType::NewFile => {
-                    fullpath = clean_path(&fullpath);
+                    full_path = clean_path(&full_path);
 
                     let hash = {
                         let mut vfs = vfs.lock().await;
@@ -1022,37 +1022,12 @@ async fn match_request(
                                 return Err(VfsError::InternalError);
                             };
 
-                            let (name, parent_path) = make_file_name(&full_path);
-                            let mut vfs = vfs.lock().await;
-                            let Some(parent_key) = vfs.path_to_key.remove(&parent_path) else {
-                                return Err(VfsError::InternalError);
-                            };
-                            let Some(mut parent_entry) = vfs.key_to_entry.remove(&parent_key)
-                            else {
-                                return Err(VfsError::InternalError);
-                            };
-                            let EntryType::Dir {
-                                children: ref mut parent_children,
-                                ..
-                            } = parent_entry.entry_type
-                            else {
-                                return Err(VfsError::InternalError);
-                            };
-                            let key = Key::File { id: hash };
-                            vfs.key_to_entry.insert(
-                                key.clone(),
-                                Entry {
-                                    name,
-                                    full_path: full_path.clone(),
-                                    entry_type: EntryType::File {
-                                        parent: parent_key.clone(),
-                                    },
+                            match create_entry(&mut vfs.lock().await, &full_path, EntryType::File { parent: Key::File { id: hash } }).await {
+                                Ok(_) => {},
+                                Err(e) => {
+                                    return Err(e);
                                 },
-                            );
-                            parent_children.insert(key.clone());
-                            vfs.path_to_key.insert(parent_path, parent_key.clone());
-                            vfs.key_to_entry.insert(parent_key, parent_entry);
-                            vfs.path_to_key.insert(full_path.clone(), key.clone());
+                            }
                         } else if is_dir {
                             println!("vfs: zip dir not yet implemented");
                             return Err(VfsError::InternalError);
@@ -1087,6 +1062,8 @@ async fn match_request(
             (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
         }
         VfsAction::Delete(mut full_path) => {
+            full_path = clean_path(&full_path);
+
             let mut vfs = vfs.lock().await;
             let Some(key) = vfs.path_to_key.remove(&full_path) else {
                 send_to_terminal
