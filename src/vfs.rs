@@ -34,7 +34,7 @@ type DriveToQueue = Arc<Mutex<HashMap<String, RequestQueue>>>;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct Entry {
     name: String,
-    full_path: String, 
+    full_path: String,
     entry_type: EntryType,
     // ...  //  general metadata?
 }
@@ -86,13 +86,25 @@ fn get_parent_path(path: &str) -> String {
     }
 }
 
-async fn create_entry(vfs: &mut MutexGuard<Vfs>, path: &str, entry_type: EntryType) -> Result<Key, VfsError> {
+async fn create_entry(
+    vfs: &mut MutexGuard<Vfs>,
+    path: &str,
+    entry_type: EntryType,
+) -> Result<Key, VfsError> {
     if let Some(key) = vfs.path_to_key.get(path) {
         return Ok(key.clone());
     }
 
     let parent_path = get_parent_path(path);
-    let parent_key = create_entry(vfs, &parent_path, EntryType::Dir { parent: Key::Dir { id: 0 }, children: HashSet::new() }).await?;
+    let parent_key = create_entry(
+        vfs,
+        &parent_path,
+        EntryType::Dir {
+            parent: Key::Dir { id: 0 },
+            children: HashSet::new(),
+        },
+    )
+    .await?;
 
     let key = match entry_type {
         EntryType::Dir { .. } => Key::Dir { id: rand::random() },
@@ -115,7 +127,11 @@ async fn create_entry(vfs: &mut MutexGuard<Vfs>, path: &str, entry_type: EntryTy
     Ok(key)
 }
 
-async fn rename_entry(vfs: &mut MutexGuard<Vfs>, old_path: &str, new_path: &str) -> Result<(), VfsError> {
+async fn rename_entry(
+    vfs: &mut MutexGuard<Vfs>,
+    old_path: &str,
+    new_path: &str,
+) -> Result<(), VfsError> {
     let key = match vfs.path_to_key.remove(old_path) {
         Some(key) => key,
         None => return Err(VfsError::EntryNotFound),
@@ -759,11 +775,25 @@ async fn match_request(
                             .unwrap();
                         return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None));
                     };
-                    match create_entry(&mut vfs, &full_path, EntryType::Dir { parent: Key::Dir { id: 0 }, children: HashSet::new() }).await {
-                        Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
+                    match create_entry(
+                        &mut vfs,
+                        &full_path,
+                        EntryType::Dir {
+                            parent: Key::Dir { id: 0 },
+                            children: HashSet::new(),
+                        },
+                    )
+                    .await
+                    {
+                        Ok(_) => {
+                            return Ok((
+                                Some(serde_json::to_string(&VfsResponse::Ok).unwrap()),
+                                None,
+                            ))
+                        }
                         Err(e) => {
                             return Err(e);
-                        },
+                        }
                     }
                 }
                 AddEntryType::NewFile => {
@@ -830,11 +860,24 @@ async fn match_request(
                     else {
                         return Err(VfsError::InternalError);
                     };
-                    match create_entry(&mut vfs, &full_path, EntryType::File { parent: Key::File { id: hash } }).await {
-                        Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
+                    match create_entry(
+                        &mut vfs,
+                        &full_path,
+                        EntryType::File {
+                            parent: Key::File { id: hash },
+                        },
+                    )
+                    .await
+                    {
+                        Ok(_) => {
+                            return Ok((
+                                Some(serde_json::to_string(&VfsResponse::Ok).unwrap()),
+                                None,
+                            ))
+                        }
                         Err(e) => {
                             return Err(e);
-                        },
+                        }
                     }
                 }
                 AddEntryType::ExistingFile { hash } => {
@@ -855,11 +898,24 @@ async fn match_request(
                         };
                         vfs.key_to_entry.remove(&old_key);
                     };
-                    match create_entry(&mut vfs, &full_path, EntryType::File { parent: Key::File { id: hash } }).await {
-                        Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
+                    match create_entry(
+                        &mut vfs,
+                        &full_path,
+                        EntryType::File {
+                            parent: Key::File { id: hash },
+                        },
+                    )
+                    .await
+                    {
+                        Ok(_) => {
+                            return Ok((
+                                Some(serde_json::to_string(&VfsResponse::Ok).unwrap()),
+                                None,
+                            ))
+                        }
                         Err(e) => {
                             return Err(e);
-                        },
+                        }
                     }
                 }
                 AddEntryType::ZipArchive => {
@@ -1021,10 +1077,10 @@ async fn match_request(
 
             let mut vfs = vfs.lock().await;
             match rename_entry(&mut vfs, &full_path, &new_full_path).await {
-                Ok(_) => {},
+                Ok(_) => {}
                 Err(e) => {
                     return Err(e);
-                },
+                }
             }
 
             persist_state(send_to_persist, &mut recv_response, id).await;
@@ -1106,7 +1162,10 @@ async fn match_request(
                 Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
             }
         }
-        VfsAction::WriteOffset { mut full_path, offset } => {
+        VfsAction::WriteOffset {
+            mut full_path,
+            offset,
+        } => {
             full_path = clean_path(&full_path);
 
             let file_hash = {
@@ -1164,7 +1223,10 @@ async fn match_request(
                 Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
             }
         }
-        VfsAction::SetSize { mut full_path, size } => {
+        VfsAction::SetSize {
+            mut full_path,
+            size,
+        } => {
             full_path = clean_path(&full_path);
 
             let file_hash = {
@@ -1271,7 +1333,9 @@ async fn match_request(
                                 let paths: Vec<String> = children
                                     .iter()
                                     .filter_map(|child_key| {
-                                        vfs.key_to_entry.get(child_key).map(|child| child.full_path.clone())
+                                        vfs.key_to_entry
+                                            .get(child_key)
+                                            .map(|child| child.full_path.clone())
                                     })
                                     .collect();
                                 (
@@ -1320,14 +1384,16 @@ async fn match_request(
                                 let KernelMessage {
                                     message, payload, ..
                                 } = read_response;
-                                let Message::Response((Response { ipc, .. }, None)) = message else {
+                                let Message::Response((Response { ipc, .. }, None)) = message
+                                else {
                                     return Err(VfsError::InternalError);
                                 };
                                 let Some(ipc) = ipc else {
                                     return Err(VfsError::InternalError);
                                 };
                                 let Ok(FsResponse::Read(_read_hash)) =
-                                    serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                                    serde_json::from_str::<Result<FsResponse, FsError>>(&ipc)
+                                        .unwrap()
                                 else {
                                     println!("vfs: GetEntry fail fs error: {}\r", ipc);
                                     return Err(VfsError::InternalError);
