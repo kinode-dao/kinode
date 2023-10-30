@@ -1,4 +1,5 @@
 use anyhow::Result;
+use clap::Parser;
 use dotenv;
 use ethers::prelude::namehash;
 use std::env;
@@ -42,26 +43,15 @@ async fn main() {
     // For use with https://github.com/tokio-rs/console
     // console_subscriber::init();
 
-    // DEMO ONLY: remove all CLI arguments
-    let args: Vec<String> = env::args().collect();
-    let home_directory_path = &args[1];
-    // let home_directory_path = "home";
-    // create home directory if it does not already exist
+    let args = types::Args::parse();
+
+    let home_directory_path = &args.home;
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {:?}", e);
     }
     // read PKI from websocket endpoint served by public RPC
     // if you get rate-limited or something, pass in your own RPC as a boot argument
-    let mut rpc_url = "".to_string();
-
-    for (i, arg) in args.iter().enumerate() {
-        if arg == "--rpc" {
-            // Check if the next argument exists and is not another flag
-            if i + 1 < args.len() && !args[i + 1].starts_with('-') {
-                rpc_url = args[i + 1].clone();
-            }
-        }
-    }
+    let rpc_url = args.rpc;
 
     // kernel receives system messages via this channel, all other modules send messages
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =

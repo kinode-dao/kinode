@@ -1,4 +1,5 @@
 use crate::kernel::component::uq_process::types as wit;
+use clap::Parser;
 use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -17,6 +18,19 @@ lazy_static::lazy_static! {
     pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "sys", "uqbar");
     pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "uqbar");
     pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "sys", "uqbar");
+}
+
+#[derive(Parser, Debug)]
+/// Uqbar: your p2p personal node integrating cryptocurrency and AI
+#[command(author, version, about, long_about = None)]
+pub struct Args {
+    /// Home directory
+    #[arg(short, long)]
+    pub home: String,
+
+    /// Ethereum RPC endpoint
+    #[arg(short, long, default_value_t = String::new())]
+    pub rpc: String,
 }
 
 //

@@ -24,6 +24,7 @@ cap-std = "2.0.0"
 chacha20poly1305 = "0.10.1"
 chrono = "0.4.31"
 cita_trie = "4.0.0"
+clap = { version = "4.4", features = ["derive"] }
 crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"] }
 digest = "0.10"
 dotenv = "0.15.0"
