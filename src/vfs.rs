@@ -837,7 +837,6 @@ async fn match_request(
                         return Err(VfsError::InternalError);
                     };
 
-
                     let Ok(FsResponse::Write(hash)) =
                         serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
                     else {
@@ -973,7 +972,8 @@ async fn match_request(
                             };
 
                             let Ok(FsResponse::Write(hash)) =
-                                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
+                                    .unwrap()
                             else {
                                 return Err(VfsError::InternalError);
                             };
@@ -1267,11 +1267,11 @@ async fn match_request(
                                     })
                                     .collect();
                                 (
-                                        serde_json::to_vec(&VfsResponse::GetEntry {
-                                            is_file: false,
-                                            children: paths,
-                                        })
-                                        .unwrap(),
+                                    serde_json::to_vec(&VfsResponse::GetEntry {
+                                        is_file: false,
+                                        children: paths,
+                                    })
+                                    .unwrap(),
                                     None,
                                 )
                             }
@@ -1294,11 +1294,10 @@ async fn match_request(
                                         message: Message::Request(Request {
                                             inherit: true,
                                             expects_response: Some(5), // TODO evaluate
-                                            ipc: 
-                                                serde_json::to_vec(&FsAction::Read(
-                                                    file_hash.clone(),
-                                                ))
-                                                .unwrap(),
+                                            ipc: serde_json::to_vec(&FsAction::Read(
+                                                file_hash.clone(),
+                                            ))
+                                            .unwrap(),
                                             metadata: None,
                                         }),
                                         payload: None,
@@ -1315,7 +1314,8 @@ async fn match_request(
                                 };
 
                                 let Ok(FsResponse::Read(_read_hash)) =
-                                    serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                                    serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
+                                        .unwrap()
                                 else {
                                     return Err(VfsError::InternalError);
                                 };
@@ -1323,11 +1323,11 @@ async fn match_request(
                                     return Err(VfsError::InternalError);
                                 };
                                 (
-                                        serde_json::to_vec(&VfsResponse::GetEntry {
-                                            is_file: true,
-                                            children: vec![],
-                                        })
-                                        .unwrap(),
+                                    serde_json::to_vec(&VfsResponse::GetEntry {
+                                        is_file: true,
+                                        children: vec![],
+                                    })
+                                    .unwrap(),
                                     Some(payload.bytes),
                                 )
                             }
