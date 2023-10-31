@@ -68,7 +68,7 @@ pub async fn create_passthrough(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&NetActions::ConnectionRequest(from_id.name.clone()))?,
+                ipc: rmp_serde::to_vec(&NetActions::ConnectionRequest(from_id.name.clone()))?,
                 metadata: None,
             }),
             payload: None,
@@ -111,7 +111,7 @@ pub fn validate_routing_request(
     pki: &OnchainPKI,
 ) -> Result<(Identity, NodeId)> {
     println!("validate_routing_request\r");
-    let routing_request: RoutingRequest = bincode::deserialize(buf)?;
+    let routing_request: RoutingRequest = rmp_serde::from_slice(buf)?;
     println!("routing request: {:?}\r", routing_request);
     let their_id = pki
         .get(&routing_request.source)
@@ -149,7 +149,7 @@ pub fn validate_handshake(
 }
 
 pub async fn send_uqbar_message(km: &KernelMessage, conn: &mut PeerConnection) -> Result<()> {
-    let serialized = bincode::serialize(km)?;
+    let serialized = rmp_serde::to_vec(km)?;
     if serialized.len() > MESSAGE_MAX_SIZE as usize {
         return Err(anyhow!("message too large"));
     }
@@ -186,7 +186,7 @@ pub async fn recv_uqbar_message(conn: &mut PeerConnection) -> Result<KernelMessa
         msg.extend_from_slice(&conn.buf[..len]);
     }
 
-    Ok(bincode::deserialize(&msg)?)
+    Ok(rmp_serde::from_slice(&msg)?)
 }
 
 pub async fn send_uqbar_handshake(
@@ -199,7 +199,7 @@ pub async fn send_uqbar_handshake(
     proxy_request: bool,
 ) -> Result<()> {
     println!("send_uqbar_handshake\r");
-    let our_hs = bincode::serialize(&HandshakePayload {
+    let our_hs = rmp_serde::to_vec(&HandshakePayload {
         name: our.name.clone(),
         signature: keypair.sign(noise_static_key).as_ref().to_vec(),
         protocol_version: 1,
@@ -226,7 +226,7 @@ pub async fn recv_uqbar_handshake(
     // 2. a signature by their published networking key that signs the
     //    static key they will be using for this handshake
     // 3. the version number of the networking protocol (so we can upgrade it)
-    Ok(bincode::deserialize(&buf[..len])?)
+    Ok(rmp_serde::from_slice(&buf[..len])?)
 }
 
 pub async fn ws_recv(

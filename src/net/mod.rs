@@ -708,7 +708,7 @@ async fn recv_connection_via_router(
     let (mut write_stream, mut read_stream) = websocket.split();
 
     // before beginning XX handshake pattern, send a routing request
-    let message = bincode::serialize(&RoutingRequest {
+    let message = rmp_serde::to_vec(&RoutingRequest {
         source: our.name.clone(),
         signature: keypair
             .sign([their_name, router.name.as_str()].concat().as_bytes())
@@ -810,7 +810,7 @@ async fn init_connection(
     // if this is a routed request, before starting XX handshake pattern, send a
     // routing request message over socket
     if use_router.is_some() {
-        let message = bincode::serialize(&RoutingRequest {
+        let message = rmp_serde::to_vec(&RoutingRequest {
             source: our.name.clone(),
             signature: keypair
                 .sign(
@@ -890,8 +890,8 @@ async fn handle_local_message(
         Message::Response((response, _context)) => {
             // these are received as a router, when we send ConnectionRequests
             // to a node we do routing for.
-            match serde_json::from_slice::<NetResponses>(&response.ipc)? {
-                NetResponses::Attempting(_) => {
+            match rmp_serde::from_slice::<NetResponses>(&response.ipc)? {
+                NetResponses::Accepted(_) => {
                     // TODO anything here?
                 }
                 NetResponses::Rejected(to) => {
@@ -907,7 +907,7 @@ async fn handle_local_message(
     };
 
     if km.source.node != our.name {
-        if let Ok(act) = serde_json::from_slice::<NetActions>(&ipc) {
+        if let Ok(act) = rmp_serde::from_slice::<NetActions>(&ipc) {
             match act {
                 NetActions::QnsBatchUpdate(_) | NetActions::QnsUpdate(_) => {
                     // for now, we don't get these from remote.
@@ -949,6 +949,27 @@ async fn handle_local_message(
                             kernel_message_tx.clone(),
                             print_tx.clone(),
                         ));
+                        kernel_message_tx
+                            .send(KernelMessage {
+                                id: km.id,
+                                source: Address {
+                                    node: our.name.clone(),
+                                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+                                },
+                                target: km.rsvp.unwrap_or(km.source),
+                                rsvp: None,
+                                message: Message::Response((
+                                    Response {
+                                        inherit: false,
+                                        ipc: rmp_serde::to_vec(&NetResponses::Accepted(from))?,
+                                        metadata: None,
+                                    },
+                                    None,
+                                )),
+                                payload: None,
+                                signed_capabilities: None,
+                            })
+                            .await?;
                     } else {
                         kernel_message_tx
                             .send(KernelMessage {
@@ -962,7 +983,7 @@ async fn handle_local_message(
                                 message: Message::Response((
                                     Response {
                                         inherit: false,
-                                        ipc: serde_json::to_vec(&NetResponses::Rejected(from))?,
+                                        ipc: rmp_serde::to_vec(&NetResponses::Rejected(from))?,
                                         metadata: None,
                                     },
                                     None,
