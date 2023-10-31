@@ -836,7 +836,7 @@ async fn match_request(
                     let Message::Response((Response { ipc, .. }, None)) = message else {
                         return Err(VfsError::InternalError);
                     };
-            
+
                     let Some(ipc) = ipc else {
                         return Err(VfsError::InternalError);
                     };
@@ -977,7 +977,7 @@ async fn match_request(
                             let Some(ipc) = ipc else {
                                 return Err(VfsError::InternalError);
                             };
-                            
+
                             let Ok(FsResponse::Write(hash)) =
                                 serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
                                     .unwrap()
@@ -1106,7 +1106,6 @@ async fn match_request(
                 Err(_) => return Err(VfsError::PersistError),
                 Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
             }
-
         }
         VfsAction::WriteOffset {
             mut full_path,
