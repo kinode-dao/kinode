@@ -86,29 +86,32 @@ fn get_parent_path(path: &str) -> String {
     }
 }
 
+#[async_recursion::async_recursion]
 async fn create_entry(
     vfs: &mut MutexGuard<Vfs>,
     path: &str,
-    entry_type: EntryType,
+    key: Key,
 ) -> Result<Key, VfsError> {
-    if let Some(key) = vfs.path_to_key.get(path) {
-        return Ok(key.clone());
+    if let Some(existing_key) = vfs.path_to_key.get(path) {
+        return Ok(existing_key.clone());
     }
 
     let parent_path = get_parent_path(path);
     let parent_key = create_entry(
         vfs,
         &parent_path,
-        EntryType::Dir {
-            parent: Key::Dir { id: 0 },
-            children: HashSet::new(),
-        },
+        Key::Dir { id: rand::random() },
     )
     .await?;
 
-    let key = match entry_type {
-        EntryType::Dir { .. } => Key::Dir { id: rand::random() },
-        EntryType::File { .. } => Key::File { id: rand::random() },
+    let entry_type = match key {
+        Key::Dir { id } => EntryType::Dir {
+            parent: parent_key.clone(),
+            children: HashSet::new(),
+        },
+        Key::File { id } => EntryType::File {
+            parent: parent_key.clone(),
+        },
     };
     let entry = Entry {
         name: path.split("/").last().unwrap().to_string(),
@@ -127,32 +130,42 @@ async fn create_entry(
     Ok(key)
 }
 
+#[async_recursion::async_recursion]
 async fn rename_entry(
-    vfs: &mut MutexGuard<Vfs>,
+    vfs: Arc<Mutex<Vfs>>,
     old_path: &str,
     new_path: &str,
 ) -> Result<(), VfsError> {
-    let key = match vfs.path_to_key.remove(old_path) {
-        Some(key) => key,
-        None => return Err(VfsError::EntryNotFound),
+    let (key, children) = {
+        let mut vfs = vfs.lock().await;
+        let key = match vfs.path_to_key.remove(old_path) {
+            Some(key) => key,
+            None => return Err(VfsError::EntryNotFound),
+        };
+        let mut entry = match vfs.key_to_entry.get_mut(&key) {
+            Some(entry) => entry,
+            None => return Err(VfsError::EntryNotFound),
+        };
+        entry.name = new_path.split("/").last().unwrap().to_string();
+        entry.full_path = new_path.to_string();
+        let children = if let EntryType::Dir { children, .. } = &entry.entry_type {
+            children.clone()
+        } else {
+            HashSet::new()
+        };
+        vfs.path_to_key.insert(new_path.to_string(), key.clone());
+        (key, children)
     };
-    let mut entry = match vfs.key_to_entry.remove(&key) {
-        Some(entry) => entry,
-        None => return Err(VfsError::EntryNotFound),
-    };
-    entry.name = new_path.split("/").last().unwrap().to_string();
-    entry.full_path = new_path.to_string();
-    vfs.key_to_entry.insert(key.clone(), entry);
-    vfs.path_to_key.insert(new_path.to_string(), key.clone());
 
-    // if the entry is a directory, recursively update the paths of its children
-    if let EntryType::Dir { children, .. } = &vfs.key_to_entry.get(&key).unwrap().entry_type {
-        for child_key in children.clone() {
-            let child_entry = vfs.key_to_entry.get(&child_key).unwrap();
-            let old_child_path = child_entry.full_path.clone();
-            let new_child_path = old_child_path.replace(old_path, new_path);
-            rename_entry(vfs, &old_child_path, &new_child_path).await?;
-        }
+    // recursively update the paths of the children
+    for child_key in children {
+        let child_entry = {
+            let vfs = vfs.lock().await;
+            vfs.key_to_entry.get(&child_key).unwrap().clone()
+        };
+        let old_child_path = child_entry.full_path.clone();
+        let new_child_path = old_child_path.replace(old_path, new_path);
+        rename_entry(vfs.clone(), &old_child_path, &new_child_path).await?;
     }
 
     Ok(())
@@ -778,19 +791,11 @@ async fn match_request(
                     match create_entry(
                         &mut vfs,
                         &full_path,
-                        EntryType::Dir {
-                            parent: Key::Dir { id: 0 },
-                            children: HashSet::new(),
-                        },
+                        Key::Dir { id: rand::random() },
                     )
                     .await
                     {
-                        Ok(_) => {
-                            return Ok((
-                                Some(serde_json::to_string(&VfsResponse::Ok).unwrap()),
-                                None,
-                            ))
-                        }
+                        Ok(_) => {},
                         Err(e) => {
                             return Err(e);
                         }
@@ -798,7 +803,6 @@ async fn match_request(
                 }
                 AddEntryType::NewFile => {
                     full_path = clean_path(&full_path);
-
                     let hash = {
                         let mut vfs = vfs.lock().await;
                         if !vfs.path_to_key.contains_key(&full_path) {
@@ -860,21 +864,15 @@ async fn match_request(
                     else {
                         return Err(VfsError::InternalError);
                     };
+
                     match create_entry(
-                        &mut vfs,
+                        &mut vfs.lock().await,
                         &full_path,
-                        EntryType::File {
-                            parent: Key::File { id: hash },
-                        },
+                        Key::File { id: hash },
                     )
                     .await
                     {
-                        Ok(_) => {
-                            return Ok((
-                                Some(serde_json::to_string(&VfsResponse::Ok).unwrap()),
-                                None,
-                            ))
-                        }
+                        Ok(_) => {},
                         Err(e) => {
                             return Err(e);
                         }
@@ -901,18 +899,11 @@ async fn match_request(
                     match create_entry(
                         &mut vfs,
                         &full_path,
-                        EntryType::File {
-                            parent: Key::File { id: hash },
-                        },
+                        Key::File { id: hash },
                     )
                     .await
                     {
-                        Ok(_) => {
-                            return Ok((
-                                Some(serde_json::to_string(&VfsResponse::Ok).unwrap()),
-                                None,
-                            ))
-                        }
+                        Ok(_) => {}
                         Err(e) => {
                             return Err(e);
                         }
@@ -1025,9 +1016,7 @@ async fn match_request(
                             match create_entry(
                                 &mut vfs.lock().await,
                                 &full_path,
-                                EntryType::File {
-                                    parent: Key::File { id: hash },
-                                },
+                                Key::File { id: hash },
                             )
                             .await
                             {
@@ -1058,8 +1047,7 @@ async fn match_request(
             full_path = clean_path(&full_path);
             new_full_path = clean_path(&new_full_path);
 
-            let mut vfs = vfs.lock().await;
-            match rename_entry(&mut vfs, &full_path, &new_full_path).await {
+            match rename_entry(vfs, &full_path, &new_full_path).await {
                 Ok(_) => {}
                 Err(e) => {
                     return Err(e);
@@ -1305,6 +1293,7 @@ async fn match_request(
         }
         VfsAction::GetEntry(mut full_path) => {
             full_path = clean_path(&full_path);
+
             let vfs = vfs.lock().await;
             let key = vfs.path_to_key.get(&full_path);
             match key {
