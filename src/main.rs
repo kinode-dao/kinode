@@ -36,6 +36,11 @@ const CAP_CHANNEL_CAPACITY: usize = 1_000;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// This can and should be an environment variable / setting. It configures networking
+/// such that indirect nodes always use routers, even when target is a direct node,
+/// such that only their routers can ever see their physical networking details.
+const REVEAL_IP: bool = true;
+
 #[tokio::main]
 async fn main() {
     // For use with https://github.com/tokio-rs/console
@@ -264,6 +269,7 @@ async fn main() {
         print_sender.clone(),
         net_message_sender,
         net_message_receiver,
+        REVEAL_IP,
     ));
     tasks.spawn(filesystem::fs_sender(
         our.name.clone(),
@@ -321,10 +327,10 @@ async fn main() {
                     "\x1b[38;5;196muh oh, a kernel process crashed: {}\x1b[0m",
                     e
                 )
-                // TODO restart the task
+                // TODO restart the task?
             } else {
                 format!("what does this mean???")
-                // TODO restart the task
+                // TODO restart the task?
             }
         }
         quit = terminal::terminal(
