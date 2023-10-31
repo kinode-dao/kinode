@@ -31,6 +31,10 @@ pub struct Args {
     /// Ethereum RPC endpoint
     #[arg(short, long, default_value_t = String::new())]
     pub rpc: String,
+
+    /// Networking password
+    #[arg(short, long, value_parser)]
+    pub password: Option<String>,
 }
 
 //

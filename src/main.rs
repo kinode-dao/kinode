@@ -2,6 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use dotenv;
 use ethers::prelude::namehash;
+use ring::signature::KeyPair;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -161,45 +162,72 @@ async fn main() {
         }
     };
 
-    // check if we have keys saved on disk, encrypted
-    // if so, prompt user for "password" to decrypt with
-
-    // once password is received, use to decrypt local keys file,
-    // and pass the keys into boot process as is done in registration.
-
-    // NOTE: when we log in, we MUST check the PKI to make sure our
-    // information matches what we think it should be. this includes
-    // username, networking key, and routing info.
-    // if any do not match, we should prompt user to create a "transaction"
-    // that updates their PKI info on-chain.
     let http_server_port = http_server::find_open_port(8080).await.unwrap();
-    let (kill_tx, kill_rx) = oneshot::channel::<bool>();
+    let (our, decoded_keyfile) = match args.password {
+        Some(password) => {
+            match fs::read(format!("{}/.keys", home_directory_path)).await {
+                Err(e) => panic!("could not read keyfile: {}", e),
+                Ok(keyfile) => {
+                    match keygen::decode_keyfile(keyfile, &password) {
+                        Err(e) => panic!("could not decode keyfile: {}", e),
+                        Ok(decoded_keyfile) => {
+                            let our = Identity {
+                                name: decoded_keyfile.username.clone(),
+                                networking_key: format!("0x{}", hex::encode(decoded_keyfile.networking_keypair.public_key().as_ref())),
+                                ws_routing: None,  //  TODO
+                                allowed_routers: decoded_keyfile.routers.clone(),
+                            };
+                            (our, decoded_keyfile)
+                        },
+                    }
+                },
+            }
+        },
+        None => {
+            // check if we have keys saved on disk, encrypted
+            // if so, prompt user for "password" to decrypt with
 
-    let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
-        Ok(keyfile) => keyfile,
-        Err(_) => Vec::new(),
+            // once password is received, use to decrypt local keys file,
+            // and pass the keys into boot process as is done in registration.
+
+            // NOTE: when we log in, we MUST check the PKI to make sure our
+            // information matches what we think it should be. this includes
+            // username, networking key, and routing info.
+            // if any do not match, we should prompt user to create a "transaction"
+            // that updates their PKI info on-chain.
+            let (kill_tx, kill_rx) = oneshot::channel::<bool>();
+
+            let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
+                Ok(keyfile) => keyfile,
+                Err(_) => Vec::new(),
+            };
+
+            let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
+            let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
+                _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, disk_keyfile)
+                    => panic!("registration failed"),
+                (our, decoded_keyfile, encoded_keyfile) = async {
+                    while let Some(fin) = rx.recv().await { return fin }
+                    panic!("registration failed")
+                } => (our, decoded_keyfile, encoded_keyfile),
+            };
+
+            println!(
+                "saving encrypted networking keys to {}/.keys",
+                home_directory_path
+            );
+
+            fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
+                .await
+                .unwrap();
+
+            println!("registration complete!");
+
+            let _ = kill_tx.send(true);
+
+            (our, decoded_keyfile)
+        },
     };
-
-    let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
-    let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-        _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, disk_keyfile)
-            => panic!("registration failed"),
-        (our, decoded_keyfile, encoded_keyfile) = async {
-            while let Some(fin) = rx.recv().await { return fin }
-            panic!("registration failed")
-        } => (our, decoded_keyfile, encoded_keyfile),
-    };
-
-    println!(
-        "saving encrypted networking keys to {}/.keys",
-        home_directory_path
-    );
-
-    fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
-        .await
-        .unwrap();
-
-    println!("registration complete!");
 
     let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
         our.name.clone(),
@@ -210,7 +238,6 @@ async fn main() {
     .await
     .expect("fs load failed!");
 
-    let _ = kill_tx.send(true);
     let _ = print_sender
         .send(Printout {
             verbosity: 0,
