@@ -520,7 +520,8 @@ async fn init_connection(
             let Ok(ws_url) = make_ws_url(our_ip, ip, port) else {
                 return Err(anyhow!("failed to parse websocket url"));
             };
-            let Ok(Ok((websocket, _response))) = timeout(TIMEOUT, connect_async(ws_url)).await else {
+            let Ok(Ok((websocket, _response))) = timeout(TIMEOUT, connect_async(ws_url)).await
+            else {
                 return Err(anyhow!("failed to connect to target"));
             };
             websocket.split()
@@ -532,7 +533,8 @@ async fn init_connection(
             let Ok(ws_url) = make_ws_url(our_ip, ip, port) else {
                 return Err(anyhow!("failed to parse websocket url"));
             };
-            let Ok(Ok((websocket, _response))) = timeout(TIMEOUT, connect_async(ws_url)).await else {
+            let Ok(Ok((websocket, _response))) = timeout(TIMEOUT, connect_async(ws_url)).await
+            else {
                 return Err(anyhow!("failed to connect to target"));
             };
             websocket.split()
