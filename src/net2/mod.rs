@@ -715,8 +715,7 @@ async fn recv_connection_via_router(
     let Ok(ws_url) = make_ws_url(our_ip, ip, port) else {
         return Err(anyhow!("failed to parse websocket url"));
     };
-    let Ok(Ok((websocket, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
-    else {
+    let Ok(Ok((websocket, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await else {
         return Err(anyhow!("failed to connect to target"));
     };
     let (mut write_stream, mut read_stream) = websocket.split();
@@ -798,7 +797,8 @@ async fn init_connection(
             let Ok(ws_url) = make_ws_url(our_ip, ip, port) else {
                 return Err(anyhow!("failed to parse websocket url"));
             };
-            let Ok(Ok((websocket, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
+            let Ok(Ok((websocket, _response))) =
+                time::timeout(TIMEOUT, connect_async(ws_url)).await
             else {
                 return Err(anyhow!("failed to connect to target"));
             };
@@ -811,7 +811,8 @@ async fn init_connection(
             let Ok(ws_url) = make_ws_url(our_ip, ip, port) else {
                 return Err(anyhow!("failed to parse websocket url"));
             };
-            let Ok(Ok((websocket, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
+            let Ok(Ok((websocket, _response))) =
+                time::timeout(TIMEOUT, connect_async(ws_url)).await
             else {
                 return Err(anyhow!("failed to connect to target"));
             };
@@ -930,20 +931,24 @@ async fn handle_local_message(
                     // respond by attempting to init a matching passthrough.
                     // TODO can discriminate more here..
                     if our.allowed_routers.contains(&km.source.node) {
-                        let Ok((peer_id, peer_conn)) = time::timeout(TIMEOUT,
-                                recv_connection_via_router(
-                                    our,
-                                    our_ip,
-                                    &from,
-                                    pki,
-                                    keypair,
-                                    &peers
-                                        .get(&km.source.node)
-                                        .ok_or(anyhow!("unknown router"))?
-                                        .identity,
-                                )).await? else {
-                                    return Err(anyhow!("someone tried to connect to us but it timed out"))
-                                };
+                        let Ok((peer_id, peer_conn)) = time::timeout(
+                            TIMEOUT,
+                            recv_connection_via_router(
+                                our,
+                                our_ip,
+                                &from,
+                                pki,
+                                keypair,
+                                &peers
+                                    .get(&km.source.node)
+                                    .ok_or(anyhow!("unknown router"))?
+                                    .identity,
+                            ),
+                        )
+                        .await?
+                        else {
+                            return Err(anyhow!("someone tried to connect to us but it timed out"));
+                        };
                         let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
                         let peer = Arc::new(Peer {
                             identity: peer_id,
