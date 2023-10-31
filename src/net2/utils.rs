@@ -46,16 +46,24 @@ pub async fn create_passthrough(
     let Some((ref ip, ref port)) = to_id.ws_routing else {
         // create passthrough to indirect node that we do routing for
         //
-        let target_peer = peers.get(&to_name).ok_or(anyhow!("can't route to that indirect node"))?;
+        let target_peer = peers
+            .get(&to_name)
+            .ok_or(anyhow!("can't route to that indirect node"))?;
         if !target_peer.routing_for {
-            return Err(anyhow!("we don't route for that indirect node"))
+            return Err(anyhow!("we don't route for that indirect node"));
         }
         // send their net:sys:uqbar process a message, notifying it to create a *matching*
         // passthrough request, which we can pair with this pending one.
         target_peer.sender.send(KernelMessage {
             id: rand::random(),
-            source: Address { node: our.name.clone(), process: ProcessId::from_str("net:sys:uqbar").unwrap() },
-            target: Address { node: to_name.clone(), process: ProcessId::from_str("net:sys:uqbar").unwrap() },
+            source: Address {
+                node: our.name.clone(),
+                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+            },
+            target: Address {
+                node: to_name.clone(),
+                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+            },
             rsvp: None,
             message: Message::Request(Request {
                 inherit: false,
@@ -73,7 +81,7 @@ pub async fn create_passthrough(
                 target: to_name,
                 write_stream: write_stream_1,
                 read_stream: read_stream_1,
-            })
+            }),
         ));
     };
     // create passthrough to direct node
@@ -117,7 +125,7 @@ pub fn validate_routing_request(
         &routing_request.signature,
     )?;
     if routing_request.target == routing_request.source {
-        return Err(anyhow!("can't route to self"))
+        return Err(anyhow!("can't route to self"));
     }
     Ok((their_id.clone(), routing_request.target))
 }
