@@ -99,7 +99,7 @@ pub enum NetActions {
 /// For now, only sent in response to a ConnectionRequest
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NetResponses {
-    Attempting(NodeId),
+    Accepted(NodeId),
     Rejected(NodeId),
 }
 
