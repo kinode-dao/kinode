@@ -173,16 +173,21 @@ async fn main() {
                         Ok(decoded_keyfile) => {
                             let our = Identity {
                                 name: decoded_keyfile.username.clone(),
-                                networking_key: format!("0x{}", hex::encode(decoded_keyfile.networking_keypair.public_key().as_ref())),
-                                ws_routing: None,  //  TODO
+                                networking_key: format!(
+                                    "0x{}",
+                                    hex::encode(
+                                        decoded_keyfile.networking_keypair.public_key().as_ref()
+                                    )
+                                ),
+                                ws_routing: None, //  TODO
                                 allowed_routers: decoded_keyfile.routers.clone(),
                             };
                             (our, decoded_keyfile)
-                        },
+                        }
                     }
-                },
+                }
             }
-        },
+        }
         None => {
             // check if we have keys saved on disk, encrypted
             // if so, prompt user for "password" to decrypt with
@@ -226,7 +231,7 @@ async fn main() {
             let _ = kill_tx.send(true);
 
             (our, decoded_keyfile)
-        },
+        }
     };
 
     let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
