@@ -151,7 +151,7 @@ pub fn validate_handshake(
 pub async fn send_uqbar_message(km: &KernelMessage, conn: &mut PeerConnection) -> Result<()> {
     let serialized = bincode::serialize(km)?;
     if serialized.len() > MESSAGE_MAX_SIZE as usize {
-        return Err(anyhow!("uqbar message too large"));
+        return Err(anyhow!("message too large"));
     }
 
     let len = (serialized.len() as u32).to_be_bytes();

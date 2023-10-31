@@ -72,7 +72,7 @@ pub struct PendingPassthroughConnection {
 
 // TODO upgrade from hashmaps
 pub type Peers = HashMap<String, Arc<Peer>>;
-pub type PKINames = HashMap<String, NodeId>; // TODO maybe U256 to String
+pub type PKINames = HashMap<String, NodeId>;
 pub type OnchainPKI = HashMap<String, Identity>;
 pub type PendingPassthroughs = HashMap<(NodeId, NodeId), PendingPassthroughConnection>;
 
