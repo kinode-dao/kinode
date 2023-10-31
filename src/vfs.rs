@@ -87,22 +87,13 @@ fn get_parent_path(path: &str) -> String {
 }
 
 #[async_recursion::async_recursion]
-async fn create_entry(
-    vfs: &mut MutexGuard<Vfs>,
-    path: &str,
-    key: Key,
-) -> Result<Key, VfsError> {
+async fn create_entry(vfs: &mut MutexGuard<Vfs>, path: &str, key: Key) -> Result<Key, VfsError> {
     if let Some(existing_key) = vfs.path_to_key.get(path) {
         return Ok(existing_key.clone());
     }
 
     let parent_path = get_parent_path(path);
-    let parent_key = create_entry(
-        vfs,
-        &parent_path,
-        Key::Dir { id: rand::random() },
-    )
-    .await?;
+    let parent_key = create_entry(vfs, &parent_path, Key::Dir { id: rand::random() }).await?;
 
     let entry_type = match key {
         Key::Dir { id } => EntryType::Dir {
@@ -788,14 +779,9 @@ async fn match_request(
                             .unwrap();
                         return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None));
                     };
-                    match create_entry(
-                        &mut vfs,
-                        &full_path,
-                        Key::Dir { id: rand::random() },
-                    )
-                    .await
+                    match create_entry(&mut vfs, &full_path, Key::Dir { id: rand::random() }).await
                     {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => {
                             return Err(e);
                         }
@@ -865,14 +851,10 @@ async fn match_request(
                         return Err(VfsError::InternalError);
                     };
 
-                    match create_entry(
-                        &mut vfs.lock().await,
-                        &full_path,
-                        Key::File { id: hash },
-                    )
-                    .await
+                    match create_entry(&mut vfs.lock().await, &full_path, Key::File { id: hash })
+                        .await
                     {
-                        Ok(_) => {},
+                        Ok(_) => {}
                         Err(e) => {
                             return Err(e);
                         }
@@ -896,13 +878,7 @@ async fn match_request(
                         };
                         vfs.key_to_entry.remove(&old_key);
                     };
-                    match create_entry(
-                        &mut vfs,
-                        &full_path,
-                        Key::File { id: hash },
-                    )
-                    .await
-                    {
+                    match create_entry(&mut vfs, &full_path, Key::File { id: hash }).await {
                         Ok(_) => {}
                         Err(e) => {
                             return Err(e);
