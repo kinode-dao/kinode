@@ -1,4 +1,4 @@
-use crate::net2::{types::*, MESSAGE_MAX_SIZE, TIMEOUT};
+use crate::net::{types::*, MESSAGE_MAX_SIZE, TIMEOUT};
 use crate::types::*;
 use anyhow::{anyhow, Result};
 use futures::stream::{SplitSink, SplitStream};

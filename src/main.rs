@@ -14,7 +14,7 @@ mod http_client;
 mod http_server;
 mod kernel;
 mod keygen;
-mod net2;
+mod net;
 mod register;
 mod terminal;
 mod types;
@@ -255,7 +255,7 @@ async fn main() {
         vfs_message_sender,
         encryptor_sender,
     ));
-    tasks.spawn(net2::networking(
+    tasks.spawn(net::networking(
         our.clone(),
         our_ip.to_string(),
         networking_keypair_arc.clone(),
