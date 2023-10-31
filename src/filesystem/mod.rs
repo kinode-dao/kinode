@@ -192,13 +192,11 @@ async fn bootstrap(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: Some(
-                    serde_json::to_string::<VfsRequest>(&VfsRequest {
-                        drive: our_drive_name.clone(),
-                        action: VfsAction::New,
-                    })
-                    .unwrap(),
-                ),
+                ipc: serde_json::to_vec::<VfsRequest>(&VfsRequest {
+                    drive: our_drive_name.clone(),
+                    action: VfsAction::New,
+                })
+                .unwrap(),
                 metadata: None,
             }),
             payload: None,
@@ -233,16 +231,14 @@ async fn bootstrap(
                     message: Message::Request(Request {
                         inherit: false,
                         expects_response: None,
-                        ipc: Some(
-                            serde_json::to_string::<VfsRequest>(&VfsRequest {
-                                drive: our_drive_name.clone(),
-                                action: VfsAction::Add {
-                                    full_path: file_path,
-                                    entry_type: AddEntryType::NewFile,
-                                },
-                            })
-                            .unwrap(),
-                        ),
+                        ipc: serde_json::to_vec::<VfsRequest>(&VfsRequest {
+                            drive: our_drive_name.clone(),
+                            action: VfsAction::Add {
+                                full_path: file_path,
+                                entry_type: AddEntryType::NewFile,
+                            },
+                        })
+                        .unwrap(),
                         metadata: None,
                     }),
                     payload: Some(Payload {
@@ -515,7 +511,7 @@ async fn handle_request(
     } = kernel_message;
     let Message::Request(Request {
         expects_response,
-        ipc: Some(json_string),
+        ipc,
         metadata, // for kernel
         ..
     }) = message
@@ -523,11 +519,11 @@ async fn handle_request(
         return Err(FsError::NoJson);
     };
 
-    let action: FsAction = match serde_json::from_str(&json_string) {
+    let action: FsAction = match serde_json::from_slice(&ipc) {
         Ok(r) => r,
         Err(e) => {
             return Err(FsError::BadJson {
-                json: json_string.into(),
+                json: String::from_utf8(ipc).unwrap_or_default(),
                 error: format!("parse failed: {:?}", e),
             })
         }
@@ -711,9 +707,7 @@ async fn handle_request(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc: Some(
-                        serde_json::to_string::<Result<FsResponse, FsError>>(&Ok(ipc)).unwrap(),
-                    ),
+                    ipc: serde_json::to_vec::<Result<FsResponse, FsError>>(&Ok(ipc)).unwrap(),
                     metadata, // for kernel
                 },
                 None,
@@ -759,9 +753,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: FsError) -> K
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: Some(
-                    serde_json::to_string::<Result<FsResponse, FsError>>(&Err(error)).unwrap(),
-                ),
+                ipc: serde_json::to_vec::<Result<FsResponse, FsError>>(&Err(error)).unwrap(),
                 metadata: None,
             },
             None,

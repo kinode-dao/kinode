@@ -93,7 +93,7 @@ pub struct CIpcMetadata {
 }
 
 impl CPreOptionStr {
-    fn new(s: Option<String>) -> Self {
+    fn new(s: Option<Vec<u8>>) -> Self {
         let (is_empty, string) = match s {
             None => (0, CString::new("").unwrap()),
             Some(s) => (1, CString::new(s).unwrap()),
@@ -106,7 +106,7 @@ impl CPreOptionStr {
 }
 
 impl COptionStr {
-    fn new(s: Option<String>) -> Self {
+    fn new(s: Option<Vec<u8>>) -> Self {
         let (is_empty, string) = match s {
             None => (0, CString::new("").unwrap()),
             Some(s) => (1, CString::new(s).unwrap()),
@@ -115,6 +115,14 @@ impl COptionStr {
             is_empty,
             string: string.as_ptr() as *mut c_char,
         }
+    }
+}
+
+fn from_coptionstr_to_bytes(s: *const COptionStr) -> Vec<u8> {
+    if unsafe { (*s).is_empty == 0 } {
+        vec![]
+    } else {
+        from_cstr_to_string(unsafe { (*s).string }).as_bytes().to_vec()
     }
 }
 
@@ -163,7 +171,13 @@ impl From<Option<Payload>> for CPrePayload {
     fn from(p: Option<Payload>) -> Self {
         let (is_empty, mime, bytes) = match p {
             None => (0, COptionStr::new(None), CBytes::new_empty()),
-            Some(Payload { mime, bytes }) => (1, COptionStr::new(mime), CBytes::new(bytes)),
+            Some(Payload { mime, bytes }) => {
+                let mime = match mime {
+                    Some(s) => Some(s.as_bytes().to_vec()),
+                    None => None,
+                };
+                (1, COptionStr::new(mime), CBytes::new(bytes))
+            }
         };
         CPrePayload {
             is_empty,
@@ -299,7 +313,7 @@ pub extern "C" fn send_and_await_response_wrapped(
     let target_node = from_cstr_to_string(target_node);
     let target_process = from_cprocessid_to_processid(target_process);
     let payload = from_cpayload_to_option_payload(payload);
-    let request_ipc = from_coptionstr_to_option_string(request_ipc);
+    let request_ipc = from_coptionstr_to_bytes(request_ipc);
     let request_metadata = from_coptionstr_to_option_string(request_metadata);
     let (
         _,
@@ -322,8 +336,11 @@ pub extern "C" fn send_and_await_response_wrapped(
     ).unwrap() else {
         panic!("");
     };
-    let ipc = CPreOptionStr::new(ipc);
-    let metadata = CPreOptionStr::new(metadata);
+    let ipc = CPreOptionStr::new(Some(ipc));
+    let metadata = CPreOptionStr::new(match metadata {
+        None => None,
+        Some(s) => Some(s.as_bytes().to_vec())
+    });
 
     CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
 }
@@ -342,7 +359,7 @@ fn handle_message (
     match message {
         Message::Response(_) => { unimplemented!() },
         Message::Request(Request { ipc, .. }) => {
-            match process_lib::parse_message_ipc(ipc.clone())? {
+            match process_lib::parse_message_ipc(&ipc)? {
                 sq::SqliteMessage::New { db } => {
                     let vfs_address = Address {
                         node: our.node.clone(),

@@ -76,7 +76,7 @@ pub async fn encryptor(
             payload,
             ..
         } = kernel_message;
-        let Message::Request(Request { ipc: Some(ipc), .. }) = message else {
+        let Message::Request(Request { ipc, .. }) = message else {
             let _ = print_tx
                 .send(Printout {
                     verbosity: 1,
@@ -86,14 +86,7 @@ pub async fn encryptor(
             continue;
         };
 
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 1,
-                content: format!("ENCRYPTOR IPC: {}", ipc.clone()),
-            })
-            .await;
-
-        match serde_json::from_str::<EncryptorMessage>(&ipc) {
+        match serde_json::from_slice::<EncryptorMessage>(&ipc) {
             Ok(message) => {
                 match message {
                     EncryptorMessage::GetKeyAction(GetKeyAction {
@@ -160,10 +153,10 @@ pub async fn encryptor(
                                     message: Message::Response((
                                         Response {
                                             inherit: false,
-                                            ipc: Some(serde_json::json!({
+                                            ipc: serde_json::json!({
                                                 "status": 201,
                                                 "headers": headers,
-                                            }).to_string()),
+                                            }).to_string().into_bytes(),
                                             metadata: None,
                                         },
                                         None,
@@ -234,7 +227,7 @@ pub async fn encryptor(
                                 message: Message::Request(Request {
                                     inherit: false,
                                     expects_response: None, // A forwarded message does not expect a response
-                                    ipc: Some(json.clone().unwrap_or_default().to_string()),
+                                    ipc: json.unwrap_or_default().to_string().into_bytes(),
                                     metadata: None,
                                 }),
                                 payload: Some(Payload {
@@ -288,7 +281,7 @@ pub async fn encryptor(
                                 message: Message::Request(Request {
                                     inherit: false,
                                     expects_response: None, // A forwarded message does not expect a response
-                                    ipc: Some(json.clone().unwrap_or_default().to_string()),
+                                    ipc: json.unwrap_or_default().to_string().into_bytes(),
                                     metadata: None,
                                 }),
                                 payload: Some(Payload {
@@ -342,7 +335,7 @@ pub async fn encryptor(
                                 message: Message::Response((
                                     Response {
                                         inherit: false,
-                                        ipc: None,
+                                        ipc: vec![],
                                         metadata: None,
                                     },
                                     None,
@@ -398,7 +391,7 @@ pub async fn encryptor(
                                 message: Message::Response((
                                     Response {
                                         inherit: false,
-                                        ipc: None,
+                                        ipc: vec![],
                                         metadata: None,
                                     },
                                     None,

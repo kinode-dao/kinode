@@ -1,0 +1,3 @@
+[submodule "src/register"]
+	path = src/register
+	url = https://github.com/uqbar-dao/register

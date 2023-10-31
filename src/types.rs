@@ -1,4 +1,5 @@
 use crate::kernel::component::uq_process::types as wit;
+use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
@@ -52,6 +53,37 @@ pub struct Registration {
     pub direct: bool,
 }
 
+#[derive(Debug)]
+pub struct Keyfile {
+    pub username: String,
+    pub routers: Vec<String>,
+    pub networking_keypair: signature::Ed25519KeyPair,
+    pub jwt_secret_bytes: Vec<u8>,
+    pub file_key: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyfileVet {
+    pub password: String,
+    pub keyfile: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyfileVetted {
+    pub username: String,
+    pub networking_key: String,
+    pub routers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BootInfo {
+    pub password: String,
+    pub keyfile: String,
+    pub username: String,
+    pub reset: bool,
+    pub direct: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Identity {
     pub name: NodeId,
@@ -76,7 +108,7 @@ pub struct IdentityTransaction {
 // matches types in uqbar.wit
 //
 
-pub type Context = String; // JSON-string
+pub type Context = Vec<u8>;
 
 /// process ID is a formatted unique identifier that contains
 /// the publishing node's ID, the package name, and finally the process name.
@@ -201,14 +233,14 @@ pub struct Payload {
 pub struct Request {
     pub inherit: bool,
     pub expects_response: Option<u64>, // number of seconds until timeout
-    pub ipc: Option<String>,           // JSON-string
-    pub metadata: Option<String>,      // JSON-string
+    pub ipc: Vec<u8>,
+    pub metadata: Option<String>, // JSON-string
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Response {
     pub inherit: bool,
-    pub ipc: Option<String>,      // JSON-string
+    pub ipc: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
 }
 
@@ -718,16 +750,29 @@ impl std::fmt::Display for Message {
                 "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n    )",
                 request.inherit,
                 request.expects_response,
-                &request.ipc.as_ref().unwrap_or(&"None".into()),
+                match serde_json::from_slice::<serde_json::Value>(&request.ipc) {
+                    Ok(json) => format!("{}", json),
+                    Err(_) => format!("{:?}", request.ipc),
+                },
                 &request.metadata.as_ref().unwrap_or(&"None".into()),
             ),
             Message::Response((response, context)) => write!(
                 f,
                 "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
                 response.inherit,
-                &response.ipc.as_ref().unwrap_or(&"None".into()),
+                match serde_json::from_slice::<serde_json::Value>(&response.ipc) {
+                    Ok(json) => format!("{}", json),
+                    Err(_) => format!("{:?}", response.ipc),
+                },
                 &response.metadata.as_ref().unwrap_or(&"None".into()),
-                &context.as_ref().unwrap_or(&"None".into()),
+                if context.is_none() {
+                    "None".into()
+                } else {
+                    match serde_json::from_slice::<serde_json::Value>(&context.as_ref().unwrap()) {
+                        Ok(json) => format!("{}", json),
+                        Err(_) => format!("{:?}", context.as_ref().unwrap()),
+                    }
+                },
             ),
         }
     }

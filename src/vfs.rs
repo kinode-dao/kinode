@@ -179,7 +179,7 @@ fn make_error_message(
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: Some(serde_json::to_string(&VfsResponse::Err(error)).unwrap()), //  TODO: handle error?
+                ipc: serde_json::to_vec(&VfsResponse::Err(error)).unwrap(), //  TODO: handle error?
                 metadata: None,
             },
             None,
@@ -226,9 +226,7 @@ async fn send_persist_state_message(
             message: Message::Request(Request {
                 inherit: true,
                 expects_response: Some(5), // TODO evaluate
-                ipc: Some(
-                    serde_json::to_string(&FsAction::SetState(VFS_PROCESS_ID.clone())).unwrap(),
-                ),
+                ipc: serde_json::to_vec(&FsAction::SetState(VFS_PROCESS_ID.clone())).unwrap(),
                 metadata: None,
             }),
             payload: Some(Payload {
@@ -284,9 +282,7 @@ async fn load_state_from_reboot(
             message: Message::Request(Request {
                 inherit: true,
                 expects_response: Some(5), // TODO evaluate
-                ipc: Some(
-                    serde_json::to_string(&FsAction::GetState(VFS_PROCESS_ID.clone())).unwrap(),
-                ),
+                ipc: serde_json::to_vec(&FsAction::GetState(VFS_PROCESS_ID.clone())).unwrap(),
                 metadata: None,
             }),
             payload: None,
@@ -304,8 +300,7 @@ async fn load_state_from_reboot(
     let Message::Response((Response { ipc, .. }, None)) = message else {
         return ();
     };
-    let Ok(Ok(FsResponse::GetState)) =
-        serde_json::from_str::<Result<FsResponse, FsError>>(&ipc.unwrap_or_default())
+    let Ok(Ok(FsResponse::GetState)) = serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
     else {
         return ();
     };
@@ -381,7 +376,7 @@ pub async fn vfs(
                     ..
                 } = km.clone();
                 let Message::Request(Request {
-                    ipc: Some(ipc),
+                    ipc,
                     ..
                 }) = message.clone()
                 else {
@@ -389,7 +384,7 @@ pub async fn vfs(
                     continue;
                 };
 
-                let request: VfsRequest = match serde_json::from_str(&ipc) {
+                let request: VfsRequest = match serde_json::from_slice(&ipc) {
                     Ok(r) => r,
                     Err(e) => {
                         println!("vfs: got invalid Request: {}", e);
@@ -537,7 +532,7 @@ pub async fn vfs(
                                                 } = km;
                                                 let Message::Request(Request {
                                                     expects_response,
-                                                    ipc: Some(ipc),
+                                                    ipc,
                                                     metadata, // we return this to Requester for kernel reasons
                                                     ..
                                                 }) = message.clone()
@@ -545,7 +540,7 @@ pub async fn vfs(
                                                     continue;
                                                 };
 
-                                                let request: VfsRequest = match serde_json::from_str(&ipc) {
+                                                let request: VfsRequest = match serde_json::from_slice(&ipc) {
                                                     Ok(r) => r,
                                                     Err(e) => {
                                                         println!("vfs: got invalid Request: {}", e);
@@ -740,7 +735,7 @@ async fn match_request(
     send_to_terminal: &PrintSender,
     send_to_caps_oracle: &CapMessageSender,
     mut recv_response: MessageReceiver,
-) -> Result<(Option<String>, Option<Vec<u8>>), VfsError> {
+) -> Result<(Vec<u8>, Option<Vec<u8>>), VfsError> {
     Ok(match request.action {
         VfsAction::New => {
             for new_cap in new_caps {
@@ -829,7 +824,7 @@ async fn match_request(
                             message: Message::Request(Request {
                                 inherit: true,
                                 expects_response: Some(5), // TODO evaluate
-                                ipc: Some(serde_json::to_string(&FsAction::Write(hash)).unwrap()),
+                                ipc: serde_json::to_vec(&FsAction::Write(hash)).unwrap(),
                                 metadata: None,
                             }),
                             payload,
@@ -841,12 +836,13 @@ async fn match_request(
                     let Message::Response((Response { ipc, .. }, None)) = message else {
                         return Err(VfsError::InternalError);
                     };
-
+            
                     let Some(ipc) = ipc else {
                         return Err(VfsError::InternalError);
                     };
+
                     let Ok(FsResponse::Write(hash)) =
-                        serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                        serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
                     else {
                         return Err(VfsError::InternalError);
                     };
@@ -957,9 +953,7 @@ async fn match_request(
                                     message: Message::Request(Request {
                                         inherit: true,
                                         expects_response: Some(5), // TODO evaluate
-                                        ipc: Some(
-                                            serde_json::to_string(&FsAction::Write(hash)).unwrap(),
-                                        ),
+                                        ipc: serde_json::to_vec(&FsAction::Write(hash)).unwrap(),
                                         metadata: None,
                                     }),
                                     payload: Some(Payload {
@@ -983,8 +977,10 @@ async fn match_request(
                             let Some(ipc) = ipc else {
                                 return Err(VfsError::InternalError);
                             };
+                            
                             let Ok(FsResponse::Write(hash)) =
-                                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
+                                    .unwrap()
                             else {
                                 return Err(VfsError::InternalError);
                             };
@@ -1031,7 +1027,7 @@ async fn match_request(
             }
 
             persist_state(send_to_persist, &mut recv_response, id).await;
-            (Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Delete(mut full_path) => {
             full_path = clean_path(&full_path);
@@ -1110,6 +1106,7 @@ async fn match_request(
                 Err(_) => return Err(VfsError::PersistError),
                 Ok(_) => return Ok((Some(serde_json::to_string(&VfsResponse::Ok).unwrap()), None)),
             }
+
         }
         VfsAction::WriteOffset {
             mut full_path,
@@ -1144,10 +1141,8 @@ async fn match_request(
                     message: Message::Request(Request {
                         inherit: true,
                         expects_response: Some(5), // TODO evaluate
-                        ipc: Some(
-                            serde_json::to_string(&FsAction::WriteOffset((file_hash, offset)))
-                                .unwrap(),
-                        ),
+                        ipc: serde_json::to_vec(&FsAction::WriteOffset((file_hash, offset)))
+                            .unwrap(),
                         metadata: None,
                     }),
                     payload,
@@ -1163,7 +1158,7 @@ async fn match_request(
                 return Err(VfsError::InternalError);
             };
             let Ok(FsResponse::Write(_)) =
-                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
             else {
                 return Err(VfsError::InternalError);
             };
@@ -1206,10 +1201,8 @@ async fn match_request(
                     message: Message::Request(Request {
                         inherit: true,
                         expects_response: Some(15),
-                        ipc: Some(
-                            serde_json::to_string(&FsAction::SetLength((file_hash.clone(), size)))
-                                .unwrap(),
-                        ),
+                        ipc: serde_json::to_vec(&FsAction::SetLength((file_hash.clone(), size)))
+                            .unwrap(),
                         metadata: None,
                     }),
                     payload: None,
@@ -1225,7 +1218,7 @@ async fn match_request(
                 return Err(VfsError::InternalError);
             };
             let Ok(FsResponse::Length(length)) =
-                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
             else {
                 return Err(VfsError::InternalError);
             };
@@ -1240,8 +1233,8 @@ async fn match_request(
         VfsAction::GetPath(hash) => {
             let mut vfs = vfs.lock().await;
             let key = Key::File { id: hash.clone() };
-            let ipc = Some(
-                serde_json::to_string(&VfsResponse::GetPath(match vfs.key_to_entry.remove(&key) {
+            let ipc =
+                serde_json::to_vec(&VfsResponse::GetPath(match vfs.key_to_entry.remove(&key) {
                     None => None,
                     Some(entry) => {
                         let full_path = entry.full_path.clone();
@@ -1249,8 +1242,7 @@ async fn match_request(
                         Some(full_path)
                     }
                 }))
-                .unwrap(),
-            );
+                .unwrap();
             (ipc, None)
         }
         VfsAction::GetHash(full_path) => {
@@ -1258,13 +1250,11 @@ async fn match_request(
             let Some(key) = vfs.path_to_key.get(&full_path) else {
                 return Err(VfsError::EntryNotFound);
             };
-            let ipc = Some(
-                serde_json::to_string(&VfsResponse::GetHash(match key {
-                    Key::File { id } => Some(id.clone()),
-                    Key::Dir { .. } => None,
-                }))
-                .unwrap(),
-            );
+            let ipc = serde_json::to_vec(&VfsResponse::GetHash(match key {
+                Key::File { id } => Some(id.clone()),
+                Key::Dir { .. } => None,
+            }))
+            .unwrap();
             (ipc, None)
         }
         VfsAction::GetEntry(mut full_path) => {
@@ -1400,14 +1390,12 @@ async fn match_request(
                     message: Message::Request(Request {
                         inherit: true,
                         expects_response: Some(5), // TODO evaluate
-                        ipc: Some(
-                            serde_json::to_string(&FsAction::ReadChunk(ReadChunkRequest {
-                                file: file_hash.clone(),
-                                start: offset,
-                                length,
-                            }))
-                            .unwrap(),
-                        ),
+                        ipc: serde_json::to_vec(&FsAction::ReadChunk(ReadChunkRequest {
+                            file: file_hash.clone(),
+                            start: offset,
+                            length,
+                        }))
+                        .unwrap(),
                         metadata: None,
                     }),
                     payload: None,
@@ -1425,7 +1413,7 @@ async fn match_request(
                 return Err(VfsError::InternalError);
             };
             let Ok(FsResponse::Read(read_hash)) =
-                serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
             else {
                 return Err(VfsError::InternalError);
             };
@@ -1435,14 +1423,14 @@ async fn match_request(
             };
 
             (
-                Some(serde_json::to_string(&VfsResponse::GetFileChunk).unwrap()),
+                serde_json::to_vec(&VfsResponse::GetFileChunk).unwrap(),
                 Some(payload.bytes),
             )
         }
         VfsAction::GetEntryLength(ref full_path) => {
             if full_path.chars().last() == Some('/') {
                 (
-                    Some(serde_json::to_string(&VfsResponse::GetEntryLength(None)).unwrap()),
+                    serde_json::to_vec(&VfsResponse::GetEntryLength(None)).unwrap(),
                     None,
                 )
             } else {
@@ -1474,7 +1462,7 @@ async fn match_request(
                         message: Message::Request(Request {
                             inherit: true,
                             expects_response: Some(5), // TODO evaluate
-                            ipc: Some(serde_json::to_string(&FsAction::Length(file_hash)).unwrap()),
+                            ipc: serde_json::to_vec(&FsAction::Length(file_hash)).unwrap(),
                             metadata: None,
                         }),
                         payload: None,
@@ -1490,15 +1478,13 @@ async fn match_request(
                     return Err(VfsError::InternalError);
                 };
                 let Ok(FsResponse::Length(length)) =
-                    serde_json::from_str::<Result<FsResponse, FsError>>(&ipc).unwrap()
+                    serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
                 else {
                     return Err(VfsError::InternalError);
                 };
 
                 (
-                    Some(
-                        serde_json::to_string(&VfsResponse::GetEntryLength(Some(length))).unwrap(),
-                    ),
+                    serde_json::to_vec(&VfsResponse::GetEntryLength(Some(length))).unwrap(),
                     None,
                 )
             }

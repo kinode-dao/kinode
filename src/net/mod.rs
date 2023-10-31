@@ -689,14 +689,9 @@ async fn handle_incoming_message(
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) {
-    let data = match km.message {
-        Message::Response(_) => {
-            return;
-        }
-        Message::Request(request) => match request.ipc {
-            None => return,
-            Some(ipc) => ipc,
-        },
+    let ipc = match km.message {
+        Message::Response(_) => return,
+        Message::Request(request) => request.ipc,
     };
 
     if km.source.node != our.name {
@@ -704,7 +699,11 @@ async fn handle_incoming_message(
         let _ = print_tx
             .send(Printout {
                 verbosity: 0,
-                content: format!("\x1b[3;32m{}: {}\x1b[0m", km.source.node, data),
+                content: format!(
+                    "\x1b[3;32m{}: {}\x1b[0m",
+                    km.source.node,
+                    std::str::from_utf8(&ipc).unwrap_or("!!message parse error!!")
+                ),
             })
             .await;
         let _ = kernel_message_tx
@@ -719,7 +718,7 @@ async fn handle_incoming_message(
                 message: Message::Response((
                     Response {
                         inherit: false,
-                        ipc: Some("delivered".into()),
+                        ipc: "delivered".as_bytes().to_vec(),
                         metadata: None,
                     },
                     None,
@@ -731,8 +730,8 @@ async fn handle_incoming_message(
     } else {
         // available commands: "peers", "QnsUpdate" (see qns_indexer module)
         // first parse as raw string, then deserialize to NetActions object
-        match data.as_ref() {
-            "peers" => {
+        match std::str::from_utf8(&ipc) {
+            Ok("peers") => {
                 let peer_read = peers.read().await;
                 let _ = print_tx
                     .send(Printout {
@@ -741,7 +740,7 @@ async fn handle_incoming_message(
                     })
                     .await;
             }
-            "keys" => {
+            Ok("keys") => {
                 let keys_read = keys.read().await;
                 let _ = print_tx
                     .send(Printout {
@@ -750,7 +749,7 @@ async fn handle_incoming_message(
                     })
                     .await;
             }
-            "pki" => {
+            Ok("pki") => {
                 let pki_read = pki.read().await;
                 let _ = print_tx
                     .send(Printout {
@@ -759,7 +758,7 @@ async fn handle_incoming_message(
                     })
                     .await;
             }
-            "names" => {
+            Ok("names") => {
                 let names_read = names.read().await;
                 let _ = print_tx
                     .send(Printout {
@@ -769,7 +768,7 @@ async fn handle_incoming_message(
                     .await;
             }
             _ => {
-                let Ok(act) = serde_json::from_str::<NetActions>(&data) else {
+                let Ok(act) = serde_json::from_slice::<NetActions>(&ipc) else {
                     let _ = print_tx
                         .send(Printout {
                             verbosity: 0,

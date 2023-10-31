@@ -86,13 +86,13 @@ fn send_http_response(status: u16, headers: HashMap<String, String>, payload_byt
     send_response(
         &Response {
             inherit: false,
-            ipc: Some(
-                serde_json::json!({
-                    "status": status,
-                    "headers": headers,
-                })
-                .to_string(),
-            ),
+            ipc: serde_json::json!({
+                "status": status,
+                "headers": headers,
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
             metadata: None,
         },
         Some(&Payload {
@@ -111,31 +111,31 @@ fn send_ws_update(our: Address, game: Game) {
         &Request {
             inherit: false,
             expects_response: None,
-            ipc: Some(
-                serde_json::json!({
-                    "EncryptAndForwardAction": {
-                        "channel_id": our.process.to_string(),
-                        "forward_to": {
-                            "node": our.node.clone(),
-                            "process": {
-                                "process_name": "http_server",
-                                "package_name": "sys",
-                                "publisher_node": "uqbar"
+            ipc: serde_json::json!({
+                "EncryptAndForwardAction": {
+                    "channel_id": our.process.to_string(),
+                    "forward_to": {
+                        "node": our.node.clone(),
+                        "process": {
+                            "process_name": "http_server",
+                            "package_name": "sys",
+                            "publisher_node": "uqbar"
+                        }
+                    }, // node, process
+                    "json": Some(serde_json::json!({ // this is the JSON to forward
+                        "WebSocketPush": {
+                            "target": {
+                                "node": our.node.clone(),
+                                "id": "chess", // If the message passed in an ID then we could send to just that ID
                             }
-                        }, // node, process
-                        "json": Some(serde_json::json!({ // this is the JSON to forward
-                            "WebSocketPush": {
-                                "target": {
-                                    "node": our.node.clone(),
-                                    "id": "chess", // If the message passed in an ID then we could send to just that ID
-                                }
-                            }
-                        })),
-                    }
+                        }
+                    })),
+                }
 
-                })
-                .to_string(),
-            ),
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
             metadata: None,
         },
         None,
@@ -190,13 +190,16 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(json!({
+                    ipc: json!({
                         "BindPath": {
                             "path": "/",
                             "authenticated": true,
                             "local_only": false
                         }
-                    }).to_string()),
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
                     metadata: None,
                 },
                 None,
@@ -207,13 +210,16 @@ impl Guest for Component {
                 Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: Some(json!({
+                    ipc: json!({
                         "BindPath": {
                             "path": "/games",
                             "authenticated": true,
                             "local_only": false
                         }
-                    }).to_string()),
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
                     metadata: None,
                 },
                 None,
@@ -274,81 +280,79 @@ impl Guest for Component {
                 continue;
             };
 
-            if let Some(json) = request.ipc {
-                print_to_terminal(1, format!("chess: JSON {}", json).as_str());
-                let message_json: serde_json::Value = match serde_json::from_str(&json) {
-                    Ok(v) => v,
-                    Err(_) => {
-                        print_to_terminal(1, "chess: failed to parse ipc JSON, skipping");
-                        continue;
-                    }
-                };
+            let message_json: serde_json::Value = match serde_json::from_slice(&request.ipc) {
+                Ok(v) => v,
+                Err(_) => {
+                    print_to_terminal(1, "chess: failed to parse ipc JSON, skipping");
+                    continue;
+                }
+            };
 
-                print_to_terminal(1, "chess: parsed ipc JSON");
+            print_to_terminal(1, &format!("chess: parsed ipc JSON: {:?}", message_json));
 
-                if source.process.to_string() == "chess:chess:uqbar" {
-                    let action = message_json["action"].as_str().unwrap_or("");
-                    let game_id = source.node.clone();
+            if source.process.to_string() == "chess:chess:uqbar" {
+                let action = message_json["action"].as_str().unwrap_or("");
+                let game_id = source.node.clone();
 
-                    match action {
-                        "new_game" => {
-                            // make a new game with source.node if the current game has ended
-                            if let Some(game) = state.games.get(&game_id) {
-                                if !game.ended {
-                                    send_response(
-                                        &Response {
-                                            inherit: false,
-                                            ipc: None,
-                                            metadata: None,
-                                        },
-                                        Some(&Payload {
-                                            mime: Some("application/octet-stream".to_string()),
-                                            bytes: "conflict".as_bytes().to_vec(),
-                                        }),
-                                    );
-                                    continue;
-                                }
-                            }
-                            let game = Game {
-                                id: game_id.clone(),
-                                turns: 0,
-                                board: Board::start_pos(),
-                                white: message_json["white"]
-                                    .as_str()
-                                    .unwrap_or(game_id.as_str())
-                                    .to_string(),
-                                black: message_json["black"]
-                                    .as_str()
-                                    .unwrap_or(our.node.as_str())
-                                    .to_string(),
-                                ended: false,
-                            };
-                            state.games.insert(game_id.clone(), game.clone());
-
-                            send_ws_update(our.clone(), game.clone());
-
-                            save_chess_state(state.clone());
-
-                            send_response(
-                                &Response {
-                                    inherit: false,
-                                    ipc: None,
-                                    metadata: None,
-                                },
-                                Some(&Payload {
-                                    mime: Some("application/octet-stream".to_string()),
-                                    bytes: "success".as_bytes().to_vec(),
-                                }),
-                            );
-                            continue;
-                        }
-                        "make_move" => {
-                            // check the move and then update if correct and send WS update
-                            let Some(game) = state.games.get_mut(&game_id) else {
+                match action {
+                    "new_game" => {
+                        // make a new game with source.node if the current game has ended
+                        if let Some(game) = state.games.get(&game_id) {
+                            if !game.ended {
                                 send_response(
                                     &Response {
                                         inherit: false,
-                                        ipc: None,
+                                        ipc: vec![],
+                                        metadata: None,
+                                    },
+                                    Some(&Payload {
+                                        mime: Some("application/octet-stream".to_string()),
+                                        bytes: "conflict".as_bytes().to_vec(),
+                                    }),
+                                );
+                                continue;
+                            }
+                        }
+                        let game = Game {
+                            id: game_id.clone(),
+                            turns: 0,
+                            board: Board::start_pos(),
+                            white: message_json["white"]
+                                .as_str()
+                                .unwrap_or(game_id.as_str())
+                                .to_string(),
+                            black: message_json["black"]
+                                .as_str()
+                                .unwrap_or(our.node.as_str())
+                                .to_string(),
+                            ended: false,
+                        };
+                        state.games.insert(game_id.clone(), game.clone());
+
+                        send_ws_update(our.clone(), game.clone());
+
+                        save_chess_state(state.clone());
+
+                        send_response(
+                            &Response {
+                                inherit: false,
+                                ipc: vec![],
+                                metadata: None,
+                            },
+                            Some(&Payload {
+                                mime: Some("application/octet-stream".to_string()),
+                                bytes: "success".as_bytes().to_vec(),
+                            }),
+                        );
+                        continue;
+                    }
+                    "make_move" => {
+                        // check the move and then update if correct and send WS update
+                        let Some(game) = state.games.get_mut(&game_id) else {
+                                send_response(
+                                    &Response {
+                                        inherit: false,
+                                        ipc: vec![],
                                         metadata: None,
                                     },
                                     Some(&Payload {
@@ -358,87 +362,87 @@ impl Guest for Component {
                                 );
                                 continue;
                             };
-                            let valid_move = game
-                                .board
-                                .apply_uci_move(message_json["move"].as_str().unwrap_or(""));
-                            if valid_move {
-                                game.turns += 1;
-                                let checkmate = game.board.checkmate();
-                                let draw = game.board.stalemate();
+                        let valid_move = game
+                            .board
+                            .apply_uci_move(message_json["move"].as_str().unwrap_or(""));
+                        if valid_move {
+                            game.turns += 1;
+                            let checkmate = game.board.checkmate();
+                            let draw = game.board.stalemate();
 
-                                if checkmate || draw {
-                                    game.ended = true;
-                                    let winner = if checkmate {
-                                        if game.turns % 2 == 1 {
-                                            game.white.clone()
+                            if checkmate || draw {
+                                game.ended = true;
+                                let winner = if checkmate {
+                                    if game.turns % 2 == 1 {
+                                        game.white.clone()
+                                    } else {
+                                        game.black.clone()
+                                    }
+                                } else {
+                                    "".to_string()
+                                };
+
+                                // update the records
+                                if draw {
+                                    if let Some(record) = state.records.get_mut(&game.id) {
+                                        record.2 += 1;
+                                    } else {
+                                        state.records.insert(game.id.clone(), (0, 0, 1));
+                                    }
+                                } else {
+                                    if let Some(record) = state.records.get_mut(&game.id) {
+                                        if winner == our.node {
+                                            record.0 += 1;
                                         } else {
-                                            game.black.clone()
+                                            record.1 += 1;
                                         }
                                     } else {
-                                        "".to_string()
-                                    };
-
-                                    // update the records
-                                    if draw {
-                                        if let Some(record) = state.records.get_mut(&game.id) {
-                                            record.2 += 1;
+                                        if winner == our.node {
+                                            state.records.insert(game.id.clone(), (1, 0, 0));
                                         } else {
-                                            state.records.insert(game.id.clone(), (0, 0, 1));
-                                        }
-                                    } else {
-                                        if let Some(record) = state.records.get_mut(&game.id) {
-                                            if winner == our.node {
-                                                record.0 += 1;
-                                            } else {
-                                                record.1 += 1;
-                                            }
-                                        } else {
-                                            if winner == our.node {
-                                                state.records.insert(game.id.clone(), (1, 0, 0));
-                                            } else {
-                                                state.records.insert(game.id.clone(), (0, 1, 0));
-                                            }
+                                            state.records.insert(game.id.clone(), (0, 1, 0));
                                         }
                                     }
                                 }
-
-                                send_ws_update(our.clone(), game.clone());
-                                save_chess_state(state.clone());
-
-                                send_response(
-                                    &Response {
-                                        inherit: false,
-                                        ipc: None,
-                                        metadata: None,
-                                    },
-                                    Some(&Payload {
-                                        mime: Some("application/octet-stream".to_string()),
-                                        bytes: "success".as_bytes().to_vec(),
-                                    }),
-                                );
-                                continue;
-                            } else {
-                                send_response(
-                                    &Response {
-                                        inherit: false,
-                                        ipc: None,
-                                        metadata: None,
-                                    },
-                                    Some(&Payload {
-                                        mime: Some("application/octet-stream".to_string()),
-                                        bytes: "invalid move".as_bytes().to_vec(),
-                                    }),
-                                );
-                                continue;
                             }
+
+                            send_ws_update(our.clone(), game.clone());
+                            save_chess_state(state.clone());
+
+                            send_response(
+                                &Response {
+                                    inherit: false,
+                                    ipc: vec![],
+                                    metadata: None,
+                                },
+                                Some(&Payload {
+                                    mime: Some("application/octet-stream".to_string()),
+                                    bytes: "success".as_bytes().to_vec(),
+                                }),
+                            );
+                            continue;
+                        } else {
+                            send_response(
+                                &Response {
+                                    inherit: false,
+                                    ipc: vec![],
+                                    metadata: None,
+                                },
+                                Some(&Payload {
+                                    mime: Some("application/octet-stream".to_string()),
+                                    bytes: "invalid move".as_bytes().to_vec(),
+                                }),
+                            );
+                            continue;
                         }
-                        "end_game" => {
-                            // end the game and send WS update, update the standings
-                            let Some(game) = state.games.get_mut(&game_id) else {
+                    }
+                    "end_game" => {
+                        // end the game and send WS update, update the standings
+                        let Some(game) = state.games.get_mut(&game_id) else {
                                 send_response(
                                     &Response {
                                         inherit: false,
-                                        ipc: None,
+                                        ipc: vec![],
                                         metadata: None,
                                     },
                                     Some(&Payload {
@@ -449,187 +453,141 @@ impl Guest for Component {
                                 continue;
                             };
 
-                            game.ended = true;
+                        game.ended = true;
 
-                            if let Some(record) = state.records.get_mut(&game.id) {
-                                record.0 += 1;
-                            } else {
-                                state.records.insert(game.id.clone(), (1, 0, 0));
-                            }
-
-                            send_ws_update(our.clone(), game.clone());
-                            save_chess_state(state.clone());
-
-                            send_response(
-                                &Response {
-                                    inherit: false,
-                                    ipc: None,
-                                    metadata: None,
-                                },
-                                Some(&Payload {
-                                    mime: Some("application/octet-stream".to_string()),
-                                    bytes: "success".as_bytes().to_vec(),
-                                }),
-                            );
+                        if let Some(record) = state.records.get_mut(&game.id) {
+                            record.0 += 1;
+                        } else {
+                            state.records.insert(game.id.clone(), (1, 0, 0));
                         }
-                        _ => {
-                            print_to_terminal(1, "chess: got unexpected action");
-                            continue;
-                        }
+
+                        send_ws_update(our.clone(), game.clone());
+                        save_chess_state(state.clone());
+
+                        send_response(
+                            &Response {
+                                inherit: false,
+                                ipc: vec![],
+                                metadata: None,
+                            },
+                            Some(&Payload {
+                                mime: Some("application/octet-stream".to_string()),
+                                bytes: "success".as_bytes().to_vec(),
+                            }),
+                        );
                     }
-                } else if source.process.to_string() == "http_server:sys:uqbar" {
-                    let path = message_json["path"].as_str().unwrap_or("");
-                    let method = message_json["method"].as_str().unwrap_or("");
+                    _ => {
+                        print_to_terminal(1, "chess: got unexpected action");
+                        continue;
+                    }
+                }
+            } else if source.process.to_string() == "http_server:sys:uqbar" {
+                let path = message_json["path"].as_str().unwrap_or("");
+                let method = message_json["method"].as_str().unwrap_or("");
 
-                    let mut default_headers = HashMap::new();
-                    default_headers.insert("Content-Type".to_string(), "text/html".to_string());
-                    // Handle incoming http
-                    match path {
-                        "/" => {
-                            send_http_response(
-                                200,
-                                default_headers.clone(),
-                                CHESS_PAGE
-                                    .replace("${node}", &our.node)
-                                    .replace("${process}", &our.process.to_string())
-                                    .replace("${js}", CHESS_JS)
-                                    .replace("${css}", CHESS_CSS)
-                                    .to_string()
-                                    .as_bytes()
-                                    .to_vec(),
-                            );
-                        }
-                        "/games" => {
-                            match method {
-                                "GET" => {
-                                    send_http_response(
-                                        200,
-                                        {
-                                            let mut headers = default_headers.clone();
-                                            headers.insert(
-                                                "Content-Type".to_string(),
-                                                "application/json".to_string(),
+                let mut default_headers = HashMap::new();
+                default_headers.insert("Content-Type".to_string(), "text/html".to_string());
+                // Handle incoming http
+                match path {
+                    "/" => {
+                        send_http_response(
+                            200,
+                            default_headers.clone(),
+                            CHESS_PAGE
+                                .replace("${node}", &our.node)
+                                .replace("${process}", &our.process.to_string())
+                                .replace("${js}", CHESS_JS)
+                                .replace("${css}", CHESS_CSS)
+                                .to_string()
+                                .as_bytes()
+                                .to_vec(),
+                        );
+                    }
+                    "/games" => {
+                        match method {
+                            "GET" => {
+                                send_http_response(
+                                    200,
+                                    {
+                                        let mut headers = default_headers.clone();
+                                        headers.insert(
+                                            "Content-Type".to_string(),
+                                            "application/json".to_string(),
+                                        );
+                                        headers
+                                    },
+                                    {
+                                        let mut json_games: HashMap<String, serde_json::Value> =
+                                            HashMap::new();
+                                        for (id, game) in &state.games {
+                                            json_games.insert(id.to_string(), json_game(&game));
+                                        }
+                                        json!(json_games).to_string().as_bytes().to_vec()
+                                    },
+                                );
+                            }
+                            "POST" => {
+                                // create a new game
+                                if let Some(payload) = get_payload() {
+                                    if let Ok(payload_json) =
+                                        serde_json::from_slice::<serde_json::Value>(&payload.bytes)
+                                    {
+                                        let game_id =
+                                            String::from(payload_json["id"].as_str().unwrap_or(""));
+                                        if game_id == "" {
+                                            send_http_response(
+                                                400,
+                                                default_headers.clone(),
+                                                "Bad Request".to_string().as_bytes().to_vec(),
                                             );
-                                            headers
-                                        },
-                                        {
-                                            let mut json_games: HashMap<String, serde_json::Value> =
-                                                HashMap::new();
-                                            for (id, game) in &state.games {
-                                                json_games.insert(id.to_string(), json_game(&game));
-                                            }
-                                            json!(json_games).to_string().as_bytes().to_vec()
-                                        },
-                                    );
-                                }
-                                "POST" => {
-                                    // create a new game
-                                    if let Some(payload) = get_payload() {
-                                        if let Ok(payload_json) =
-                                            serde_json::from_slice::<serde_json::Value>(
-                                                &payload.bytes,
-                                            )
-                                        {
-                                            let game_id = String::from(
-                                                payload_json["id"].as_str().unwrap_or(""),
-                                            );
-                                            if game_id == "" {
+                                            continue;
+                                        }
+
+                                        if let Some(game) = state.games.get(&game_id) {
+                                            if !game.ended {
                                                 send_http_response(
-                                                    400,
+                                                    409,
                                                     default_headers.clone(),
-                                                    "Bad Request".to_string().as_bytes().to_vec(),
+                                                    "Conflict".to_string().as_bytes().to_vec(),
                                                 );
                                                 continue;
                                             }
+                                        }
 
-                                            if let Some(game) = state.games.get(&game_id) {
-                                                if !game.ended {
-                                                    send_http_response(
-                                                        409,
-                                                        default_headers.clone(),
-                                                        "Conflict".to_string().as_bytes().to_vec(),
-                                                    );
-                                                    continue;
-                                                }
-                                            }
+                                        let white = payload_json["white"]
+                                            .as_str()
+                                            .unwrap_or(our.node.as_str())
+                                            .to_string();
+                                        let black = payload_json["black"]
+                                            .as_str()
+                                            .unwrap_or(game_id.as_str())
+                                            .to_string();
 
-                                            let white = payload_json["white"]
-                                                .as_str()
-                                                .unwrap_or(our.node.as_str())
-                                                .to_string();
-                                            let black = payload_json["black"]
-                                                .as_str()
-                                                .unwrap_or(game_id.as_str())
-                                                .to_string();
+                                        let response = send_and_await_response(
+                                            &Address {
+                                                node: game_id.clone(),
+                                                process: ProcessId::from_str("chess:chess:uqbar")
+                                                    .unwrap(),
+                                            },
+                                            &Request {
+                                                inherit: false,
+                                                expects_response: Some(30), // TODO check this!
+                                                ipc: serde_json::json!({
+                                                    "action": "new_game",
+                                                    "white": white.clone(),
+                                                    "black": black.clone(),
+                                                })
+                                                .to_string()
+                                                .as_bytes()
+                                                .to_vec(),
+                                                metadata: None,
+                                            },
+                                            None,
+                                        );
 
-                                            let response = send_and_await_response(
-                                                &Address {
-                                                    node: game_id.clone(),
-                                                    process: ProcessId::from_str("chess:chess:uqbar")
-                                                        .unwrap(),
-                                                },
-                                                &Request {
-                                                    inherit: false,
-                                                    expects_response: Some(30), // TODO check this!
-                                                    ipc: Some(
-                                                        serde_json::json!({
-                                                            "action": "new_game",
-                                                            "white": white.clone(),
-                                                            "black": black.clone(),
-                                                        })
-                                                        .to_string(),
-                                                    ),
-                                                    metadata: None,
-                                                },
-                                                None,
-                                            );
-
-                                            match response {
-                                                Ok(_reponse) => {
-                                                    if !response_success() {
-                                                        send_http_response(
-                                                            503,
-                                                            default_headers.clone(),
-                                                            "Service Unavailable"
-                                                                .to_string()
-                                                                .as_bytes()
-                                                                .to_vec(),
-                                                        );
-                                                        continue;
-                                                    }
-                                                    // create a new game
-                                                    let game = Game {
-                                                        id: game_id.clone(),
-                                                        turns: 0,
-                                                        board: Board::start_pos(),
-                                                        white: white.clone(),
-                                                        black: black.clone(),
-                                                        ended: false,
-                                                    };
-                                                    state
-                                                        .games
-                                                        .insert(game_id.clone(), game.clone());
-
-                                                    save_chess_state(state.clone());
-
-                                                    send_http_response(
-                                                        200,
-                                                        {
-                                                            let mut headers =
-                                                                default_headers.clone();
-                                                            headers.insert(
-                                                                "Content-Type".to_string(),
-                                                                "application/json".to_string(),
-                                                            );
-                                                            headers
-                                                        },
-                                                        json_game(&game)
-                                                            .to_string()
-                                                            .as_bytes()
-                                                            .to_vec(),
-                                                    );
-                                                }
-                                                Err(_) => {
+                                        match response {
+                                            Ok(_reponse) => {
+                                                if !response_success() {
                                                     send_http_response(
                                                         503,
                                                         default_headers.clone(),
@@ -638,196 +596,143 @@ impl Guest for Component {
                                                             .as_bytes()
                                                             .to_vec(),
                                                     );
+                                                    continue;
                                                 }
+                                                // create a new game
+                                                let game = Game {
+                                                    id: game_id.clone(),
+                                                    turns: 0,
+                                                    board: Board::start_pos(),
+                                                    white: white.clone(),
+                                                    black: black.clone(),
+                                                    ended: false,
+                                                };
+                                                state.games.insert(game_id.clone(), game.clone());
+
+                                                save_chess_state(state.clone());
+
+                                                send_http_response(
+                                                    200,
+                                                    {
+                                                        let mut headers = default_headers.clone();
+                                                        headers.insert(
+                                                            "Content-Type".to_string(),
+                                                            "application/json".to_string(),
+                                                        );
+                                                        headers
+                                                    },
+                                                    json_game(&game)
+                                                        .to_string()
+                                                        .as_bytes()
+                                                        .to_vec(),
+                                                );
                                             }
+                                            Err(_) => {
+                                                send_http_response(
+                                                    503,
+                                                    default_headers.clone(),
+                                                    "Service Unavailable"
+                                                        .to_string()
+                                                        .as_bytes()
+                                                        .to_vec(),
+                                                );
+                                            }
+                                        }
+                                        continue;
+                                    }
+                                }
+
+                                send_http_response(
+                                    400,
+                                    default_headers.clone(),
+                                    "Bad Request".to_string().as_bytes().to_vec(),
+                                );
+                            }
+                            "PUT" => {
+                                // make a move
+                                if let Some(payload) = get_payload() {
+                                    print_to_terminal(
+                                        1,
+                                        format!(
+                                            "payload: {}",
+                                            String::from_utf8(payload.bytes.clone())
+                                                .unwrap_or("".to_string())
+                                        )
+                                        .as_str(),
+                                    );
+                                    if let Ok(payload_json) =
+                                        serde_json::from_slice::<serde_json::Value>(&payload.bytes)
+                                    {
+                                        let game_id =
+                                            String::from(payload_json["id"].as_str().unwrap_or(""));
+
+                                        if game_id == "" {
+                                            send_http_response(
+                                                400,
+                                                default_headers.clone(),
+                                                "No game ID".to_string().as_bytes().to_vec(),
+                                            );
                                             continue;
                                         }
-                                    }
 
-                                    send_http_response(
-                                        400,
-                                        default_headers.clone(),
-                                        "Bad Request".to_string().as_bytes().to_vec(),
-                                    );
-                                }
-                                "PUT" => {
-                                    // make a move
-                                    if let Some(payload) = get_payload() {
-                                        print_to_terminal(
-                                            1,
-                                            format!(
-                                                "payload: {}",
-                                                String::from_utf8(payload.bytes.clone())
-                                                    .unwrap_or("".to_string())
-                                            )
-                                            .as_str(),
-                                        );
-                                        if let Ok(payload_json) =
-                                            serde_json::from_slice::<serde_json::Value>(
-                                                &payload.bytes,
-                                            )
-                                        {
-                                            let game_id = String::from(
-                                                payload_json["id"].as_str().unwrap_or(""),
-                                            );
-
-                                            if game_id == "" {
+                                        if let Some(game) = state.games.get_mut(&game_id) {
+                                            if game.turns % 2 == 0 && game.white != our.node {
                                                 send_http_response(
-                                                    400,
+                                                    403,
                                                     default_headers.clone(),
-                                                    "No game ID".to_string().as_bytes().to_vec(),
+                                                    "Forbidden".to_string().as_bytes().to_vec(),
+                                                );
+                                                continue;
+                                            } else if game.turns % 2 == 1 && game.black != our.node
+                                            {
+                                                send_http_response(
+                                                    403,
+                                                    default_headers.clone(),
+                                                    "Forbidden".to_string().as_bytes().to_vec(),
+                                                );
+                                                continue;
+                                            } else if game.ended {
+                                                send_http_response(
+                                                    409,
+                                                    default_headers.clone(),
+                                                    "Conflict".to_string().as_bytes().to_vec(),
                                                 );
                                                 continue;
                                             }
 
-                                            if let Some(game) = state.games.get_mut(&game_id) {
-                                                if game.turns % 2 == 0 && game.white != our.node {
-                                                    send_http_response(
-                                                        403,
-                                                        default_headers.clone(),
-                                                        "Forbidden".to_string().as_bytes().to_vec(),
-                                                    );
-                                                    continue;
-                                                } else if game.turns % 2 == 1
-                                                    && game.black != our.node
-                                                {
-                                                    send_http_response(
-                                                        403,
-                                                        default_headers.clone(),
-                                                        "Forbidden".to_string().as_bytes().to_vec(),
-                                                    );
-                                                    continue;
-                                                } else if game.ended {
-                                                    send_http_response(
-                                                        409,
-                                                        default_headers.clone(),
-                                                        "Conflict".to_string().as_bytes().to_vec(),
-                                                    );
-                                                    continue;
-                                                }
+                                            let move_str =
+                                                payload_json["move"].as_str().unwrap_or("");
+                                            let valid_move = game.board.apply_uci_move(move_str);
+                                            if valid_move {
+                                                // send the move to the other player
+                                                // check if the game is over
+                                                // if so, update the records
+                                                let response = send_and_await_response(
+                                                    &Address {
+                                                        node: game_id.clone(),
+                                                        process: ProcessId::from_str(
+                                                            "chess:chess:uqbar",
+                                                        )
+                                                        .unwrap(),
+                                                    },
+                                                    &Request {
+                                                        inherit: false,
+                                                        expects_response: Some(30), // TODO check this!
+                                                        ipc: serde_json::json!({
+                                                            "action": "make_move",
+                                                            "move": move_str,
+                                                        })
+                                                        .to_string()
+                                                        .as_bytes()
+                                                        .to_vec(),
+                                                        metadata: None,
+                                                    },
+                                                    None,
+                                                );
 
-                                                let move_str =
-                                                    payload_json["move"].as_str().unwrap_or("");
-                                                let valid_move =
-                                                    game.board.apply_uci_move(move_str);
-                                                if valid_move {
-                                                    // send the move to the other player
-                                                    // check if the game is over
-                                                    // if so, update the records
-                                                    let response = send_and_await_response(
-                                                        &Address {
-                                                            node: game_id.clone(),
-                                                            process: ProcessId::from_str(
-                                                                "chess:chess:uqbar",
-                                                            )
-                                                            .unwrap(),
-                                                        },
-                                                        &Request {
-                                                            inherit: false,
-                                                            expects_response: Some(30), // TODO check this!
-                                                            ipc: Some(
-                                                                serde_json::json!({
-                                                                    "action": "make_move",
-                                                                    "move": move_str,
-                                                                })
-                                                                .to_string(),
-                                                            ),
-                                                            metadata: None,
-                                                        },
-                                                        None,
-                                                    );
-
-                                                    match response {
-                                                        Ok(_reponse) => {
-                                                            if !response_success() {
-                                                                send_http_response(
-                                                                    503,
-                                                                    default_headers.clone(),
-                                                                    "Service Unavailable"
-                                                                        .to_string()
-                                                                        .as_bytes()
-                                                                        .to_vec(),
-                                                                );
-                                                                continue;
-                                                            }
-                                                            // update the game
-                                                            game.turns += 1;
-                                                            let checkmate = game.board.checkmate();
-                                                            let draw = game.board.stalemate();
-
-                                                            if checkmate || draw {
-                                                                game.ended = true;
-                                                                let winner = if checkmate {
-                                                                    if game.turns % 2 == 1 {
-                                                                        game.white.clone()
-                                                                    } else {
-                                                                        game.black.clone()
-                                                                    }
-                                                                } else {
-                                                                    "".to_string()
-                                                                };
-
-                                                                // update the records
-                                                                if draw {
-                                                                    if let Some(record) = state
-                                                                        .records
-                                                                        .get_mut(&game.id)
-                                                                    {
-                                                                        record.2 += 1;
-                                                                    } else {
-                                                                        state.records.insert(
-                                                                            game.id.clone(),
-                                                                            (0, 0, 1),
-                                                                        );
-                                                                    }
-                                                                } else {
-                                                                    if let Some(record) = state
-                                                                        .records
-                                                                        .get_mut(&game.id)
-                                                                    {
-                                                                        if winner == our.node {
-                                                                            record.0 += 1;
-                                                                        } else {
-                                                                            record.1 += 1;
-                                                                        }
-                                                                    } else {
-                                                                        if winner == our.node {
-                                                                            state.records.insert(
-                                                                                game.id.clone(),
-                                                                                (1, 0, 0),
-                                                                            );
-                                                                        } else {
-                                                                            state.records.insert(
-                                                                                game.id.clone(),
-                                                                                (0, 1, 0),
-                                                                            );
-                                                                        }
-                                                                    }
-                                                                }
-                                                            }
-
-                                                            let game = game.clone();
-                                                            save_chess_state(state.clone());
-                                                            // return the game
-                                                            send_http_response(
-                                                                200,
-                                                                {
-                                                                    let mut headers =
-                                                                        default_headers.clone();
-                                                                    headers.insert(
-                                                                        "Content-Type".to_string(),
-                                                                        "application/json"
-                                                                            .to_string(),
-                                                                    );
-                                                                    headers
-                                                                },
-                                                                json_game(&game)
-                                                                    .to_string()
-                                                                    .as_bytes()
-                                                                    .to_vec(),
-                                                            );
-                                                        }
-                                                        Err(_) => {
+                                                match response {
+                                                    Ok(_reponse) => {
+                                                        if !response_success() {
                                                             send_http_response(
                                                                 503,
                                                                 default_headers.clone(),
@@ -836,59 +741,83 @@ impl Guest for Component {
                                                                     .as_bytes()
                                                                     .to_vec(),
                                                             );
+                                                            continue;
                                                         }
+                                                        // update the game
+                                                        game.turns += 1;
+                                                        let checkmate = game.board.checkmate();
+                                                        let draw = game.board.stalemate();
+
+                                                        if checkmate || draw {
+                                                            game.ended = true;
+                                                            let winner = if checkmate {
+                                                                if game.turns % 2 == 1 {
+                                                                    game.white.clone()
+                                                                } else {
+                                                                    game.black.clone()
+                                                                }
+                                                            } else {
+                                                                "".to_string()
+                                                            };
+
+                                                            // update the records
+                                                            if draw {
+                                                                if let Some(record) =
+                                                                    state.records.get_mut(&game.id)
+                                                                {
+                                                                    record.2 += 1;
+                                                                } else {
+                                                                    state.records.insert(
+                                                                        game.id.clone(),
+                                                                        (0, 0, 1),
+                                                                    );
+                                                                }
+                                                            } else {
+                                                                if let Some(record) =
+                                                                    state.records.get_mut(&game.id)
+                                                                {
+                                                                    if winner == our.node {
+                                                                        record.0 += 1;
+                                                                    } else {
+                                                                        record.1 += 1;
+                                                                    }
+                                                                } else {
+                                                                    if winner == our.node {
+                                                                        state.records.insert(
+                                                                            game.id.clone(),
+                                                                            (1, 0, 0),
+                                                                        );
+                                                                    } else {
+                                                                        state.records.insert(
+                                                                            game.id.clone(),
+                                                                            (0, 1, 0),
+                                                                        );
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+
+                                                        let game = game.clone();
+                                                        save_chess_state(state.clone());
+                                                        // return the game
+                                                        send_http_response(
+                                                            200,
+                                                            {
+                                                                let mut headers =
+                                                                    default_headers.clone();
+                                                                headers.insert(
+                                                                    "Content-Type".to_string(),
+                                                                    "application/json".to_string(),
+                                                                );
+                                                                headers
+                                                            },
+                                                            json_game(&game)
+                                                                .to_string()
+                                                                .as_bytes()
+                                                                .to_vec(),
+                                                        );
                                                     }
-
-                                                    continue;
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    print_to_terminal(0, "never got a response");
-                                    send_http_response(
-                                        400,
-                                        default_headers.clone(),
-                                        "Bad Request".to_string().as_bytes().to_vec(),
-                                    );
-                                }
-                                "DELETE" => {
-                                    let game_id = message_json["query_params"]["id"]
-                                        .as_str()
-                                        .unwrap_or("")
-                                        .to_string();
-                                    if game_id == "" {
-                                        send_http_response(
-                                            400,
-                                            default_headers.clone(),
-                                            "Bad Request".to_string().as_bytes().to_vec(),
-                                        );
-                                        continue;
-                                    } else {
-                                        if let Some(game) = state.games.get_mut(&game_id) {
-                                            let response = send_and_await_response(
-                                                &Address {
-                                                    node: game_id.clone(),
-                                                    process: ProcessId::from_str("chess:chess:uqbar")
-                                                        .unwrap(),
-                                                },
-                                                &Request {
-                                                    inherit: false,
-                                                    expects_response: Some(30), // TODO check this!
-                                                    ipc: Some(
-                                                        serde_json::json!({
-                                                            "action": "end_game",
-                                                        })
-                                                        .to_string(),
-                                                    ),
-                                                    metadata: None,
-                                                },
-                                                None,
-                                            );
-
-                                            match response {
-                                                Ok(_response) => {
-                                                    if !response_success() {
+                                                    Err(_) => {
                                                         send_http_response(
                                                             503,
                                                             default_headers.clone(),
@@ -897,43 +826,59 @@ impl Guest for Component {
                                                                 .as_bytes()
                                                                 .to_vec(),
                                                         );
-                                                        continue;
                                                     }
-
-                                                    game.ended = true;
-
-                                                    if let Some(record) =
-                                                        state.records.get_mut(&game.id)
-                                                    {
-                                                        record.1 += 1;
-                                                    } else {
-                                                        state
-                                                            .records
-                                                            .insert(game.id.clone(), (0, 1, 0));
-                                                    }
-
-                                                    let game = game.clone();
-                                                    save_chess_state(state.clone());
-
-                                                    // return the game
-                                                    send_http_response(
-                                                        200,
-                                                        {
-                                                            let mut headers =
-                                                                default_headers.clone();
-                                                            headers.insert(
-                                                                "Content-Type".to_string(),
-                                                                "application/json".to_string(),
-                                                            );
-                                                            headers
-                                                        },
-                                                        json_game(&game)
-                                                            .to_string()
-                                                            .as_bytes()
-                                                            .to_vec(),
-                                                    );
                                                 }
-                                                Err(_) => {
+
+                                                continue;
+                                            }
+                                        }
+                                    }
+                                }
+
+                                print_to_terminal(0, "never got a response");
+                                send_http_response(
+                                    400,
+                                    default_headers.clone(),
+                                    "Bad Request".to_string().as_bytes().to_vec(),
+                                );
+                            }
+                            "DELETE" => {
+                                let game_id = message_json["query_params"]["id"]
+                                    .as_str()
+                                    .unwrap_or("")
+                                    .to_string();
+                                if game_id == "" {
+                                    send_http_response(
+                                        400,
+                                        default_headers.clone(),
+                                        "Bad Request".to_string().as_bytes().to_vec(),
+                                    );
+                                    continue;
+                                } else {
+                                    if let Some(game) = state.games.get_mut(&game_id) {
+                                        let response = send_and_await_response(
+                                            &Address {
+                                                node: game_id.clone(),
+                                                process: ProcessId::from_str("chess:chess:uqbar")
+                                                    .unwrap(),
+                                            },
+                                            &Request {
+                                                inherit: false,
+                                                expects_response: Some(30), // TODO check this!
+                                                ipc: serde_json::json!({
+                                                    "action": "end_game",
+                                                })
+                                                .to_string()
+                                                .as_bytes()
+                                                .to_vec(),
+                                                metadata: None,
+                                            },
+                                            None,
+                                        );
+
+                                        match response {
+                                            Ok(_response) => {
+                                                if !response_success() {
                                                     send_http_response(
                                                         503,
                                                         default_headers.clone(),
@@ -942,32 +887,75 @@ impl Guest for Component {
                                                             .as_bytes()
                                                             .to_vec(),
                                                     );
+                                                    continue;
                                                 }
-                                            }
 
-                                            continue;
+                                                game.ended = true;
+
+                                                if let Some(record) =
+                                                    state.records.get_mut(&game.id)
+                                                {
+                                                    record.1 += 1;
+                                                } else {
+                                                    state
+                                                        .records
+                                                        .insert(game.id.clone(), (0, 1, 0));
+                                                }
+
+                                                let game = game.clone();
+                                                save_chess_state(state.clone());
+
+                                                // return the game
+                                                send_http_response(
+                                                    200,
+                                                    {
+                                                        let mut headers = default_headers.clone();
+                                                        headers.insert(
+                                                            "Content-Type".to_string(),
+                                                            "application/json".to_string(),
+                                                        );
+                                                        headers
+                                                    },
+                                                    json_game(&game)
+                                                        .to_string()
+                                                        .as_bytes()
+                                                        .to_vec(),
+                                                );
+                                            }
+                                            Err(_) => {
+                                                send_http_response(
+                                                    503,
+                                                    default_headers.clone(),
+                                                    "Service Unavailable"
+                                                        .to_string()
+                                                        .as_bytes()
+                                                        .to_vec(),
+                                                );
+                                            }
                                         }
+
+                                        continue;
                                     }
-                                    // end a game
                                 }
-                                _ => {
-                                    send_http_response(
-                                        404,
-                                        default_headers.clone(),
-                                        "Not Found".to_string().as_bytes().to_vec(),
-                                    );
-                                    continue;
-                                }
+                                // end a game
+                            }
+                            _ => {
+                                send_http_response(
+                                    404,
+                                    default_headers.clone(),
+                                    "Not Found".to_string().as_bytes().to_vec(),
+                                );
+                                continue;
                             }
                         }
-                        _ => {
-                            send_http_response(
-                                404,
-                                default_headers.clone(),
-                                "Not Found".to_string().as_bytes().to_vec(),
-                            );
-                            continue;
-                        }
+                    }
+                    _ => {
+                        send_http_response(
+                            404,
+                            default_headers.clone(),
+                            "Not Found".to_string().as_bytes().to_vec(),
+                        );
+                        continue;
                     }
                 }
             }

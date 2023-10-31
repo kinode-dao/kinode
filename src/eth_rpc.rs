@@ -63,7 +63,7 @@ pub async fn eth_rpc(
             message:
                 Message::Request(Request {
                     expects_response,
-                    ipc: ref json,
+                    ipc: ref json_bytes,
                     ..
                 }),
             ..
@@ -94,19 +94,7 @@ pub async fn eth_rpc(
 
         // let call_data = content.payload.bytes.content.clone().unwrap_or(vec![]);
 
-        let Some(json) = json.clone() else {
-            send_to_loop
-                .send(make_error_message(
-                    our.clone(),
-                    &message,
-                    EthRpcError::NoJson,
-                ))
-                .await
-                .unwrap();
-            continue;
-        };
-
-        let Ok(action) = serde_json::from_str::<EthRpcAction>(&json) else {
+        let Ok(action) = serde_json::from_slice::<EthRpcAction>(&json_bytes) else {
             send_to_loop
                 .send(make_error_message(
                     our.clone(),
@@ -135,12 +123,10 @@ pub async fn eth_rpc(
                         message: Message::Response((
                             Response {
                                 inherit: false,
-                                ipc: Some(
-                                    serde_json::to_string::<Result<u64, EthRpcError>>(&Ok(
-                                        message.id
-                                    ))
-                                    .unwrap(),
-                                ),
+                                ipc: serde_json::to_vec::<Result<u64, EthRpcError>>(
+                                    &Ok(message.id),
+                                )
+                                .unwrap(),
                                 metadata: None,
                             },
                             None,
@@ -234,9 +220,9 @@ pub async fn eth_rpc(
                                             message: Message::Request(Request {
                                                 inherit: false,
                                                 expects_response: None,
-                                                ipc: Some(json!({
+                                                ipc: json!({
                                                     "EventSubscription": serde_json::to_value(event.clone()).unwrap()
-                                                }).to_string()),
+                                                }).to_string().into_bytes(),
                                                 metadata: None,
                                             }),
                                             payload: None,
@@ -303,7 +289,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: EthRpcError) 
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: Some(serde_json::to_string::<Result<u64, EthRpcError>>(&Err(error)).unwrap()),
+                ipc: serde_json::to_vec::<Result<u64, EthRpcError>>(&Err(error)).unwrap(),
                 metadata: None,
             },
             None,
