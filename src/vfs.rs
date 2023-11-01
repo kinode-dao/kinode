@@ -998,7 +998,7 @@ async fn match_request(
                     }
                 }
             }
-            persist_state(send_to_persist, &mut recv_response, id).await?; 
+            persist_state(send_to_persist, &mut recv_response, id).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Rename {
@@ -1014,7 +1014,7 @@ async fn match_request(
                 }
             }
 
-            persist_state(send_to_persist, &mut recv_response, id).await?; 
+            persist_state(send_to_persist, &mut recv_response, id).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Delete(mut full_path) => {
@@ -1087,7 +1087,7 @@ async fn match_request(
                     }
                 },
             }
-            persist_state(send_to_persist, &mut recv_response, id).await?; 
+            persist_state(send_to_persist, &mut recv_response, id).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::WriteOffset {
@@ -1188,7 +1188,7 @@ async fn match_request(
             else {
                 return Err(VfsError::InternalError);
             };
-            persist_state(send_to_persist, &mut recv_response, id).await?; 
+            persist_state(send_to_persist, &mut recv_response, id).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::SetSize {
