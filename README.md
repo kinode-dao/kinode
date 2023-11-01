@@ -63,4 +63,8 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your eth
 
 ## Example usage
 
-TODO
+Download and install an app:
+```
+!message our main:app_store:uqbar {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
+!message our main:app_store:uqbar {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
+```

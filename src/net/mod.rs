@@ -38,8 +38,6 @@ pub async fn networking(
     message_rx: MessageReceiver,
     reveal_ip: bool,
 ) -> Result<()> {
-    println!("networking!\r");
-    println!("our identity: {:#?}\r", our);
     // branch on whether we are a direct or indirect node
     match &our.ws_routing {
         None => {
@@ -102,13 +100,12 @@ async fn indirect_networking(
     mut message_rx: MessageReceiver,
     reveal_ip: bool,
 ) -> Result<()> {
-    println!("indirect_networking\r");
     let mut pki: OnchainPKI = HashMap::new();
     let mut peers: Peers = HashMap::new();
     // mapping from QNS namehash to username
     let mut names: PKINames = HashMap::new();
-
     let mut peer_connections = JoinSet::<(NodeId, Option<KernelMessage>)>::new();
+    // indirect-specific structure
     let mut active_routers = HashSet::<NodeId>::new();
 
     loop {
@@ -141,7 +138,7 @@ async fn indirect_networking(
                         Err(e) => {
                             print_tx.send(Printout {
                                 verbosity: 0,
-                                content: format!("net: error handling local message: {}", e)
+                                content: format!("net: error handling local message: {e}")
                             }).await?;
                         }
                     }
@@ -170,8 +167,7 @@ async fn indirect_networking(
                                     &print_tx,
                                 ).await?;
                             }
-                            Err(e) => {
-                                println!("net: error initializing connection: {}\r", e);
+                            Err(_) => {
                                 error_offline(km, &network_error_tx).await?;
                             }
                         }
@@ -198,7 +194,6 @@ async fn indirect_networking(
                             )).await;
                         if !sent.unwrap_or(false) {
                             // none of the routers worked!
-                            println!("net: error initializing routed connection\r");
                             error_offline(km, &network_error_tx).await?;
                         }
                     }
@@ -235,7 +230,10 @@ async fn indirect_networking(
                     };
                     match init_connection(&our, &our_ip, router_id, &keypair, None, true).await {
                         Ok(direct_conn) => {
-                            println!("net: connected to router {}\r", router_id.name);
+                            print_tx.send(Printout {
+                                verbosity: 0,
+                                content: format!("now connected to router {}", router_id.name),
+                            }).await?;
                             active_routers.insert(router_id.name.clone());
                             save_new_peer(
                                 router_id,
@@ -267,13 +265,12 @@ async fn direct_networking(
     self_message_tx: MessageSender,
     mut message_rx: MessageReceiver,
 ) -> Result<()> {
-    println!("direct_networking\r");
     let mut pki: OnchainPKI = HashMap::new();
     let mut peers: Peers = HashMap::new();
     // mapping from QNS namehash to username
     let mut names: PKINames = HashMap::new();
-
     let mut peer_connections = JoinSet::<(NodeId, Option<KernelMessage>)>::new();
+    // direct-specific structures
     let mut forwarding_connections = JoinSet::<()>::new();
     let mut pending_passthroughs: PendingPassthroughs = HashMap::new();
 
@@ -334,8 +331,7 @@ async fn direct_networking(
                                     &print_tx,
                                 ).await?;
                             }
-                            Err(e) => {
-                                println!("net: error initializing connection: {}\r", e);
+                            Err(_) => {
                                 error_offline(km, &network_error_tx).await?;
                             }
                         }
@@ -361,7 +357,6 @@ async fn direct_networking(
                             )).await;
                         if !sent.unwrap_or(false) {
                             // none of the routers worked!
-                            println!("net: error initializing routed connection\r");
                             error_offline(km, &network_error_tx).await?;
                         }
                     }
@@ -390,7 +385,10 @@ async fn direct_networking(
                             {
                                 Ok(res) => res,
                                 Err(e) => {
-                                    println!("net: recv_connection failed: {e}\r");
+                                    print_tx.send(Printout {
+                                        verbosity: 0,
+                                        content: format!("net: recv_connection failed: {e}"),
+                                    }).await?;
                                     continue;
                                 }
                             };
@@ -460,7 +458,6 @@ async fn init_connection_via_router(
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) -> bool {
-    println!("init_connection_via_router\r");
     let routers_shuffled = {
         let mut routers = peer_id.allowed_routers.clone();
         routers.shuffle(&mut rand::thread_rng());
@@ -504,7 +501,6 @@ async fn recv_connection(
     keypair: &Ed25519KeyPair,
     websocket: WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
 ) -> Result<(Identity, bool, Connection)> {
-    println!("recv_connection\r");
     let mut buf = vec![0u8; 65535];
     let (mut noise, our_static_key) = build_responder();
     let (mut write_stream, mut read_stream) = websocket.split();
@@ -563,15 +559,11 @@ async fn recv_connection(
         their_id,
     )?;
 
-    // Transition the state machine into transport mode now that the handshake is complete.
-    let noise = noise.into_transport_mode()?;
-    println!("handshake complete, noise session received\r");
-
     Ok((
         their_id.clone(),
         their_handshake.proxy_request,
         Connection::Peer(PeerConnection {
-            noise,
+            noise: noise.into_transport_mode()?,
             buf,
             write_stream,
             read_stream,
@@ -587,7 +579,6 @@ async fn recv_connection_via_router(
     keypair: &Ed25519KeyPair,
     router: &Identity,
 ) -> Result<(Identity, PeerConnection)> {
-    println!("recv_connection_via_router\r");
     let mut buf = vec![0u8; 65535];
     let (mut noise, our_static_key) = build_responder();
 
@@ -604,13 +595,13 @@ async fn recv_connection_via_router(
 
     // before beginning XX handshake pattern, send a routing request
     let req = rmp_serde::to_vec(&RoutingRequest {
+        protocol_version: 1,
         source: our.name.clone(),
         signature: keypair
             .sign([their_name, router.name.as_str()].concat().as_bytes())
             .as_ref()
             .to_vec(),
         target: their_name.to_string(),
-        protocol_version: 1,
     })?;
     write_stream.send(tungstenite::Message::binary(req)).await?;
     // <- e
@@ -643,14 +634,10 @@ async fn recv_connection_via_router(
         their_id,
     )?;
 
-    // Transition the state machine into transport mode now that the handshake is complete.
-    let noise = noise.into_transport_mode()?;
-    println!("handshake complete, noise session received\r");
-
     Ok((
         their_id.clone(),
         PeerConnection {
-            noise,
+            noise: noise.into_transport_mode()?,
             buf,
             write_stream,
             read_stream,
@@ -666,7 +653,6 @@ async fn init_connection(
     use_router: Option<&Identity>,
     proxy_request: bool,
 ) -> Result<PeerConnection> {
-    println!("init_connection\r");
     let mut buf = vec![0u8; 65535];
     let (mut noise, our_static_key) = build_initiator();
 
@@ -690,6 +676,7 @@ async fn init_connection(
     // routing request message over socket
     if use_router.is_some() {
         let req = rmp_serde::to_vec(&RoutingRequest {
+            protocol_version: 1,
             source: our.name.clone(),
             signature: keypair
                 .sign(
@@ -700,7 +687,6 @@ async fn init_connection(
                 .as_ref()
                 .to_vec(),
             target: peer_id.name.clone(),
-            protocol_version: 1,
         })?;
         write_stream.send(tungstenite::Message::binary(req)).await?;
     }
@@ -735,11 +721,8 @@ async fn init_connection(
     )
     .await?;
 
-    let noise = noise.into_transport_mode()?;
-    println!("handshake complete, noise session initiated\r");
-
     Ok(PeerConnection {
-        noise,
+        noise: noise.into_transport_mode()?,
         buf,
         write_stream,
         read_stream,
@@ -762,7 +745,6 @@ async fn handle_local_message(
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
 ) -> Result<()> {
-    println!("handle_local_message\r");
     let ipc = match km.message {
         Message::Request(request) => request.ipc,
         Message::Response((response, _context)) => {
