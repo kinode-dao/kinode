@@ -32,6 +32,10 @@ pub struct Args {
     #[arg(short, long, default_value_t = String::new())]
     pub rpc: String,
 
+    /// First port to try binding
+    #[arg(long, default_value_t = 8080)]
+    pub port: u16,
+
     /// Networking password
     #[arg(short, long, value_parser)]
     pub password: Option<String>,

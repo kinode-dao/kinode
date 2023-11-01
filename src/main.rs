@@ -162,7 +162,7 @@ async fn main() {
         }
     };
 
-    let http_server_port = http_server::find_open_port(8080).await.unwrap();
+    let http_server_port = http_server::find_open_port(args.port).await.unwrap();
     let (our, decoded_keyfile) = match args.password {
         Some(password) => {
             match fs::read(format!("{}/.keys", home_directory_path)).await {
