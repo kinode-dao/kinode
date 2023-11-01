@@ -3,7 +3,7 @@ use futures::stream::{SplitSink, SplitStream};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Arc};
 use tokio::net::TcpStream;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::{mpsc::UnboundedSender, RwLock};
 use tokio_tungstenite::{tungstenite, MaybeTlsStream, WebSocketStream};
 
 /// Sent to a node when you want to connect directly to them.
@@ -71,7 +71,7 @@ pub struct PendingPassthroughConnection {
 }
 
 // TODO upgrade from hashmaps
-pub type Peers = HashMap<String, Arc<Peer>>;
+pub type Peers = HashMap<String, Arc<RwLock<Peer>>>;
 pub type PKINames = HashMap<String, NodeId>;
 pub type OnchainPKI = HashMap<String, Identity>;
 pub type PendingPassthroughs = HashMap<(NodeId, NodeId), PendingPassthroughConnection>;
@@ -84,6 +84,7 @@ pub struct Peer {
     pub sender: UnboundedSender<KernelMessage>,
 }
 
+/// Must be parsed from message pack vector.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NetActions {
     /// Received from a router of ours when they have a new pending passthrough for us.
@@ -96,7 +97,8 @@ pub enum NetActions {
     QnsBatchUpdate(Vec<QnsUpdate>),
 }
 
-/// For now, only sent in response to a ConnectionRequest
+/// For now, only sent in response to a ConnectionRequest.
+/// Must be parsed from message pack vector
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NetResponses {
     Accepted(NodeId),

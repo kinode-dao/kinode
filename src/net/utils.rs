@@ -5,7 +5,13 @@ use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use ring::signature::{self, Ed25519KeyPair};
 use snow::params::NoiseParams;
+use std::sync::Arc;
 use tokio::net::TcpStream;
+use tokio::sync::{
+    mpsc::{unbounded_channel, UnboundedReceiver},
+    RwLock,
+};
+use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite, MaybeTlsStream, WebSocketStream};
 
@@ -13,6 +19,128 @@ lazy_static::lazy_static! {
     static ref PARAMS: NoiseParams = "Noise_XX_25519_ChaChaPoly_BLAKE2s"
                                         .parse()
                                         .expect("net: couldn't build noise params?");
+}
+
+pub async fn save_new_peer(
+    identity: &Identity,
+    routing_for: bool,
+    peers: &mut Peers,
+    peer_connections: &mut JoinSet<(String, Option<KernelMessage>)>,
+    conn: PeerConnection,
+    km: Option<KernelMessage>,
+    kernel_message_tx: &MessageSender,
+    print_tx: &PrintSender,
+) -> Result<()> {
+    println!("save_new_peer\r");
+    let peer_name = identity.name.clone();
+    let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
+    if km.is_some() {
+        peer_tx.send(km.unwrap())?
+    }
+    let peer = Arc::new(RwLock::new(Peer {
+        identity: identity.clone(),
+        routing_for,
+        sender: peer_tx,
+    }));
+    peers.insert(peer_name, peer.clone());
+    peer_connections.spawn(maintain_connection(
+        peer,
+        conn,
+        peer_rx,
+        kernel_message_tx.clone(),
+        print_tx.clone(),
+    ));
+    Ok(())
+}
+
+pub async fn maintain_connection(
+    peer: Arc<RwLock<Peer>>,
+    mut conn: PeerConnection,
+    mut peer_rx: UnboundedReceiver<KernelMessage>,
+    kernel_message_tx: MessageSender,
+    print_tx: PrintSender,
+) -> (NodeId, Option<KernelMessage>) {
+    println!("maintain_connection\r");
+    let peer_name = peer.read().await.identity.name.clone();
+    loop {
+        tokio::select! {
+            recv_result = recv_uqbar_message(&mut conn) => {
+                match recv_result {
+                    Ok(km) => {
+                        if km.source.node != peer_name {
+                            println!("net: got message with spoofed source: {}\r", km);
+                            return (peer_name, None)
+                        }
+                        kernel_message_tx.send(km).await.expect("net error: fatal: kernel died");
+                    }
+                    Err(e) => {
+                        println!("net: error receiving message: {}\r", e);
+                        return (peer_name, None)
+                    }
+                }
+            },
+            maybe_recv = peer_rx.recv() => {
+                match maybe_recv {
+                    Some(km) => {
+                        match send_uqbar_message(&km, &mut conn).await {
+                            Ok(()) => continue,
+                            Err(e) => {
+                                if e.to_string() == "message too large" {
+                                    // this will result in a Timeout if the message
+                                    // requested a response, otherwise nothing. so,
+                                    // we should always print something to terminal
+                                    let _ = print_tx.send(Printout {
+                                        verbosity: 0,
+                                        content: format!(
+                                            "net: tried to send too-large message, limit is {:.2}mb",
+                                            MESSAGE_MAX_SIZE as f64 / 1_048_576.0
+                                        ),
+                                    }).await;
+                                    return (peer_name, None)
+                                }
+                                return (peer_name, Some(km))
+                            }
+                        }
+                    }
+                    None => {
+                        println!("net: peer disconnected\r");
+                        return (peer_name, None)
+                    }
+                }
+            },
+        }
+    }
+}
+
+/// cross the streams
+pub async fn maintain_passthrough(mut conn: PassthroughConnection) {
+    println!("maintain_passthrough\r");
+    loop {
+        tokio::select! {
+            maybe_recv = conn.read_stream_1.next() => {
+                match maybe_recv {
+                    Some(Ok(msg)) => {
+                        conn.write_stream_2.send(msg).await.expect("net error: fatal: kernel died");
+                    }
+                    _ => {
+                        println!("net: passthrough broke\r");
+                        return
+                    }
+                }
+            },
+            maybe_recv = conn.read_stream_2.next() => {
+                match maybe_recv {
+                    Some(Ok(msg)) => {
+                        conn.write_stream_1.send(msg).await.expect("net error: fatal: kernel died");
+                    }
+                    _ => {
+                        println!("net: passthrough broke\r");
+                        return
+                    }
+                }
+            },
+        }
+    }
 }
 
 pub async fn create_passthrough(
@@ -49,12 +177,12 @@ pub async fn create_passthrough(
         let target_peer = peers
             .get(&to_name)
             .ok_or(anyhow!("can't route to that indirect node"))?;
-        if !target_peer.routing_for {
+        if !target_peer.read().await.routing_for {
             return Err(anyhow!("we don't route for that indirect node"));
         }
         // send their net:sys:uqbar process a message, notifying it to create a *matching*
         // passthrough request, which we can pair with this pending one.
-        target_peer.sender.send(KernelMessage {
+        target_peer.write().await.sender.send(KernelMessage {
             id: rand::random(),
             source: Address {
                 node: our.name.clone(),
@@ -86,9 +214,7 @@ pub async fn create_passthrough(
     };
     // create passthrough to direct node
     //
-    let Ok(ws_url) = make_ws_url(our_ip, ip, port) else {
-        return Err(anyhow!("failed to parse websocket url"));
-    };
+    let ws_url = make_ws_url(our_ip, ip, port)?;
     let Ok(Ok((websocket, _response))) = timeout(TIMEOUT, connect_async(ws_url)).await else {
         return Err(anyhow!("failed to connect to target"));
     };
@@ -157,11 +283,14 @@ pub async fn send_uqbar_message(km: &KernelMessage, conn: &mut PeerConnection) -
     let len = (serialized.len() as u32).to_be_bytes();
     let with_length_prefix = [len.to_vec(), serialized].concat();
 
+    // 65519 = 65535 - 16 (TAGLEN)
     for payload in with_length_prefix.chunks(65519) {
-        // 65535 - 16 (TAGLEN)
         let len = conn.noise.write_message(payload, &mut conn.buf)?;
-        ws_send(&mut conn.write_stream, &conn.buf[..len]).await?;
+        conn.write_stream
+            .feed(tungstenite::Message::binary(&conn.buf[..len]))
+            .await?;
     }
+    conn.write_stream.flush().await?;
     Ok(())
 }
 
@@ -208,7 +337,9 @@ pub async fn send_uqbar_handshake(
     .expect("failed to serialize handshake payload");
 
     let len = noise.write_message(&our_hs, buf)?;
-    ws_send(write_stream, &buf[..len]).await?;
+    write_stream
+        .send(tungstenite::Message::binary(&buf[..len]))
+        .await?;
 
     Ok(())
 }
@@ -236,14 +367,6 @@ pub async fn ws_recv(
         return Err(anyhow!("websocket closed"));
     };
     Ok(bin)
-}
-
-pub async fn ws_send(
-    write_stream: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-    msg: &[u8],
-) -> Result<()> {
-    write_stream.send(tungstenite::Message::binary(msg)).await?;
-    Ok(())
 }
 
 pub fn build_responder() -> (snow::HandshakeState, Vec<u8>) {
@@ -274,14 +397,12 @@ pub fn build_initiator() -> (snow::HandshakeState, Vec<u8>) {
     )
 }
 
-pub fn make_ws_url(our_ip: &str, ip: &str, port: &u16) -> Result<url::Url, SendErrorKind> {
+pub fn make_ws_url(our_ip: &str, ip: &str, port: &u16) -> Result<url::Url> {
     // if we have the same public IP as target, route locally,
     // otherwise they will appear offline due to loopback stuff
     let ip = if our_ip == ip { "localhost" } else { ip };
-    match url::Url::parse(&format!("ws://{}:{}/ws", ip, port)) {
-        Ok(v) => Ok(v),
-        Err(_) => Err(SendErrorKind::Offline),
-    }
+    let url = url::Url::parse(&format!("ws://{}:{}/ws", ip, port))?;
+    Ok(url)
 }
 
 pub async fn error_offline(km: KernelMessage, network_error_tx: &NetworkErrorSender) -> Result<()> {
