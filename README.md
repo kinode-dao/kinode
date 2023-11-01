@@ -7,10 +7,7 @@ Last updated: 10/16/23
 # Clone the repo.
 
 git clone git@github.com:uqbar-dao/uqbar.git
-git clone git@github.com:uqbar-dao/redb.git
-git clone git@github.com:uqbar-dao/rusqlite.git
 
-Make sure the two repos are next to each other in your directory structure.
 
 # Get some stuff so we can build wasm.
 
@@ -22,13 +19,17 @@ rustup target add wasm32-wasi --toolchain nightly
 cargo install cargo-wasi
 cargo install --git https://github.com/bytecodealliance/cargo-component --locked cargo-component
 
+
 # Initialize submodules, in particular the register app
+
 git submodule update --init --recursive
 # Build the register app
 cd src/register && ./build_all.sh && cd ../..
 
+
 # Build the runtime, along with a number of booted-at-startup WASM modules including terminal and key_value
 # OPTIONAL: --release flag
+
 cargo +nightly build --release
 ```
 
