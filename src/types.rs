@@ -589,6 +589,7 @@ pub enum VfsAction {
         full_path: String,
         offset: u64,
     },
+    Append(String),
     SetSize {
         full_path: String,
         size: u64,

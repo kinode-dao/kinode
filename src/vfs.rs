@@ -96,11 +96,11 @@ async fn create_entry(vfs: &mut MutexGuard<Vfs>, path: &str, key: Key) -> Result
     let parent_key = create_entry(vfs, &parent_path, Key::Dir { id: rand::random() }).await?;
 
     let entry_type = match key {
-        Key::Dir { id } => EntryType::Dir {
+        Key::Dir { id: _ } => EntryType::Dir {
             parent: parent_key.clone(),
             children: HashSet::new(),
         },
-        Key::File { id } => EntryType::File {
+        Key::File { id: _ } => EntryType::File {
             parent: parent_key.clone(),
         },
     };
@@ -127,13 +127,13 @@ async fn rename_entry(
     old_path: &str,
     new_path: &str,
 ) -> Result<(), VfsError> {
-    let (key, children) = {
+    let (_key, children) = {
         let mut vfs = vfs.lock().await;
         let key = match vfs.path_to_key.remove(old_path) {
             Some(key) => key,
             None => return Err(VfsError::EntryNotFound),
         };
-        let mut entry = match vfs.key_to_entry.get_mut(&key) {
+        let entry = match vfs.key_to_entry.get_mut(&key) {
             Some(entry) => entry,
             None => return Err(VfsError::EntryNotFound),
         };
@@ -179,7 +179,7 @@ fn make_error_message(
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: serde_json::to_vec(&VfsResponse::Err(error)).unwrap(), //  TODO: handle error?
+                ipc: serde_json::to_vec(&VfsResponse::Err(error)).unwrap(),
                 metadata: None,
             },
             None,
@@ -684,7 +684,6 @@ async fn handle_request(
     )
     .await?;
 
-    //  TODO: properly handle rsvp
     if expects_response.is_some() {
         let response = KernelMessage {
             id,
@@ -1019,8 +1018,10 @@ async fn match_request(
                 }
             }
 
-            persist_state(send_to_persist, &mut recv_response, id).await;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            match persist_state(send_to_persist, &mut recv_response, id).await {
+                Err(_) => return Err(VfsError::PersistError),
+                Ok(_) => return Ok((serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)),
+            }
         }
         VfsAction::Delete(mut full_path) => {
             full_path = clean_path(&full_path);
@@ -1089,7 +1090,6 @@ async fn match_request(
                             else {
                                 return Err(VfsError::InternalError);
                             };
-                            //  TODO: does this work?
                             children.remove(&key);
                         }
                     }
@@ -1107,16 +1107,14 @@ async fn match_request(
             full_path = clean_path(&full_path);
 
             let file_hash = {
-                let mut vfs = vfs.lock().await;
-                let Some(key) = vfs.path_to_key.remove(&full_path) else {
+                let vfs = vfs.lock().await;
+                let Some(key) = vfs.path_to_key.get(&full_path) else {
                     return Err(VfsError::EntryNotFound);
                 };
-                let key2 = key.clone();
-                let Key::File { id: file_hash } = key2 else {
+                let Key::File { id: file_hash } = key else {
                     return Err(VfsError::InternalError);
                 };
-                vfs.path_to_key.insert(full_path.clone(), key);
-                file_hash
+                *file_hash
             };
             let _ = send_to_loop
                 .send(KernelMessage {
@@ -1157,6 +1155,58 @@ async fn match_request(
                 Ok(_) => return Ok((serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)),
             }
         }
+        VfsAction::Append(mut full_path) => {
+            full_path = clean_path(&full_path);
+
+            let file_hash = {
+                let vfs = vfs.lock().await;
+                let Some(key) = vfs.path_to_key.get(&full_path) else {
+                    return Err(VfsError::EntryNotFound);
+                };
+                let Key::File { id: file_hash } = key else {
+                    return Err(VfsError::InternalError);
+                };
+                *file_hash
+            };
+            let _ = send_to_loop
+                .send(KernelMessage {
+                    id,
+                    source: Address {
+                        node: our_node.clone(),
+                        process: VFS_PROCESS_ID.clone(),
+                    },
+                    target: Address {
+                        node: our_node.clone(),
+                        process: FILESYSTEM_PROCESS_ID.clone(),
+                    },
+                    rsvp: None,
+                    message: Message::Request(Request {
+                        inherit: true,
+                        expects_response: Some(5), // TODO evaluate
+                        ipc: serde_json::to_vec(&FsAction::Append(Some(file_hash)))
+                            .unwrap(),
+                        metadata: None,
+                    }),
+                    payload,
+                    signed_capabilities: None,
+                })
+                .await;
+            let write_response = recv_response.recv().await.unwrap();
+            let KernelMessage { message, .. } = write_response;
+            let Message::Response((Response { ipc, .. }, None)) = message else {
+                return Err(VfsError::InternalError);
+            };
+
+            let Ok(FsResponse::Append(_)) =
+                serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc).unwrap()
+            else {
+                return Err(VfsError::InternalError);
+            };
+            match persist_state(send_to_persist, &mut recv_response, id).await {
+                Err(_) => return Err(VfsError::PersistError),
+                Ok(_) => return Ok((serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)),
+            }
+        }
         VfsAction::SetSize {
             mut full_path,
             size,
@@ -1164,16 +1214,14 @@ async fn match_request(
             full_path = clean_path(&full_path);
 
             let file_hash = {
-                let mut vfs = vfs.lock().await;
-                let Some(key) = vfs.path_to_key.remove(&full_path) else {
+                let vfs = vfs.lock().await;
+                let Some(key) = vfs.path_to_key.get(&full_path) else {
                     return Err(VfsError::EntryNotFound);
                 };
-                let key2 = key.clone();
-                let Key::File { id: file_hash } = key2 else {
+                let Key::File { id: file_hash } = key else {
                     return Err(VfsError::InternalError);
                 };
-                vfs.path_to_key.insert(full_path.clone(), key);
-                file_hash
+                *file_hash
             };
 
             let _ = send_to_loop
@@ -1191,7 +1239,7 @@ async fn match_request(
                     message: Message::Request(Request {
                         inherit: true,
                         expects_response: Some(15),
-                        ipc: serde_json::to_vec(&FsAction::SetLength((file_hash.clone(), size)))
+                        ipc: serde_json::to_vec(&FsAction::SetLength((file_hash, size)))
                             .unwrap(),
                         metadata: None,
                     }),
@@ -1337,21 +1385,20 @@ async fn match_request(
             }
         }
         VfsAction::GetFileChunk {
-            ref full_path,
+            mut full_path,
             offset,
             length,
         } => {
+            full_path = clean_path(&full_path);
             let file_hash = {
-                let mut vfs = vfs.lock().await;
-                let Some(key) = vfs.path_to_key.remove(full_path) else {
+                let vfs = vfs.lock().await;
+                let Some(key) = vfs.path_to_key.get(&full_path) else {
                     return Err(VfsError::EntryNotFound);
                 };
-                let key2 = key.clone();
-                let Key::File { id: file_hash } = key2 else {
+                let Key::File { id: file_hash } = key else {
                     return Err(VfsError::InternalError);
                 };
-                vfs.path_to_key.insert(full_path.clone(), key);
-                file_hash
+                *file_hash
             };
 
             let _ = send_to_loop
@@ -1406,7 +1453,8 @@ async fn match_request(
                 Some(payload.bytes),
             )
         }
-        VfsAction::GetEntryLength(ref full_path) => {
+        VfsAction::GetEntryLength(mut full_path) => {
+            full_path = clean_path(&full_path);
             if full_path.chars().last() == Some('/') {
                 (
                     serde_json::to_vec(&VfsResponse::GetEntryLength(None)).unwrap(),
@@ -1414,16 +1462,14 @@ async fn match_request(
                 )
             } else {
                 let file_hash = {
-                    let mut vfs = vfs.lock().await;
-                    let Some(key) = vfs.path_to_key.remove(full_path) else {
+                    let vfs = vfs.lock().await;
+                    let Some(key) = vfs.path_to_key.get(&full_path) else {
                         return Err(VfsError::EntryNotFound);
                     };
-                    let key2 = key.clone();
-                    let Key::File { id: file_hash } = key2 else {
+                    let Key::File { id: file_hash } = key else {
                         return Err(VfsError::InternalError);
                     };
-                    vfs.path_to_key.insert(full_path.clone(), key);
-                    file_hash
+                    *file_hash
                 };
 
                 let _ = send_to_loop
