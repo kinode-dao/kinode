@@ -1067,33 +1067,31 @@ async fn match_request(
                         vfs.key_to_entry.insert(key.clone(), entry);
                     }
                 }
-                EntryType::File { parent } => {
-                    match vfs.key_to_entry.get_mut(&parent) {
-                        None => {
-                            send_to_terminal
-                                .send(Printout {
-                                    verbosity: 0,
-                                    content: format!(
-                                        "vfs: delete: unexpected file with no parent dir: {}",
-                                        full_path
-                                    ),
-                                })
-                                .await
-                                .unwrap();
-                            return Err(VfsError::InternalError);
-                        }
-                        Some(parent) => {
-                            let EntryType::Dir {
-                                parent: _,
-                                ref mut children,
-                            } = parent.entry_type
-                            else {
-                                return Err(VfsError::InternalError);
-                            };
-                            children.remove(&key);
-                        }
+                EntryType::File { parent } => match vfs.key_to_entry.get_mut(&parent) {
+                    None => {
+                        send_to_terminal
+                            .send(Printout {
+                                verbosity: 0,
+                                content: format!(
+                                    "vfs: delete: unexpected file with no parent dir: {}",
+                                    full_path
+                                ),
+                            })
+                            .await
+                            .unwrap();
+                        return Err(VfsError::InternalError);
                     }
-                }
+                    Some(parent) => {
+                        let EntryType::Dir {
+                            parent: _,
+                            ref mut children,
+                        } = parent.entry_type
+                        else {
+                            return Err(VfsError::InternalError);
+                        };
+                        children.remove(&key);
+                    }
+                },
             }
             match persist_state(send_to_persist, &mut recv_response, id).await {
                 Err(_) => return Err(VfsError::PersistError),
@@ -1183,8 +1181,7 @@ async fn match_request(
                     message: Message::Request(Request {
                         inherit: true,
                         expects_response: Some(5), // TODO evaluate
-                        ipc: serde_json::to_vec(&FsAction::Append(Some(file_hash)))
-                            .unwrap(),
+                        ipc: serde_json::to_vec(&FsAction::Append(Some(file_hash))).unwrap(),
                         metadata: None,
                     }),
                     payload,
@@ -1239,8 +1236,7 @@ async fn match_request(
                     message: Message::Request(Request {
                         inherit: true,
                         expects_response: Some(15),
-                        ipc: serde_json::to_vec(&FsAction::SetLength((file_hash, size)))
-                            .unwrap(),
+                        ipc: serde_json::to_vec(&FsAction::SetLength((file_hash, size))).unwrap(),
                         metadata: None,
                     }),
                     payload: None,
