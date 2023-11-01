@@ -10,6 +10,7 @@ use tokio_tungstenite::{tungstenite, MaybeTlsStream, WebSocketStream};
 /// Sent in the 'e, ee, s, es' and 's, se' phases of XX noise protocol pattern.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HandshakePayload {
+    pub protocol_version: u8,
     pub name: NodeId,
     // signature is created by their networking key, of their static key
     // someone could reuse this signature, but then they will be unable
@@ -20,7 +21,6 @@ pub struct HandshakePayload {
     /// including from the router itself.
     /// This is not relevant in a handshake sent from the receiver side.
     pub proxy_request: bool,
-    pub protocol_version: u8,
 }
 
 /// Sent to a node when you want them to connect you to an indirect node.
@@ -36,12 +36,12 @@ pub struct HandshakePayload {
 /// Sent in the 'e' phase of XX noise protocol pattern.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RoutingRequest {
+    pub protocol_version: u8,
     pub source: NodeId,
     // signature is created by their networking key, of the [target, router name].concat()
     // someone could reuse this signature, and TODO need to make sure that's useless.
     pub signature: Vec<u8>,
     pub target: NodeId,
-    pub protocol_version: u8,
 }
 
 pub enum Connection {

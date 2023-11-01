@@ -31,7 +31,6 @@ pub async fn save_new_peer(
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
 ) -> Result<()> {
-    println!("save_new_peer\r");
     let peer_name = identity.name.clone();
     let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
     if km.is_some() {
@@ -53,6 +52,7 @@ pub async fn save_new_peer(
     Ok(())
 }
 
+/// should always be spawned on its own task
 pub async fn maintain_connection(
     peer: Arc<RwLock<Peer>>,
     mut conn: PeerConnection,
@@ -60,7 +60,6 @@ pub async fn maintain_connection(
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) -> (NodeId, Option<KernelMessage>) {
-    println!("maintain_connection\r");
     let peer_name = peer.read().await.identity.name.clone();
     loop {
         tokio::select! {
@@ -68,13 +67,15 @@ pub async fn maintain_connection(
                 match recv_result {
                     Ok(km) => {
                         if km.source.node != peer_name {
-                            println!("net: got message with spoofed source: {}\r", km);
+                            let _ = print_tx.send(Printout {
+                                verbosity: 0,
+                                content: format!("net: got message with spoofed source from {peer_name}")
+                            }).await;
                             return (peer_name, None)
                         }
                         kernel_message_tx.send(km).await.expect("net error: fatal: kernel died");
                     }
-                    Err(e) => {
-                        println!("net: error receiving message: {}\r", e);
+                    Err(_) => {
                         return (peer_name, None)
                     }
                 }
@@ -102,10 +103,7 @@ pub async fn maintain_connection(
                             }
                         }
                     }
-                    None => {
-                        println!("net: peer disconnected\r");
-                        return (peer_name, None)
-                    }
+                    None => return (peer_name, None),
                 }
             },
         }
@@ -114,7 +112,6 @@ pub async fn maintain_connection(
 
 /// cross the streams
 pub async fn maintain_passthrough(mut conn: PassthroughConnection) {
-    println!("maintain_passthrough\r");
     loop {
         tokio::select! {
             maybe_recv = conn.read_stream_1.next() => {
@@ -122,10 +119,7 @@ pub async fn maintain_passthrough(mut conn: PassthroughConnection) {
                     Some(Ok(msg)) => {
                         conn.write_stream_2.send(msg).await.expect("net error: fatal: kernel died");
                     }
-                    _ => {
-                        println!("net: passthrough broke\r");
-                        return
-                    }
+                    _ => return,
                 }
             },
             maybe_recv = conn.read_stream_2.next() => {
@@ -133,10 +127,7 @@ pub async fn maintain_passthrough(mut conn: PassthroughConnection) {
                     Some(Ok(msg)) => {
                         conn.write_stream_1.send(msg).await.expect("net error: fatal: kernel died");
                     }
-                    _ => {
-                        println!("net: passthrough broke\r");
-                        return
-                    }
+                    _ => return,
                 }
             },
         }
@@ -154,11 +145,8 @@ pub async fn create_passthrough(
     write_stream_1: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
     read_stream_1: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
 ) -> Result<(Identity, Connection)> {
-    println!("create_passthrough\r");
     // if the target has already generated a pending passthrough for this source,
     // immediately match them
-    println!("current: {:?}\r", pending_passthroughs.keys());
-    println!("this one: {:?}\r", (to_name.clone(), from_id.name.clone()));
     if let Some(pending) = pending_passthroughs.remove(&(to_name.clone(), from_id.name.clone())) {
         return Ok((
             from_id,
@@ -219,7 +207,6 @@ pub async fn create_passthrough(
         return Err(anyhow!("failed to connect to target"));
     };
     let (write_stream_2, read_stream_2) = websocket.split();
-
     Ok((
         from_id,
         Connection::Passthrough(PassthroughConnection {
@@ -236,9 +223,7 @@ pub fn validate_routing_request(
     buf: &[u8],
     pki: &OnchainPKI,
 ) -> Result<(Identity, NodeId)> {
-    println!("validate_routing_request\r");
     let routing_request: RoutingRequest = rmp_serde::from_slice(buf)?;
-    println!("routing request: {:?}\r", routing_request);
     let their_id = pki
         .get(&routing_request.source)
         .ok_or(anyhow!("unknown QNS name"))?;
@@ -261,7 +246,6 @@ pub fn validate_handshake(
     their_static_key: &[u8],
     their_id: &Identity,
 ) -> Result<()> {
-    println!("validate_handshake\r");
     if handshake.protocol_version != 1 {
         return Err(anyhow!("handshake protocol version mismatch"));
     }
@@ -294,6 +278,7 @@ pub async fn send_uqbar_message(km: &KernelMessage, conn: &mut PeerConnection) -
     Ok(())
 }
 
+/// any error in receiving a message will result in the connection being closed.
 pub async fn recv_uqbar_message(conn: &mut PeerConnection) -> Result<KernelMessage> {
     let outer_len = conn
         .noise
@@ -304,6 +289,9 @@ pub async fn recv_uqbar_message(conn: &mut PeerConnection) -> Result<KernelMessa
 
     let length_bytes = [conn.buf[0], conn.buf[1], conn.buf[2], conn.buf[3]];
     let msg_len = u32::from_be_bytes(length_bytes);
+    if msg_len > MESSAGE_MAX_SIZE {
+        return Err(anyhow!("message too large"));
+    }
 
     let mut msg = Vec::with_capacity(msg_len as usize);
     msg.extend_from_slice(&conn.buf[4..outer_len]);
@@ -327,11 +315,10 @@ pub async fn send_uqbar_handshake(
     write_stream: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
     proxy_request: bool,
 ) -> Result<()> {
-    println!("send_uqbar_handshake\r");
     let our_hs = rmp_serde::to_vec(&HandshakePayload {
+        protocol_version: 1,
         name: our.name.clone(),
         signature: keypair.sign(noise_static_key).as_ref().to_vec(),
-        protocol_version: 1,
         proxy_request,
     })
     .expect("failed to serialize handshake payload");
@@ -340,7 +327,6 @@ pub async fn send_uqbar_handshake(
     write_stream
         .send(tungstenite::Message::binary(&buf[..len]))
         .await?;
-
     Ok(())
 }
 
@@ -349,14 +335,7 @@ pub async fn recv_uqbar_handshake(
     buf: &mut Vec<u8>,
     read_stream: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
 ) -> Result<HandshakePayload> {
-    println!("recv_uqbar_handshake\r");
     let len = noise.read_message(&ws_recv(read_stream).await?, buf)?;
-
-    // from buffer, read a sequence of bytes that deserializes to the
-    // 1. QNS name of the sender
-    // 2. a signature by their published networking key that signs the
-    //    static key they will be using for this handshake
-    // 3. the version number of the networking protocol (so we can upgrade it)
     Ok(rmp_serde::from_slice(&buf[..len])?)
 }
 
