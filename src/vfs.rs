@@ -120,14 +120,13 @@ async fn create_entry(vfs: &mut MutexGuard<Vfs>, path: &str, key: Key) -> Result
 
     Ok(key)
 }
-
 #[async_recursion::async_recursion]
 async fn rename_entry(
     vfs: Arc<Mutex<Vfs>>,
     old_path: &str,
     new_path: &str,
 ) -> Result<(), VfsError> {
-    let (_key, children) = {
+    let children = {
         let mut vfs = vfs.lock().await;
         let key = match vfs.path_to_key.remove(old_path) {
             Some(key) => key,
@@ -139,13 +138,15 @@ async fn rename_entry(
         };
         entry.name = new_path.split("/").last().unwrap().to_string();
         entry.full_path = new_path.to_string();
+
         let children = if let EntryType::Dir { children, .. } = &entry.entry_type {
             children.clone()
         } else {
             HashSet::new()
         };
-        vfs.path_to_key.insert(new_path.to_string(), key.clone());
-        (key, children)
+
+        vfs.path_to_key.insert(new_path.to_string(), key);
+        children
     };
 
     // recursively update the paths of the children
@@ -749,10 +750,8 @@ async fn match_request(
                     .unwrap();
                 let _ = recv_cap_bool.await.unwrap();
             }
-            match persist_state(send_to_persist, &mut recv_response, id).await {
-                Err(_) => return Err(VfsError::PersistError),
-                Ok(_) => return Ok((serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)),
-            }
+            persist_state(send_to_persist, &mut recv_response, id).await?;
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Add {
             mut full_path,
@@ -878,18 +877,18 @@ async fn match_request(
                 }
                 AddEntryType::ZipArchive => {
                     let Some(payload) = payload else {
-                        return Err(VfsError::InternalError);
+                        return Err(VfsError::BadPayload);
                     };
                     let Some(mime) = payload.mime else {
-                        return Err(VfsError::InternalError);
+                        return Err(VfsError::BadPayload);
                     };
                     if "application/zip" != mime {
-                        return Err(VfsError::InternalError);
+                        return Err(VfsError::BadPayload);
                     }
                     let file = std::io::Cursor::new(&payload.bytes);
                     let mut zip = match zip::ZipArchive::new(file) {
                         Ok(f) => f,
-                        Err(e) => panic!("vfs: zip error: {:?}", e),
+                        Err(e) => return Err(VfsError::InternalError),
                     };
 
                     // loop through items in archive; recursively add to root
@@ -999,10 +998,8 @@ async fn match_request(
                     }
                 }
             }
-            match persist_state(send_to_persist, &mut recv_response, id).await {
-                Err(_) => return Err(VfsError::PersistError),
-                Ok(_) => return Ok((serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)),
-            }
+            persist_state(send_to_persist, &mut recv_response, id).await?; 
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Rename {
             mut full_path,
@@ -1010,7 +1007,6 @@ async fn match_request(
         } => {
             full_path = clean_path(&full_path);
             new_full_path = clean_path(&new_full_path);
-
             match rename_entry(vfs, &full_path, &new_full_path).await {
                 Ok(_) => {}
                 Err(e) => {
@@ -1018,10 +1014,8 @@ async fn match_request(
                 }
             }
 
-            match persist_state(send_to_persist, &mut recv_response, id).await {
-                Err(_) => return Err(VfsError::PersistError),
-                Ok(_) => return Ok((serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)),
-            }
+            persist_state(send_to_persist, &mut recv_response, id).await?; 
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Delete(mut full_path) => {
             full_path = clean_path(&full_path);
@@ -1093,10 +1087,8 @@ async fn match_request(
                     }
                 },
             }
-            match persist_state(send_to_persist, &mut recv_response, id).await {
-                Err(_) => return Err(VfsError::PersistError),
-                Ok(_) => return Ok((serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)),
-            }
+            persist_state(send_to_persist, &mut recv_response, id).await?; 
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::WriteOffset {
             mut full_path,
@@ -1148,10 +1140,7 @@ async fn match_request(
             else {
                 return Err(VfsError::InternalError);
             };
-            match persist_state(send_to_persist, &mut recv_response, id).await {
-                Err(_) => return Err(VfsError::PersistError),
-                Ok(_) => return Ok((serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)),
-            }
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Append(mut full_path) => {
             full_path = clean_path(&full_path);
@@ -1199,10 +1188,8 @@ async fn match_request(
             else {
                 return Err(VfsError::InternalError);
             };
-            match persist_state(send_to_persist, &mut recv_response, id).await {
-                Err(_) => return Err(VfsError::PersistError),
-                Ok(_) => return Ok((serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)),
-            }
+            persist_state(send_to_persist, &mut recv_response, id).await?; 
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::SetSize {
             mut full_path,
@@ -1257,10 +1244,7 @@ async fn match_request(
             if length != size {
                 return Err(VfsError::InternalError);
             };
-            match persist_state(send_to_persist, &mut recv_response, id).await {
-                Err(_) => return Err(VfsError::PersistError),
-                Ok(_) => return Ok((serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)),
-            }
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::GetPath(hash) => {
             let mut vfs = vfs.lock().await;
