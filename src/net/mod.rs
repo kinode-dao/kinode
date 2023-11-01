@@ -9,10 +9,12 @@ use std::{
     sync::Arc,
 };
 use tokio::net::TcpListener;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::sync::{mpsc::unbounded_channel, RwLock};
 use tokio::task::JoinSet;
 use tokio::time;
-use tokio_tungstenite::{accept_async, connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::{
+    accept_async, connect_async, tungstenite, MaybeTlsStream, WebSocketStream,
+};
 
 mod types;
 mod utils;
@@ -147,7 +149,7 @@ async fn indirect_networking(
                 // if the message is for a peer we currently have a connection with,
                 // try to send it to them
                 else if let Some(peer) = peers.get_mut(target) {
-                    peer.sender.send(km)?;
+                    peer.write().await.sender.send(km)?;
                 }
                 else if let Some(peer_id) = pki.get(target) {
                     // if the message is for a *direct* peer we don't have a connection with,
@@ -156,22 +158,17 @@ async fn indirect_networking(
                     // networking information about ourselves to the target.
                     if peer_id.ws_routing.is_some() && reveal_ip {
                         match init_connection(&our, &our_ip, peer_id, &keypair, None, false).await {
-                            Ok((peer_name, direct_conn)) => {
-                                let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
-                                let peer = Arc::new(Peer {
-                                    identity: peer_id.clone(),
-                                    routing_for: false,
-                                    sender: peer_tx,
-                                });
-                                peers.insert(peer_name, peer.clone());
-                                peer.sender.send(km)?;
-                                peer_connections.spawn(maintain_connection(
-                                    peer,
+                            Ok(direct_conn) => {
+                                save_new_peer(
+                                    peer_id,
+                                    false,
+                                    &mut peers,
+                                    &mut peer_connections,
                                     direct_conn,
-                                    peer_rx,
-                                    kernel_message_tx.clone(),
-                                    print_tx.clone(),
-                                ));
+                                    Some(km),
+                                    &kernel_message_tx,
+                                    &print_tx,
+                                ).await?;
                             }
                             Err(e) => {
                                 println!("net: error initializing connection: {}\r", e);
@@ -237,23 +234,19 @@ async fn indirect_networking(
                         continue;
                     };
                     match init_connection(&our, &our_ip, router_id, &keypair, None, true).await {
-                        Ok((peer_name, direct_conn)) => {
-                            let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
-                            let peer = Arc::new(Peer {
-                                identity: router_id.clone(),
-                                routing_for: false,
-                                sender: peer_tx,
-                            });
-                            println!("net: connected to router {}\r", peer_name);
-                            peers.insert(peer_name.clone(), peer.clone());
-                            active_routers.insert(peer_name);
-                            peer_connections.spawn(maintain_connection(
-                                peer,
+                        Ok(direct_conn) => {
+                            println!("net: connected to router {}\r", router_id.name);
+                            active_routers.insert(router_id.name.clone());
+                            save_new_peer(
+                                router_id,
+                                false,
+                                &mut peers,
+                                &mut peer_connections,
                                 direct_conn,
-                                peer_rx,
-                                kernel_message_tx.clone(),
-                                print_tx.clone(),
-                            ));
+                                None,
+                                &kernel_message_tx,
+                                &print_tx,
+                            ).await?;
                         }
                         Err(_e) => continue,
                     }
@@ -322,29 +315,24 @@ async fn direct_networking(
                 // if the message is for a peer we currently have a connection with,
                 // try to send it to them
                 else if let Some(peer) = peers.get_mut(target) {
-                    peer.sender.send(km)?;
+                    peer.write().await.sender.send(km)?;
                 }
                 else if let Some(peer_id) = pki.get(target) {
                     // if the message is for a *direct* peer we don't have a connection with,
                     // try to establish a connection with them
                     if peer_id.ws_routing.is_some() {
                         match init_connection(&our, &our_ip, peer_id, &keypair, None, false).await {
-                            Ok((peer_name, direct_conn)) => {
-                                let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
-                                let peer = Arc::new(Peer {
-                                    identity: peer_id.clone(),
-                                    routing_for: false,
-                                    sender: peer_tx,
-                                });
-                                peers.insert(peer_name, peer.clone());
-                                peer.sender.send(km)?;
-                                peer_connections.spawn(maintain_connection(
-                                    peer,
+                            Ok(direct_conn) => {
+                                save_new_peer(
+                                    peer_id,
+                                    false,
+                                    &mut peers,
+                                    &mut peer_connections,
                                     direct_conn,
-                                    peer_rx,
-                                    kernel_message_tx.clone(),
-                                    print_tx.clone(),
-                                ));
+                                    Some(km),
+                                    &kernel_message_tx,
+                                    &print_tx,
+                                ).await?;
                             }
                             Err(e) => {
                                 println!("net: error initializing connection: {}\r", e);
@@ -414,12 +402,12 @@ async fn direct_networking(
                         match conn {
                             Connection::Peer(peer_conn) => {
                                 let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
-                                let peer = Arc::new(Peer {
+                                let peer = Arc::new(RwLock::new(Peer {
                                     identity: peer_id,
                                     routing_for,
                                     sender: peer_tx,
-                                });
-                                peers.insert(peer.identity.name.clone(), peer.clone());
+                                }));
+                                peers.insert(peer.read().await.identity.name.clone(), peer.clone());
                                 peer_connections.spawn(maintain_connection(
                                     peer,
                                     peer_conn,
@@ -487,117 +475,24 @@ async fn init_connection_via_router(
             Some(id) => id,
         };
         match init_connection(&our, &our_ip, peer_id, &keypair, Some(router_id), false).await {
-            Ok((peer_name, direct_conn)) => {
-                let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
-                let peer = Arc::new(Peer {
-                    identity: peer_id.clone(),
-                    routing_for: false,
-                    sender: peer_tx,
-                });
-                peers.insert(peer_name, peer.clone());
-                peer.sender.send(km).unwrap();
-                peer_connections.spawn(maintain_connection(
-                    peer,
+            Ok(direct_conn) => {
+                return save_new_peer(
+                    peer_id,
+                    false,
+                    peers,
+                    peer_connections,
                     direct_conn,
-                    peer_rx,
-                    kernel_message_tx.clone(),
-                    print_tx.clone(),
-                ));
-                return true;
+                    Some(km),
+                    &kernel_message_tx,
+                    &print_tx,
+                )
+                .await
+                .is_ok()
             }
             Err(_) => continue,
         }
     }
     return false;
-}
-
-async fn maintain_connection(
-    peer: Arc<Peer>,
-    mut conn: PeerConnection,
-    mut peer_rx: UnboundedReceiver<KernelMessage>,
-    kernel_message_tx: MessageSender,
-    print_tx: PrintSender,
-) -> (NodeId, Option<KernelMessage>) {
-    println!("maintain_connection\r");
-    loop {
-        tokio::select! {
-            recv_result = recv_uqbar_message(&mut conn) => {
-                match recv_result {
-                    Ok(km) => {
-                        if km.source.node != peer.identity.name {
-                            println!("net: got message with spoofed source\r");
-                            return (peer.identity.name.clone(), None)
-                        }
-                        kernel_message_tx.send(km).await.expect("net error: fatal: kernel died");
-                    }
-                    Err(e) => {
-                        println!("net: error receiving message: {}\r", e);
-                        return (peer.identity.name.clone(), None)
-                    }
-                }
-            },
-            maybe_recv = peer_rx.recv() => {
-                match maybe_recv {
-                    Some(km) => {
-                        match send_uqbar_message(&km, &mut conn).await {
-                            Ok(()) => continue,
-                            Err(e) => {
-                                if e.to_string() == "message too large" {
-                                    // this will result in a Timeout if the message
-                                    // requested a response, otherwise nothing. so,
-                                    // we should always print something to terminal
-                                    let _ = print_tx.send(Printout {
-                                        verbosity: 0,
-                                        content: format!(
-                                            "net: tried to send too-large message, limit is {:.2}mb",
-                                            MESSAGE_MAX_SIZE as f64 / 1_048_576.0
-                                        ),
-                                    }).await;
-                                    return (peer.identity.name.clone(), None)
-                                }
-                                return (peer.identity.name.clone(), Some(km))
-                            }
-                        }
-                    }
-                    None => {
-                        println!("net: peer disconnected\r");
-                        return (peer.identity.name.clone(), None)
-                    }
-                }
-            },
-        }
-    }
-}
-
-/// cross the streams
-async fn maintain_passthrough(mut conn: PassthroughConnection) {
-    println!("maintain_passthrough\r");
-    loop {
-        tokio::select! {
-            maybe_recv = conn.read_stream_1.next() => {
-                match maybe_recv {
-                    Some(Ok(msg)) => {
-                        conn.write_stream_2.send(msg).await.expect("net error: fatal: kernel died");
-                    }
-                    _ => {
-                        println!("net: passthrough broke\r");
-                        return
-                    }
-                }
-            },
-            maybe_recv = conn.read_stream_2.next() => {
-                match maybe_recv {
-                    Some(Ok(msg)) => {
-                        conn.write_stream_1.send(msg).await.expect("net error: fatal: kernel died");
-                    }
-                    _ => {
-                        println!("net: passthrough broke\r");
-                        return
-                    }
-                }
-            },
-        }
-    }
 }
 
 async fn recv_connection(
@@ -708,7 +603,7 @@ async fn recv_connection_via_router(
     let (mut write_stream, mut read_stream) = websocket.split();
 
     // before beginning XX handshake pattern, send a routing request
-    let message = rmp_serde::to_vec(&RoutingRequest {
+    let req = rmp_serde::to_vec(&RoutingRequest {
         source: our.name.clone(),
         signature: keypair
             .sign([their_name, router.name.as_str()].concat().as_bytes())
@@ -717,8 +612,7 @@ async fn recv_connection_via_router(
         target: their_name.to_string(),
         protocol_version: 1,
     })?;
-    ws_send(&mut write_stream, &message).await?;
-
+    write_stream.send(tungstenite::Message::binary(req)).await?;
     // <- e
     noise.read_message(&ws_recv(&mut read_stream).await?, &mut buf)?;
 
@@ -771,46 +665,31 @@ async fn init_connection(
     keypair: &Ed25519KeyPair,
     use_router: Option<&Identity>,
     proxy_request: bool,
-) -> Result<(String, PeerConnection)> {
+) -> Result<PeerConnection> {
     println!("init_connection\r");
     let mut buf = vec![0u8; 65535];
     let (mut noise, our_static_key) = build_initiator();
 
-    let (mut write_stream, mut read_stream) = match use_router {
-        None => {
-            let Some((ref ip, ref port)) = peer_id.ws_routing else {
-                return Err(anyhow!("target has no routing information"));
-            };
-            let Ok(ws_url) = make_ws_url(our_ip, ip, port) else {
-                return Err(anyhow!("failed to parse websocket url"));
-            };
-            let Ok(Ok((websocket, _response))) =
-                time::timeout(TIMEOUT, connect_async(ws_url)).await
-            else {
-                return Err(anyhow!("failed to connect to target"));
-            };
-            websocket.split()
-        }
-        Some(router_id) => {
-            let Some((ref ip, ref port)) = router_id.ws_routing else {
-                return Err(anyhow!("router has no routing information"));
-            };
-            let Ok(ws_url) = make_ws_url(our_ip, ip, port) else {
-                return Err(anyhow!("failed to parse websocket url"));
-            };
-            let Ok(Ok((websocket, _response))) =
-                time::timeout(TIMEOUT, connect_async(ws_url)).await
-            else {
-                return Err(anyhow!("failed to connect to target"));
-            };
-            websocket.split()
-        }
+    let (ref ip, ref port) = match use_router {
+        None => peer_id
+            .ws_routing
+            .as_ref()
+            .ok_or(anyhow!("target has no routing information"))?,
+        Some(router_id) => router_id
+            .ws_routing
+            .as_ref()
+            .ok_or(anyhow!("target has no routing information"))?,
     };
+    let ws_url = make_ws_url(our_ip, ip, port)?;
+    let Ok(Ok((websocket, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await else {
+        return Err(anyhow!("failed to connect to target"));
+    };
+    let (mut write_stream, mut read_stream) = websocket.split();
 
     // if this is a routed request, before starting XX handshake pattern, send a
     // routing request message over socket
     if use_router.is_some() {
-        let message = rmp_serde::to_vec(&RoutingRequest {
+        let req = rmp_serde::to_vec(&RoutingRequest {
             source: our.name.clone(),
             signature: keypair
                 .sign(
@@ -823,12 +702,14 @@ async fn init_connection(
             target: peer_id.name.clone(),
             protocol_version: 1,
         })?;
-        ws_send(&mut write_stream, &message).await?;
+        write_stream.send(tungstenite::Message::binary(req)).await?;
     }
 
     // -> e
     let len = noise.write_message(&[], &mut buf)?;
-    ws_send(&mut write_stream, &buf[..len]).await?;
+    write_stream
+        .send(tungstenite::Message::binary(&buf[..len]))
+        .await?;
 
     // <- e, ee, s, es
     let their_handshake = recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream).await?;
@@ -857,15 +738,12 @@ async fn init_connection(
     let noise = noise.into_transport_mode()?;
     println!("handshake complete, noise session initiated\r");
 
-    Ok((
-        their_handshake.name,
-        PeerConnection {
-            noise,
-            buf,
-            write_stream,
-            read_stream,
-        },
-    ))
+    Ok(PeerConnection {
+        noise,
+        buf,
+        write_stream,
+        read_stream,
+    })
 }
 
 /// net module only handles incoming local requests, will never return a response
@@ -890,16 +768,19 @@ async fn handle_local_message(
         Message::Response((response, _context)) => {
             // these are received as a router, when we send ConnectionRequests
             // to a node we do routing for.
-            match rmp_serde::from_slice::<NetResponses>(&response.ipc)? {
-                NetResponses::Accepted(_) => {
+            match rmp_serde::from_slice::<NetResponses>(&response.ipc) {
+                Ok(NetResponses::Accepted(_)) => {
                     // TODO anything here?
                 }
-                NetResponses::Rejected(to) => {
+                Ok(NetResponses::Rejected(to)) => {
                     // drop from our pending map
                     // this will drop the socket, causing initiator to see it as failed
                     pending_passthroughs
                         .ok_or(anyhow!("got net response as non-router"))?
                         .remove(&(to, km.source.node));
+                }
+                Err(_) => {
+                    // this is usually the "delivered" response to a raw message
                 }
             }
             return Ok(());
@@ -916,83 +797,60 @@ async fn handle_local_message(
                     // someone wants to open a passthrough with us through a router!
                     // if we are an indirect node, and source is one of our routers,
                     // respond by attempting to init a matching passthrough.
-                    if our.allowed_routers.contains(&km.source.node) {
-                        let Ok((peer_id, peer_conn)) = time::timeout(
+                    let res: Result<NetResponses> = if our.allowed_routers.contains(&km.source.node)
+                    {
+                        let router_id = peers
+                            .get(&km.source.node)
+                            .ok_or(anyhow!("unknown router"))?
+                            .read()
+                            .await
+                            .identity
+                            .clone();
+                        let (peer_id, peer_conn) = time::timeout(
                             TIMEOUT,
                             recv_connection_via_router(
-                                our,
-                                our_ip,
-                                &from,
-                                pki,
-                                keypair,
-                                &peers
-                                    .get(&km.source.node)
-                                    .ok_or(anyhow!("unknown router"))?
-                                    .identity,
+                                our, our_ip, &from, pki, keypair, &router_id,
                             ),
                         )
-                        .await?
-                        else {
-                            return Err(anyhow!("someone tried to connect to us but it timed out"));
-                        };
-                        let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
-                        let peer = Arc::new(Peer {
-                            identity: peer_id,
-                            routing_for: false,
-                            sender: peer_tx,
-                        });
-                        peers.insert(peer.identity.name.clone(), peer.clone());
-                        peer_connections.spawn(maintain_connection(
-                            peer,
+                        .await??;
+                        save_new_peer(
+                            &peer_id,
+                            false,
+                            peers,
+                            peer_connections,
                             peer_conn,
-                            peer_rx,
-                            kernel_message_tx.clone(),
-                            print_tx.clone(),
-                        ));
-                        kernel_message_tx
-                            .send(KernelMessage {
-                                id: km.id,
-                                source: Address {
-                                    node: our.name.clone(),
-                                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
-                                },
-                                target: km.rsvp.unwrap_or(km.source),
-                                rsvp: None,
-                                message: Message::Response((
-                                    Response {
-                                        inherit: false,
-                                        ipc: rmp_serde::to_vec(&NetResponses::Accepted(from))?,
-                                        metadata: None,
-                                    },
-                                    None,
-                                )),
-                                payload: None,
-                                signed_capabilities: None,
-                            })
-                            .await?;
+                            None,
+                            &kernel_message_tx,
+                            &print_tx,
+                        )
+                        .await?;
+                        Ok(NetResponses::Accepted(from.clone()))
                     } else {
-                        kernel_message_tx
-                            .send(KernelMessage {
-                                id: km.id,
-                                source: Address {
-                                    node: our.name.clone(),
-                                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+                        Ok(NetResponses::Rejected(from.clone()))
+                    };
+                    kernel_message_tx
+                        .send(KernelMessage {
+                            id: km.id,
+                            source: Address {
+                                node: our.name.clone(),
+                                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+                            },
+                            target: km.rsvp.unwrap_or(km.source),
+                            rsvp: None,
+                            message: Message::Response((
+                                Response {
+                                    inherit: false,
+                                    ipc: rmp_serde::to_vec(
+                                        &res.unwrap_or(NetResponses::Rejected(from)),
+                                    )?,
+                                    metadata: None,
                                 },
-                                target: km.rsvp.unwrap_or(km.source),
-                                rsvp: None,
-                                message: Message::Response((
-                                    Response {
-                                        inherit: false,
-                                        ipc: rmp_serde::to_vec(&NetResponses::Rejected(from))?,
-                                        metadata: None,
-                                    },
-                                    None,
-                                )),
-                                payload: None,
-                                signed_capabilities: None,
-                            })
-                            .await?;
-                    }
+                                None,
+                            )),
+                            payload: None,
+                            signed_capabilities: None,
+                        })
+                        .await?;
                 }
             }
             return Ok(());
@@ -1034,115 +892,55 @@ async fn handle_local_message(
     } else {
         // available commands: "peers", "pki", "names", "diagnostics"
         // first parse as raw string, then deserialize to NetActions object
+        let mut printout = String::new();
         match std::str::from_utf8(&ipc) {
             Ok("peers") => {
-                print_tx
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!("{:#?}", peers.keys()),
-                    })
-                    .await?;
+                printout.push_str(&format!("{:#?}", peers.keys()));
             }
             Ok("pki") => {
-                print_tx
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!("{:#?}", pki),
-                    })
-                    .await?;
+                printout.push_str(&format!("{:#?}", pki));
             }
             Ok("names") => {
-                print_tx
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!("{:#?}", names),
-                    })
-                    .await?;
+                printout.push_str(&format!("{:#?}", names));
             }
             Ok("diagnostics") => {
-                print_tx
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!("our Identity: {:#?}", our),
-                    })
-                    .await?;
-                print_tx
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!("we have connections with peers: {:#?}", peers.keys()),
-                    })
-                    .await?;
-                print_tx
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!("we have {} entries in the PKI", pki.len()),
-                    })
-                    .await?;
-                print_tx
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!(
-                            "we have {} open peer connections",
-                            peer_connections.len()
-                        ),
-                    })
-                    .await?;
+                printout.push_str(&format!("our Identity: {:#?}\r\n", our));
+                printout.push_str(&format!(
+                    "we have connections with peers: {:#?}\r\n",
+                    peers.keys()
+                ));
+                printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
+                printout.push_str(&format!(
+                    "we have {} open peer connections\r\n",
+                    peer_connections.len()
+                ));
+
                 if pending_passthroughs.is_some() {
-                    print_tx
-                        .send(Printout {
-                            verbosity: 0,
-                            content: format!(
-                                "we have {} pending passthrough connections",
-                                pending_passthroughs.unwrap().len()
-                            ),
-                        })
-                        .await?;
+                    printout.push_str(&format!(
+                        "we have {} pending passthrough connections\r\n",
+                        pending_passthroughs.unwrap().len()
+                    ));
                 }
                 if forwarding_connections.is_some() {
-                    print_tx
-                        .send(Printout {
-                            verbosity: 0,
-                            content: format!(
-                                "we have {} open passthrough connections",
-                                forwarding_connections.unwrap().len()
-                            ),
-                        })
-                        .await?;
+                    printout.push_str(&format!(
+                        "we have {} open passthrough connections\r\n",
+                        forwarding_connections.unwrap().len()
+                    ));
                 }
                 if active_routers.is_some() {
-                    print_tx
-                        .send(Printout {
-                            verbosity: 0,
-                            content: format!(
-                                "we have {} active routers",
-                                active_routers.unwrap().len()
-                            ),
-                        })
-                        .await?;
+                    printout.push_str(&format!(
+                        "we have {} active routers\r\n",
+                        active_routers.unwrap().len()
+                    ));
                 }
             }
             _ => {
-                let Ok(act) = serde_json::from_slice::<NetActions>(&ipc) else {
-                    print_tx
-                        .send(Printout {
-                            verbosity: 0,
-                            content: "net: got unknown command".into(),
-                        })
-                        .await?;
-                    return Ok(());
-                };
-                match act {
+                match rmp_serde::from_slice::<NetActions>(&ipc)? {
                     NetActions::ConnectionRequest(_) => {
                         // we shouldn't receive these from ourselves.
                     }
                     NetActions::QnsUpdate(log) => {
-                        print_tx
-                            .send(Printout {
-                                verbosity: 1,
-                                content: format!("net: got QNS update for {}", log.name),
-                            })
-                            .await?;
-
+                        // printout.push_str(&format!("net: got QNS update for {}", log.name));
                         pki.insert(
                             log.name.clone(),
                             Identity {
@@ -1159,15 +957,10 @@ async fn handle_local_message(
                         names.insert(log.node, log.name);
                     }
                     NetActions::QnsBatchUpdate(log_list) => {
-                        print_tx
-                            .send(Printout {
-                                verbosity: 1,
-                                content: format!(
-                                    "net: got QNS update with {} peers",
-                                    log_list.len()
-                                ),
-                            })
-                            .await?;
+                        // printout.push_str(&format!(
+                        //     "net: got QNS update with {} peers",
+                        //     log_list.len()
+                        // ));
                         for log in log_list {
                             pki.insert(
                                 log.name.clone(),
@@ -1188,6 +981,14 @@ async fn handle_local_message(
                     }
                 }
             }
+        }
+        if !printout.is_empty() {
+            print_tx
+                .send(Printout {
+                    verbosity: 0,
+                    content: printout,
+                })
+                .await?;
         }
         Ok(())
     }
