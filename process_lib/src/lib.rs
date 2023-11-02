@@ -14,7 +14,11 @@ struct Component;
 
 impl Guest for Component {
     fn init(_: Address) {
-        println!("Don't run this, run the app!");
+        print_to_terminal(0, "don't run this!");
+
+        std::thread::sleep(std::time::Duration::from_millis(3000));
+
+
         set_on_panic(&OnPanic::None);
     }
 }

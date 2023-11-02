@@ -123,27 +123,10 @@ impl UqProcessImports for ProcessWasi {
     // process management:
     //
 
-    ///  todo -> move to kernel logic to enable persistence etc.
-    async fn set_on_panic(&mut self, _on_panic: wit::OnPanic) -> Result<()> {
-        unimplemented!();
-        //     let on_panic = match on_panic {
-        //         wit::OnPanic::None => t::OnPanic::None,
-        //         wit::OnPanic::Restart => t::OnPanic::Restart,
-        //         wit::OnPanic::Requests(reqs) => t::OnPanic::Requests(
-        //             reqs.into_iter()
-        //                 .map(|(addr, req, payload)| {
-        //                     (
-        //                         de_wit_address(addr),
-        //                         de_wit_request(req),
-        //                         de_wit_payload(payload),
-        //                     )
-        //                 })
-        //                 .collect(),
-        //         ),
-        //     };
-
-        //     self.process.metadata.on_panic = on_panic;
-        //     Ok(())
+    ///  TODO critical: move to kernel logic to enable persistence of choice made here
+    async fn set_on_panic(&mut self, on_panic: wit::OnPanic) -> Result<()> {
+        self.process.metadata.on_panic = de_wit_on_panic(on_panic);
+        Ok(())
     }
 
     /// create a message from the *kernel* to the filesystem,
