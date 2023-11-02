@@ -120,6 +120,7 @@ async fn create_entry(vfs: &mut MutexGuard<Vfs>, path: &str, key: Key) -> Result
 
     Ok(key)
 }
+
 #[async_recursion::async_recursion]
 async fn rename_entry(
     vfs: Arc<Mutex<Vfs>>,
@@ -686,18 +687,18 @@ async fn handle_request(
     )
     .await?;
 
-    if expects_response.is_some() {
+    if let Some(target) = rsvp.or_else(|| expects_response.map(|_| Address {
+        node: our_node.clone(),
+        process: source.process.clone(),
+    })) {
         let response = KernelMessage {
             id,
             source: Address {
                 node: our_node.clone(),
                 process: VFS_PROCESS_ID.clone(),
             },
-            target: Address {
-                node: our_node.clone(),
-                process: source.process.clone(),
-            },
-            rsvp,
+            target,
+            rsvp: None,
             message: Message::Response((
                 Response {
                     inherit: false,
@@ -715,8 +716,16 @@ async fn handle_request(
             },
             signed_capabilities: None,
         };
-
+    
         let _ = send_to_loop.send(response).await;
+    } else {
+        let _ = send_to_terminal
+            .send(Printout {
+                verbosity: 1,
+                content: format!("vfs: not sending response: {:?}", serde_json::from_slice::<VfsResponse>(&ipc)),
+            })
+            .await
+            .unwrap();
     }
 
     Ok(())
@@ -889,7 +898,7 @@ async fn match_request(
                     let file = std::io::Cursor::new(&payload.bytes);
                     let mut zip = match zip::ZipArchive::new(file) {
                         Ok(f) => f,
-                        Err(e) => return Err(VfsError::InternalError),
+                        Err(_) => return Err(VfsError::InternalError),
                     };
 
                     // loop through items in archive; recursively add to root
