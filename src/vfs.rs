@@ -614,6 +614,7 @@ async fn handle_request(
         | VfsAction::Rename { .. }
         | VfsAction::Delete { .. }
         | VfsAction::WriteOffset { .. }
+        | VfsAction::Append { .. }
         | VfsAction::SetSize { .. } => {
             let _ = send_to_caps_oracle
                 .send(CapMessage::Has {
@@ -666,7 +667,7 @@ async fn handle_request(
                 return Err(VfsError::NoCap);
             }
         }
-        _ => {} // New
+        VfsAction::New { .. } => {}
     }
 
     let (ipc, bytes) = match_request(
