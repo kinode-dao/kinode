@@ -1,0 +1,11 @@
+[package]
+name = "uqbarprocesslib"
+version = "0.2.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.71"
+bincode = "1.3.3"
+serde = {version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", version = "0.13.0" }

@@ -17,6 +17,7 @@ cargo-component-bindings = { git = "https://github.com/bytecodealliance/cargo-co
 serde = {version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 wit-bindgen = { version = "0.11.0", default_features = false }
+uqbarprocesslib = { path = "../../uqbar-process-lib" }
 
 [lib]
 crate-type = ["cdylib"]
