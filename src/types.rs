@@ -611,6 +611,7 @@ pub enum VfsAction {
         full_path: String,
         offset: u64,
     },
+    Append(String),
     SetSize {
         full_path: String,
         size: u64,
@@ -657,20 +658,28 @@ pub enum VfsResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsError {
+    BadJson,
+    BadPayload,
     BadDriveName,
     BadDescriptor,
     NoCap,
     EntryNotFound,
+    PersistError,
+    InternalError, // String
 }
 
 #[allow(dead_code)]
 impl VfsError {
     pub fn kind(&self) -> &str {
         match *self {
+            VfsError::BadJson => "BadJson",
+            VfsError::BadPayload => "BadPayload",
             VfsError::BadDriveName => "BadDriveName",
             VfsError::BadDescriptor => "BadDescriptor",
             VfsError::NoCap => "NoCap",
             VfsError::EntryNotFound => "EntryNotFound",
+            VfsError::PersistError => "PersistError",
+            VfsError::InternalError => "InternalError",
         }
     }
 }
