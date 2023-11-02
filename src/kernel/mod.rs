@@ -1185,7 +1185,10 @@ async fn make_process_loop(
             };
 
         // the process will run until it returns from init()
-        let is_error = match bindings.call_init(&mut store, &metadata.our.to_string()).await {
+        let is_error = match bindings
+            .call_init(&mut store, &metadata.our.to_string())
+            .await
+        {
             Ok(()) => {
                 let _ =
                     send_to_terminal
