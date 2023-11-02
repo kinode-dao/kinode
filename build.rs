@@ -40,18 +40,11 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
 
     // if and only if module's wit is outdated, re-set-up build environment
     if file_outdated(
-        format!("{}/wit/uqbar.wit", pwd.display()),
-        format!("{}/wit/uqbar.wit", target_path),
+        format!("{}/target.wasm", pwd.display()),
+        format!("{}/target/bindings/{}/target.wasm", target_path, name),
     )
     .unwrap_or(true)
     {
-        println!("cargo:warning=wit outdated, rebuilding");
-        run_command(Command::new("cp").args(&[
-            "-r",
-            &format!("{}/wit", pwd.display()),
-            &format!("{}/wit", target_path),
-        ]))
-        .unwrap();
         // create target/bindings directory
         fs::create_dir_all(&format!("{}/target/bindings/{}", target_path, name,)).unwrap();
         // copy newly-made target.wasm into target/bindings
@@ -160,7 +153,7 @@ fn main() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
 
-        if package_name != "terminal" {
+        if package_name != "terminal" && package_name != "app_store" {
             continue;
         }
 

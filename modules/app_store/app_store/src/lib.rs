@@ -1,20 +1,18 @@
-cargo_component_bindings::generate!();
-use bindings::{
-    component::uq_process::types::*, get_capability, get_payload, print_to_terminal, receive,
-    send_request, send_response, Guest,
-};
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::{HashMap, HashSet};
+use uqbar_process_lib::component::uq_process::api::*;
+use uqbar_process_lib::component::uq_process::types::NodeId;
+use uqbar_process_lib::*;
+use uqbar_process_lib::kernel_types as kt;
 
-#[allow(dead_code)]
-mod kernel_types;
-use kernel_types as kt;
-use kernel_types::{PackageManifestEntry, PackageMetadata, PackageVersion};
-
-#[allow(dead_code)]
-mod process_lib;
-use process_lib::PackageId;
+wit_bindgen::generate!({
+    path: "../../../wit",
+    world: "uq-process",
+    exports: {
+        world: Component,
+    },
+});
 
 #[allow(dead_code)]
 mod ft_worker_lib;
@@ -66,7 +64,7 @@ struct PackageListing {
     pub publisher: NodeId,
     pub description: Option<String>,
     pub website: Option<String>,
-    pub version: PackageVersion,
+    pub version: kt::PackageVersion,
     pub version_hash: String, // sha256 hash of the package zip or whatever
 }
 
@@ -163,12 +161,13 @@ pub enum InstallResponse {
 //
 
 impl Guest for Component {
-    fn init(our: Address) {
+    fn init(our: String) {
+        let our = Address::from_str(&our).unwrap();
         assert_eq!(our.process, "main:app_store:uqbar");
 
         // begin by granting messaging capabilities to http_server and terminal,
         // so that they can send us requests.
-        process_lib::grant_messaging(
+        grant_messaging(
             &our,
             &Vec::from([
                 ProcessId::from_str("http_server:sys:uqbar").unwrap(),
@@ -178,7 +177,7 @@ impl Guest for Component {
         print_to_terminal(0, &format!("app_store main proc: start"));
 
         // load in our saved state or initalize a new one if none exists
-        let mut state = process_lib::get_state::<State>().unwrap_or(State {
+        let mut state = get_typed_state::<State>().unwrap_or(State {
             packages: HashMap::new(),
             requested_packages: HashSet::new(),
         });
@@ -377,68 +376,68 @@ fn handle_local_request(
             hasher.update(&payload.bytes);
             let version_hash = format!("{:x}", hasher.finalize());
 
-            let _ = process_lib::send_and_await_response(
+            send_and_await_typed_response(
                 &vfs_address,
                 false,
-                serde_json::to_vec(&kt::VfsRequest {
+                &kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::New,
-                })?,
+                },
                 None,
                 None,
                 5,
-            )?;
+            )??;
 
             // add zip bytes
             payload.mime = Some("application/zip".to_string());
-            let _ = process_lib::send_and_await_response(
+            send_and_await_typed_response(
                 &vfs_address,
                 true,
-                serde_json::to_vec(&kt::VfsRequest {
+                &kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::Add {
                         full_path: package.to_string(),
                         entry_type: kt::AddEntryType::ZipArchive,
                     },
-                })?,
+                },
                 None,
                 Some(&payload),
                 5,
-            )?;
+            )??;
 
             // save the zip file itself in VFS for sharing with other nodes
             // call it <package>.zip
-            let _ = process_lib::send_and_await_response(
+            send_and_await_typed_response(
                 &vfs_address,
                 true,
-                serde_json::to_vec(&kt::VfsRequest {
+                &kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::Add {
                         full_path: format!("/{}.zip", package.to_string()),
                         entry_type: kt::AddEntryType::NewFile,
                     },
-                })?,
+                },
                 None,
                 Some(&payload),
                 5,
-            )?;
+            )??;
 
-            let _ = process_lib::send_and_await_response(
+            send_and_await_typed_response(
                 &vfs_address,
                 false,
-                serde_json::to_vec(&kt::VfsRequest {
+                &kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry("/metadata.json".into()),
-                })?,
+                },
                 None,
                 None,
                 5,
-            )?;
+            )??;
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no metadata payload"));
             };
             let metadata = String::from_utf8(payload.bytes)?;
-            let metadata = serde_json::from_str::<PackageMetadata>(&metadata)?;
+            let metadata = serde_json::from_str::<kt::PackageMetadata>(&metadata)?;
 
             let listing_data = PackageListing {
                 name: metadata.package,
@@ -455,30 +454,30 @@ fn handle_local_request(
                 auto_update: true,
             };
             state.packages.insert(package.clone(), package_state);
-            process_lib::set_state::<State>(&state);
+            set_typed_state::<State>(&state);
             Ok(Some(Resp::NewPackageResponse(NewPackageResponse::Success)))
         }
         LocalRequest::Download {
             package,
             install_from,
         } => Ok(Some(Resp::DownloadResponse(
-            match process_lib::send_and_await_response(
+            match send_and_await_typed_response(
                 &Address {
                     node: install_from.clone(),
                     process: our.process.clone(),
                 },
                 true,
-                serde_json::to_vec(&RemoteRequest::Download(package.clone()))?,
+                &RemoteRequest::Download(package.clone()),
                 None,
                 None,
                 5,
             ) {
-                Ok((_source, Message::Response((resp, _context)))) => {
+                Ok(Ok((_source, Message::Response((resp, _context))))) => {
                     let resp = serde_json::from_slice::<Resp>(&resp.ipc)?;
                     match resp {
                         Resp::RemoteResponse(RemoteResponse::DownloadApproved) => {
                             state.requested_packages.insert(package.clone());
-                            process_lib::set_state::<State>(&state);
+                            set_typed_state::<State>(&state);
                             DownloadResponse::Started
                         }
                         _ => DownloadResponse::Failure,
@@ -492,22 +491,22 @@ fn handle_local_request(
                 node: our.node.clone(),
                 process: ProcessId::from_str("vfs:sys:uqbar")?,
             };
-            let _ = process_lib::send_and_await_response(
+            send_and_await_typed_response(
                 &vfs_address,
                 false,
-                serde_json::to_vec(&kt::VfsRequest {
+                &kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry("/manifest.json".into()),
-                })?,
+                },
                 None,
                 None,
                 5,
-            )?;
+            )??;
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
             let manifest = String::from_utf8(payload.bytes)?;
-            let manifest = serde_json::from_str::<Vec<PackageManifestEntry>>(&manifest)?;
+            let manifest = serde_json::from_str::<Vec<kt::PackageManifestEntry>>(&manifest)?;
             for entry in manifest {
                 let path = if entry.process_wasm_path.starts_with("/") {
                     entry.process_wasm_path
@@ -515,17 +514,17 @@ fn handle_local_request(
                     format!("/{}", entry.process_wasm_path)
                 };
 
-                let (_, hash_response) = process_lib::send_and_await_response(
+                let (_, hash_response) = send_and_await_typed_response(
                     &vfs_address,
                     false,
-                    serde_json::to_vec(&kt::VfsRequest {
+                    &kt::VfsRequest {
                         drive: package.to_string(),
                         action: kt::VfsAction::GetHash(path.clone()),
-                    })?,
+                    },
                     None,
                     None,
                     5,
-                )?;
+                )??;
 
                 let Message::Response((Response { ipc, .. }, _)) = hash_response else {
                     return Err(anyhow::anyhow!("bad vfs response"));
@@ -591,15 +590,15 @@ fn handle_local_request(
                 let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {
                     return Err(anyhow::anyhow!("app-store: invalid process id!"));
                 };
-                let _ = process_lib::send_request(
+                send_typed_request(
                     &Address {
                         node: our.node.clone(),
                         process: ProcessId::from_str("kernel:sys:uqbar")?,
                     },
                     false,
-                    serde_json::to_vec(&kt::KernelCommand::KillProcess(kt::ProcessId::de_wit(
+                    &kt::KernelCommand::KillProcess(kt::ProcessId::de_wit(
                         parsed_new_process_id.clone(),
-                    )))?,
+                    )),
                     None,
                     None,
                     None,
@@ -607,39 +606,39 @@ fn handle_local_request(
 
                 // kernel start process takes bytes as payload + wasm_bytes_handle...
                 // reconsider perhaps
-                let (_, _bytes_response) = process_lib::send_and_await_response(
+                let (_, _bytes_response) = send_and_await_typed_response(
                     &vfs_address,
                     false,
-                    serde_json::to_vec(&kt::VfsRequest {
+                    &kt::VfsRequest {
                         drive: package.to_string(),
                         action: kt::VfsAction::GetEntry(path),
-                    })?,
+                    },
                     None,
                     None,
                     5,
-                )?;
+                )??;
 
                 let Some(payload) = get_payload() else {
                     return Err(anyhow::anyhow!("no wasm bytes payload."));
                 };
 
-                let _ = process_lib::send_and_await_response(
+                send_and_await_typed_response(
                     &Address {
                         node: our.node.clone(),
                         process: ProcessId::from_str("kernel:sys:uqbar")?,
                     },
                     false,
-                    serde_json::to_vec(&kt::KernelCommand::StartProcess {
+                    &kt::KernelCommand::StartProcess {
                         id: kt::ProcessId::de_wit(parsed_new_process_id),
                         wasm_bytes_handle: hash,
                         on_panic: entry.on_panic,
                         initial_capabilities,
                         public: entry.public,
-                    })?,
+                    },
                     None,
                     Some(&payload),
                     5,
-                )?;
+                )??;
             }
             Ok(Some(Resp::InstallResponse(InstallResponse::Success)))
         }
@@ -674,17 +673,17 @@ fn handle_remote_request(
                 process: ProcessId::from_str("vfs:sys:uqbar")?,
             };
             let file_name = format!("/{}.zip", package.to_string());
-            let _ = process_lib::send_and_await_response(
+            send_and_await_typed_response(
                 &vfs_address,
                 false,
-                serde_json::to_vec(&kt::VfsRequest {
+                &kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry(file_name.clone()),
-                })?,
+                },
                 None,
                 None,
                 5,
-            )?;
+            )??;
             // transfer will inherit the payload bytes we receive from VFS
             spawn_transfer(&our, &file_name, None, &source);
             Ok(Some(Resp::RemoteResponse(RemoteResponse::DownloadApproved)))
