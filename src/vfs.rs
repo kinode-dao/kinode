@@ -687,10 +687,12 @@ async fn handle_request(
     )
     .await?;
 
-    if let Some(target) = rsvp.or_else(|| expects_response.map(|_| Address {
-        node: our_node.clone(),
-        process: source.process.clone(),
-    })) {
+    if let Some(target) = rsvp.or_else(|| {
+        expects_response.map(|_| Address {
+            node: our_node.clone(),
+            process: source.process.clone(),
+        })
+    }) {
         let response = KernelMessage {
             id,
             source: Address {
@@ -716,13 +718,16 @@ async fn handle_request(
             },
             signed_capabilities: None,
         };
-    
+
         let _ = send_to_loop.send(response).await;
     } else {
         let _ = send_to_terminal
             .send(Printout {
                 verbosity: 1,
-                content: format!("vfs: not sending response: {:?}", serde_json::from_slice::<VfsResponse>(&ipc)),
+                content: format!(
+                    "vfs: not sending response: {:?}",
+                    serde_json::from_slice::<VfsResponse>(&ipc)
+                ),
             })
             .await
             .unwrap();
