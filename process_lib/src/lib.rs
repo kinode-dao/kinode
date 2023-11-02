@@ -9,14 +9,14 @@ wit_bindgen::generate!({
 });
 
 /// Override the println! macro to print to the terminal
-macro_rules! println {
-        () => {
-            $print_to_terminal(0, "\n");
-        };
-        ($($arg:tt)*) => {
-            $print_to_terminal(0, &format!($($arg)*));
-        };
-    }
+// macro_rules! println {
+//         () => {
+//             $print_to_terminal(0, "\n");
+//         };
+//         ($($arg:tt)*) => {
+//             $print_to_terminal(0, &format!($($arg)*));
+//         };
+//     }
 
 /// PackageId is like a ProcessId, but for a package. Only contains the name
 /// of the package and the name of the publisher.
