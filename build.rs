@@ -160,6 +160,10 @@ fn main() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
 
+        if package_name != "terminal" {
+            continue;
+        }
+
         // If Cargo.toml is present, build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());
         if entry_path.join("Cargo.toml").exists() {

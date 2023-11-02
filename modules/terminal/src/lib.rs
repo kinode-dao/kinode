@@ -1,8 +1,11 @@
-cargo_component_bindings::generate!();
-use bindings::{component::uq_process::types::*, print_to_terminal, receive, send_request, Guest};
+use uqbar_process_lib::component::uq_process::api::*;
 
-#[allow(dead_code)]
-mod process_lib;
+wit_bindgen::generate!({
+    world: "uq-process",
+    exports: {
+        world: Component,
+    },
+});
 
 struct Component;
 
@@ -83,7 +86,8 @@ fn parse_command(our_name: &str, line: &str) {
 }
 
 impl Guest for Component {
-    fn init(our: Address) {
+    fn init(our: String) {
+        let our = Address::from_str(&our).unwrap();
         assert_eq!(our.process.to_string(), "terminal:terminal:uqbar");
         print_to_terminal(1, &format!("terminal: start"));
         loop {

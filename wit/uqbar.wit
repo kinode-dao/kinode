@@ -102,49 +102,42 @@ interface types {
     }
 }
 
-world uq-process {
+interface api {
     use types.{
         json,
         node-id,
         context,
         process-id,
         address,
-
         payload,
         request,
         response,
         message,
-
         capabilities,
         signed-capability,
-
         on-panic,
         send-error,
         send-error-kind,
-        spawn-error
+        spawn-error,
     }
 
-    // entry point to all programs
-    export init: func(our: address)
-
     // system utils:
-
-    import print-to-terminal: func(verbosity: u8, message: string)
+    print-to-terminal: func(verbosity: u8, message: string)
 
     // **more will be added here with regard to blockchains**
-    import get-eth-block: func() -> u64
+    get-eth-block: func() -> u64
 
     // process management:
 
-    import set-on-panic: func(on-panic: on-panic)
+    set-on-panic: func(on-panic: on-panic)
 
-    import get-state: func() -> option<list<u8>>
+    get-state: func() -> option<list<u8>>
 
-    import set-state: func(bytes: list<u8>)
+    set-state: func(bytes: list<u8>)
 
-    import clear-state: func()
+    clear-state: func()
 
-    import spawn: func(
+    spawn: func(
                 name: option<string>,
                 wasm-path: string, // must be located within package's drive
                 on-panic: on-panic,
@@ -155,49 +148,59 @@ world uq-process {
     // capabilities management
 
     // gives us all our signed capabilities so we can send them to others
-    import get-capabilities: func() -> list<signed-capability>
+    get-capabilities: func() -> list<signed-capability>
 
     // gets a single specific capability
-    import get-capability: func(issuer: address, params: json) -> option<signed-capability>
+    get-capability: func(issuer: address, params: json) -> option<signed-capability>
 
     // attaches a specific signed capability to our next message
-    import attach-capability: func(capability: signed-capability)
+    attach-capability: func(capability: signed-capability)
 
     // saves capabilities to our store, so we can use them
-    import save-capabilities: func(capabilities: list<signed-capability>)
+    save-capabilities: func(capabilities: list<signed-capability>)
 
     // check to see if the sender of a prompting message has a given capability, issued by us
     // if the prompting message has a remote source, they must have attached it.
-    import has-capability: func(params: json) -> bool
+    has-capability: func(params: json) -> bool
 
     // generates a new capability with our process as the issuer and gives it to the target,
     // which must be a locally-running process.
-    import create-capability: func(to: process-id, params: json)
+    create-capability: func(to: process-id, params: json)
 
     // take a signed capability and save it to a given locally-running process
-    import share-capability: func(to: process-id, capability: signed-capability)
+    share-capability: func(to: process-id, capability: signed-capability)
 
 
     // message I/O:
 
     // ingest next message when it arrives along with its source.
     // almost all long-running processes will call this in a loop
-    import receive: func() -> result<tuple<address, message>, tuple<send-error, option<context>>>
+    receive: func() -> result<tuple<address, message>, tuple<send-error, option<context>>>
 
     // gets payload, if any, of the message we just received
-    import get-payload: func() -> option<payload>
+    get-payload: func() -> option<payload>
 
     // send message(s) to target(s)
-    import send-request:
+    send-request:
         func(target: address, request: request, context: option<context>, payload: option<payload>)
-    import send-requests:
+    send-requests:
         func(requests: list<tuple<address, request, option<context>, option<payload>>>)
-    import send-response:
+    send-response:
         func(response: response, payload: option<payload>)
 
     // send a single request, then block (internally) until its response
     // the type is Message but will always contain Response
-    import send-and-await-response:
+    send-and-await-response:
         func(target: address, request: request, payload: option<payload>) ->
             result<tuple<address, message>, send-error>
+}
+
+world uq-process-lib {
+    import api
+}
+
+world uq-process {
+    include uq-process-lib
+
+    export init: func(our: string)
 }

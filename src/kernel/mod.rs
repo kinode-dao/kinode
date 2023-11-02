@@ -20,7 +20,11 @@ use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
 //  WIT errors when `use`ing interface unless we import this and implement Host for Process below
 use crate::kernel::component::uq_process::types as wit;
-use crate::kernel::component::uq_process::types::Host;
+use crate::kernel::wit::Host;
+// use crate::kernel::component::uq_process::types::Host;
+// use crate::kernel::component::uq_process::api::Host;
+
+use component::uq_process::api::Host as Foo;
 
 mod utils;
 use crate::kernel::utils::*;
@@ -98,7 +102,7 @@ impl WasiView for ProcessWasi {
 /// create the process API. this is where the functions that a process can use live.
 ///
 #[async_trait::async_trait]
-impl UqProcessImports for ProcessWasi {
+impl Foo for ProcessWasi {
     //
     // system utils:
     //
@@ -193,7 +197,7 @@ impl UqProcessImports for ProcessWasi {
                 .unwrap(),
                 metadata: None,
             },
-            Some(Payload { mime: None, bytes }),
+            Some(wit::Payload { mime: None, bytes }),
         )
         .await
         {
@@ -1181,7 +1185,7 @@ async fn make_process_loop(
             };
 
         // the process will run until it returns from init()
-        let is_error = match bindings.call_init(&mut store, &metadata.our.en_wit()).await {
+        let is_error = match bindings.call_init(&mut store, &metadata.our.to_string()).await {
             Ok(()) => {
                 let _ =
                     send_to_terminal
