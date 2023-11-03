@@ -22,9 +22,7 @@ uqbar_process_lib = { path = "../../process_lib" }
 crate-type = ["cdylib"]
 
 [package.metadata.component]
-package = "component:uq-process"
+package = "uqbar:process"
 
 [package.metadata.component.target]
 path = "wit"
-
-[package.metadata.component.dependencies]

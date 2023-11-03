@@ -1,12 +1,12 @@
-package component:uq-process@0.2.0
+package uqbar:process@0.3.0
 
-interface types {
+interface standard {
     // JSON is passed over WASM boundary as a string.
     type json = string
 
     type node-id = string
 
-    // context, like ipc, is a protocol-defined cap'n proto schema
+    // context, like ipc, is a protocol-defined serialized byte array.
     // it is used when building a Request to save information
     // that will not be part of a Response, in order to more
     // easily handle ("contextualize") that Response.
@@ -100,26 +100,6 @@ interface types {
         no-file-at-path,
         // TODO more here?
     }
-}
-
-interface api {
-    use types.{
-        json,
-        node-id,
-        context,
-        process-id,
-        address,
-        payload,
-        request,
-        response,
-        message,
-        capabilities,
-        signed-capability,
-        on-panic,
-        send-error,
-        send-error-kind,
-        spawn-error,
-    }
 
     // system utils:
     print-to-terminal: func(verbosity: u8, message: string)
@@ -195,12 +175,12 @@ interface api {
             result<tuple<address, message>, send-error>
 }
 
-world uq-process-lib {
-    import api
+world lib {
+    import standard
 }
 
-world uq-process {
-    include uq-process-lib
+world process {
+    include lib
 
     export init: func(our: string)
 }

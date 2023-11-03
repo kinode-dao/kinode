@@ -1,4 +1,4 @@
-use crate::kernel::component::uq_process::types as wit;
+use crate::kernel::uqbar::process::standard as wit;
 use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -20,95 +20,14 @@ lazy_static::lazy_static! {
 }
 
 //
-// internal message pipes between kernel and runtime modules
+// types shared between kernel and processes. frustratingly, this is an exact copy
+// of the types in process_lib/src/kernel_types.rs
+// this is because even though the types are identical, they will not match when
+// used in the kernel context which generates bindings differently than the process
+// standard library. make sure to keep this synced with kernel_types.rs
 //
-
-// keeps the from address so we know where to pipe error
-pub type NetworkErrorSender = tokio::sync::mpsc::Sender<WrappedSendError>;
-pub type NetworkErrorReceiver = tokio::sync::mpsc::Receiver<WrappedSendError>;
-
-pub type MessageSender = tokio::sync::mpsc::Sender<KernelMessage>;
-pub type MessageReceiver = tokio::sync::mpsc::Receiver<KernelMessage>;
-
-pub type PrintSender = tokio::sync::mpsc::Sender<Printout>;
-pub type PrintReceiver = tokio::sync::mpsc::Receiver<Printout>;
-
-pub type DebugSender = tokio::sync::mpsc::Sender<DebugCommand>;
-pub type DebugReceiver = tokio::sync::mpsc::Receiver<DebugCommand>;
-
-pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
-pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
-
-//
-// types used for UQI: uqbar's identity system
-//
-pub type NodeId = String;
-pub type PKINames = Arc<RwLock<HashMap<String, NodeId>>>; // TODO maybe U256 to String
-pub type OnchainPKI = Arc<RwLock<HashMap<String, Identity>>>;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Registration {
-    pub username: NodeId,
-    pub password: String,
-    pub direct: bool,
-}
-
-#[derive(Debug)]
-pub struct Keyfile {
-    pub username: String,
-    pub routers: Vec<String>,
-    pub networking_keypair: signature::Ed25519KeyPair,
-    pub jwt_secret_bytes: Vec<u8>,
-    pub file_key: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyfileVet {
-    pub password: String,
-    pub keyfile: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyfileVetted {
-    pub username: String,
-    pub networking_key: String,
-    pub routers: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BootInfo {
-    pub password: String,
-    pub keyfile: String,
-    pub username: String,
-    pub reset: bool,
-    pub direct: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Identity {
-    pub name: NodeId,
-    pub networking_key: String,
-    pub ws_routing: Option<(String, u16)>,
-    pub allowed_routers: Vec<NodeId>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IdentityTransaction {
-    pub from: String,
-    pub signature: Option<String>,
-    pub to: String, // contract address
-    pub town_id: u32,
-    pub calldata: Identity,
-    pub nonce: String,
-}
-
-//
-// process-facing kernel types, used for process
-// management and message-passing
-// matches types in uqbar.wit
-//
-
 pub type Context = Vec<u8>;
+pub type NodeId = String; // QNS domain name
 
 /// process ID is a formatted unique identifier that contains
 /// the publishing node's ID, the package name, and finally the process name.
@@ -127,10 +46,9 @@ impl ProcessId {
     /// generates a random u64 number if process_name is not declared
     pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
         ProcessId {
-            process_name: match process_name {
-                Some(name) => name.to_string(),
-                None => rand::random::<u64>().to_string(),
-            },
+            process_name: process_name
+                .unwrap_or(&rand::random::<u64>().to_string())
+                .into(),
             package_name: package_name.into(),
             publisher_node: publisher_node.into(),
         }
@@ -266,7 +184,7 @@ pub struct SignedCapability {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SendError {
     pub kind: SendErrorKind,
-    pub target: Address, // what the message was trying to reach
+    pub target: Address,
     pub message: Message,
     pub payload: Option<Payload>,
 }
@@ -292,6 +210,266 @@ impl OnPanic {
             OnPanic::Requests(_) => false,
         }
     }
+}
+
+//
+// display impls
+//
+
+impl std::fmt::Display for ProcessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl std::fmt::Display for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}@{}", self.node, self.process.to_string(),)
+    }
+}
+
+impl std::fmt::Display for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Message::Request(request) => write!(
+                f,
+                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n    )",
+                request.inherit,
+                request.expects_response,
+                match serde_json::from_slice::<serde_json::Value>(&request.ipc) {
+                    Ok(json) => format!("{}", json),
+                    Err(_) => format!("{:?}", request.ipc),
+                },
+                &request.metadata.as_ref().unwrap_or(&"None".into()),
+            ),
+            Message::Response((response, context)) => write!(
+                f,
+                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
+                response.inherit,
+                match serde_json::from_slice::<serde_json::Value>(&response.ipc) {
+                    Ok(json) => format!("{}", json),
+                    Err(_) => format!("{:?}", response.ipc),
+                },
+                &response.metadata.as_ref().unwrap_or(&"None".into()),
+                if context.is_none() {
+                    "None".into()
+                } else {
+                    match serde_json::from_slice::<serde_json::Value>(&context.as_ref().unwrap()) {
+                        Ok(json) => format!("{}", json),
+                        Err(_) => format!("{:?}", context.as_ref().unwrap()),
+                    }
+                },
+            ),
+        }
+    }
+}
+
+//
+// conversions between wit types and kernel types (annoying!)
+//
+
+pub fn de_wit_request(wit: wit::Request) -> Request {
+    Request {
+        inherit: wit.inherit,
+        expects_response: wit.expects_response,
+        ipc: wit.ipc,
+        metadata: wit.metadata,
+    }
+}
+
+pub fn en_wit_request(request: Request) -> wit::Request {
+    wit::Request {
+        inherit: request.inherit,
+        expects_response: request.expects_response,
+        ipc: request.ipc,
+        metadata: request.metadata,
+    }
+}
+
+pub fn de_wit_response(wit: wit::Response) -> Response {
+    Response {
+        inherit: wit.inherit,
+        ipc: wit.ipc,
+        metadata: wit.metadata,
+    }
+}
+
+pub fn en_wit_response(response: Response) -> wit::Response {
+    wit::Response {
+        inherit: response.inherit,
+        ipc: response.ipc,
+        metadata: response.metadata,
+    }
+}
+
+pub fn de_wit_payload(wit: Option<wit::Payload>) -> Option<Payload> {
+    match wit {
+        None => None,
+        Some(wit) => Some(Payload {
+            mime: wit.mime,
+            bytes: wit.bytes,
+        }),
+    }
+}
+
+pub fn en_wit_payload(load: Option<Payload>) -> Option<wit::Payload> {
+    match load {
+        None => None,
+        Some(load) => Some(wit::Payload {
+            mime: load.mime,
+            bytes: load.bytes,
+        }),
+    }
+}
+
+pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> SignedCapability {
+    SignedCapability {
+        issuer: Address {
+            node: wit.issuer.node,
+            process: ProcessId {
+                process_name: wit.issuer.process.process_name,
+                package_name: wit.issuer.process.package_name,
+                publisher_node: wit.issuer.process.publisher_node,
+            },
+        },
+        params: wit.params,
+        signature: wit.signature,
+    }
+}
+
+pub fn _en_wit_signed_capability(cap: SignedCapability) -> wit::SignedCapability {
+    wit::SignedCapability {
+        issuer: cap.issuer.en_wit(),
+        params: cap.params,
+        signature: cap.signature,
+    }
+}
+
+pub fn en_wit_message(message: Message) -> wit::Message {
+    match message {
+        Message::Request(request) => wit::Message::Request(en_wit_request(request)),
+        Message::Response((response, context)) => {
+            wit::Message::Response((en_wit_response(response), context))
+        }
+    }
+}
+
+pub fn en_wit_send_error(error: SendError) -> wit::SendError {
+    wit::SendError {
+        kind: en_wit_send_error_kind(error.kind),
+        message: en_wit_message(error.message),
+        payload: en_wit_payload(error.payload),
+    }
+}
+
+pub fn en_wit_send_error_kind(kind: SendErrorKind) -> wit::SendErrorKind {
+    match kind {
+        SendErrorKind::Offline => wit::SendErrorKind::Offline,
+        SendErrorKind::Timeout => wit::SendErrorKind::Timeout,
+    }
+}
+
+pub fn de_wit_on_panic(wit: wit::OnPanic) -> OnPanic {
+    match wit {
+        wit::OnPanic::None => OnPanic::None,
+        wit::OnPanic::Restart => OnPanic::Restart,
+        wit::OnPanic::Requests(reqs) => OnPanic::Requests(
+            reqs.into_iter()
+                .map(|(address, request, payload)| {
+                    (
+                        Address::de_wit(address),
+                        de_wit_request(request),
+                        de_wit_payload(payload),
+                    )
+                })
+                .collect(),
+        ),
+    }
+}
+//
+// END SYNC WITH kernel_types.rs
+//
+
+//
+// internal message pipes between kernel and runtime modules
+//
+
+// keeps the from address so we know where to pipe error
+pub type NetworkErrorSender = tokio::sync::mpsc::Sender<WrappedSendError>;
+pub type NetworkErrorReceiver = tokio::sync::mpsc::Receiver<WrappedSendError>;
+
+pub type MessageSender = tokio::sync::mpsc::Sender<KernelMessage>;
+pub type MessageReceiver = tokio::sync::mpsc::Receiver<KernelMessage>;
+
+pub type PrintSender = tokio::sync::mpsc::Sender<Printout>;
+pub type PrintReceiver = tokio::sync::mpsc::Receiver<Printout>;
+
+pub type DebugSender = tokio::sync::mpsc::Sender<DebugCommand>;
+pub type DebugReceiver = tokio::sync::mpsc::Receiver<DebugCommand>;
+
+pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
+pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
+
+//
+// types used for UQI: uqbar's identity system
+//
+pub type PKINames = Arc<RwLock<HashMap<String, NodeId>>>; // TODO maybe U256 to String
+pub type OnchainPKI = Arc<RwLock<HashMap<String, Identity>>>;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Registration {
+    pub username: NodeId,
+    pub password: String,
+    pub direct: bool,
+}
+
+#[derive(Debug)]
+pub struct Keyfile {
+    pub username: String,
+    pub routers: Vec<String>,
+    pub networking_keypair: signature::Ed25519KeyPair,
+    pub jwt_secret_bytes: Vec<u8>,
+    pub file_key: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyfileVet {
+    pub password: String,
+    pub keyfile: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyfileVetted {
+    pub username: String,
+    pub networking_key: String,
+    pub routers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BootInfo {
+    pub password: String,
+    pub keyfile: String,
+    pub username: String,
+    pub reset: bool,
+    pub direct: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Identity {
+    pub name: NodeId,
+    pub networking_key: String,
+    pub ws_routing: Option<(String, u16)>,
+    pub allowed_routers: Vec<NodeId>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentityTransaction {
+    pub from: String,
+    pub signature: Option<String>,
+    pub to: String, // contract address
+    pub town_id: u32,
+    pub calldata: Identity,
+    pub nonce: String,
 }
 
 //
@@ -713,18 +891,6 @@ impl HttpClientError {
 // custom kernel displays
 //
 
-impl std::fmt::Display for ProcessId {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
-    }
-}
-
-impl std::fmt::Display for Address {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}@{}", self.node, self.process.to_string(),)
-    }
-}
-
 impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
@@ -740,42 +906,6 @@ impl std::fmt::Display for KernelMessage {
             self.message,
             self.payload.is_some(),
         )
-    }
-}
-
-impl std::fmt::Display for Message {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Message::Request(request) => write!(
-                f,
-                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n    )",
-                request.inherit,
-                request.expects_response,
-                match serde_json::from_slice::<serde_json::Value>(&request.ipc) {
-                    Ok(json) => format!("{}", json),
-                    Err(_) => format!("{:?}", request.ipc),
-                },
-                &request.metadata.as_ref().unwrap_or(&"None".into()),
-            ),
-            Message::Response((response, context)) => write!(
-                f,
-                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
-                response.inherit,
-                match serde_json::from_slice::<serde_json::Value>(&response.ipc) {
-                    Ok(json) => format!("{}", json),
-                    Err(_) => format!("{:?}", response.ipc),
-                },
-                &response.metadata.as_ref().unwrap_or(&"None".into()),
-                if context.is_none() {
-                    "None".into()
-                } else {
-                    match serde_json::from_slice::<serde_json::Value>(&context.as_ref().unwrap()) {
-                        Ok(json) => format!("{}", json),
-                        Err(_) => format!("{:?}", context.as_ref().unwrap()),
-                    }
-                },
-            ),
-        }
     }
 }
 

@@ -1,8 +1,8 @@
-use uqbar_process_lib::component::uq_process::api::*;
+use uqbar_process_lib::uqbar::process::standard::*;
 
 wit_bindgen::generate!({
     path: "../../wit",
-    world: "uq-process",
+    world: "process",
     exports: {
         world: Component,
     },

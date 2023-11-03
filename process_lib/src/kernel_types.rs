@@ -1,4 +1,4 @@
-use crate::component::uq_process::api as wit;
+use crate::uqbar::process::standard as wit;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -26,9 +26,11 @@ pub struct ProcessId {
 #[allow(dead_code)]
 impl ProcessId {
     /// generates a random u64 number if process_name is not declared
-    pub fn new(process_name: &str, package_name: &str, publisher_node: &str) -> Self {
+    pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
         ProcessId {
-            process_name: process_name.into(),
+            process_name: process_name
+                .unwrap_or(&rand::random::<u64>().to_string())
+                .into(),
             package_name: package_name.into(),
             publisher_node: publisher_node.into(),
         }
@@ -341,6 +343,58 @@ pub struct PackageManifestEntry {
 }
 
 //
+// display impls
+//
+
+impl std::fmt::Display for ProcessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
+impl std::fmt::Display for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}@{}", self.node, self.process.to_string(),)
+    }
+}
+
+impl std::fmt::Display for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Message::Request(request) => write!(
+                f,
+                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n    )",
+                request.inherit,
+                request.expects_response,
+                match serde_json::from_slice::<serde_json::Value>(&request.ipc) {
+                    Ok(json) => format!("{}", json),
+                    Err(_) => format!("{:?}", request.ipc),
+                },
+                &request.metadata.as_ref().unwrap_or(&"None".into()),
+            ),
+            Message::Response((response, context)) => write!(
+                f,
+                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
+                response.inherit,
+                match serde_json::from_slice::<serde_json::Value>(&response.ipc) {
+                    Ok(json) => format!("{}", json),
+                    Err(_) => format!("{:?}", response.ipc),
+                },
+                &response.metadata.as_ref().unwrap_or(&"None".into()),
+                if context.is_none() {
+                    "None".into()
+                } else {
+                    match serde_json::from_slice::<serde_json::Value>(&context.as_ref().unwrap()) {
+                        Ok(json) => format!("{}", json),
+                        Err(_) => format!("{:?}", context.as_ref().unwrap()),
+                    }
+                },
+            ),
+        }
+    }
+}
+
+//
 // conversions between wit types and kernel types (annoying!)
 //
 
@@ -418,5 +472,47 @@ pub fn en_wit_signed_capability(cap: SignedCapability) -> wit::SignedCapability 
         issuer: cap.issuer.en_wit(),
         params: cap.params,
         signature: cap.signature,
+    }
+}
+
+pub fn en_wit_message(message: Message) -> wit::Message {
+    match message {
+        Message::Request(request) => wit::Message::Request(en_wit_request(request)),
+        Message::Response((response, context)) => {
+            wit::Message::Response((en_wit_response(response), context))
+        }
+    }
+}
+
+pub fn en_wit_send_error(error: SendError) -> wit::SendError {
+    wit::SendError {
+        kind: en_wit_send_error_kind(error.kind),
+        message: en_wit_message(error.message),
+        payload: en_wit_payload(error.payload),
+    }
+}
+
+pub fn en_wit_send_error_kind(kind: SendErrorKind) -> wit::SendErrorKind {
+    match kind {
+        SendErrorKind::Offline => wit::SendErrorKind::Offline,
+        SendErrorKind::Timeout => wit::SendErrorKind::Timeout,
+    }
+}
+
+pub fn de_wit_on_panic(wit: wit::OnPanic) -> OnPanic {
+    match wit {
+        wit::OnPanic::None => OnPanic::None,
+        wit::OnPanic::Restart => OnPanic::Restart,
+        wit::OnPanic::Requests(reqs) => OnPanic::Requests(
+            reqs.into_iter()
+                .map(|(address, request, payload)| {
+                    (
+                        Address::de_wit(address),
+                        de_wit_request(request),
+                        de_wit_payload(payload),
+                    )
+                })
+                .collect(),
+        ),
     }
 }

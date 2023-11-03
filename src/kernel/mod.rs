@@ -1,3 +1,8 @@
+use crate::kernel::uqbar::process::standard as wit;
+use crate::types as t;
+use crate::FILESYSTEM_PROCESS_ID;
+use crate::KERNEL_PROCESS_ID;
+use crate::VFS_PROCESS_ID;
 use anyhow::Result;
 use ring::signature::{self, KeyPair};
 use serde::{Deserialize, Serialize};
@@ -10,28 +15,14 @@ use std::sync::{
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use uqbar::process::standard::Host as StandardHost;
 use wasmtime::component::*;
 use wasmtime::{Config, Engine, Store, WasmBacktraceDetails};
 use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView};
 
-use crate::types as t;
-use crate::FILESYSTEM_PROCESS_ID;
-use crate::KERNEL_PROCESS_ID;
-use crate::VFS_PROCESS_ID;
-//  WIT errors when `use`ing interface unless we import this and implement Host for Process below
-use crate::kernel::component::uq_process::types as wit;
-use crate::kernel::wit::Host;
-// use crate::kernel::component::uq_process::types::Host;
-// use crate::kernel::component::uq_process::api::Host;
-
-use component::uq_process::api::Host as Foo;
-
-mod utils;
-use crate::kernel::utils::*;
-
 bindgen!({
     path: "wit",
-    world: "uq-process",
+    world: "process",
     async: true,
 });
 
@@ -42,7 +33,7 @@ type ProcessMessageSender =
 type ProcessMessageReceiver =
     tokio::sync::mpsc::Receiver<Result<t::KernelMessage, t::WrappedSendError>>;
 
-struct Process {
+struct ProcessState {
     keypair: Arc<signature::Ed25519KeyPair>,
     metadata: t::ProcessMetadata,
     recv_in_process: ProcessMessageReceiver,
@@ -58,7 +49,7 @@ struct Process {
 }
 
 struct ProcessWasi {
-    process: Process,
+    process: ProcessState,
     table: Table,
     wasi: WasiCtx,
 }
@@ -81,7 +72,7 @@ enum ProcessSender {
     Userspace(ProcessMessageSender),
 }
 
-impl Host for ProcessWasi {}
+//impl Host for ProcessWasi {}
 
 impl WasiView for ProcessWasi {
     fn table(&self) -> &Table {
@@ -102,7 +93,7 @@ impl WasiView for ProcessWasi {
 /// create the process API. this is where the functions that a process can use live.
 ///
 #[async_trait::async_trait]
-impl Foo for ProcessWasi {
+impl StandardHost for ProcessWasi {
     //
     // system utils:
     //
@@ -129,7 +120,7 @@ impl Foo for ProcessWasi {
 
     ///  TODO critical: move to kernel logic to enable persistence of choice made here
     async fn set_on_panic(&mut self, on_panic: wit::OnPanic) -> Result<()> {
-        self.process.metadata.on_panic = de_wit_on_panic(on_panic);
+        self.process.metadata.on_panic = t::de_wit_on_panic(on_panic);
         Ok(())
     }
 
@@ -360,7 +351,7 @@ impl Foo for ProcessWasi {
                 ipc: serde_json::to_vec(&t::KernelCommand::StartProcess {
                     id: new_process_id.clone(),
                     wasm_bytes_handle: hash,
-                    on_panic: de_wit_on_panic(on_panic),
+                    on_panic: t::de_wit_on_panic(on_panic),
                     // TODO
                     initial_capabilities: match capabilities {
                         wit::Capabilities::None => HashSet::new(),
@@ -526,11 +517,12 @@ impl Foo for ProcessWasi {
     async fn attach_capability(&mut self, capability: wit::SignedCapability) -> Result<()> {
         match self.process.next_message_caps {
             None => {
-                self.process.next_message_caps = Some(vec![de_wit_signed_capability(capability)]);
+                self.process.next_message_caps =
+                    Some(vec![t::de_wit_signed_capability(capability)]);
                 Ok(())
             }
             Some(ref mut v) => {
-                v.push(de_wit_signed_capability(capability));
+                v.push(t::de_wit_signed_capability(capability));
                 Ok(())
             }
         }
@@ -664,7 +656,7 @@ impl Foo for ProcessWasi {
     /// if the prompting message did not have a payload, will return None.
     /// will also return None if there is no prompting message.
     async fn get_payload(&mut self) -> Result<Option<wit::Payload>> {
-        Ok(en_wit_payload(self.process.last_payload.clone()))
+        Ok(t::en_wit_payload(self.process.last_payload.clone()))
     }
 
     async fn send_request(
@@ -756,7 +748,7 @@ async fn send_and_await_response(
     }
 }
 
-impl Process {
+impl ProcessState {
     /// save a context for a given request.
     async fn save_context(
         &mut self,
@@ -849,11 +841,11 @@ impl Process {
                 }
             },
             Err(e) => match self.contexts.remove(&e.id) {
-                None => return Err((en_wit_send_error(e.error), None)),
+                None => return Err((t::en_wit_send_error(e.error), None)),
                 Some((context, timeout_handle)) => {
                     timeout_handle.abort();
                     self.prompting_message = context.prompting_message;
-                    return Err((en_wit_send_error(e.error), context.context));
+                    return Err((t::en_wit_send_error(e.error), context.context));
                 }
             },
         };
@@ -864,9 +856,9 @@ impl Process {
         Ok((
             km.source.en_wit().to_owned(),
             match km.message {
-                t::Message::Request(request) => wit::Message::Request(en_wit_request(request)),
+                t::Message::Request(request) => wit::Message::Request(t::en_wit_request(request)),
                 t::Message::Response((response, _context)) => {
-                    wit::Message::Response((en_wit_response(response), context))
+                    wit::Message::Response((t::en_wit_response(response), context))
                 }
             },
         ))
@@ -963,7 +955,7 @@ impl Process {
                 // no rsvp because neither prompting message nor this request wants a response
                 (_, None, None) => None,
             },
-            message: t::Message::Request(de_wit_request(request.clone())),
+            message: t::Message::Request(t::de_wit_request(request.clone())),
             payload: payload.clone(),
             signed_capabilities: None,
         };
@@ -983,7 +975,7 @@ impl Process {
                         error: t::SendError {
                             kind: t::SendErrorKind::Timeout,
                             target: t::Address::de_wit(target),
-                            message: t::Message::Request(de_wit_request(request.clone())),
+                            message: t::Message::Request(t::de_wit_request(request.clone())),
                             payload,
                         },
                     }))
@@ -1019,7 +1011,7 @@ impl Process {
 
         let payload = match response.inherit {
             true => self.last_payload.clone(),
-            false => de_wit_payload(payload),
+            false => t::de_wit_payload(payload),
         };
 
         self.send_to_loop
@@ -1029,7 +1021,7 @@ impl Process {
                 target,
                 rsvp: None,
                 message: t::Message::Response((
-                    de_wit_response(response),
+                    t::de_wit_response(response),
                     // the context will be set by the process receiving this Response.
                     None,
                 )),
@@ -1119,7 +1111,7 @@ async fn make_process_loop(
         Component::new(&engine, wasm_bytes).expect("make_process_loop: couldn't read file");
 
     let mut linker = Linker::new(&engine);
-    UqProcess::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
+    Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
 
     let mut table = Table::new();
     let wasi = WasiCtxBuilder::new().build(&mut table).unwrap();
@@ -1147,7 +1139,7 @@ async fn make_process_loop(
     let mut store = Store::new(
         engine,
         ProcessWasi {
-            process: Process {
+            process: ProcessState {
                 keypair: keypair.clone(),
                 metadata: metadata.clone(),
                 recv_in_process,
@@ -1168,7 +1160,7 @@ async fn make_process_loop(
 
     Box::pin(async move {
         let (bindings, _bindings) =
-            match UqProcess::instantiate_async(&mut store, &component, &linker).await {
+            match Process::instantiate_async(&mut store, &component, &linker).await {
                 Ok(b) => b,
                 Err(e) => {
                     let _ = send_to_terminal

@@ -328,6 +328,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
+ "rand",
  "serde",
  "serde_json",
  "wit-bindgen",

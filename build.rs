@@ -109,7 +109,7 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
         "embed",
         "wit",
         "--world",
-        "uq-process",
+        "process",
         &format!(
             "{}/target/wasm32-wasi/release/{}_adapted.wasm",
             target_path, name
@@ -153,7 +153,7 @@ fn main() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
 
-        if package_name != "terminal" && package_name != "app_store" {
+        if package_name != "terminal" {
             continue;
         }
 
