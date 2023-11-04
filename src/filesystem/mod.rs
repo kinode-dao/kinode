@@ -149,6 +149,14 @@ async fn bootstrap(
     let mut vfs_messages = Vec::new();
 
     for (package_name, mut package) in packages {
+        // special case tester: only load it in if in simulation mode
+        if package_name == "tester" {
+            #[cfg(not(feature = "simulation-mode"))]
+            continue;
+            #[cfg(feature = "simulation-mode")]
+            {}
+        }
+
         println!("fs: handling package {package_name}...\r");
         // get and read metadata.json
         let Ok(mut package_metadata_zip) = package.by_name("metadata.json") else {
@@ -361,6 +369,7 @@ async fn bootstrap(
             .write(&kernel_process_id, &serialized_process_map)
             .await;
     }
+
     Ok(vfs_messages)
 }
 

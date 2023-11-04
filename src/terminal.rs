@@ -186,7 +186,6 @@ pub async fn terminal(
         let event = reader.next().fuse();
 
         tokio::select! {
-            // aaa
             prints = print_rx.recv() => match prints {
                 Some(printout) => {
                     let now = Local::now();

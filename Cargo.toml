@@ -10,6 +10,8 @@ sha2 = "0.10"
 walkdir = "2.4"
 zip = "0.6"
 
+[features]
+simulation-mode = []
 
 [dependencies]
 aes-gcm = "0.10.2"
