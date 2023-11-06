@@ -256,14 +256,18 @@ async fn handle_info(
     // TODO: if IP is localhost, assign a router...
     let ws_port = http_server::find_open_port(9000).await.unwrap();
 
+    // this is NOT our real identity. it's stuff we give to the frontend
+    // to match on
     let our = Identity {
         networking_key: format!("0x{}", public_key),
         name: String::new(),
         ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
-            "uqbar-router-1.uq".into(), // "0x8d9e54427c50660c6d4802f63edca86a9ca5fd6a78070c4635950e9d149ed441".into(),
-            "uqbar-router-2.uq".into(), // "0x06d331ed65843ecf0860c73292005d8103af20820546b2f8f9007d01f60595b1".into(),
-            "uqbar-router-3.uq".into(), // "0xe6ab611eb62e8aee0460295667f8179cda4315982717db4b0b3da6022deecac1".into(),
+            "testnode101.uq".into(),
+            "testnode102.uq".into(),
+            // "uqbar-router-1.uq".into(), // "0x8d9e54427c50660c6d4802f63edca86a9ca5fd6a78070c4635950e9d149ed441".into(),
+            // "uqbar-router-2.uq".into(), // "0x06d331ed65843ecf0860c73292005d8103af20820546b2f8f9007d01f60595b1".into(),
+            // "uqbar-router-3.uq".into(), // "0xe6ab611eb62e8aee0460295667f8179cda4315982717db4b0b3da6022deecac1".into(),
         ],
     };
 

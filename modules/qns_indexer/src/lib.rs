@@ -129,7 +129,7 @@ impl UqProcess for Component {
                 inherit: false,
                 expects_response: None,
                 metadata: None,
-                ipc: serde_json::to_vec(&NetActions::QnsBatchUpdate(
+                ipc: rmp_serde::to_vec(&NetActions::QnsBatchUpdate(
                     state.nodes.values().cloned().collect::<Vec<_>>(),
                 ))
                 .unwrap(),
@@ -326,7 +326,7 @@ impl UqProcess for Component {
                                     inherit: false,
                                     expects_response: None,
                                     metadata: None,
-                                    ipc: serde_json::to_vec(&NetActions::QnsUpdate(update.clone()))
+                                    ipc: rmp_serde::to_vec(&NetActions::QnsUpdate(update.clone()))
                                         .unwrap(),
                                 },
                                 None,

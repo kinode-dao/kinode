@@ -43,8 +43,6 @@ pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
 // types used for UQI: uqbar's identity system
 //
 pub type NodeId = String;
-pub type PKINames = Arc<RwLock<HashMap<String, NodeId>>>; // TODO maybe U256 to String
-pub type OnchainPKI = Arc<RwLock<HashMap<String, Identity>>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Registration {

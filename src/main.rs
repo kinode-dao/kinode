@@ -1,6 +1,5 @@
 use anyhow::Result;
 use dotenv;
-use ethers::prelude::namehash;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -36,6 +35,11 @@ const CAP_CHANNEL_CAPACITY: usize = 1_000;
 // const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// This can and should be an environment variable / setting. It configures networking
+/// such that indirect nodes always use routers, even when target is a direct node,
+/// such that only their routers can ever see their physical networking details.
+const REVEAL_IP: bool = true;
 
 #[tokio::main]
 async fn main() {
@@ -265,6 +269,7 @@ async fn main() {
         print_sender.clone(),
         net_message_sender,
         net_message_receiver,
+        REVEAL_IP,
     ));
     tasks.spawn(filesystem::fs_sender(
         our.name.clone(),
@@ -322,10 +327,10 @@ async fn main() {
                     "\x1b[38;5;196muh oh, a kernel process crashed: {}\x1b[0m",
                     e
                 )
-                // TODO restart the task
+                // TODO restart the task?
             } else {
                 format!("what does this mean???")
-                // TODO restart the task
+                // TODO restart the task?
             }
         }
         quit = terminal::terminal(
