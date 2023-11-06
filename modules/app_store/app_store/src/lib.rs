@@ -1,14 +1,13 @@
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::{HashMap, HashSet};
-use uqbar_process_lib::component::uq_process::api::*;
-use uqbar_process_lib::component::uq_process::types::NodeId;
-use uqbar_process_lib::*;
 use uqbar_process_lib::kernel_types as kt;
+use uqbar_process_lib::uqbar::process::standard as wit;
+use uqbar_process_lib::{NodeId, Address, ProcessId, Request};
 
 wit_bindgen::generate!({
-    path: "../../../wit",
-    world: "uq-process",
+    path: "../../wit",
+    world: "process",
     exports: {
         world: Component,
     },

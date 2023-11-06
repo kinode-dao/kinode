@@ -1,17 +1,20 @@
-cargo_component_bindings::generate!();
-
 use alloy_primitives::FixedBytes;
 use alloy_sol_types::{sol, SolEvent};
-use bindings::component::uq_process::types::*;
-use bindings::{print_to_terminal, receive, send_request, send_response, UqProcess};
 use hex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::string::FromUtf8Error;
+use uqbar_process_lib::uqbar::process::standard as wit;
+use uqbar_process_lib::{Address, ProcessId, Request, Response};
 
-#[allow(dead_code)]
-mod process_lib;
+wit_bindgen::generate!({
+    path: "../../wit",
+    world: "process",
+    exports: {
+        world: Component,
+    },
+});
 
 struct Component;
 
@@ -98,8 +101,26 @@ fn subscribe_to_qns(from_block: u64) -> Vec<u8> {
     .to_vec()
 }
 
+fn serialize_state(state: &State) -> anyhow::Result<Vec<u8>> {
+    Ok(bincode::serialize(state)?)
+}
+
+fn deserialize_state(bytes: &[u8]) -> anyhow::Result<State> {
+    Ok(bincode::deserialize(bytes)?)
+}
+
+fn serialize_message(message: &NetActions) -> anyhow::Result<Vec<u8>> {
+    Ok(serde_json::to_vec(message)?)
+}
+
+fn deserialize_message(bytes: &[u8]) -> anyhow::Result<NetActions> {
+    Ok(serde_json::from_slice(bytes)?)
+}
+
 impl UqProcess for Component {
-    fn init(our: Address) {
+    fn init(our: String) {
+        let our = Address::from_str(&our).unwrap();
+
         let mut state: State = State {
             names: HashMap::new(),
             nodes: HashMap::new(),
@@ -107,247 +128,202 @@ impl UqProcess for Component {
         };
 
         // if we have state, load it in
-        match process_lib::get_state::<State>() {
+        match get_typed_state::<State>(deserialize_state) {
             Some(s) => {
                 state = s;
             }
             None => {}
         }
 
-        bindings::print_to_terminal(
+        print_to_terminal(
             0,
             &format!("qns_indexer: starting at block {}", state.block),
         );
 
-        // shove all state into net::net
-        send_request(
-            &Address {
-                node: our.node.clone(),
-                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
-            },
-            &Request {
-                inherit: false,
-                expects_response: None,
-                metadata: None,
-                ipc: serde_json::to_vec(&NetActions::QnsBatchUpdate(
-                    state.nodes.values().cloned().collect::<Vec<_>>(),
-                ))
-                .unwrap(),
-            },
-            None,
-            None,
-        );
+        match main(our, state) {
+            Ok(_) => {}
+            Err(e) => {
+                print_to_terminal(0, &format!("qns_indexer: ended with error: {:?}", e));
+            }
+        }
+    }
+}
 
-        let _ = send_request(
-            &Address {
-                node: our.node.clone(),
-                process: ProcessId::from_str("eth_rpc:sys:uqbar").unwrap(),
-            },
-            &Request {
-                inherit: false,            // TODO what
-                expects_response: Some(5), // TODO evaluate
-                metadata: None,
-                // -1 because there could be other events in the last processed block
-                ipc: subscribe_to_qns(state.block - 1),
-            },
-            None,
-            None,
-        );
+fn main(our: Address, state: State) -> anyhow::Result<()> {
+    // shove all state into net::net
+    Request::new()
+        .target(Address::new(our.node, "net:sys:uqbar")?)?
+        .ipc(
+            &NetActions::QnsBatchUpdate(state.nodes.values().cloned().collect::<Vec<_>>()),
+            serialize_message,
+        )?
+        .send()?;
 
-        let http_server_address = ProcessId::from_str("http_server:sys:uqbar").unwrap();
+    Request::new()
+        .target(Address::new(our.node, "eth_rpc:sys:uqbar")?)?
+        .ipc_bytes(subscribe_to_qns(state.block - 1))?
+        .expects_response(5)
+        .send()?;
 
-        let _register_endpoint = send_request(
-            &Address {
-                node: our.node.clone(),
-                process: http_server_address.clone(),
-            },
-            &Request {
-                inherit: false,
-                expects_response: None,
-                metadata: None,
-                ipc: json!({
-                    "BindPath": {
-                        "path": "/node/:name",
-                        "authenticated": false,
-                        "local_only": false
-                    }
-                })
-                .to_string()
-                .as_bytes()
-                .to_vec(),
-            },
-            None,
-            None,
-        );
+    let http_server_address = ProcessId::from_str("http_server:sys:uqbar").unwrap();
 
-        loop {
-            let Ok((source, message)) = receive() else {
-                print_to_terminal(0, "qns_indexer: got network error");
-                continue;
-            };
-            let Message::Request(request) = message else {
-                // TODO we should store the subscription ID for eth_rpc
-                // incase we want to cancel/reset it
-                // print_to_terminal(0, "qns_indexer: got response");
-                continue;
-            };
+    Request::new()
+        .target(Address::new(our.node, http_server_address)?)?
+        .ipc_bytes(
+            json!({
+                "BindPath": {
+                    "path": "/node/:name",
+                    "authenticated": false,
+                    "local_only": false
+                }
+            })
+            .to_string()
+            .as_bytes(),
+        )?
+        .send()?;
 
-            if source.process == http_server_address {
-                if let Ok(ipc_json) =
-                    serde_json::from_slice::<serde_json::Value>(&request.ipc)
-                {
-                    if ipc_json["path"].as_str().unwrap_or_default() == "/node/:name" {
-                        if let Some(name) = ipc_json["url_params"]["name"].as_str() {
-                            if let Some(node) = state.nodes.get(name) {
-                                send_response(
-                                    &Response {
-                                        inherit: false,
-                                        ipc: serde_json::json!({
-                                            "status": 200,
-                                            "headers": {
-                                                "Content-Type": "application/json",
-                                            },
-                                        })
-                                        .to_string()
-                                        .as_bytes()
-                                        .to_vec(),
-                                        metadata: None,
-                                    },
-                                    Some(&Payload {
+    loop {
+        let Ok((source, message)) = receive() else {
+            print_to_terminal(0, "qns_indexer: got network error");
+            continue;
+        };
+        let Message::Request(request) = message else {
+            // TODO we should store the subscription ID for eth_rpc
+            // incase we want to cancel/reset it
+            // print_to_terminal(0, "qns_indexer: got response");
+            continue;
+        };
+
+        if source.process == http_server_address {
+            if let Ok(ipc_json) = serde_json::from_slice::<serde_json::Value>(&request.ipc) {
+                if ipc_json["path"].as_str().unwrap_or_default() == "/node/:name" {
+                    if let Some(name) = ipc_json["url_params"]["name"].as_str() {
+                        if let Some(node) = state.nodes.get(name) {
+                            Response::new()
+                                .ipc_bytes(
+                                    serde_json::json!({
+                                        "status": 200,
+                                        "headers": {
+                                            "Content-Type": "application/json",
+                                        },
+                                    })
+                                    .payload(&Payload {
                                         mime: Some("application/json".to_string()),
                                         bytes: serde_json::to_string(&node)
                                             .unwrap()
                                             .as_bytes()
                                             .to_vec(),
-                                    }),
-                                );
-                                continue;
-                            }
+                                    })?,
+                                )
+                                .send()?;
+                            continue;
                         }
                     }
                 }
-                send_response(
-                    &Response {
-                        inherit: false,
-                        ipc: serde_json::json!({
-                            "status": 404,
-                            "headers": {
-                                "Content-Type": "application/json",
-                            },
-                        })
-                        .to_string()
-                        .as_bytes()
-                        .to_vec(),
-                        metadata: None,
-                    },
-                    Some(&Payload {
+            }
+            Response::new()
+                .ipc_bytes(
+                    serde_json::json!({
+                        "status": 404,
+                        "headers": {
+                            "Content-Type": "application/json",
+                        },
+                    })
+                    .payload(&Payload {
                         mime: Some("application/json".to_string()),
                         bytes: "Not Found".to_string().as_bytes().to_vec(),
-                    }),
-                );
-                continue;
-            }
+                    })?,
+                )
+                .send()?;
+            continue;
+        }
 
-            let Ok(msg) = serde_json::from_slice::<AllActions>(&request.ipc) else {
-                print_to_terminal(0, "qns_indexer: got invalid message");
-                continue;
-            };
+        let Ok(msg) = serde_json::from_slice::<AllActions>(&request.ipc) else {
+            print_to_terminal(0, "qns_indexer: got invalid message");
+            continue;
+        };
 
-            match msg {
-                // Probably more message types later...maybe not...
-                AllActions::EventSubscription(e) => {
-                    state.block = hex_to_u64(&e.block_number).unwrap();
-                    match decode_hex(&e.topics[0].clone()) {
-                        NodeRegistered::SIGNATURE_HASH => {
-                            // bindings::print_to_terminal(0, format!("qns_indexer: got NodeRegistered event: {:?}", e).as_str());
+        match msg {
+            // Probably more message types later...maybe not...
+            AllActions::EventSubscription(e) => {
+                state.block = hex_to_u64(&e.block_number).unwrap();
+                match decode_hex(&e.topics[0].clone()) {
+                    NodeRegistered::SIGNATURE_HASH => {
+                        // print_to_terminal(0, format!("qns_indexer: got NodeRegistered event: {:?}", e).as_str());
 
-                            let node = &e.topics[1];
-                            let decoded =
-                                NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true)
-                                    .unwrap();
-                            let Ok(name) = dnswire_decode(decoded.0.clone()) else {
-                                bindings::print_to_terminal(
-                                    1,
-                                    &format!("qns_indexer: failed to decode name: {:?}", decoded.0),
-                                );
-                                continue;
-                            };
-
-                            state.names.insert(node.to_string(), name);
-                        }
-                        WsChanged::SIGNATURE_HASH => {
-                            let node = &e.topics[1];
-                            let decoded =
-                                WsChanged::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                            let public_key = hex::encode(decoded.0);
-                            let ip = decoded.1;
-                            let port = decoded.2;
-                            let routers_raw = decoded.3;
-                            let routers: Vec<String> = routers_raw
-                                .iter()
-                                .map(|r| {
-                                    let key = hex::encode(r);
-                                    match state.names.get(&key) {
-                                        Some(name) => name.clone(),
-                                        None => format!("0x{}", key), // TODO it should actually just panic here
-                                    }
-                                })
-                                .collect::<Vec<String>>();
-
-                            let Some(name) = state.names.get(node) else {
-                                bindings::print_to_terminal(0, &format!("qns_indexer: failed to find name for node during WsChanged: {:?}", node));
-                                continue;
-                            };
-
-                            let update = QnsUpdate {
-                                name: name.clone(),
-                                owner: "0x".to_string(), // TODO or get rid of
-                                node: node.clone(),
-                                public_key: format!("0x{}", public_key),
-                                ip: format!(
-                                    "{}.{}.{}.{}",
-                                    (ip >> 24) & 0xFF,
-                                    (ip >> 16) & 0xFF,
-                                    (ip >> 8) & 0xFF,
-                                    ip & 0xFF
-                                ),
-                                port,
-                                routers,
-                            };
-
-                            state.nodes.insert(name.clone(), update.clone());
-
-                            send_request(
-                                &Address {
-                                    node: our.node.clone(),
-                                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
-                                },
-                                &Request {
-                                    inherit: false,
-                                    expects_response: None,
-                                    metadata: None,
-                                    ipc: serde_json::to_vec(&NetActions::QnsUpdate(update.clone()))
-                                        .unwrap(),
-                                },
-                                None,
-                                None,
+                        let node = &e.topics[1];
+                        let decoded =
+                            NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        let Ok(name) = dnswire_decode(decoded.0.clone()) else {
+                            print_to_terminal(
+                                1,
+                                &format!("qns_indexer: failed to decode name: {:?}", decoded.0),
                             );
-                        }
-                        event => {
-                            bindings::print_to_terminal(
-                                0,
-                                format!("qns_indexer: got unknown event: {:?}", event).as_str(),
-                            );
-                        }
+                            continue;
+                        };
+
+                        state.names.insert(node.to_string(), name);
+                    }
+                    WsChanged::SIGNATURE_HASH => {
+                        let node = &e.topics[1];
+                        let decoded =
+                            WsChanged::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        let public_key = hex::encode(decoded.0);
+                        let ip = decoded.1;
+                        let port = decoded.2;
+                        let routers_raw = decoded.3;
+                        let routers: Vec<String> = routers_raw
+                            .iter()
+                            .map(|r| {
+                                let key = hex::encode(r);
+                                match state.names.get(&key) {
+                                    Some(name) => name.clone(),
+                                    None => format!("0x{}", key), // TODO it should actually just panic here
+                                }
+                            })
+                            .collect::<Vec<String>>();
+
+                        let Some(name) = state.names.get(node) else {
+                            print_to_terminal(0, &format!("qns_indexer: failed to find name for node during WsChanged: {:?}", node));
+                            continue;
+                        };
+
+                        let update = QnsUpdate {
+                            name: name.clone(),
+                            owner: "0x".to_string(), // TODO or get rid of
+                            node: node.clone(),
+                            public_key: format!("0x{}", public_key),
+                            ip: format!(
+                                "{}.{}.{}.{}",
+                                (ip >> 24) & 0xFF,
+                                (ip >> 16) & 0xFF,
+                                (ip >> 8) & 0xFF,
+                                ip & 0xFF
+                            ),
+                            port,
+                            routers,
+                        };
+
+                        state.nodes.insert(name.clone(), update.clone());
+
+                        Request::new()
+                            .target(Address::new(our.node, "net:sys:uqbar")?)?
+                            .ipc(&NetActions::QnsUpdate(update.clone()), serialize_message)?
+                            .send()?;
+                    }
+                    event => {
+                        print_to_terminal(
+                            0,
+                            format!("qns_indexer: got unknown event: {:?}", event).as_str(),
+                        );
                     }
                 }
             }
-
-            process_lib::set_state::<State>(&state);
         }
+
+        set_typed_state::<State>(&state, serialize_state);
     }
 }
-
 // helpers
 // TODO these probably exist somewhere in alloy...not sure where though.
 fn decode_hex(s: &str) -> FixedBytes<32> {
