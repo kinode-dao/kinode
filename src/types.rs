@@ -2,12 +2,8 @@ use crate::kernel::component::uq_process::types as wit;
 use clap::Parser;
 use ring::signature;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{HashMap, HashSet};
 use thiserror::Error;
-use tokio::sync::RwLock;
 
 lazy_static::lazy_static! {
     pub static ref ENCRYPTOR_PROCESS_ID: ProcessId = ProcessId::new(Some("encryptor"), "sys", "uqbar");
@@ -65,8 +61,6 @@ pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
 // types used for UQI: uqbar's identity system
 //
 pub type NodeId = String;
-pub type PKINames = Arc<RwLock<HashMap<String, NodeId>>>; // TODO maybe U256 to String
-pub type OnchainPKI = Arc<RwLock<HashMap<String, Identity>>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Registration {

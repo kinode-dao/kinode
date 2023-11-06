@@ -256,6 +256,8 @@ async fn handle_info(
     // TODO: if IP is localhost, assign a router...
     let ws_port = http_server::find_open_port(9000).await.unwrap();
 
+    // this is NOT our real identity. it's stuff we give to the frontend
+    // to match on
     let our = Identity {
         networking_key: format!("0x{}", public_key),
         name: String::new(),
