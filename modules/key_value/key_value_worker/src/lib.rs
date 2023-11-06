@@ -1,28 +1,29 @@
-cargo_component_bindings::generate!();
-
 use std::collections::HashMap;
 
 use redb::ReadableTable;
 use serde::{Deserialize, Serialize};
 
-use bindings::component::uq_process::types::*;
-use bindings::{get_payload, Guest, print_to_terminal, receive, send_and_await_response, send_response};
+use uqbar_process_lib::{Address, ProcessId, Response};
+use uqbar_process_lib::uqbar::process::standard as wit;
 
-mod kernel_types;
-use kernel_types as kt;
+wit_bindgen::generate!({
+    path: "../../../wit",
+    world: "process",
+    exports: {
+        world: Component,
+    },
+});
+
 mod key_value_types;
 use key_value_types as kv;
-mod process_lib;
-
-struct Component;
 
 const PREFIX: &str = "key_value-";
 const TABLE: redb::TableDefinition<&[u8], &[u8]> = redb::TableDefinition::new("process");
 
 fn get_payload_wrapped() -> Option<(Option<String>, Vec<u8>)> {
-   match get_payload() {
+   match wit::get_payload() {
        None => None,
-       Some(Payload { mime, bytes }) => Some((mime, bytes)),
+       Some(wit::Payload { mime, bytes }) => Some((mime, bytes)),
    }
 }
 
@@ -38,21 +39,21 @@ fn send_and_await_response_wrapped(
 ) -> (Vec<u8>, Option<String>) {
     let payload = match payload {
         None => None,
-        Some((mime, bytes)) => Some(Payload { mime, bytes }),
+        Some((mime, bytes)) => Some(wit::Payload { mime, bytes }),
     };
     let (
         _,
-        Message::Response((Response { ipc, metadata, .. }, _)),
-    ) = send_and_await_response(
-        &Address {
+        wit::Message::Response((wit::Response { ipc, metadata, .. }, _)),
+    ) = wit::send_and_await_response(
+        &wit::Address {
             node: target_node,
-            process: kt::ProcessId::new(
+            process: ProcessId::new(
                 &target_process,
                 &target_package,
                 &target_publisher,
-            ).en_wit(),
+            ),
         },
-        &Request {
+        &wit::Request {
             inherit: false,
             expects_response: Some(timeout),
             ipc: request_ipc,
@@ -69,20 +70,19 @@ fn send_and_await_response_wrapped(
 }
 
 fn handle_message (
-    our: &Address,
+    our: &wit::Address,
     db_handle: &mut Option<redb::Database>,
 ) -> anyhow::Result<()> {
-    let (source, message) = receive().unwrap();
-    // let (source, message) = receive()?;
+    let (source, message) = wit::receive().unwrap();
 
     if our.node != source.node {
         return Err(kv::KeyValueError::RejectForeign.into());
     }
 
     match message {
-        Message::Response(_) => { unimplemented!() },
-        Message::Request(Request { inherit: _ , expects_response: _, ipc, metadata: _ }) => {
-            match process_lib::parse_message_ipc(&ipc)? {
+        wit::Message::Response(_) => { unimplemented!() },
+        wit::Message::Request(wit::Request { ipc, .. }) => {
+            match serde_json::from_slice(&ipc)? {
                 kv::KeyValueMessage::New { db } => {
                     let vfs_drive = format!("{}{}", PREFIX, db);
                     match db_handle {
@@ -90,7 +90,7 @@ fn handle_message (
                             return Err(kv::KeyValueError::DbAlreadyExists.into());
                         },
                         None => {
-                            print_to_terminal(0, "key_value_worker: Create");
+                            wit::print_to_terminal(1, "key_value_worker: Create");
                             *db_handle = Some(redb::Database::create(
                                 format!("/{}.redb", db),
                                 our.node.clone(),
@@ -98,7 +98,7 @@ fn handle_message (
                                 get_payload_wrapped,
                                 send_and_await_response_wrapped,
                             )?);
-                            print_to_terminal(0, "key_value_worker: Create done");
+                            wit::print_to_terminal(1, "key_value_worker: Create done");
                         },
                     }
                 },
@@ -107,7 +107,8 @@ fn handle_message (
                         return Err(kv::KeyValueError::DbDoesNotExist.into());
                     };
 
-                    let Payload { mime: _, ref bytes } = get_payload().ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
+                    let wit::Payload { ref bytes, .. } = wit::get_payload()
+                        .ok_or(anyhow::anyhow!("couldnt get bytes for Write"))?;
 
                     let write_txn = db_handle.begin_write()?;
                     {
@@ -116,14 +117,9 @@ fn handle_message (
                     }
                     write_txn.commit()?;
 
-                    send_response(
-                        &Response {
-                            inherit: false,
-                            ipc,
-                            metadata: None,
-                        },
-                        None,
-                    );
+                    Response::new()
+                        .ipc_bytes(ipc)
+                        .send()?;
                 },
                 kv::KeyValueMessage::Read { ref key, .. } => {
                     let Some(db_handle) = db_handle else {
@@ -136,36 +132,31 @@ fn handle_message (
 
                     match table.get(&key[..])? {
                         None => {
-                            send_response(
-                                &Response {
-                                    inherit: false,
-                                    ipc,
-                                    metadata: None,
-                                },
-                                None,
-                            );
+                            Response::new()
+                                .ipc_bytes(ipc)
+                                .send()?;
                         },
                         Some(v) => {
                             let bytes = v.value().to_vec();
-                            print_to_terminal(
+                            wit::print_to_terminal(
                                 1,
                                 &format!(
                                     "key_value_worker: key, val: {:?}, {}",
                                     key,
-                                    if bytes.len() < 100 { format!("{:?}", bytes) } else { "<elided>".into() },
+                                    if bytes.len() < 100 {
+                                        format!("{:?}", bytes)
+                                    } else {
+                                        "<elided>".into()
+                                    },
                                 ),
                             );
-                            send_response(
-                                &Response {
-                                    inherit: false,
-                                    ipc,
-                                    metadata: None,
-                                },
-                                Some(&Payload {
+                            Response::new()
+                                .ipc_bytes(ipc)
+                                .payload(wit::Payload {
                                     mime: None,
                                     bytes,
-                                }),
-                            );
+                                })
+                                .send()?;
                         },
                     };
                 },
@@ -179,29 +170,27 @@ fn handle_message (
     }
 }
 
+struct Component;
 impl Guest for Component {
-    fn init(our: Address) {
-        print_to_terminal(1, "key_value_worker: begin");
+    fn init(our: String) {
+        wit::print_to_terminal(1, "key_value_worker: begin");
 
+        let our = Address::from_str(&our).unwrap();
         let mut db_handle: Option<redb::Database> = None;
 
         loop {
             match handle_message(&our, &mut db_handle) {
                 Ok(()) => {},
                 Err(e) => {
-                    print_to_terminal(0, format!(
+                    wit::print_to_terminal(0, format!(
                         "key_value_worker: error: {:?}",
                         e,
                     ).as_str());
                     if let Some(e) = e.downcast_ref::<kv::KeyValueError>() {
-                        send_response(
-                            &Response {
-                                inherit: false,
-                                ipc: serde_json::to_vec(&e).unwrap(),
-                                metadata: None,
-                            },
-                            None,
-                        );
+                        Response::new()
+                            .ipc_bytes(serde_json::to_vec(&e).unwrap())
+                            .send()
+                            .unwrap();
                     }
                     panic!("");
                 },
