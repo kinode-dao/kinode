@@ -399,20 +399,16 @@ async fn direct_networking(
                         // forwarding connections joinset
                         match conn {
                             Connection::Peer(peer_conn) => {
-                                let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
-                                let peer = Arc::new(RwLock::new(Peer {
-                                    identity: peer_id,
+                                save_new_peer(
+                                    &peer_id,
                                     routing_for,
-                                    sender: peer_tx,
-                                }));
-                                peers.insert(peer.read().await.identity.name.clone(), peer.clone());
-                                peer_connections.spawn(maintain_connection(
-                                    peer,
+                                    &mut peers,
+                                    &mut peer_connections,
                                     peer_conn,
-                                    peer_rx,
-                                    kernel_message_tx.clone(),
-                                    print_tx.clone(),
-                                ));
+                                    None,
+                                    &kernel_message_tx,
+                                    &print_tx
+                                ).await?;
                             }
                             Connection::Passthrough(passthrough_conn) => {
                                 forwarding_connections.spawn(maintain_passthrough(
@@ -890,6 +886,13 @@ async fn handle_local_message(
                 printout.push_str(&format!(
                     "we have connections with peers: {:#?}\r\n",
                     peers.keys()
+                ));
+                printout.push_str(&format!(
+                    "we are routing for: {:#?}\r\n",
+                    peers
+                        .iter()
+                        .filter(|(_, peer)| peer.read().await.routing_for)
+                        .map(|(id, _)| id)
                 ));
                 printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
                 printout.push_str(&format!(
