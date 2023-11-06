@@ -9,7 +9,6 @@ use std::{
     sync::Arc,
 };
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc::unbounded_channel, RwLock};
 use tokio::task::JoinSet;
 use tokio::time;
 use tokio_tungstenite::{
@@ -891,8 +890,9 @@ async fn handle_local_message(
                     "we are routing for: {:#?}\r\n",
                     peers
                         .iter()
-                        .filter(|(_, peer)| peer.read().await.routing_for)
+                        .filter(|(_, peer)| peer.blocking_read().routing_for)
                         .map(|(id, _)| id)
+                        .collect::<Vec<&NodeId>>()
                 ));
                 printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
                 printout.push_str(&format!(
