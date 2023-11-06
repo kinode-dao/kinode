@@ -882,24 +882,20 @@ async fn handle_local_message(
             }
             Ok("diagnostics") => {
                 printout.push_str(&format!("our Identity: {:#?}\r\n", our));
-                printout.push_str(&format!(
-                    "we have connections with peers: {:#?}\r\n",
-                    peers.keys()
-                ));
-                printout.push_str(&format!(
-                    "we are routing for: {:#?}\r\n",
-                    peers
-                        .iter()
-                        .filter(|(_, peer)| peer.blocking_read().routing_for)
-                        .map(|(id, _)| id)
-                        .collect::<Vec<&NodeId>>()
-                ));
+                printout.push_str(&format!("we have connections with peers:\r\n"));
+                for peer in peers.values() {
+                    let read = peer.read().await;
+                    printout.push_str(&format!(
+                        "{}, routing_for={}\r\n",
+                        read.identity.name,
+                        read.routing_for,
+                    ));
+                }
                 printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
                 printout.push_str(&format!(
                     "we have {} open peer connections\r\n",
                     peer_connections.len()
                 ));
-
                 if pending_passthroughs.is_some() {
                     printout.push_str(&format!(
                         "we have {} pending passthrough connections\r\n",
