@@ -355,8 +355,8 @@ impl Request {
         self
     }
 
-    pub fn payload(mut self, payload: Option<Payload>) -> Self {
-        self.payload = payload;
+    pub fn payload(mut self, payload: Payload) -> Self {
+        self.payload = Some(payload);
         self
     }
 
@@ -409,7 +409,7 @@ impl Request {
                 &wit::Request {
                     inherit: self.inherit,
                     expects_response: self.timeout,
-                    ipc: serde_json::to_vec(&ipc)?,
+                    ipc,
                     metadata: self.metadata,
                 },
                 self.context.as_ref(),
@@ -428,7 +428,7 @@ impl Request {
                 &wit::Request {
                     inherit: self.inherit,
                     expects_response: self.timeout,
-                    ipc: serde_json::to_vec(&ipc)?,
+                    ipc,
                     metadata: self.metadata,
                 },
                 self.payload.as_ref(),
@@ -479,8 +479,8 @@ impl Response {
         self
     }
 
-    pub fn payload(mut self, payload: Option<Payload>) -> Self {
-        self.payload = payload;
+    pub fn payload(mut self, payload: Payload) -> Self {
+        self.payload = Some(payload);
         self
     }
 
@@ -518,7 +518,7 @@ impl Response {
             crate::send_response(
                 &wit::Response {
                     inherit: self.inherit,
-                    ipc: serde_json::to_vec(&ipc)?,
+                    ipc,
                     metadata: self.metadata,
                 },
                 self.payload.as_ref(),
@@ -564,14 +564,6 @@ where
         },
         None => None,
     }
-}
-
-pub fn set_typed_state<T, F>(state: &T, serializer: F) -> anyhow::Result<()>
-where
-    F: Fn(&T) -> anyhow::Result<Vec<u8>>,
-{
-    crate::set_state(&serializer(state)?);
-    Ok(())
 }
 
 pub fn grant_messaging(our: &Address, grant_to: &Vec<ProcessId>) -> anyhow::Result<()> {

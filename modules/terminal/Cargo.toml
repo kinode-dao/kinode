@@ -23,6 +23,3 @@ crate-type = ["cdylib"]
 
 [package.metadata.component]
 package = "uqbar:process"
-
-[package.metadata.component.target]
-path = "wit"

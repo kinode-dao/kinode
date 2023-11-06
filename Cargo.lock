@@ -5106,7 +5106,6 @@ dependencies = [
  "bincode",
  "rand",
  "serde",
- "serde_json",
  "wit-bindgen",
 ]
 

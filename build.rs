@@ -153,7 +153,7 @@ fn main() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
 
-        if package_name != "terminal" {
+        if package_name != "homepage" {
             continue;
         }
 

@@ -363,31 +363,22 @@ impl std::fmt::Display for Message {
         match self {
             Message::Request(request) => write!(
                 f,
-                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n    )",
+                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {} bytes,\n        metadata: {}\n    )",
                 request.inherit,
                 request.expects_response,
-                match serde_json::from_slice::<serde_json::Value>(&request.ipc) {
-                    Ok(json) => format!("{}", json),
-                    Err(_) => format!("{:?}", request.ipc),
-                },
+                request.ipc.len(),
                 &request.metadata.as_ref().unwrap_or(&"None".into()),
             ),
             Message::Response((response, context)) => write!(
                 f,
-                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
+                "Response(\n        inherit: {},\n        ipc: {} bytes,\n        metadata: {},\n        context: {} bytes\n    )",
                 response.inherit,
-                match serde_json::from_slice::<serde_json::Value>(&response.ipc) {
-                    Ok(json) => format!("{}", json),
-                    Err(_) => format!("{:?}", response.ipc),
-                },
+                response.ipc.len(),
                 &response.metadata.as_ref().unwrap_or(&"None".into()),
                 if context.is_none() {
-                    "None".into()
+                    0
                 } else {
-                    match serde_json::from_slice::<serde_json::Value>(&context.as_ref().unwrap()) {
-                        Ok(json) => format!("{}", json),
-                        Err(_) => format!("{:?}", context.as_ref().unwrap()),
-                    }
+                    context.as_ref().unwrap().len()
                 },
             ),
         }
