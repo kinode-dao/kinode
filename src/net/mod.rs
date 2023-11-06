@@ -887,8 +887,7 @@ async fn handle_local_message(
                     let read = peer.read().await;
                     printout.push_str(&format!(
                         "{}, routing_for={}\r\n",
-                        read.identity.name,
-                        read.routing_for,
+                        read.identity.name, read.routing_for,
                     ));
                 }
                 printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
