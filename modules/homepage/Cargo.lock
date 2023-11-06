@@ -19,9 +19,9 @@ dependencies = [
 
 [[package]]
 name = "bitflags"
-version = "2.4.0"
+version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4682ae6287fcf752ecaabbfcc7b6f9b72aa33933dc23a554d853aea8eea8635"
+checksum = "327762f6e5a765692301e5bb513e0d9fef63be86bbc14528052b1cd3e6f03e07"
 
 [[package]]
 name = "cfg-if"
@@ -122,9 +122,9 @@ checksum = "5b40af805b3121feab8a3c29f04d8ad262fa8e0561883e7653e024ae4479e6de"
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.66"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18fb31db3f9bddb2ea821cde30a9f70117e3f119938b5ee630b7403aa6e2ead9"
+checksum = "134c189feb4956b20f6f547d2cf727d4c0fe06722b20a0eec87ed445a97f92da"
 dependencies = [
  "unicode-ident",
 ]
@@ -182,18 +182,18 @@ checksum = "836fa6a3e1e547f9a2c4040802ec865b5d85f4014efe00555d7090a3dcaa1090"
 
 [[package]]
 name = "serde"
-version = "1.0.188"
+version = "1.0.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf9e0fcba69a370eed61bcf2b728575f726b50b55cba78064753d708ddc7549e"
+checksum = "a834c4821019838224821468552240d4d95d14e751986442c816572d39a080c9"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.188"
+version = "1.0.191"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4eca7ac642d82aa35b60049a6eccb4be6be75e599bd2e9adb5f875a737654af2"
+checksum = "46fa52d5646bce91b680189fe5b1c049d2ea38dabb4e2e7c8d00ca12cfbfbcfd"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -202,9 +202,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.106"
+version = "1.0.108"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2cc66a619ed80bf7a0f6b17dd063a84b88f6dea1813737cf469aef1d081142c2"
+checksum = "3d1c7e3eac408d115102c4c24ad393e0821bb3a5df4d506a80f85f7a742a526b"
 dependencies = [
  "itoa",
  "ryu",
@@ -228,9 +228,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.32"
+version = "2.0.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "239814284fd6f1a4ffe4ca893952cdd93c224b6a1571c9a9eadd670295c0c9e2"
+checksum = "23e78b90f2fcf45d3e842032ce32e3f2d1545ba6636271dcbf24fa306d87be7a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -239,9 +239,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-ident"
-version = "1.0.11"
+version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "301abaae475aa91687eb82514b328ab47a211a533026cb25fc3e519b86adfc3c"
+checksum = "3354b9ac3fae1ff6755cb6db53683adb661634f67557942dea4facebec0fee4b"
 
 [[package]]
 name = "unicode-segmentation"
@@ -310,7 +310,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen"
 version = "0.13.1"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#23e0c1463f31cb53fb390a7c744a3ced282a579a"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=5390bab780733f1660d14c254ec985df2816bf1d#5390bab780733f1660d14c254ec985df2816bf1d"
 dependencies = [
  "bitflags",
  "wit-bindgen-rust-macro",
@@ -319,7 +319,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-core"
 version = "0.13.1"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#23e0c1463f31cb53fb390a7c744a3ced282a579a"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=5390bab780733f1660d14c254ec985df2816bf1d#5390bab780733f1660d14c254ec985df2816bf1d"
 dependencies = [
  "anyhow",
  "wit-component",
@@ -329,7 +329,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rust"
 version = "0.13.2"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#23e0c1463f31cb53fb390a7c744a3ced282a579a"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=5390bab780733f1660d14c254ec985df2816bf1d#5390bab780733f1660d14c254ec985df2816bf1d"
 dependencies = [
  "anyhow",
  "heck",
@@ -341,7 +341,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rust-macro"
 version = "0.13.1"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#23e0c1463f31cb53fb390a7c744a3ced282a579a"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=5390bab780733f1660d14c254ec985df2816bf1d#5390bab780733f1660d14c254ec985df2816bf1d"
 dependencies = [
  "anyhow",
  "proc-macro2",

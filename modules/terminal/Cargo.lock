@@ -263,7 +263,6 @@ dependencies = [
  "bincode",
  "rand",
  "serde",
- "serde_json",
  "wit-bindgen",
 ]
 
@@ -311,7 +310,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen"
 version = "0.13.1"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#5390bab780733f1660d14c254ec985df2816bf1d"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=5390bab780733f1660d14c254ec985df2816bf1d#5390bab780733f1660d14c254ec985df2816bf1d"
 dependencies = [
  "bitflags",
  "wit-bindgen-rust-macro",
@@ -320,7 +319,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-core"
 version = "0.13.1"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#5390bab780733f1660d14c254ec985df2816bf1d"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=5390bab780733f1660d14c254ec985df2816bf1d#5390bab780733f1660d14c254ec985df2816bf1d"
 dependencies = [
  "anyhow",
  "wit-component",
@@ -330,7 +329,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rust"
 version = "0.13.2"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#5390bab780733f1660d14c254ec985df2816bf1d"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=5390bab780733f1660d14c254ec985df2816bf1d#5390bab780733f1660d14c254ec985df2816bf1d"
 dependencies = [
  "anyhow",
  "heck",
@@ -342,7 +341,7 @@ dependencies = [
 [[package]]
 name = "wit-bindgen-rust-macro"
 version = "0.13.1"
-source = "git+https://github.com/bytecodealliance/wit-bindgen#5390bab780733f1660d14c254ec985df2816bf1d"
+source = "git+https://github.com/bytecodealliance/wit-bindgen?rev=5390bab780733f1660d14c254ec985df2816bf1d#5390bab780733f1660d14c254ec985df2816bf1d"
 dependencies = [
  "anyhow",
  "proc-macro2",

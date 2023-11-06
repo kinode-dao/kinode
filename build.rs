@@ -153,7 +153,7 @@ fn main() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
 
-        if package_name != "homepage" {
+        if !["homepage", "http_proxy", "qns_indexer", "terminal"].contains(&package_name)  {
             continue;
         }
 

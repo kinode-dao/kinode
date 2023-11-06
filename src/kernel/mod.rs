@@ -1113,8 +1113,8 @@ async fn make_process_loop(
     let mut linker = Linker::new(&engine);
     Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
 
-    let mut table = Table::new();
-    let wasi = WasiCtxBuilder::new().build(&mut table).unwrap();
+    let table = Table::new();
+    let wasi = WasiCtxBuilder::new().build(); // (&mut table).unwrap();
 
     wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
     // wasmtime_wasi::preview2::bindings::clocks::wall_clock::add_to_linker(&mut linker, |t| t)
