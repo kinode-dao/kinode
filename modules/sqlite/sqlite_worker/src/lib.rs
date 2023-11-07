@@ -1,23 +1,23 @@
-cargo_component_bindings::generate!();
-
 use core::ffi::{c_char, c_int, c_ulonglong, CStr};
 use std::ffi::CString;
 
+use rusqlite::{types::FromSql, types::FromSqlError, types::ToSql, types::ValueRef};
+
+use uqbar_process_lib::{Address, ProcessId, Response};
+use uqbar_process_lib::uqbar::process::standard as wit;
+
 use crate::sqlite_types::Deserializable;
 
-use rusqlite::{types::FromSql, types::FromSqlError, types::ToSql, types::ValueRef};
-// use serde::{Deserialize, Serialize};
+wit_bindgen::generate!({
+    path: "../../../wit",
+    world: "process",
+    exports: {
+        world: Component,
+    },
+});
 
-use bindings::component::uq_process::types::*;
-use bindings::{get_payload, Guest, print_to_terminal, receive, send_and_await_response, send_response};
-
-mod kernel_types;
-use kernel_types as kt;
-mod process_lib;
 mod sqlite_types;
 use sqlite_types as sq;
-
-struct Component;
 
 const PREFIX: &str = "sqlite-";
 
@@ -167,11 +167,11 @@ fn from_cbytes_to_vec_u8(bytes: *mut CBytes) -> Vec<u8> {
     bytes
 }
 
-impl From<Option<Payload>> for CPrePayload {
-    fn from(p: Option<Payload>) -> Self {
+impl From<Option<wit::Payload>> for CPrePayload {
+    fn from(p: Option<wit::Payload>) -> Self {
         let (is_empty, mime, bytes) = match p {
             None => (0, COptionStr::new(None), CBytes::new_empty()),
-            Some(Payload { mime, bytes }) => {
+            Some(wit::Payload { mime, bytes }) => {
                 let mime = match mime {
                     Some(s) => Some(s.as_bytes().to_vec()),
                     None => None,
@@ -187,14 +187,14 @@ impl From<Option<Payload>> for CPrePayload {
     }
 }
 
-impl From<CPayload> for Option<Payload> {
+impl From<CPayload> for Option<wit::Payload> {
     fn from(p: CPayload) -> Self {
         if p.is_empty == 0 {
             None
         } else {
             let mime = from_coptionstr_to_option_string(p.mime);
             let bytes = from_cbytes_to_vec_u8(p.bytes);
-            Some(Payload {
+            Some(wit::Payload {
                 mime,
                 bytes,
             })
@@ -202,13 +202,13 @@ impl From<CPayload> for Option<Payload> {
     }
 }
 
-fn from_cpayload_to_option_payload(p: *const CPayload) -> Option<Payload> {
+fn from_cpayload_to_option_payload(p: *const CPayload) -> Option<wit::Payload> {
     if unsafe { (*p).is_empty == 0 } {
         None
     } else {
         let mime = unsafe { from_coptionstr_to_option_string((*p).mime) };
         let bytes = unsafe { from_cbytes_to_vec_u8((*p).bytes) };
-        Some(Payload {
+        Some(wit::Payload {
             mime,
             bytes,
         })
@@ -234,7 +234,7 @@ pub extern "C" fn get_payload_wrapped(return_val: *mut CPayload) {
     // in memory due to an fs bug where chunk size may be bigger than requested
     let max_len = unsafe { (*(*return_val).bytes).len.clone() };
 
-    let payload = get_payload();
+    let payload = wit::get_payload();
     let mime_len = {
         match payload {
             None => None,
@@ -317,13 +317,13 @@ pub extern "C" fn send_and_await_response_wrapped(
     let request_metadata = from_coptionstr_to_option_string(request_metadata);
     let (
         _,
-        Message::Response((Response { ipc, metadata, .. }, _)),
-    ) = send_and_await_response(
-        &Address {
+        wit::Message::Response((wit::Response { ipc, metadata, .. }, _)),
+    ) = wit::send_and_await_response(
+        &wit::Address {
             node: target_node,
             process: target_process,
         },
-        &Request {
+        &wit::Request {
             inherit: false,
             expects_response: Some(timeout),
             ipc: request_ipc,
@@ -346,25 +346,20 @@ pub extern "C" fn send_and_await_response_wrapped(
 }
 
 fn handle_message (
-    our: &Address,
+    our: &wit::Address,
     db_handle: &mut Option<rusqlite::Connection>,
 ) -> anyhow::Result<()> {
-    let (source, message) = receive().unwrap();
-    // let (source, message) = receive()?;
+    let (source, message) = wit::receive().unwrap();
 
     if our.node != source.node {
         return Err(sq::SqliteError::RejectForeign.into());
     }
 
     match message {
-        Message::Response(_) => { unimplemented!() },
-        Message::Request(Request { ipc, .. }) => {
-            match process_lib::parse_message_ipc(&ipc)? {
+        wit::Message::Response(_) => { unimplemented!() },
+        wit::Message::Request(wit::Request { ipc, .. }) => {
+            match serde_json::from_slice(&ipc)? {
                 sq::SqliteMessage::New { db } => {
-                    let vfs_address = Address {
-                        node: our.node.clone(),
-                        process: kt::ProcessId::new("vfs", "sys", "uqbar").en_wit(),
-                    };
                     let vfs_drive = format!("{}{}", PREFIX, db);
 
                     match db_handle {
@@ -391,7 +386,7 @@ fn handle_message (
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
-                    match get_payload() {
+                    match wit::get_payload() {
                         None => {
                             let parameters: Vec<&dyn rusqlite::ToSql> = vec![];
                             db_handle.execute(
@@ -399,7 +394,7 @@ fn handle_message (
                                 &parameters[..],
                             )?;
                         },
-                        Some(Payload { mime: _, ref bytes }) => {
+                        Some(wit::Payload { mime: _, ref bytes }) => {
                             let parameters = Vec::<sq::SqlValue>::from_serialized(&bytes)?;
                             let parameters: Vec<&dyn rusqlite::ToSql> = parameters
                                 .iter()
@@ -413,14 +408,9 @@ fn handle_message (
                         },
                     }
 
-                    send_response(
-                        &Response {
-                            inherit: false,
-                            ipc,
-                            metadata: None,
-                        },
-                        None,
-                    );
+                    Response::new()
+                        .ipc_bytes(ipc)
+                        .send()?;
                 },
                 sq::SqliteMessage::Read { ref query, .. } => {
                     let Some(db_handle) = db_handle else {
@@ -445,17 +435,13 @@ fn handle_message (
 
                     let results = rmp_serde::to_vec(&results).unwrap();
 
-                    send_response(
-                        &Response {
-                            inherit: false,
-                            ipc,
-                            metadata: None,
-                        },
-                        Some(&Payload {
+                    Response::new()
+                        .ipc_bytes(ipc)
+                        .payload(wit::Payload {
                             mime: None,
                             bytes: results,
-                        }),
-                    );
+                        })
+                        .send()?;
                 },
             }
 
@@ -464,10 +450,12 @@ fn handle_message (
     }
 }
 
+struct Component;
 impl Guest for Component {
-    fn init(our: Address) {
-        print_to_terminal(1, "sqlite_worker: begin");
+    fn init(our: String) {
+        wit::print_to_terminal(1, "sqlite_worker: begin");
 
+        let our = Address::from_str(&our).unwrap();
         let mut db_handle: Option<rusqlite::Connection> = None;
 
         loop {
@@ -475,10 +463,16 @@ impl Guest for Component {
                 Ok(()) => {},
                 Err(e) => {
                     //  TODO: should we send an error on failure?
-                    print_to_terminal(0, format!(
+                    wit::print_to_terminal(0, format!(
                         "sqlite_worker: error: {:?}",
                         e,
                     ).as_str());
+                    if let Some(e) = e.downcast_ref::<sq::SqliteError>() {
+                        Response::new()
+                            .ipc_bytes(serde_json::to_vec(&e).unwrap())
+                            .send()
+                            .unwrap();
+                    }
                 },
             };
         }

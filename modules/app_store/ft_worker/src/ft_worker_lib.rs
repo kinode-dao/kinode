@@ -1,6 +1,5 @@
-use super::bindings::component::uq_process::types::*;
-use super::bindings::{print_to_terminal, send_request, spawn, Address, Payload};
 use serde::{Deserialize, Serialize};
+use uqbar_process_lib::uqbar::process::standard::*;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileTransferContext {
@@ -84,15 +83,17 @@ pub fn spawn_transfer(
             .unwrap(),
             metadata: None,
         },
-        Some(&serde_json::to_vec(&FileTransferContext {
-            file_name: file_name.into(),
-            file_size: match &payload_or_inherit {
-                Some(p) => Some(p.bytes.len() as u64),
-                None => None, // TODO
-            },
-            start_time: std::time::SystemTime::now(),
-        })
-        .unwrap()),
+        Some(
+            &serde_json::to_vec(&FileTransferContext {
+                file_name: file_name.into(),
+                file_size: match &payload_or_inherit {
+                    Some(p) => Some(p.bytes.len() as u64),
+                    None => None, // TODO
+                },
+                start_time: std::time::SystemTime::now(),
+            })
+            .unwrap(),
+        ),
         payload_or_inherit.as_ref(),
     );
 }

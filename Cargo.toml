@@ -61,8 +61,9 @@ thiserror = "1.0.43"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 tokio-tungstenite = "*"
 url = "*"
+uqbar_process_lib = { path = "process_lib" }
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"
-wasmtime = "12.0.1"
-wasmtime-wasi = "12.0.1"
+wasmtime = "14.0.4"
+wasmtime-wasi = "14.0.4"
 zip = "0.6"
