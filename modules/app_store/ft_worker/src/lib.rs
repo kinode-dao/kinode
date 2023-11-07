@@ -1,14 +1,16 @@
-cargo_component_bindings::generate!();
-use bindings::component::uq_process::types::*;
-use bindings::{get_payload, print_to_terminal, receive, send_request, send_response, Guest};
 use serde::{Deserialize, Serialize};
-
-struct Component;
+use uqbar_process_lib::uqbar::process::standard::*;
 
 mod ft_worker_lib;
-#[allow(dead_code)]
-mod process_lib;
 use ft_worker_lib::*;
+
+wit_bindgen::generate!({
+    path: "../../../wit",
+    world: "process",
+    exports: {
+        world: Component,
+    },
+});
 
 /// internal worker protocol
 #[derive(Debug, Serialize, Deserialize)]
@@ -17,8 +19,10 @@ pub enum FTWorkerProtocol {
     Finished,
 }
 
+struct Component;
 impl Guest for Component {
-    fn init(our: Address) {
+    fn init(our: String) {
+        let our = Address::from_str(&our).unwrap();
         print_to_terminal(1, &format!("{}: start", our.process));
 
         let Ok((parent_process, Message::Request(req))) = receive() else {
@@ -49,7 +53,7 @@ impl Guest for Component {
                 // then upon reciving affirmative response,
                 // send contents in chunks and wait for
                 // acknowledgement.
-                match bindings::send_and_await_response(
+                match send_and_await_response(
                     &Address::from_str(&target).unwrap(),
                     &Request {
                         inherit: false,

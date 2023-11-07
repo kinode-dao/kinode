@@ -1,3 +1,4 @@
+use crate::types::*;
 use anyhow::Result;
 use clap::Parser;
 use dotenv;
@@ -6,8 +7,6 @@ use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::{fs, time::timeout};
-
-use crate::types::*;
 
 mod encryptor;
 mod eth_rpc;
