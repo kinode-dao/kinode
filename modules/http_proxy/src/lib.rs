@@ -68,6 +68,7 @@ fn main(our: Address) -> anyhow::Result<()> {
     // bind to all of our favorite paths
     for path in ["/", "/static/*", "/list", "/register", "/serve/:username/*"] {
         Request::new()
+            .target(Address::new(&our.node, "http_server:sys:uqbar")?)?
             .ipc(
                 &json!({
                     "BindPath": {
@@ -273,6 +274,7 @@ fn main(our: Address) -> anyhow::Result<()> {
                 }
 
                 Request::new()
+                    .target(Address::new(&username, "http_server:sys:uqbar")?)?
                     .inherit(true)
                     .ipc(
                         &json!({

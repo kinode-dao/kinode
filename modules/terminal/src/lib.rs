@@ -11,7 +11,7 @@ wit_bindgen::generate!({
 });
 
 fn serialize_message(message: &&str) -> anyhow::Result<Vec<u8>> {
-    Ok(serde_json::to_vec(message)?)
+    Ok(message.as_bytes().to_vec())
 }
 
 fn parse_command(our_name: &str, line: &str) -> anyhow::Result<()> {

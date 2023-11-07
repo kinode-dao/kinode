@@ -104,7 +104,7 @@ fn subscribe_to_qns(from_block: u64) -> Vec<u8> {
 }
 
 fn serialize_message(message: &NetActions) -> anyhow::Result<Vec<u8>> {
-    Ok(serde_json::to_vec(message)?)
+    Ok(rmp_serde::to_vec(message)?)
 }
 
 fn serialize_json_message(message: &serde_json::Value) -> anyhow::Result<Vec<u8>> {

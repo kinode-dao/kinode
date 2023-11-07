@@ -153,21 +153,6 @@ fn main() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
 
-        if ![
-            "app_store",
-            "chess",
-            "homepage",
-            "http_proxy",
-            "key_value",
-            "qns_indexer",
-            "sqlite",
-            "terminal",
-        ]
-        .contains(&package_name)
-        {
-            continue;
-        }
-
         // If Cargo.toml is present, build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());
         if entry_path.join("Cargo.toml").exists() {

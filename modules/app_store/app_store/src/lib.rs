@@ -4,8 +4,8 @@ use std::collections::{HashMap, HashSet};
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
 use uqbar_process_lib::{
-    get_capability, get_payload, get_typed_state, grant_messaging, receive, set_state, Address,
-    Message, NodeId, PackageId, ProcessId, Request, Response,
+    get_capability, get_payload, get_typed_state, grant_messaging, println, receive, set_state,
+    Address, Message, NodeId, PackageId, ProcessId, Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -158,15 +158,9 @@ pub enum InstallResponse {
     Failure,
 }
 
-//
-// app store init()
-//
-
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
-        assert_eq!(our.process, "main:app_store:uqbar");
-
         // begin by granting messaging capabilities to http_server and terminal,
         // so that they can send us requests.
         grant_messaging(
@@ -176,16 +170,14 @@ impl Guest for Component {
                 ProcessId::from_str("terminal:terminal:uqbar").unwrap(),
             ]),
         );
-        println!("app_store main proc: start");
+        println!("{}: start", our.process);
 
         // load in our saved state or initalize a new one if none exists
-        let mut state = get_typed_state(|bytes| {
-            Ok(bincode::deserialize(bytes).unwrap_or(State {
+        let mut state =
+            get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)).unwrap_or(State {
                 packages: HashMap::new(),
                 requested_packages: HashSet::new(),
-            }))
-        })
-        .unwrap();
+            });
 
         // active the main messaging loop: handle requests and responses
         loop {
