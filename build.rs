@@ -155,6 +155,7 @@ fn main() {
 
         if ![
             "app_store",
+            "chess",
             "homepage",
             "http_proxy",
             "key_value",
