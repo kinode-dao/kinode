@@ -114,11 +114,15 @@ fn handle_message (
                         &vfs_address,
                         &make_vfs_cap("write", &vfs_drive),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
+                    let messaging = wit::get_capability(
+                        &source,
+                        &"\"messaging\"".into(),
+                    ).ok_or(anyhow::anyhow!("New failed: no source 'messaging' capability found"))?;
                     let spawned_process_id = match wit::spawn(
                         None,
                         "/sqlite_worker.wasm",
                         &wit::OnPanic::None,  //  TODO: notify us
-                        &wit::Capabilities::Some(vec![vfs_read, vfs_write]),
+                        &wit::Capabilities::Some(vec![vfs_read, vfs_write, messaging]),
                         false, // not public
                     ) {
                         Ok(spawned_process_id) => spawned_process_id,

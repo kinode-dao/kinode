@@ -18,6 +18,12 @@ enum TesterRequest {
     Run,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+enum TesterResponse {
+    Pass,
+    Fail,
+}
+
 #[derive(Debug, Serialize, Deserialize, thiserror::Error)]
 enum TesterError {
     #[error("RejectForeign")]
@@ -68,21 +74,7 @@ fn handle_message (our: &Address) -> anyhow::Result<()> {
                     wit::print_to_terminal(0, &format!("tester: running {:?}...", children));
 
                     for child in &children {
-                        let (_, response) = Request::new()
-                            .target(make_vfs_address(&our)?)?
-                            .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
-                                drive: "tester:uqbar".into(),
-                                action: kt::VfsAction::GetEntryLength(child.into()),
-                            })?)
-                            .send_and_await_response(5)??;
-
-                        let wit::Message::Response((response, _)) = response else { panic!("") };
-                        let kt::VfsResponse::GetEntryLength(length) =
-                            serde_json::from_slice(&response.ipc)? else { panic!("") };
-
-                        wit::print_to_terminal(0, &format!("tester: child {} length {:?}", child, length));
-
-                        match wit::spawn(
+                        let child_process_id = match wit::spawn(
                             None,
                             child,
                             &wit::OnPanic::None, //  TODO: notify us
@@ -95,9 +87,23 @@ fn handle_message (our: &Address) -> anyhow::Result<()> {
                                 panic!("couldn't spawn"); //  TODO
                             }
                         };
+
+                        let (_, response) = Request::new()
+                            .target(Address {
+                                node: our.node.clone(),
+                                process: child_process_id,
+                            })?
+                            .ipc_bytes(ipc.clone())
+                            .send_and_await_response(5)??;
+
+                        let wit::Message::Response((response, _)) = response else { panic!("") };
+                        let TesterResponse::Pass = serde_json::from_slice(&response.ipc)? else {
+                            return Err(anyhow::anyhow!("{} FAIL", child))
+                        };
                     }
+
                     Response::new()
-                        .ipc_bytes(serde_json::to_vec(&ipc).unwrap())
+                        .ipc_bytes(serde_json::to_vec(&TesterResponse::Pass).unwrap())
                         .send()
                         .unwrap();
                 },
@@ -116,7 +122,6 @@ impl Guest for Component {
 
         // orchestrate tests using external scripts
         //  -> must give drive cap to rpc
-        // TODO: need read as well?
         let drive_cap = wit::get_capability(
             &make_vfs_address(&our).unwrap(),
             &serde_json::to_string(&serde_json::json!({
@@ -134,16 +139,10 @@ impl Guest for Component {
                         "tester: error: {:?}",
                         e,
                     ).as_str());
-                    // if let Some(e) = e.downcast_ref::<sq::SqliteError>() {
-                    //     send_response(
-                    //         &Response {
-                    //             inherit: false,
-                    //             ipc: serde_json::to_vec(&e).unwrap(),
-                    //             metadata: None,
-                    //         },
-                    //         None,
-                    //     );
-                    // }
+                    Response::new()
+                        .ipc_bytes(serde_json::to_vec(&TesterResponse::Fail).unwrap())
+                        .send()
+                        .unwrap();
                 },
             };
         }
