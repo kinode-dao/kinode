@@ -326,6 +326,10 @@ fn handle_local_request(
                 process: ProcessId::from_str("vfs:sys:uqbar")?,
             };
 
+            let Some(mut payload) = get_payload() else {
+                return Err(anyhow::anyhow!("no payload"));
+            };
+
             Request::new()
                 .target(vfs_address.clone())?
                 .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
@@ -334,9 +338,6 @@ fn handle_local_request(
                 })?)
                 .send_and_await_response(5)??;
 
-            let Some(mut payload) = get_payload() else {
-                return Err(anyhow::anyhow!("no payload"));
-            };
             // produce the version hash for this new package
             let mut hasher = sha2::Sha256::new();
             hasher.update(&payload.bytes);
