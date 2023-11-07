@@ -59,7 +59,7 @@ fn handle_message (our: &Address) -> anyhow::Result<()> {
 
                     let wit::Message::Response((response, _)) = response else { panic!("") };
                     let kt::VfsResponse::GetEntry { children, .. } =
-                        serde_json::from_slice(&ipc)? else { panic!("") };
+                        serde_json::from_slice(&response.ipc)? else { panic!("") };
                     let mut children: HashSet<_> = children.into_iter().collect();
                     children.remove("/manifest.json");
                     children.remove("/metadata.json");
@@ -78,7 +78,7 @@ fn handle_message (our: &Address) -> anyhow::Result<()> {
 
                         let wit::Message::Response((response, _)) = response else { panic!("") };
                         let kt::VfsResponse::GetEntryLength(length) =
-                            serde_json::from_slice(&ipc)? else { panic!("") };
+                            serde_json::from_slice(&response.ipc)? else { panic!("") };
 
                         wit::print_to_terminal(0, &format!("tester: child {} length {:?}", child, length));
 
