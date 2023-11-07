@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use uqbar_process_lib::component::uq_process::api::*;
+use uqbar_process_lib::uqbar::process::standard::*;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileTransferContext {

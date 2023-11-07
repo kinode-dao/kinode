@@ -6,7 +6,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::string::FromUtf8Error;
 use uqbar_process_lib::{
-    get_typed_state, receive, set_state, Address, Message, Payload, ProcessId, Request,
+    get_typed_state, receive, set_state, Address, Message, Payload, Request,
     Response,
 };
 
@@ -105,10 +105,6 @@ fn subscribe_to_qns(from_block: u64) -> Vec<u8> {
 
 fn serialize_message(message: &NetActions) -> anyhow::Result<Vec<u8>> {
     Ok(serde_json::to_vec(message)?)
-}
-
-fn deserialize_message(bytes: &[u8]) -> anyhow::Result<NetActions> {
-    Ok(serde_json::from_slice(bytes)?)
 }
 
 fn serialize_json_message(message: &serde_json::Value) -> anyhow::Result<Vec<u8>> {

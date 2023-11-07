@@ -350,8 +350,8 @@ impl Request {
         Ok(self)
     }
 
-    pub fn metadata(mut self, metadata: Option<String>) -> Self {
-        self.metadata = metadata;
+    pub fn metadata(mut self, metadata: String) -> Self {
+        self.metadata = Some(metadata);
         self
     }
 
@@ -389,8 +389,8 @@ impl Request {
         }
     }
 
-    pub fn context_bytes(mut self, context: Option<Vec<u8>>) -> Self {
-        self.context = context;
+    pub fn context_bytes(mut self, context: Vec<u8>) -> Self {
+        self.context = Some(context);
         self
     }
 
@@ -421,13 +421,13 @@ impl Request {
         }
     }
 
-    pub fn send_and_await_response(self) -> anyhow::Result<Result<(Address, Message), SendError>> {
+    pub fn send_and_await_response(self, timeout: u64) -> anyhow::Result<Result<(Address, Message), SendError>> {
         if let (Some(target), Some(ipc)) = (self.target, self.ipc) {
             Ok(crate::send_and_await_response(
                 &target,
                 &wit::Request {
                     inherit: self.inherit,
-                    expects_response: self.timeout,
+                    expects_response: Some(timeout),
                     ipc,
                     metadata: self.metadata,
                 },

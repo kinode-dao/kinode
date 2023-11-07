@@ -1,19 +1,16 @@
 use serde::{Deserialize, Serialize};
-use uqbar_process_lib::component::uq_process::api::*;
-use uqbar_process_lib::component::uq_process::types::SendErrorKind;
+use uqbar_process_lib::uqbar::process::standard::*;
 
 mod ft_worker_lib;
 use ft_worker_lib::*;
 
 wit_bindgen::generate!({
     path: "../../../wit",
-    world: "uq-process",
+    world: "process",
     exports: {
         world: Component,
     },
 });
-
-struct Component;
 
 /// internal worker protocol
 #[derive(Debug, Serialize, Deserialize)]
@@ -22,6 +19,7 @@ pub enum FTWorkerProtocol {
     Finished,
 }
 
+struct Component;
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
