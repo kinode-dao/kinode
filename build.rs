@@ -157,7 +157,9 @@ fn main() {
             "app_store",
             "homepage",
             "http_proxy",
+            "key_value",
             "qns_indexer",
+            "sqlite",
             "terminal",
         ]
         .contains(&package_name)
