@@ -18,6 +18,7 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::RwLock;
+use lru_mem::LruCache;
 use uuid;
 
 /// Contains interface for filesystem manifest log, and write ahead log.
@@ -173,6 +174,7 @@ pub struct Manifest {
     pub flush_cold_freq: usize,
 
     pub memory_buffer: Arc<RwLock<Vec<u8>>>,
+    pub read_cache: Arc<RwLock<LruCache<[u8; 32], Vec<u8>>>>,
     pub memory_limit: usize,
     pub chunk_size: usize,
     pub cipher: Arc<XChaCha20Poly1305>,
@@ -202,6 +204,12 @@ impl Manifest {
         verify_manifest(&mut manifest, &mut chunk_hashes, &mut hash_index).await?;
         let cipher = XChaCha20Poly1305::new_from_slice(&file_key).unwrap();
 
+        //  read_cache buffer size defined in .env, naive calc of capacity would be buffer_size / chunk_size.
+        //  note that old chunks might be different sizes, so we might need a custom solution for this.  
+        //  e.g defines capacity as bytes, and evicts stuff from cache based on that. 
+        //  note, found lib that does that. but, doesn't play well with Read only locks (might evict value etc.)
+        let read_cache: LruCache<[u8; 32], Vec<u8>> = LruCache::new(5242880);
+
         let s3_client = if let Some(s3_config) = fs_config.s3_config {
             match parse_s3_config(s3_config) {
                 Ok((s3_client, bucket)) => Some((s3_client, bucket)),
@@ -223,6 +231,7 @@ impl Manifest {
             fs_directory_path: fs_directory_path.clone(),
             flush_cold_freq: fs_config.flush_to_cold_interval,
             memory_buffer: Arc::new(RwLock::new(Vec::new())),
+            read_cache: Arc::new(RwLock::new(read_cache)),
             memory_limit: fs_config.mem_buffer_limit,
             chunk_size: fs_config.chunk_size,
             cipher: Arc::new(cipher),
@@ -531,87 +540,96 @@ impl Manifest {
         };
 
         for (start_chunk, (hash, len, location, encrypted)) in filtered_chunks {
-            let mut chunk_data = match location {
-                ChunkLocation::Memory(offset) => {
-                    let len = if encrypted {
-                        len + ENCRYPTION_OVERHEAD as u64
-                    } else {
-                        len
-                    };
+            let mut read_cache = self.read_cache.write().await;
 
-                    if offset as usize + len as usize > memory_buffer.len() {
-                        return Err(FsError::MemoryBufferError {
-                            error: format!(
-                                "Out of bounds read: offset={}, len={}, memory_buffer size={}",
-                                offset,
-                                len,
-                                memory_buffer.len()
-                            ),
-                        });
-                    }
-                    let mut chunk_data =
-                        memory_buffer[offset as usize..(offset + len) as usize].to_vec();
-                    if encrypted {
-                        chunk_data = decrypt(&cipher, &chunk_data)?;
-                    }
-                    chunk_data
-                }
-                ChunkLocation::WAL(offset) => {
-                    let mut wal_file = self.wal_file.write().await;
-                    wal_file
-                        .seek(SeekFrom::Start(offset))
-                        .await
-                        .map_err(|e| FsError::IOError {
-                            error: format!("Local WAL seek failed: {}", e),
-                        })?;
-                    let len = if encrypted {
-                        len + ENCRYPTION_OVERHEAD as u64
-                    } else {
-                        len
-                    };
-
-                    let mut buffer = vec![0u8; len as usize];
-                    wal_file
-                        .read_exact(&mut buffer)
-                        .await
-                        .map_err(|e| FsError::IOError {
-                            error: format!("Local WAL read failed: {}", e),
-                        })?;
-                    if encrypted {
-                        buffer = decrypt(&cipher, &buffer)?;
-                    }
-                    buffer
-                }
-                ChunkLocation::ColdStorage(local) => {
-                    if local {
-                        let path = self.fs_directory_path.join(hex::encode(hash));
-                        let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
-                            error: format!("Local Cold read failed: {}", e),
-                        })?;
-                        if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
-                        }
-                        buffer
-                    } else {
-                        let file_name = hex::encode(hash);
-                        let (client, bucket) = self.s3_client.as_ref().unwrap();
-                        let req = GetObjectRequest {
-                            bucket: bucket.clone(),
-                            key: file_name.clone(),
-                            ..Default::default()
+            let mut chunk_data = if let Some(cached_data) = read_cache.get(&hash).cloned() {
+                cached_data
+            } else {
+                match location {
+                    ChunkLocation::Memory(offset) => {
+                        let len = if encrypted {
+                            len + ENCRYPTION_OVERHEAD as u64
+                        } else {
+                            len
                         };
-                        let res = client.get_object(req).await?;
-                        let body = res.body.unwrap();
-                        let mut stream = body.into_async_read();
-                        let mut buffer = Vec::new();
-                        stream.read_to_end(&mut buffer).await?;
-                        if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
+    
+                        if offset as usize + len as usize > memory_buffer.len() {
+                            return Err(FsError::MemoryBufferError {
+                                error: format!(
+                                    "Out of bounds read: offset={}, len={}, memory_buffer size={}",
+                                    offset,
+                                    len,
+                                    memory_buffer.len()
+                                ),
+                            });
                         }
+                        let mut chunk_data =
+                            memory_buffer[offset as usize..(offset + len) as usize].to_vec();
+                        if encrypted {
+                            chunk_data = decrypt(&cipher, &chunk_data)?;
+                        }
+                        let _ = read_cache.insert(hash, chunk_data.clone());
+                        chunk_data
+                    }
+                    ChunkLocation::WAL(offset) => {
+                        let mut wal_file = self.wal_file.write().await;
+                        wal_file
+                            .seek(SeekFrom::Start(offset))
+                            .await
+                            .map_err(|e| FsError::IOError {
+                                error: format!("Local WAL seek failed: {}", e),
+                            })?;
+                        let len = if encrypted {
+                            len + ENCRYPTION_OVERHEAD as u64
+                        } else {
+                            len
+                        };
+    
+                        let mut buffer = vec![0u8; len as usize];
+                        wal_file
+                            .read_exact(&mut buffer)
+                            .await
+                            .map_err(|e| FsError::IOError {
+                                error: format!("Local WAL read failed: {}", e),
+                            })?;
+                        if encrypted {
+                            buffer = decrypt(&cipher, &buffer)?;
+                        }
+                        let _ = read_cache.insert(hash, buffer.clone());
                         buffer
                     }
+                    ChunkLocation::ColdStorage(local) => {
+                        if local {
+                            let path = self.fs_directory_path.join(hex::encode(hash));
+                            let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
+                                error: format!("Local Cold read failed: {}", e),
+                            })?;
+                            if encrypted {
+                                buffer = decrypt(&*self.cipher, &buffer)?;
+                            }
+                            buffer
+                        } else {
+                            let file_name = hex::encode(hash);
+                            let (client, bucket) = self.s3_client.as_ref().unwrap();
+                            let req = GetObjectRequest {
+                                bucket: bucket.clone(),
+                                key: file_name.clone(),
+                                ..Default::default()
+                            };
+                            let res = client.get_object(req).await?;
+                            let body = res.body.unwrap();
+                            let mut stream = body.into_async_read();
+                            let mut buffer = Vec::new();
+                            stream.read_to_end(&mut buffer).await?;
+                            if encrypted {
+                                buffer = decrypt(&*self.cipher, &buffer)?;
+                            }
+                            let _ = read_cache.insert(hash, buffer.clone());
+                            buffer
+                        }
+                    }
                 }
-            };
+            }; 
 
             // adjust the chunk data based on the start and length
             if let Some(start) = start {
@@ -658,88 +676,97 @@ impl Manifest {
         };
 
         for (start_chunk, (hash, len, location, encrypted)) in filtered_chunks {
-            let mut chunk_data = match location {
-                ChunkLocation::Memory(offset) => {
-                    let memory_buffer = self.memory_buffer.read().await;
-                    let len = if encrypted {
-                        len + ENCRYPTION_OVERHEAD as u64
-                    } else {
-                        len
-                    };
+            let mut read_cache = self.read_cache.write().await;
 
-                    if offset as usize + len as usize > memory_buffer.len() {
-                        return Err(FsError::MemoryBufferError {
-                            error: format!(
-                                "Out of bounds read: offset={}, len={}, memory_buffer size={}",
-                                offset,
-                                len,
-                                memory_buffer.len()
-                            ),
-                        });
-                    }
-                    let mut chunk_data =
-                        memory_buffer[offset as usize..(offset + len) as usize].to_vec();
-                    if encrypted {
-                        chunk_data = decrypt(&cipher, &chunk_data)?;
-                    }
-                    chunk_data
-                }
-                ChunkLocation::WAL(offset) => {
-                    let mut wal_file = self.wal_file.write().await;
-                    wal_file
-                        .seek(SeekFrom::Start(offset))
-                        .await
-                        .map_err(|e| FsError::IOError {
-                            error: format!("Local WAL seek failed: {}", e),
-                        })?;
-                    let len = if encrypted {
-                        len + ENCRYPTION_OVERHEAD as u64
-                    } else {
-                        len
-                    };
-
-                    let mut buffer = vec![0u8; len as usize];
-                    wal_file
-                        .read_exact(&mut buffer)
-                        .await
-                        .map_err(|e| FsError::IOError {
-                            error: format!("Local WAL read failed: {}", e),
-                        })?;
-                    if encrypted {
-                        buffer = decrypt(&cipher, &buffer)?;
-                    }
-                    buffer
-                }
-                ChunkLocation::ColdStorage(local) => {
-                    if local {
-                        let path = self.fs_directory_path.join(hex::encode(hash));
-                        let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
-                            error: format!("Local Cold read failed: {}", e),
-                        })?;
-                        if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
-                        }
-                        buffer
-                    } else {
-                        let file_name = hex::encode(hash);
-                        let (client, bucket) = self.s3_client.as_ref().unwrap();
-                        let req = GetObjectRequest {
-                            bucket: bucket.clone(),
-                            key: file_name.clone(),
-                            ..Default::default()
+            let mut chunk_data = if let Some(cached_data) = read_cache.get(&hash).cloned() {
+                cached_data
+            } else {
+                match location {
+                    ChunkLocation::Memory(offset) => {
+                        let memory_buffer = self.memory_buffer.read().await;
+                        let len = if encrypted {
+                            len + ENCRYPTION_OVERHEAD as u64
+                        } else {
+                            len
                         };
-                        let res = client.get_object(req).await?;
-                        let body = res.body.unwrap();
-                        let mut stream = body.into_async_read();
-                        let mut buffer = Vec::new();
-                        stream.read_to_end(&mut buffer).await?;
-                        if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
+    
+                        if offset as usize + len as usize > memory_buffer.len() {
+                            return Err(FsError::MemoryBufferError {
+                                error: format!(
+                                    "Out of bounds read: offset={}, len={}, memory_buffer size={}",
+                                    offset,
+                                    len,
+                                    memory_buffer.len()
+                                ),
+                            });
                         }
+                        let mut chunk_data =
+                            memory_buffer[offset as usize..(offset + len) as usize].to_vec();
+                        if encrypted {
+                            chunk_data = decrypt(&cipher, &chunk_data)?;
+                        }
+                        let _ = read_cache.insert(hash, chunk_data.clone());
+                        chunk_data
+                    }
+                    ChunkLocation::WAL(offset) => {
+                        let mut wal_file = self.wal_file.write().await;
+                        wal_file
+                            .seek(SeekFrom::Start(offset))
+                            .await
+                            .map_err(|e| FsError::IOError {
+                                error: format!("Local WAL seek failed: {}", e),
+                            })?;
+                        let len = if encrypted {
+                            len + ENCRYPTION_OVERHEAD as u64
+                        } else {
+                            len
+                        };
+    
+                        let mut buffer = vec![0u8; len as usize];
+                        wal_file
+                            .read_exact(&mut buffer)
+                            .await
+                            .map_err(|e| FsError::IOError {
+                                error: format!("Local WAL read failed: {}", e),
+                            })?;
+                        if encrypted {
+                            buffer = decrypt(&cipher, &buffer)?;
+                        }
+                        let _ = read_cache.insert(hash, buffer.clone());
                         buffer
                     }
+                    ChunkLocation::ColdStorage(local) => {
+                        if local {
+                            let path = self.fs_directory_path.join(hex::encode(hash));
+                            let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
+                                error: format!("Local Cold read failed: {}", e),
+                            })?;
+                            if encrypted {
+                                buffer = decrypt(&*self.cipher, &buffer)?;
+                            }
+                            buffer
+                        } else {
+                            let file_name = hex::encode(hash);
+                            let (client, bucket) = self.s3_client.as_ref().unwrap();
+                            let req = GetObjectRequest {
+                                bucket: bucket.clone(),
+                                key: file_name.clone(),
+                                ..Default::default()
+                            };
+                            let res = client.get_object(req).await?;
+                            let body = res.body.unwrap();
+                            let mut stream = body.into_async_read();
+                            let mut buffer = Vec::new();
+                            stream.read_to_end(&mut buffer).await?;
+                            if encrypted {
+                                buffer = decrypt(&*self.cipher, &buffer)?;
+                            }
+                            let _ = read_cache.insert(hash, buffer.clone());
+                            buffer
+                        }
+                    }
                 }
-            };
+            }; 
 
             // adjust the chunk data based on the start and length
             if let Some(start) = start {
@@ -1172,6 +1199,7 @@ impl Clone for Manifest {
             fs_directory_path: self.fs_directory_path.clone(),
             flush_cold_freq: self.flush_cold_freq,
             memory_buffer: Arc::clone(&self.memory_buffer),
+            read_cache: Arc::clone(&self.read_cache),
             memory_limit: self.memory_limit,
             chunk_size: self.chunk_size,
             cipher: Arc::clone(&self.cipher),
