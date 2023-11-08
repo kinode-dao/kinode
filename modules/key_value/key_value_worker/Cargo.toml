@@ -17,14 +17,14 @@ redb = { git = "https://github.com/uqbar-dao/redb", rev = "8e192d9" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
-uqbar_process_lib = { path = "../../../process_lib" }
+uqbar_process_lib = { git = "https://github.com/uqbar-dao/process_lib", rev = "e53c124" }
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "5390bab780733f1660d14c254ec985df2816bf1d" }
 
 [lib]
 crate-type = ["cdylib"]
 
 [package.metadata.component]
-package = "component:uq-process"
+package = "uqbar:process"
 
 [package.metadata.component.target]
 path = "wit"
