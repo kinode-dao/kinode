@@ -30,7 +30,8 @@ pub async fn save_new_peer(
     print_debug(
         &print_tx,
         &format!("net: saving new peer {}", identity.name),
-    ).await;
+    )
+    .await;
     let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
     if km.is_some() {
         peer_tx.send(km.unwrap())?
@@ -457,8 +458,10 @@ fn strip_0x(s: &str) -> String {
 }
 
 pub async fn print_debug(print_tx: &PrintSender, content: &str) {
-    let _ = print_tx.send(Printout {
-        verbosity: 0,
-        content: content.into(),
-    }).await;
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 0,
+            content: content.into(),
+        })
+        .await;
 }
