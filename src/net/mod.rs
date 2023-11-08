@@ -99,6 +99,7 @@ async fn indirect_networking(
     mut message_rx: MessageReceiver,
     reveal_ip: bool,
 ) -> Result<()> {
+    print_debug(&print_tx, "net: starting as indirect").await;
     let mut pki: OnchainPKI = HashMap::new();
     let mut peers: Peers = HashMap::new();
     // mapping from QNS namehash to username
@@ -145,7 +146,7 @@ async fn indirect_networking(
                 // if the message is for a peer we currently have a connection with,
                 // try to send it to them
                 else if let Some(peer) = peers.get_mut(target) {
-                    peer.write().await.sender.send(km)?;
+                    peer.sender.send(km)?;
                 }
                 else if let Some(peer_id) = pki.get(target) {
                     // if the message is for a *direct* peer we don't have a connection with,
@@ -153,6 +154,7 @@ async fn indirect_networking(
                     // here, we can *choose* to use our routers so as not to reveal
                     // networking information about ourselves to the target.
                     if peer_id.ws_routing.is_some() && reveal_ip {
+                        print_debug(&print_tx, &format!("net: attempting to connect to {} directly", peer_id.name)).await;
                         match init_connection(&our, &our_ip, peer_id, &keypair, None, false).await {
                             Ok(direct_conn) => {
                                 save_new_peer(
@@ -177,6 +179,7 @@ async fn indirect_networking(
                     // on chain and try to get one of them to build a proxied connection to
                     // this node for you
                     else {
+                        print_debug(&print_tx, &format!("net: attempting to connect to {} via router", peer_id.name)).await;
                         let sent = time::timeout(TIMEOUT,
                             init_connection_via_router(
                                 &our,
@@ -205,6 +208,7 @@ async fn indirect_networking(
             // 2. deal with active connections that die by removing the associated peer
             // if the peer is one of our routers, remove them from router-set
             Some(Ok((dead_peer, maybe_resend))) = peer_connections.join_next() => {
+                print_debug(&print_tx, &format!("net: connection with {dead_peer} died")).await;
                 peers.remove(&dead_peer);
                 active_routers.remove(&dead_peer);
                 match maybe_resend {
@@ -227,6 +231,7 @@ async fn indirect_networking(
                     let Some(router_id) = pki.get(router) else {
                         continue;
                     };
+                    print_debug(&print_tx, "net: attempting to connect to router").await;
                     match init_connection(&our, &our_ip, router_id, &keypair, None, true).await {
                         Ok(direct_conn) => {
                             print_tx.send(Printout {
@@ -264,6 +269,7 @@ async fn direct_networking(
     self_message_tx: MessageSender,
     mut message_rx: MessageReceiver,
 ) -> Result<()> {
+    print_debug(&print_tx, "net: starting as direct").await;
     let mut pki: OnchainPKI = HashMap::new();
     let mut peers: Peers = HashMap::new();
     // mapping from QNS namehash to username
@@ -311,12 +317,13 @@ async fn direct_networking(
                 // if the message is for a peer we currently have a connection with,
                 // try to send it to them
                 else if let Some(peer) = peers.get_mut(target) {
-                    peer.write().await.sender.send(km)?;
+                    peer.sender.send(km)?;
                 }
                 else if let Some(peer_id) = pki.get(target) {
                     // if the message is for a *direct* peer we don't have a connection with,
                     // try to establish a connection with them
                     if peer_id.ws_routing.is_some() {
+                        print_debug(&print_tx, &format!("net: attempting to connect to {} directly", peer_id.name)).await;
                         match init_connection(&our, &our_ip, peer_id, &keypair, None, false).await {
                             Ok(direct_conn) => {
                                 save_new_peer(
@@ -340,6 +347,7 @@ async fn direct_networking(
                     // on chain and try to get one of them to build a proxied connection to
                     // this node for you
                     else {
+                        print_debug(&print_tx, &format!("net: attempting to connect to {} via router", peer_id.name)).await;
                         let sent = time::timeout(TIMEOUT,
                             init_connection_via_router(
                                 &our,
@@ -372,6 +380,7 @@ async fn direct_networking(
                 // can also block based on socket_addr
                 match accept_async(MaybeTlsStream::Plain(stream)).await {
                     Ok(websocket) => {
+                        print_debug(&print_tx, "net: received new websocket connection").await;
                         let (peer_id, routing_for, conn) =
                             match recv_connection(
                                 &our,
@@ -428,6 +437,7 @@ async fn direct_networking(
             }
             // 3. deal with active connections that die by removing the associated peer
             Some(Ok((dead_peer, maybe_resend))) = peer_connections.join_next() => {
+                print_debug(&print_tx, &format!("net: connection with {dead_peer} died")).await;
                 peers.remove(&dead_peer);
                 match maybe_resend {
                     None => {},
@@ -501,7 +511,7 @@ async fn recv_connection(
     let (mut write_stream, mut read_stream) = websocket.split();
 
     // before we begin XX handshake pattern, check first message over socket
-    let first_message = &ws_recv(&mut read_stream).await?;
+    let first_message = &ws_recv(&mut read_stream, &mut write_stream).await?;
 
     // if the first message contains a "routing request",
     // we see if the target is someone we are actively routing for,
@@ -540,7 +550,8 @@ async fn recv_connection(
     .await?;
 
     // <- s, se
-    let their_handshake = recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream).await?;
+    let their_handshake =
+        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     let their_id = pki
@@ -600,7 +611,10 @@ async fn recv_connection_via_router(
     })?;
     write_stream.send(tungstenite::Message::binary(req)).await?;
     // <- e
-    noise.read_message(&ws_recv(&mut read_stream).await?, &mut buf)?;
+    noise.read_message(
+        &ws_recv(&mut read_stream, &mut write_stream).await?,
+        &mut buf,
+    )?;
 
     // -> e, ee, s, es
     send_uqbar_handshake(
@@ -615,7 +629,8 @@ async fn recv_connection_via_router(
     .await?;
 
     // <- s, se
-    let their_handshake = recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream).await?;
+    let their_handshake =
+        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     let their_id = pki
@@ -693,7 +708,8 @@ async fn init_connection(
         .await?;
 
     // <- e, ee, s, es
-    let their_handshake = recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream).await?;
+    let their_handshake =
+        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     validate_handshake(
@@ -740,6 +756,7 @@ async fn handle_local_message(
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
 ) -> Result<()> {
+    print_debug(&print_tx, "net: handling local message").await;
     let ipc = match km.message {
         Message::Request(request) => request.ipc,
         Message::Response((response, _context)) => {
@@ -779,8 +796,6 @@ async fn handle_local_message(
                         let router_id = peers
                             .get(&km.source.node)
                             .ok_or(anyhow!("unknown router"))?
-                            .read()
-                            .await
                             .identity
                             .clone();
                         let (peer_id, peer_conn) = time::timeout(
@@ -884,10 +899,9 @@ async fn handle_local_message(
                 printout.push_str(&format!("our Identity: {:#?}\r\n", our));
                 printout.push_str(&format!("we have connections with peers:\r\n"));
                 for peer in peers.values() {
-                    let read = peer.read().await;
                     printout.push_str(&format!(
-                        "{}, routing_for={}\r\n",
-                        read.identity.name, read.routing_for,
+                        "    {}, routing_for={}\r\n",
+                        peer.identity.name, peer.routing_for,
                     ));
                 }
                 printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));

@@ -1,9 +1,9 @@
 use crate::types::*;
 use futures::stream::{SplitSink, SplitStream};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc::UnboundedSender, RwLock};
+use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::{tungstenite, MaybeTlsStream, WebSocketStream};
 
 /// Sent to a node when you want to connect directly to them.
@@ -71,11 +71,12 @@ pub struct PendingPassthroughConnection {
 }
 
 // TODO upgrade from hashmaps
-pub type Peers = HashMap<String, Arc<RwLock<Peer>>>;
+pub type Peers = HashMap<String, Peer>;
 pub type PKINames = HashMap<String, NodeId>;
 pub type OnchainPKI = HashMap<String, Identity>;
 pub type PendingPassthroughs = HashMap<(NodeId, NodeId), PendingPassthroughConnection>;
 
+#[derive(Clone)]
 pub struct Peer {
     pub identity: Identity,
     /// If true, we are routing for them and have a RoutingClientConnection

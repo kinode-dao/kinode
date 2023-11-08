@@ -5,12 +5,8 @@ use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use ring::signature::{self, Ed25519KeyPair};
 use snow::params::NoiseParams;
-use std::sync::Arc;
 use tokio::net::TcpStream;
-use tokio::sync::{
-    mpsc::{unbounded_channel, UnboundedReceiver},
-    RwLock,
-};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite, MaybeTlsStream, WebSocketStream};
@@ -31,17 +27,20 @@ pub async fn save_new_peer(
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
 ) -> Result<()> {
-    let peer_name = identity.name.clone();
+    print_debug(
+        &print_tx,
+        &format!("net: saving new peer {}", identity.name),
+    ).await;
     let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
     if km.is_some() {
         peer_tx.send(km.unwrap())?
     }
-    let peer = Arc::new(RwLock::new(Peer {
+    let peer = Peer {
         identity: identity.clone(),
         routing_for,
         sender: peer_tx,
-    }));
-    peers.insert(peer_name, peer.clone());
+    };
+    peers.insert(identity.name.clone(), peer.clone());
     peer_connections.spawn(maintain_connection(
         peer,
         conn,
@@ -54,13 +53,14 @@ pub async fn save_new_peer(
 
 /// should always be spawned on its own task
 pub async fn maintain_connection(
-    peer: Arc<RwLock<Peer>>,
+    peer: Peer,
     mut conn: PeerConnection,
     mut peer_rx: UnboundedReceiver<KernelMessage>,
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) -> (NodeId, Option<KernelMessage>) {
-    let peer_name = peer.read().await.identity.name.clone();
+    let peer_name = peer.identity.name;
+    let mut last_message = std::time::Instant::now();
     loop {
         tokio::select! {
             recv_result = recv_uqbar_message(&mut conn) => {
@@ -71,20 +71,25 @@ pub async fn maintain_connection(
                                 verbosity: 0,
                                 content: format!("net: got message with spoofed source from {peer_name}")
                             }).await;
-                            return (peer_name, None)
+                            break
+                        } else {
+                            kernel_message_tx.send(km).await.expect("net error: fatal: kernel receiver died");
+                            last_message = std::time::Instant::now();
+                            continue
                         }
-                        kernel_message_tx.send(km).await.expect("net error: fatal: kernel died");
+
                     }
-                    Err(_) => {
-                        return (peer_name, None)
-                    }
+                    Err(_) => break
                 }
             },
             maybe_recv = peer_rx.recv() => {
                 match maybe_recv {
                     Some(km) => {
                         match send_uqbar_message(&km, &mut conn).await {
-                            Ok(()) => continue,
+                            Ok(()) => {
+                                last_message = std::time::Instant::now();
+                                continue
+                            }
                             Err(e) => {
                                 if e.to_string() == "message too large" {
                                     // this will result in a Timeout if the message
@@ -97,41 +102,69 @@ pub async fn maintain_connection(
                                             MESSAGE_MAX_SIZE as f64 / 1_048_576.0
                                         ),
                                     }).await;
-                                    return (peer_name, None)
                                 }
-                                return (peer_name, Some(km))
+                                break
                             }
                         }
                     }
-                    None => return (peer_name, None),
+                    None => break
                 }
             },
+            // keepalive ping -- can adjust time based on testing
+            _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
+                match conn.write_stream.send(tungstenite::Message::Ping(vec![])).await {
+                    Ok(()) => continue,
+                    Err(_) => break,
+                }
+            }
+            // if a message has not been sent or received in ~2 hours, close the connection
+            _ = tokio::time::sleep(std::time::Duration::from_secs(7200)) => {
+                if last_message.elapsed().as_secs() > 7200 {
+                    break
+                }
+            }
         }
     }
+    let mut conn = conn.write_stream.reunite(conn.read_stream).unwrap();
+    let _ = conn.close(None).await;
+    return (peer_name, None);
 }
 
 /// cross the streams
 pub async fn maintain_passthrough(mut conn: PassthroughConnection) {
+    let mut last_message = std::time::Instant::now();
     loop {
         tokio::select! {
             maybe_recv = conn.read_stream_1.next() => {
                 match maybe_recv {
                     Some(Ok(msg)) => {
                         conn.write_stream_2.send(msg).await.expect("net error: fatal: kernel died");
+                        last_message = std::time::Instant::now();
                     }
-                    _ => return,
+                    _ => break,
                 }
             },
             maybe_recv = conn.read_stream_2.next() => {
                 match maybe_recv {
                     Some(Ok(msg)) => {
                         conn.write_stream_1.send(msg).await.expect("net error: fatal: kernel died");
+                        last_message = std::time::Instant::now();
                     }
-                    _ => return,
+                    _ => break,
                 }
             },
+            // if a message has not been sent or received in ~2 hours, close the connection
+            _ = tokio::time::sleep(std::time::Duration::from_secs(7200)) => {
+                if last_message.elapsed().as_secs() > 7200 {
+                    break
+                }
+            }
         }
     }
+    let mut conn_1 = conn.write_stream_1.reunite(conn.read_stream_1).unwrap();
+    let mut conn_2 = conn.write_stream_2.reunite(conn.read_stream_2).unwrap();
+    let _ = conn_1.close(None).await;
+    let _ = conn_2.close(None).await;
 }
 
 pub async fn create_passthrough(
@@ -165,12 +198,12 @@ pub async fn create_passthrough(
         let target_peer = peers
             .get(&to_name)
             .ok_or(anyhow!("can't route to that indirect node"))?;
-        if !target_peer.read().await.routing_for {
+        if !target_peer.routing_for {
             return Err(anyhow!("we don't route for that indirect node"));
         }
         // send their net:sys:uqbar process a message, notifying it to create a *matching*
         // passthrough request, which we can pair with this pending one.
-        target_peer.write().await.sender.send(KernelMessage {
+        target_peer.sender.send(KernelMessage {
             id: rand::random(),
             source: Address {
                 node: our.name.clone(),
@@ -280,9 +313,10 @@ pub async fn send_uqbar_message(km: &KernelMessage, conn: &mut PeerConnection) -
 
 /// any error in receiving a message will result in the connection being closed.
 pub async fn recv_uqbar_message(conn: &mut PeerConnection) -> Result<KernelMessage> {
-    let outer_len = conn
-        .noise
-        .read_message(&ws_recv(&mut conn.read_stream).await?, &mut conn.buf)?;
+    let outer_len = conn.noise.read_message(
+        &ws_recv(&mut conn.read_stream, &mut conn.write_stream).await?,
+        &mut conn.buf,
+    )?;
     if outer_len < 4 {
         return Err(anyhow!("uqbar message too small!"));
     }
@@ -297,9 +331,10 @@ pub async fn recv_uqbar_message(conn: &mut PeerConnection) -> Result<KernelMessa
     msg.extend_from_slice(&conn.buf[4..outer_len]);
 
     while msg.len() < msg_len as usize {
-        let len = conn
-            .noise
-            .read_message(&ws_recv(&mut conn.read_stream).await?, &mut conn.buf)?;
+        let len = conn.noise.read_message(
+            &ws_recv(&mut conn.read_stream, &mut conn.write_stream).await?,
+            &mut conn.buf,
+        )?;
         msg.extend_from_slice(&conn.buf[..len]);
     }
 
@@ -334,18 +369,31 @@ pub async fn recv_uqbar_handshake(
     noise: &mut snow::HandshakeState,
     buf: &mut Vec<u8>,
     read_stream: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    write_stream: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
 ) -> Result<HandshakePayload> {
-    let len = noise.read_message(&ws_recv(read_stream).await?, buf)?;
+    let len = noise.read_message(&ws_recv(read_stream, write_stream).await?, buf)?;
     Ok(rmp_serde::from_slice(&buf[..len])?)
 }
 
+/// Receive a byte array from a read stream. If this returns an error,
+/// we should close the connection. Will automatically respond to 'PING' messages with a 'PONG'.
 pub async fn ws_recv(
     read_stream: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    write_stream: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
 ) -> Result<Vec<u8>> {
-    let Some(Ok(tungstenite::Message::Binary(bin))) = read_stream.next().await else {
-        return Err(anyhow!("websocket closed"));
-    };
-    Ok(bin)
+    loop {
+        match read_stream.next().await {
+            Some(Ok(tungstenite::Message::Ping(_))) => {
+                write_stream
+                    .send(tungstenite::Message::Pong(vec![]))
+                    .await?;
+                continue;
+            }
+            Some(Ok(tungstenite::Message::Pong(_))) => continue,
+            Some(Ok(tungstenite::Message::Binary(bin))) => return Ok(bin),
+            _ => return Err(anyhow!("websocket closed")),
+        }
+    }
 }
 
 pub fn build_responder() -> (snow::HandshakeState, Vec<u8>) {
@@ -406,4 +454,11 @@ fn strip_0x(s: &str) -> String {
     } else {
         s.to_string()
     }
+}
+
+pub async fn print_debug(print_tx: &PrintSender, content: &str) {
+    let _ = print_tx.send(Printout {
+        verbosity: 0,
+        content: content.into(),
+    }).await;
 }
