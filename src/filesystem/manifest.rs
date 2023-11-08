@@ -208,7 +208,7 @@ impl Manifest {
         //  note that old chunks might be different sizes, so we might need a custom solution for this.  
         //  e.g defines capacity as bytes, and evicts stuff from cache based on that. 
         //  note, found lib that does that. but, doesn't play well with Read only locks (might evict value etc.)
-        let read_cache: LruCache<[u8; 32], Vec<u8>> = LruCache::new(5242880);
+        let read_cache: LruCache<[u8; 32], Vec<u8>> = LruCache::new(fs_config.read_cache_limit);
 
         let s3_client = if let Some(s3_config) = fs_config.s3_config {
             match parse_s3_config(s3_config) {
