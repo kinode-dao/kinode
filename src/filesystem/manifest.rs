@@ -5,6 +5,7 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit},
     XChaCha20Poly1305, XNonce,
 };
+use lru_mem::LruCache;
 use rand::RngCore;
 use rusoto_core::{Region, RusotoError};
 use rusoto_s3::{
@@ -18,7 +19,6 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::RwLock;
-use lru_mem::LruCache;
 use uuid;
 
 /// Contains interface for filesystem manifest log, and write ahead log.
@@ -205,8 +205,8 @@ impl Manifest {
         let cipher = XChaCha20Poly1305::new_from_slice(&file_key).unwrap();
 
         //  read_cache buffer size defined in .env, naive calc of capacity would be buffer_size / chunk_size.
-        //  note that old chunks might be different sizes, so we might need a custom solution for this.  
-        //  e.g defines capacity as bytes, and evicts stuff from cache based on that. 
+        //  note that old chunks might be different sizes, so we might need a custom solution for this.
+        //  e.g defines capacity as bytes, and evicts stuff from cache based on that.
         //  note, found lib that does that. but, doesn't play well with Read only locks (might evict value etc.)
         let read_cache: LruCache<[u8; 32], Vec<u8>> = LruCache::new(fs_config.read_cache_limit);
 
@@ -552,7 +552,7 @@ impl Manifest {
                         } else {
                             len
                         };
-    
+
                         if offset as usize + len as usize > memory_buffer.len() {
                             return Err(FsError::MemoryBufferError {
                                 error: format!(
@@ -573,18 +573,17 @@ impl Manifest {
                     }
                     ChunkLocation::WAL(offset) => {
                         let mut wal_file = self.wal_file.write().await;
-                        wal_file
-                            .seek(SeekFrom::Start(offset))
-                            .await
-                            .map_err(|e| FsError::IOError {
+                        wal_file.seek(SeekFrom::Start(offset)).await.map_err(|e| {
+                            FsError::IOError {
                                 error: format!("Local WAL seek failed: {}", e),
-                            })?;
+                            }
+                        })?;
                         let len = if encrypted {
                             len + ENCRYPTION_OVERHEAD as u64
                         } else {
                             len
                         };
-    
+
                         let mut buffer = vec![0u8; len as usize];
                         wal_file
                             .read_exact(&mut buffer)
@@ -601,9 +600,10 @@ impl Manifest {
                     ChunkLocation::ColdStorage(local) => {
                         if local {
                             let path = self.fs_directory_path.join(hex::encode(hash));
-                            let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
-                                error: format!("Local Cold read failed: {}", e),
-                            })?;
+                            let mut buffer =
+                                fs::read(path).await.map_err(|e| FsError::IOError {
+                                    error: format!("Local Cold read failed: {}", e),
+                                })?;
                             if encrypted {
                                 buffer = decrypt(&*self.cipher, &buffer)?;
                             }
@@ -629,7 +629,7 @@ impl Manifest {
                         }
                     }
                 }
-            }; 
+            };
 
             // adjust the chunk data based on the start and length
             if let Some(start) = start {
@@ -689,7 +689,7 @@ impl Manifest {
                         } else {
                             len
                         };
-    
+
                         if offset as usize + len as usize > memory_buffer.len() {
                             return Err(FsError::MemoryBufferError {
                                 error: format!(
@@ -710,18 +710,17 @@ impl Manifest {
                     }
                     ChunkLocation::WAL(offset) => {
                         let mut wal_file = self.wal_file.write().await;
-                        wal_file
-                            .seek(SeekFrom::Start(offset))
-                            .await
-                            .map_err(|e| FsError::IOError {
+                        wal_file.seek(SeekFrom::Start(offset)).await.map_err(|e| {
+                            FsError::IOError {
                                 error: format!("Local WAL seek failed: {}", e),
-                            })?;
+                            }
+                        })?;
                         let len = if encrypted {
                             len + ENCRYPTION_OVERHEAD as u64
                         } else {
                             len
                         };
-    
+
                         let mut buffer = vec![0u8; len as usize];
                         wal_file
                             .read_exact(&mut buffer)
@@ -738,9 +737,10 @@ impl Manifest {
                     ChunkLocation::ColdStorage(local) => {
                         if local {
                             let path = self.fs_directory_path.join(hex::encode(hash));
-                            let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
-                                error: format!("Local Cold read failed: {}", e),
-                            })?;
+                            let mut buffer =
+                                fs::read(path).await.map_err(|e| FsError::IOError {
+                                    error: format!("Local Cold read failed: {}", e),
+                                })?;
                             if encrypted {
                                 buffer = decrypt(&*self.cipher, &buffer)?;
                             }
@@ -766,7 +766,7 @@ impl Manifest {
                         }
                     }
                 }
-            }; 
+            };
 
             // adjust the chunk data based on the start and length
             if let Some(start) = start {
