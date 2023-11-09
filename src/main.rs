@@ -227,22 +227,22 @@ async fn main() {
         (
             ProcessId::new(Some("http_server"), "sys", "uqbar"),
             http_server_sender,
-            true
+            true,
         ),
         (
             ProcessId::new(Some("http_client"), "sys", "uqbar"),
             http_client_sender,
-            false
+            false,
         ),
         (
             ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
             eth_rpc_sender,
-            true
+            true,
         ),
         (
             ProcessId::new(Some("vfs"), "sys", "uqbar"),
             vfs_message_sender,
-            true
+            true,
         ),
         (
             ProcessId::new(Some("encryptor"), "sys", "uqbar"),
@@ -252,8 +252,8 @@ async fn main() {
         (
             ProcessId::new(Some("llm"), "sys", "uqbar"),
             llm_message_sender,
-            true
-        )
+            true,
+        ),
     ];
 
     let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(

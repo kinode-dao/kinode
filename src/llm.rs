@@ -23,7 +23,6 @@ pub enum LlamaError {
     PromptFailed,
 }
 
-
 pub async fn llm(
     our: String,
     send_to_loop: MessageSender,
@@ -82,10 +81,13 @@ pub async fn llm(
         //     continue;
         // };
 
-        let _ = print_tx.send(Printout {
-            verbosity: 0,
-            content: "prompting".to_string(),
-        }).await.unwrap();
+        let _ = print_tx
+            .send(Printout {
+                verbosity: 0,
+                content: "prompting".to_string(),
+            })
+            .await
+            .unwrap();
 
         let llama = LLama::new(
             "./WizardLM-7B-uncensored.Q4_0.gguf".into(),
@@ -93,7 +95,8 @@ pub async fn llm(
                 n_gpu_layers: 0,
                 ..Default::default()
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let res = llama
             .predict(
@@ -103,10 +106,13 @@ pub async fn llm(
                         Some(Box::new(move |token| {
                             let print_tx_for_async = print_tx.clone();
                             tokio::spawn(async move {
-                                print_tx_for_async.send(Printout {
-                                    verbosity: 0,
-                                    content: format!("next token: {}", token)
-                                }).await.unwrap();
+                                print_tx_for_async
+                                    .send(Printout {
+                                        verbosity: 0,
+                                        content: format!("next token: {}", token),
+                                    })
+                                    .await
+                                    .unwrap();
                             });
                             true // The callback still synchronously returns a bool
                         }))
