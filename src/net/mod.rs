@@ -988,11 +988,11 @@ async fn handle_local_message(
                 }
             }
             _ => {
-                match rmp_serde::from_slice::<NetActions>(&ipc)? {
-                    NetActions::ConnectionRequest(_) => {
+                match rmp_serde::from_slice::<NetActions>(&ipc) {
+                    Ok(NetActions::ConnectionRequest(_)) => {
                         // we shouldn't receive these from ourselves.
                     }
-                    NetActions::QnsUpdate(log) => {
+                    Ok(NetActions::QnsUpdate(log)) => {
                         // printout.push_str(&format!("net: got QNS update for {}", log.name));
                         pki.insert(
                             log.name.clone(),
@@ -1009,7 +1009,7 @@ async fn handle_local_message(
                         );
                         names.insert(log.node, log.name);
                     }
-                    NetActions::QnsBatchUpdate(log_list) => {
+                    Ok(NetActions::QnsBatchUpdate(log_list)) => {
                         // printout.push_str(&format!(
                         //     "net: got QNS update with {} peers",
                         //     log_list.len()
@@ -1031,6 +1031,18 @@ async fn handle_local_message(
                             );
                             names.insert(log.node, log.name);
                         }
+                    }
+                    _ => {
+                        print_tx
+                            .send(Printout {
+                                verbosity: 0,
+                                content: format!(
+                                    "\x1b[3;32m{}: {}\x1b[0m",
+                                    km.source.node,
+                                    std::str::from_utf8(&ipc).unwrap_or("!!message parse error!!")
+                                ),
+                            })
+                            .await?;
                     }
                 }
             }
