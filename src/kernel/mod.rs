@@ -1786,7 +1786,7 @@ async fn make_event_loop(
     send_to_net: t::MessageSender,
     send_to_terminal: t::PrintSender,
     engine: Engine,
-    runtime_extensions: Vec<(t::ProcessId, t::MessageSender)>,
+    runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
     // shared global flag to mark if we're finished boot process
     let booted = Arc::new(AtomicBool::new(false));
@@ -1797,7 +1797,7 @@ async fn make_event_loop(
             t::ProcessId::new(Some("net"), "sys", "uqbar"),
             ProcessSender::Runtime(send_to_net.clone()),
         );
-        for (process_id, sender) in runtime_extensions {
+        for (process_id, sender, _) in runtime_extensions {
             senders.insert(process_id, ProcessSender::Runtime(sender));
         }
 
@@ -2187,7 +2187,7 @@ pub async fn kernel(
     network_error_recv: t::NetworkErrorReceiver,
     recv_debug_in_loop: t::DebugReceiver,
     send_to_wss: t::MessageSender,
-    runtime_extensions: Vec<(t::ProcessId, t::MessageSender)>,
+    runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
 ) -> Result<()> {
     let mut config = Config::new();
     config.cache_config_load_default().unwrap();

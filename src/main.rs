@@ -13,6 +13,7 @@ mod http_client;
 mod http_server;
 mod kernel;
 mod keygen;
+mod llm;
 mod net;
 mod register;
 mod terminal;
@@ -30,6 +31,7 @@ const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
+const LLAMA_CHANNEL_CAPACITY: usize = 32;
 
 // const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
 
@@ -78,6 +80,8 @@ async fn main() {
     // kernel receives debug messages via this channel, terminal sends messages
     let (kernel_debug_message_sender, kernel_debug_message_receiver): (DebugSender, DebugReceiver) =
         mpsc::channel(EVENT_LOOP_DEBUG_CHANNEL_CAPACITY);
+    let (llm_message_sender, llm_message_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(LLAMA_CHANNEL_CAPACITY);
     // websocket sender receives send messages via this channel, kernel send messages
     let (net_message_sender, net_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(WEBSOCKET_SENDER_CHANNEL_CAPACITY);
@@ -214,11 +218,50 @@ async fn main() {
 
     println!("registration complete!");
 
+    let runtime_extensions = vec![
+        (
+            ProcessId::new(Some("filesystem"), "sys", "uqbar"),
+            fs_message_sender,
+            false,
+        ),
+        (
+            ProcessId::new(Some("http_server"), "sys", "uqbar"),
+            http_server_sender,
+            true
+        ),
+        (
+            ProcessId::new(Some("http_client"), "sys", "uqbar"),
+            http_client_sender,
+            false
+        ),
+        (
+            ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
+            eth_rpc_sender,
+            true
+        ),
+        (
+            ProcessId::new(Some("vfs"), "sys", "uqbar"),
+            vfs_message_sender,
+            true
+        ),
+        (
+            ProcessId::new(Some("encryptor"), "sys", "uqbar"),
+            encryptor_sender,
+            false,
+        ),
+        (
+            ProcessId::new(Some("llm"), "sys", "uqbar"),
+            llm_message_sender,
+            true
+        )
+    ];
+
     let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
         our.name.clone(),
         home_directory_path.clone(),
         decoded_keyfile.file_key,
         fs_config,
+        runtime_extensions.clone(),
     )
     .await
     .expect("fs load failed!");
@@ -252,32 +295,7 @@ async fn main() {
         network_error_receiver,
         kernel_debug_message_receiver,
         net_message_sender.clone(),
-        vec![
-            (
-                ProcessId::new(Some("filesystem"), "sys", "uqbar"),
-                fs_message_sender,
-            ),
-            (
-                ProcessId::new(Some("http_server"), "sys", "uqbar"),
-                http_server_sender,
-            ),
-            (
-                ProcessId::new(Some("http_client"), "sys", "uqbar"),
-                http_client_sender,
-            ),
-            (
-                ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
-                eth_rpc_sender,
-            ),
-            (
-                ProcessId::new(Some("vfs"), "sys", "uqbar"),
-                vfs_message_sender,
-            ),
-            (
-                ProcessId::new(Some("encryptor"), "sys", "uqbar"),
-                encryptor_sender,
-            ),
-        ],
+        runtime_extensions,
     ));
     tasks.spawn(net::networking(
         our.clone(),
@@ -333,6 +351,12 @@ async fn main() {
         networking_keypair_arc.clone(),
         kernel_message_sender.clone(),
         encryptor_receiver,
+        print_sender.clone(),
+    ));
+    tasks.spawn(llm::llm(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        llm_message_receiver,
         print_sender.clone(),
     ));
     // if a runtime task exits, try to recover it,
