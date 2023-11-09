@@ -252,12 +252,32 @@ async fn main() {
         network_error_receiver,
         kernel_debug_message_receiver,
         net_message_sender.clone(),
-        fs_message_sender,
-        http_server_sender,
-        http_client_sender,
-        eth_rpc_sender,
-        vfs_message_sender,
-        encryptor_sender,
+        vec![
+            (
+                ProcessId::new(Some("filesystem"), "sys", "uqbar"),
+                fs_message_sender
+            ),
+            (
+                ProcessId::new(Some("http_server"), "sys", "uqbar"),
+                http_server_sender
+            ),
+            (
+                ProcessId::new(Some("http_client"), "sys", "uqbar"),
+                http_client_sender
+            ),
+            (
+                ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
+                eth_rpc_sender
+            ),
+            (
+                ProcessId::new(Some("vfs"), "sys", "uqbar"),
+                vfs_message_sender
+            ),
+            (
+                ProcessId::new(Some("encryptor"), "sys", "uqbar"),
+                encryptor_sender
+            ),
+        ],
     ));
     tasks.spawn(net::networking(
         our.clone(),
