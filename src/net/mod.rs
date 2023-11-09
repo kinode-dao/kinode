@@ -1012,7 +1012,7 @@ async fn handle_local_message(
                     }
                     _ => {
                         parse_hello_message(&our, &km, ipc, &kernel_message_tx, &print_tx).await?;
-                        return Ok(())
+                        return Ok(());
                     }
                 }
             }
