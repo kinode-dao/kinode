@@ -5,8 +5,10 @@ use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use ring::signature::{self, Ed25519KeyPair};
 use snow::params::NoiseParams;
+use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
+use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite, MaybeTlsStream, WebSocketStream};
@@ -20,13 +22,13 @@ lazy_static::lazy_static! {
 pub async fn save_new_peer(
     identity: &Identity,
     routing_for: bool,
-    peers: &mut Peers,
-    peer_connections: &mut JoinSet<(String, Option<KernelMessage>)>,
+    peers: Peers,
+    peer_connections: Arc<Mutex<JoinSet<()>>>,
     conn: PeerConnection,
     km: Option<KernelMessage>,
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
-) -> Result<()> {
+) {
     print_debug(
         &print_tx,
         &format!("net: saving new peer {}", identity.name),
@@ -34,7 +36,7 @@ pub async fn save_new_peer(
     .await;
     let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
     if km.is_some() {
-        peer_tx.send(km.unwrap())?
+        peer_tx.send(km.unwrap()).unwrap()
     }
     let peer = Peer {
         identity: identity.clone(),
@@ -42,24 +44,25 @@ pub async fn save_new_peer(
         sender: peer_tx,
     };
     peers.insert(identity.name.clone(), peer.clone());
-    peer_connections.spawn(maintain_connection(
+    peer_connections.lock().await.spawn(maintain_connection(
         peer,
+        peers,
         conn,
         peer_rx,
         kernel_message_tx.clone(),
         print_tx.clone(),
     ));
-    Ok(())
 }
 
 /// should always be spawned on its own task
 pub async fn maintain_connection(
     peer: Peer,
+    peers: Peers,
     mut conn: PeerConnection,
     mut peer_rx: UnboundedReceiver<KernelMessage>,
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
-) -> (NodeId, Option<KernelMessage>) {
+) {
     let peer_name = peer.identity.name;
     let mut last_message = std::time::Instant::now();
     loop {
@@ -128,7 +131,10 @@ pub async fn maintain_connection(
     }
     let mut conn = conn.write_stream.reunite(conn.read_stream).unwrap();
     let _ = conn.close(None).await;
-    return (peer_name, None);
+
+    print_debug(&print_tx, &format!("net: connection with {peer_name} died")).await;
+    peers.remove(&peer_name);
+    return;
 }
 
 /// cross the streams
@@ -199,6 +205,8 @@ pub async fn create_passthrough(
         let target_peer = peers
             .get(&to_name)
             .ok_or(anyhow!("can't route to that indirect node"))?;
+        // TODO: if we're not router for an indirect node, we should be able to
+        // *use one of their routers* to create a doubly-indirect passthrough.
         if !target_peer.routing_for {
             return Err(anyhow!("we don't route for that indirect node"));
         }
@@ -460,7 +468,7 @@ fn strip_0x(s: &str) -> String {
 pub async fn print_debug(print_tx: &PrintSender, content: &str) {
     let _ = print_tx
         .send(Printout {
-            verbosity: 0,
+            verbosity: 1,
             content: content.into(),
         })
         .await;
