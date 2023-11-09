@@ -6,22 +6,38 @@ use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
 
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../../../wit",
     world: "process",
     exports: {
         world: Component,
     },
 });
 
+pub type Rsvp = Option<kt::Address>;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KernelMessage {
+    pub id: u64,
+    pub source: kt::Address,
+    pub target: kt::Address,
+    pub rsvp: Rsvp,
+    pub message: kt::Message,
+    pub payload: Option<kt::Payload>,
+    pub signed_capabilities: Option<Vec<kt::SignedCapability>>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 enum TesterRequest {
     Run,
+    KernelMessage(KernelMessage),
+    GetFullMessage(kt::Message),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 enum TesterResponse {
     Pass,
     Fail,
+    GetFullMessage(Option<KernelMessage>),
 }
 
 #[derive(Debug, Serialize, Deserialize, thiserror::Error)]
@@ -53,7 +69,7 @@ fn handle_message (our: &Address) -> anyhow::Result<()> {
         wit::Message::Request(wit::Request { ipc, .. }) => {
             match serde_json::from_slice(&ipc)? {
                 TesterRequest::Run => {
-                    wit::print_to_terminal(0, "tester: got Run");
+                    wit::print_to_terminal(0, "test_runner: got Run");
 
                     let (_, response) = Request::new()
                         .target(make_vfs_address(&our)?)?
@@ -70,8 +86,9 @@ fn handle_message (our: &Address) -> anyhow::Result<()> {
                     children.remove("/manifest.json");
                     children.remove("/metadata.json");
                     children.remove("/tester.wasm");
+                    children.remove("/test_runner.wasm");
 
-                    wit::print_to_terminal(0, &format!("tester: running {:?}...", children));
+                    wit::print_to_terminal(0, &format!("test_runner: running {:?}...", children));
 
                     for child in &children {
                         let child_process_id = match wit::spawn(
@@ -102,11 +119,14 @@ fn handle_message (our: &Address) -> anyhow::Result<()> {
                         };
                     }
 
+                    wit::print_to_terminal(0, &format!("test_runner: done running {:?}", children));
+
                     Response::new()
                         .ipc_bytes(serde_json::to_vec(&TesterResponse::Pass).unwrap())
                         .send()
                         .unwrap();
                 },
+                TesterRequest::KernelMessage(_) | TesterRequest::GetFullMessage(_) => { unimplemented!() },
             }
             Ok(())
         },
@@ -116,7 +136,7 @@ fn handle_message (our: &Address) -> anyhow::Result<()> {
 struct Component;
 impl Guest for Component {
     fn init(our: String) {
-        wit::print_to_terminal(0, "tester: begin");
+        wit::print_to_terminal(0, "test_runner: begin");
 
         let our = Address::from_str(&our).unwrap();
 
@@ -136,7 +156,7 @@ impl Guest for Component {
                 Ok(()) => {},
                 Err(e) => {
                     wit::print_to_terminal(0, format!(
-                        "tester: error: {:?}",
+                        "test_runner: error: {:?}",
                         e,
                     ).as_str());
                     Response::new()
