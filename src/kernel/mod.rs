@@ -1934,8 +1934,7 @@ async fn make_event_loop(
                     // forward the error to the relevant process
                     match senders.get(&wrapped_network_error.source.process) {
                         Some(ProcessSender::Userspace(sender)) => {
-                            // TODO: this failing should crash kernel
-                            sender.send(Err(wrapped_network_error)).await.unwrap();
+                            let _ = sender.send(Err(wrapped_network_error)).await;
                         }
                         Some(ProcessSender::Runtime(_sender)) => {
                             // TODO should runtime modules get these? no

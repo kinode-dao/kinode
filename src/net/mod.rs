@@ -1,13 +1,11 @@
 use crate::net::{types::*, utils::*};
 use crate::types::*;
 use anyhow::{anyhow, Result};
+use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use rand::seq::SliceRandom;
 use ring::signature::Ed25519KeyPair;
-use std::{
-    collections::{HashMap, HashSet},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time;
@@ -95,17 +93,18 @@ async fn indirect_networking(
     kernel_message_tx: MessageSender,
     network_error_tx: NetworkErrorSender,
     print_tx: PrintSender,
-    self_message_tx: MessageSender,
+    _self_message_tx: MessageSender,
     mut message_rx: MessageReceiver,
     reveal_ip: bool,
 ) -> Result<()> {
-    let mut pki: OnchainPKI = HashMap::new();
-    let mut peers: Peers = HashMap::new();
+    print_debug(&print_tx, "net: starting as indirect").await;
+    let pki: OnchainPKI = Arc::new(DashMap::new());
+    let peers: Peers = Arc::new(DashMap::new());
     // mapping from QNS namehash to username
-    let mut names: PKINames = HashMap::new();
-    let mut peer_connections = JoinSet::<(NodeId, Option<KernelMessage>)>::new();
-    // indirect-specific structure
-    let mut active_routers = HashSet::<NodeId>::new();
+    let names: PKINames = Arc::new(DashMap::new());
+    // track peers that we're already in the midst of establishing a connection with
+    let mut pending_connections = JoinSet::<(NodeId, Result<()>)>::new();
+    let mut peer_message_queues = HashMap::<NodeId, Vec<KernelMessage>>::new();
 
     loop {
         tokio::select! {
@@ -122,135 +121,134 @@ async fn indirect_networking(
                         &our_ip,
                         &keypair,
                         km,
-                        &mut peers,
-                        &mut pki,
-                        &mut peer_connections,
+                        peers.clone(),
+                        pki.clone(),
                         None,
                         None,
-                        Some(&active_routers),
-                        &mut names,
+                        names.clone(),
                         &kernel_message_tx,
                         &print_tx,
                     )
                     .await {
-                        Ok(()) => {},
+                        Ok(()) => continue,
                         Err(e) => {
                             print_tx.send(Printout {
                                 verbosity: 0,
                                 content: format!("net: error handling local message: {e}")
                             }).await?;
+                            continue
                         }
                     }
                 }
                 // if the message is for a peer we currently have a connection with,
                 // try to send it to them
                 else if let Some(peer) = peers.get_mut(target) {
-                    peer.write().await.sender.send(km)?;
+                    peer.sender.send(km)?;
+                    continue
                 }
-                else if let Some(peer_id) = pki.get(target) {
-                    // if the message is for a *direct* peer we don't have a connection with,
-                    // try to establish a connection with them
-                    // here, we can *choose* to use our routers so as not to reveal
-                    // networking information about ourselves to the target.
-                    if peer_id.ws_routing.is_some() && reveal_ip {
-                        match init_connection(&our, &our_ip, peer_id, &keypair, None, false).await {
-                            Ok(direct_conn) => {
-                                save_new_peer(
-                                    peer_id,
-                                    false,
-                                    &mut peers,
-                                    &mut peer_connections,
-                                    direct_conn,
-                                    Some(km),
-                                    &kernel_message_tx,
-                                    &print_tx,
-                                ).await?;
+                // if we cannot send it to an existing peer-connection, need to spawn
+                // a task that will attempt to establish such a connection.
+                // if such a task already exists for that peer, we should queue the message
+                // to be sent once that task completes. otherwise, it will duplicate connections.
+                pending_connections.spawn(establish_new_peer_connection(
+                    our.clone(),
+                    our_ip.clone(),
+                    keypair.clone(),
+                    km,
+                    pki.clone(),
+                    names.clone(),
+                    peers.clone(),
+                    reveal_ip,
+                    kernel_message_tx.clone(),
+                    network_error_tx.clone(),
+                    print_tx.clone()
+                ));
+            }
+            // 2. recover the result of a pending connection and flush any message
+            // queue that's built up since it was spawned
+            Some(Ok((peer_name, result))) = pending_connections.join_next() => {
+                match result {
+                    Ok(()) => {
+                        // if we have a message queue for this peer, send it out
+                        if let Some(queue) = peer_message_queues.remove(&peer_name) {
+                            for km in queue {
+                                peers.get_mut(&peer_name).unwrap().sender.send(km)?;
                             }
-                            Err(_) => {
+                        }
+                    }
+                    Err(_e) => {
+                        // TODO decide if this is good behavior, but throw
+                        // offline error for each message in this peer's queue
+                        if let Some(queue) = peer_message_queues.remove(&peer_name) {
+                            for km in queue {
                                 error_offline(km, &network_error_tx).await?;
                             }
                         }
                     }
-                    // if the message is for an *indirect* peer we don't have a connection with,
-                    // or we want to protect our node's physical networking details from non-routers,
-                    // do some routing: in a randomized order, go through their listed routers
-                    // on chain and try to get one of them to build a proxied connection to
-                    // this node for you
-                    else {
-                        let sent = time::timeout(TIMEOUT,
-                            init_connection_via_router(
-                                &our,
-                                &our_ip,
-                                &keypair,
-                                km.clone(),
-                                peer_id,
-                                &pki,
-                                &names,
-                                &mut peers,
-                                &mut peer_connections,
-                                kernel_message_tx.clone(),
-                                print_tx.clone(),
-                            )).await;
-                        if !sent.unwrap_or(false) {
-                            // none of the routers worked!
-                            error_offline(km, &network_error_tx).await?;
-                        }
-                    }
-                }
-                // peer cannot be found in PKI, throw an offline error
-                else {
-                    error_offline(km, &network_error_tx).await?;
-                }
-            }
-            // 2. deal with active connections that die by removing the associated peer
-            // if the peer is one of our routers, remove them from router-set
-            Some(Ok((dead_peer, maybe_resend))) = peer_connections.join_next() => {
-                peers.remove(&dead_peer);
-                active_routers.remove(&dead_peer);
-                match maybe_resend {
-                    None => {},
-                    Some(km) => {
-                        self_message_tx.send(km).await?;
-                    }
                 }
             }
             // 3. periodically attempt to connect to any allowed routers that we
-            // are not connected to
-            _ = time::sleep(time::Duration::from_secs(3)) => {
-                if active_routers.len() == our.allowed_routers.len() {
-                    continue;
-                }
-                for router in &our.allowed_routers {
-                    if active_routers.contains(router) {
-                        continue;
-                    }
-                    let Some(router_id) = pki.get(router) else {
-                        continue;
-                    };
-                    match init_connection(&our, &our_ip, router_id, &keypair, None, true).await {
-                        Ok(direct_conn) => {
-                            print_tx.send(Printout {
-                                verbosity: 0,
-                                content: format!("now connected to router {}", router_id.name),
-                            }).await?;
-                            active_routers.insert(router_id.name.clone());
-                            save_new_peer(
-                                router_id,
-                                false,
-                                &mut peers,
-                                &mut peer_connections,
-                                direct_conn,
-                                None,
-                                &kernel_message_tx,
-                                &print_tx,
-                            ).await?;
-                        }
-                        Err(_e) => continue,
-                    }
-                }
+            // are not connected to -- TODO do some exponential backoff if a router
+            // is not responding.
+            _ = time::sleep(time::Duration::from_secs(5)) => {
+                tokio::spawn(connect_to_routers(
+                    our.clone(),
+                    our_ip.clone(),
+                    keypair.clone(),
+                    pki.clone(),
+                    peers.clone(),
+                    kernel_message_tx.clone(),
+                    print_tx.clone()
+                ));
             }
         }
     }
+}
+
+async fn connect_to_routers(
+    our: Identity,
+    our_ip: String,
+    keypair: Arc<Ed25519KeyPair>,
+    pki: OnchainPKI,
+    peers: Peers,
+    kernel_message_tx: MessageSender,
+    print_tx: PrintSender,
+) -> Result<()> {
+    for router in &our.allowed_routers {
+        if peers.contains_key(router) {
+            continue;
+        }
+        let Some(router_id) = pki.get(router) else {
+            continue;
+        };
+        print_debug(
+            &print_tx,
+            &format!("net: attempting to connect to router {router}"),
+        )
+        .await;
+        match init_connection(&our, &our_ip, &router_id, &keypair, None, true).await {
+            Ok(direct_conn) => {
+                print_tx
+                    .send(Printout {
+                        verbosity: 0,
+                        content: format!("connected to router {}", router_id.name),
+                    })
+                    .await?;
+                save_new_peer(
+                    &router_id,
+                    false,
+                    peers.clone(),
+                    direct_conn,
+                    None,
+                    &kernel_message_tx,
+                    &print_tx,
+                )
+                .await;
+            }
+            Err(_e) => continue,
+        }
+    }
+    Ok(())
 }
 
 async fn direct_networking(
@@ -261,17 +259,20 @@ async fn direct_networking(
     kernel_message_tx: MessageSender,
     network_error_tx: NetworkErrorSender,
     print_tx: PrintSender,
-    self_message_tx: MessageSender,
+    _self_message_tx: MessageSender,
     mut message_rx: MessageReceiver,
 ) -> Result<()> {
-    let mut pki: OnchainPKI = HashMap::new();
-    let mut peers: Peers = HashMap::new();
+    print_debug(&print_tx, "net: starting as direct").await;
+    let pki: OnchainPKI = Arc::new(DashMap::new());
+    let peers: Peers = Arc::new(DashMap::new());
     // mapping from QNS namehash to username
-    let mut names: PKINames = HashMap::new();
-    let mut peer_connections = JoinSet::<(NodeId, Option<KernelMessage>)>::new();
+    let names: PKINames = Arc::new(DashMap::new());
     // direct-specific structures
     let mut forwarding_connections = JoinSet::<()>::new();
     let mut pending_passthroughs: PendingPassthroughs = HashMap::new();
+    // track peers that we're already in the midst of establishing a connection with
+    let mut pending_connections = JoinSet::<(NodeId, Result<()>)>::new();
+    let mut peer_message_queues = HashMap::<NodeId, Vec<KernelMessage>>::new();
 
     loop {
         tokio::select! {
@@ -279,99 +280,88 @@ async fn direct_networking(
             // making new connections as needed
             Some(km) = message_rx.recv() => {
                 // got a message from kernel to send out over the network
-                let target = &km.target.node;
                 // if the message is for us, it's either a protocol-level "hello" message,
                 // or a debugging command issued from our terminal. handle it here:
-                if target == &our.name {
+                if km.target.node == our.name {
                     match handle_local_message(
                         &our,
                         &our_ip,
                         &keypair,
                         km,
-                        &mut peers,
-                        &mut pki,
-                        &mut peer_connections,
+                        peers.clone(),
+                        pki.clone(),
                         Some(&mut pending_passthroughs),
                         Some(&forwarding_connections),
-                        None,
-                        &mut names,
+                        names.clone(),
                         &kernel_message_tx,
                         &print_tx,
                     )
                     .await {
-                        Ok(()) => {},
+                        Ok(()) => continue,
                         Err(e) => {
                             print_tx.send(Printout {
                                 verbosity: 0,
                                 content: format!("net: error handling local message: {}", e)
                             }).await?;
+                            continue;
                         }
                     }
                 }
                 // if the message is for a peer we currently have a connection with,
                 // try to send it to them
-                else if let Some(peer) = peers.get_mut(target) {
-                    peer.write().await.sender.send(km)?;
+                else if let Some(peer) = peers.get_mut(&km.target.node) {
+                    peer.sender.send(km)?;
+                    continue
                 }
-                else if let Some(peer_id) = pki.get(target) {
-                    // if the message is for a *direct* peer we don't have a connection with,
-                    // try to establish a connection with them
-                    if peer_id.ws_routing.is_some() {
-                        match init_connection(&our, &our_ip, peer_id, &keypair, None, false).await {
-                            Ok(direct_conn) => {
-                                save_new_peer(
-                                    peer_id,
-                                    false,
-                                    &mut peers,
-                                    &mut peer_connections,
-                                    direct_conn,
-                                    Some(km),
-                                    &kernel_message_tx,
-                                    &print_tx,
-                                ).await?;
+                // if we cannot send it to an existing peer-connection, need to spawn
+                // a task that will attempt to establish such a connection.
+                // if such a task already exists for that peer, we should queue the message
+                // to be sent once that task completes. otherwise, it will duplicate connections.
+                pending_connections.spawn(establish_new_peer_connection(
+                    our.clone(),
+                    our_ip.clone(),
+                    keypair.clone(),
+                    km,
+                    pki.clone(),
+                    names.clone(),
+                    peers.clone(),
+                    true,
+                    kernel_message_tx.clone(),
+                    network_error_tx.clone(),
+                    print_tx.clone()
+                ));
+            }
+            // 2. recover the result of a pending connection and flush any message
+            // queue that's built up since it was spawned
+            Some(Ok((peer_name, result))) = pending_connections.join_next() => {
+                match result {
+                    Ok(()) => {
+                        // if we have a message queue for this peer, send it out
+                        if let Some(queue) = peer_message_queues.remove(&peer_name) {
+                            for km in queue {
+                                peers.get_mut(&peer_name).unwrap().sender.send(km)?;
                             }
-                            Err(_) => {
+                        }
+                    }
+                    Err(_e) => {
+                        // TODO decide if this is good behavior, but throw
+                        // offline error for each message in this peer's queue
+                        if let Some(queue) = peer_message_queues.remove(&peer_name) {
+                            for km in queue {
                                 error_offline(km, &network_error_tx).await?;
                             }
                         }
                     }
-                    // if the message is for an *indirect* peer we don't have a connection with,
-                    // do some routing: in a randomized order, go through their listed routers
-                    // on chain and try to get one of them to build a proxied connection to
-                    // this node for you
-                    else {
-                        let sent = time::timeout(TIMEOUT,
-                            init_connection_via_router(
-                                &our,
-                                &our_ip,
-                                &keypair,
-                                km.clone(),
-                                peer_id,
-                                &pki,
-                                &names,
-                                &mut peers,
-                                &mut peer_connections,
-                                kernel_message_tx.clone(),
-                                print_tx.clone(),
-                            )).await;
-                        if !sent.unwrap_or(false) {
-                            // none of the routers worked!
-                            error_offline(km, &network_error_tx).await?;
-                        }
-                    }
-                }
-                // peer cannot be found in PKI, throw an offline error
-                else {
-                    error_offline(km, &network_error_tx).await?;
                 }
             }
-            // 2. receive incoming TCP connections
+            // 3. receive incoming TCP connections
             Ok((stream, _socket_addr)) = tcp.accept() => {
                 // TODO we can perform some amount of validation here
                 // to prevent some amount of potential DDoS attacks.
                 // can also block based on socket_addr
                 match accept_async(MaybeTlsStream::Plain(stream)).await {
                     Ok(websocket) => {
+                        print_debug(&print_tx, "net: received new websocket connection").await;
                         let (peer_id, routing_for, conn) =
                             match recv_connection(
                                 &our,
@@ -401,13 +391,12 @@ async fn direct_networking(
                                 save_new_peer(
                                     &peer_id,
                                     routing_for,
-                                    &mut peers,
-                                    &mut peer_connections,
+                                    peers.clone(),
                                     peer_conn,
                                     None,
                                     &kernel_message_tx,
                                     &print_tx
-                                ).await?;
+                                ).await;
                             }
                             Connection::Passthrough(passthrough_conn) => {
                                 forwarding_connections.spawn(maintain_passthrough(
@@ -426,17 +415,106 @@ async fn direct_networking(
                     Err(_) => {}
                 }
             }
-            // 3. deal with active connections that die by removing the associated peer
-            Some(Ok((dead_peer, maybe_resend))) = peer_connections.join_next() => {
-                peers.remove(&dead_peer);
-                match maybe_resend {
-                    None => {},
-                    Some(km) => {
-                        self_message_tx.send(km).await?;
-                    }
+        }
+    }
+}
+
+async fn establish_new_peer_connection(
+    our: Identity,
+    our_ip: String,
+    keypair: Arc<Ed25519KeyPair>,
+    km: KernelMessage,
+    pki: OnchainPKI,
+    names: PKINames,
+    peers: Peers,
+    reveal_ip: bool,
+    kernel_message_tx: MessageSender,
+    network_error_tx: NetworkErrorSender,
+    print_tx: PrintSender,
+) -> (NodeId, Result<()>) {
+    if let Some(peer_id) = pki.get(&km.target.node) {
+        // if the message is for a *direct* peer we don't have a connection with,
+        // try to establish a connection with them
+        // here, we can *choose* to use our routers so as not to reveal
+        // networking information about ourselves to the target.
+        if peer_id.ws_routing.is_some() && reveal_ip {
+            print_debug(
+                &print_tx,
+                &format!("net: attempting to connect to {} directly", peer_id.name),
+            )
+            .await;
+            match time::timeout(
+                TIMEOUT,
+                init_connection(&our, &our_ip, &peer_id, &keypair, None, false),
+            )
+            .await
+            {
+                Ok(Ok(direct_conn)) => {
+                    save_new_peer(
+                        &peer_id,
+                        false,
+                        peers,
+                        direct_conn,
+                        Some(km),
+                        &kernel_message_tx,
+                        &print_tx,
+                    )
+                    .await;
+                    (peer_id.name.clone(), Ok(()))
+                }
+                _ => {
+                    let _ = error_offline(km, &network_error_tx).await;
+                    (
+                        peer_id.name.clone(),
+                        Err(anyhow!("failed to connect to peer")),
+                    )
                 }
             }
         }
+        // if the message is for an *indirect* peer we don't have a connection with,
+        // or we want to protect our node's physical networking details from non-routers,
+        // do some routing: in a randomized order, go through their listed routers
+        // on chain and try to get one of them to build a proxied connection to
+        // this node for you
+        else {
+            print_debug(
+                &print_tx,
+                &format!("net: attempting to connect to {} via router", peer_id.name),
+            )
+            .await;
+            let sent = time::timeout(
+                TIMEOUT,
+                init_connection_via_router(
+                    &our,
+                    &our_ip,
+                    &keypair,
+                    km.clone(),
+                    &peer_id,
+                    &pki,
+                    &names,
+                    peers,
+                    kernel_message_tx.clone(),
+                    print_tx.clone(),
+                ),
+            )
+            .await;
+            if sent.unwrap_or(false) {
+                (peer_id.name.clone(), Ok(()))
+            } else {
+                // none of the routers worked!
+                let _ = error_offline(km, &network_error_tx).await;
+                (
+                    peer_id.name.clone(),
+                    Err(anyhow!("failed to connect to peer")),
+                )
+            }
+        }
+    }
+    // peer cannot be found in PKI, throw an offline error
+    else {
+        let peer_name = km.target.node.clone();
+        let _ = error_offline(km, &network_error_tx).await;
+        (peer_name, Err(anyhow!("failed to connect to peer")))
     }
 }
 
@@ -448,8 +526,7 @@ async fn init_connection_via_router(
     peer_id: &Identity,
     pki: &OnchainPKI,
     names: &PKINames,
-    peers: &mut Peers,
-    peer_connections: &mut JoinSet<(NodeId, Option<KernelMessage>)>,
+    peers: Peers,
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) -> bool {
@@ -462,24 +539,23 @@ async fn init_connection_via_router(
         let Some(router_name) = names.get(router_namehash) else {
             continue;
         };
-        let router_id = match pki.get(router_name) {
+        let router_id = match pki.get(router_name.as_str()) {
             None => continue,
             Some(id) => id,
         };
-        match init_connection(&our, &our_ip, peer_id, &keypair, Some(router_id), false).await {
+        match init_connection(&our, &our_ip, peer_id, &keypair, Some(&router_id), false).await {
             Ok(direct_conn) => {
-                return save_new_peer(
+                save_new_peer(
                     peer_id,
                     false,
                     peers,
-                    peer_connections,
                     direct_conn,
                     Some(km),
                     &kernel_message_tx,
                     &print_tx,
                 )
-                .await
-                .is_ok()
+                .await;
+                return true;
             }
             Err(_) => continue,
         }
@@ -501,7 +577,7 @@ async fn recv_connection(
     let (mut write_stream, mut read_stream) = websocket.split();
 
     // before we begin XX handshake pattern, check first message over socket
-    let first_message = &ws_recv(&mut read_stream).await?;
+    let first_message = &ws_recv(&mut read_stream, &mut write_stream).await?;
 
     // if the first message contains a "routing request",
     // we see if the target is someone we are actively routing for,
@@ -540,7 +616,8 @@ async fn recv_connection(
     .await?;
 
     // <- s, se
-    let their_handshake = recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream).await?;
+    let their_handshake =
+        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     let their_id = pki
@@ -551,7 +628,7 @@ async fn recv_connection(
         noise
             .get_remote_static()
             .ok_or(anyhow!("noise error: missing remote pubkey"))?,
-        their_id,
+        &their_id,
     )?;
 
     Ok((
@@ -600,7 +677,10 @@ async fn recv_connection_via_router(
     })?;
     write_stream.send(tungstenite::Message::binary(req)).await?;
     // <- e
-    noise.read_message(&ws_recv(&mut read_stream).await?, &mut buf)?;
+    noise.read_message(
+        &ws_recv(&mut read_stream, &mut write_stream).await?,
+        &mut buf,
+    )?;
 
     // -> e, ee, s, es
     send_uqbar_handshake(
@@ -615,7 +695,8 @@ async fn recv_connection_via_router(
     .await?;
 
     // <- s, se
-    let their_handshake = recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream).await?;
+    let their_handshake =
+        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     let their_id = pki
@@ -626,7 +707,7 @@ async fn recv_connection_via_router(
         noise
             .get_remote_static()
             .ok_or(anyhow!("noise error: missing remote pubkey"))?,
-        their_id,
+        &their_id,
     )?;
 
     Ok((
@@ -693,7 +774,8 @@ async fn init_connection(
         .await?;
 
     // <- e, ee, s, es
-    let their_handshake = recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream).await?;
+    let their_handshake =
+        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     validate_handshake(
@@ -730,16 +812,15 @@ async fn handle_local_message(
     our_ip: &str,
     keypair: &Ed25519KeyPair,
     km: KernelMessage,
-    peers: &mut Peers,
-    pki: &mut OnchainPKI,
-    peer_connections: &mut JoinSet<(NodeId, Option<KernelMessage>)>,
+    peers: Peers,
+    pki: OnchainPKI,
     pending_passthroughs: Option<&mut PendingPassthroughs>,
     forwarding_connections: Option<&JoinSet<()>>,
-    active_routers: Option<&HashSet<NodeId>>,
-    names: &mut PKINames,
+    names: PKINames,
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
 ) -> Result<()> {
+    print_debug(&print_tx, "net: handling local message").await;
     let ipc = match km.message {
         Message::Request(request) => request.ipc,
         Message::Response((response, _context)) => {
@@ -779,14 +860,12 @@ async fn handle_local_message(
                         let router_id = peers
                             .get(&km.source.node)
                             .ok_or(anyhow!("unknown router"))?
-                            .read()
-                            .await
                             .identity
                             .clone();
                         let (peer_id, peer_conn) = time::timeout(
                             TIMEOUT,
                             recv_connection_via_router(
-                                our, our_ip, &from, pki, keypair, &router_id,
+                                our, our_ip, &from, &pki, keypair, &router_id,
                             ),
                         )
                         .await??;
@@ -794,13 +873,12 @@ async fn handle_local_message(
                             &peer_id,
                             false,
                             peers,
-                            peer_connections,
                             peer_conn,
                             None,
                             &kernel_message_tx,
                             &print_tx,
                         )
-                        .await?;
+                        .await;
                         Ok(NetResponses::Accepted(from.clone()))
                     } else {
                         Ok(NetResponses::Rejected(from.clone()))
@@ -872,7 +950,13 @@ async fn handle_local_message(
         let mut printout = String::new();
         match std::str::from_utf8(&ipc) {
             Ok("peers") => {
-                printout.push_str(&format!("{:#?}", peers.keys()));
+                printout.push_str(&format!(
+                    "{:#?}",
+                    peers
+                        .iter()
+                        .map(|p| p.identity.name.clone())
+                        .collect::<Vec<_>>()
+                ));
             }
             Ok("pki") => {
                 printout.push_str(&format!("{:#?}", pki));
@@ -883,18 +967,13 @@ async fn handle_local_message(
             Ok("diagnostics") => {
                 printout.push_str(&format!("our Identity: {:#?}\r\n", our));
                 printout.push_str(&format!("we have connections with peers:\r\n"));
-                for peer in peers.values() {
-                    let read = peer.read().await;
+                for peer in peers.iter() {
                     printout.push_str(&format!(
-                        "{}, routing_for={}\r\n",
-                        read.identity.name, read.routing_for,
+                        "    {}, routing_for={}\r\n",
+                        peer.identity.name, peer.routing_for,
                     ));
                 }
                 printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
-                printout.push_str(&format!(
-                    "we have {} open peer connections\r\n",
-                    peer_connections.len()
-                ));
                 if pending_passthroughs.is_some() {
                     printout.push_str(&format!(
                         "we have {} pending passthrough connections\r\n",
@@ -905,12 +984,6 @@ async fn handle_local_message(
                     printout.push_str(&format!(
                         "we have {} open passthrough connections\r\n",
                         forwarding_connections.unwrap().len()
-                    ));
-                }
-                if active_routers.is_some() {
-                    printout.push_str(&format!(
-                        "we have {} active routers\r\n",
-                        active_routers.unwrap().len()
                     ));
                 }
             }
