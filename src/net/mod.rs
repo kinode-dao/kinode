@@ -472,7 +472,10 @@ async fn establish_new_peer_connection(
                 }
                 Err(_) => {
                     let _ = error_offline(km, &network_error_tx).await;
-                    (peer_id.name.clone(), Err(anyhow!("failed to connect to peer")))
+                    (
+                        peer_id.name.clone(),
+                        Err(anyhow!("failed to connect to peer")),
+                    )
                 }
             }
         }
@@ -509,7 +512,10 @@ async fn establish_new_peer_connection(
             } else {
                 // none of the routers worked!
                 let _ = error_offline(km, &network_error_tx).await;
-                (peer_id.name.clone(), Err(anyhow!("failed to connect to peer")))
+                (
+                    peer_id.name.clone(),
+                    Err(anyhow!("failed to connect to peer")),
+                )
             }
         }
     }
