@@ -7,7 +7,6 @@ use rand::seq::SliceRandom;
 use ring::signature::Ed25519KeyPair;
 use std::{collections::HashMap, sync::Arc};
 use tokio::net::TcpListener;
-use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use tokio::time;
 use tokio_tungstenite::{
@@ -103,7 +102,6 @@ async fn indirect_networking(
     let peers: Peers = Arc::new(DashMap::new());
     // mapping from QNS namehash to username
     let names: PKINames = Arc::new(DashMap::new());
-    let peer_connections = Arc::new(Mutex::new(JoinSet::<()>::new()));
     // track peers that we're already in the midst of establishing a connection with
     let mut pending_connections = JoinSet::<(NodeId, Result<()>)>::new();
     let mut peer_message_queues = HashMap::<NodeId, Vec<KernelMessage>>::new();
@@ -125,7 +123,6 @@ async fn indirect_networking(
                         km,
                         peers.clone(),
                         pki.clone(),
-                        peer_connections.clone(),
                         None,
                         None,
                         names.clone(),
@@ -161,7 +158,6 @@ async fn indirect_networking(
                     pki.clone(),
                     names.clone(),
                     peers.clone(),
-                    peer_connections.clone(),
                     reveal_ip,
                     kernel_message_tx.clone(),
                     network_error_tx.clone(),
@@ -201,7 +197,6 @@ async fn indirect_networking(
                     keypair.clone(),
                     pki.clone(),
                     peers.clone(),
-                    peer_connections.clone(),
                     kernel_message_tx.clone(),
                     print_tx.clone()
                 ));
@@ -216,7 +211,6 @@ async fn connect_to_routers(
     keypair: Arc<Ed25519KeyPair>,
     pki: OnchainPKI,
     peers: Peers,
-    peer_connections: Arc<Mutex<JoinSet<()>>>,
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) -> Result<()> {
@@ -244,7 +238,6 @@ async fn connect_to_routers(
                     &router_id,
                     false,
                     peers.clone(),
-                    peer_connections.clone(),
                     direct_conn,
                     None,
                     &kernel_message_tx,
@@ -274,7 +267,6 @@ async fn direct_networking(
     let peers: Peers = Arc::new(DashMap::new());
     // mapping from QNS namehash to username
     let names: PKINames = Arc::new(DashMap::new());
-    let peer_connections = Arc::new(Mutex::new(JoinSet::<()>::new()));
     // direct-specific structures
     let mut forwarding_connections = JoinSet::<()>::new();
     let mut pending_passthroughs: PendingPassthroughs = HashMap::new();
@@ -298,7 +290,6 @@ async fn direct_networking(
                         km,
                         peers.clone(),
                         pki.clone(),
-                        peer_connections.clone(),
                         Some(&mut pending_passthroughs),
                         Some(&forwarding_connections),
                         names.clone(),
@@ -334,7 +325,6 @@ async fn direct_networking(
                     pki.clone(),
                     names.clone(),
                     peers.clone(),
-                    peer_connections.clone(),
                     true,
                     kernel_message_tx.clone(),
                     network_error_tx.clone(),
@@ -402,7 +392,6 @@ async fn direct_networking(
                                     &peer_id,
                                     routing_for,
                                     peers.clone(),
-                                    peer_connections.clone(),
                                     peer_conn,
                                     None,
                                     &kernel_message_tx,
@@ -438,7 +427,6 @@ async fn establish_new_peer_connection(
     pki: OnchainPKI,
     names: PKINames,
     peers: Peers,
-    peer_connections: Arc<Mutex<JoinSet<()>>>,
     reveal_ip: bool,
     kernel_message_tx: MessageSender,
     network_error_tx: NetworkErrorSender,
@@ -455,13 +443,17 @@ async fn establish_new_peer_connection(
                 &format!("net: attempting to connect to {} directly", peer_id.name),
             )
             .await;
-            match init_connection(&our, &our_ip, &peer_id, &keypair, None, false).await {
-                Ok(direct_conn) => {
+            match time::timeout(
+                TIMEOUT,
+                init_connection(&our, &our_ip, &peer_id, &keypair, None, false),
+            )
+            .await
+            {
+                Ok(Ok(direct_conn)) => {
                     save_new_peer(
                         &peer_id,
                         false,
                         peers,
-                        peer_connections,
                         direct_conn,
                         Some(km),
                         &kernel_message_tx,
@@ -470,7 +462,7 @@ async fn establish_new_peer_connection(
                     .await;
                     (peer_id.name.clone(), Ok(()))
                 }
-                Err(_) => {
+                _ => {
                     let _ = error_offline(km, &network_error_tx).await;
                     (
                         peer_id.name.clone(),
@@ -501,7 +493,6 @@ async fn establish_new_peer_connection(
                     &pki,
                     &names,
                     peers,
-                    peer_connections,
                     kernel_message_tx.clone(),
                     print_tx.clone(),
                 ),
@@ -536,7 +527,6 @@ async fn init_connection_via_router(
     pki: &OnchainPKI,
     names: &PKINames,
     peers: Peers,
-    peer_connections: Arc<Mutex<JoinSet<()>>>,
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) -> bool {
@@ -559,7 +549,6 @@ async fn init_connection_via_router(
                     peer_id,
                     false,
                     peers,
-                    peer_connections,
                     direct_conn,
                     Some(km),
                     &kernel_message_tx,
@@ -825,7 +814,6 @@ async fn handle_local_message(
     km: KernelMessage,
     peers: Peers,
     pki: OnchainPKI,
-    peer_connections: Arc<Mutex<JoinSet<()>>>,
     pending_passthroughs: Option<&mut PendingPassthroughs>,
     forwarding_connections: Option<&JoinSet<()>>,
     names: PKINames,
@@ -885,7 +873,6 @@ async fn handle_local_message(
                             &peer_id,
                             false,
                             peers,
-                            peer_connections,
                             peer_conn,
                             None,
                             &kernel_message_tx,
@@ -987,10 +974,6 @@ async fn handle_local_message(
                     ));
                 }
                 printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
-                printout.push_str(&format!(
-                    "we have {} open peer connections\r\n",
-                    peer_connections.lock().await.len()
-                ));
                 if pending_passthroughs.is_some() {
                     printout.push_str(&format!(
                         "we have {} pending passthrough connections\r\n",

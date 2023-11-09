@@ -5,11 +5,8 @@ use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use ring::signature::{self, Ed25519KeyPair};
 use snow::params::NoiseParams;
-use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
-use tokio::sync::Mutex;
-use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite, MaybeTlsStream, WebSocketStream};
 
@@ -23,7 +20,6 @@ pub async fn save_new_peer(
     identity: &Identity,
     routing_for: bool,
     peers: Peers,
-    peer_connections: Arc<Mutex<JoinSet<()>>>,
     conn: PeerConnection,
     km: Option<KernelMessage>,
     kernel_message_tx: &MessageSender,
@@ -44,7 +40,7 @@ pub async fn save_new_peer(
         sender: peer_tx,
     };
     peers.insert(identity.name.clone(), peer.clone());
-    peer_connections.lock().await.spawn(maintain_connection(
+    tokio::spawn(maintain_connection(
         peer,
         peers,
         conn,
