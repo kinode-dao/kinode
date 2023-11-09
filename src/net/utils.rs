@@ -461,6 +461,47 @@ fn strip_0x(s: &str) -> String {
     }
 }
 
+pub async fn parse_hello_message(
+    our: &Identity,
+    km: &KernelMessage,
+    ipc: &[u8],
+    kernel_message_tx: &MessageSender,
+    print_tx: &PrintSender,
+) -> Result<()> {
+    print_tx
+        .send(Printout {
+            verbosity: 0,
+            content: format!(
+                "\x1b[3;32m{}: {}\x1b[0m",
+                km.source.node,
+                std::str::from_utf8(&ipc).unwrap_or("!!message parse error!!")
+            ),
+        })
+        .await?;
+    kernel_message_tx
+        .send(KernelMessage {
+            id: km.id,
+            source: Address {
+                node: our.name.clone(),
+                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+            },
+            target: km.rsvp.as_ref().unwrap_or(&km.source).clone(),
+            rsvp: None,
+            message: Message::Response((
+                Response {
+                    inherit: false,
+                    ipc: "delivered".as_bytes().to_vec(),
+                    metadata: None,
+                },
+                None,
+            )),
+            payload: None,
+            signed_capabilities: None,
+        })
+        .await?;
+    Ok(())
+}
+
 pub async fn print_debug(print_tx: &PrintSender, content: &str) {
     let _ = print_tx
         .send(Printout {
