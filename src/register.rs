@@ -58,8 +58,7 @@ pub async fn register(
     let keyfile_has = keyfile_arc.clone();
     let keyfile_vet = keyfile_arc.clone();
 
-    let static_files = warp::path("static")
-        .and(warp::fs::dir("./src/register/build/static/"));
+    let static_files = warp::path("static").and(warp::fs::dir("./src/register/build/static/"));
 
     let react_app = warp::path::end()
         .and(warp::get())
@@ -97,9 +96,15 @@ pub async fn register(
         ));
 
     let mut headers = HeaderMap::new();
-    headers.insert("Cache-Control", HeaderValue::from_static("no-store, no-cache, must-revalidate, proxy-revalidate"));
+    headers.insert(
+        "Cache-Control",
+        HeaderValue::from_static("no-store, no-cache, must-revalidate, proxy-revalidate"),
+    );
 
-    let routes = static_files.or(react_app).or(api).with(warp::reply::with::headers(headers));
+    let routes = static_files
+        .or(react_app)
+        .or(api)
+        .with(warp::reply::with::headers(headers));
 
     let _ = open::that(format!("http://localhost:{}/", port));
     warp::serve(routes)
@@ -108,7 +113,6 @@ pub async fn register(
         })
         .1
         .await;
-
 }
 
 async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl Reply, Rejection> {
