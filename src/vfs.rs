@@ -1035,73 +1035,76 @@ async fn match_request(
         VfsAction::Delete(mut full_path) => {
             full_path = clean_path(&full_path);
 
-            let mut vfs = vfs.lock().await;
-            let Some(key) = vfs.path_to_key.remove(&full_path) else {
-                send_to_terminal
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!("vfs: can't delete: nonexistent entry {}", full_path),
-                    })
-                    .await
-                    .unwrap();
-                return Err(VfsError::EntryNotFound);
-            };
-            let Some(entry) = vfs.key_to_entry.remove(&key) else {
-                send_to_terminal
-                    .send(Printout {
-                        verbosity: 0,
-                        content: format!("vfs: can't delete: nonexistent entry {}", full_path),
-                    })
-                    .await
-                    .unwrap();
-                return Err(VfsError::EntryNotFound);
-            };
-            match entry.entry_type {
-                EntryType::Dir {
-                    parent: _,
-                    ref children,
-                } => {
-                    if !children.is_empty() {
-                        send_to_terminal
-                            .send(Printout {
-                                verbosity: 0,
-                                content: format!(
-                                    "vfs: can't delete: non-empty directory {}",
-                                    full_path
-                                ),
-                            })
-                            .await
-                            .unwrap();
-                        vfs.path_to_key.insert(full_path.clone(), key.clone());
-                        vfs.key_to_entry.insert(key.clone(), entry);
+            {
+                let mut vfs = vfs.lock().await;
+                let Some(key) = vfs.path_to_key.remove(&full_path) else {
+                    send_to_terminal
+                        .send(Printout {
+                            verbosity: 0,
+                            content: format!("vfs: can't delete: nonexistent entry {}", full_path),
+                        })
+                        .await
+                        .unwrap();
+                    return Err(VfsError::EntryNotFound);
+                };
+                let Some(entry) = vfs.key_to_entry.remove(&key) else {
+                    send_to_terminal
+                        .send(Printout {
+                            verbosity: 0,
+                            content: format!("vfs: can't delete: nonexistent entry {}", full_path),
+                        })
+                        .await
+                        .unwrap();
+                    return Err(VfsError::EntryNotFound);
+                };
+                match entry.entry_type {
+                    EntryType::Dir {
+                        parent: _,
+                        ref children,
+                    } => {
+                        if !children.is_empty() {
+                            send_to_terminal
+                                .send(Printout {
+                                    verbosity: 0,
+                                    content: format!(
+                                        "vfs: can't delete: non-empty directory {}",
+                                        full_path
+                                    ),
+                                })
+                                .await
+                                .unwrap();
+                            vfs.path_to_key.insert(full_path.clone(), key.clone());
+                            vfs.key_to_entry.insert(key.clone(), entry);
+                        }
                     }
-                }
-                EntryType::File { parent } => match vfs.key_to_entry.get_mut(&parent) {
-                    None => {
-                        send_to_terminal
-                            .send(Printout {
-                                verbosity: 0,
-                                content: format!(
-                                    "vfs: delete: unexpected file with no parent dir: {}",
-                                    full_path
-                                ),
-                            })
-                            .await
-                            .unwrap();
-                        return Err(VfsError::InternalError);
-                    }
-                    Some(parent) => {
-                        let EntryType::Dir {
-                            parent: _,
-                            ref mut children,
-                        } = parent.entry_type
-                        else {
+                    EntryType::File { parent } => match vfs.key_to_entry.get_mut(&parent) {
+                        None => {
+                            send_to_terminal
+                                .send(Printout {
+                                    verbosity: 0,
+                                    content: format!(
+                                        "vfs: delete: unexpected file with no parent dir: {}",
+                                        full_path
+                                    ),
+                                })
+                                .await
+                                .unwrap();
                             return Err(VfsError::InternalError);
-                        };
-                        children.remove(&key);
-                    }
-                },
+                        }
+                        Some(parent) => {
+                            let EntryType::Dir {
+                                parent: _,
+                                ref mut children,
+                            } = parent.entry_type
+                            else {
+                                return Err(VfsError::InternalError);
+                            };
+                            children.remove(&key);
+                        }
+                    },
+                }
             }
+
             persist_state(send_to_persist, &mut recv_response, id).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
