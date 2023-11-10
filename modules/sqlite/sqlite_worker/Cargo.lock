@@ -162,7 +162,7 @@ checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 [[package]]
 name = "libsqlite3-sys"
 version = "0.26.0"
-source = "git+https://github.com/uqbar-dao/rusqlite?rev=fa6ed84#fa6ed843b65f7dd78d53a1b74c7e5095d71c2bd4"
+source = "git+https://github.com/uqbar-dao/rusqlite?rev=7dc2eb0#7dc2eb03876566435b75500eb9e4369b8567bb70"
 dependencies = [
  "cc",
  "pkg-config",
@@ -281,7 +281,7 @@ dependencies = [
 [[package]]
 name = "rusqlite"
 version = "0.29.0"
-source = "git+https://github.com/uqbar-dao/rusqlite?rev=fa6ed84#fa6ed843b65f7dd78d53a1b74c7e5095d71c2bd4"
+source = "git+https://github.com/uqbar-dao/rusqlite?rev=7dc2eb0#7dc2eb03876566435b75500eb9e4369b8567bb70"
 dependencies = [
  "bitflags",
  "fallible-iterator",
