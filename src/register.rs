@@ -18,6 +18,7 @@ use warp::{
 };
 
 use crate::http_server;
+use crate::http_server::types::JwtClaims;
 use crate::keygen;
 use crate::types::*;
 

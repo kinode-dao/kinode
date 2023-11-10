@@ -1,4 +1,8 @@
-use crate::types::*;
+use crate::http_server::types::*;
+use crate::types::{
+    Address, KernelMessage, Message, MessageSender, Payload, PrintSender, Printout, ProcessId,
+    Request, Response, ENCRYPTOR_PROCESS_ID, HTTP_SERVER_PROCESS_ID,
+};
 use futures::stream::SplitSink;
 use hmac::{Hmac, Mac};
 use jwt::{Error, VerifyWithKey};

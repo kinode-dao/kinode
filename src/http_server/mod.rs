@@ -1,6 +1,10 @@
 use crate::http_server::server_fns::*;
+use crate::http_server::types::*;
 use crate::register;
-use crate::types::*;
+use crate::types::{
+    Address, KernelMessage, Message, MessageReceiver, MessageSender, Payload, PrintSender,
+    Printout, ProcessId, Request, HTTP_SERVER_PROCESS_ID,
+};
 use anyhow::Result;
 
 use base64;
@@ -20,6 +24,7 @@ use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
 
 mod server_fns;
+pub mod types;
 
 // types and constants
 type HttpSender = tokio::sync::oneshot::Sender<HttpResponse>;
