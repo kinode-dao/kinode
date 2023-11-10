@@ -3,6 +3,32 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
+/// The structure of an IPC message sent to the HTTP server. Should be
+/// serialized as JSON bytes. HTTP server will respond with `HttpServerResponse`,
+/// which will also be serialized as JSON bytes.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum HttpServerMessage {
+    BindPath {
+        path: String,
+        authenticated: bool,
+        local_only: bool,
+    },
+    WebSocketPush(WebSocketPush),
+    ServerAction(ServerAction),
+    WsRegister(WsRegister),                 // Coming from a proxy
+    WsProxyDisconnect(WsProxyDisconnect),   // Coming from a proxy
+    WsMessage(WsMessage),                   // Coming from a proxy
+    EncryptedWsMessage(EncryptedWsMessage), // Coming from a proxy
+}
+
+/// Any Request sent to http_server, if it expects a response, will be given this
+/// response serialized to JSON bytes.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum HttpServerResponse {
+    Ok(()),
+    Error(HttpServerError),
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HttpResponse {
     pub status: u16,
@@ -61,21 +87,6 @@ pub struct WebSocketPush {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ServerAction {
     pub action: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum HttpServerMessage {
-    BindPath {
-        path: String,
-        authenticated: bool,
-        local_only: bool,
-    },
-    WebSocketPush(WebSocketPush),
-    ServerAction(ServerAction),
-    WsRegister(WsRegister),                 // Coming from a proxy
-    WsProxyDisconnect(WsProxyDisconnect),   // Coming from a proxy
-    WsMessage(WsMessage),                   // Coming from a proxy
-    EncryptedWsMessage(EncryptedWsMessage), // Coming from a proxy
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
