@@ -351,9 +351,10 @@ pub extern "C" fn send_and_await_response_wrapped(
     CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
 }
 
-fn handle_message<'a>(
+fn handle_message(
     our: &wit::Address,
-    db_handle: &'a mut Connection<'a>,
+    conn: &mut Option<rusqlite::Connection>,
+    txs: &mut HashMap<u64, rusqlite::Transaction>,
 ) -> anyhow::Result<()> {
     let (source, message) = wit::receive().unwrap();
 
@@ -368,13 +369,13 @@ fn handle_message<'a>(
                 sq::SqliteMessage::New { db } => {
                     let vfs_drive = format!("{}{}", PREFIX, db);
 
-                    match db_handle.conn {
+                    match conn {
                         Some(_) => {
                             return Err(sq::SqliteError::DbAlreadyExists.into());
                         },
                         None => {
                             let flags = rusqlite::OpenFlags::default();
-                            db_handle.conn = Some(rusqlite::Connection::open_with_flags_and_vfs(
+                            *conn = Some(rusqlite::Connection::open_with_flags_and_vfs(
                                     format!(
                                         "{}:{}:/{}.sql",
                                         our.node,
@@ -388,14 +389,14 @@ fn handle_message<'a>(
                     }
                 },
                 sq::SqliteMessage::Write { ref statement, tx_id, .. } => {
-                    let Some(ref conn) = db_handle.conn else {
+                    let Some(ref conn) = conn else {
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
                     let tx = match tx_id {
                         None => None,
                         Some(tx_id) => {
-                            match db_handle.txs.get(&tx_id) {
+                            match txs.get(&tx_id) {
                                 None => return Err(sq::SqliteError::NoTx.into()),
                                 Some(tx) => Some(tx),
                             }
@@ -449,19 +450,19 @@ fn handle_message<'a>(
                         .send()?;
                 },
                 sq::SqliteMessage::StartTransaction { tx_id, .. } => {
-                    let Some(ref mut conn) = db_handle.conn else {
+                    let Some(ref mut conn) = conn else {
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
                     let tx = conn.transaction()?;
-                    db_handle.txs.insert(tx_id, tx);
+                    txs.insert(tx_id, tx);    // this completely messes up lifetimes..
 
                     Response::new()
                         .ipc_bytes(ipc)
                         .send()?;
                 },
                 sq::SqliteMessage::Commit { ref tx_id, .. } => {
-                    let Some(tx) = db_handle.txs.remove(tx_id) else {
+                    let Some(tx) = txs.remove(tx_id) else {
                         return Err(sq::SqliteError::NoTx.into());
                     };
 
@@ -472,7 +473,7 @@ fn handle_message<'a>(
                         .send()?;
                 },
                 sq::SqliteMessage::Read { ref query, .. } => {
-                    let Some(ref db_handle) = db_handle.conn else {
+                    let Some(ref db_handle) = conn else {
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
@@ -515,15 +516,11 @@ impl Guest for Component {
         wit::print_to_terminal(1, "sqlite_worker: begin");
 
         let our = Address::from_str(&our).unwrap();
-        let mut db_handle = Connection {
-            conn: None,
-            txs: HashMap::new(),
-        };
-        loop {
-            {
+        let mut conn: Option<rusqlite::Connection> = None;
+        let mut txs: HashMap<u64, rusqlite::Transaction> = HashMap::new();
 
-           
-            match handle_message(&our, &mut db_handle) {
+        loop {
+            match handle_message(&our, &mut conn, &mut txs) {
                 Ok(()) => {},
                 Err(e) => {
                     //  TODO: should we send an error on failure?
@@ -539,7 +536,6 @@ impl Guest for Component {
                     }
                 },
             };
-        }
         }
     }
 }
