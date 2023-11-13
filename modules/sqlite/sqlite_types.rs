@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SqliteMessage {
     New { db: String },
-    Write { db: String, statement: String },
+    Write { db: String, statement: String, tx_id: Option<u64> },
     Read { db: String, query: String },
+    StartTransaction { db: String, tx_id: u64 }, // generate in sql module instead?
+    Commit { db: String, tx_id: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +33,8 @@ pub enum SqliteError {
     DbDoesNotExist,
     #[error("DbAlreadyExists")]
     DbAlreadyExists,
+    #[error("NoTx")]
+    NoTx,
     #[error("NoCap")]
     NoCap,
     #[error("RejectForeign")]
