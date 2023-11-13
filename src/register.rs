@@ -128,15 +128,13 @@ async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl
     let encoded_keyfile = keyfile_lock.as_ref().unwrap();
     let username: String = match encoded_keyfile.is_empty() {
         true => "".to_string(),
-        false => {
-            match bincode::deserialize(encoded_keyfile) {
-                Ok(k) => {
-                    let (user, ..): (String,) = k;
-                    user
-                },
-                Err(_) => "".to_string(),
+        false => match bincode::deserialize(encoded_keyfile) {
+            Ok(k) => {
+                let (user, ..): (String,) = k;
+                user
             }
-        }
+            Err(_) => "".to_string(),
+        },
     };
 
     Ok(warp::reply::json(&username))
@@ -189,11 +187,13 @@ async fn handle_boot(
     let mut encoded_keyfile = if !info.keyfile.clone().is_empty() {
         match base64::decode(info.keyfile.clone()) {
             Ok(k) => k,
-            Err(_) => return Ok(
-                warp::reply::with_status(warp::reply::json(&"Keyfile not valid base64".to_string()),
-                StatusCode::BAD_REQUEST)
-                    .into_response()
+            Err(_) => {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&"Keyfile not valid base64".to_string()),
+                    StatusCode::BAD_REQUEST,
                 )
+                .into_response())
+            }
         }
     } else {
         encoded_keyfile
@@ -224,11 +224,11 @@ async fn handle_boot(
                 k
             }
             Err(_) => {
-                return Ok(
-                warp::reply::with_status(warp::reply::json(&"Failed to decode keyfile".to_string()),
-                StatusCode::INTERNAL_SERVER_ERROR)
-                    .into_response()
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&"Failed to decode keyfile".to_string()),
+                    StatusCode::INTERNAL_SERVER_ERROR,
                 )
+                .into_response())
             }
         }
     };
@@ -246,11 +246,13 @@ async fn handle_boot(
 
     let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, our.name.clone()) {
         Some(token) => token,
-        None => return Ok(
-            warp::reply::with_status(warp::reply::json(&"Failed to generate JWT".to_string()),
-            StatusCode::SERVICE_UNAVAILABLE)
-                .into_response()
+        None => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&"Failed to generate JWT".to_string()),
+                StatusCode::SERVICE_UNAVAILABLE,
             )
+            .into_response())
+        }
     };
 
     sender
@@ -293,12 +295,10 @@ async fn handle_info(
     let username = {
         match keyfile_arc.lock().unwrap().clone() {
             None => String::new(),
-            Some(encoded_keyfile) => {
-                match keygen::get_username(encoded_keyfile) {
-                    Ok(k) => k,
-                    Err(_) => String::new(),
-                }
-            }
+            Some(encoded_keyfile) => match keygen::get_username(encoded_keyfile) {
+                Ok(k) => k,
+                Err(_) => String::new(),
+            },
         }
     };
 
