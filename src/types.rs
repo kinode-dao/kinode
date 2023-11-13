@@ -206,7 +206,13 @@ impl OnPanic {
 
 impl std::fmt::Display for ProcessId {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}:{}:{}", self.process(), self.package(), self.publisher())
+        write!(
+            f,
+            "{}:{}:{}",
+            self.process(),
+            self.package(),
+            self.publisher()
+        )
     }
 }
 
