@@ -186,6 +186,7 @@ async fn main() {
     // if any do not match, we should prompt user to create a "transaction"
     // that updates their PKI info on-chain.
     let http_server_port = http_server::find_open_port(8080).await.unwrap();
+    println!("login or register at http://localhost:{}", http_server_port);
     let (kill_tx, kill_rx) = oneshot::channel::<bool>();
 
     let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
