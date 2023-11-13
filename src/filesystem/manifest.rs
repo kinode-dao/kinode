@@ -13,7 +13,7 @@ use rusoto_s3::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
@@ -44,7 +44,7 @@ pub struct ChunkEntry {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, Hash, PartialEq)]
 pub enum FileIdentifier {
-    UUID(u128),
+    Uuid(u128),
     Process(ProcessId),
 }
 
@@ -65,7 +65,7 @@ pub struct BackupEntry {
 #[derive(Debug, Clone, Copy)]
 pub enum ChunkLocation {
     ColdStorage(bool), // bool local
-    WAL(u64),          // offset in wal,
+    Wal(u64),          // offset in wal,
     Memory(u64),       // offset in memory buffer
 }
 
@@ -89,7 +89,7 @@ pub struct InMemoryFile {
 impl InMemoryFile {
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Hasher::new();
-        for (_, (hash, _, _, _)) in &self.chunks {
+        for (hash, _, _, _) in self.chunks.values() {
             hasher.update(hash);
         }
         hasher.finalize().into()
@@ -139,12 +139,12 @@ impl InMemoryFile {
 
 impl FileIdentifier {
     pub fn new_uuid() -> Self {
-        Self::UUID(uuid::Uuid::new_v4().as_u128())
+        Self::Uuid(uuid::Uuid::new_v4().as_u128())
     }
 
     pub fn to_uuid(&self) -> Option<u128> {
         match self {
-            Self::UUID(uuid) => Some(*uuid),
+            Self::Uuid(uuid) => Some(*uuid),
             _ => None,
         }
     }
@@ -174,7 +174,7 @@ impl Manifest {
     pub async fn load(
         manifest_file: fs::File,
         wal_file: fs::File,
-        fs_directory_path: &PathBuf,
+        fs_directory_path: &Path,
         file_key: Vec<u8>,
         fs_config: FsConfig,
     ) -> io::Result<Self> {
@@ -208,7 +208,7 @@ impl Manifest {
             hash_index: Arc::new(RwLock::new(hash_index)),
             manifest_file: Arc::new(RwLock::new(manifest_file)),
             wal_file: Arc::new(RwLock::new(wal_file)),
-            fs_directory_path: fs_directory_path.clone(),
+            fs_directory_path: fs_directory_path.to_path_buf(),
             flush_cold_freq: fs_config.flush_to_cold_interval,
             memory_buffer: Arc::new(RwLock::new(Vec::new())),
             memory_limit: fs_config.mem_buffer_limit,
@@ -254,7 +254,7 @@ impl Manifest {
     pub async fn _get_chunk_hashes(&self) -> HashSet<[u8; 32]> {
         let mut in_use_hashes = HashSet::new();
         for file in self.manifest.read().await.values() {
-            for (_start, (hash, _length, _wal_position, _encrypted)) in &file.chunks {
+            for (hash, _length, _wal_position, _encrypted) in file.chunks.values() {
                 in_use_hashes.insert(*hash);
             }
         }
@@ -297,8 +297,8 @@ impl Manifest {
                     .chunks
                     .insert(start, (hash, length, location, encrypted));
                 match &location {
-                    &ChunkLocation::Memory(..) => in_memory_file.mem_chunks.push(start),
-                    &ChunkLocation::WAL(..) => in_memory_file.wal_chunks.push(start),
+                    ChunkLocation::Memory(..) => in_memory_file.mem_chunks.push(start),
+                    ChunkLocation::Wal(..) => in_memory_file.wal_chunks.push(start),
                     _ => {}
                 }
             }
@@ -322,7 +322,7 @@ impl Manifest {
                     in_memory_file.chunks.get_mut(&start)
                 {
                     if let ChunkLocation::Memory(offset) = location {
-                        *location = ChunkLocation::WAL(wal_length_before_flush + *offset);
+                        *location = ChunkLocation::Wal(wal_length_before_flush + *offset);
                         in_memory_file.wal_chunks.push(start);
                     }
                 }
@@ -332,7 +332,7 @@ impl Manifest {
             for tx_chunks in in_memory_file.active_txs.values_mut() {
                 for (_start, _hash, _length, location, _encrypted) in tx_chunks {
                     if let ChunkLocation::Memory(offset) = location {
-                        *location = ChunkLocation::WAL(wal_length_before_flush + *offset);
+                        *location = ChunkLocation::Wal(wal_length_before_flush + *offset);
                     }
                 }
             }
@@ -362,7 +362,7 @@ impl Manifest {
                     in_memory_file.chunks.get_mut(&start)
                 {
                     if let ChunkLocation::Memory(offset) = location {
-                        *location = ChunkLocation::WAL(wal_length_before_flush + *offset);
+                        *location = ChunkLocation::Wal(wal_length_before_flush + *offset);
                         in_memory_file.wal_chunks.push(start);
                     }
                 }
@@ -372,7 +372,7 @@ impl Manifest {
             for tx_chunks in in_memory_file.active_txs.values_mut() {
                 for (_start, _hash, _length, location, _encrypted) in tx_chunks {
                     if let ChunkLocation::Memory(offset) = location {
-                        *location = ChunkLocation::WAL(wal_length_before_flush + *offset);
+                        *location = ChunkLocation::Wal(wal_length_before_flush + *offset);
                     }
                 }
             }
@@ -546,7 +546,7 @@ impl Manifest {
                     }
                     chunk_data
                 }
-                ChunkLocation::WAL(offset) => {
+                ChunkLocation::Wal(offset) => {
                     let mut wal_file = self.wal_file.write().await;
                     wal_file
                         .seek(SeekFrom::Start(offset))
@@ -674,7 +674,7 @@ impl Manifest {
                     }
                     chunk_data
                 }
-                ChunkLocation::WAL(offset) => {
+                ChunkLocation::Wal(offset) => {
                     let mut wal_file = self.wal_file.write().await;
                     wal_file
                         .seek(SeekFrom::Start(offset))
@@ -956,32 +956,30 @@ impl Manifest {
             let mut chunks_to_flush: Vec<([u8; 32], u64, u64, ChunkLocation, bool)> = Vec::new();
 
             for &start in &in_memory_file.mem_chunks {
-                if let Some((hash, length, location, encrypted)) = in_memory_file.chunks.get(&start)
+                if let Some((hash, length, ChunkLocation::Memory(mem_pos), encrypted)) =
+                    in_memory_file.chunks.get(&start)
                 {
-                    if let ChunkLocation::Memory(mem_pos) = location {
-                        chunks_to_flush.push((
-                            *hash,
-                            start,
-                            *length,
-                            ChunkLocation::Memory(*mem_pos),
-                            *encrypted,
-                        ));
-                    }
+                    chunks_to_flush.push((
+                        *hash,
+                        start,
+                        *length,
+                        ChunkLocation::Memory(*mem_pos),
+                        *encrypted,
+                    ));
                 }
             }
 
             for &start in &in_memory_file.wal_chunks {
-                if let Some((hash, length, location, encrypted)) = in_memory_file.chunks.get(&start)
+                if let Some((hash, length, ChunkLocation::Wal(wal_pos), encrypted)) =
+                    in_memory_file.chunks.get(&start)
                 {
-                    if let ChunkLocation::WAL(wal_pos) = location {
-                        chunks_to_flush.push((
-                            *hash,
-                            start,
-                            *length,
-                            ChunkLocation::WAL(*wal_pos),
-                            *encrypted,
-                        ));
-                    }
+                    chunks_to_flush.push((
+                        *hash,
+                        start,
+                        *length,
+                        ChunkLocation::Wal(*wal_pos),
+                        *encrypted,
+                    ));
                 }
             }
             if !chunks_to_flush.is_empty() {
@@ -999,7 +997,7 @@ impl Manifest {
                 };
 
                 let buffer = match location {
-                    ChunkLocation::WAL(wal_pos) => {
+                    ChunkLocation::Wal(wal_pos) => {
                         // seek to the chunk in the WAL file
                         wal_file.seek(SeekFrom::Start(*wal_pos)).await?;
                         // read the chunk data from the WAL file
@@ -1284,7 +1282,7 @@ async fn load_wal(
                                 in_memory_file
                                     .chunks
                                     .insert(start, (hash, length, location, encrypted));
-                                if let ChunkLocation::WAL(_) = location {
+                                if let ChunkLocation::Wal(_) = location {
                                     in_memory_file.wal_chunks.push(start);
                                 }
                             }
@@ -1298,7 +1296,7 @@ async fn load_wal(
                         let location = if entry.copy {
                             ChunkLocation::ColdStorage(entry.local)
                         } else {
-                            ChunkLocation::WAL(data_position)
+                            ChunkLocation::Wal(data_position)
                         };
                         let chunks = tx_chunks
                             .entry(entry.tx_id)
@@ -1363,11 +1361,8 @@ async fn verify_manifest(
         let file_hash = in_memory_file.hash();
 
         for (chunk_hash, _, location, _encrypted) in in_memory_file.chunks.values() {
-            match location {
-                ChunkLocation::ColdStorage(local) => {
-                    chunk_hashes.insert(*chunk_hash, *local);
-                }
-                _ => {}
+            if let ChunkLocation::ColdStorage(local) = location {
+                chunk_hashes.insert(*chunk_hash, *local);
             }
         }
         hash_index.insert(file_hash, file.clone());

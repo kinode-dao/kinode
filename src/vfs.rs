@@ -200,7 +200,7 @@ async fn state_to_bytes(state: &DriveToVfs) -> Vec<u8> {
     bincode::serialize(&serializable).unwrap()
 }
 
-fn bytes_to_state(bytes: &Vec<u8>, state: &mut DriveToVfs) {
+fn bytes_to_state(bytes: &[u8], state: &mut DriveToVfs) {
     let serializable: DriveToVfsSerializable = bincode::deserialize(bytes).unwrap();
     for (id, vfs) in serializable.into_iter() {
         state.insert(id, Arc::new(Mutex::new(vfs)));
@@ -549,7 +549,7 @@ pub async fn vfs(
                                                         continue;
                                                     }
                                                 };
-                                                match handle_request(
+                                                if let Err(e) = handle_request(
                                                     our_node.clone(),
                                                     id,
                                                     source.clone(),
@@ -566,18 +566,15 @@ pub async fn vfs(
                                                     send_to_caps_oracle.clone(),
                                                     response_receiver,
                                                 ).await {
-                                                    Err(e) => {
-                                                        send_to_loop
-                                                            .send(make_error_message(
-                                                                our_node,
-                                                                id,
-                                                                source,
-                                                                e,
-                                                            ))
-                                                            .await
-                                                            .unwrap();
-                                                    },
-                                                    Ok(_) => {},
+                                                    send_to_loop
+                                                        .send(make_error_message(
+                                                            our_node,
+                                                            id,
+                                                            source,
+                                                            e,
+                                                        ))
+                                                        .await
+                                                        .unwrap();
                                                 }
                                             },
                                         }

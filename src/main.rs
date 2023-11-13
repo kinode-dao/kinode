@@ -199,8 +199,7 @@ async fn main() {
         _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, disk_keyfile)
             => panic!("registration failed"),
         (our, decoded_keyfile, encoded_keyfile) = async {
-            while let Some(fin) = rx.recv().await { return fin }
-            panic!("registration failed")
+            rx.recv().await.expect("registration failed")
         } => (our, decoded_keyfile, encoded_keyfile),
     };
 

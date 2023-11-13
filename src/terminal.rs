@@ -83,12 +83,10 @@ impl CommandHistory {
     /// provided string. otherwise, skip the first <depth> matches.
     /// yes this is O(n) to provide desired ordering, can revisit if slow
     fn search(&mut self, find: &str, depth: usize) -> Option<String> {
-        let mut skips = 0;
-        for line in &self.lines {
+        for (skips, line) in self.lines.iter().enumerate() {
             if line.contains(find) && skips == depth {
                 return Some(line.to_string());
             }
-            skips += 1;
         }
         None
     }
@@ -116,7 +114,7 @@ pub async fn terminal(
     // print initial splash screen
     println!(
         "\x1b[38;5;128m{}\x1b[0m",
-        format!(
+        format_args!(
             r#"
 
                 ,,   UU

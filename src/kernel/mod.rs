@@ -262,7 +262,7 @@ impl StandardHost for ProcessWasi {
         };
         let our_drive_name = [
             self.process.metadata.our.process.package(),
-            self.process.metadata.our.process.publisher_node(),
+            self.process.metadata.our.process.publisher(),
         ]
         .join(":");
         let Ok(Ok((_, hash_response))) = send_and_await_response(
@@ -333,7 +333,7 @@ impl StandardHost for ProcessWasi {
         let new_process_id = t::ProcessId::new(
             Some(&name),
             self.process.metadata.our.process.package(),
-            self.process.metadata.our.process.publisher_node(),
+            self.process.metadata.our.process.publisher(),
         );
         let Ok(Ok((_, response))) = send_and_await_response(
             self,
@@ -1042,7 +1042,7 @@ impl ProcessState {
 /// persist process_map state for next bootup
 /// and wait for filesystem to respond in the affirmative
 async fn persist_state(
-    our_name: &String,
+    our_name: &str,
     send_to_loop: &t::MessageSender,
     process_map: &t::ProcessMap,
 ) -> Result<()> {
@@ -1051,11 +1051,11 @@ async fn persist_state(
         .send(t::KernelMessage {
             id: rand::random(),
             source: t::Address {
-                node: our_name.clone(),
+                node: our_name.to_string(),
                 process: KERNEL_PROCESS_ID.clone(),
             },
             target: t::Address {
-                node: our_name.clone(),
+                node: our_name.to_string(),
                 process: FILESYSTEM_PROCESS_ID.clone(),
             },
             rsvp: None,

@@ -89,7 +89,7 @@ pub async fn encryptor(
         match serde_json::from_slice::<EncryptorMessage>(&ipc) {
             Ok(message) => {
                 match message {
-                    EncryptorMessage::GetKeyAction(GetKeyAction {
+                    EncryptorMessage::GetKey(GetKeyAction {
                         channel_id,
                         public_key_hex,
                     }) => {
@@ -183,7 +183,7 @@ pub async fn encryptor(
                             }
                         }
                     }
-                    EncryptorMessage::DecryptAndForwardAction(DecryptAndForwardAction {
+                    EncryptorMessage::DecryptAndForward(DecryptAndForwardAction {
                         channel_id,
                         forward_to,
                         json,
@@ -241,7 +241,7 @@ pub async fn encryptor(
                             panic!("No secret found");
                         }
                     }
-                    EncryptorMessage::EncryptAndForwardAction(EncryptAndForwardAction {
+                    EncryptorMessage::EncryptAndForward(EncryptAndForwardAction {
                         channel_id,
                         forward_to,
                         json,
@@ -301,7 +301,7 @@ pub async fn encryptor(
                                 .await;
                         }
                     }
-                    EncryptorMessage::DecryptAction(DecryptAction { channel_id }) => {
+                    EncryptorMessage::Decrypt(DecryptAction { channel_id }) => {
                         let _ = print_tx
                             .send(Printout {
                                 verbosity: 1,
@@ -357,7 +357,7 @@ pub async fn encryptor(
                                 .await;
                         }
                     }
-                    EncryptorMessage::EncryptAction(EncryptAction { channel_id }) => {
+                    EncryptorMessage::Encrypt(EncryptAction { channel_id }) => {
                         let _ = print_tx
                             .send(Printout {
                                 verbosity: 1,

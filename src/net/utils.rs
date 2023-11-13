@@ -27,8 +27,8 @@ pub async fn save_new_peer(
 ) {
     print_debug(print_tx, &format!("net: saving new peer {}", identity.name)).await;
     let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
-    if km.is_some() {
-        peer_tx.send(km.unwrap()).unwrap()
+    if let Some(km) = km {
+        peer_tx.send(km).unwrap()
     }
     let peer = Peer {
         identity: identity.clone(),
@@ -346,7 +346,7 @@ pub async fn send_uqbar_handshake(
     keypair: &Ed25519KeyPair,
     noise_static_key: &[u8],
     noise: &mut snow::HandshakeState,
-    buf: &mut Vec<u8>,
+    buf: &mut [u8],
     write_stream: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
     proxy_request: bool,
 ) -> Result<()> {
@@ -367,7 +367,7 @@ pub async fn send_uqbar_handshake(
 
 pub async fn recv_uqbar_handshake(
     noise: &mut snow::HandshakeState,
-    buf: &mut Vec<u8>,
+    buf: &mut [u8],
     read_stream: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     write_stream: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
 ) -> Result<HandshakePayload> {
@@ -449,11 +449,10 @@ pub async fn error_offline(km: KernelMessage, network_error_tx: &NetworkErrorSen
 }
 
 fn strip_0x(s: &str) -> String {
-    if s.starts_with("0x") {
-        s[2..].to_string()
-    } else {
-        s.to_string()
+    if let Some(stripped) = s.strip_prefix("0x") {
+        return stripped.to_string();
     }
+    s.to_string()
 }
 
 pub async fn parse_hello_message(

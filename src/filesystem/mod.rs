@@ -539,7 +539,7 @@ async fn handle_request(
                 });
             };
             let file_uuid = match maybe_file_id {
-                Some(id) => FileIdentifier::UUID(id),
+                Some(id) => FileIdentifier::Uuid(id),
                 None => FileIdentifier::new_uuid(),
             };
 
@@ -562,7 +562,7 @@ async fn handle_request(
                 });
             };
 
-            let file_uuid = FileIdentifier::UUID(file_uuid);
+            let file_uuid = FileIdentifier::Uuid(file_uuid);
 
             match manifest.write_at(&file_uuid, offset, &payload.bytes).await {
                 Ok(_) => (),
@@ -577,7 +577,7 @@ async fn handle_request(
             (FsResponse::Write(file_uuid.to_uuid().unwrap()), None)
         }
         FsAction::Read(file_uuid) => {
-            let file = FileIdentifier::UUID(file_uuid);
+            let file = FileIdentifier::Uuid(file_uuid);
 
             match manifest.read(&file, None, None).await {
                 Err(e) => {
@@ -590,7 +590,7 @@ async fn handle_request(
             }
         }
         FsAction::ReadChunk(req) => {
-            let file = FileIdentifier::UUID(req.file);
+            let file = FileIdentifier::Uuid(req.file);
 
             match manifest
                 .read(&file, Some(req.start), Some(req.length))
@@ -606,7 +606,7 @@ async fn handle_request(
             }
         }
         FsAction::Delete(del) => {
-            let file = FileIdentifier::UUID(del);
+            let file = FileIdentifier::Uuid(del);
             manifest.delete(&file).await?;
 
             (FsResponse::Delete(del), None)
@@ -619,7 +619,7 @@ async fn handle_request(
             };
 
             let file_uuid = match maybe_file_uuid {
-                Some(uuid) => FileIdentifier::UUID(uuid),
+                Some(uuid) => FileIdentifier::Uuid(uuid),
                 None => FileIdentifier::new_uuid(),
             };
 
@@ -636,7 +636,7 @@ async fn handle_request(
             (FsResponse::Append(file_uuid.to_uuid().unwrap()), None)
         }
         FsAction::Length(file_uuid) => {
-            let file = FileIdentifier::UUID(file_uuid);
+            let file = FileIdentifier::Uuid(file_uuid);
             let length = manifest.get_length(&file).await;
             match length {
                 Some(len) => (FsResponse::Length(len), None),
@@ -648,7 +648,7 @@ async fn handle_request(
             }
         }
         FsAction::SetLength((file_uuid, length)) => {
-            let file = FileIdentifier::UUID(file_uuid);
+            let file = FileIdentifier::Uuid(file_uuid);
             manifest.set_length(&file, length).await?;
 
             // doublecheck if this is the type of return statement we want.

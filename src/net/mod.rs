@@ -367,60 +367,57 @@ async fn direct_networking(
                 // TODO we can perform some amount of validation here
                 // to prevent some amount of potential DDoS attacks.
                 // can also block based on socket_addr
-                match accept_async(MaybeTlsStream::Plain(stream)).await {
-                    Ok(websocket) => {
-                        print_debug(&print_tx, "net: received new websocket connection").await;
-                        let (peer_id, routing_for, conn) =
-                            match recv_connection(
-                                &our,
-                                &our_ip,
-                                &pki,
-                                &peers,
-                                &mut pending_passthroughs,
-                                &keypair,
-                                websocket).await
-                            {
-                                Ok(res) => res,
-                                Err(e) => {
-                                    print_tx.send(Printout {
-                                        verbosity: 0,
-                                        content: format!("net: recv_connection failed: {e}"),
-                                    }).await?;
-                                    continue;
-                                }
-                            };
-                        // TODO if their handshake indicates they want us to proxy
-                        // for them (aka act as a router for them) we can choose
-                        // whether to do so here!
-                        // if conn is direct, add peer. if passthrough, add to our
-                        // forwarding connections joinset
-                        match conn {
-                            Connection::Peer(peer_conn) => {
-                                save_new_peer(
-                                    &peer_id,
-                                    routing_for,
-                                    peers.clone(),
-                                    peer_conn,
-                                    None,
-                                    &kernel_message_tx,
-                                    &print_tx
-                                ).await;
+                // ignore connections we failed to accept...?
+                if let Ok(websocket) = accept_async(MaybeTlsStream::Plain(stream)).await {
+                    print_debug(&print_tx, "net: received new websocket connection").await;
+                    let (peer_id, routing_for, conn) =
+                        match recv_connection(
+                            &our,
+                            &our_ip,
+                            &pki,
+                            &peers,
+                            &mut pending_passthroughs,
+                            &keypair,
+                            websocket).await
+                        {
+                            Ok(res) => res,
+                            Err(e) => {
+                                print_tx.send(Printout {
+                                    verbosity: 0,
+                                    content: format!("net: recv_connection failed: {e}"),
+                                }).await?;
+                                continue;
                             }
-                            Connection::Passthrough(passthrough_conn) => {
-                                forwarding_connections.spawn(maintain_passthrough(
-                                    passthrough_conn,
-                                ));
-                            }
-                            Connection::PendingPassthrough(pending_conn) => {
-                                pending_passthroughs.insert(
-                                    (peer_id.name.clone(), pending_conn.target.clone()),
-                                    pending_conn
-                                );
-                            }
+                        };
+                    // TODO if their handshake indicates they want us to proxy
+                    // for them (aka act as a router for them) we can choose
+                    // whether to do so here!
+                    // if conn is direct, add peer. if passthrough, add to our
+                    // forwarding connections joinset
+                    match conn {
+                        Connection::Peer(peer_conn) => {
+                            save_new_peer(
+                                &peer_id,
+                                routing_for,
+                                peers.clone(),
+                                peer_conn,
+                                None,
+                                &kernel_message_tx,
+                                &print_tx
+                            ).await;
+                        }
+                        Connection::Passthrough(passthrough_conn) => {
+                            forwarding_connections.spawn(maintain_passthrough(
+                                passthrough_conn,
+                            ));
+                        }
+                        Connection::PendingPassthrough(pending_conn) => {
+                            pending_passthroughs.insert(
+                                (peer_id.name.clone(), pending_conn.target.clone()),
+                                pending_conn
+                            );
                         }
                     }
-                    // ignore connections we failed to accept...?
-                    Err(_) => {}
                 }
             }
         }
