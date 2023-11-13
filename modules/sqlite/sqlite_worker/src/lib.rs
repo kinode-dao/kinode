@@ -351,7 +351,7 @@ pub extern "C" fn send_and_await_response_wrapped(
     CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
 }
 
-fn handle_message(
+fn handle_message<'a>(
     our: &wit::Address,
     conn: &mut Option<rusqlite::Connection>,
     txs: &mut HashMap<u64, rusqlite::Transaction>,
@@ -450,11 +450,12 @@ fn handle_message(
                         .send()?;
                 },
                 sq::SqliteMessage::StartTransaction { tx_id, .. } => {
-                    let Some(ref mut conn) = conn else {
+                    let Some(ref conn) = conn else {
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
-                    let tx = conn.transaction()?;
+                    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Deferred)?;
+                    
                     txs.insert(tx_id, tx);    // this completely messes up lifetimes..
 
                     Response::new()
