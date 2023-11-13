@@ -256,7 +256,7 @@ async fn main() {
             ProcessId::new(Some("encryptor"), "sys", "uqbar"),
             encryptor_sender,
             false,
-        )
+        ),
     ];
 
     #[cfg(feature = "llm")]

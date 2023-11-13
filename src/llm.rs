@@ -89,30 +89,31 @@ async fn handle_message(
         .post("http://localhost:3030/completion")
         .json(&req)
         .send()
-        .await {
-            Ok(res) => res,
-            Err(e) => {
-                return Err(LlmError::RequestFailed {
-                    error: format!("{}", e),
-                });
-            }
-        };
-
-    let llm_response = match res.json::<LlmResponse>()
         .await
-        {
-            Ok(response) => response,
-            Err(e) => {
-                return Err(LlmError::DeserializationToLlmResponseFailed {
-                    error: format!("{}", e),
-                });
-            }
-        };
+    {
+        Ok(res) => res,
+        Err(e) => {
+            return Err(LlmError::RequestFailed {
+                error: format!("{}", e),
+            });
+        }
+    };
 
-    let _ = _print_tx.send(Printout {
-        verbosity: 0,
-        content: format!("llm: {:?}", llm_response.clone().content)
-    }).await;
+    let llm_response = match res.json::<LlmResponse>().await {
+        Ok(response) => response,
+        Err(e) => {
+            return Err(LlmError::DeserializationToLlmResponseFailed {
+                error: format!("{}", e),
+            });
+        }
+    };
+
+    let _ = _print_tx
+        .send(Printout {
+            verbosity: 0,
+            content: format!("llm: {:?}", llm_response.clone().content),
+        })
+        .await;
 
     let message = KernelMessage {
         id,
@@ -125,10 +126,8 @@ async fn handle_message(
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: serde_json::to_vec::<Result<LlmResponse, LlmError>>(&Ok(
-                    llm_response,
-                ))
-                .unwrap(),
+                ipc: serde_json::to_vec::<Result<LlmResponse, LlmError>>(&Ok(llm_response))
+                    .unwrap(),
                 metadata: None,
             },
             None,
