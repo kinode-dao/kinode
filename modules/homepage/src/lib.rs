@@ -1,5 +1,8 @@
 use serde_json::json;
-use uqbar_process_lib::{get_payload, receive, Address, Message, Payload, Request, Response};
+use uqbar_process_lib::{
+    get_payload, grant_messaging, println, receive, Address, Message, Payload, ProcessId, Request,
+    Response,
+};
 
 wit_bindgen::generate!({
     path: "../../wit",
@@ -21,6 +24,11 @@ impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
         println!("homepage: start");
+
+        grant_messaging(
+            &our,
+            &Vec::from([ProcessId::from_str("http_server:sys:uqbar").unwrap()]),
+        );
 
         match main(our) {
             Ok(_) => {}
@@ -66,7 +74,6 @@ fn main(our: Address) -> anyhow::Result<()> {
         };
 
         if message_json["path"] == "/" && message_json["method"] == "GET" {
-            println!("homepage: sending response");
             Response::new()
                 .ipc(
                     &json!({
