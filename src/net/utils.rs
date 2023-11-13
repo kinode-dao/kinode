@@ -25,11 +25,7 @@ pub async fn save_new_peer(
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
 ) {
-    print_debug(
-        print_tx,
-        &format!("net: saving new peer {}", identity.name),
-    )
-    .await;
+    print_debug(print_tx, &format!("net: saving new peer {}", identity.name)).await;
     let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
     if km.is_some() {
         peer_tx.send(km.unwrap()).unwrap()

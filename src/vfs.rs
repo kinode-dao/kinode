@@ -293,21 +293,21 @@ async fn load_state_from_reboot(
         .await;
     let km = recv_from_loop.recv().await;
     let Some(km) = km else {
-        return ;
+        return;
     };
 
     let KernelMessage {
         message, payload, ..
     } = km;
     let Message::Response((Response { ipc, .. }, None)) = message else {
-        return ;
+        return;
     };
     let Ok(Ok(FsResponse::GetState)) = serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
     else {
-        return ;
+        return;
     };
     let Some(payload) = payload else {
-        return ;
+        return;
     };
     bytes_to_state(&payload.bytes, drive_to_vfs);
 }
@@ -710,9 +710,9 @@ async fn handle_request(
                 None,
             )),
             payload: bytes.map(|bytes| Payload {
-                    mime: Some("application/octet-stream".into()),
-                    bytes,
-                }),
+                mime: Some("application/octet-stream".into()),
+                bytes,
+            }),
             signed_capabilities: None,
         };
 
@@ -1337,10 +1337,8 @@ async fn match_request(
                                         message: Message::Request(Request {
                                             inherit: true,
                                             expects_response: Some(5), // TODO evaluate
-                                            ipc: serde_json::to_vec(&FsAction::Read(
-                                                *file_hash,
-                                            ))
-                                            .unwrap(),
+                                            ipc: serde_json::to_vec(&FsAction::Read(*file_hash))
+                                                .unwrap(),
                                             metadata: None,
                                         }),
                                         payload: None,

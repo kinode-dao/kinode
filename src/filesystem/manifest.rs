@@ -19,7 +19,6 @@ use tokio::fs;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::RwLock;
 
-
 /// Contains interface for filesystem manifest log, and write ahead log.
 
 //   ON-DISK, WAL
@@ -74,8 +73,7 @@ const NONCE_SIZE: usize = 24;
 const TAG_SIZE: usize = 16;
 const ENCRYPTION_OVERHEAD: usize = NONCE_SIZE + TAG_SIZE;
 
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct InMemoryFile {
     //  chunks: (start) -> (hash, length, chunk_location, encrypted) [commited txs]
     pub chunks: BTreeMap<u64, ([u8; 32], u64, ChunkLocation, bool)>,
@@ -138,8 +136,6 @@ impl InMemoryFile {
             })
     }
 }
-
-
 
 impl FileIdentifier {
     pub fn new_uuid() -> Self {
@@ -490,11 +486,13 @@ impl Manifest {
         };
 
         // update the in_memory_file directly
-        in_memory_file
-            .active_txs
-            .entry(tx_id)
-            .or_default()
-            .push((start, chunk_hash, chunk_length, proper_position, encrypted));
+        in_memory_file.active_txs.entry(tx_id).or_default().push((
+            start,
+            chunk_hash,
+            chunk_length,
+            proper_position,
+            encrypted,
+        ));
 
         Ok(())
     }
@@ -1020,7 +1018,7 @@ impl Manifest {
                             });
                         }
                         // copy the chunk data from the memory buffer
-                        
+
                         memory_buffer[mem_pos..mem_pos + total_len as usize].to_vec()
                     }
                     _ => vec![],
@@ -1281,8 +1279,7 @@ async fn load_wal(
                 match record {
                     Ok(WALRecord::CommitTx(tx_id)) => {
                         if let Some((file_id, chunks)) = tx_chunks.remove(&tx_id) {
-                            let in_memory_file =
-                                manifest.entry(file_id).or_default();
+                            let in_memory_file = manifest.entry(file_id).or_default();
                             for (start, hash, length, location, encrypted) in chunks {
                                 in_memory_file
                                     .chunks
@@ -1325,8 +1322,7 @@ async fn load_wal(
                         }
                     }
                     Ok(WALRecord::SetLength(file_id, new_length)) => {
-                        let in_memory_file =
-                            manifest.entry(file_id).or_default();
+                        let in_memory_file = manifest.entry(file_id).or_default();
                         in_memory_file.chunks.retain(|&start, _| start < new_length);
 
                         // update mem_chunks and wal_chunks

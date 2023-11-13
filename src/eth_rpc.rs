@@ -179,7 +179,8 @@ pub async fn eth_rpc(
                             let _ = print_tx
                                 .send(Printout {
                                     verbosity: 0,
-                                    content: "eth_rpc: connection failed, retrying in 5s".to_string(),
+                                    content: "eth_rpc: connection failed, retrying in 5s"
+                                        .to_string(),
                                 })
                                 .await;
                             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -234,7 +235,9 @@ pub async fn eth_rpc(
                                 let _ = print_tx
                                     .send(Printout {
                                         verbosity: 0,
-                                        content: "eth_rpc: subscription connection lost, reconnecting".to_string(),
+                                        content:
+                                            "eth_rpc: subscription connection lost, reconnecting"
+                                                .to_string(),
                                     })
                                     .await;
                             }

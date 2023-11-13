@@ -998,8 +998,7 @@ async fn handle_local_message(
                                 Identity {
                                     name: log.name.clone(),
                                     networking_key: log.public_key,
-                                    ws_routing: if log.ip == *"0.0.0.0" || log.port == 0
-                                    {
+                                    ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
                                         None
                                     } else {
                                         Some((log.ip, log.port))

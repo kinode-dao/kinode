@@ -3,10 +3,8 @@ use crate::register;
 use crate::types::*;
 use anyhow::Result;
 
-
 use futures::SinkExt;
 use futures::StreamExt;
-
 
 use route_recognizer::Router;
 use std::collections::HashMap;
@@ -100,12 +98,7 @@ pub async fn http_server(
                 .await
                 {
                     send_to_loop
-                        .send(make_error_message(
-                            our_name.clone(),
-                            id,
-                            source.clone(),
-                            e,
-                        ))
+                        .send(make_error_message(our_name.clone(), id, source.clone(), e))
                         .await
                         .unwrap();
                 }
