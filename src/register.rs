@@ -64,6 +64,8 @@ pub async fn register(
         .and(warp::get())
         .and(warp::fs::file("./src/register/build/index.html"));
 
+    let keyfile_vet_copy = keyfile_vet.clone();
+
     let api = warp::path("has-keyfile")
         .and(
             warp::get()
@@ -75,6 +77,7 @@ pub async fn register(
                 .and(warp::any().map(move || ip.clone()))
                 .and(warp::any().map(move || our_ws_info.clone()))
                 .and(warp::any().map(move || net_keypair_ws_info.clone()))
+                .and(warp::any().map(move || keyfile_vet_copy.clone()))
                 .and_then(handle_info),
         ))
         .or(warp::path("vet-keyfile").and(
@@ -126,8 +129,13 @@ async fn handle_has_keyfile(keyfile: Arc<Mutex<Option<Vec<u8>>>>) -> Result<impl
     let username: String = match encoded_keyfile.is_empty() {
         true => "".to_string(),
         false => {
-            let (user, ..): (String,) = bincode::deserialize(encoded_keyfile).unwrap();
-            user
+            match bincode::deserialize(encoded_keyfile) {
+                Ok(k) => {
+                    let (user, ..): (String,) = k;
+                    user
+                },
+                Err(_) => "".to_string(),
+            }
         }
     };
 
@@ -165,9 +173,11 @@ async fn handle_boot(
     sender: RegistrationSender,
     mut our: Identity,
     networking_keypair: Document,
-    mut encoded_keyfile: Vec<u8>,
+    encoded_keyfile: Vec<u8>,
 ) -> Result<impl Reply, Rejection> {
-    our.name = info.username;
+    if !info.username.is_empty() {
+        our.name = info.username;
+    }
 
     if info.direct {
         our.allowed_routers = vec![];
@@ -176,12 +186,18 @@ async fn handle_boot(
     }
 
     // if keyfile was not present in node and is present from user upload
-    if encoded_keyfile.is_empty() && !info.keyfile.clone().is_empty() {
+    let mut encoded_keyfile = if !info.keyfile.clone().is_empty() {
         match base64::decode(info.keyfile.clone()) {
-            Ok(k) => encoded_keyfile = k,
-            Err(_) => return Err(warp::reject()),
+            Ok(k) => k,
+            Err(_) => return Ok(
+                warp::reply::with_status(warp::reply::json(&"Keyfile not valid base64".to_string()),
+                StatusCode::BAD_REQUEST)
+                    .into_response()
+                )
         }
-    }
+    } else {
+        encoded_keyfile
+    };
 
     // if keyfile was not in node or upload or if networking required reset
     let decoded_keyfile = if info.reset || encoded_keyfile.is_empty() {
@@ -200,13 +216,20 @@ async fn handle_boot(
     } else {
         match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
             Ok(k) => {
+                our.name = k.username.clone();
                 our.networking_key = format!(
                     "0x{}",
                     hex::encode(k.networking_keypair.public_key().as_ref())
                 );
                 k
             }
-            Err(_) => return Err(warp::reject()),
+            Err(_) => {
+                return Ok(
+                warp::reply::with_status(warp::reply::json(&"Failed to decode keyfile".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR)
+                    .into_response()
+                )
+            }
         }
     };
 
@@ -223,7 +246,11 @@ async fn handle_boot(
 
     let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, our.name.clone()) {
         Some(token) => token,
-        None => return Err(warp::reject()),
+        None => return Ok(
+            warp::reply::with_status(warp::reply::json(&"Failed to generate JWT".to_string()),
+            StatusCode::SERVICE_UNAVAILABLE)
+                .into_response()
+            )
     };
 
     sender
@@ -257,10 +284,23 @@ async fn handle_info(
     ip: String,
     our_arc: Arc<Mutex<Option<Identity>>>,
     networking_keypair_arc: Arc<Mutex<Option<Document>>>,
+    keyfile_arc: Arc<Mutex<Option<Vec<u8>>>>,
 ) -> Result<impl Reply, Rejection> {
     // 1. Generate networking keys
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
     *networking_keypair_arc.lock().unwrap() = Some(serialized_networking_keypair);
+
+    let username = {
+        match keyfile_arc.lock().unwrap().clone() {
+            None => String::new(),
+            Some(encoded_keyfile) => {
+                match keygen::get_username(encoded_keyfile) {
+                    Ok(k) => k,
+                    Err(_) => String::new(),
+                }
+            }
+        }
+    };
 
     // 2. set our...
     // TODO: if IP is localhost, assign a router...
@@ -270,7 +310,7 @@ async fn handle_info(
     // to match on
     let our = Identity {
         networking_key: format!("0x{}", public_key),
-        name: String::new(),
+        name: username,
         ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
             "uqbar-router-1.uq".into(), // "0x8d9e54427c50660c6d4802f63edca86a9ca5fd6a78070c4635950e9d149ed441".into(),
