@@ -73,21 +73,13 @@ impl ProcessId {
             publisher_node,
         })
     }
-    pub fn to_string(&self) -> String {
-        [
-            self.process_name.as_str(),
-            self.package_name.as_str(),
-            self.publisher_node.as_str(),
-        ]
-        .join(":")
-    }
     pub fn process(&self) -> &str {
         &self.process_name
     }
     pub fn package(&self) -> &str {
         &self.package_name
     }
-    pub fn publisher_node(&self) -> &str {
+    pub fn publisher(&self) -> &str {
         &self.publisher_node
     }
     pub fn en_wit(&self) -> wit::ProcessId {
@@ -214,13 +206,19 @@ impl OnPanic {
 
 impl std::fmt::Display for ProcessId {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(
+            f,
+            "{}:{}:{}",
+            self.process(),
+            self.package(),
+            self.publisher()
+        )
     }
 }
 
 impl std::fmt::Display for Address {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}@{}", self.node, self.process.to_string(),)
+        write!(f, "{}@{}", self.node, self.process)
     }
 }
 
@@ -250,7 +248,7 @@ impl std::fmt::Display for Message {
                 if context.is_none() {
                     "None".into()
                 } else {
-                    match serde_json::from_slice::<serde_json::Value>(&context.as_ref().unwrap()) {
+                    match serde_json::from_slice::<serde_json::Value>(context.as_ref().unwrap()) {
                         Ok(json) => format!("{}", json),
                         Err(_) => format!("{:?}", context.as_ref().unwrap()),
                     }
@@ -1055,10 +1053,10 @@ pub struct EncryptAction {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EncryptorMessage {
-    GetKeyAction(GetKeyAction),
-    DecryptAndForwardAction(DecryptAndForwardAction),
-    EncryptAndForwardAction(EncryptAndForwardAction),
-    DecryptAction(DecryptAction),
-    EncryptAction(EncryptAction),
+    GetKey(GetKeyAction),
+    DecryptAndForward(DecryptAndForwardAction),
+    EncryptAndForward(EncryptAndForwardAction),
+    Decrypt(DecryptAction),
+    Encrypt(EncryptAction),
 }
 // encryptor End

@@ -1,6 +1,6 @@
 use crate::types::*;
 use anyhow::Result;
-use dotenv;
+
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -83,7 +83,7 @@ async fn main() {
         mpsc::channel(WEBSOCKET_SENDER_CHANNEL_CAPACITY);
     // filesystem receives request messages via this channel, kernel sends messages
     let (fs_message_sender, fs_message_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY.clone());
+        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY);
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
@@ -199,8 +199,7 @@ async fn main() {
         _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, disk_keyfile)
             => panic!("registration failed"),
         (our, decoded_keyfile, encoded_keyfile) = async {
-            while let Some(fin) = rx.recv().await { return fin }
-            panic!("registration failed")
+            rx.recv().await.expect("registration failed")
         } => (our, decoded_keyfile, encoded_keyfile),
     };
 
@@ -329,7 +328,7 @@ async fn main() {
                 )
                 // TODO restart the task?
             } else {
-                format!("what does this mean???")
+                "what does this mean???".to_string()
                 // TODO restart the task?
             }
         }
@@ -379,7 +378,7 @@ async fn main() {
     // abort all remaining tasks
     tasks.shutdown().await;
     let _ = crossterm::terminal::disable_raw_mode();
-    println!("");
+    println!();
     println!("\x1b[38;5;196m{}\x1b[0m", quit_msg);
     return;
 }
