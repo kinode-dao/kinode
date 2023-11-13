@@ -1,127 +1,143 @@
 use crate::types::*;
 use anyhow::Result;
-use llama_cpp_rs::{
-    options::{ModelOptions, PredictOptions},
-    LLama,
-};
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::Mutex;
-// use serde_json::json;
-// use std::collections::HashMap;
+use reqwest::Response as ReqwestResponse;
 
-#[derive(Debug, Serialize, Deserialize)]
-enum LlamaAction {
-    Prompt(String), // TODO add grammar
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum LlamaError {
-    NoRsvp,
-    BadJson,
-    NoJson,
-    PromptFailed,
-}
+// Test llm with these commands in the terminal
 
 pub async fn llm(
-    our: String,
+    our_name: String,
     send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
     print_tx: PrintSender,
 ) -> Result<()> {
     while let Some(message) = recv_in_client.recv().await {
-        let our = our.clone();
-        let send_to_loop = send_to_loop.clone();
-        let print_tx = print_tx.clone();
-
         let KernelMessage {
-            ref source,
-            ref rsvp,
+            id,
+            source,
+            rsvp,
             message:
                 Message::Request(Request {
                     expects_response,
-                    ipc: ref json_bytes,
+                    ipc,
                     ..
                 }),
             ..
-        } = message
+        } = message.clone()
         else {
-            panic!("llm: bad message");
+            return Err(anyhow::anyhow!("llm: bad message"));
         };
 
-        // let target = if expects_response.is_some() {
-        //     Address {
-        //         node: our.clone(),
-        //         process: source.process.clone(),
-        //     }
-        // } else {
-        //     let Some(rsvp) = rsvp else {
-        //         send_to_loop
-        //             .send(make_error_message(
-        //                 our.clone(),
-        //                 &message,
-        //                 LlamaError::NoRsvp,
-        //             ))
-        //             .await
-        //             .unwrap();
-        //         continue;
-        //     };
-        //     rsvp.clone()
-        // };
+        let our_name = our_name.clone();
+        let send_to_loop = send_to_loop.clone();
+        let print_tx = print_tx.clone();
 
-        // let Ok(action) = serde_json::from_slice::<LlamaAction>(&json_bytes) else {
-        //     send_to_loop
-        //         .send(make_error_message(
-        //             our.clone(),
-        //             &message,
-        //             LlamaError::BadJson,
-        //         ))
-        //         .await
-        //         .unwrap();
-        //     continue;
-        // };
-
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 0,
-                content: "prompting".to_string(),
-            })
-            .await
-            .unwrap();
-
-        let llama = LLama::new(
-            "./WizardLM-7B-uncensored.Q4_0.gguf".into(),
-            &ModelOptions {
-                n_gpu_layers: 0,
-                ..Default::default()
-            },
-        )
-        .unwrap();
-
-        let res = llama
-            .predict(
-                "what are the national animals of ".into(),
-                PredictOptions {
-                    token_callback: {
-                        Some(Box::new(move |token| {
-                            let print_tx_for_async = print_tx.clone();
-                            tokio::spawn(async move {
-                                print_tx_for_async
-                                    .send(Printout {
-                                        verbosity: 0,
-                                        content: format!("next token: {}", token),
-                                    })
-                                    .await
-                                    .unwrap();
-                            });
-                            true // The callback still synchronously returns a bool
-                        }))
-                    },
-                    ..Default::default()
-                },
+        tokio::spawn(async move {
+            if let Err(e) = handle_message(
+                our_name.clone(),
+                send_to_loop.clone(),
+                id,
+                rsvp,
+                expects_response,
+                source.clone(),
+                ipc,
+                print_tx.clone(),
             )
-            .unwrap();
+            .await
+            {
+                send_to_loop
+                    .send(make_error_message(our_name.clone(), id, source, e))
+                    .await
+                    .unwrap();
+            }
+        });
     }
+    Err(anyhow::anyhow!("llm: exited"))
+}
+
+async fn handle_message(
+    our: String,
+    send_to_loop: MessageSender,
+    id: u64,
+    rsvp: Option<Address>,
+    expects_response: Option<u64>,
+    source: Address,
+    json: Vec<u8>,
+    _print_tx: PrintSender,
+) -> Result<(), LlmError> {
+    let target = if expects_response.is_some() {
+        source.clone()
+    } else {
+        let Some(rsvp) = rsvp else {
+            return Err(LlmError::BadRsvp);
+        };
+        rsvp.clone()
+    };
+
+    let req: LlmPrompt = match serde_json::from_slice(&json) {
+        Ok(req) => req,
+        Err(e) => {
+            return Err(LlmError::BadJson {
+                json: String::from_utf8(json).unwrap_or_default(),
+                error: format!("{}", e),
+            })
+        }
+    };
+
+    let client = reqwest::Client::new();
+
+    let res: ReqwestResponse = match client
+        .post("http://localhost:3030/completion")
+        .json(&req)
+        .send()
+        .await {
+            Ok(res) => res,
+            Err(e) => {
+                return Err(LlmError::RequestFailed {
+                    error: format!("{}", e),
+                });
+            }
+        };
+
+    let llm_response = match res.json::<LlmResponse>()
+        .await
+        {
+            Ok(response) => response,
+            Err(e) => {
+                return Err(LlmError::DeserializationToLlmResponseFailed {
+                    error: format!("{}", e),
+                });
+            }
+        };
+
+    let _ = _print_tx.send(Printout {
+        verbosity: 0,
+        content: format!("llm: {:?}", llm_response.clone().content)
+    }).await;
+
+    let message = KernelMessage {
+        id,
+        source: Address {
+            node: our,
+            process: ProcessId::new(Some("llm"), "sys", "uqbar"),
+        },
+        target,
+        rsvp: None,
+        message: Message::Response((
+            Response {
+                inherit: false,
+                ipc: serde_json::to_vec::<Result<LlmResponse, LlmError>>(&Ok(
+                    llm_response,
+                ))
+                .unwrap(),
+                metadata: None,
+            },
+            None,
+        )),
+        payload: None,
+        signed_capabilities: None,
+    };
+
+    send_to_loop.send(message).await.unwrap();
 
     Ok(())
 }
@@ -129,23 +145,25 @@ pub async fn llm(
 //
 //  helpers
 //
-
-fn make_error_message(our_name: String, km: &KernelMessage, error: LlamaError) -> KernelMessage {
+fn make_error_message(
+    our_name: String,
+    id: u64,
+    source: Address,
+    error: LlmError,
+) -> KernelMessage {
     KernelMessage {
-        id: km.id,
-        source: Address {
+        id,
+        source: source.clone(),
+        target: Address {
             node: our_name.clone(),
-            process: FILESYSTEM_PROCESS_ID.clone(),
-        },
-        target: match &km.rsvp {
-            None => km.source.clone(),
-            Some(rsvp) => rsvp.clone(),
+            process: source.process.clone(),
         },
         rsvp: None,
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: serde_json::to_vec::<Result<u64, LlamaError>>(&Err(error)).unwrap(),
+                ipc: serde_json::to_vec::<Result<HttpClientResponse, LlmError>>(&Err(error))
+                    .unwrap(),
                 metadata: None,
             },
             None,

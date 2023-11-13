@@ -13,12 +13,15 @@ mod http_client;
 mod http_server;
 mod kernel;
 mod keygen;
-mod llm;
 mod net;
 mod register;
 mod terminal;
 mod types;
 mod vfs;
+
+// extensions
+#[cfg(feature = "llm")]
+mod llm;
 
 const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
@@ -31,7 +34,7 @@ const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
-const LLAMA_CHANNEL_CAPACITY: usize = 32;
+const LLM_CHANNEL_CAPACITY: usize = 32;
 
 // const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
 
@@ -44,6 +47,10 @@ const REVEAL_IP: bool = true;
 
 #[tokio::main]
 async fn main() {
+    #[cfg(feature = "llm")]
+    {
+        println!("TODO remove this print llm is enabled");
+    }
     // For use with https://github.com/tokio-rs/console
     // console_subscriber::init();
 
@@ -80,8 +87,6 @@ async fn main() {
     // kernel receives debug messages via this channel, terminal sends messages
     let (kernel_debug_message_sender, kernel_debug_message_receiver): (DebugSender, DebugReceiver) =
         mpsc::channel(EVENT_LOOP_DEBUG_CHANNEL_CAPACITY);
-    let (llm_message_sender, llm_message_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(LLAMA_CHANNEL_CAPACITY);
     // websocket sender receives send messages via this channel, kernel send messages
     let (net_message_sender, net_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(WEBSOCKET_SENDER_CHANNEL_CAPACITY);
@@ -102,6 +107,9 @@ async fn main() {
     // encryptor handles end-to-end encryption for client messages
     let (encryptor_sender, encryptor_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ENCRYPTOR_CHANNEL_CAPACITY);
+    // optional llm extension
+    let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(LLM_CHANNEL_CAPACITY);
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
@@ -218,7 +226,7 @@ async fn main() {
 
     println!("registration complete!");
 
-    let runtime_extensions = vec![
+    let mut runtime_extensions = vec![
         (
             ProcessId::new(Some("filesystem"), "sys", "uqbar"),
             fs_message_sender,
@@ -248,13 +256,17 @@ async fn main() {
             ProcessId::new(Some("encryptor"), "sys", "uqbar"),
             encryptor_sender,
             false,
-        ),
-        (
-            ProcessId::new(Some("llm"), "sys", "uqbar"),
-            llm_message_sender,
-            true,
-        ),
+        )
     ];
+
+    #[cfg(feature = "llm")]
+    {
+        runtime_extensions.push((
+            ProcessId::new(Some("llm"), "sys", "uqbar"), // TODO llm:extensions:uqbar ?
+            llm_sender,
+            true,
+        ));
+    }
 
     let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
         our.name.clone(),
@@ -353,12 +365,15 @@ async fn main() {
         encryptor_receiver,
         print_sender.clone(),
     ));
-    tasks.spawn(llm::llm(
-        our.name.clone(),
-        kernel_message_sender.clone(),
-        llm_message_receiver,
-        print_sender.clone(),
-    ));
+    #[cfg(feature = "llm")]
+    {
+        tasks.spawn(llm::llm(
+            our.name.clone(),
+            kernel_message_sender.clone(),
+            llm_receiver,
+            print_sender.clone(),
+        ));
+    }
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
     let quit_msg: String = tokio::select! {

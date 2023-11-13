@@ -69,3 +69,6 @@ warp = "0.3.5"
 wasmtime = "14.0.4"
 wasmtime-wasi = "14.0.4"
 zip = "0.6"
+
+[features]
+llm = []
