@@ -26,7 +26,7 @@ pub async fn save_new_peer(
     print_tx: &PrintSender,
 ) {
     print_debug(
-        &print_tx,
+        print_tx,
         &format!("net: saving new peer {}", identity.name),
     )
     .await;
@@ -130,7 +130,6 @@ pub async fn maintain_connection(
 
     print_debug(&print_tx, &format!("net: connection with {peer_name} died")).await;
     peers.remove(&peer_name);
-    return;
 }
 
 /// cross the streams
@@ -267,10 +266,10 @@ pub fn validate_routing_request(
         .ok_or(anyhow!("unknown QNS name"))?;
     let their_networking_key = signature::UnparsedPublicKey::new(
         &signature::ED25519,
-        hex::decode(&strip_0x(&their_id.networking_key))?,
+        hex::decode(strip_0x(&their_id.networking_key))?,
     );
     their_networking_key.verify(
-        &[&routing_request.target, our_name].concat().as_bytes(),
+        [&routing_request.target, our_name].concat().as_bytes(),
         &routing_request.signature,
     )?;
     if routing_request.target == routing_request.source {
@@ -290,7 +289,7 @@ pub fn validate_handshake(
     // verify their signature of their static key
     let their_networking_key = signature::UnparsedPublicKey::new(
         &signature::ED25519,
-        hex::decode(&strip_0x(&their_id.networking_key))?,
+        hex::decode(strip_0x(&their_id.networking_key))?,
     );
     their_networking_key.verify(their_static_key, &handshake.signature)?;
     Ok(())
@@ -474,7 +473,7 @@ pub async fn parse_hello_message(
             content: format!(
                 "\x1b[3;32m{}: {}\x1b[0m",
                 km.source.node,
-                std::str::from_utf8(&ipc).unwrap_or("!!message parse error!!")
+                std::str::from_utf8(ipc).unwrap_or("!!message parse error!!")
             ),
         })
         .await?;

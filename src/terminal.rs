@@ -55,7 +55,7 @@ impl CommandHistory {
     }
 
     fn get_prev(&mut self, working_line: &str) -> Option<String> {
-        if self.lines.len() == 0 || self.index == self.lines.len() {
+        if self.lines.is_empty() || self.index == self.lines.len() {
             return None;
         }
         self.index += 1;
@@ -67,7 +67,7 @@ impl CommandHistory {
     }
 
     fn get_next(&mut self) -> Option<String> {
-        if self.lines.len() == 0 || self.index == 0 || self.index == 1 {
+        if self.lines.is_empty() || self.index == 0 || self.index == 1 {
             self.index = 0;
             if let Some(line) = self.working_line.clone() {
                 self.working_line = None;

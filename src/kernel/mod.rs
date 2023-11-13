@@ -503,7 +503,7 @@ impl StandardHost for ProcessWasi {
             let sig = self
                 .process
                 .keypair
-                .sign(&rmp_serde::to_vec(&cap).unwrap_or(vec![]));
+                .sign(&rmp_serde::to_vec(&cap).unwrap_or_default());
             return Ok(Some(wit::SignedCapability {
                 issuer: cap.issuer.en_wit().to_owned(),
                 params: cap.params.clone(),
@@ -540,7 +540,7 @@ impl StandardHost for ProcessWasi {
                 params: signed_cap.params,
             };
             pk.verify(
-                &rmp_serde::to_vec(&cap).unwrap_or(vec![]),
+                &rmp_serde::to_vec(&cap).unwrap_or_default(),
                 &signed_cap.signature,
             )?;
 
@@ -630,7 +630,7 @@ impl StandardHost for ProcessWasi {
             params: signed_cap.params,
         };
         pk.verify(
-            &rmp_serde::to_vec(&cap).unwrap_or(vec![]),
+            &rmp_serde::to_vec(&cap).unwrap_or_default(),
             &signed_cap.signature,
         )?;
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -887,7 +887,7 @@ impl ProcessState {
                         content: "kernel: prompting_message has no rsvp".into(),
                     })
                     .await;
-                return None;
+                None
             }
             Some(address) => Some((prompting_message.id, address.clone())),
         }
@@ -1117,9 +1117,9 @@ async fn make_process_loop(
     }
 
     let component =
-        Component::new(&engine, wasm_bytes).expect("make_process_loop: couldn't read file");
+        Component::new(engine, wasm_bytes).expect("make_process_loop: couldn't read file");
 
-    let mut linker = Linker::new(&engine);
+    let mut linker = Linker::new(engine);
     Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
 
     let table = Table::new();
@@ -1423,7 +1423,7 @@ async fn handle_kernel_request(
                     params: signed_cap.params,
                 };
                 match pk.verify(
-                    &rmp_serde::to_vec(&cap).unwrap_or(vec![]),
+                    &rmp_serde::to_vec(&cap).unwrap_or_default(),
                     &signed_cap.signature,
                 ) {
                     Ok(_) => {}
@@ -1476,7 +1476,7 @@ async fn handle_kernel_request(
             )
             .await
             {
-                Ok(()) => return,
+                Ok(()) => (),
                 Err(_e) => {
                     send_to_loop
                         .send(t::KernelMessage {
@@ -1576,7 +1576,7 @@ async fn handle_kernel_request(
             }
 
             process_map.remove(&process_id);
-            let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
+            let _ = persist_state(&our_name, &send_to_loop, process_map).await;
 
             send_to_loop
                 .send(t::KernelMessage {
@@ -1645,7 +1645,7 @@ async fn handle_kernel_response(
         return;
     };
 
-    let meta: StartProcessMetadata = match serde_json::from_str(&metadata) {
+    let meta: StartProcessMetadata = match serde_json::from_str(metadata) {
         Err(_) => {
             let _ = send_to_terminal
                 .send(t::Printout {
@@ -1688,7 +1688,7 @@ async fn handle_kernel_response(
     )
     .await
     {
-        Ok(()) => return,
+        Ok(()) => (),
         Err(e) => {
             let _ = send_to_terminal
                 .send(t::Printout {
@@ -1736,7 +1736,7 @@ async fn start_process(
             node: our_name.clone(),
             process: id.clone(),
         },
-        wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle.clone(),
+        wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle,
         on_panic: process_metadata.persisted.on_panic.clone(),
         public: process_metadata.persisted.public,
     };
@@ -1751,7 +1751,7 @@ async fn start_process(
                 send_to_terminal.clone(),
                 recv_in_process,
                 send_to_process,
-                &km_payload_bytes,
+                km_payload_bytes,
                 caps_oracle,
                 engine,
             )
@@ -1762,7 +1762,7 @@ async fn start_process(
     process_map.insert(id, process_metadata.persisted);
     if !process_metadata.reboot {
         // if new, persist
-        persist_state(&our_name, &send_to_loop, &process_map).await?;
+        persist_state(&our_name, &send_to_loop, process_map).await?;
     }
 
     send_to_loop
@@ -2059,27 +2059,25 @@ async fn make_event_loop(
                             let Some(persisted_target) = process_map.get(&kernel_message.target.process) else {
                                 continue
                             };
-                            if !persisted_target.public {
-                                if !persisted_source.capabilities.contains(&t::Capability {
+                            if !persisted_target.public && !persisted_source.capabilities.contains(&t::Capability {
                                     issuer: t::Address {
                                         node: our_name.clone(),
                                         process: kernel_message.target.process.clone(),
                                     },
                                     params: "\"messaging\"".into(),
                                 }) {
-                                    // capabilities are not correct! skip this message.
-                                    // TODO some kind of error thrown back at process?
-                                    let _ = send_to_terminal.send(
-                                        t::Printout {
-                                            verbosity: 0,
-                                            content: format!(
-                                                "event loop: process {} doesn't have capability to message process {}",
-                                                kernel_message.source.process, kernel_message.target.process
-                                            )
-                                        }
-                                    ).await;
-                                    continue;
-                                }
+                                // capabilities are not correct! skip this message.
+                                // TODO some kind of error thrown back at process?
+                                let _ = send_to_terminal.send(
+                                    t::Printout {
+                                        verbosity: 0,
+                                        content: format!(
+                                            "event loop: process {} doesn't have capability to message process {}",
+                                            kernel_message.source.process, kernel_message.target.process
+                                        )
+                                    }
+                                ).await;
+                                continue;
                             }
                         }
                     }

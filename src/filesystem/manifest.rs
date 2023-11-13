@@ -18,7 +18,7 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::RwLock;
-use uuid;
+
 
 /// Contains interface for filesystem manifest log, and write ahead log.
 
@@ -75,6 +75,7 @@ const TAG_SIZE: usize = 16;
 const ENCRYPTION_OVERHEAD: usize = NONCE_SIZE + TAG_SIZE;
 
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct InMemoryFile {
     //  chunks: (start) -> (hash, length, chunk_location, encrypted) [commited txs]
     pub chunks: BTreeMap<u64, ([u8; 32], u64, ChunkLocation, bool)>,
@@ -138,16 +139,7 @@ impl InMemoryFile {
     }
 }
 
-impl Default for InMemoryFile {
-    fn default() -> Self {
-        Self {
-            chunks: BTreeMap::new(),
-            active_txs: HashMap::new(),
-            mem_chunks: Vec::new(),
-            wal_chunks: Vec::new(),
-        }
-    }
-}
+
 
 impl FileIdentifier {
     pub fn new_uuid() -> Self {
@@ -234,12 +226,12 @@ impl Manifest {
 
     pub async fn get(&self, file: &FileIdentifier) -> Option<InMemoryFile> {
         let read_lock = self.manifest.read().await;
-        read_lock.get(&file).cloned()
+        read_lock.get(file).cloned()
     }
 
     pub async fn get_length(&self, file: &FileIdentifier) -> Option<u64> {
         let read_lock = self.manifest.read().await;
-        read_lock.get(&file).map(|f| f.get_len())
+        read_lock.get(file).map(|f| f.get_len())
     }
 
     pub async fn _get_memory_buffer_size(&self) -> usize {
@@ -307,7 +299,7 @@ impl Manifest {
             for (start, hash, length, location, encrypted) in tx_chunks {
                 in_memory_file
                     .chunks
-                    .insert(start, (hash, length, location.clone(), encrypted));
+                    .insert(start, (hash, length, location, encrypted));
                 match &location {
                     &ChunkLocation::Memory(..) => in_memory_file.mem_chunks.push(start),
                     &ChunkLocation::WAL(..) => in_memory_file.wal_chunks.push(start),
@@ -325,7 +317,7 @@ impl Manifest {
         let mut wal_file = self.wal_file.write().await;
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
 
-        wal_file.write_all(&memory_buffer).await?;
+        wal_file.write_all(memory_buffer).await?;
 
         for in_memory_file in manifest.values_mut() {
             // update the locations of the in-memory chunks
@@ -406,12 +398,12 @@ impl Manifest {
             None
         };
 
-        let mut chunks = data.chunks(self.chunk_size);
+        let chunks = data.chunks(self.chunk_size);
         let mut chunk_start = 0u64;
 
         let tx_id = rand::random::<u64>(); // uuid instead?
 
-        while let Some(chunk) = chunks.next() {
+        for chunk in chunks {
             if memory_buffer.len() + chunk.len() > self.memory_limit {
                 manifest.insert(file.clone(), in_memory_file);
                 self.flush_to_wal(&mut manifest, &mut memory_buffer).await?;
@@ -452,7 +444,7 @@ impl Manifest {
     ) -> Result<(), FsError> {
         let chunk_hashes = self.chunk_hashes.read().await;
 
-        let chunk_hash: [u8; 32] = blake3::hash(&chunk).into();
+        let chunk_hash: [u8; 32] = blake3::hash(chunk).into();
         let chunk_length = chunk.len() as u64;
         let (copy, is_local) = if let Some(is_local) = chunk_hashes.get(&chunk_hash) {
             (true, *is_local)
@@ -464,7 +456,7 @@ impl Manifest {
         let mut chunk_data = chunk.to_vec();
 
         if let Some(cipher) = cipher {
-            chunk_data = encrypt(&cipher, &chunk_data)?;
+            chunk_data = encrypt(cipher, &chunk_data)?;
             encrypted = true;
         }
 
@@ -501,7 +493,7 @@ impl Manifest {
         in_memory_file
             .active_txs
             .entry(tx_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push((start, chunk_hash, chunk_length, proper_position, encrypted));
 
         Ok(())
@@ -526,7 +518,7 @@ impl Manifest {
         } else {
             file.chunks
                 .iter()
-                .map(|(&start, value)| (start, value.clone()))
+                .map(|(&start, value)| (start, *value))
                 .collect()
         };
 
@@ -552,7 +544,7 @@ impl Manifest {
                     let mut chunk_data =
                         memory_buffer[offset as usize..(offset + len) as usize].to_vec();
                     if encrypted {
-                        chunk_data = decrypt(&cipher, &chunk_data)?;
+                        chunk_data = decrypt(cipher, &chunk_data)?;
                     }
                     chunk_data
                 }
@@ -578,7 +570,7 @@ impl Manifest {
                             error: format!("Local WAL read failed: {}", e),
                         })?;
                     if encrypted {
-                        buffer = decrypt(&cipher, &buffer)?;
+                        buffer = decrypt(cipher, &buffer)?;
                     }
                     buffer
                 }
@@ -589,7 +581,7 @@ impl Manifest {
                             error: format!("Local Cold read failed: {}", e),
                         })?;
                         if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
+                            buffer = decrypt(&self.cipher, &buffer)?;
                         }
                         buffer
                     } else {
@@ -606,7 +598,7 @@ impl Manifest {
                         let mut buffer = Vec::new();
                         stream.read_to_end(&mut buffer).await?;
                         if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
+                            buffer = decrypt(&self.cipher, &buffer)?;
                         }
                         buffer
                     }
@@ -653,7 +645,7 @@ impl Manifest {
         } else {
             file.chunks
                 .iter()
-                .map(|(&start, value)| (start, value.clone()))
+                .map(|(&start, value)| (start, *value))
                 .collect()
         };
 
@@ -680,7 +672,7 @@ impl Manifest {
                     let mut chunk_data =
                         memory_buffer[offset as usize..(offset + len) as usize].to_vec();
                     if encrypted {
-                        chunk_data = decrypt(&cipher, &chunk_data)?;
+                        chunk_data = decrypt(cipher, &chunk_data)?;
                     }
                     chunk_data
                 }
@@ -706,7 +698,7 @@ impl Manifest {
                             error: format!("Local WAL read failed: {}", e),
                         })?;
                     if encrypted {
-                        buffer = decrypt(&cipher, &buffer)?;
+                        buffer = decrypt(cipher, &buffer)?;
                     }
                     buffer
                 }
@@ -717,7 +709,7 @@ impl Manifest {
                             error: format!("Local Cold read failed: {}", e),
                         })?;
                         if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
+                            buffer = decrypt(&self.cipher, &buffer)?;
                         }
                         buffer
                     } else {
@@ -734,7 +726,7 @@ impl Manifest {
                         let mut buffer = Vec::new();
                         stream.read_to_end(&mut buffer).await?;
                         if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
+                            buffer = decrypt(&self.cipher, &buffer)?;
                         }
                         buffer
                     }
@@ -805,8 +797,8 @@ impl Manifest {
                 0,
             ); // extend the chunk data if necessary
 
-            let data_to_write = &data[data_offset..data_offset + write_length as usize];
-            chunk_data[chunk_data_start..chunk_data_start + write_length as usize]
+            let data_to_write = &data[data_offset..data_offset + write_length];
+            chunk_data[chunk_data_start..chunk_data_start + write_length]
                 .copy_from_slice(data_to_write);
 
             if memory_buffer.len() + chunk_data.len() > self.memory_limit {
@@ -1028,9 +1020,8 @@ impl Manifest {
                             });
                         }
                         // copy the chunk data from the memory buffer
-                        let temp_buffer =
-                            memory_buffer[mem_pos..mem_pos + total_len as usize].to_vec();
-                        temp_buffer
+                        
+                        memory_buffer[mem_pos..mem_pos + total_len as usize].to_vec()
                     }
                     _ => vec![],
                 };
@@ -1291,11 +1282,11 @@ async fn load_wal(
                     Ok(WALRecord::CommitTx(tx_id)) => {
                         if let Some((file_id, chunks)) = tx_chunks.remove(&tx_id) {
                             let in_memory_file =
-                                manifest.entry(file_id).or_insert(InMemoryFile::default());
+                                manifest.entry(file_id).or_default();
                             for (start, hash, length, location, encrypted) in chunks {
                                 in_memory_file
                                     .chunks
-                                    .insert(start, (hash, length, location.clone(), encrypted));
+                                    .insert(start, (hash, length, location, encrypted));
                                 if let ChunkLocation::WAL(_) = location {
                                     in_memory_file.wal_chunks.push(start);
                                 }
@@ -1327,7 +1318,7 @@ async fn load_wal(
                         // if encrypted data, add encryption overhead (nonce 24 + tag 16)
                         current_position += 8 + record_length as u64;
                         if !entry.copy {
-                            current_position += data_length as u64;
+                            current_position += data_length;
                             if entry.encrypted {
                                 current_position += ENCRYPTION_OVERHEAD as u64;
                             }
@@ -1335,7 +1326,7 @@ async fn load_wal(
                     }
                     Ok(WALRecord::SetLength(file_id, new_length)) => {
                         let in_memory_file =
-                            manifest.entry(file_id).or_insert(InMemoryFile::default());
+                            manifest.entry(file_id).or_default();
                         in_memory_file.chunks.retain(|&start, _| start < new_length);
 
                         // update mem_chunks and wal_chunks
@@ -1398,7 +1389,7 @@ fn generate_nonce() -> [u8; 24] {
 
 fn encrypt(cipher: &XChaCha20Poly1305, bytes: &[u8]) -> Result<Vec<u8>, FsError> {
     let nonce = generate_nonce();
-    let ciphertext = cipher.encrypt(&XNonce::from_slice(&nonce), bytes)?;
+    let ciphertext = cipher.encrypt(XNonce::from_slice(&nonce), bytes)?;
     Ok([nonce.to_vec(), ciphertext].concat())
 }
 

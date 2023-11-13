@@ -3,10 +3,10 @@ use crate::register;
 use crate::types::*;
 use anyhow::Result;
 
-use base64;
+
 use futures::SinkExt;
 use futures::StreamExt;
-use serde_urlencoded;
+
 
 use route_recognizer::Router;
 use std::collections::HashMap;
@@ -85,7 +85,7 @@ pub async fn http_server(
 
                 if let Err(e) = http_handle_messages(
                     our_name.clone(),
-                    id.clone(),
+                    id,
                     source.clone(),
                     message,
                     payload,
@@ -102,7 +102,7 @@ pub async fn http_server(
                     send_to_loop
                         .send(make_error_message(
                             our_name.clone(),
-                            id.clone(),
+                            id,
                             source.clone(),
                             e,
                         ))
@@ -134,7 +134,7 @@ async fn handle_websocket(
             let _ = print_tx
                 .send(Printout {
                     verbosity: 1,
-                    content: format!("GOT WEBSOCKET BYTES"),
+                    content: "GOT WEBSOCKET BYTES".to_string(),
                 })
                 .await;
             let bytes = msg.as_bytes();
@@ -147,7 +147,7 @@ async fn handle_websocket(
                     ),
                 })
                 .await;
-            match serde_json::from_slice::<WebSocketClientMessage>(&bytes) {
+            match serde_json::from_slice::<WebSocketClientMessage>(bytes) {
                 Ok(parsed_msg) => {
                     handle_incoming_ws(
                         parsed_msg,
@@ -157,7 +157,7 @@ async fn handle_websocket(
                         send_to_loop.clone(),
                         print_tx.clone(),
                         write_stream.clone(),
-                        ws_id.clone(),
+                        ws_id,
                     )
                     .await;
                 }
@@ -179,7 +179,7 @@ async fn handle_websocket(
                             content: format!("WEBSOCKET MESSAGE (TEXT): {}", msg_str),
                         })
                         .await;
-                    match serde_json::from_str(&msg_str) {
+                    match serde_json::from_str(msg_str) {
                         Ok(parsed_msg) => {
                             handle_incoming_ws(
                                 parsed_msg,
@@ -189,7 +189,7 @@ async fn handle_websocket(
                                 send_to_loop.clone(),
                                 print_tx.clone(),
                                 write_stream.clone(),
-                                ws_id.clone(),
+                                ws_id,
                             )
                             .await;
                         }
@@ -242,10 +242,10 @@ async fn http_handle_messages(
                 None => {}
                 Some((path, channel)) => {
                     // if path is /rpc/message, return accordingly with base64 encoded payload
-                    if path == "/rpc:sys:uqbar/message".to_string() {
+                    if path == *"/rpc:sys:uqbar/message" {
                         let payload = payload.map(|p| {
                             let bytes = p.bytes;
-                            let base64_bytes = base64::encode(&bytes);
+                            let base64_bytes = base64::encode(bytes);
                             Payload {
                                 mime: p.mime,
                                 bytes: base64_bytes.into_bytes(),
@@ -292,7 +292,7 @@ async fn http_handle_messages(
                                         let mut ws_auth_username = our.clone();
 
                                         if segments.len() == 4
-                                            && matches!(segments.get(0), Some(&"http-proxy"))
+                                            && matches!(segments.first(), Some(&"http-proxy"))
                                             && matches!(segments.get(1), Some(&"serve"))
                                         {
                                             if let Some(segment) = segments.get(2) {
@@ -341,7 +341,7 @@ async fn http_handle_messages(
                                     status: 503,
                                     headers: error_headers,
                                     body: Some(
-                                        format!("Internal Server Error").as_bytes().to_vec(),
+                                        "Internal Server Error".to_string().as_bytes().to_vec(),
                                     ),
                                 });
                             }
@@ -364,7 +364,7 @@ async fn http_handle_messages(
 
                             let mut path = path.clone();
                             if app != "homepage:homepage:uqbar" {
-                                path = if path.starts_with("/") {
+                                path = if path.starts_with('/') {
                                     format!("/{}{}", app, path)
                                 } else {
                                     format!("/{}/{}", app, path)
@@ -375,8 +375,8 @@ async fn http_handle_messages(
 
                             let bound_path = BoundPath {
                                 app: source.process,
-                                authenticated: authenticated,
-                                local_only: local_only,
+                                authenticated,
+                                local_only,
                                 original_path: path.clone(),
                             };
 
@@ -409,7 +409,7 @@ async fn http_handle_messages(
 
                                         // Send a message to the encryptor
                                         let message = KernelMessage {
-                                            id: id.clone(),
+                                            id,
                                             source: Address {
                                                 node: our.clone(),
                                                 process: HTTP_SERVER_PROCESS_ID.clone(),
@@ -486,7 +486,7 @@ async fn http_handle_messages(
                             if action == "get-jwt-secret" && source.node == our {
                                 let id: u64 = rand::random();
                                 let message = KernelMessage {
-                                    id: id.clone(),
+                                    id,
                                     source: Address {
                                         node: our.clone(),
                                         process: HTTP_SERVER_PROCESS_ID.clone(),
@@ -532,7 +532,7 @@ async fn http_handle_messages(
                             let _ = print_tx
                                 .send(Printout {
                                     verbosity: 1,
-                                    content: format!("WsDisconnect"),
+                                    content: "WsDisconnect".to_string(),
                                 })
                                 .await;
                             // Check the ws_proxies for this channel_id, if it exists, delete the node that forwarded
@@ -541,7 +541,7 @@ async fn http_handle_messages(
                                 let _ = print_tx
                                     .send(Printout {
                                         verbosity: 1,
-                                        content: format!("disconnected"),
+                                        content: "disconnected".to_string(),
                                     })
                                     .await;
                                 proxy_nodes.remove(&source.node);
@@ -661,7 +661,7 @@ async fn http_serve(
         .and(warp::filters::header::headers_cloned())
         .and(
             warp::filters::query::raw()
-                .or(warp::any().map(|| String::default()))
+                .or(warp::any().map(String::default))
                 .unify()
                 .map(|query_string: String| {
                     if query_string.is_empty() {
@@ -747,7 +747,7 @@ async fn handler(
     // we extract message from base64 encoded bytes in data
     // and send it to the correct app.
 
-    let message = if app == "rpc:sys:uqbar".to_string() {
+    let message = if app == *"rpc:sys:uqbar" {
         let rpc_message: RpcMessage = match serde_json::from_slice(&body) {
             // to_vec()?
             Ok(v) => v,
@@ -767,7 +767,7 @@ async fn handler(
             }
         };
 
-        let payload = match base64::decode(&rpc_message.data.unwrap_or("".to_string())) {
+        let payload = match base64::decode(rpc_message.data.unwrap_or("".to_string())) {
             Ok(bytes) => Some(Payload {
                 mime: rpc_message.mime,
                 bytes,
@@ -807,7 +807,7 @@ async fn handler(
             payload,
             signed_capabilities: None,
         }
-    } else if app == "encryptor:sys:uqbar".to_string() {
+    } else if app == *"encryptor:sys:uqbar" {
         let body_json = match String::from_utf8(body.to_vec()) {
             Ok(s) => s,
             Err(_) => {

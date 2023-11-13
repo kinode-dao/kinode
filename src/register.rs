@@ -1,5 +1,5 @@
 use aes_gcm::aead::KeyInit;
-use base64;
+
 use hmac::Hmac;
 use jwt::SignWithKey;
 use ring::pkcs8::Document;
@@ -24,7 +24,7 @@ use crate::types::*;
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
 pub fn generate_jwt(jwt_secret_bytes: &[u8], username: String) -> Option<String> {
-    let jwt_secret: Hmac<Sha256> = match Hmac::new_from_slice(&jwt_secret_bytes) {
+    let jwt_secret: Hmac<Sha256> = match Hmac::new_from_slice(jwt_secret_bytes) {
         Ok(secret) => secret,
         Err(_) => return None,
     };

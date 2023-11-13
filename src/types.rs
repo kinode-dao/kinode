@@ -250,7 +250,7 @@ impl std::fmt::Display for Message {
                 if context.is_none() {
                     "None".into()
                 } else {
-                    match serde_json::from_slice::<serde_json::Value>(&context.as_ref().unwrap()) {
+                    match serde_json::from_slice::<serde_json::Value>(context.as_ref().unwrap()) {
                         Ok(json) => format!("{}", json),
                         Err(_) => format!("{:?}", context.as_ref().unwrap()),
                     }

@@ -595,13 +595,9 @@ fn handle_request(
                                 }
 
                                 if let Some(game) = state.games.get_mut(&game_id) {
-                                    if game.turns % 2 == 0 && game.white != our.node {
-                                        return send_http_response(
-                                            403,
-                                            default_headers.clone(),
-                                            "Forbidden".to_string().as_bytes().to_vec(),
-                                        );
-                                    } else if game.turns % 2 == 1 && game.black != our.node {
+                                    if (game.turns % 2 == 0 && game.white != our.node)
+                                        || (game.turns % 2 == 1 && game.black != our.node)
+                                    {
                                         return send_http_response(
                                             403,
                                             default_headers.clone(),

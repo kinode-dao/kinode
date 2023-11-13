@@ -94,7 +94,7 @@ pub async fn eth_rpc(
 
         // let call_data = content.payload.bytes.content.clone().unwrap_or(vec![]);
 
-        let Ok(action) = serde_json::from_slice::<EthRpcAction>(&json_bytes) else {
+        let Ok(action) = serde_json::from_slice::<EthRpcAction>(json_bytes) else {
             send_to_loop
                 .send(make_error_message(
                     our.clone(),
@@ -179,7 +179,7 @@ pub async fn eth_rpc(
                             let _ = print_tx
                                 .send(Printout {
                                     verbosity: 0,
-                                    content: format!("eth_rpc: connection failed, retrying in 5s"),
+                                    content: "eth_rpc: connection failed, retrying in 5s".to_string(),
                                 })
                                 .await;
                             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -203,7 +203,7 @@ pub async fn eth_rpc(
                                 let _ = print_tx
                                     .send(Printout {
                                         verbosity: 0,
-                                        content: format!("eth_rpc: connection established"),
+                                        content: "eth_rpc: connection established".to_string(),
                                     })
                                     .await;
 
@@ -234,9 +234,7 @@ pub async fn eth_rpc(
                                 let _ = print_tx
                                     .send(Printout {
                                         verbosity: 0,
-                                        content: format!(
-                                            "eth_rpc: subscription connection lost, reconnecting"
-                                        ),
+                                        content: "eth_rpc: subscription connection lost, reconnecting".to_string(),
                                     })
                                     .await;
                             }

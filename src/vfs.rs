@@ -76,7 +76,7 @@ fn clean_path(path: &str) -> String {
 }
 
 fn get_parent_path(path: &str) -> String {
-    let mut split_path: Vec<&str> = path.split("/").collect();
+    let mut split_path: Vec<&str> = path.split('/').collect();
     split_path.pop();
     let parent_path = split_path.join("/");
     if parent_path.is_empty() {
@@ -105,9 +105,9 @@ async fn create_entry(vfs: &mut MutexGuard<Vfs>, path: &str, key: Key) -> Result
         },
     };
     let entry = Entry {
-        name: path.split("/").last().unwrap().to_string(),
+        name: path.split('/').last().unwrap().to_string(),
         full_path: path.to_string(),
-        entry_type: entry_type,
+        entry_type,
     };
     vfs.key_to_entry.insert(key.clone(), entry);
     vfs.path_to_key.insert(path.to_string(), key.clone());
@@ -137,7 +137,7 @@ async fn rename_entry(
             Some(entry) => entry,
             None => return Err(VfsError::EntryNotFound),
         };
-        entry.name = new_path.split("/").last().unwrap().to_string();
+        entry.name = new_path.split('/').last().unwrap().to_string();
         entry.full_path = new_path.to_string();
 
         let children = if let EntryType::Dir { children, .. } = &entry.entry_type {
@@ -201,7 +201,7 @@ async fn state_to_bytes(state: &DriveToVfs) -> Vec<u8> {
 }
 
 fn bytes_to_state(bytes: &Vec<u8>, state: &mut DriveToVfs) {
-    let serializable: DriveToVfsSerializable = bincode::deserialize(&bytes).unwrap();
+    let serializable: DriveToVfsSerializable = bincode::deserialize(bytes).unwrap();
     for (id, vfs) in serializable.into_iter() {
         state.insert(id, Arc::new(Mutex::new(vfs)));
     }
@@ -293,21 +293,21 @@ async fn load_state_from_reboot(
         .await;
     let km = recv_from_loop.recv().await;
     let Some(km) = km else {
-        return ();
+        return ;
     };
 
     let KernelMessage {
         message, payload, ..
     } = km;
     let Message::Response((Response { ipc, .. }, None)) = message else {
-        return ();
+        return ;
     };
     let Ok(Ok(FsResponse::GetState)) = serde_json::from_slice::<Result<FsResponse, FsError>>(&ipc)
     else {
-        return ();
+        return ;
     };
     let Some(payload) = payload else {
-        return ();
+        return ;
     };
     bytes_to_state(&payload.bytes, drive_to_vfs);
 }
@@ -407,7 +407,7 @@ pub async fn vfs(
                     MessageSender,
                     MessageReceiver,
                 ) = tokio::sync::mpsc::channel(VFS_RESPONSE_CHANNEL_CAPACITY);
-                response_router.insert(km.id.clone(), response_sender);
+                response_router.insert(km.id, response_sender);
 
                 let mut drive_to_queue_lock = drive_to_queue.lock().await;
                 match drive_to_queue_lock.remove(&request.drive) {
@@ -520,7 +520,7 @@ pub async fn vfs(
                                                     },
                                                 }
                                                 let _ = send_vfs_task_done.send(id).await;
-                                                return ();
+                                                return ;
                                             },
                                             Some((km, response_receiver)) => {
                                                 // handle next item
@@ -569,7 +569,7 @@ pub async fn vfs(
                                                     Err(e) => {
                                                         send_to_loop
                                                             .send(make_error_message(
-                                                                our_node.into(),
+                                                                our_node,
                                                                 id,
                                                                 source,
                                                                 e,
@@ -617,7 +617,7 @@ async fn handle_request(
         | VfsAction::WriteOffset { .. }
         | VfsAction::Append { .. }
         | VfsAction::SetSize { .. } => {
-            let _ = send_to_caps_oracle
+            send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
                     cap: Capability {
@@ -645,7 +645,7 @@ async fn handle_request(
         | VfsAction::GetEntry { .. }
         | VfsAction::GetFileChunk { .. }
         | VfsAction::GetEntryLength { .. } => {
-            let _ = send_to_caps_oracle
+            send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
                     cap: Capability {
@@ -673,7 +673,7 @@ async fn handle_request(
 
     let (ipc, bytes) = match_request(
         our_node.clone(),
-        id.clone(),
+        id,
         source.clone(),
         request,
         payload,
@@ -709,19 +709,16 @@ async fn handle_request(
                 },
                 None,
             )),
-            payload: match bytes {
-                Some(bytes) => Some(Payload {
+            payload: bytes.map(|bytes| Payload {
                     mime: Some("application/octet-stream".into()),
                     bytes,
                 }),
-                None => None,
-            },
             signed_capabilities: None,
         };
 
         let _ = send_to_loop.send(response).await;
     } else {
-        let _ = send_to_terminal
+        send_to_terminal
             .send(Printout {
                 verbosity: 1,
                 content: format!(
@@ -755,7 +752,7 @@ async fn match_request(
         VfsAction::New => {
             for new_cap in new_caps {
                 let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-                let _ = send_to_caps_oracle
+                send_to_caps_oracle
                     .send(CapMessage::Add {
                         on: source.process.clone(),
                         cap: new_cap,
@@ -1266,7 +1263,7 @@ async fn match_request(
         }
         VfsAction::GetPath(hash) => {
             let mut vfs = vfs.lock().await;
-            let key = Key::File { id: hash.clone() };
+            let key = Key::File { id: hash };
             let ipc =
                 serde_json::to_vec(&VfsResponse::GetPath(match vfs.key_to_entry.remove(&key) {
                     None => None,
@@ -1285,7 +1282,7 @@ async fn match_request(
                 return Err(VfsError::EntryNotFound);
             };
             let ipc = serde_json::to_vec(&VfsResponse::GetHash(match key {
-                Key::File { id } => Some(id.clone()),
+                Key::File { id } => Some(*id),
                 Key::Dir { .. } => None,
             }))
             .unwrap();
@@ -1341,7 +1338,7 @@ async fn match_request(
                                             inherit: true,
                                             expects_response: Some(5), // TODO evaluate
                                             ipc: serde_json::to_vec(&FsAction::Read(
-                                                file_hash.clone(),
+                                                *file_hash,
                                             ))
                                             .unwrap(),
                                             metadata: None,
@@ -1415,7 +1412,7 @@ async fn match_request(
                         inherit: true,
                         expects_response: Some(5), // TODO evaluate
                         ipc: serde_json::to_vec(&FsAction::ReadChunk(ReadChunkRequest {
-                            file: file_hash.clone(),
+                            file: file_hash,
                             start: offset,
                             length,
                         }))
@@ -1453,7 +1450,7 @@ async fn match_request(
         }
         VfsAction::GetEntryLength(mut full_path) => {
             full_path = clean_path(&full_path);
-            if full_path.chars().last() == Some('/') {
+            if full_path.ends_with('/') {
                 (
                     serde_json::to_vec(&VfsResponse::GetEntryLength(None)).unwrap(),
                     None,
