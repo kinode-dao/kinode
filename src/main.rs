@@ -315,22 +315,13 @@ async fn main() {
         encryptor_receiver,
         print_sender.clone(),
     ));
-    // if a runtime task exits, try to recover it,
-    // unless it was terminal signaling a quit
+
     let quit_msg: String = tokio::select! {
-        Some(res) = tasks.join_next() => {
-            if let Err(e) = res {
-                format!("what does this mean? {:?}", e)
-            } else if let Ok(Err(e)) = res {
-                format!(
-                    "\x1b[38;5;196muh oh, a kernel process crashed: {}\x1b[0m",
-                    e
-                )
-                // TODO restart the task?
-            } else {
-                "what does this mean???".to_string()
-                // TODO restart the task?
-            }
+        Some(Ok(res)) = tasks.join_next() => {
+            format!(
+                "\x1b[38;5;196muh oh, a kernel process crashed -- this should never happen: {:?}\x1b[0m",
+                res
+            )
         }
         quit = terminal::terminal(
             our.clone(),
@@ -347,10 +338,10 @@ async fn main() {
             }
         }
     };
+
     // shutdown signal to fs for flush
     let _ = fs_kill_send.send(());
     let _ = fs_kill_confirm_recv.await;
-    // println!("fs shutdown complete.");
 
     // gracefully abort all running processes in kernel
     let _ = kernel_message_sender
@@ -375,10 +366,10 @@ async fn main() {
             signed_capabilities: None,
         })
         .await;
+
     // abort all remaining tasks
     tasks.shutdown().await;
     let _ = crossterm::terminal::disable_raw_mode();
-    println!();
-    println!("\x1b[38;5;196m{}\x1b[0m", quit_msg);
+    println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
     return;
 }

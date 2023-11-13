@@ -1946,8 +1946,7 @@ async fn make_event_loop(
                         is_debug = !is_debug;
                     }
                 },
-                ne = network_error_recv.recv() => {
-                    let wrapped_network_error = ne.expect("fatal: networking module died");
+                Some(wrapped_network_error) = network_error_recv.recv() => {
                     let _ = send_to_terminal.send(
                         t::Printout {
                             verbosity: 1,
