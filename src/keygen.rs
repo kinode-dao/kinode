@@ -112,6 +112,14 @@ pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'sta
     })
 }
 
+pub fn get_username(keyfile: Vec<u8>) -> Result<String, &'static str> {
+    let (username, _routers, _salt, _key_enc, _jwt_enc, _file_enc) =
+        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(&keyfile)
+            .map_err(|_| "failed to deserialize keyfile")?;
+
+    Ok(username)
+}
+
 /// # Returns
 /// a pair of (public key (encoded as a hex string), serialized key as a pkcs8 Document)
 pub fn generate_networking_key() -> (String, Document) {
