@@ -1,5 +1,5 @@
-use crate::types::*;
 use crate::llm::types::*;
+use crate::types::*;
 use anyhow::Result;
 use reqwest::Response as ReqwestResponse;
 
