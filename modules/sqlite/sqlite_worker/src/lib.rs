@@ -29,6 +29,8 @@ impl ToSql for sq::SqlValue {
             sq::SqlValue::Real(f) => f.to_sql(),
             sq::SqlValue::Text(ref s) => s.to_sql(),
             sq::SqlValue::Blob(ref b) => b.to_sql(),
+            sq::SqlValue::Boolean(b) => b.to_sql(),
+            sq::SqlValue::Null => Ok(rusqlite::types::ToSqlOutput::Owned(rusqlite::types::Value::Null)),
         }
     }
 }
@@ -391,7 +393,70 @@ fn handle_message(
                     let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
                         None => vec![],
                         Some(wit::Payload { mime: _, ref bytes }) => {
-                            Vec::<sq::SqlValue>::from_serialized(&bytes)?
+                            // Assume the payload is a serialized JSON string
+                            let json_params = serde_json::from_slice::<serde_json::Value>(bytes)?;
+
+                            match &json_params {
+                                serde_json::Value::Array(vec) => {
+                                    let parameters: Result<Vec<sq::SqlValue>, _> = vec.iter().map(|value| {
+                                        match value {
+                                            serde_json::Value::Number(n) => {
+                                                if let Some(int_val) = n.as_i64() {
+                                                    Ok(sq::SqlValue::Integer(int_val))
+                                                } else if let Some(float_val) = n.as_f64() {
+                                                    Ok(sq::SqlValue::Real(float_val))
+                                                } else {
+                                                    Err("Invalid number type")
+                                                }
+                                            },
+                                            serde_json::Value::String(s) => {
+                                                match base64::decode(&s) {
+                                                    Ok(decoded_bytes) => {
+                                                        // Convert to SQLite Blob if it's a valid base64 string
+                                                        Ok(sq::SqlValue::Blob(decoded_bytes))
+                                                    },
+                                                    Err(_) => {
+                                                        // If it's not base64, just use the string itself
+                                                        Ok(sq::SqlValue::Text(s.clone()))
+                                                    }
+                                                }
+                                            },
+                                            serde_json::Value::Bool(b) => {
+                                                Ok(sq::SqlValue::Boolean(*b))
+                                            },
+                                            serde_json::Value::Null => {
+                                                Ok(sq::SqlValue::Null)
+                                            },
+                                            _ => {
+                                                wit::print_to_terminal(0, format!(
+                                                    "SQLite param list contains invalid type: {:?}",
+                                                    value,
+                                                ).as_str());
+                                                Ok(sq::SqlValue::Null)
+                                                // Err("Invalid type in JSON array")
+                                            }
+                                        }
+                                    }).collect();
+
+                                    match parameters {
+                                        Ok(parameters) => {
+                                            let params_refs: Vec<sq::SqlValue> = parameters;
+                                            params_refs
+                                        },
+                                        Err(e) => {
+                                            wit::print_to_terminal(0, format!(
+                                                "SQLite param list is invalid: {:?}",
+                                                e,
+                                            ).as_str());
+                                            return Err(sq::SqliteError::InvalidParameters.into());
+                                        },
+                                    }
+                                },
+                                _ => {
+                                    wit::print_to_terminal(0, "SQLite param list is not a JSON array");
+                                    return Err(sq::SqliteError::InvalidParameters.into());
+                                }
+                            }
                         },
                     };
 
@@ -411,7 +476,7 @@ fn handle_message(
                         .ipc_bytes(ipc)
                         .send()?;
                 },
-                sq::SqliteMessage::Commit { ref tx_id, .. } => {                    
+                sq::SqliteMessage::Commit { ref tx_id, .. } => {
                     let Some(queries) = txs.remove(tx_id) else {
                         return Err(sq::SqliteError::NoTx.into());
                     };
@@ -419,9 +484,9 @@ fn handle_message(
                     let Some(ref mut conn) = conn else {
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
-                    
+
                     let tx = conn.transaction()?;
-                    for (query, params) in queries {                
+                    for (query, params) in queries {
                         tx.execute(&query, rusqlite::params_from_iter(params.iter()))?;
                     }
 
