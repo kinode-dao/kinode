@@ -487,40 +487,6 @@ async fn http_handle_messages(
                                 // Do nothing because we don't have a WS for that node
                             }
                         }
-                        HttpServerMessage::ServerAction(ServerAction { action }) => {
-                            if action == "get-jwt-secret" && source.node == our {
-                                let id: u64 = rand::random();
-                                let message = KernelMessage {
-                                    id: id.clone(),
-                                    source: Address {
-                                        node: our.clone(),
-                                        process: HTTP_SERVER_PROCESS_ID.clone(),
-                                    },
-                                    target: source,
-                                    rsvp: Some(Address {
-                                        node: our.clone(),
-                                        process: HTTP_SERVER_PROCESS_ID.clone(),
-                                    }),
-                                    message: Message::Request(Request {
-                                        inherit: false,
-                                        expects_response: None,
-                                        ipc: serde_json::json!({
-                                            "action": "set-jwt-secret"
-                                        })
-                                        .to_string()
-                                        .into_bytes(),
-                                        metadata: None,
-                                    }),
-                                    payload: Some(Payload {
-                                        mime: Some("application/octet-stream".to_string()), // TODO adjust MIME type as needed
-                                        bytes: jwt_secret_bytes.clone(),
-                                    }),
-                                    signed_capabilities: None,
-                                };
-
-                                send_to_loop.send(message).await.unwrap();
-                            }
-                        }
                         HttpServerMessage::WsRegister(WsRegister {
                             auth_token,
                             ws_auth_token: _,
@@ -627,6 +593,13 @@ async fn http_serve(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) {
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 0,
+            content: format!("http_server: running on: {}", our_port),
+        })
+        .await;
+
     let cloned_msg_tx = send_to_loop.clone();
     let cloned_print_tx = print_tx.clone();
     let cloned_our = our.clone();
@@ -659,7 +632,6 @@ async fn http_serve(
             },
         );
 
-    let print_tx_move = print_tx.clone();
     let filter = warp::filters::method::method()
         .and(warp::addr::remote())
         .and(warp::path::full())
@@ -685,17 +657,10 @@ async fn http_serve(
         .and(warp::any().map(move || path_bindings.clone()))
         .and(warp::any().map(move || jwt_secret_bytes.clone()))
         .and(warp::any().map(move || send_to_loop.clone()))
-        .and(warp::any().map(move || print_tx_move.clone()))
         .and_then(handler);
 
     let filter_with_ws = ws_route.or(filter);
 
-    let _ = print_tx
-        .send(Printout {
-            verbosity: 1,
-            content: format!("http_server: running on: {}", our_port),
-        })
-        .await;
     warp::serve(filter_with_ws)
         .run(([0, 0, 0, 0], our_port))
         .await;
@@ -713,12 +678,7 @@ async fn handler(
     path_bindings: PathBindings,
     jwt_secret_bytes: Vec<u8>,
     send_to_loop: MessageSender,
-    _print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    let address = match address {
-        Some(a) => a.to_string(),
-        None => "".to_string(),
-    };
     // trim trailing "/"
     let original_path = normalize_path(path.as_str());
     let id: u64 = rand::random();
@@ -731,7 +691,7 @@ async fn handler(
     let bound_path = route.handler();
 
     let app = bound_path.app.to_string();
-    let url_params: HashMap<&str, &str> = route.params().into_iter().collect();
+    let url_params: HashMap<String, String> = route.params().iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
     let raw_path = remove_process_id(&original_path);
     let path = remove_process_id(&bound_path.original_path);
 
@@ -743,7 +703,12 @@ async fn handler(
         }
     }
 
-    if bound_path.local_only && !address.starts_with("127.0.0.1:") {
+    let is_local = match address.as_ref() {
+        Some(addr) => addr.ip().is_loopback(),
+        None => false,
+    };
+
+    if bound_path.local_only && !is_local {
         // send 403
         return Ok(warp::reply::with_status(vec![], StatusCode::FORBIDDEN).into_response());
     }
@@ -879,18 +844,16 @@ async fn handler(
             }),
             message: Message::Request(Request {
                 inherit: false,
-                expects_response: Some(15), // no effect on runtime
-                ipc: serde_json::json!({
-                    "address": address,
-                    "method": method.to_string(),
-                    "raw_path": raw_path.clone(),
-                    "path": path.clone(),
-                    "headers": serialize_headers(&headers),
-                    "query_params": query_params,
-                    "url_params": url_params,
-                })
-                .to_string()
-                .into_bytes(),
+                expects_response: None,
+                ipc: rmp_serde::to_vec(&HttpRequest {
+                    method: method.to_string(),
+                    address,
+                    raw_path: raw_path.clone(),
+                    path: path.clone(),
+                    headers: real_headers.clone(),
+                    query_params: query_params.clone(),
+                    url_params: url_params.clone(),
+                }).unwrap(),
                 metadata: None,
             }),
             payload: Some(Payload {

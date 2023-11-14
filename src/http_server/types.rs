@@ -1,4 +1,5 @@
 use crate::types::Address;
+use http;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -13,12 +14,22 @@ pub enum HttpServerMessage {
         authenticated: bool,
         local_only: bool,
     },
-    WebSocketPush(WebSocketPush),
-    ServerAction(ServerAction),
-    WsRegister(WsRegister),                 // Coming from a proxy
-    WsProxyDisconnect(WsProxyDisconnect),   // Coming from a proxy
-    WsMessage(WsMessage),                   // Coming from a proxy
-    EncryptedWsMessage(EncryptedWsMessage), // Coming from a proxy
+    WebSocketPush(WebSocketPush),           // XX look into these
+    WsRegister(WsRegister),                 // XX look into these
+    WsProxyDisconnect(WsProxyDisconnect),   // XX look into these
+    WsMessage(WsMessage),                   // XX look into these
+    EncryptedWsMessage(EncryptedWsMessage), // XX look into these
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HttpRequest {
+    pub method: String,
+    pub address: Option<std::net::SocketAddr>,
+    pub raw_path: String,
+    pub path: String,
+    pub headers: HashMap<String, String>,
+    pub query_params: HashMap<String, String>,
+    pub url_params: HashMap<String, String>,
 }
 
 /// Any Request sent to http_server, if it expects a response, will be given this
@@ -82,11 +93,6 @@ pub struct WebSocketServerTarget {
 pub struct WebSocketPush {
     pub target: WebSocketServerTarget,
     pub is_text: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ServerAction {
-    pub action: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
