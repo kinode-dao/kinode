@@ -2,8 +2,9 @@ use core::ffi::{c_char, c_int, c_ulonglong, CStr};
 use std::ffi::CString;
 
 use rusqlite::{types::FromSql, types::FromSqlError, types::ToSql, types::ValueRef};
+use std::collections::HashMap;
 
-use uqbar_process_lib::{Address, ProcessId, Response};
+use uqbar_process_lib::{Address, ProcessId, Response, grant_messaging};
 use uqbar_process_lib::uqbar::process::standard as wit;
 
 use crate::sqlite_types::Deserializable;
@@ -345,9 +346,10 @@ pub extern "C" fn send_and_await_response_wrapped(
     CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
 }
 
-fn handle_message (
+fn handle_message(
     our: &wit::Address,
-    db_handle: &mut Option<rusqlite::Connection>,
+    conn: &mut Option<rusqlite::Connection>,
+    txs: &mut HashMap<u64, Vec<(String, Vec<sq::SqlValue>)>>,
 ) -> anyhow::Result<()> {
     let (source, message) = wit::receive().unwrap();
 
@@ -362,13 +364,13 @@ fn handle_message (
                 sq::SqliteMessage::New { db } => {
                     let vfs_drive = format!("{}{}", PREFIX, db);
 
-                    match db_handle {
+                    match conn {
                         Some(_) => {
                             return Err(sq::SqliteError::DbAlreadyExists.into());
                         },
                         None => {
                             let flags = rusqlite::OpenFlags::default();
-                            *db_handle = Some(rusqlite::Connection::open_with_flags_and_vfs(
+                            *conn = Some(rusqlite::Connection::open_with_flags_and_vfs(
                                 format!(
                                     "{}:{}:/{}.sql",
                                     our.node,
@@ -381,40 +383,64 @@ fn handle_message (
                         },
                     }
                 },
-                sq::SqliteMessage::Write { ref statement, .. } => {
-                    let Some(db_handle) = db_handle else {
+                sq::SqliteMessage::Write { ref statement, tx_id, .. } => {
+                    let Some(ref conn) = conn else {
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
-                    match wit::get_payload() {
-                        None => {
-                            let parameters: Vec<&dyn rusqlite::ToSql> = vec![];
-                            db_handle.execute(
-                                statement,
-                                &parameters[..],
-                            )?;
-                        },
+                    let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
+                        None => vec![],
                         Some(wit::Payload { mime: _, ref bytes }) => {
-                            let parameters = Vec::<sq::SqlValue>::from_serialized(&bytes)?;
-                            let parameters: Vec<&dyn rusqlite::ToSql> = parameters
-                                .iter()
-                                .map(|param| param as &dyn rusqlite::ToSql)
-                                .collect();
-
-                            db_handle.execute(
-                                statement,
-                                &parameters[..],
-                            )?;
+                            Vec::<sq::SqlValue>::from_serialized(&bytes)?
                         },
+                    };
+
+                    match tx_id {
+                        Some(tx_id) => {
+                            txs.entry(tx_id)
+                                .or_insert_with(Vec::new)
+                                .push((statement.clone(), parameters));
+                        },
+                        None => {
+                            let mut stmt = conn.prepare(statement)?;
+                            stmt.execute(rusqlite::params_from_iter(parameters.iter()))?;
+                        },
+                    };
+
+                    Response::new()
+                        .ipc_bytes(ipc)
+                        .send()?;
+                },
+                sq::SqliteMessage::Commit { ref tx_id, .. } => {                    
+                    let Some(queries) = txs.remove(tx_id) else {
+                        return Err(sq::SqliteError::NoTx.into());
+                    };
+
+                    let Some(ref mut conn) = conn else {
+                        return Err(sq::SqliteError::DbDoesNotExist.into());
+                    };
+                    
+                    let tx = conn.transaction()?;
+                    for (query, params) in queries {                
+                        tx.execute(&query, rusqlite::params_from_iter(params.iter()))?;
                     }
+
+                    tx.commit()?;
 
                     Response::new()
                         .ipc_bytes(ipc)
                         .send()?;
                 },
                 sq::SqliteMessage::Read { ref query, .. } => {
-                    let Some(db_handle) = db_handle else {
+                    let Some(ref db_handle) = conn else {
                         return Err(sq::SqliteError::DbDoesNotExist.into());
+                    };
+
+                    let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
+                        None => vec![],
+                        Some(wit::Payload { mime: _, ref bytes }) => {
+                            Vec::<sq::SqlValue>::from_serialized(&bytes)?
+                        },
                     };
 
                     let mut statement = db_handle.prepare(query)?;
@@ -425,11 +451,11 @@ fn handle_message (
                         .collect();
                     let number_columns = column_names.len();
                     let results: Vec<Vec<sq::SqlValue>> = statement
-                        .query_map([], |row| {
+                        .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
                             (0..number_columns)
                                 .map(|i| row.get(i))
                                 .collect()
-                            })?
+                        })?
                         .map(|item| item.unwrap())  //  TODO
                         .collect();
 
@@ -454,12 +480,18 @@ struct Component;
 impl Guest for Component {
     fn init(our: String) {
         wit::print_to_terminal(1, "sqlite_worker: begin");
-
         let our = Address::from_str(&our).unwrap();
-        let mut db_handle: Option<rusqlite::Connection> = None;
+
+        let mut conn: Option<rusqlite::Connection> = None;
+        let mut txs: HashMap<u64, Vec<(String, Vec<sq::SqlValue>)>> = HashMap::new();
+
+        grant_messaging(
+            &our,
+            &Vec::from([ProcessId::from_str("vfs:sys:uqbar").unwrap()])
+        );
 
         loop {
-            match handle_message(&our, &mut db_handle) {
+            match handle_message(&our, &mut conn, &mut txs) {
                 Ok(()) => {},
                 Err(e) => {
                     //  TODO: should we send an error on failure?
