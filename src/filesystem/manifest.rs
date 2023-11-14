@@ -293,7 +293,6 @@ impl Manifest {
         memory_buffer.extend_from_slice(&commit_tx_length.to_le_bytes());
         memory_buffer.extend_from_slice(&serialized_commit_tx);
 
-        
         if let Some(tx_chunks) = in_memory_file.active_txs.remove(&tx_id) {
             for (start, hash, length, location, encrypted) in tx_chunks {
                 in_memory_file
@@ -451,7 +450,9 @@ impl Manifest {
 
         let chunk_hash: [u8; 32] = blake3::hash(chunk).into();
         let chunk_length = chunk.len() as u64;
-        let (copy, copy_location) = chunk_hashes.get(&chunk_hash).map_or((false, None), |&location| (true, Some(location)));
+        let (copy, copy_location) = chunk_hashes
+            .get(&chunk_hash)
+            .map_or((false, None), |&location| (true, Some(location)));
 
         let mut encrypted = false;
         let mut chunk_data = chunk.to_vec();
