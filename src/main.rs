@@ -1,6 +1,6 @@
 use crate::types::*;
 use anyhow::Result;
-
+use clap::{arg, Command};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -51,25 +51,23 @@ async fn main() {
     // console_subscriber::init();
 
     // DEMO ONLY: remove all CLI arguments
-    let args: Vec<String> = env::args().collect();
-    let home_directory_path = &args[1];
-    // let home_directory_path = "home";
-    // create home directory if it does not already exist
-    if let Err(e) = fs::create_dir_all(home_directory_path).await {
-        panic!("failed to create home directory: {:?}", e);
-    }
-    // read PKI from websocket endpoint served by public RPC
-    // if you get rate-limited or something, pass in your own RPC as a boot argument
-    let mut rpc_url = "".to_string();
+    let matches = Command::new("Uqbar")
+        .version("0.1.0")
+        .author("Uqbar DAO")
+        .about("A decentralized operating system")
+        .arg(arg!([home] "Path to home directory").required(true))
+        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true))
+        .arg(arg!(--llm <LLM_URL> "LLM endpoint"))
+        .get_matches();
+    let home_directory_path = matches.get_one::<String>("home").unwrap();
+    let rpc_url = matches.get_one::<String>("rpc").unwrap();
+    let llm_url = matches.get_one::<String>("llm");
 
-    for (i, arg) in args.iter().enumerate() {
-        if arg == "--rpc" {
-            // Check if the next argument exists and is not another flag
-            if i + 1 < args.len() && !args[i + 1].starts_with('-') {
-                rpc_url = args[i + 1].clone();
-            }
-        }
+    #[cfg(not(feature = "llm"))]
+    if let Some(llm_url) = llm_url {
+        panic!("You passed in --llm {:?} but you do not have the llm feature enabled. Please re-run with `--features llm`", llm_url);
     }
+
 
     // kernel receives system messages via this channel, all other modules send messages
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
@@ -257,6 +255,9 @@ async fn main() {
 
     #[cfg(feature = "llm")]
     {
+        if llm_url.is_none() {
+            panic!("You did not pass in --llm <LLM_URL> but you have the llm feature enabled. Please re-run with `--llm <LLM_URL>`");
+        }
         runtime_extensions.push((
             ProcessId::new(Some("llm"), "sys", "uqbar"), // TODO llm:extensions:uqbar ?
             llm_sender,
@@ -367,6 +368,7 @@ async fn main() {
             our.name.clone(),
             kernel_message_sender.clone(),
             llm_receiver,
+            llm_url.unwrap().to_string(),
             print_sender.clone(),
         ));
     }

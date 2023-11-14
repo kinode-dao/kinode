@@ -2,12 +2,13 @@ use crate::types::*;
 use anyhow::Result;
 use reqwest::Response as ReqwestResponse;
 
-// Test llm with these commands in the terminal
+// const TERMINAL_PROCESS_ID: ProcessId = ;
 
 pub async fn llm(
     our_name: String,
     send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
+    llm_url: String,
     print_tx: PrintSender,
 ) -> Result<()> {
     while let Some(message) = recv_in_client.recv().await {
@@ -28,6 +29,7 @@ pub async fn llm(
         };
 
         let our_name = our_name.clone();
+        let llm_url = llm_url.clone();
         let send_to_loop = send_to_loop.clone();
         let print_tx = print_tx.clone();
 
@@ -35,6 +37,7 @@ pub async fn llm(
             if let Err(e) = handle_message(
                 our_name.clone(),
                 send_to_loop.clone(),
+                llm_url.clone(),
                 id,
                 rsvp,
                 expects_response,
@@ -57,6 +60,7 @@ pub async fn llm(
 async fn handle_message(
     our: String,
     send_to_loop: MessageSender,
+    llm_url: String,
     id: u64,
     rsvp: Option<Address>,
     expects_response: Option<u64>,
@@ -65,6 +69,8 @@ async fn handle_message(
     _print_tx: PrintSender,
 ) -> Result<(), LlmError> {
     let target = if expects_response.is_some() {
+        source.clone()
+    } else if source.process == ProcessId::from_str("terminal:terminal:uqbar").unwrap() {
         source.clone()
     } else {
         let Some(rsvp) = rsvp else {
@@ -86,7 +92,7 @@ async fn handle_message(
     let client = reqwest::Client::new();
 
     let res: ReqwestResponse = match client
-        .post("http://localhost:3030/completion")
+        .post(&format!("{}/completion", llm_url))
         .json(&req)
         .send()
         .await
