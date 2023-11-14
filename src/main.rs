@@ -1,6 +1,6 @@
 use crate::types::*;
 use anyhow::Result;
-use dotenv;
+
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -88,7 +88,7 @@ async fn main() {
         mpsc::channel(WEBSOCKET_SENDER_CHANNEL_CAPACITY);
     // filesystem receives request messages via this channel, kernel sends messages
     let (fs_message_sender, fs_message_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY.clone());
+        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY);
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
@@ -194,6 +194,7 @@ async fn main() {
     // if any do not match, we should prompt user to create a "transaction"
     // that updates their PKI info on-chain.
     let http_server_port = http_server::find_open_port(8080).await.unwrap();
+    println!("login or register at http://localhost:{}", http_server_port);
     let (kill_tx, kill_rx) = oneshot::channel::<bool>();
 
     let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
@@ -206,8 +207,7 @@ async fn main() {
         _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, disk_keyfile)
             => panic!("registration failed"),
         (our, decoded_keyfile, encoded_keyfile) = async {
-            while let Some(fin) = rx.recv().await { return fin }
-            panic!("registration failed")
+            rx.recv().await.expect("registration failed")
         } => (our, decoded_keyfile, encoded_keyfile),
     };
 
@@ -373,19 +373,11 @@ async fn main() {
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
     let quit_msg: String = tokio::select! {
-        Some(res) = tasks.join_next() => {
-            if let Err(e) = res {
-                format!("what does this mean? {:?}", e)
-            } else if let Ok(Err(e)) = res {
-                format!(
-                    "\x1b[38;5;196muh oh, a kernel process crashed: {}\x1b[0m",
-                    e
-                )
-                // TODO restart the task?
-            } else {
-                format!("what does this mean???")
-                // TODO restart the task?
-            }
+        Some(Ok(res)) = tasks.join_next() => {
+            format!(
+                "\x1b[38;5;196muh oh, a kernel process crashed -- this should never happen: {:?}\x1b[0m",
+                res
+            )
         }
         quit = terminal::terminal(
             our.clone(),
@@ -402,10 +394,10 @@ async fn main() {
             }
         }
     };
+
     // shutdown signal to fs for flush
     let _ = fs_kill_send.send(());
     let _ = fs_kill_confirm_recv.await;
-    // println!("fs shutdown complete.");
 
     // gracefully abort all running processes in kernel
     let _ = kernel_message_sender
@@ -430,10 +422,10 @@ async fn main() {
             signed_capabilities: None,
         })
         .await;
+
     // abort all remaining tasks
     tasks.shutdown().await;
     let _ = crossterm::terminal::disable_raw_mode();
-    println!("");
-    println!("\x1b[38;5;196m{}\x1b[0m", quit_msg);
+    println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
     return;
 }

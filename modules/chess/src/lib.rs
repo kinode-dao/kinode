@@ -6,8 +6,8 @@ extern crate pleco;
 use pleco::Board;
 use uqbar_process_lib::uqbar::process::standard as wit;
 use uqbar_process_lib::{
-    get_payload, get_typed_state, println, receive, set_state, Address, Message, Payload, Request,
-    Response,
+    get_payload, get_typed_state, grant_messaging, println, receive, set_state, Address, Message,
+    Payload, ProcessId, Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -174,11 +174,17 @@ const CHESS_CSS: &str = include_str!("../pkg/index.css");
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
-        println!("CHESS: start");
+        println!("chess: start");
+
+        grant_messaging(
+            &our,
+            &Vec::from([ProcessId::from_str("http_server:sys:uqbar").unwrap()]),
+        );
 
         for path in ["/", "/games"] {
             Request::new()
-                .target(Address::new(&our.node, "http_server:sys:uqbar").unwrap()).unwrap()
+                .target(Address::new(&our.node, "http_server:sys:uqbar").unwrap())
+                .unwrap()
                 .ipc_bytes(
                     serde_json::json!({
                         "BindPath": {
@@ -194,47 +200,47 @@ impl Guest for Component {
                 .send();
         }
 
-        let mut state: ChessState = match get_typed_state(|bytes| Ok(bincode::deserialize::<StoredChessState>(bytes)?))
-        {
-            Some(state) => {
-                let mut games = HashMap::new();
-                for (id, game) in state.games {
-                    if let Ok(board) = Board::from_fen(&game.board) {
-                        games.insert(
-                            id,
-                            Game {
-                                id: game.id.clone(),
-                                turns: game.turns,
-                                board,
-                                white: game.white.clone(),
-                                black: game.black.clone(),
-                                ended: game.ended,
-                            },
-                        );
-                    } else {
-                        games.insert(
-                            id,
-                            Game {
-                                id: game.id.clone(),
-                                turns: 0,
-                                board: Board::start_pos(),
-                                white: game.white.clone(),
-                                black: game.black.clone(),
-                                ended: game.ended,
-                            },
-                        );
+        let mut state: ChessState =
+            match get_typed_state(|bytes| Ok(bincode::deserialize::<StoredChessState>(bytes)?)) {
+                Some(state) => {
+                    let mut games = HashMap::new();
+                    for (id, game) in state.games {
+                        if let Ok(board) = Board::from_fen(&game.board) {
+                            games.insert(
+                                id,
+                                Game {
+                                    id: game.id.clone(),
+                                    turns: game.turns,
+                                    board,
+                                    white: game.white.clone(),
+                                    black: game.black.clone(),
+                                    ended: game.ended,
+                                },
+                            );
+                        } else {
+                            games.insert(
+                                id,
+                                Game {
+                                    id: game.id.clone(),
+                                    turns: 0,
+                                    board: Board::start_pos(),
+                                    white: game.white.clone(),
+                                    black: game.black.clone(),
+                                    ended: game.ended,
+                                },
+                            );
+                        }
+                    }
+                    ChessState {
+                        games,
+                        records: state.records,
                     }
                 }
-                ChessState {
-                    games,
-                    records: state.records,
-                }
-            }
-            None => ChessState {
-                games: HashMap::new(),
-                records: HashMap::new(),
-            },
-        };
+                None => ChessState {
+                    games: HashMap::new(),
+                    records: HashMap::new(),
+                },
+            };
 
         loop {
             let Ok((source, message)) = receive() else {
@@ -284,7 +290,7 @@ fn handle_request(
                                 mime: Some("application/octet-stream".to_string()),
                                 bytes: "conflict".as_bytes().to_vec(),
                             })
-                            .send()
+                            .send();
                     }
                 }
                 let game = Game {
@@ -324,7 +330,7 @@ fn handle_request(
                             mime: Some("application/octet-stream".to_string()),
                             bytes: "not found".as_bytes().to_vec(),
                         })
-                        .send()
+                        .send();
                 };
                 let valid_move = game
                     .board
@@ -399,7 +405,7 @@ fn handle_request(
                             mime: Some("application/octet-stream".to_string()),
                             bytes: "not found".as_bytes().to_vec(),
                         })
-                        .send()
+                        .send();
                 };
 
                 game.ended = true;
@@ -589,13 +595,9 @@ fn handle_request(
                                 }
 
                                 if let Some(game) = state.games.get_mut(&game_id) {
-                                    if game.turns % 2 == 0 && game.white != our.node {
-                                        return send_http_response(
-                                            403,
-                                            default_headers.clone(),
-                                            "Forbidden".to_string().as_bytes().to_vec(),
-                                        );
-                                    } else if game.turns % 2 == 1 && game.black != our.node {
+                                    if (game.turns % 2 == 0 && game.white != our.node)
+                                        || (game.turns % 2 == 1 && game.black != our.node)
+                                    {
                                         return send_http_response(
                                             403,
                                             default_headers.clone(),

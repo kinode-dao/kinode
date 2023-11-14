@@ -354,65 +354,70 @@ async fn direct_networking(
                     }
                 }
             }
-            // 3. receive incoming TCP connections
+            // 3. join any closed forwarding connection tasks and destroy them
+            // TODO can do more here if desired
+            Some(res) = forwarding_connections.join_next() => {
+                match res {
+                    Ok(()) => continue,
+                    Err(_e) => continue,
+                }
+            }
+            // 4. receive incoming TCP connections
             Ok((stream, _socket_addr)) = tcp.accept() => {
                 // TODO we can perform some amount of validation here
                 // to prevent some amount of potential DDoS attacks.
                 // can also block based on socket_addr
-                match accept_async(MaybeTlsStream::Plain(stream)).await {
-                    Ok(websocket) => {
-                        print_debug(&print_tx, "net: received new websocket connection").await;
-                        let (peer_id, routing_for, conn) =
-                            match recv_connection(
-                                &our,
-                                &our_ip,
-                                &pki,
-                                &peers,
-                                &mut pending_passthroughs,
-                                &keypair,
-                                websocket).await
-                            {
-                                Ok(res) => res,
-                                Err(e) => {
-                                    print_tx.send(Printout {
-                                        verbosity: 0,
-                                        content: format!("net: recv_connection failed: {e}"),
-                                    }).await?;
-                                    continue;
-                                }
-                            };
-                        // TODO if their handshake indicates they want us to proxy
-                        // for them (aka act as a router for them) we can choose
-                        // whether to do so here!
-                        // if conn is direct, add peer. if passthrough, add to our
-                        // forwarding connections joinset
-                        match conn {
-                            Connection::Peer(peer_conn) => {
-                                save_new_peer(
-                                    &peer_id,
-                                    routing_for,
-                                    peers.clone(),
-                                    peer_conn,
-                                    None,
-                                    &kernel_message_tx,
-                                    &print_tx
-                                ).await;
+                // ignore connections we failed to accept...?
+                if let Ok(websocket) = accept_async(MaybeTlsStream::Plain(stream)).await {
+                    print_debug(&print_tx, "net: received new websocket connection").await;
+                    let (peer_id, routing_for, conn) =
+                        match recv_connection(
+                            &our,
+                            &our_ip,
+                            &pki,
+                            &peers,
+                            &mut pending_passthroughs,
+                            &keypair,
+                            websocket).await
+                        {
+                            Ok(res) => res,
+                            Err(e) => {
+                                print_tx.send(Printout {
+                                    verbosity: 0,
+                                    content: format!("net: recv_connection failed: {e}"),
+                                }).await?;
+                                continue;
                             }
-                            Connection::Passthrough(passthrough_conn) => {
-                                forwarding_connections.spawn(maintain_passthrough(
-                                    passthrough_conn,
-                                ));
-                            }
-                            Connection::PendingPassthrough(pending_conn) => {
-                                pending_passthroughs.insert(
-                                    (peer_id.name.clone(), pending_conn.target.clone()),
-                                    pending_conn
-                                );
-                            }
+                        };
+                    // TODO if their handshake indicates they want us to proxy
+                    // for them (aka act as a router for them) we can choose
+                    // whether to do so here!
+                    // if conn is direct, add peer. if passthrough, add to our
+                    // forwarding connections joinset
+                    match conn {
+                        Connection::Peer(peer_conn) => {
+                            save_new_peer(
+                                &peer_id,
+                                routing_for,
+                                peers.clone(),
+                                peer_conn,
+                                None,
+                                &kernel_message_tx,
+                                &print_tx
+                            ).await;
+                        }
+                        Connection::Passthrough(passthrough_conn) => {
+                            forwarding_connections.spawn(maintain_passthrough(
+                                passthrough_conn,
+                            ));
+                        }
+                        Connection::PendingPassthrough(pending_conn) => {
+                            pending_passthroughs.insert(
+                                (peer_id.name.clone(), pending_conn.target.clone()),
+                                pending_conn
+                            );
                         }
                     }
-                    // ignore connections we failed to accept...?
-                    Err(_) => {}
                 }
             }
         }
@@ -543,7 +548,7 @@ async fn init_connection_via_router(
             None => continue,
             Some(id) => id,
         };
-        match init_connection(&our, &our_ip, peer_id, &keypair, Some(&router_id), false).await {
+        match init_connection(our, our_ip, peer_id, keypair, Some(&router_id), false).await {
             Ok(direct_conn) => {
                 save_new_peer(
                     peer_id,
@@ -560,7 +565,7 @@ async fn init_connection_via_router(
             Err(_) => continue,
         }
     }
-    return false;
+    false
 }
 
 async fn recv_connection(
@@ -584,7 +589,7 @@ async fn recv_connection(
     // and create a Passthrough connection if so.
     // a Noise 'e' message with have len 32
     if first_message.len() != 32 {
-        let (their_id, target_name) = validate_routing_request(&our.name, &first_message, pki)?;
+        let (their_id, target_name) = validate_routing_request(&our.name, first_message, pki)?;
         let (id, conn) = create_passthrough(
             our,
             our_ip,
@@ -605,7 +610,7 @@ async fn recv_connection(
 
     // -> e, ee, s, es
     send_uqbar_handshake(
-        &our,
+        our,
         keypair,
         &our_static_key,
         &mut noise,
@@ -684,7 +689,7 @@ async fn recv_connection_via_router(
 
     // -> e, ee, s, es
     send_uqbar_handshake(
-        &our,
+        our,
         keypair,
         &our_static_key,
         &mut noise,
@@ -788,7 +793,7 @@ async fn init_connection(
 
     // -> s, se
     send_uqbar_handshake(
-        &our,
+        our,
         keypair,
         &our_static_key,
         &mut noise,
@@ -820,9 +825,9 @@ async fn handle_local_message(
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
 ) -> Result<()> {
-    print_debug(&print_tx, "net: handling local message").await;
+    print_debug(print_tx, "net: handling local message").await;
     let ipc = match km.message {
-        Message::Request(request) => request.ipc,
+        Message::Request(ref request) => &request.ipc,
         Message::Response((response, _context)) => {
             // these are received as a router, when we send ConnectionRequests
             // to a node we do routing for.
@@ -846,7 +851,7 @@ async fn handle_local_message(
     };
 
     if km.source.node != our.name {
-        if let Ok(act) = rmp_serde::from_slice::<NetActions>(&ipc) {
+        if let Ok(act) = rmp_serde::from_slice::<NetActions>(ipc) {
             match act {
                 NetActions::QnsBatchUpdate(_) | NetActions::QnsUpdate(_) => {
                     // for now, we don't get these from remote.
@@ -875,8 +880,8 @@ async fn handle_local_message(
                             peers,
                             peer_conn,
                             None,
-                            &kernel_message_tx,
-                            &print_tx,
+                            kernel_message_tx,
+                            print_tx,
                         )
                         .await;
                         Ok(NetResponses::Accepted(from.clone()))
@@ -912,43 +917,13 @@ async fn handle_local_message(
         };
         // if we can't parse this to a netaction, treat it as a hello and print it
         // respond to a text message with a simple "delivered" response
-        print_tx
-            .send(Printout {
-                verbosity: 0,
-                content: format!(
-                    "\x1b[3;32m{}: {}\x1b[0m",
-                    km.source.node,
-                    std::str::from_utf8(&ipc).unwrap_or("!!message parse error!!")
-                ),
-            })
-            .await?;
-        kernel_message_tx
-            .send(KernelMessage {
-                id: km.id,
-                source: Address {
-                    node: our.name.clone(),
-                    process: ProcessId::from_str("net:sys:uqbar").unwrap(),
-                },
-                target: km.rsvp.unwrap_or(km.source),
-                rsvp: None,
-                message: Message::Response((
-                    Response {
-                        inherit: false,
-                        ipc: "delivered".as_bytes().to_vec(),
-                        metadata: None,
-                    },
-                    None,
-                )),
-                payload: None,
-                signed_capabilities: None,
-            })
-            .await?;
+        parse_hello_message(our, &km, ipc, kernel_message_tx, print_tx).await?;
         Ok(())
     } else {
         // available commands: "peers", "pki", "names", "diagnostics"
         // first parse as raw string, then deserialize to NetActions object
         let mut printout = String::new();
-        match std::str::from_utf8(&ipc) {
+        match std::str::from_utf8(ipc) {
             Ok("peers") => {
                 printout.push_str(&format!(
                     "{:#?}",
@@ -966,7 +941,7 @@ async fn handle_local_message(
             }
             Ok("diagnostics") => {
                 printout.push_str(&format!("our Identity: {:#?}\r\n", our));
-                printout.push_str(&format!("we have connections with peers:\r\n"));
+                printout.push_str("we have connections with peers:\r\n");
                 for peer in peers.iter() {
                     printout.push_str(&format!(
                         "    {}, routing_for={}\r\n",
@@ -988,18 +963,18 @@ async fn handle_local_message(
                 }
             }
             _ => {
-                match rmp_serde::from_slice::<NetActions>(&ipc)? {
-                    NetActions::ConnectionRequest(_) => {
+                match rmp_serde::from_slice::<NetActions>(ipc) {
+                    Ok(NetActions::ConnectionRequest(_)) => {
                         // we shouldn't receive these from ourselves.
                     }
-                    NetActions::QnsUpdate(log) => {
+                    Ok(NetActions::QnsUpdate(log)) => {
                         // printout.push_str(&format!("net: got QNS update for {}", log.name));
                         pki.insert(
                             log.name.clone(),
                             Identity {
                                 name: log.name.clone(),
                                 networking_key: log.public_key,
-                                ws_routing: if log.ip == "0.0.0.0".to_string() || log.port == 0 {
+                                ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
                                     None
                                 } else {
                                     Some((log.ip, log.port))
@@ -1009,7 +984,7 @@ async fn handle_local_message(
                         );
                         names.insert(log.node, log.name);
                     }
-                    NetActions::QnsBatchUpdate(log_list) => {
+                    Ok(NetActions::QnsBatchUpdate(log_list)) => {
                         // printout.push_str(&format!(
                         //     "net: got QNS update with {} peers",
                         //     log_list.len()
@@ -1020,8 +995,7 @@ async fn handle_local_message(
                                 Identity {
                                     name: log.name.clone(),
                                     networking_key: log.public_key,
-                                    ws_routing: if log.ip == "0.0.0.0".to_string() || log.port == 0
-                                    {
+                                    ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
                                         None
                                     } else {
                                         Some((log.ip, log.port))
@@ -1031,6 +1005,10 @@ async fn handle_local_message(
                             );
                             names.insert(log.node, log.name);
                         }
+                    }
+                    _ => {
+                        parse_hello_message(our, &km, ipc, kernel_message_tx, print_tx).await?;
+                        return Ok(());
                     }
                 }
             }

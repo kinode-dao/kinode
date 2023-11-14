@@ -237,7 +237,7 @@ async fn bootstrap(
                     .expect("fs: name error reading package.zip")
                     .to_owned();
                 let mut file_path = file_path.to_string_lossy().to_string();
-                if !file_path.starts_with("/") {
+                if !file_path.starts_with('/') {
                     file_path = format!("/{}", file_path);
                 }
                 println!("fs: found file {}...\r", file_path);
@@ -296,9 +296,9 @@ async fn bootstrap(
         // for each process-entry in manifest.json:
         for mut entry in package_manifest {
             let wasm_bytes = &mut Vec::new();
-            let mut file_path = format!("{}", entry.process_wasm_path);
-            if file_path.starts_with("/") {
-                file_path = format!("{}", &file_path[1..]);
+            let mut file_path = entry.process_wasm_path.to_string();
+            if file_path.starts_with('/') {
+                file_path = file_path[1..].to_string();
             }
             package
                 .by_name(&file_path)
@@ -362,7 +362,7 @@ async fn bootstrap(
 
             // save in process map
             let file = FileIdentifier::new_uuid();
-            manifest.write(&file, &wasm_bytes).await.unwrap();
+            manifest.write(&file, wasm_bytes).await.unwrap();
             let wasm_bytes_handle = file.to_uuid().unwrap();
 
             process_map.insert(
@@ -384,7 +384,7 @@ async fn bootstrap(
 
     if manifest.get_by_hash(&process_map_hash).await.is_none() {
         let _ = manifest
-            .write(&kernel_process_id, &serialized_process_map)
+            .write(kernel_process_id, &serialized_process_map)
             .await;
     }
     Ok(vfs_messages)
@@ -416,7 +416,7 @@ async fn get_zipped_packages() -> Vec<(String, zip::ZipArchive<std::io::Cursor<V
         }
     }
 
-    return packages;
+    packages
 }
 
 pub async fn fs_sender(
@@ -565,7 +565,7 @@ async fn handle_request(
                 });
             };
             let file_uuid = match maybe_file_id {
-                Some(id) => FileIdentifier::UUID(id),
+                Some(id) => FileIdentifier::Uuid(id),
                 None => FileIdentifier::new_uuid(),
             };
 
@@ -588,7 +588,7 @@ async fn handle_request(
                 });
             };
 
-            let file_uuid = FileIdentifier::UUID(file_uuid);
+            let file_uuid = FileIdentifier::Uuid(file_uuid);
 
             match manifest.write_at(&file_uuid, offset, &payload.bytes).await {
                 Ok(_) => (),
@@ -603,7 +603,7 @@ async fn handle_request(
             (FsResponse::Write(file_uuid.to_uuid().unwrap()), None)
         }
         FsAction::Read(file_uuid) => {
-            let file = FileIdentifier::UUID(file_uuid);
+            let file = FileIdentifier::Uuid(file_uuid);
 
             match manifest.read(&file, None, None).await {
                 Err(e) => {
@@ -616,7 +616,7 @@ async fn handle_request(
             }
         }
         FsAction::ReadChunk(req) => {
-            let file = FileIdentifier::UUID(req.file);
+            let file = FileIdentifier::Uuid(req.file);
 
             match manifest
                 .read(&file, Some(req.start), Some(req.length))
@@ -632,7 +632,7 @@ async fn handle_request(
             }
         }
         FsAction::Delete(del) => {
-            let file = FileIdentifier::UUID(del);
+            let file = FileIdentifier::Uuid(del);
             manifest.delete(&file).await?;
 
             (FsResponse::Delete(del), None)
@@ -645,7 +645,7 @@ async fn handle_request(
             };
 
             let file_uuid = match maybe_file_uuid {
-                Some(uuid) => FileIdentifier::UUID(uuid),
+                Some(uuid) => FileIdentifier::Uuid(uuid),
                 None => FileIdentifier::new_uuid(),
             };
 
@@ -662,7 +662,7 @@ async fn handle_request(
             (FsResponse::Append(file_uuid.to_uuid().unwrap()), None)
         }
         FsAction::Length(file_uuid) => {
-            let file = FileIdentifier::UUID(file_uuid);
+            let file = FileIdentifier::Uuid(file_uuid);
             let length = manifest.get_length(&file).await;
             match length {
                 Some(len) => (FsResponse::Length(len), None),
@@ -674,7 +674,7 @@ async fn handle_request(
             }
         }
         FsAction::SetLength((file_uuid, length)) => {
-            let file = FileIdentifier::UUID(file_uuid);
+            let file = FileIdentifier::Uuid(file_uuid);
             manifest.set_length(&file, length).await?;
 
             // doublecheck if this is the type of return statement we want.
@@ -720,7 +720,7 @@ async fn handle_request(
 
     if expects_response.is_some() {
         let response = KernelMessage {
-            id: id.clone(),
+            id,
             source: Address {
                 node: our_name.clone(),
                 process: FILESYSTEM_PROCESS_ID.clone(),
@@ -738,10 +738,7 @@ async fn handle_request(
                 },
                 None,
             )),
-            payload: match bytes {
-                Some(bytes) => Some(Payload { mime: None, bytes }),
-                None => None,
-            },
+            payload: bytes.map(|bytes| Payload { mime: None, bytes }),
             signed_capabilities: None,
         };
 
