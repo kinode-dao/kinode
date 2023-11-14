@@ -8,7 +8,7 @@ pub struct LlmPrompt {
     top_k: Option<usize>,
     top_p: Option<f64>,
     n_predict: Option<isize>, // isize to accommodate -1
-    n_keep: Option<isize>, // isize to accommodate -1
+    n_keep: Option<isize>,    // isize to accommodate -1
     stream: Option<bool>,
     stop: Option<Vec<String>>,
     tfs_z: Option<f64>,
