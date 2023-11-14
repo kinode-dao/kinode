@@ -14,7 +14,7 @@ use generic_array::GenericArray;
 use rand::{thread_rng, Rng};
 use ring::signature::Ed25519KeyPair;
 use rsa::{BigUint, Oaep, RsaPublicKey};
-use serde_json;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -41,7 +41,7 @@ fn decrypt_data(secret_key_bytes: [u8; 32], data: Vec<u8>) -> Vec<u8> {
     let nonce_bytes = data[data.len() - 12..].to_vec();
     let encrypted_bytes = data[..data.len() - 12].to_vec();
     let key = Key::<Aes256Gcm>::from_slice(&secret_key_bytes);
-    let cipher = Aes256Gcm::new(&key);
+    let cipher = Aes256Gcm::new(key);
     let nonce = GenericArray::from_slice(&nonce_bytes);
     let decrypted_bytes = cipher
         .decrypt(nonce, encrypted_bytes.as_ref())
@@ -89,7 +89,7 @@ pub async fn encryptor(
         match serde_json::from_slice::<EncryptorMessage>(&ipc) {
             Ok(message) => {
                 match message {
-                    EncryptorMessage::GetKeyAction(GetKeyAction {
+                    EncryptorMessage::GetKey(GetKeyAction {
                         channel_id,
                         public_key_hex,
                     }) => {
@@ -183,7 +183,7 @@ pub async fn encryptor(
                             }
                         }
                     }
-                    EncryptorMessage::DecryptAndForwardAction(DecryptAndForwardAction {
+                    EncryptorMessage::DecryptAndForward(DecryptAndForwardAction {
                         channel_id,
                         forward_to,
                         json,
@@ -193,7 +193,7 @@ pub async fn encryptor(
                                 verbosity: 1,
                                 content: format!(
                                     "DECRYPTOR TO FORWARD: {}",
-                                    json.clone().unwrap_or_default().to_string()
+                                    json.clone().unwrap_or_default()
                                 ),
                             })
                             .await;
@@ -212,12 +212,12 @@ pub async fn encryptor(
                         let data = payload.bytes.clone();
 
                         if let Some(secret_key_bytes) = secrets.get(&channel_id) {
-                            let decrypted_bytes = decrypt_data(secret_key_bytes.clone(), data);
+                            let decrypted_bytes = decrypt_data(*secret_key_bytes, data);
 
                             // Forward the unencrypted data to the target
                             let id: u64 = rand::random();
                             let message = KernelMessage {
-                                id: id.clone(),
+                                id,
                                 source: Address {
                                     node: our.clone(),
                                     process: ENCRYPTOR_PROCESS_ID.clone(),
@@ -241,7 +241,7 @@ pub async fn encryptor(
                             panic!("No secret found");
                         }
                     }
-                    EncryptorMessage::EncryptAndForwardAction(EncryptAndForwardAction {
+                    EncryptorMessage::EncryptAndForward(EncryptAndForwardAction {
                         channel_id,
                         forward_to,
                         json,
@@ -249,7 +249,7 @@ pub async fn encryptor(
                         let _ = print_tx
                             .send(Printout {
                                 verbosity: 1,
-                                content: format!("ENCRYPTOR TO FORWARD"),
+                                content: "ENCRYPTOR TO FORWARD".to_string(),
                             })
                             .await;
 
@@ -266,7 +266,7 @@ pub async fn encryptor(
                         let data = payload.bytes.clone();
 
                         if let Some(secret_key_bytes) = secrets.get(&channel_id) {
-                            let encrypted_bytes = encrypt_data(secret_key_bytes.clone(), data);
+                            let encrypted_bytes = encrypt_data(*secret_key_bytes, data);
 
                             // Forward the ciphertext and nonce_hex to the specified process
                             let id: u64 = rand::random();
@@ -296,16 +296,16 @@ pub async fn encryptor(
                             let _ = print_tx
                                 .send(Printout {
                                     verbosity: 1,
-                                    content: format!("ERROR: No secret found"),
+                                    content: "ERROR: No secret found".to_string(),
                                 })
                                 .await;
                         }
                     }
-                    EncryptorMessage::DecryptAction(DecryptAction { channel_id }) => {
+                    EncryptorMessage::Decrypt(DecryptAction { channel_id }) => {
                         let _ = print_tx
                             .send(Printout {
                                 verbosity: 1,
-                                content: format!("ENCRYPTOR TO DECRYPT"),
+                                content: "ENCRYPTOR TO DECRYPT".to_string(),
                             })
                             .await;
 
@@ -322,7 +322,7 @@ pub async fn encryptor(
                         let data = payload.bytes.clone();
 
                         if let Some(secret_key_bytes) = secrets.get(&channel_id) {
-                            let decrypted_bytes = decrypt_data(secret_key_bytes.clone(), data);
+                            let decrypted_bytes = decrypt_data(*secret_key_bytes, data);
 
                             let message = KernelMessage {
                                 id: *id,
@@ -352,16 +352,16 @@ pub async fn encryptor(
                             let _ = print_tx
                                 .send(Printout {
                                     verbosity: 1,
-                                    content: format!("ERROR: No secret found"),
+                                    content: "ERROR: No secret found".to_string(),
                                 })
                                 .await;
                         }
                     }
-                    EncryptorMessage::EncryptAction(EncryptAction { channel_id }) => {
+                    EncryptorMessage::Encrypt(EncryptAction { channel_id }) => {
                         let _ = print_tx
                             .send(Printout {
                                 verbosity: 1,
-                                content: format!("ENCRYPTOR TO ENCRYPT"),
+                                content: "ENCRYPTOR TO ENCRYPT".to_string(),
                             })
                             .await;
 
@@ -378,7 +378,7 @@ pub async fn encryptor(
                         let data = payload.bytes.clone();
 
                         if let Some(secret_key_bytes) = secrets.get(&channel_id) {
-                            let encrypted_bytes = encrypt_data(secret_key_bytes.clone(), data);
+                            let encrypted_bytes = encrypt_data(*secret_key_bytes, data);
 
                             let message = KernelMessage {
                                 id: *id,
@@ -408,7 +408,7 @@ pub async fn encryptor(
                             let _ = print_tx
                                 .send(Printout {
                                     verbosity: 1,
-                                    content: format!("ERROR: No secret found"),
+                                    content: "ERROR: No secret found".to_string(),
                                 })
                                 .await;
                         }

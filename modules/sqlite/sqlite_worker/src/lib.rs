@@ -4,7 +4,7 @@ use std::ffi::CString;
 use rusqlite::{types::FromSql, types::FromSqlError, types::ToSql, types::ValueRef};
 use std::collections::HashMap;
 
-use uqbar_process_lib::{Address, ProcessId, Response};
+use uqbar_process_lib::{Address, ProcessId, Response, grant_messaging};
 use uqbar_process_lib::uqbar::process::standard as wit;
 
 use crate::sqlite_types::Deserializable;
@@ -473,10 +473,16 @@ struct Component;
 impl Guest for Component {
     fn init(our: String) {
         wit::print_to_terminal(1, "sqlite_worker: begin");
-
         let our = Address::from_str(&our).unwrap();
+
         let mut conn: Option<rusqlite::Connection> = None;
         let mut txs: HashMap<u64, Vec<(String, Vec<sq::SqlValue>)>> = HashMap::new();
+
+
+        grant_messaging(
+            &our,
+            &Vec::from([ProcessId::from_str("vfs:sys:uqbar").unwrap()])
+        );
 
         loop {
             match handle_message(&our, &mut conn, &mut txs) {

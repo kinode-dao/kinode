@@ -1,7 +1,8 @@
 use serde_json::json;
 use std::collections::HashMap;
 use uqbar_process_lib::{
-    get_payload, receive, println, Address, Message, Payload, Request, Response,
+    get_payload, grant_messaging, println, receive, Address, Message, Payload, ProcessId, Request,
+    Response,
 };
 
 wit_bindgen::generate!({
@@ -16,7 +17,11 @@ struct Component;
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
-        //print_to_terminal(1, "http_proxy: start");
+
+        grant_messaging(
+            &our,
+            &Vec::from([ProcessId::from_str("http_server:sys:uqbar").unwrap()]),
+        );
 
         match main(our) {
             Ok(_) => {}
