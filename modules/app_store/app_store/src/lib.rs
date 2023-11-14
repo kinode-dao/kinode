@@ -168,6 +168,7 @@ impl Guest for Component {
             &Vec::from([
                 ProcessId::from_str("http_server:sys:uqbar").unwrap(),
                 ProcessId::from_str("terminal:terminal:uqbar").unwrap(),
+                ProcessId::from_str("vfs:sys:uqbar").unwrap(),
             ]),
         );
         println!("{}: start", our.process);
