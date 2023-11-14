@@ -47,10 +47,6 @@ const REVEAL_IP: bool = true;
 
 #[tokio::main]
 async fn main() {
-    #[cfg(feature = "llm")]
-    {
-        println!("TODO remove this print llm is enabled");
-    }
     // For use with https://github.com/tokio-rs/console
     // console_subscriber::init();
 
