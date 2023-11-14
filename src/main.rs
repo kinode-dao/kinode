@@ -1,6 +1,6 @@
 use crate::types::*;
 use anyhow::Result;
-
+use clap::{arg, Command};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -19,6 +19,10 @@ mod terminal;
 mod types;
 mod vfs;
 
+// extensions
+#[cfg(feature = "llm")]
+mod llm;
+
 const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
 const TERMINAL_CHANNEL_CAPACITY: usize = 32;
@@ -30,6 +34,8 @@ const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
+#[cfg(feature = "llm")]
+const LLM_CHANNEL_CAPACITY: usize = 32;
 
 // const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
 
@@ -46,24 +52,21 @@ async fn main() {
     // console_subscriber::init();
 
     // DEMO ONLY: remove all CLI arguments
-    let args: Vec<String> = env::args().collect();
-    let home_directory_path = &args[1];
-    // let home_directory_path = "home";
-    // create home directory if it does not already exist
-    if let Err(e) = fs::create_dir_all(home_directory_path).await {
-        panic!("failed to create home directory: {:?}", e);
-    }
-    // read PKI from websocket endpoint served by public RPC
-    // if you get rate-limited or something, pass in your own RPC as a boot argument
-    let mut rpc_url = "".to_string();
+    let matches = Command::new("Uqbar")
+        .version("0.1.0")
+        .author("Uqbar DAO")
+        .about("A decentralized operating system")
+        .arg(arg!([home] "Path to home directory").required(true))
+        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true))
+        .arg(arg!(--llm <LLM_URL> "LLM endpoint"))
+        .get_matches();
+    let home_directory_path = matches.get_one::<String>("home").unwrap();
+    let rpc_url = matches.get_one::<String>("rpc").unwrap();
+    let llm_url = matches.get_one::<String>("llm");
 
-    for (i, arg) in args.iter().enumerate() {
-        if arg == "--rpc" {
-            // Check if the next argument exists and is not another flag
-            if i + 1 < args.len() && !args[i + 1].starts_with('-') {
-                rpc_url = args[i + 1].clone();
-            }
-        }
+    #[cfg(not(feature = "llm"))]
+    if let Some(llm_url) = llm_url {
+        panic!("You passed in --llm {:?} but you do not have the llm feature enabled. Please re-run with `--features llm`", llm_url);
     }
 
     // kernel receives system messages via this channel, all other modules send messages
@@ -98,6 +101,10 @@ async fn main() {
     // encryptor handles end-to-end encryption for client messages
     let (encryptor_sender, encryptor_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ENCRYPTOR_CHANNEL_CAPACITY);
+    // optional llm extension
+    #[cfg(feature = "llm")]
+    let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(LLM_CHANNEL_CAPACITY);
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
@@ -214,11 +221,57 @@ async fn main() {
 
     println!("registration complete!");
 
+    let mut runtime_extensions = vec![
+        (
+            ProcessId::new(Some("filesystem"), "sys", "uqbar"),
+            fs_message_sender,
+            false,
+        ),
+        (
+            ProcessId::new(Some("http_server"), "sys", "uqbar"),
+            http_server_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("http_client"), "sys", "uqbar"),
+            http_client_sender,
+            false,
+        ),
+        (
+            ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
+            eth_rpc_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("vfs"), "sys", "uqbar"),
+            vfs_message_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("encryptor"), "sys", "uqbar"),
+            encryptor_sender,
+            false,
+        ),
+    ];
+
+    #[cfg(feature = "llm")]
+    {
+        if llm_url.is_none() {
+            panic!("You did not pass in --llm <LLM_URL> but you have the llm feature enabled. Please re-run with `--llm <LLM_URL>`");
+        }
+        runtime_extensions.push((
+            ProcessId::new(Some("llm"), "sys", "uqbar"), // TODO llm:extensions:uqbar ?
+            llm_sender,
+            true,
+        ));
+    }
+
     let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
         our.name.clone(),
         home_directory_path.clone(),
         decoded_keyfile.file_key,
         fs_config,
+        runtime_extensions.clone(),
     )
     .await
     .expect("fs load failed!");
@@ -252,12 +305,7 @@ async fn main() {
         network_error_receiver,
         kernel_debug_message_receiver,
         net_message_sender.clone(),
-        fs_message_sender,
-        http_server_sender,
-        http_client_sender,
-        eth_rpc_sender,
-        vfs_message_sender,
-        encryptor_sender,
+        runtime_extensions,
     ));
     tasks.spawn(net::networking(
         our.clone(),
@@ -315,7 +363,18 @@ async fn main() {
         encryptor_receiver,
         print_sender.clone(),
     ));
-
+    #[cfg(feature = "llm")]
+    {
+        tasks.spawn(llm::llm(
+            our.name.clone(),
+            kernel_message_sender.clone(),
+            llm_receiver,
+            llm_url.unwrap().to_string(),
+            print_sender.clone(),
+        ));
+    }
+    // if a runtime task exits, try to recover it,
+    // unless it was terminal signaling a quit
     let quit_msg: String = tokio::select! {
         Some(Ok(res)) = tasks.join_next() => {
             format!(

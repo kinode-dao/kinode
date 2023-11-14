@@ -1802,14 +1802,9 @@ async fn make_event_loop(
     mut recv_debug_in_loop: t::DebugReceiver,
     send_to_loop: t::MessageSender,
     send_to_net: t::MessageSender,
-    send_to_fs: t::MessageSender,
-    send_to_http_server: t::MessageSender,
-    send_to_http_client: t::MessageSender,
-    send_to_eth_rpc: t::MessageSender,
-    send_to_vfs: t::MessageSender,
-    send_to_encryptor: t::MessageSender,
     send_to_terminal: t::PrintSender,
     engine: Engine,
+    runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
     // shared global flag to mark if we're finished boot process
     let booted = Arc::new(AtomicBool::new(false));
@@ -1817,33 +1812,12 @@ async fn make_event_loop(
     Box::pin(async move {
         let mut senders: Senders = HashMap::new();
         senders.insert(
-            t::ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_eth_rpc),
-        );
-        senders.insert(
-            t::ProcessId::new(Some("filesystem"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_fs),
-        );
-        senders.insert(
-            t::ProcessId::new(Some("http_server"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_http_server),
-        );
-        senders.insert(
-            t::ProcessId::new(Some("http_client"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_http_client),
-        );
-        senders.insert(
-            t::ProcessId::new(Some("encryptor"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_encryptor),
-        );
-        senders.insert(
             t::ProcessId::new(Some("net"), "sys", "uqbar"),
             ProcessSender::Runtime(send_to_net.clone()),
         );
-        senders.insert(
-            t::ProcessId::new(Some("vfs"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_vfs),
-        );
+        for (process_id, sender, _) in runtime_extensions {
+            senders.insert(process_id, ProcessSender::Runtime(sender));
+        }
 
         // each running process is stored in this map
         let mut process_handles: ProcessHandles = HashMap::new();
@@ -2235,12 +2209,7 @@ pub async fn kernel(
     network_error_recv: t::NetworkErrorReceiver,
     recv_debug_in_loop: t::DebugReceiver,
     send_to_wss: t::MessageSender,
-    send_to_fs: t::MessageSender,
-    send_to_http_server: t::MessageSender,
-    send_to_http_client: t::MessageSender,
-    send_to_eth_rpc: t::MessageSender,
-    send_to_vfs: t::MessageSender,
-    send_to_encryptor: t::MessageSender,
+    runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
 ) -> Result<()> {
     let mut config = Config::new();
     config.cache_config_load_default().unwrap();
@@ -2261,14 +2230,9 @@ pub async fn kernel(
             recv_debug_in_loop,
             send_to_loop,
             send_to_wss,
-            send_to_fs,
-            send_to_http_server,
-            send_to_http_client,
-            send_to_eth_rpc,
-            send_to_vfs,
-            send_to_encryptor,
             send_to_terminal,
             engine,
+            runtime_extensions,
         )
         .await,
     );
