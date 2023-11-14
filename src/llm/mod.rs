@@ -1,6 +1,9 @@
 use crate::types::*;
+use crate::llm::types::*;
 use anyhow::Result;
 use reqwest::Response as ReqwestResponse;
+
+mod types;
 
 pub async fn llm(
     our_name: String,
