@@ -22,11 +22,6 @@ use sqlite_types as sq;
 
 const PREFIX: &str = "sqlite-";
 
-struct Connection<'a> {
-    conn: Option<rusqlite::Connection>,
-    txs: HashMap<u64, rusqlite::Transaction<'a>>,
-}
-
 impl ToSql for sq::SqlValue {
     fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput> {
         match self {
@@ -351,10 +346,10 @@ pub extern "C" fn send_and_await_response_wrapped(
     CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
 }
 
-fn handle_message<'a>(
+fn handle_message(
     our: &wit::Address,
     conn: &mut Option<rusqlite::Connection>,
-    txs: &mut HashMap<u64, rusqlite::Transaction>,
+    txs: &mut HashMap<u64, Vec<(String, Vec<sq::SqlValue>)>>,
 ) -> anyhow::Result<()> {
     let (source, message) = wit::receive().unwrap();
 
@@ -393,79 +388,42 @@ fn handle_message<'a>(
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
-                    let tx = match tx_id {
-                        None => None,
-                        Some(tx_id) => {
-                            match txs.get(&tx_id) {
-                                None => return Err(sq::SqliteError::NoTx.into()),
-                                Some(tx) => Some(tx),
-                            }
-                        },
-                    };
-
-                    match wit::get_payload() {
-                        None => {
-                            let parameters: Vec<&dyn rusqlite::ToSql> = vec![];
-                            match tx {
-                                None => {
-                                    conn.execute(
-                                        statement,
-                                        &parameters[..],
-                                    )?;
-                                },
-                                Some(tx) => {
-                                    tx.execute(
-                                        statement,
-                                        &parameters[..],
-                                    )?;
-                                },
-                            }
-                        },
+                    let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
+                        None => vec![],
                         Some(wit::Payload { mime: _, ref bytes }) => {
-                            let parameters = Vec::<sq::SqlValue>::from_serialized(&bytes)?;
-                            let parameters: Vec<&dyn rusqlite::ToSql> = parameters
-                                .iter()
-                                .map(|param| param as &dyn rusqlite::ToSql)
-                                .collect();
-                            // Todo refactor?
-                            match tx {
-                                None => {
-                                    conn.execute(
-                                        statement,
-                                        &parameters[..],
-                                    )?;
-                                },
-                                Some(tx) => {
-                                    tx.execute(
-                                        statement,
-                                        &parameters[..],
-                                    )?;
-                                },
-                            }
+                            Vec::<sq::SqlValue>::from_serialized(&bytes)?
                         },
-                    }
-
-                    Response::new()
-                        .ipc_bytes(ipc)
-                        .send()?;
-                },
-                sq::SqliteMessage::StartTransaction { tx_id, .. } => {
-                    let Some(ref conn) = conn else {
-                        return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
-                    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Deferred)?;
-                    
-                    txs.insert(tx_id, tx);    // this completely messes up lifetimes..
+                    match tx_id {
+                        Some(tx_id) => {
+                            txs.entry(tx_id)
+                                .or_insert_with(Vec::new)
+                                .push((statement.clone(), parameters));
+                        },
+                        None => {
+                            let mut stmt = conn.prepare(statement)?;
+                            stmt.execute(rusqlite::params_from_iter(parameters.iter()))?;
+                        },
+                    };
 
                     Response::new()
                         .ipc_bytes(ipc)
                         .send()?;
                 },
-                sq::SqliteMessage::Commit { ref tx_id, .. } => {
-                    let Some(tx) = txs.remove(tx_id) else {
+                sq::SqliteMessage::Commit { ref tx_id, .. } => {                    
+                    let Some(queries) = txs.remove(tx_id) else {
                         return Err(sq::SqliteError::NoTx.into());
                     };
+
+                    let Some(ref mut conn) = conn else {
+                        return Err(sq::SqliteError::DbDoesNotExist.into());
+                    };
+                    
+                    let tx = conn.transaction()?;
+                    for (query, params) in queries {                
+                        tx.execute(&query, rusqlite::params_from_iter(params.iter()))?;
+                    }
 
                     tx.commit()?;
 
@@ -518,7 +476,7 @@ impl Guest for Component {
 
         let our = Address::from_str(&our).unwrap();
         let mut conn: Option<rusqlite::Connection> = None;
-        let mut txs: HashMap<u64, rusqlite::Transaction> = HashMap::new();
+        let mut txs: HashMap<u64, Vec<(String, Vec<sq::SqlValue>)>> = HashMap::new();
 
         loop {
             match handle_message(&our, &mut conn, &mut txs) {

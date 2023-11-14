@@ -169,9 +169,6 @@ fn handle_message (
                     }
                     forward_if_have_cap(our, "read", db, ipc, db_to_process)?;
                 },
-                sq::SqliteMessage::StartTransaction { ref db, ref tx_id } => {
-                    forward_if_have_cap(our, "write", db, ipc, db_to_process)?;
-                },
                 sq::SqliteMessage::Commit { ref db, ref tx_id } => {
                     forward_if_have_cap(our, "write", db, ipc, db_to_process)?;
                 },
