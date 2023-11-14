@@ -371,15 +371,15 @@ fn handle_message(
                         None => {
                             let flags = rusqlite::OpenFlags::default();
                             *conn = Some(rusqlite::Connection::open_with_flags_and_vfs(
-                                    format!(
-                                        "{}:{}:/{}.sql",
-                                        our.node,
-                                        vfs_drive,
-                                        db,
-                                    ),
-                                    flags,
-                                    "uqbar",
-                                )?);
+                                format!(
+                                    "{}:{}:/{}.sql",
+                                    our.node,
+                                    vfs_drive,
+                                    db,
+                                ),
+                                flags,
+                                "uqbar",
+                            )?);
                         },
                     }
                 },
@@ -477,7 +477,6 @@ impl Guest for Component {
 
         let mut conn: Option<rusqlite::Connection> = None;
         let mut txs: HashMap<u64, Vec<(String, Vec<sq::SqlValue>)>> = HashMap::new();
-
 
         grant_messaging(
             &our,
