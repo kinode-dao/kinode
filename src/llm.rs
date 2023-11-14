@@ -2,8 +2,6 @@ use crate::types::*;
 use anyhow::Result;
 use reqwest::Response as ReqwestResponse;
 
-// const TERMINAL_PROCESS_ID: ProcessId = ;
-
 pub async fn llm(
     our_name: String,
     send_to_loop: MessageSender,
