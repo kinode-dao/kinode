@@ -436,6 +436,13 @@ fn handle_message(
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
+                    let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
+                        None => vec![],
+                        Some(wit::Payload { mime: _, ref bytes }) => {
+                            Vec::<sq::SqlValue>::from_serialized(&bytes)?
+                        },
+                    };
+
                     let mut statement = db_handle.prepare(query)?;
                     let column_names: Vec<String> = statement
                         .column_names()
@@ -444,11 +451,11 @@ fn handle_message(
                         .collect();
                     let number_columns = column_names.len();
                     let results: Vec<Vec<sq::SqlValue>> = statement
-                        .query_map([], |row| {
+                        .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
                             (0..number_columns)
                                 .map(|i| row.get(i))
                                 .collect()
-                            })?
+                        })?
                         .map(|item| item.unwrap())  //  TODO
                         .collect();
 
