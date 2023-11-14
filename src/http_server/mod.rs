@@ -691,7 +691,11 @@ async fn handler(
     let bound_path = route.handler();
 
     let app = bound_path.app.to_string();
-    let url_params: HashMap<String, String> = route.params().iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+    let url_params: HashMap<String, String> = route
+        .params()
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
     let raw_path = remove_process_id(&original_path);
     let path = remove_process_id(&bound_path.original_path);
 
@@ -853,7 +857,8 @@ async fn handler(
                     headers: real_headers.clone(),
                     query_params: query_params.clone(),
                     url_params: url_params.clone(),
-                }).unwrap(),
+                })
+                .unwrap(),
                 metadata: None,
             }),
             payload: Some(Payload {
