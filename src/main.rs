@@ -34,6 +34,7 @@ const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
+#[cfg(feature = "llm")]
 const LLM_CHANNEL_CAPACITY: usize = 32;
 
 // const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
@@ -101,6 +102,7 @@ async fn main() {
     let (encryptor_sender, encryptor_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ENCRYPTOR_CHANNEL_CAPACITY);
     // optional llm extension
+    #[cfg(feature = "llm")]
     let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(LLM_CHANNEL_CAPACITY);
     // terminal receives prints via this channel, all other modules send prints
