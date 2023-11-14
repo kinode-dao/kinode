@@ -3,8 +3,36 @@ use thiserror::Error;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LlmPrompt {
-    pub prompt: String,
-    pub n_predict: u64,
+    prompt: String, // TODO can be a string or an array of strings
+    temperature: Option<f64>,
+    top_k: Option<usize>,
+    top_p: Option<f64>,
+    n_predict: Option<isize>, // isize to accommodate -1
+    n_keep: Option<isize>, // isize to accommodate -1
+    stream: Option<bool>,
+    stop: Option<Vec<String>>,
+    tfs_z: Option<f64>,
+    typical_p: Option<f64>,
+    repeat_penalty: Option<f64>,
+    repeat_last_n: Option<isize>, // isize to accommodate -1
+    penalize_nl: Option<bool>,
+    presence_penalty: Option<f64>,
+    frequency_penalty: Option<f64>,
+    mirostat: Option<u8>, // u8 as it's 0, 1, or 2
+    mirostat_tau: Option<f64>,
+    mirostat_eta: Option<f64>,
+    grammar: Option<String>,
+    seed: Option<isize>, // isize to accommodate -1
+    ignore_eos: Option<bool>,
+    logit_bias: Option<Vec<(usize, f64)>>,
+    n_probs: Option<usize>,
+    image_data: Option<Vec<ImageData>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ImageData {
+    data: String, // Base64 string
+    id: usize,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
