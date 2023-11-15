@@ -348,6 +348,41 @@ pub extern "C" fn send_and_await_response_wrapped(
     CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
 }
 
+fn json_to_sqlite(value: &serde_json::Value) -> Result<sq::SqlValue, sq::SqliteError> {
+    match value {
+        serde_json::Value::Number(n) => {
+            if let Some(int_val) = n.as_i64() {
+                Ok(sq::SqlValue::Integer(int_val))
+            } else if let Some(float_val) = n.as_f64() {
+                Ok(sq::SqlValue::Real(float_val))
+            } else {
+                Err(sq::SqliteError::InvalidParameters)
+            }
+        },
+        serde_json::Value::String(s) => {
+            match base64::decode(&s) {
+                Ok(decoded_bytes) => {
+                    // Convert to SQLite Blob if it's a valid base64 string
+                    Ok(sq::SqlValue::Blob(decoded_bytes))
+                },
+                Err(_) => {
+                    // If it's not base64, just use the string itself
+                    Ok(sq::SqlValue::Text(s.clone()))
+                }
+            }
+        },
+        serde_json::Value::Bool(b) => {
+            Ok(sq::SqlValue::Boolean(*b))
+        },
+        serde_json::Value::Null => {
+            Ok(sq::SqlValue::Null)
+        },
+        _ => {
+            Err(sq::SqliteError::InvalidParameters)
+        }
+    }
+}
+
 fn handle_message(
     our: &wit::Address,
     conn: &mut Option<rusqlite::Connection>,
@@ -393,67 +428,12 @@ fn handle_message(
                     let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
                         None => vec![],
                         Some(wit::Payload { mime: _, ref bytes }) => {
-                            // Assume the payload is a serialized JSON string
                             let json_params = serde_json::from_slice::<serde_json::Value>(bytes)?;
-
-                            match &json_params {
+                            match json_params {
                                 serde_json::Value::Array(vec) => {
-                                    let parameters: Result<Vec<sq::SqlValue>, _> = vec.iter().map(|value| {
-                                        match value {
-                                            serde_json::Value::Number(n) => {
-                                                if let Some(int_val) = n.as_i64() {
-                                                    Ok(sq::SqlValue::Integer(int_val))
-                                                } else if let Some(float_val) = n.as_f64() {
-                                                    Ok(sq::SqlValue::Real(float_val))
-                                                } else {
-                                                    Err("Invalid number type")
-                                                }
-                                            },
-                                            serde_json::Value::String(s) => {
-                                                match base64::decode(&s) {
-                                                    Ok(decoded_bytes) => {
-                                                        // Convert to SQLite Blob if it's a valid base64 string
-                                                        Ok(sq::SqlValue::Blob(decoded_bytes))
-                                                    },
-                                                    Err(_) => {
-                                                        // If it's not base64, just use the string itself
-                                                        Ok(sq::SqlValue::Text(s.clone()))
-                                                    }
-                                                }
-                                            },
-                                            serde_json::Value::Bool(b) => {
-                                                Ok(sq::SqlValue::Boolean(*b))
-                                            },
-                                            serde_json::Value::Null => {
-                                                Ok(sq::SqlValue::Null)
-                                            },
-                                            _ => {
-                                                wit::print_to_terminal(0, format!(
-                                                    "SQLite param list contains invalid type: {:?}",
-                                                    value,
-                                                ).as_str());
-                                                Ok(sq::SqlValue::Null)
-                                                // Err("Invalid type in JSON array")
-                                            }
-                                        }
-                                    }).collect();
-
-                                    match parameters {
-                                        Ok(parameters) => {
-                                            let params_refs: Vec<sq::SqlValue> = parameters;
-                                            params_refs
-                                        },
-                                        Err(e) => {
-                                            wit::print_to_terminal(0, format!(
-                                                "SQLite param list is invalid: {:?}",
-                                                e,
-                                            ).as_str());
-                                            return Err(sq::SqliteError::InvalidParameters.into());
-                                        },
-                                    }
+                                    vec.iter().map(|value| json_to_sqlite(value)).collect::<Result<Vec<_>, _>>()?
                                 },
                                 _ => {
-                                    wit::print_to_terminal(0, "SQLite param list is not a JSON array");
                                     return Err(sq::SqliteError::InvalidParameters.into());
                                 }
                             }
@@ -504,7 +484,15 @@ fn handle_message(
                     let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
                         None => vec![],
                         Some(wit::Payload { mime: _, ref bytes }) => {
-                            Vec::<sq::SqlValue>::from_serialized(&bytes)?
+                            let json_params = serde_json::from_slice::<serde_json::Value>(bytes)?;
+                            match json_params {
+                                serde_json::Value::Array(vec) => {
+                                    vec.iter().map(|value| json_to_sqlite(value)).collect::<Result<Vec<_>, _>>()?
+                                },
+                                _ => {
+                                    return Err(sq::SqliteError::InvalidParameters.into());
+                                }
+                            }
                         },
                     };
 
@@ -515,22 +503,44 @@ fn handle_message(
                         .map(|c| c.to_string())
                         .collect();
                     let number_columns = column_names.len();
-                    let results: Vec<Vec<sq::SqlValue>> = statement
-                        .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
-                            (0..number_columns)
-                                .map(|i| row.get(i))
-                                .collect()
-                        })?
-                        .map(|item| item.unwrap())  //  TODO
-                        .collect();
 
-                    let results = rmp_serde::to_vec(&results).unwrap();
+                    let results: Vec<HashMap<String, serde_json::Value>> = statement
+                    .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+                        let mut map = HashMap::new();
+                        for (i, column_name) in column_names.iter().enumerate() {
+                            let value: sq::SqlValue = row.get(i)?;
+                            let value_json = match value {
+                                sq::SqlValue::Integer(int) => serde_json::Value::Number(int.into()),
+                                sq::SqlValue::Real(real) => serde_json::Value::Number(serde_json::Number::from_f64(real).unwrap()),
+                                sq::SqlValue::Text(text) => serde_json::Value::String(text),
+                                sq::SqlValue::Blob(blob) => serde_json::Value::String(base64::encode(blob)), // or another representation if you prefer
+                                _ => serde_json::Value::Null,
+                            };
+                            map.insert(column_name.clone(), value_json);
+                        }
+                        Ok(map)
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                    
+                    let results = serde_json::json!(results).to_string();
+                    let results_bytes = results.as_bytes().to_vec();
+                    
+                    // let results: Vec<Vec<sq::SqlValue>> = statement
+                    //     .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+                    //         (0..number_columns)
+                    //             .map(|i| row.get(i))
+                    //             .collect()
+                    //     })?
+                    //     .map(|item| item.unwrap())  //  TODO
+                    //     .collect();
+
+                    // let results = rmp_serde::to_vec(&results).unwrap();
 
                     Response::new()
                         .ipc_bytes(ipc)
                         .payload(wit::Payload {
                             mime: None,
-                            bytes: results,
+                            bytes: results_bytes,
                         })
                         .send()?;
                 },
