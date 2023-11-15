@@ -64,6 +64,11 @@ async fn main() {
     let rpc_url = matches.get_one::<String>("rpc").unwrap();
     let llm_url = matches.get_one::<String>("llm");
 
+    // create home directory if it does not already exist
+    if let Err(e) = fs::create_dir_all(home_directory_path).await {
+        panic!("failed to create home directory: {:?}", e);
+    }
+
     #[cfg(not(feature = "llm"))]
     if let Some(llm_url) = llm_url {
         panic!("You passed in --llm {:?} but you do not have the llm feature enabled. Please re-run with `--features llm`", llm_url);
