@@ -502,7 +502,6 @@ fn handle_message(
                         .iter()
                         .map(|c| c.to_string())
                         .collect();
-                    let number_columns = column_names.len();
 
                     let results: Vec<HashMap<String, serde_json::Value>> = statement
                     .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
@@ -524,17 +523,6 @@ fn handle_message(
                     
                     let results = serde_json::json!(results).to_string();
                     let results_bytes = results.as_bytes().to_vec();
-                    
-                    // let results: Vec<Vec<sq::SqlValue>> = statement
-                    //     .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
-                    //         (0..number_columns)
-                    //             .map(|i| row.get(i))
-                    //             .collect()
-                    //     })?
-                    //     .map(|item| item.unwrap())  //  TODO
-                    //     .collect();
-
-                    // let results = rmp_serde::to_vec(&results).unwrap();
 
                     Response::new()
                         .ipc_bytes(ipc)
