@@ -1951,7 +1951,15 @@ async fn make_event_loop(
                     }
                 },
                 kernel_message = recv_in_loop.recv() => {
-                    let kernel_message = kernel_message.expect("fatal: event loop died");
+                    let mut kernel_message = kernel_message.expect("fatal: event loop died");
+                    // the kernel treats the node-string "our" as a special case,
+                    // and replaces it with the name of the node this kernel is running.
+                    if kernel_message.source.node == "our" {
+                        kernel_message.source.node = our_name.clone();
+                    }
+                    if kernel_message.target.node == "our" {
+                        kernel_message.target.node = our_name.clone();
+                    }
                     //
                     // here: are the special kernel-level capabilities checks!
                     //

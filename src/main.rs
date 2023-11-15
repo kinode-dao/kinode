@@ -1,3 +1,5 @@
+#![feature(btree_extract_if)]
+
 use crate::types::*;
 use anyhow::Result;
 use clap::{arg, Command};
@@ -16,6 +18,7 @@ mod keygen;
 mod net;
 mod register;
 mod terminal;
+mod timer;
 mod types;
 mod vfs;
 
@@ -95,9 +98,11 @@ async fn main() {
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
-    // http client performs http requests on behalf of processes
+    let (timer_service_sender, timer_service_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(HTTP_CHANNEL_CAPACITY);
     let (eth_rpc_sender, eth_rpc_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ETH_RPC_CHANNEL_CAPACITY);
+    // http client performs http requests on behalf of processes
     let (http_client_sender, http_client_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CLIENT_CHANNEL_CAPACITY);
     // vfs maintains metadata about files in fs for processes
@@ -226,7 +231,9 @@ async fn main() {
 
     println!("registration complete!");
 
-    let mut runtime_extensions = vec![
+    // the boolean flag determines whether the runtime module is *public* or not,
+    // where public means that any process can always message it.
+    let runtime_extensions = vec![
         (
             ProcessId::new(Some("filesystem"), "sys", "uqbar"),
             fs_message_sender,
@@ -241,6 +248,11 @@ async fn main() {
             ProcessId::new(Some("http_client"), "sys", "uqbar"),
             http_client_sender,
             false,
+        ),
+        (
+            ProcessId::new(Some("timer"), "sys", "uqbar"),
+            timer_service_sender,
+            true,
         ),
         (
             ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
@@ -344,6 +356,12 @@ async fn main() {
         our.name.clone(),
         kernel_message_sender.clone(),
         http_client_receiver,
+        print_sender.clone(),
+    ));
+    tasks.spawn(timer::timer_service(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        timer_service_receiver,
         print_sender.clone(),
     ));
     tasks.spawn(eth_rpc::eth_rpc(
