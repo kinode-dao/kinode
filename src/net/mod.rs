@@ -39,6 +39,12 @@ pub async fn networking(
     match &our.ws_routing {
         None => {
             // indirect node: run the indirect networking strategy
+            print_tx
+                .send(Printout {
+                    verbosity: 0,
+                    content: "going online as an indirect node".to_string(),
+                })
+                .await?;
             indirect_networking(
                 our,
                 our_ip,
@@ -70,6 +76,12 @@ pub async fn networking(
                     ));
                 }
             };
+            print_tx
+                .send(Printout {
+                    verbosity: 0,
+                    content: "going online as a direct node".to_string(),
+                })
+                .await?;
             direct_networking(
                 our,
                 our_ip,
@@ -105,6 +117,9 @@ async fn indirect_networking(
     // track peers that we're already in the midst of establishing a connection with
     let mut pending_connections = JoinSet::<(NodeId, Result<()>)>::new();
     let mut peer_message_queues = HashMap::<NodeId, Vec<KernelMessage>>::new();
+
+    // some initial delay as we wait for QNS data to be piped in from qns_indexer
+    let mut router_reconnect_delay = std::time::Duration::from_secs(2);
 
     loop {
         tokio::select! {
@@ -190,7 +205,8 @@ async fn indirect_networking(
             // 3. periodically attempt to connect to any allowed routers that we
             // are not connected to -- TODO do some exponential backoff if a router
             // is not responding.
-            _ = time::sleep(time::Duration::from_secs(5)) => {
+            _ = time::sleep(router_reconnect_delay) => {
+                router_reconnect_delay = std::time::Duration::from_secs(4);
                 tokio::spawn(connect_to_routers(
                     our.clone(),
                     our_ip.clone(),

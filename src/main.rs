@@ -51,10 +51,6 @@ const REVEAL_IP: bool = true;
 
 #[tokio::main]
 async fn main() {
-    // For use with https://github.com/tokio-rs/console
-    // console_subscriber::init();
-
-    // DEMO ONLY: remove all CLI arguments
     let matches = Command::new("Uqbar")
         .version("0.1.0")
         .author("Uqbar DAO")
@@ -111,13 +107,13 @@ async fn main() {
     // encryptor handles end-to-end encryption for client messages
     let (encryptor_sender, encryptor_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ENCRYPTOR_CHANNEL_CAPACITY);
+    // terminal receives prints via this channel, all other modules send prints
+    let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
+        mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
     // optional llm extension
     #[cfg(feature = "llm")]
     let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(LLM_CHANNEL_CAPACITY);
-    // terminal receives prints via this channel, all other modules send prints
-    let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
-        mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
 
     //  fs config in .env file (todo add -- arguments cleanly (with clap?))
     dotenv::dotenv().ok();
@@ -220,16 +216,9 @@ async fn main() {
         } => (our, decoded_keyfile, encoded_keyfile),
     };
 
-    println!(
-        "saving encrypted networking keys to {}/.keys",
-        home_directory_path
-    );
-
     fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
         .await
         .unwrap();
-
-    println!("registration complete!");
 
     // the boolean flag determines whether the runtime module is *public* or not,
     // where public means that any process can always message it.
@@ -294,12 +283,6 @@ async fn main() {
     .expect("fs load failed!");
 
     let _ = kill_tx.send(true);
-    let _ = print_sender
-        .send(Printout {
-            verbosity: 0,
-            content: format!("our networking public key: {}", our.networking_key),
-        })
-        .await;
 
     /*
      *  the kernel module will handle our userspace processes and receives
