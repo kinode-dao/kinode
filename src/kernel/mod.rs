@@ -145,7 +145,7 @@ impl StandardHost for ProcessWasi {
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
-                metadata: None,
+                metadata: Some(self.process.metadata.our.process.to_string()),
             },
             None,
         )
@@ -186,7 +186,7 @@ impl StandardHost for ProcessWasi {
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
-                metadata: None,
+                metadata: Some(self.process.metadata.our.process.to_string()),
             },
             Some(wit::Payload { mime: None, bytes }),
         )
