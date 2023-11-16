@@ -112,7 +112,7 @@ async fn handle_message(
 
     let request = request_builder
         .headers(deserialize_headers(req.headers))
-        .body(body.unwrap_or(vec![]))
+        .body(body.unwrap_or_default())
         .build()
         .unwrap();
 
@@ -180,7 +180,7 @@ fn to_pascal_case(s: &str) -> String {
 fn serialize_headers(headers: &HeaderMap) -> HashMap<String, String> {
     let mut hashmap = HashMap::new();
     for (key, value) in headers.iter() {
-        let key_str = to_pascal_case(&key.to_string());
+        let key_str = to_pascal_case(key.as_ref());
         let value_str = value.to_str().unwrap_or("").to_string();
         hashmap.insert(key_str, value_str);
     }

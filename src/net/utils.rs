@@ -25,14 +25,10 @@ pub async fn save_new_peer(
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
 ) {
-    print_debug(
-        &print_tx,
-        &format!("net: saving new peer {}", identity.name),
-    )
-    .await;
+    print_debug(print_tx, &format!("net: saving new peer {}", identity.name)).await;
     let (peer_tx, peer_rx) = unbounded_channel::<KernelMessage>();
-    if km.is_some() {
-        peer_tx.send(km.unwrap()).unwrap()
+    if let Some(km) = km {
+        peer_tx.send(km).unwrap()
     }
     let peer = Peer {
         identity: identity.clone(),
@@ -130,7 +126,6 @@ pub async fn maintain_connection(
 
     print_debug(&print_tx, &format!("net: connection with {peer_name} died")).await;
     peers.remove(&peer_name);
-    return;
 }
 
 /// cross the streams
@@ -267,10 +262,10 @@ pub fn validate_routing_request(
         .ok_or(anyhow!("unknown QNS name"))?;
     let their_networking_key = signature::UnparsedPublicKey::new(
         &signature::ED25519,
-        hex::decode(&strip_0x(&their_id.networking_key))?,
+        hex::decode(strip_0x(&their_id.networking_key))?,
     );
     their_networking_key.verify(
-        &[&routing_request.target, our_name].concat().as_bytes(),
+        [&routing_request.target, our_name].concat().as_bytes(),
         &routing_request.signature,
     )?;
     if routing_request.target == routing_request.source {
@@ -290,7 +285,7 @@ pub fn validate_handshake(
     // verify their signature of their static key
     let their_networking_key = signature::UnparsedPublicKey::new(
         &signature::ED25519,
-        hex::decode(&strip_0x(&their_id.networking_key))?,
+        hex::decode(strip_0x(&their_id.networking_key))?,
     );
     their_networking_key.verify(their_static_key, &handshake.signature)?;
     Ok(())
@@ -351,7 +346,7 @@ pub async fn send_uqbar_handshake(
     keypair: &Ed25519KeyPair,
     noise_static_key: &[u8],
     noise: &mut snow::HandshakeState,
-    buf: &mut Vec<u8>,
+    buf: &mut [u8],
     write_stream: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
     proxy_request: bool,
 ) -> Result<()> {
@@ -372,7 +367,7 @@ pub async fn send_uqbar_handshake(
 
 pub async fn recv_uqbar_handshake(
     noise: &mut snow::HandshakeState,
-    buf: &mut Vec<u8>,
+    buf: &mut [u8],
     read_stream: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     write_stream: &mut SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
 ) -> Result<HandshakePayload> {
@@ -454,11 +449,10 @@ pub async fn error_offline(km: KernelMessage, network_error_tx: &NetworkErrorSen
 }
 
 fn strip_0x(s: &str) -> String {
-    if s.starts_with("0x") {
-        s[2..].to_string()
-    } else {
-        s.to_string()
+    if let Some(stripped) = s.strip_prefix("0x") {
+        return stripped.to_string();
     }
+    s.to_string()
 }
 
 pub async fn parse_hello_message(
@@ -474,7 +468,7 @@ pub async fn parse_hello_message(
             content: format!(
                 "\x1b[3;32m{}: {}\x1b[0m",
                 km.source.node,
-                std::str::from_utf8(&ipc).unwrap_or("!!message parse error!!")
+                std::str::from_utf8(ipc).unwrap_or("!!message parse error!!")
             ),
         })
         .await?;

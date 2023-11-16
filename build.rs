@@ -46,15 +46,15 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
     .unwrap_or(true)
     {
         // create target/bindings directory
-        fs::create_dir_all(&format!("{}/target/bindings/{}", target_path, name,)).unwrap();
+        fs::create_dir_all(format!("{}/target/bindings/{}", target_path, name,)).unwrap();
         // copy newly-made target.wasm into target/bindings
-        run_command(Command::new("cp").args(&[
+        run_command(Command::new("cp").args([
             "target.wasm",
             &format!("{}/target/bindings/{}/", target_path, name,),
         ]))
         .unwrap();
         // copy newly-made world into target/bindings
-        run_command(Command::new("cp").args(&[
+        run_command(Command::new("cp").args([
             "world",
             &format!("{}/target/bindings/{}/", target_path, name,),
         ]))
@@ -65,10 +65,10 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
     if std::path::Path::new(&bash_build_path).exists() {
         let cwd = std::env::current_dir().unwrap();
         std::env::set_current_dir(target_path).unwrap();
-        run_command(&mut Command::new("/bin/bash").arg("build.sh")).unwrap();
+        run_command(Command::new("/bin/bash").arg("build.sh")).unwrap();
         std::env::set_current_dir(cwd).unwrap();
     } else {
-        run_command(Command::new("cargo").args(&[
+        run_command(Command::new("cargo").args([
             "+nightly",
             "build",
             "--release",
@@ -80,7 +80,7 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
         .unwrap();
     }
     // Adapt module to component with adapter based on wasi_snapshot_preview1.wasm
-    run_command(Command::new("wasm-tools").args(&[
+    run_command(Command::new("wasm-tools").args([
         "component",
         "new",
         &format!("{}/target/wasm32-wasi/release/{}.wasm", target_path, name),
@@ -99,12 +99,12 @@ fn build_app(target_path: &str, name: &str, parent_pkg_path: Option<&str>) {
         format!("{}/{}.wasm", parent_pkg, name)
     } else {
         let pkg_folder = format!("{}/pkg/", target_path);
-        let _ = run_command(Command::new("mkdir").args(&["-p", &pkg_folder]));
+        let _ = run_command(Command::new("mkdir").args(["-p", &pkg_folder]));
         format!("{}/{}.wasm", pkg_folder, name)
     };
 
     // Embed "wit" into the component
-    run_command(Command::new("wasm-tools").args(&[
+    run_command(Command::new("wasm-tools").args([
         "component",
         "embed",
         "wit",
@@ -136,7 +136,7 @@ fn main() {
     let pwd = std::env::current_dir().unwrap();
 
     // Create target.wasm (compiled .wit) & world
-    run_command(Command::new("wasm-tools").args(&[
+    run_command(Command::new("wasm-tools").args([
         "component",
         "wit",
         &format!("{}/wit/", pwd.display()),
@@ -145,18 +145,18 @@ fn main() {
         "--wasm",
     ]))
     .unwrap();
-    run_command(Command::new("touch").args(&[&format!("{}/world", pwd.display())])).unwrap();
+    run_command(Command::new("touch").args([&format!("{}/world", pwd.display())])).unwrap();
 
     // Build wasm32-wasi apps.
     let modules_dir = format!("{}/modules", pwd.display());
-    for entry in std::fs::read_dir(&modules_dir).unwrap() {
+    for entry in std::fs::read_dir(modules_dir).unwrap() {
         let entry_path = entry.unwrap().path();
         let package_name = entry_path.file_name().unwrap().to_str().unwrap();
 
         // If Cargo.toml is present, build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());
         if entry_path.join("Cargo.toml").exists() {
-            build_app(&entry_path.display().to_string(), &package_name, None);
+            build_app(&entry_path.display().to_string(), package_name, None);
         } else if entry_path.is_dir() {
             fs::create_dir_all(&parent_pkg_path).unwrap();
 
@@ -166,7 +166,7 @@ fn main() {
                 if sub_entry_path.join("Cargo.toml").exists() {
                     build_app(
                         &sub_entry_path.display().to_string(),
-                        &sub_entry_path.file_name().unwrap().to_str().unwrap(),
+                        sub_entry_path.file_name().unwrap().to_str().unwrap(),
                         Some(&parent_pkg_path),
                     );
                 }
@@ -199,7 +199,7 @@ fn main() {
                 let mut buffer = Vec::new();
                 file.read_to_end(&mut buffer).unwrap();
                 zip.write_all(&buffer).unwrap();
-            } else if name.as_os_str().len() != 0 {
+            } else if !name.as_os_str().is_empty() {
                 zip.add_directory(name.to_string_lossy().into_owned(), options)
                     .unwrap();
             }

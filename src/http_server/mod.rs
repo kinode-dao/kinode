@@ -7,10 +7,8 @@ use crate::types::{
 };
 use anyhow::Result;
 
-use base64;
 use futures::SinkExt;
 use futures::StreamExt;
-use serde_urlencoded;
 
 use route_recognizer::Router;
 use std::collections::HashMap;
@@ -90,7 +88,7 @@ pub async fn http_server(
 
                 if let Err(e) = http_handle_messages(
                     our_name.clone(),
-                    id.clone(),
+                    id,
                     source.clone(),
                     message,
                     payload,
@@ -105,12 +103,7 @@ pub async fn http_server(
                 .await
                 {
                     send_to_loop
-                        .send(make_error_message(
-                            our_name.clone(),
-                            id.clone(),
-                            source.clone(),
-                            e,
-                        ))
+                        .send(make_error_message(our_name.clone(), id, source.clone(), e))
                         .await
                         .unwrap();
                 }
@@ -139,7 +132,7 @@ async fn handle_websocket(
             let _ = print_tx
                 .send(Printout {
                     verbosity: 1,
-                    content: format!("GOT WEBSOCKET BYTES"),
+                    content: "GOT WEBSOCKET BYTES".to_string(),
                 })
                 .await;
             let bytes = msg.as_bytes();
@@ -152,7 +145,7 @@ async fn handle_websocket(
                     ),
                 })
                 .await;
-            match serde_json::from_slice::<WebSocketClientMessage>(&bytes) {
+            match serde_json::from_slice::<WebSocketClientMessage>(bytes) {
                 Ok(parsed_msg) => {
                     handle_incoming_ws(
                         parsed_msg,
@@ -162,7 +155,7 @@ async fn handle_websocket(
                         send_to_loop.clone(),
                         print_tx.clone(),
                         write_stream.clone(),
-                        ws_id.clone(),
+                        ws_id,
                     )
                     .await;
                 }
@@ -176,39 +169,33 @@ async fn handle_websocket(
                 }
             }
         } else if msg.is_text() {
-            match msg.to_str() {
-                Ok(msg_str) => {
-                    let _ = print_tx
-                        .send(Printout {
-                            verbosity: 1,
-                            content: format!("WEBSOCKET MESSAGE (TEXT): {}", msg_str),
-                        })
-                        .await;
-                    match serde_json::from_str(&msg_str) {
-                        Ok(parsed_msg) => {
-                            handle_incoming_ws(
-                                parsed_msg,
-                                our.clone(),
-                                jwt_secret_bytes.clone().to_vec(),
-                                websockets.clone(),
-                                send_to_loop.clone(),
-                                print_tx.clone(),
-                                write_stream.clone(),
-                                ws_id.clone(),
-                            )
-                            .await;
-                        }
-                        _ => (),
-                    }
+            if let Ok(msg_str) = msg.to_str() {
+                let _ = print_tx
+                    .send(Printout {
+                        verbosity: 1,
+                        content: format!("WEBSOCKET MESSAGE (TEXT): {}", msg_str),
+                    })
+                    .await;
+                if let Ok(parsed_msg) = serde_json::from_str(msg_str) {
+                    handle_incoming_ws(
+                        parsed_msg,
+                        our.clone(),
+                        jwt_secret_bytes.clone().to_vec(),
+                        websockets.clone(),
+                        send_to_loop.clone(),
+                        print_tx.clone(),
+                        write_stream.clone(),
+                        ws_id,
+                    )
+                    .await;
                 }
-                _ => (),
             }
         } else if msg.is_close() {
             // Delete the websocket from the map
             let mut ws_map = websockets.lock().await;
             for (node, node_map) in ws_map.iter_mut() {
                 for (channel_id, id_map) in node_map.iter_mut() {
-                    if let Some(_) = id_map.remove(&ws_id) {
+                    if id_map.remove(&ws_id).is_some() {
                         // Send disconnect message
                         send_ws_disconnect(
                             node.clone(),
@@ -247,10 +234,10 @@ async fn http_handle_messages(
                 None => {}
                 Some((path, channel)) => {
                     // if path is /rpc/message, return accordingly with base64 encoded payload
-                    if path == "/rpc:sys:uqbar/message".to_string() {
+                    if path == *"/rpc:sys:uqbar/message" {
                         let payload = payload.map(|p| {
                             let bytes = p.bytes;
-                            let base64_bytes = base64::encode(&bytes);
+                            let base64_bytes = base64::encode(bytes);
                             Payload {
                                 mime: p.mime,
                                 bytes: base64_bytes.into_bytes(),
@@ -297,7 +284,7 @@ async fn http_handle_messages(
                                         let mut ws_auth_username = our.clone();
 
                                         if segments.len() == 4
-                                            && matches!(segments.get(0), Some(&"http-proxy"))
+                                            && matches!(segments.first(), Some(&"http-proxy"))
                                             && matches!(segments.get(1), Some(&"serve"))
                                         {
                                             if let Some(segment) = segments.get(2) {
@@ -346,7 +333,7 @@ async fn http_handle_messages(
                                     status: 503,
                                     headers: error_headers,
                                     body: Some(
-                                        format!("Internal Server Error").as_bytes().to_vec(),
+                                        "Internal Server Error".to_string().as_bytes().to_vec(),
                                     ),
                                 });
                             }
@@ -356,65 +343,64 @@ async fn http_handle_messages(
             }
         }
         Message::Request(Request { ipc, .. }) => {
-            match serde_json::from_slice(&ipc) {
-                Ok(message) => {
-                    match message {
-                        HttpServerMessage::BindPath {
-                            path,
+            if let Ok(message) = serde_json::from_slice(&ipc) {
+                match message {
+                    HttpServerMessage::BindPath {
+                        path,
+                        authenticated,
+                        local_only,
+                    } => {
+                        let mut path_bindings = path_bindings.write().await;
+                        let app = source.process.clone().to_string();
+
+                        let mut path = path.clone();
+                        if app != "homepage:homepage:uqbar" {
+                            path = if path.starts_with('/') {
+                                format!("/{}{}", app, path)
+                            } else {
+                                format!("/{}/{}", app, path)
+                            };
+                        }
+                        // trim trailing "/"
+                        path = normalize_path(&path);
+
+                        let bound_path = BoundPath {
+                            app: source.process,
                             authenticated,
                             local_only,
-                        } => {
-                            let mut path_bindings = path_bindings.write().await;
-                            let app = source.process.clone().to_string();
+                            original_path: path.clone(),
+                        };
 
-                            let mut path = path.clone();
-                            if app != "homepage:homepage:uqbar" {
-                                path = if path.starts_with("/") {
-                                    format!("/{}{}", app, path)
-                                } else {
-                                    format!("/{}/{}", app, path)
-                                };
-                            }
-                            // trim trailing "/"
-                            path = normalize_path(&path);
+                        path_bindings.add(&path, bound_path);
+                    }
+                    HttpServerMessage::WebSocketPush(WebSocketPush { target, is_text }) => {
+                        let Some(payload) = payload else {
+                            return Err(HttpServerError::NoBytes);
+                        };
+                        let bytes = payload.bytes;
 
-                            let bound_path = BoundPath {
-                                app: source.process,
-                                authenticated: authenticated,
-                                local_only: local_only,
-                                original_path: path.clone(),
-                            };
+                        let mut ws_map = websockets.lock().await;
+                        let send_text = is_text.unwrap_or(false);
+                        let response_data = if send_text {
+                            warp::ws::Message::text(
+                                String::from_utf8(bytes.clone()).unwrap_or_default(),
+                            )
+                        } else {
+                            warp::ws::Message::binary(bytes.clone())
+                        };
 
-                            path_bindings.add(&path, bound_path);
-                        }
-                        HttpServerMessage::WebSocketPush(WebSocketPush { target, is_text }) => {
-                            let Some(payload) = payload else {
-                                return Err(HttpServerError::NoBytes);
-                            };
-                            let bytes = payload.bytes;
+                        // Send to the proxy, if registered
+                        if let Some(channel_id) = target.id.clone() {
+                            let locked_proxies = ws_proxies.lock().await;
 
-                            let mut ws_map = websockets.lock().await;
-                            let send_text = is_text.unwrap_or(false);
-                            let response_data = if send_text {
-                                warp::ws::Message::text(
-                                    String::from_utf8(bytes.clone()).unwrap_or_default(),
-                                )
-                            } else {
-                                warp::ws::Message::binary(bytes.clone())
-                            };
+                            if let Some(proxy_nodes) = locked_proxies.get(&channel_id) {
+                                for proxy_node in proxy_nodes {
+                                    let id: u64 = rand::random();
+                                    let bytes_content = bytes.clone();
 
-                            // Send to the proxy, if registered
-                            if let Some(channel_id) = target.id.clone() {
-                                let locked_proxies = ws_proxies.lock().await;
-
-                                if let Some(proxy_nodes) = locked_proxies.get(&channel_id) {
-                                    for proxy_node in proxy_nodes {
-                                        let id: u64 = rand::random();
-                                        let bytes_content = bytes.clone();
-
-                                        // Send a message to the encryptor
-                                        let message = KernelMessage {
-                                            id: id.clone(),
+                                    // Send a message to the encryptor
+                                    let message = KernelMessage {
+                                            id,
                                             source: Address {
                                                 node: our.clone(),
                                                 process: HTTP_SERVER_PROCESS_ID.clone(),
@@ -445,32 +431,21 @@ async fn http_handle_messages(
                                             signed_capabilities: None,
                                         };
 
-                                        send_to_loop.send(message).await.unwrap();
-                                    }
+                                    send_to_loop.send(message).await.unwrap();
                                 }
                             }
+                        }
 
-                            // Send to the websocket if registered
-                            if let Some(node_map) = ws_map.get_mut(&target.node) {
-                                if let Some(socket_id) = &target.id {
-                                    if let Some(ws_map) = node_map.get_mut(socket_id) {
-                                        // Iterate over ws_map values and send message to all websockets
-                                        for ws in ws_map.values_mut() {
-                                            let mut locked_write_stream = ws.lock().await;
-                                            let _ = locked_write_stream
-                                                .send(response_data.clone())
-                                                .await; // TODO: change this to binary
-                                        }
-                                    } else {
-                                        // Send to all websockets
-                                        for ws_map in node_map.values_mut() {
-                                            for ws in ws_map.values_mut() {
-                                                let mut locked_write_stream = ws.lock().await;
-                                                let _ = locked_write_stream
-                                                    .send(response_data.clone())
-                                                    .await;
-                                            }
-                                        }
+                        // Send to the websocket if registered
+                        if let Some(node_map) = ws_map.get_mut(&target.node) {
+                            if let Some(socket_id) = &target.id {
+                                if let Some(ws_map) = node_map.get_mut(socket_id) {
+                                    // Iterate over ws_map values and send message to all websockets
+                                    for ws in ws_map.values_mut() {
+                                        let mut locked_write_stream = ws.lock().await;
+                                        let _ =
+                                            locked_write_stream.send(response_data.clone()).await;
+                                        // TODO: change this to binary
                                     }
                                 } else {
                                     // Send to all websockets
@@ -484,8 +459,17 @@ async fn http_handle_messages(
                                     }
                                 }
                             } else {
-                                // Do nothing because we don't have a WS for that node
+                                // Send to all websockets
+                                for ws_map in node_map.values_mut() {
+                                    for ws in ws_map.values_mut() {
+                                        let mut locked_write_stream = ws.lock().await;
+                                        let _ =
+                                            locked_write_stream.send(response_data.clone()).await;
+                                    }
+                                }
                             }
+                        } else {
+                            // Do nothing because we don't have a WS for that node
                         }
                         HttpServerMessage::WsRegister(WsRegister {
                             auth_token,
@@ -499,81 +483,79 @@ async fn http_handle_messages(
                                     .await;
                             }
                         }
-                        HttpServerMessage::WsProxyDisconnect(WsProxyDisconnect { channel_id }) => {
+                    }
+                    HttpServerMessage::WsProxyDisconnect(WsProxyDisconnect { channel_id }) => {
+                        let _ = print_tx
+                            .send(Printout {
+                                verbosity: 1,
+                                content: "WsDisconnect".to_string(),
+                            })
+                            .await;
+                        // Check the ws_proxies for this channel_id, if it exists, delete the node that forwarded
+                        let mut locked_proxies = ws_proxies.lock().await;
+                        if let Some(proxy_nodes) = locked_proxies.get_mut(&channel_id) {
                             let _ = print_tx
                                 .send(Printout {
                                     verbosity: 1,
-                                    content: format!("WsDisconnect"),
+                                    content: "disconnected".to_string(),
                                 })
                                 .await;
-                            // Check the ws_proxies for this channel_id, if it exists, delete the node that forwarded
-                            let mut locked_proxies = ws_proxies.lock().await;
-                            if let Some(proxy_nodes) = locked_proxies.get_mut(&channel_id) {
-                                let _ = print_tx
-                                    .send(Printout {
-                                        verbosity: 1,
-                                        content: format!("disconnected"),
-                                    })
-                                    .await;
-                                proxy_nodes.remove(&source.node);
-                            }
+                            proxy_nodes.remove(&source.node);
                         }
-                        HttpServerMessage::WsMessage(WsMessage {
-                            auth_token,
-                            ws_auth_token: _,
-                            channel_id,
-                            target,
-                            json,
-                        }) => {
-                            if let Ok(_node) =
-                                parse_auth_token(auth_token, jwt_secret_bytes.clone().to_vec())
-                            {
-                                add_ws_proxy(ws_proxies.clone(), channel_id, source.node.clone())
-                                    .await;
+                    }
+                    HttpServerMessage::WsMessage(WsMessage {
+                        auth_token,
+                        ws_auth_token: _,
+                        channel_id,
+                        target,
+                        json,
+                    }) => {
+                        if let Ok(_node) =
+                            parse_auth_token(auth_token, jwt_secret_bytes.clone().to_vec())
+                        {
+                            add_ws_proxy(ws_proxies.clone(), channel_id, source.node.clone()).await;
 
-                                handle_ws_message(
-                                    target.clone(),
-                                    json.clone(),
-                                    our.clone(),
-                                    send_to_loop.clone(),
-                                    print_tx.clone(),
-                                )
-                                .await;
-                            }
+                            handle_ws_message(
+                                target.clone(),
+                                json.clone(),
+                                our.clone(),
+                                send_to_loop.clone(),
+                                print_tx.clone(),
+                            )
+                            .await;
                         }
-                        HttpServerMessage::EncryptedWsMessage(EncryptedWsMessage {
-                            auth_token,
-                            ws_auth_token: _,
-                            channel_id,
-                            target,
-                            encrypted,
-                            nonce,
-                        }) => {
-                            if let Ok(_node) =
-                                parse_auth_token(auth_token, jwt_secret_bytes.clone().to_vec())
-                            {
-                                add_ws_proxy(
-                                    ws_proxies.clone(),
-                                    channel_id.clone(),
-                                    source.node.clone(),
-                                )
-                                .await;
+                    }
+                    HttpServerMessage::EncryptedWsMessage(EncryptedWsMessage {
+                        auth_token,
+                        ws_auth_token: _,
+                        channel_id,
+                        target,
+                        encrypted,
+                        nonce,
+                    }) => {
+                        if let Ok(_node) =
+                            parse_auth_token(auth_token, jwt_secret_bytes.clone().to_vec())
+                        {
+                            add_ws_proxy(
+                                ws_proxies.clone(),
+                                channel_id.clone(),
+                                source.node.clone(),
+                            )
+                            .await;
 
-                                handle_encrypted_ws_message(
-                                    target.clone(),
-                                    our.clone(),
-                                    channel_id.clone(),
-                                    encrypted.clone(),
-                                    nonce.clone(),
-                                    send_to_loop.clone(),
-                                    print_tx.clone(),
-                                )
-                                .await;
-                            }
+                            handle_encrypted_ws_message(
+                                target.clone(),
+                                our.clone(),
+                                channel_id.clone(),
+                                encrypted.clone(),
+                                nonce.clone(),
+                                send_to_loop.clone(),
+                                print_tx.clone(),
+                            )
+                            .await;
                         }
                     }
                 }
-                Err(_) => (),
             }
         }
     }
@@ -638,7 +620,7 @@ async fn http_serve(
         .and(warp::filters::header::headers_cloned())
         .and(
             warp::filters::query::raw()
-                .or(warp::any().map(|| String::default()))
+                .or(warp::any().map(String::default))
                 .unify()
                 .map(|query_string: String| {
                     if query_string.is_empty() {
@@ -721,7 +703,7 @@ async fn handler(
     // we extract message from base64 encoded bytes in data
     // and send it to the correct app.
 
-    let message = if app == "rpc:sys:uqbar".to_string() {
+    let message = if app == *"rpc:sys:uqbar" {
         let rpc_message: RpcMessage = match serde_json::from_slice(&body) {
             // to_vec()?
             Ok(v) => v,
@@ -741,7 +723,7 @@ async fn handler(
             }
         };
 
-        let payload = match base64::decode(&rpc_message.data.unwrap_or("".to_string())) {
+        let payload = match base64::decode(rpc_message.data.unwrap_or("".to_string())) {
             Ok(bytes) => Some(Payload {
                 mime: rpc_message.mime,
                 bytes,
@@ -781,7 +763,7 @@ async fn handler(
             payload,
             signed_capabilities: None,
         }
-    } else if app == "encryptor:sys:uqbar".to_string() {
+    } else if app == *"encryptor:sys:uqbar" {
         let body_json = match String::from_utf8(body.to_vec()) {
             Ok(s) => s,
             Err(_) => {

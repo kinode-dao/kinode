@@ -40,7 +40,7 @@ pub struct RpcMessage {
 }
 
 pub fn parse_auth_token(auth_token: String, jwt_secret: Vec<u8>) -> Result<String, Error> {
-    let secret: Hmac<Sha256> = match Hmac::new_from_slice(&jwt_secret.as_slice()) {
+    let secret: Hmac<Sha256> = match Hmac::new_from_slice(jwt_secret.as_slice()) {
         Ok(secret) => secret,
         Err(_) => {
             return Ok("Error recovering jwt secret".to_string());
@@ -60,7 +60,7 @@ pub fn auth_cookie_valid(our_node: String, cookie: &str, jwt_secret: Vec<u8>) ->
     let mut auth_token = None;
 
     for cookie_part in cookie_parts {
-        let cookie_part_parts: Vec<&str> = cookie_part.split("=").collect();
+        let cookie_part_parts: Vec<&str> = cookie_part.split('=').collect();
         if cookie_part_parts.len() == 2
             && cookie_part_parts[0] == format!("uqbar-auth_{}", our_node)
         {
@@ -148,14 +148,14 @@ pub async fn handle_incoming_ws(
                     send_to_loop.clone(),
                     print_tx.clone(),
                     write_stream.clone(),
-                    ws_id.clone(),
+                    ws_id,
                 )
                 .await;
             } else {
                 let _ = print_tx
                     .send(Printout {
                         verbosity: 1,
-                        content: format!("Auth token parsing failed for WsRegister"),
+                        content: "Auth token parsing failed for WsRegister".to_string(),
                     })
                     .await;
             }
@@ -266,10 +266,7 @@ pub fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
 }
 
 pub async fn is_port_available(bind_addr: &str) -> bool {
-    match TcpListener::bind(bind_addr).await {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+    TcpListener::bind(bind_addr).await.is_ok()
 }
 
 pub fn binary_encoded_string_to_bytes(s: &str) -> Vec<u8> {
@@ -292,13 +289,13 @@ pub async fn handle_ws_register(
     let mut ws_map = websockets.lock().await;
     let node_map = ws_map.entry(node.clone()).or_insert(HashMap::new());
     let id_map = node_map.entry(channel_id.clone()).or_insert(HashMap::new());
-    id_map.insert(ws_id.clone(), write_stream.clone());
+    id_map.insert(ws_id, write_stream.clone());
 
     // Send a message to the target node to add to let it know we are proxying
     if node != our {
         let id: u64 = rand::random();
         let message = KernelMessage {
-            id: id.clone(),
+            id,
             source: Address {
                 node: our.clone(),
                 process: HTTP_SERVER_PROCESS_ID.clone(),
@@ -325,7 +322,7 @@ pub async fn handle_ws_register(
         let _ = print_tx
             .send(Printout {
                 verbosity: 1,
-                content: format!("WEBSOCKET CHANNEL FORWARDED!"),
+                content: "WEBSOCKET CHANNEL FORWARDED!".to_string(),
             })
             .await;
     }
@@ -333,7 +330,7 @@ pub async fn handle_ws_register(
     let _ = print_tx
         .send(Printout {
             verbosity: 1,
-            content: format!("WEBSOCKET CHANNEL REGISTERED!"),
+            content: "WEBSOCKET CHANNEL REGISTERED!".to_string(),
         })
         .await;
 }
@@ -347,7 +344,7 @@ pub async fn handle_ws_message(
 ) {
     let id: u64 = rand::random();
     let message = KernelMessage {
-        id: id.clone(),
+        id,
         source: Address {
             node: our.clone(),
             process: HTTP_SERVER_PROCESS_ID.clone(),
@@ -389,7 +386,7 @@ pub async fn handle_encrypted_ws_message(
 
     // Send a message to the encryptor
     let message = KernelMessage {
-        id: id.clone(),
+        id,
         source: Address {
             node: our.clone(),
             process: HTTP_SERVER_PROCESS_ID.clone(),
@@ -437,7 +434,7 @@ pub async fn proxy_ws_message(
 ) {
     let id: u64 = rand::random();
     let message = KernelMessage {
-        id: id.clone(),
+        id,
         source: Address {
             node: our.clone(),
             process: HTTP_SERVER_PROCESS_ID.clone(),
@@ -485,7 +482,7 @@ pub async fn send_ws_disconnect(
 ) {
     let id: u64 = rand::random();
     let message = KernelMessage {
-        id: id.clone(),
+        id,
         source: Address {
             node: our.clone(),
             process: HTTP_SERVER_PROCESS_ID.clone(),

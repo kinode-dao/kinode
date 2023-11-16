@@ -1,6 +1,8 @@
+#![feature(btree_extract_if)]
+
 use crate::types::*;
 use anyhow::Result;
-use dotenv;
+use clap::{arg, Command};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -16,8 +18,13 @@ mod keygen;
 mod net;
 mod register;
 mod terminal;
+mod timer;
 mod types;
 mod vfs;
+
+// extensions
+#[cfg(feature = "llm")]
+mod llm;
 
 const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
@@ -30,6 +37,8 @@ const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
+#[cfg(feature = "llm")]
+const LLM_CHANNEL_CAPACITY: usize = 32;
 
 // const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
 
@@ -42,28 +51,26 @@ const REVEAL_IP: bool = true;
 
 #[tokio::main]
 async fn main() {
-    // For use with https://github.com/tokio-rs/console
-    // console_subscriber::init();
+    let matches = Command::new("Uqbar")
+        .version("0.1.0")
+        .author("Uqbar DAO")
+        .about("A decentralized operating system")
+        .arg(arg!([home] "Path to home directory").required(true))
+        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true))
+        .arg(arg!(--llm <LLM_URL> "LLM endpoint"))
+        .get_matches();
+    let home_directory_path = matches.get_one::<String>("home").unwrap();
+    let rpc_url = matches.get_one::<String>("rpc").unwrap();
+    let llm_url = matches.get_one::<String>("llm");
 
-    // DEMO ONLY: remove all CLI arguments
-    let args: Vec<String> = env::args().collect();
-    let home_directory_path = &args[1];
-    // let home_directory_path = "home";
     // create home directory if it does not already exist
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {:?}", e);
     }
-    // read PKI from websocket endpoint served by public RPC
-    // if you get rate-limited or something, pass in your own RPC as a boot argument
-    let mut rpc_url = "".to_string();
 
-    for (i, arg) in args.iter().enumerate() {
-        if arg == "--rpc" {
-            // Check if the next argument exists and is not another flag
-            if i + 1 < args.len() && !args[i + 1].starts_with('-') {
-                rpc_url = args[i + 1].clone();
-            }
-        }
+    #[cfg(not(feature = "llm"))]
+    if let Some(llm_url) = llm_url {
+        panic!("You passed in --llm {:?} but you do not have the llm feature enabled. Please re-run with `--features llm`", llm_url);
     }
 
     // kernel receives system messages via this channel, all other modules send messages
@@ -83,13 +90,15 @@ async fn main() {
         mpsc::channel(WEBSOCKET_SENDER_CHANNEL_CAPACITY);
     // filesystem receives request messages via this channel, kernel sends messages
     let (fs_message_sender, fs_message_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY.clone());
+        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY);
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
-    // http client performs http requests on behalf of processes
+    let (timer_service_sender, timer_service_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(HTTP_CHANNEL_CAPACITY);
     let (eth_rpc_sender, eth_rpc_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ETH_RPC_CHANNEL_CAPACITY);
+    // http client performs http requests on behalf of processes
     let (http_client_sender, http_client_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CLIENT_CHANNEL_CAPACITY);
     // vfs maintains metadata about files in fs for processes
@@ -101,6 +110,10 @@ async fn main() {
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
+    // optional llm extension
+    #[cfg(feature = "llm")]
+    let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(LLM_CHANNEL_CAPACITY);
 
     //  fs config in .env file (todo add -- arguments cleanly (with clap?))
     dotenv::dotenv().ok();
@@ -199,38 +212,77 @@ async fn main() {
         _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, disk_keyfile)
             => panic!("registration failed"),
         (our, decoded_keyfile, encoded_keyfile) = async {
-            while let Some(fin) = rx.recv().await { return fin }
-            panic!("registration failed")
+            rx.recv().await.expect("registration failed")
         } => (our, decoded_keyfile, encoded_keyfile),
     };
-
-    println!(
-        "saving encrypted networking keys to {}/.keys",
-        home_directory_path
-    );
 
     fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
         .await
         .unwrap();
 
-    println!("registration complete!");
+    // the boolean flag determines whether the runtime module is *public* or not,
+    // where public means that any process can always message it.
+    let runtime_extensions = vec![
+        (
+            ProcessId::new(Some("filesystem"), "sys", "uqbar"),
+            fs_message_sender,
+            false,
+        ),
+        (
+            ProcessId::new(Some("http_server"), "sys", "uqbar"),
+            http_server_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("http_client"), "sys", "uqbar"),
+            http_client_sender,
+            false,
+        ),
+        (
+            ProcessId::new(Some("timer"), "sys", "uqbar"),
+            timer_service_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
+            eth_rpc_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("vfs"), "sys", "uqbar"),
+            vfs_message_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("encryptor"), "sys", "uqbar"),
+            encryptor_sender,
+            false,
+        ),
+    ];
+
+    #[cfg(feature = "llm")]
+    {
+        if llm_url.is_none() {
+            panic!("You did not pass in --llm <LLM_URL> but you have the llm feature enabled. Please re-run with `--llm <LLM_URL>`");
+        }
+        runtime_extensions.push((
+            ProcessId::new(Some("llm"), "sys", "uqbar"), // TODO llm:extensions:uqbar ?
+            llm_sender,
+            true,
+        ));
+    }
 
     let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
         our.name.clone(),
         home_directory_path.clone(),
         decoded_keyfile.file_key,
         fs_config,
+        runtime_extensions.clone(),
     )
     .await
     .expect("fs load failed!");
 
     let _ = kill_tx.send(true);
-    let _ = print_sender
-        .send(Printout {
-            verbosity: 0,
-            content: format!("our networking public key: {}", our.networking_key),
-        })
-        .await;
 
     /*
      *  the kernel module will handle our userspace processes and receives
@@ -253,12 +305,7 @@ async fn main() {
         network_error_receiver,
         kernel_debug_message_receiver,
         net_message_sender.clone(),
-        fs_message_sender,
-        http_server_sender,
-        http_client_sender,
-        eth_rpc_sender,
-        vfs_message_sender,
-        encryptor_sender,
+        runtime_extensions,
     ));
     tasks.spawn(net::networking(
         our.clone(),
@@ -294,6 +341,12 @@ async fn main() {
         http_client_receiver,
         print_sender.clone(),
     ));
+    tasks.spawn(timer::timer_service(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        timer_service_receiver,
+        print_sender.clone(),
+    ));
     tasks.spawn(eth_rpc::eth_rpc(
         our.name.clone(),
         rpc_url.clone(),
@@ -316,22 +369,24 @@ async fn main() {
         encryptor_receiver,
         print_sender.clone(),
     ));
+    #[cfg(feature = "llm")]
+    {
+        tasks.spawn(llm::llm(
+            our.name.clone(),
+            kernel_message_sender.clone(),
+            llm_receiver,
+            llm_url.unwrap().to_string(),
+            print_sender.clone(),
+        ));
+    }
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
     let quit_msg: String = tokio::select! {
-        Some(res) = tasks.join_next() => {
-            if let Err(e) = res {
-                format!("what does this mean? {:?}", e)
-            } else if let Ok(Err(e)) = res {
-                format!(
-                    "\x1b[38;5;196muh oh, a kernel process crashed: {}\x1b[0m",
-                    e
-                )
-                // TODO restart the task?
-            } else {
-                format!("what does this mean???")
-                // TODO restart the task?
-            }
+        Some(Ok(res)) = tasks.join_next() => {
+            format!(
+                "\x1b[38;5;196muh oh, a kernel process crashed -- this should never happen: {:?}\x1b[0m",
+                res
+            )
         }
         quit = terminal::terminal(
             our.clone(),
@@ -348,10 +403,10 @@ async fn main() {
             }
         }
     };
+
     // shutdown signal to fs for flush
     let _ = fs_kill_send.send(());
     let _ = fs_kill_confirm_recv.await;
-    // println!("fs shutdown complete.");
 
     // gracefully abort all running processes in kernel
     let _ = kernel_message_sender
@@ -376,10 +431,10 @@ async fn main() {
             signed_capabilities: None,
         })
         .await;
+
     // abort all remaining tasks
     tasks.shutdown().await;
     let _ = crossterm::terminal::disable_raw_mode();
-    println!("");
-    println!("\x1b[38;5;196m{}\x1b[0m", quit_msg);
+    println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
     return;
 }
