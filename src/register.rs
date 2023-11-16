@@ -282,13 +282,14 @@ async fn handle_boot(
     Ok(response)
 }
 
+/// this is NOT our real identity info, rather, it is the
+/// information used in a possible new node registration.
 async fn handle_info(
     ip: String,
     our_arc: Arc<Mutex<Option<Identity>>>,
     networking_keypair_arc: Arc<Mutex<Option<Document>>>,
     keyfile_arc: Arc<Mutex<Option<Vec<u8>>>>,
 ) -> Result<impl Reply, Rejection> {
-    // 1. Generate networking keys
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
     *networking_keypair_arc.lock().unwrap() = Some(serialized_networking_keypair);
 
@@ -302,12 +303,9 @@ async fn handle_info(
         }
     };
 
-    // 2. set our...
-    // TODO: if IP is localhost, assign a router...
+    // TODO: if IP is localhost, don't allow registration as direct
     let ws_port = http_server::find_open_port(9000).await.unwrap();
 
-    // this is NOT our real identity. it's stuff we give to the frontend
-    // to match on
     let our = Identity {
         networking_key: format!("0x{}", public_key),
         name: username,
