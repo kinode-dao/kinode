@@ -455,11 +455,14 @@ pub async fn fs_sender(
                 let manifest_clone = manifest.clone();
 
                 let our_name = our_name.clone();
-                let source = kernel_message.source.clone();
+                let mut source = kernel_message.source.clone();
                 let send_to_loop = send_to_loop.clone();
                 let send_to_terminal = send_to_terminal.clone();
 
                 let mut process_lock = process_queues.lock().await;
+
+                // optimization for get/set_state queues.
+                update_src_from_kernel_metadata(&mut source, &kernel_message);
 
                 if let Some(queue) = process_lock.get_mut(&source.process) {
                     queue.push_back(kernel_message.clone());
@@ -759,6 +762,24 @@ pub fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
         hasher.update(&chunk_hash);
     }
     hasher.finalize().into()
+}
+
+fn update_src_from_kernel_metadata(source: &mut Address, kernel_message: &KernelMessage) {
+    if kernel_message.source.process == *KERNEL_PROCESS_ID {
+        if let Message::Request(request) = &kernel_message.message {
+            if let Some(process_id_str) = &request.metadata {
+                if let Ok(process_id) = ProcessId::from_str(process_id_str) {
+                    source.process = process_id;
+                }
+            }
+        } else if let Message::Response((response, _)) = &kernel_message.message {
+            if let Some(process_id_str) = &response.metadata {
+                if let Ok(process_id) = ProcessId::from_str(process_id_str) {
+                    source.process = process_id;
+                }
+            }
+        }
+    }
 }
 
 fn make_error_message(our_name: String, km: &KernelMessage, error: FsError) -> KernelMessage {
