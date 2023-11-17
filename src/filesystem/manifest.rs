@@ -152,7 +152,7 @@ impl FileIdentifier {
 }
 pub struct Manifest {
     pub manifest: Arc<RwLock<HashMap<FileIdentifier, InMemoryFile>>>,
-    pub chunk_hashes: Arc<RwLock<HashMap<[u8; 32], bool>>>,
+    pub chunk_hashes: Arc<RwLock<HashMap<[u8; 32], ChunkLocation>>>,
     pub hash_index: Arc<RwLock<HashMap<[u8; 32], FileIdentifier>>>,
 
     pub manifest_file: Arc<RwLock<fs::File>>,
@@ -289,6 +289,8 @@ impl Manifest {
         in_memory_file: &mut InMemoryFile,
         memory_buffer: &mut Vec<u8>,
     ) {
+        let mut chunk_hashes = self.chunk_hashes.write().await;
+
         let commit_tx_record = WALRecord::CommitTx(tx_id);
         let serialized_commit_tx = bincode::serialize(&commit_tx_record).unwrap();
         let commit_tx_length = serialized_commit_tx.len() as u64;
@@ -306,6 +308,7 @@ impl Manifest {
                     ChunkLocation::Wal(..) => in_memory_file.wal_chunks.push(start),
                     _ => {}
                 }
+                chunk_hashes.insert(hash, location);
             }
         }
     }
@@ -317,18 +320,20 @@ impl Manifest {
     ) -> Result<(), FsError> {
         let mut wal_file = self.wal_file.write().await;
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
+        let mut chunk_hashes = self.chunk_hashes.write().await;
 
         wal_file.write_all(memory_buffer).await?;
 
         for in_memory_file in manifest.values_mut() {
             // update the locations of the in-memory chunks
             for &start in &in_memory_file.mem_chunks {
-                if let Some((_hash, _length, location, _encrypted)) =
+                if let Some((hash, _length, location, _encrypted)) =
                     in_memory_file.chunks.get_mut(&start)
                 {
                     if let ChunkLocation::Memory(offset) = location {
                         *location = ChunkLocation::Wal(wal_length_before_flush + *offset);
                         in_memory_file.wal_chunks.push(start);
+                        chunk_hashes.insert(*hash, *location);
                     }
                 }
             }
@@ -356,6 +361,8 @@ impl Manifest {
         let mut manifest = self.manifest.write().await;
         let mut memory_buffer = self.memory_buffer.write().await;
         let mut wal_file = self.wal_file.write().await;
+        let mut chunk_hashes = self.chunk_hashes.write().await;
+
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
 
         wal_file.write_all(&memory_buffer).await?;
@@ -363,12 +370,13 @@ impl Manifest {
         for in_memory_file in manifest.values_mut() {
             // update the locations of the in-memory chunks
             for &start in &in_memory_file.mem_chunks {
-                if let Some((_hash, _length, location, _encrypted)) =
+                if let Some((hash, _length, location, _encrypted)) =
                     in_memory_file.chunks.get_mut(&start)
                 {
                     if let ChunkLocation::Memory(offset) = location {
                         *location = ChunkLocation::Wal(wal_length_before_flush + *offset);
                         in_memory_file.wal_chunks.push(start);
+                        chunk_hashes.insert(*hash, *location);
                     }
                 }
             }
@@ -447,11 +455,9 @@ impl Manifest {
 
         let chunk_hash: [u8; 32] = blake3::hash(chunk).into();
         let chunk_length = chunk.len() as u64;
-        let (copy, is_local) = if let Some(is_local) = chunk_hashes.get(&chunk_hash) {
-            (true, *is_local)
-        } else {
-            (false, false)
-        };
+        let (copy, copy_location) = chunk_hashes
+            .get(&chunk_hash)
+            .map_or((false, None), |&location| (true, Some(location)));
 
         let mut encrypted = false;
         let mut chunk_data = chunk.to_vec();
@@ -484,7 +490,7 @@ impl Manifest {
 
         // calculate the position for the chunk in memory chunks
         let proper_position = if copy {
-            ChunkLocation::ColdStorage(is_local)
+            copy_location.unwrap()
         } else {
             let position = memory_buffer.len() - chunk_data.len();
             ChunkLocation::Memory(position as u64)
@@ -1070,7 +1076,7 @@ impl Manifest {
                         *encrypted,
                     ),
                 );
-                chunk_hashes.insert(*hash, !self.cloud_enabled);
+                chunk_hashes.insert(*hash, ChunkLocation::ColdStorage(!self.cloud_enabled));
             }
             in_memory_file.mem_chunks.clear();
             in_memory_file.wal_chunks.clear();
@@ -1378,16 +1384,14 @@ async fn load_wal(
 
 async fn verify_manifest(
     manifest: &mut HashMap<FileIdentifier, InMemoryFile>,
-    chunk_hashes: &mut HashMap<[u8; 32], bool>,
+    chunk_hashes: &mut HashMap<[u8; 32], ChunkLocation>,
     hash_index: &mut HashMap<[u8; 32], FileIdentifier>,
 ) -> tokio::io::Result<()> {
     for (file, in_memory_file) in manifest.iter_mut() {
         let file_hash = in_memory_file.hash();
 
         for (chunk_hash, _, location, _encrypted) in in_memory_file.chunks.values() {
-            if let ChunkLocation::ColdStorage(local) = location {
-                chunk_hashes.insert(*chunk_hash, *local);
-            }
+            chunk_hashes.insert(*chunk_hash, *location);
         }
         hash_index.insert(file_hash, file.clone());
     }
