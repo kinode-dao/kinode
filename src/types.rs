@@ -18,10 +18,10 @@ lazy_static::lazy_static! {
 
 //
 // types shared between kernel and processes. frustratingly, this is an exact copy
-// of the types in process_lib/src/kernel_types.rs
+// of the types in process_lib
 // this is because even though the types are identical, they will not match when
 // used in the kernel context which generates bindings differently than the process
-// standard library. make sure to keep this synced with kernel_types.rs
+// standard library. make sure to keep this synced with process_lib.
 //
 pub type Context = Vec<u8>;
 pub type NodeId = String; // QNS domain name
@@ -382,7 +382,7 @@ pub fn de_wit_on_panic(wit: wit::OnPanic) -> OnPanic {
     }
 }
 //
-// END SYNC WITH kernel_types.rs
+// END SYNC WITH process_lib
 //
 
 //
@@ -488,6 +488,24 @@ pub struct KernelMessage {
     pub signed_capabilities: Option<Vec<SignedCapability>>,
 }
 
+impl std::fmt::Display for KernelMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n}}",
+            self.id,
+            self.source,
+            self.target,
+            match &self.rsvp {
+                Some(rsvp) => rsvp.to_string(),
+                None => "None".to_string()
+            },
+            self.message,
+            self.payload.is_some(),
+        )
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WrappedSendError {
     pub id: u64,
@@ -508,17 +526,6 @@ pub struct Printout {
 //   A requests response from B does not request response from C
 //   -> kernel sets `Some(A) = Rsvp` for B's request to C
 pub type Rsvp = Option<Address>;
-
-//
-//  boot/startup specific types???
-//
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BootOutboundRequest {
-    pub target_process: ProcessId,
-    pub json: Option<String>,
-    pub bytes: Option<Vec<u8>>,
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DebugCommand {
@@ -545,7 +552,6 @@ pub enum KernelCommand {
     Shutdown,
 }
 
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum CapMessage {
     Add {
@@ -553,7 +559,7 @@ pub enum CapMessage {
         cap: Capability,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
-    Drop {
+    _Drop {
         // not used yet!
         on: ProcessId,
         cap: Capability,
@@ -597,14 +603,6 @@ pub struct ProcessContext {
     // can be empty if a request doesn't set context, but still needs to inherit
     pub context: Option<Context>,
 }
-
-//
-// runtime-module-specific types
-//
-
-//
-// filesystem.rs types
-//
 
 pub type PackageVersion = (u32, u32, u32);
 
@@ -831,134 +829,4 @@ impl VfsError {
             VfsError::InternalError => "InternalError",
         }
     }
-}
-
-//
-// custom kernel displays
-//
-
-impl std::fmt::Display for KernelMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n}}",
-            self.id,
-            self.source,
-            self.target,
-            match &self.rsvp {
-                Some(rsvp) => rsvp.to_string(),
-                None => "None".to_string()
-            },
-            self.message,
-            self.payload.is_some(),
-        )
-    }
-}
-
-//
-// http_server.rs types
-//
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HttpResponse {
-    pub status: u16,
-    pub headers: HashMap<String, String>,
-    pub body: Option<Vec<u8>>, // TODO does this use a lot of memory?
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum HttpServerError {
-    #[error("http_server: json is None")]
-    NoJson,
-    #[error("http_server: response not ok")]
-    ResponseError,
-    #[error("http_server: bytes are None")]
-    NoBytes,
-    #[error(
-        "http_server: JSON payload could not be parsed to HttpClientRequest: {error}. Got {:?}.",
-        json
-    )]
-    BadJson { json: String, error: String },
-    #[error("http_server: path binding error:  {:?}", error)]
-    PathBind { error: String },
-}
-
-#[allow(dead_code)]
-impl HttpServerError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            HttpServerError::NoJson { .. } => "NoJson",
-            HttpServerError::NoBytes { .. } => "NoBytes",
-            HttpServerError::BadJson { .. } => "BadJson",
-            HttpServerError::ResponseError { .. } => "ResponseError",
-            HttpServerError::PathBind { .. } => "PathBind",
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JwtClaims {
-    pub username: String,
-    pub expiration: u64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WebSocketServerTarget {
-    pub node: String,
-    pub id: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct WebSocketPush {
-    pub target: WebSocketServerTarget,
-    pub is_text: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ServerAction {
-    pub action: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum HttpServerMessage {
-    BindPath {
-        path: String,
-        authenticated: bool,
-        local_only: bool,
-    },
-    WebSocketPush(WebSocketPush),
-    ServerAction(ServerAction),
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WsRegister {
-    pub ws_auth_token: String,
-    pub auth_token: String,
-    pub channel_id: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WsMessage {
-    pub ws_auth_token: String,
-    pub auth_token: String,
-    pub channel_id: String,
-    pub target: Address,
-    pub json: Option<serde_json::Value>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EncryptedWsMessage {
-    pub ws_auth_token: String,
-    pub auth_token: String,
-    pub channel_id: String,
-    pub target: Address,
-    pub encrypted: String, // Encrypted JSON as hex with the 32-byte authentication tag appended
-    pub nonce: String,     // Hex of the 12-byte nonce
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum WebSocketClientMessage {
-    WsRegister(WsRegister),
-    WsMessage(WsMessage),
-    EncryptedWsMessage(EncryptedWsMessage),
 }

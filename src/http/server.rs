@@ -1,11 +1,10 @@
-use crate::http_server::server_fns::*;
+use crate::http::utils::*;
+use crate::http::types::*;
 use crate::register;
 use crate::types::*;
 use anyhow::Result;
-
 use futures::SinkExt;
 use futures::StreamExt;
-
 use route_recognizer::Router;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -17,16 +16,26 @@ use warp::http::{header::HeaderValue, StatusCode};
 use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
 
-mod server_fns;
-
 // types and constants
 type HttpSender = tokio::sync::oneshot::Sender<HttpResponse>;
 type HttpResponseSenders = Arc<Mutex<HashMap<u64, (String, HttpSender)>>>;
 type PathBindings = Arc<RwLock<Router<BoundPath>>>;
 
-// node -> ID -> random ID
-
-/// http driver
+/// HTTP server: a runtime module that handles HTTP requests at a given port.
+/// The server accepts bindings-requests from apps. These can be used in two ways:
+///
+/// 1. The app can bind to a path and receive all subsequent requests in the form
+/// of an [`HttpRequest`] to that path.
+/// They will be responsible for generating HTTP responses in the form of an
+/// [`HttpResponse`] to those requests.
+///
+/// 2. The app can bind static content to a path. The server will handle all subsequent
+/// requests, serving that static content. It will only respond to `GET` requests.
+///
+///
+/// In addition to binding on paths, the HTTP server can receive incoming WebSocket connections
+/// and pass them to a targeted app. The server will handle encrypting and decrypting messages
+/// over these connections.
 pub async fn http_server(
     our_name: String,
     our_port: u16,
@@ -37,7 +46,6 @@ pub async fn http_server(
 ) -> Result<()> {
     let http_response_senders = Arc::new(Mutex::new(HashMap::new()));
     let websockets: WebSockets = Arc::new(Mutex::new(HashMap::new()));
-    let ws_proxies: WebSocketProxies = Arc::new(Mutex::new(HashMap::new())); // channel_id -> node
 
     // Add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
@@ -48,15 +56,6 @@ pub async fn http_server(
         original_path: "/rpc:sys:uqbar/message".to_string(),
     };
     bindings_map.add("/rpc:sys:uqbar/message", rpc_bound_path);
-
-    // Add encryptor binding
-    let encryptor_bound_path = BoundPath {
-        app: ProcessId::from_str("encryptor:sys:uqbar").unwrap(),
-        authenticated: false,
-        local_only: true,
-        original_path: "/encryptor:sys:uqbar".to_string(),
-    };
-    bindings_map.add("/encryptor:sys:uqbar", encryptor_bound_path);
 
     let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
@@ -90,7 +89,6 @@ pub async fn http_server(
                     http_response_senders.clone(),
                     path_bindings.clone(),
                     websockets.clone(),
-                    ws_proxies.clone(),
                     jwt_secret_bytes.clone(),
                     send_to_loop.clone(),
                     print_tx.clone(),
@@ -847,14 +845,4 @@ async fn handler(
         }
     }
     Ok(response)
-}
-
-pub async fn find_open_port(start_at: u16) -> Option<u16> {
-    for port in start_at..=u16::MAX {
-        let bind_addr = format!("0.0.0.0:{}", port);
-        if is_port_available(&bind_addr).await {
-            return Some(port);
-        }
-    }
-    None
 }

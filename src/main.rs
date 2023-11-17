@@ -10,8 +10,7 @@ use tokio::{fs, time::timeout};
 
 mod eth_rpc;
 mod filesystem;
-mod http_client;
-mod http_server;
+mod http;
 mod kernel;
 mod keygen;
 mod net;
@@ -193,7 +192,7 @@ async fn main() {
     // username, networking key, and routing info.
     // if any do not match, we should prompt user to create a "transaction"
     // that updates their PKI info on-chain.
-    let http_server_port = http_server::find_open_port(8080).await.unwrap();
+    let http_server_port = http::utils::find_open_port(8080).await.unwrap();
     println!("login or register at http://localhost:{}", http_server_port);
     let (kill_tx, kill_rx) = oneshot::channel::<bool>();
 
@@ -317,7 +316,7 @@ async fn main() {
         fs_kill_recv,
         fs_kill_confirm_send,
     ));
-    tasks.spawn(http_server::http_server(
+    tasks.spawn(http::server::http_server(
         our.name.clone(),
         http_server_port,
         decoded_keyfile.jwt_secret_bytes.clone(),
@@ -325,7 +324,7 @@ async fn main() {
         kernel_message_sender.clone(),
         print_sender.clone(),
     ));
-    tasks.spawn(http_client::http_client(
+    tasks.spawn(http::client::http_client(
         our.name.clone(),
         kernel_message_sender.clone(),
         http_client_receiver,

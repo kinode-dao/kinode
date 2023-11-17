@@ -1,50 +1,14 @@
 use crate::types::*;
+use crate::http::types::*;
 use anyhow::Result;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use thiserror::Error;
 
 // Test http_client with these commands in the terminal
 // !message our http_client {"method": "GET", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {}}
 // !message our http_client {"method": "POST", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}
 // !message our http_client {"method": "PUT", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}
-
-//
-// http_client.rs types
-//
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HttpRequest {
-    pub method: String,          // must parse to http::Method
-    pub version: Option<String>, // must parse to http::Version
-    pub url: String,             // must parse to url::Url
-    pub headers: HashMap<String, String>,
-    // BODY is stored in the payload, as bytes
-    // TIMEOUT is stored in the message expect_response
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HttpResponse {
-    pub status: u16,
-    pub headers: HashMap<String, String>,
-    // BODY is stored in the payload, as bytes
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum HttpClientError {
-    #[error("http_client: request could not be parsed to HttpRequest: {}.", req)]
-    BadRequest { req: String },
-    #[error("http_client: http method not supported: {}", method)]
-    BadMethod { method: String },
-    #[error("http_client: url could not be parsed: {}", url)]
-    BadUrl { url: String },
-    #[error("http_client: http version not supported: {}", version)]
-    BadVersion { version: String },
-    #[error("http_client: failed to execute request {}", error)]
-    RequestFailed { error: String },
-}
 
 pub async fn http_client(
     our_name: String,

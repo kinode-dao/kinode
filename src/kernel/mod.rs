@@ -2169,7 +2169,7 @@ async fn make_event_loop(
                             let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
                             let _ = responder.send(true);
                         },
-                        t::CapMessage::Drop { on, cap, responder } => {
+                        t::CapMessage::_Drop { on, cap, responder } => {
                             // remove cap from process map
                             let Some(entry) = process_map.get_mut(&on) else {
                                 let _ = responder.send(false);

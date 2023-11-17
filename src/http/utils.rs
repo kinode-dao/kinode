@@ -1,3 +1,4 @@
+use crate::http::types::*;
 use crate::types::*;
 use futures::stream::SplitSink;
 use hmac::{Hmac, Mac};
@@ -228,6 +229,16 @@ pub fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
         header_map.insert(key_name, value_header);
     }
     header_map
+}
+
+pub async fn find_open_port(start_at: u16) -> Option<u16> {
+    for port in start_at..=u16::MAX {
+        let bind_addr = format!("0.0.0.0:{}", port);
+        if is_port_available(&bind_addr).await {
+            return Some(port);
+        }
+    }
+    None
 }
 
 pub async fn is_port_available(bind_addr: &str) -> bool {
