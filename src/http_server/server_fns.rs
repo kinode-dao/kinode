@@ -395,20 +395,18 @@ pub async fn handle_encrypted_ws_message(
         message: Message::Request(Request {
             inherit: false,
             expects_response: None,
-            ipc: serde_json::json!(
-                EncryptorMessage::DecryptAndForward(
-                    DecryptAndForwardAction {
-                        channel_id: channel_id.clone(),
-                        forward_to: target.clone(),
-                        json: Some(serde_json::json!({
-                            "forwarded_from": {
-                                "node": our.clone(),
-                                "process": "http_server:sys:uqbar",
-                            }
-                        })),
-                    }
-                )
-            )
+            ipc: serde_json::json!(EncryptorMessage::DecryptAndForward(
+                DecryptAndForwardAction {
+                    channel_id: channel_id.clone(),
+                    forward_to: target.clone(),
+                    json: Some(serde_json::json!({
+                        "forwarded_from": {
+                            "node": our.clone(),
+                            "process": "http_server:sys:uqbar",
+                        }
+                    })),
+                }
+            ))
             .to_string()
             .into_bytes(),
             metadata: None,
