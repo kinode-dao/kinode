@@ -824,12 +824,10 @@ async fn handler(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::json!({
-                    "GetKeyAction": {
-                        "channel_id": channel_id,
-                        "public_key_hex": public_key_hex,
-                    }
-                })
+                ipc: serde_json::json!(EncryptorMessage::GetKey(GetKeyAction {
+                    channel_id: channel_id.to_string(),
+                    public_key_hex: public_key_hex.to_string(),
+                }))
                 .to_string()
                 .into_bytes(),
                 metadata: None,
