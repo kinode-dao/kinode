@@ -123,6 +123,11 @@ async fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(1024 * 1024 * 5); // 5mb default
 
+    let read_cache_limit = env::var("READ_CACHE_LIMIT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1024 * 1024 * 5); // 5mb default
+
     let chunk_size = env::var("CHUNK_SIZE")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -164,6 +169,7 @@ async fn main() {
     let fs_config = FsConfig {
         s3_config,
         mem_buffer_limit,
+        read_cache_limit,
         chunk_size,
         flush_to_cold_interval,
         encryption,

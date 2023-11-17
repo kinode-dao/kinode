@@ -676,6 +676,7 @@ pub struct S3Config {
 pub struct FsConfig {
     pub s3_config: Option<S3Config>,
     pub mem_buffer_limit: usize,
+    pub read_cache_limit: usize,
     pub chunk_size: usize,
     pub flush_to_cold_interval: usize,
     pub encryption: bool,
