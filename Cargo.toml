@@ -24,6 +24,7 @@ cap-std = "2.0.0"
 chacha20poly1305 = "0.10.1"
 chrono = "0.4.31"
 crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"] }
+dashmap = "5.5.3"
 digest = "0.10"
 dotenv = "0.15.0"
 elliptic-curve = { version = "0.13.5", features = ["ecdh"] }
@@ -40,6 +41,7 @@ http = "0.2.9"
 jwt = "0.16"
 lazy_static = "1.4.0"
 log = "*"
+nohash-hasher = "0.2.0"
 num-traits = "0.2"
 open = "5.0.0"
 public-ip = "0.2.2"
@@ -61,10 +63,14 @@ thiserror = "1.0.43"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 tokio-tungstenite = "*"
 url = "*"
-uqbar_process_lib = { path = "process_lib" }
+uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "e53c124" }
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"
 wasmtime = "14.0.4"
 wasmtime-wasi = "14.0.4"
 zip = "0.6"
 lru-mem = "0.3.0"
+clap = "4.4.8"
+
+[features]
+llm = []

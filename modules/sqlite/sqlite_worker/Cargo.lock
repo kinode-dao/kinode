@@ -32,6 +32,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
+name = "base64"
+version = "0.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
+
+[[package]]
 name = "bincode"
 version = "1.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -162,7 +168,7 @@ checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 [[package]]
 name = "libsqlite3-sys"
 version = "0.26.0"
-source = "git+https://github.com/uqbar-dao/rusqlite?rev=fa6ed84#fa6ed843b65f7dd78d53a1b74c7e5095d71c2bd4"
+source = "git+https://github.com/uqbar-dao/rusqlite?rev=8fb20a9#8fb20a9dedf4bea626036af8b43c92b050a24d9f"
 dependencies = [
  "cc",
  "pkg-config",
@@ -281,7 +287,7 @@ dependencies = [
 [[package]]
 name = "rusqlite"
 version = "0.29.0"
-source = "git+https://github.com/uqbar-dao/rusqlite?rev=fa6ed84#fa6ed843b65f7dd78d53a1b74c7e5095d71c2bd4"
+source = "git+https://github.com/uqbar-dao/rusqlite?rev=8fb20a9#8fb20a9dedf4bea626036af8b43c92b050a24d9f"
 dependencies = [
  "bitflags",
  "fallible-iterator",
@@ -354,6 +360,7 @@ name = "sqlite_worker"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "bincode",
  "rmp-serde",
  "rusqlite",
@@ -416,6 +423,7 @@ checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
 [[package]]
 name = "uqbar_process_lib"
 version = "0.2.0"
+source = "git+ssh://git@github.com/uqbar-dao/process_lib.git?rev=e53c124#e53c124ec95ef99c06d201d4d08dada8ec691d29"
 dependencies = [
  "anyhow",
  "bincode",

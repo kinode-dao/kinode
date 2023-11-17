@@ -57,7 +57,7 @@ struct ProcessWasi {
 #[derive(Serialize, Deserialize)]
 struct StartProcessMetadata {
     source: t::Address,
-    process_id: Option<t::ProcessId>,
+    process_id: t::ProcessId,
     persisted: t::PersistedProcess,
     reboot: bool,
 }
@@ -145,7 +145,7 @@ impl StandardHost for ProcessWasi {
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
-                metadata: None,
+                metadata: Some(self.process.metadata.our.process.to_string()),
             },
             None,
         )
@@ -186,7 +186,7 @@ impl StandardHost for ProcessWasi {
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
-                metadata: None,
+                metadata: Some(self.process.metadata.our.process.to_string()),
             },
             Some(wit::Payload { mime: None, bytes }),
         )
@@ -262,7 +262,7 @@ impl StandardHost for ProcessWasi {
         };
         let our_drive_name = [
             self.process.metadata.our.process.package(),
-            self.process.metadata.our.process.publisher_node(),
+            self.process.metadata.our.process.publisher(),
         ]
         .join(":");
         let Ok(Ok((_, hash_response))) = send_and_await_response(
@@ -333,7 +333,7 @@ impl StandardHost for ProcessWasi {
         let new_process_id = t::ProcessId::new(
             Some(&name),
             self.process.metadata.our.process.package(),
-            self.process.metadata.our.process.publisher_node(),
+            self.process.metadata.our.process.publisher(),
         );
         let Ok(Ok((_, response))) = send_and_await_response(
             self,
@@ -374,7 +374,7 @@ impl StandardHost for ProcessWasi {
                                     signature: self
                                         .process
                                         .keypair
-                                        .sign(&bincode::serialize(&cap).unwrap())
+                                        .sign(&rmp_serde::to_vec(&cap).unwrap())
                                         .as_ref()
                                         .to_vec(),
                                 })
@@ -473,7 +473,7 @@ impl StandardHost for ProcessWasi {
                 signature: self
                     .process
                     .keypair
-                    .sign(&bincode::serialize(&cap).unwrap())
+                    .sign(&rmp_serde::to_vec(&cap).unwrap())
                     .as_ref()
                     .to_vec(),
             })
@@ -503,7 +503,7 @@ impl StandardHost for ProcessWasi {
             let sig = self
                 .process
                 .keypair
-                .sign(&bincode::serialize(&cap).unwrap());
+                .sign(&rmp_serde::to_vec(&cap).unwrap_or_default());
             return Ok(Some(wit::SignedCapability {
                 issuer: cap.issuer.en_wit().to_owned(),
                 params: cap.params.clone(),
@@ -539,7 +539,10 @@ impl StandardHost for ProcessWasi {
                 issuer: t::Address::de_wit(signed_cap.issuer),
                 params: signed_cap.params,
             };
-            pk.verify(&bincode::serialize(&cap).unwrap(), &signed_cap.signature)?;
+            pk.verify(
+                &rmp_serde::to_vec(&cap).unwrap_or_default(),
+                &signed_cap.signature,
+            )?;
 
             let (tx, rx) = tokio::sync::oneshot::channel();
             let _ = self
@@ -575,7 +578,7 @@ impl StandardHost for ProcessWasi {
                 .caps_oracle
                 .send(t::CapMessage::Has {
                     on: prompt.source.process.clone(),
-                    cap: cap.clone(),
+                    cap,
                     responder: tx,
                 })
                 .await;
@@ -626,7 +629,10 @@ impl StandardHost for ProcessWasi {
             issuer: t::Address::de_wit(signed_cap.issuer),
             params: signed_cap.params,
         };
-        pk.verify(&bincode::serialize(&cap).unwrap(), &signed_cap.signature)?;
+        pk.verify(
+            &rmp_serde::to_vec(&cap).unwrap_or_default(),
+            &signed_cap.signature,
+        )?;
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self
             .process
@@ -881,7 +887,7 @@ impl ProcessState {
                         content: "kernel: prompting_message has no rsvp".into(),
                     })
                     .await;
-                return None;
+                None
             }
             Some(address) => Some((prompting_message.id, address.clone())),
         }
@@ -998,13 +1004,13 @@ impl ProcessState {
         let (id, target) = match self.make_response_id_target().await {
             Some(r) => r,
             None => {
-                self.send_to_terminal
+                let _ = self
+                    .send_to_terminal
                     .send(t::Printout {
                         verbosity: 1,
                         content: format!("kernel: dropping Response {:?}", response),
                     })
-                    .await
-                    .unwrap();
+                    .await;
                 return;
             }
         };
@@ -1029,14 +1035,14 @@ impl ProcessState {
                 signed_capabilities: None,
             })
             .await
-            .unwrap();
+            .expect("fatal: kernel couldn't send response");
     }
 }
 
 /// persist process_map state for next bootup
 /// and wait for filesystem to respond in the affirmative
 async fn persist_state(
-    our_name: &String,
+    our_name: &str,
     send_to_loop: &t::MessageSender,
     process_map: &t::ProcessMap,
 ) -> Result<()> {
@@ -1045,11 +1051,11 @@ async fn persist_state(
         .send(t::KernelMessage {
             id: rand::random(),
             source: t::Address {
-                node: our_name.clone(),
+                node: our_name.to_string(),
                 process: KERNEL_PROCESS_ID.clone(),
             },
             target: t::Address {
-                node: our_name.clone(),
+                node: our_name.to_string(),
                 process: FILESYSTEM_PROCESS_ID.clone(),
             },
             rsvp: None,
@@ -1083,58 +1089,43 @@ async fn make_process_loop(
     if !booted.load(Ordering::Relaxed) {
         let mut pre_boot_queue = Vec::<Result<t::KernelMessage, t::WrappedSendError>>::new();
         while let Some(message) = recv_in_process.recv().await {
-            if let Err(_) = &message {
-                pre_boot_queue.push(message);
-                continue;
+            match message {
+                Err(_) => {
+                    pre_boot_queue.push(message);
+                    continue;
+                }
+                Ok(message) => {
+                    if (message.source
+                        == t::Address {
+                            node: metadata.our.node.clone(),
+                            process: KERNEL_PROCESS_ID.clone(),
+                        })
+                        && (message.message
+                            == t::Message::Request(t::Request {
+                                inherit: false,
+                                expects_response: None,
+                                ipc: "booted".as_bytes().to_vec(),
+                                metadata: None,
+                            }))
+                    {
+                        break;
+                    }
+                    pre_boot_queue.push(Ok(message));
+                }
             }
-            let message = message.unwrap();
-            if (message.source
-                == t::Address {
-                    node: metadata.our.node.clone(),
-                    process: KERNEL_PROCESS_ID.clone(),
-                })
-                && (message.message
-                    == t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        ipc: "booted".as_bytes().to_vec(),
-                        metadata: None,
-                    }))
-            {
-                break;
-            }
-            pre_boot_queue.push(Ok(message));
         }
     }
 
     let component =
-        Component::new(&engine, wasm_bytes).expect("make_process_loop: couldn't read file");
+        Component::new(engine, wasm_bytes).expect("make_process_loop: couldn't read file");
 
-    let mut linker = Linker::new(&engine);
+    let mut linker = Linker::new(engine);
     Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
 
     let table = Table::new();
-    let wasi = WasiCtxBuilder::new().build(); // (&mut table).unwrap();
+    let wasi = WasiCtxBuilder::new().build();
 
     wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
-    // wasmtime_wasi::preview2::bindings::clocks::wall_clock::add_to_linker(&mut linker, |t| t)
-    //     .unwrap();
-    // wasmtime_wasi::preview2::bindings::clocks::monotonic_clock::add_to_linker(&mut linker, |t| t)
-    //     .unwrap();
-    // wasmtime_wasi::preview2::bindings::clocks::timezone::add_to_linker(&mut linker, |t| t).unwrap();
-    // wasmtime_wasi::preview2::bindings::filesystem::filesystem::add_to_linker(&mut linker, |t| t)
-    //     .unwrap();
-    // wasmtime_wasi::preview2::bindings::poll::poll::add_to_linker(&mut linker, |t| t).unwrap();
-    // wasmtime_wasi::preview2::bindings::io::streams::add_to_linker(&mut linker, |t| t).unwrap();
-    // wasmtime_wasi::preview2::bindings::random::random::add_to_linker(&mut linker, |t| t).unwrap();
-    // wasmtime_wasi::preview2::bindings::cli_base::exit::add_to_linker(&mut linker, |t| t).unwrap();
-    // wasmtime_wasi::preview2::bindings::cli_base::environment::add_to_linker(&mut linker, |t| t)
-    //     .unwrap();
-    // wasmtime_wasi::preview2::bindings::cli_base::preopens::add_to_linker(&mut linker, |t| t)
-    //     .unwrap();
-    // wasmtime_wasi::preview2::bindings::cli_base::stdin::add_to_linker(&mut linker, |t| t).unwrap();
-    // wasmtime_wasi::preview2::bindings::cli_base::stdout::add_to_linker(&mut linker, |t| t).unwrap();
-    // wasmtime_wasi::preview2::bindings::cli_base::stderr::add_to_linker(&mut linker, |t| t).unwrap();
 
     let mut store = Store::new(
         engine,
@@ -1250,7 +1241,7 @@ async fn make_process_loop(
                     signed_capabilities: None,
                 })
                 .await
-                .unwrap();
+                .expect("event loop: fatal: sender died");
 
             // fulfill the designated OnPanic behavior
             match metadata.on_panic {
@@ -1282,26 +1273,30 @@ async fn make_process_loop(
                             signed_capabilities: None,
                         })
                         .await
-                        .unwrap();
+                        .expect("event loop: fatal: sender died");
                 }
                 // if requests, fire them
-                // check that dying process had capability to send each message
+                // even in death, a process can only message processes it has capabilities for
                 t::OnPanic::Requests(requests) => {
                     for (address, mut request, payload) in requests {
                         request.expects_response = None;
-                        // TODO caps check
-                        send_to_loop
-                            .send(t::KernelMessage {
-                                id: rand::random(),
-                                source: metadata.our.clone(),
-                                target: address,
-                                rsvp: None,
-                                message: t::Message::Request(request),
-                                payload,
-                                signed_capabilities: None,
-                            })
-                            .await
-                            .unwrap();
+                        if initial_capabilities.contains(&t::Capability {
+                            issuer: address.clone(),
+                            params: "\"messaging\"".into(),
+                        }) {
+                            send_to_loop
+                                .send(t::KernelMessage {
+                                    id: rand::random(),
+                                    source: metadata.our.clone(),
+                                    target: address,
+                                    rsvp: None,
+                                    message: t::Message::Request(request),
+                                    payload,
+                                    signed_capabilities: None,
+                                })
+                                .await
+                                .expect("event loop: fatal: sender died");
+                        }
                     }
                 }
             }
@@ -1329,13 +1324,12 @@ async fn handle_kernel_request(
     };
     let command: t::KernelCommand = match serde_json::from_slice(&request.ipc) {
         Err(e) => {
-            send_to_terminal
+            let _ = send_to_terminal
                 .send(t::Printout {
                     verbosity: 1,
                     content: format!("kernel: couldn't parse command: {:?}", e),
                 })
-                .await
-                .unwrap();
+                .await;
             return;
         }
         Ok(c) => c,
@@ -1387,13 +1381,12 @@ async fn handle_kernel_request(
             public,
         } => {
             let Some(ref payload) = km.payload else {
-                send_to_terminal
+                let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
                         content: "kernel: process startup requires bytes".into(),
                     })
-                    .await
-                    .unwrap();
+                    .await;
                 // fire an error back
                 send_to_loop
                     .send(t::KernelMessage {
@@ -1417,7 +1410,7 @@ async fn handle_kernel_request(
                         signed_capabilities: None,
                     })
                     .await
-                    .unwrap();
+                    .expect("event loop: fatal: sender died");
                 return;
             };
 
@@ -1429,11 +1422,13 @@ async fn handle_kernel_request(
                     issuer: signed_cap.issuer,
                     params: signed_cap.params,
                 };
-                match pk.verify(&bincode::serialize(&cap).unwrap(), &signed_cap.signature) {
+                match pk.verify(
+                    &rmp_serde::to_vec(&cap).unwrap_or_default(),
+                    &signed_cap.signature,
+                ) {
                     Ok(_) => {}
                     Err(e) => {
                         println!("kernel: StartProcess no cap: {}", e);
-                        // TODO should this make the spawn fail??? could go either way
                         continue;
                     }
                 }
@@ -1449,14 +1444,14 @@ async fn handle_kernel_request(
                 params: "\"messaging\"".into(),
             });
 
-            // fires "success" response back
-            start_process(
-                our_name,
+            // fires "success" response back if successful
+            match start_process(
+                our_name.clone(),
                 booted,
                 keypair.clone(),
                 km.id,
                 &payload.bytes,
-                send_to_loop,
+                send_to_loop.clone(),
                 send_to_terminal,
                 senders,
                 process_handles,
@@ -1467,9 +1462,9 @@ async fn handle_kernel_request(
                     source: if let Some(rsvp) = km.rsvp {
                         rsvp
                     } else {
-                        km.source
+                        km.source.clone()
                     },
-                    process_id: Some(id),
+                    process_id: id,
                     persisted: t::PersistedProcess {
                         wasm_bytes_handle,
                         on_panic,
@@ -1479,7 +1474,35 @@ async fn handle_kernel_request(
                     reboot: false,
                 },
             )
-            .await;
+            .await
+            {
+                Ok(()) => (),
+                Err(_e) => {
+                    send_to_loop
+                        .send(t::KernelMessage {
+                            id: km.id,
+                            source: t::Address {
+                                node: our_name.clone(),
+                                process: KERNEL_PROCESS_ID.clone(),
+                            },
+                            target: km.source,
+                            rsvp: None,
+                            message: t::Message::Response((
+                                t::Response {
+                                    inherit: false,
+                                    ipc: serde_json::to_vec(&t::KernelResponse::StartProcessError)
+                                        .unwrap(),
+                                    metadata: None,
+                                },
+                                None,
+                            )),
+                            payload: None,
+                            signed_capabilities: None,
+                        })
+                        .await
+                        .expect("event loop: fatal: sender died");
+                }
+            }
         }
         //  reboot from persisted process.
         t::KernelCommand::RebootProcess {
@@ -1510,7 +1533,7 @@ async fn handle_kernel_request(
                         metadata: Some(
                             serde_json::to_string(&StartProcessMetadata {
                                 source: km.source,
-                                process_id: Some(process_id),
+                                process_id,
                                 persisted,
                                 reboot: true,
                             })
@@ -1521,30 +1544,28 @@ async fn handle_kernel_request(
                     signed_capabilities: None,
                 })
                 .await
-                .unwrap()
+                .expect("event loop: fatal: sender died");
         }
         t::KernelCommand::KillProcess(process_id) => {
             // brutal and savage killing: aborting the task.
             // do not do this to a process if you don't want to risk
             // dropped messages / un-replied-to-requests
-            send_to_terminal
+            let _ = send_to_terminal
                 .send(t::Printout {
-                    verbosity: 1,
-                    content: format!("kernel: killing process {:?}", process_id),
+                    verbosity: 0,
+                    content: format!("kernel: killing process {}", process_id),
                 })
-                .await
-                .unwrap();
+                .await;
             let _ = senders.remove(&process_id);
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
                 None => {
-                    send_to_terminal
+                    let _ = send_to_terminal
                         .send(t::Printout {
                             verbosity: 1,
                             content: format!("kernel: no such process {:?} to kill", process_id),
                         })
-                        .await
-                        .unwrap();
+                        .await;
                     return;
                 }
             };
@@ -1555,7 +1576,7 @@ async fn handle_kernel_request(
             }
 
             process_map.remove(&process_id);
-            let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
+            let _ = persist_state(&our_name, &send_to_loop, process_map).await;
 
             send_to_loop
                 .send(t::KernelMessage {
@@ -1579,7 +1600,7 @@ async fn handle_kernel_request(
                     signed_capabilities: None,
                 })
                 .await
-                .unwrap();
+                .expect("event loop: fatal: sender died");
         }
     }
 }
@@ -1624,7 +1645,7 @@ async fn handle_kernel_response(
         return;
     };
 
-    let meta: StartProcessMetadata = match serde_json::from_str(&metadata) {
+    let meta: StartProcessMetadata = match serde_json::from_str(metadata) {
         Err(_) => {
             let _ = send_to_terminal
                 .send(t::Printout {
@@ -1638,27 +1659,26 @@ async fn handle_kernel_response(
     };
 
     let Some(ref payload) = km.payload else {
-        send_to_terminal
+        let _ = send_to_terminal
             .send(t::Printout {
                 verbosity: 0,
                 content: format!(
-                    "kernel: process {:?} seemingly could not be read from filesystem. km: {}",
+                    "kernel: process {} seemingly could not be read from filesystem. km: {}",
                     meta.process_id, km
                 ),
             })
-            .await
-            .unwrap();
+            .await;
         return;
     };
 
-    start_process(
+    match start_process(
         our_name,
         booted,
         keypair.clone(),
         km.id,
         &payload.bytes,
         send_to_loop,
-        send_to_terminal,
+        send_to_terminal.clone(),
         senders,
         process_handles,
         process_map,
@@ -1666,7 +1686,18 @@ async fn handle_kernel_response(
         caps_oracle,
         meta,
     )
-    .await;
+    .await
+    {
+        Ok(()) => (),
+        Err(e) => {
+            let _ = send_to_terminal
+                .send(t::Printout {
+                    verbosity: 0,
+                    content: format!("kernel: process start fail: {:?}", e),
+                })
+                .await;
+        }
+    }
 }
 
 async fn start_process(
@@ -1683,47 +1714,34 @@ async fn start_process(
     engine: &Engine,
     caps_oracle: t::CapMessageSender,
     process_metadata: StartProcessMetadata,
-) {
+) -> Result<()> {
     let (send_to_process, recv_in_process) =
         mpsc::channel::<Result<t::KernelMessage, t::WrappedSendError>>(PROCESS_CHANNEL_CAPACITY);
-    let process_id = match process_metadata.process_id {
-        Some(id) => {
-            if senders.contains_key(&id) {
-                // TODO: make a Response to indicate failure?
-                send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: format!("kernel: process with ID {} already exists", id),
-                    })
-                    .await
-                    .unwrap();
-                return;
-            } else {
-                id
-            }
-        }
-        // first cases was for reboot or start with defined name, this is for start without name
-        None => {
-            // TODO change signature of outer fn
-            unimplemented!()
-        }
-    };
-
+    let id = process_metadata.process_id;
+    if senders.contains_key(&id) {
+        let _ = send_to_terminal
+            .send(t::Printout {
+                verbosity: 0,
+                content: format!("kernel: process with ID {} already exists", id),
+            })
+            .await;
+        return Err(anyhow::anyhow!("process with ID {} already exists", id));
+    }
     senders.insert(
-        process_id.clone(),
+        id.clone(),
         ProcessSender::Userspace(send_to_process.clone()),
     );
     let metadata = t::ProcessMetadata {
         our: t::Address {
             node: our_name.clone(),
-            process: process_id.clone(),
+            process: id.clone(),
         },
-        wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle.clone(),
+        wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle,
         on_panic: process_metadata.persisted.on_panic.clone(),
         public: process_metadata.persisted.public,
     };
     process_handles.insert(
-        process_id.clone(),
+        id.clone(),
         tokio::spawn(
             make_process_loop(
                 booted,
@@ -1733,7 +1751,7 @@ async fn start_process(
                 send_to_terminal.clone(),
                 recv_in_process,
                 send_to_process,
-                &km_payload_bytes,
+                km_payload_bytes,
                 caps_oracle,
                 engine,
             )
@@ -1741,10 +1759,10 @@ async fn start_process(
         ),
     );
 
-    process_map.insert(process_id, process_metadata.persisted);
+    process_map.insert(id, process_metadata.persisted);
     if !process_metadata.reboot {
         // if new, persist
-        let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
+        persist_state(&our_name, &send_to_loop, process_map).await?;
     }
 
     send_to_loop
@@ -1759,7 +1777,7 @@ async fn start_process(
             message: t::Message::Response((
                 t::Response {
                     inherit: false,
-                    ipc: serde_json::to_vec(&t::KernelResponse::StartedProcess).unwrap(),
+                    ipc: serde_json::to_vec(&t::KernelResponse::StartedProcess)?,
                     metadata: None,
                 },
                 None,
@@ -1767,8 +1785,8 @@ async fn start_process(
             payload: None,
             signed_capabilities: None,
         })
-        .await
-        .unwrap();
+        .await?;
+    Ok(())
 }
 
 /// process event loop. allows WASM processes to send messages to various runtime modules.
@@ -1784,14 +1802,9 @@ async fn make_event_loop(
     mut recv_debug_in_loop: t::DebugReceiver,
     send_to_loop: t::MessageSender,
     send_to_net: t::MessageSender,
-    send_to_fs: t::MessageSender,
-    send_to_http_server: t::MessageSender,
-    send_to_http_client: t::MessageSender,
-    send_to_eth_rpc: t::MessageSender,
-    send_to_vfs: t::MessageSender,
-    send_to_encryptor: t::MessageSender,
     send_to_terminal: t::PrintSender,
     engine: Engine,
+    runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
 ) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
     // shared global flag to mark if we're finished boot process
     let booted = Arc::new(AtomicBool::new(false));
@@ -1799,33 +1812,12 @@ async fn make_event_loop(
     Box::pin(async move {
         let mut senders: Senders = HashMap::new();
         senders.insert(
-            t::ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_eth_rpc),
-        );
-        senders.insert(
-            t::ProcessId::new(Some("filesystem"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_fs),
-        );
-        senders.insert(
-            t::ProcessId::new(Some("http_server"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_http_server),
-        );
-        senders.insert(
-            t::ProcessId::new(Some("http_client"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_http_client),
-        );
-        senders.insert(
-            t::ProcessId::new(Some("encryptor"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_encryptor),
-        );
-        senders.insert(
             t::ProcessId::new(Some("net"), "sys", "uqbar"),
             ProcessSender::Runtime(send_to_net.clone()),
         );
-        senders.insert(
-            t::ProcessId::new(Some("vfs"), "sys", "uqbar"),
-            ProcessSender::Runtime(send_to_vfs),
-        );
+        for (process_id, sender, _) in runtime_extensions {
+            senders.insert(process_id, ProcessSender::Runtime(sender));
+        }
 
         // each running process is stored in this map
         let mut process_handles: ProcessHandles = HashMap::new();
@@ -1860,30 +1852,35 @@ async fn make_event_loop(
                         signed_capabilities: None,
                     })
                     .await
-                    .unwrap();
+                    .expect("fatal: kernel event loop died");
             }
             if let t::OnPanic::Requests(requests) = &persisted.on_panic {
                 // if a persisted process had on-death-requests, we should perform them now
-                // TODO check for caps here
+                // even in death, a process can only message processes it has capabilities for
                 for (address, request, payload) in requests {
                     // the process that made the request is dead, so never expects response
-                    let mut request = request.clone();
+                    let mut request = request.to_owned();
                     request.expects_response = None;
-                    send_to_loop
-                        .send(t::KernelMessage {
-                            id: rand::random(),
-                            source: t::Address {
-                                node: our_name.clone(),
-                                process: process_id.clone(),
-                            },
-                            target: address.clone(),
-                            rsvp: None,
-                            message: t::Message::Request(request),
-                            payload: payload.clone(),
-                            signed_capabilities: None,
-                        })
-                        .await
-                        .unwrap();
+                    if persisted.capabilities.contains(&t::Capability {
+                        issuer: address.clone(),
+                        params: "\"messaging\"".into(),
+                    }) {
+                        send_to_loop
+                            .send(t::KernelMessage {
+                                id: rand::random(),
+                                source: t::Address {
+                                    node: our_name.clone(),
+                                    process: process_id.clone(),
+                                },
+                                target: address.clone(),
+                                rsvp: None,
+                                message: t::Message::Request(request),
+                                payload: payload.clone(),
+                                signed_capabilities: None,
+                            })
+                            .await
+                            .expect("fatal: kernel event loop died");
+                    }
                 }
             }
         }
@@ -1912,7 +1909,7 @@ async fn make_event_loop(
                 signed_capabilities: None,
             })
             .await
-            .unwrap();
+            .expect("fatal: kernel event loop died");
 
         // main message loop
         loop {
@@ -1923,8 +1920,7 @@ async fn make_event_loop(
                         is_debug = !is_debug;
                     }
                 },
-                ne = network_error_recv.recv() => {
-                    let Some(wrapped_network_error) = ne else { return Ok(()) };
+                Some(wrapped_network_error) = network_error_recv.recv() => {
                     let _ = send_to_terminal.send(
                         t::Printout {
                             verbosity: 1,
@@ -1934,8 +1930,7 @@ async fn make_event_loop(
                     // forward the error to the relevant process
                     match senders.get(&wrapped_network_error.source.process) {
                         Some(ProcessSender::Userspace(sender)) => {
-                            // TODO: this failing should crash kernel
-                            sender.send(Err(wrapped_network_error)).await.unwrap();
+                            let _ = sender.send(Err(wrapped_network_error)).await;
                         }
                         Some(ProcessSender::Runtime(_sender)) => {
                             // TODO should runtime modules get these? no
@@ -1943,21 +1938,28 @@ async fn make_event_loop(
                             // a message directed to not-our-node
                         }
                         None => {
-                            send_to_terminal
+                            let _ = send_to_terminal
                                 .send(t::Printout {
                                     verbosity: 0,
                                     content: format!(
-                                        "event loop: don't have {:?} amongst registered processes (got message for it from net)",
+                                        "event loop: don't have {} amongst registered processes (got net error for it)",
                                         wrapped_network_error.source.process,
                                     )
                                 })
-                                .await
-                                .unwrap();
+                                .await;
                         }
                     }
                 },
                 kernel_message = recv_in_loop.recv() => {
-                    let kernel_message = kernel_message.expect("fatal: event loop died");
+                    let mut kernel_message = kernel_message.expect("fatal: event loop died");
+                    // the kernel treats the node-string "our" as a special case,
+                    // and replaces it with the name of the node this kernel is running.
+                    if kernel_message.source.node == "our" {
+                        kernel_message.source.node = our_name.clone();
+                    }
+                    if kernel_message.target.node == "our" {
+                        kernel_message.target.node = our_name.clone();
+                    }
                     //
                     // here: are the special kernel-level capabilities checks!
                     //
@@ -1965,16 +1967,20 @@ async fn make_event_loop(
                     // enforce that if message is directed over the network, process has capability to do so
                     if kernel_message.source.node == our_name
                       && kernel_message.target.node != our_name {
-                        if !process_map.get(&kernel_message.source.process).unwrap().capabilities.contains(
-                                &t::Capability {
-                                    issuer: t::Address {
+                        let Some(proc) = process_map.get(&kernel_message.source.process) else {
+                            continue
+                        };
+                        if !proc.capabilities.contains(
+                            &t::Capability {
+                                issuer: t::Address {
                                     node: our_name.clone(),
                                     process: KERNEL_PROCESS_ID.clone(),
                                 },
                                 params: "\"network\"".into(),
-                        }) {
+                            }
+                        ) {
                             // capabilities are not correct! skip this message.
-                            // TODO some kind of error thrown back at process
+                            // TODO: some kind of error thrown back at process?
                             let _ = send_to_terminal.send(
                                 t::Printout {
                                     verbosity: 0,
@@ -1987,10 +1993,19 @@ async fn make_event_loop(
                             continue;
                         }
                     } else if kernel_message.source.node != our_name {
-                        // note that messaging restrictions only apply to *local* processes, if your
-                        // process has networking capabilities, it can be messaged by any process remotely..
+                        // note that messaging restrictions only apply to *local* processes:
+                        // your process can be messaged by any process remotely if it has
+                        // networking capabilities.
                         let Some(persisted) = process_map.get(&kernel_message.target.process) else {
-                            println!("kernel: did not find process in process_map: {}\r", kernel_message.target.process);
+                            let _ = send_to_terminal
+                                .send(t::Printout {
+                                    verbosity: 0,
+                                    content: format!(
+                                        "event loop: don't have {} amongst registered processes (got message for it from network)",
+                                        kernel_message.source.process,
+                                    )
+                                })
+                                .await;
                             continue;
                         };
                         if !persisted.capabilities.contains(
@@ -2006,7 +2021,7 @@ async fn make_event_loop(
                                 t::Printout {
                                     verbosity: 0,
                                     content: format!(
-                                        "event loop: process {} doesn't have capability to receive networked messages",
+                                        "event loop: process {} got a message from over the network, but doesn't have capability to receive networked messages",
                                         kernel_message.target.process
                                     )
                                 }
@@ -2020,40 +2035,37 @@ async fn make_event_loop(
                             && kernel_message.source.process != *FILESYSTEM_PROCESS_ID
                         {
                             let Some(persisted_source) = process_map.get(&kernel_message.source.process) else {
-                                println!("kernel: did not find process in process_map: {}\r", kernel_message.source.process);
-                                continue;
+                                continue
                             };
                             let Some(persisted_target) = process_map.get(&kernel_message.target.process) else {
-                                println!("kernel: did not find process in process_map: {}\r", kernel_message.target.process);
-                                continue;
+                                continue
                             };
-                            if !persisted_target.public {
-                                if !persisted_source.capabilities.contains(&t::Capability {
+                            if !persisted_target.public && !persisted_source.capabilities.contains(&t::Capability {
                                     issuer: t::Address {
                                         node: our_name.clone(),
                                         process: kernel_message.target.process.clone(),
                                     },
                                     params: "\"messaging\"".into(),
                                 }) {
-                                    // capabilities are not correct! skip this message.
-                                    // TODO some kind of error thrown back at process
-                                    let _ = send_to_terminal.send(
-                                        t::Printout {
-                                            verbosity: 0,
-                                            content: format!(
-                                                "event loop: process {} doesn't have capability to message process {}",
-                                                kernel_message.source.process, kernel_message.target.process
-                                            )
-                                        }
-                                    ).await;
-                                    continue;
-                                }
+                                // capabilities are not correct! skip this message.
+                                // TODO some kind of error thrown back at process?
+                                let _ = send_to_terminal.send(
+                                    t::Printout {
+                                        verbosity: 0,
+                                        content: format!(
+                                            "event loop: process {} doesn't have capability to message process {}",
+                                            kernel_message.source.process, kernel_message.target.process
+                                        )
+                                    }
+                                ).await;
+                                continue;
                             }
                         }
                     }
                     // end capabilities checks
+                    // if debug mode is on, wait for user to step through
                     while is_debug {
-                        let debug = recv_debug_in_loop.recv().await.unwrap();
+                        let debug = recv_debug_in_loop.recv().await.expect("event loop: debug channel died");
                         match debug {
                             t::DebugCommand::Toggle => is_debug = !is_debug,
                             t::DebugCommand::Step => break,
@@ -2067,7 +2079,6 @@ async fn make_event_loop(
                             }
                         ).await;
                     if our_name != kernel_message.target.node {
-                        // unrecoverable if fails
                         send_to_net.send(kernel_message).await.expect("fatal: net module died");
                     } else if kernel_message.target.process.process() == "kernel" {
                         // kernel only accepts messages from our own node
@@ -2108,34 +2119,26 @@ async fn make_event_loop(
                         }
                     } else {
                         // pass message to appropriate runtime module or process
-                        // the receiving process is automatically granted
-                        // capability to communicate with the sending process.
-                        if our_name == kernel_message.source.node {
-                            match process_map.get_mut(&kernel_message.target.process) {
-                                None => {
-                                    // this should never be hit?
-                                    println!("got message for process {:?} but it doesn't exist?", kernel_message.target.process);
-                                }
-                                Some(p) => {
-                                    let cap = t::Capability {
-                                        issuer: kernel_message.source.clone(),
-                                        params: "\"messaging\"".into(),
-                                    };
-                                    if !p.capabilities.contains(&cap) {
-                                        // insert cap in process if it doesn't already have it
-                                        p.capabilities.insert(cap);
-                                        let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
+                        match senders.get(&kernel_message.target.process) {
+                            Some(ProcessSender::Userspace(sender)) => {
+                                let target = kernel_message.target.process.clone();
+                                match sender.send(Ok(kernel_message)).await {
+                                    Ok(()) => continue,
+                                    Err(_e) => {
+                                        let _ = send_to_terminal
+                                            .send(t::Printout {
+                                                verbosity: 0,
+                                                content: format!(
+                                                    "event loop: process {} appears to have died",
+                                                    target
+                                                )
+                                            })
+                                            .await;
                                     }
                                 }
                             }
-                        }
-                        match senders.get(&kernel_message.target.process) {
-                            Some(ProcessSender::Userspace(sender)) => {
-                                // TODO: should this failing should crash kernel? probably not
-                                sender.send(Ok(kernel_message)).await.unwrap();
-                            }
                             Some(ProcessSender::Runtime(sender)) => {
-                                sender.send(kernel_message).await.expect("fatal: runtime module died");
+                                sender.send(kernel_message).await.expect("event loop: fatal: runtime module died");
                             }
                             None => {
                                 send_to_terminal
@@ -2148,7 +2151,7 @@ async fn make_event_loop(
                                         )
                                     })
                                     .await
-                                    .unwrap();
+                                    .expect("event loop: fatal: terminal sender died");
                             }
                         }
                     }
@@ -2214,12 +2217,7 @@ pub async fn kernel(
     network_error_recv: t::NetworkErrorReceiver,
     recv_debug_in_loop: t::DebugReceiver,
     send_to_wss: t::MessageSender,
-    send_to_fs: t::MessageSender,
-    send_to_http_server: t::MessageSender,
-    send_to_http_client: t::MessageSender,
-    send_to_eth_rpc: t::MessageSender,
-    send_to_vfs: t::MessageSender,
-    send_to_encryptor: t::MessageSender,
+    runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
 ) -> Result<()> {
     let mut config = Config::new();
     config.cache_config_load_default().unwrap();
@@ -2240,14 +2238,9 @@ pub async fn kernel(
             recv_debug_in_loop,
             send_to_loop,
             send_to_wss,
-            send_to_fs,
-            send_to_http_server,
-            send_to_http_client,
-            send_to_eth_rpc,
-            send_to_vfs,
-            send_to_encryptor,
             send_to_terminal,
             engine,
+            runtime_extensions,
         )
         .await,
     );
