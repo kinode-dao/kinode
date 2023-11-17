@@ -64,6 +64,12 @@ pub async fn register(
         .and(warp::fs::file("./src/register/build/index.html"));
 
     let keyfile_vet_copy = keyfile_vet.clone();
+    let boot_tx = tx.clone();
+    let boot_our_arc = our_arc.clone();
+    let boot_net_keypair_arc = net_keypair_arc.clone();
+    let import_tx = tx.clone();
+    let import_our_arc = our_arc.clone();
+    let import_net_keypair_arc = net_keypair_arc.clone();
 
     let api = warp::path("has-keyfile")
         .and(
@@ -87,14 +93,32 @@ pub async fn register(
                 .and_then(handle_keyfile_vet),
         ))
         .or(warp::path("boot").and(
-            warp::put()
+            warp::post()
+                .and(warp::body::content_length_limit(1024 * 16))
+                .and(warp::body::json())
+                .and(warp::any().map(move || boot_tx.clone()))
+                .and(warp::any().map(move || boot_our_arc.lock().unwrap().take().unwrap()))
+                .and(warp::any().map(move || boot_net_keypair_arc.lock().unwrap().take().unwrap()))
+                .and_then(handle_boot),
+        ))
+        .or(warp::path("import-keyfile").and(
+            warp::post()
+                .and(warp::body::content_length_limit(1024 * 16))
+                .and(warp::body::json())
+                .and(warp::any().map(move || import_tx.clone()))
+                .and(warp::any().map(move || import_our_arc.lock().unwrap().take().unwrap()))
+                .and(warp::any().map(move || import_net_keypair_arc.lock().unwrap().take().unwrap()))
+                .and_then(handle_import_keyfile),
+        ))
+        .or(warp::path("login").and(
+            warp::post()
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(warp::any().map(move || tx.clone()))
                 .and(warp::any().map(move || our_arc.lock().unwrap().take().unwrap()))
                 .and(warp::any().map(move || net_keypair_arc.lock().unwrap().take().unwrap()))
                 .and(warp::any().map(move || keyfile_arc.lock().unwrap().take().unwrap()))
-                .and_then(handle_boot),
+                .and_then(handle_login),
         ));
 
     let mut headers = HeaderMap::new();
@@ -170,79 +194,147 @@ async fn handle_boot(
     sender: RegistrationSender,
     mut our: Identity,
     networking_keypair: Document,
+) -> Result<impl Reply, Rejection> {
+    our.name = info.username;
+
+    let seed = SystemRandom::new();
+    let mut jwt_secret = [0u8, 32];
+    ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
+
+    if info.direct {
+        our.allowed_routers = vec![];
+    } else {
+        our.ws_routing = None;
+    }
+
+    let decoded_keyfile = Keyfile {
+        username: our.name.clone(),
+        routers: our.allowed_routers.clone(),
+        networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
+            .unwrap(),
+        jwt_secret_bytes: jwt_secret.to_vec(),
+        file_key: keygen::generate_file_key(),
+    };
+
+    let encoded_keyfile = keygen::encode_keyfile(
+        info.password,
+        decoded_keyfile.username.clone(),
+        decoded_keyfile.routers.clone(),
+        networking_keypair,
+        decoded_keyfile.jwt_secret_bytes.clone(),
+        decoded_keyfile.file_key.clone(),
+    );
+
+    let encoded_keyfile_str = base64::encode(encoded_keyfile.clone());
+
+    success_response(
+        sender,
+        our,
+        decoded_keyfile,
+        encoded_keyfile,
+        encoded_keyfile_str,
+    ).await
+}
+
+async fn handle_import_keyfile(
+    info: ImportKeyfileInfo,
+    sender: RegistrationSender,
+    mut our: Identity,
+    networking_keypair: Document,
+) -> Result<impl Reply, Rejection> {
+    // if keyfile was not present in node and is present from user upload
+    let encoded_keyfile = match base64::decode(info.keyfile.clone()) {
+        Ok(k) => k,
+        Err(_) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&"Keyfile not valid base64".to_string()),
+                StatusCode::BAD_REQUEST,
+            )
+            .into_response())
+        }
+    };
+
+    let decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
+        Ok(k) => {
+            our.name = k.username.clone();
+            our.networking_key = format!(
+                "0x{}",
+                hex::encode(k.networking_keypair.public_key().as_ref())
+            );
+            k
+        }
+        Err(_) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&"Failed to decode keyfile".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response())
+        }
+    };
+
+    let encoded_keyfile_str = info.keyfile.clone();
+
+    success_response(
+        sender,
+        our,
+        decoded_keyfile,
+        encoded_keyfile,
+        encoded_keyfile_str,
+    ).await
+}
+
+async fn handle_login(
+    info: LoginInfo,
+    sender: RegistrationSender,
+    mut our: Identity,
+    networking_keypair: Document,
     encoded_keyfile: Vec<u8>,
 ) -> Result<impl Reply, Rejection> {
-    if !info.username.is_empty() {
-        our.name = info.username;
+    if encoded_keyfile.is_empty() {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Keyfile not present".to_string()),
+            StatusCode::BAD_REQUEST,
+        )
+        .into_response());
     }
-
-    // if keyfile was not present in node and is present from user upload
-    let mut encoded_keyfile = if !info.keyfile.clone().is_empty() {
-        match base64::decode(info.keyfile.clone()) {
-            Ok(k) => k,
-            Err(_) => {
-                return Ok(warp::reply::with_status(
-                    warp::reply::json(&"Keyfile not valid base64".to_string()),
-                    StatusCode::BAD_REQUEST,
-                )
-                .into_response())
-            }
-        }
-    } else {
-        encoded_keyfile
-    };
 
     // if keyfile was not in node or upload or if networking required reset
-    let decoded_keyfile = if info.reset || encoded_keyfile.is_empty() {
-        let seed = SystemRandom::new();
-        let mut jwt_secret = [0u8, 32];
-        ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
-
-        if info.direct {
-            our.allowed_routers = vec![];
-        } else {
-            our.ws_routing = None;
+    let decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
+        Ok(k) => {
+            our.name = k.username.clone();
+            our.networking_key = format!(
+                "0x{}",
+                hex::encode(k.networking_keypair.public_key().as_ref())
+            );
+            k
         }
-
-        Keyfile {
-            username: our.name.clone(),
-            routers: our.allowed_routers.clone(),
-            networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
-                .unwrap(),
-            jwt_secret_bytes: jwt_secret.to_vec(),
-            file_key: keygen::generate_file_key(),
-        }
-    } else {
-        match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
-            Ok(k) => {
-                our.name = k.username.clone();
-                our.networking_key = format!(
-                    "0x{}",
-                    hex::encode(k.networking_keypair.public_key().as_ref())
-                );
-                k
-            }
-            Err(_) => {
-                return Ok(warp::reply::with_status(
-                    warp::reply::json(&"Failed to decode keyfile".to_string()),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                )
-                .into_response())
-            }
+        Err(_) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&"Failed to decode keyfile".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response())
         }
     };
 
-    if encoded_keyfile.is_empty() {
-        encoded_keyfile = keygen::encode_keyfile(
-            info.password,
-            decoded_keyfile.username.clone(),
-            decoded_keyfile.routers.clone(),
-            networking_keypair,
-            decoded_keyfile.jwt_secret_bytes.clone(),
-            decoded_keyfile.file_key.clone(),
-        );
-    }
+    let encoded_keyfile_str = base64::encode(encoded_keyfile.clone());
 
+    success_response(
+        sender,
+        our,
+        decoded_keyfile,
+        encoded_keyfile,
+        encoded_keyfile_str,
+    ).await
+}
+
+async fn success_response(
+    sender: RegistrationSender,
+    our: Identity,
+    decoded_keyfile: Keyfile,
+    encoded_keyfile: Vec<u8>,
+    encoded_keyfile_str: String,
+) -> Result<warp::reply::Response, Rejection>  {
     let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, our.name.clone()) {
         Some(token) => token,
         None => {
@@ -255,14 +347,9 @@ async fn handle_boot(
     };
 
     sender
-        .send((our.clone(), decoded_keyfile, encoded_keyfile.clone()))
+        .send((our.clone(), decoded_keyfile, encoded_keyfile))
         .await
         .unwrap();
-
-    let encoded_keyfile_str = match info.keyfile.clone().is_empty() {
-        true => base64::encode(encoded_keyfile),
-        false => info.keyfile.clone(),
-    };
 
     let mut response =
         warp::reply::with_status(warp::reply::json(&encoded_keyfile_str), StatusCode::FOUND)

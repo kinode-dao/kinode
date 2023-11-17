@@ -662,10 +662,20 @@ pub struct KeyfileVetted {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BootInfo {
     pub password: String,
-    pub keyfile: String,
     pub username: String,
     pub reset: bool,
     pub direct: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportKeyfileInfo {
+    pub password: String,
+    pub keyfile: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginInfo {
+    pub password: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
