@@ -192,10 +192,6 @@ impl Manifest {
         verify_manifest(&mut manifest, &mut chunk_hashes, &mut hash_index).await?;
         let cipher = XChaCha20Poly1305::new_from_slice(&file_key).unwrap();
 
-        //  read_cache buffer size defined in .env, naive calc of capacity would be buffer_size / chunk_size.
-        //  note that old chunks might be different sizes, so we might need a custom solution for this.
-        //  e.g defines capacity as bytes, and evicts stuff from cache based on that.
-        //  note, found lib that does that. but, doesn't play well with Read only locks (might evict value etc.)
         let read_cache: LruCache<[u8; 32], Vec<u8>> = LruCache::new(fs_config.read_cache_limit);
 
         let s3_client = if let Some(s3_config) = fs_config.s3_config {
