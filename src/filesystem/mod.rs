@@ -16,6 +16,7 @@ pub async fn load_fs(
     home_directory_path: String,
     file_key: Vec<u8>,
     fs_config: FsConfig,
+    runtime_extensions: Vec<(ProcessId, MessageSender, bool)>,
 ) -> Result<(ProcessMap, Manifest, Vec<KernelMessage>), FsError> {
     // load/create fs directory, manifest + log if none.
     let fs_directory_path_str = format!("{}/fs", &home_directory_path);
@@ -71,6 +72,7 @@ pub async fn load_fs(
             bootstrap(
                 &our_name,
                 &kernel_process_id,
+                runtime_extensions,
                 &mut process_map,
                 &mut manifest,
             )
@@ -97,27 +99,34 @@ pub async fn load_fs(
 async fn bootstrap(
     our_name: &str,
     kernel_process_id: &FileIdentifier,
+    runtime_extensions: Vec<(ProcessId, MessageSender, bool)>,
     process_map: &mut ProcessMap,
     manifest: &mut Manifest,
 ) -> Result<Vec<KernelMessage>> {
     println!("bootstrapping node...\r");
-    const RUNTIME_MODULES: [(&str, bool); 8] = [
-        ("filesystem:sys:uqbar", false),
-        ("http_server:sys:uqbar", true), // TODO evaluate
-        ("http_client:sys:uqbar", false),
-        ("encryptor:sys:uqbar", false),
-        ("net:sys:uqbar", false),
-        ("vfs:sys:uqbar", true),
-        ("kernel:sys:uqbar", false),
-        ("eth_rpc:sys:uqbar", true), // TODO evaluate
-    ];
 
     let mut runtime_caps: HashSet<Capability> = HashSet::new();
-    for runtime_module in RUNTIME_MODULES {
+    // kernel is a special case
+    runtime_caps.insert(Capability {
+        issuer: Address {
+            node: our_name.to_string(),
+            process: ProcessId::from_str("kernel:sys:uqbar").unwrap(),
+        },
+        params: "\"messaging\"".into(),
+    });
+    // net is a special case
+    runtime_caps.insert(Capability {
+        issuer: Address {
+            node: our_name.to_string(),
+            process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+        },
+        params: "\"messaging\"".into(),
+    });
+    for runtime_module in runtime_extensions.clone() {
         runtime_caps.insert(Capability {
             issuer: Address {
                 node: our_name.to_string(),
-                process: ProcessId::from_str(runtime_module.0).unwrap(),
+                process: runtime_module.0,
             },
             params: "\"messaging\"".into(),
         });
@@ -132,14 +141,31 @@ async fn bootstrap(
     });
 
     // finally, save runtime modules in state map as well, somewhat fakely
-    for runtime_module in RUNTIME_MODULES {
+    // special cases for kernel and net
+    process_map
+        .entry(ProcessId::from_str("kernel:sys:uqbar").unwrap())
+        .or_insert(PersistedProcess {
+            wasm_bytes_handle: 0,
+            on_panic: OnPanic::Restart,
+            capabilities: runtime_caps.clone(),
+            public: false,
+        });
+    process_map
+        .entry(ProcessId::from_str("net:sys:uqbar").unwrap())
+        .or_insert(PersistedProcess {
+            wasm_bytes_handle: 0,
+            on_panic: OnPanic::Restart,
+            capabilities: runtime_caps.clone(),
+            public: false,
+        });
+    for runtime_module in runtime_extensions {
         process_map
-            .entry(ProcessId::from_str(runtime_module.0).unwrap())
+            .entry(runtime_module.0)
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: 0,
                 on_panic: OnPanic::Restart,
                 capabilities: runtime_caps.clone(),
-                public: runtime_module.1,
+                public: runtime_module.2,
             });
     }
 
@@ -429,11 +455,14 @@ pub async fn fs_sender(
                 let manifest_clone = manifest.clone();
 
                 let our_name = our_name.clone();
-                let source = kernel_message.source.clone();
+                let mut source = kernel_message.source.clone();
                 let send_to_loop = send_to_loop.clone();
                 let send_to_terminal = send_to_terminal.clone();
 
                 let mut process_lock = process_queues.lock().await;
+
+                // optimization for get/set_state queues.
+                update_src_from_kernel_metadata(&mut source, &kernel_message);
 
                 if let Some(queue) = process_lock.get_mut(&source.process) {
                     queue.push_back(kernel_message.clone());
@@ -733,6 +762,24 @@ pub fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
         hasher.update(&chunk_hash);
     }
     hasher.finalize().into()
+}
+
+fn update_src_from_kernel_metadata(source: &mut Address, kernel_message: &KernelMessage) {
+    if kernel_message.source.process == *KERNEL_PROCESS_ID {
+        if let Message::Request(request) = &kernel_message.message {
+            if let Some(process_id_str) = &request.metadata {
+                if let Ok(process_id) = ProcessId::from_str(process_id_str) {
+                    source.process = process_id;
+                }
+            }
+        } else if let Message::Response((response, _)) = &kernel_message.message {
+            if let Some(process_id_str) = &response.metadata {
+                if let Ok(process_id) = ProcessId::from_str(process_id_str) {
+                    source.process = process_id;
+                }
+            }
+        }
+    }
 }
 
 fn make_error_message(our_name: String, km: &KernelMessage, error: FsError) -> KernelMessage {

@@ -14,6 +14,8 @@ pub enum SqlValue {
     Real(f64),
     Text(String),
     Blob(Vec<u8>),
+    Boolean(bool),
+    Null,
 }
 
 pub trait Deserializable: for<'de> Deserialize<'de> + Sized {
@@ -44,4 +46,6 @@ pub enum SqliteError {
     NotAWriteKeyword,
     #[error("NotAReadKeyword")]
     NotAReadKeyword,
+    #[error("Invalid Parameters")]
+    InvalidParameters,
 }

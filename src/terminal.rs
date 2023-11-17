@@ -111,12 +111,13 @@ pub async fn terminal(
         terminal::SetTitle(format!("{}@{}", our.name, "uqbar"))
     )?;
 
-    // print initial splash screen
-    println!(
-        "\x1b[38;5;128m{}\x1b[0m",
-        format_args!(
-            r#"
-
+    let (mut win_cols, mut win_rows) = terminal::size().unwrap();
+    // print initial splash screen, large if there's room, small otherwise
+    if win_cols >= 93 {
+        println!(
+            "\x1b[38;5;128m{}\x1b[0m",
+            format_args!(
+                r#"
                 ,,   UU
             s#  lUL  UU       !p
            !UU  lUL  UU       !UUlb
@@ -137,22 +138,42 @@ pub async fn terminal(
             `"  lUL  UU       '^                               888    {}
                      ""                                        888    version {}
 
-            "#,
-            our.name, version
-        )
-    );
+  networking public key: {}
+                "#,
+                our.name, version, our.networking_key,
+            )
+        );
+    } else {
+        println!(
+            "\x1b[38;5;128m{}\x1b[0m",
+            format_args!(
+                r#"
+                   888
+                   888
+                   888
+ 888  888  .d88888 88888b.   8888b.  888d888
+ 888  888 d88" 888 888 "88b     "88b 888P"
+ 888  888 888  888 888  888 .d888888 888
+ Y88b 888 Y88b 888 888 d88P 888  888 888
+  "Y88888  "Y88888 88888P"  "Y888888 888
+               888
+               888    {}
+               888    version {}
+
+ networking pubkey: {}
+                "#,
+                our.name, version, our.networking_key,
+            )
+        );
+    }
 
     enable_raw_mode()?;
     let mut reader = EventStream::new();
     let mut current_line = format!("{} > ", our.name);
     let prompt_len: usize = our.name.len() + 3;
-    let (mut win_cols, mut win_rows) = terminal::size().unwrap();
     let mut cursor_col: u16 = prompt_len.try_into().unwrap();
     let mut line_col: usize = cursor_col as usize;
     let mut in_step_through: bool = false;
-    // TODO add more verbosity levels as needed?
-    // defaulting to TRUE for now, as we are BUIDLING
-    // DEMO: default to false
     let mut verbose_mode: bool = false;
     let mut search_mode: bool = false;
     let mut search_depth: usize = 0;

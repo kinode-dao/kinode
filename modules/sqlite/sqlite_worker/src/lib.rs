@@ -29,6 +29,8 @@ impl ToSql for sq::SqlValue {
             sq::SqlValue::Real(f) => f.to_sql(),
             sq::SqlValue::Text(ref s) => s.to_sql(),
             sq::SqlValue::Blob(ref b) => b.to_sql(),
+            sq::SqlValue::Boolean(b) => b.to_sql(),
+            sq::SqlValue::Null => Ok(rusqlite::types::ToSqlOutput::Owned(rusqlite::types::Value::Null)),
         }
     }
 }
@@ -346,6 +348,41 @@ pub extern "C" fn send_and_await_response_wrapped(
     CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
 }
 
+fn json_to_sqlite(value: &serde_json::Value) -> Result<sq::SqlValue, sq::SqliteError> {
+    match value {
+        serde_json::Value::Number(n) => {
+            if let Some(int_val) = n.as_i64() {
+                Ok(sq::SqlValue::Integer(int_val))
+            } else if let Some(float_val) = n.as_f64() {
+                Ok(sq::SqlValue::Real(float_val))
+            } else {
+                Err(sq::SqliteError::InvalidParameters)
+            }
+        },
+        serde_json::Value::String(s) => {
+            match base64::decode(&s) {
+                Ok(decoded_bytes) => {
+                    // Convert to SQLite Blob if it's a valid base64 string
+                    Ok(sq::SqlValue::Blob(decoded_bytes))
+                },
+                Err(_) => {
+                    // If it's not base64, just use the string itself
+                    Ok(sq::SqlValue::Text(s.clone()))
+                }
+            }
+        },
+        serde_json::Value::Bool(b) => {
+            Ok(sq::SqlValue::Boolean(*b))
+        },
+        serde_json::Value::Null => {
+            Ok(sq::SqlValue::Null)
+        },
+        _ => {
+            Err(sq::SqliteError::InvalidParameters)
+        }
+    }
+}
+
 fn handle_message(
     our: &wit::Address,
     conn: &mut Option<rusqlite::Connection>,
@@ -391,7 +428,15 @@ fn handle_message(
                     let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
                         None => vec![],
                         Some(wit::Payload { mime: _, ref bytes }) => {
-                            Vec::<sq::SqlValue>::from_serialized(&bytes)?
+                            let json_params = serde_json::from_slice::<serde_json::Value>(bytes)?;
+                            match json_params {
+                                serde_json::Value::Array(vec) => {
+                                    vec.iter().map(|value| json_to_sqlite(value)).collect::<Result<Vec<_>, _>>()?
+                                },
+                                _ => {
+                                    return Err(sq::SqliteError::InvalidParameters.into());
+                                }
+                            }
                         },
                     };
 
@@ -411,7 +456,7 @@ fn handle_message(
                         .ipc_bytes(ipc)
                         .send()?;
                 },
-                sq::SqliteMessage::Commit { ref tx_id, .. } => {                    
+                sq::SqliteMessage::Commit { ref tx_id, .. } => {
                     let Some(queries) = txs.remove(tx_id) else {
                         return Err(sq::SqliteError::NoTx.into());
                     };
@@ -419,9 +464,9 @@ fn handle_message(
                     let Some(ref mut conn) = conn else {
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
-                    
+
                     let tx = conn.transaction()?;
-                    for (query, params) in queries {                
+                    for (query, params) in queries {
                         tx.execute(&query, rusqlite::params_from_iter(params.iter()))?;
                     }
 
@@ -436,29 +481,54 @@ fn handle_message(
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
+                    let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
+                        None => vec![],
+                        Some(wit::Payload { mime: _, ref bytes }) => {
+                            let json_params = serde_json::from_slice::<serde_json::Value>(bytes)?;
+                            match json_params {
+                                serde_json::Value::Array(vec) => {
+                                    vec.iter().map(|value| json_to_sqlite(value)).collect::<Result<Vec<_>, _>>()?
+                                },
+                                _ => {
+                                    return Err(sq::SqliteError::InvalidParameters.into());
+                                }
+                            }
+                        },
+                    };
+
                     let mut statement = db_handle.prepare(query)?;
                     let column_names: Vec<String> = statement
                         .column_names()
                         .iter()
                         .map(|c| c.to_string())
                         .collect();
-                    let number_columns = column_names.len();
-                    let results: Vec<Vec<sq::SqlValue>> = statement
-                        .query_map([], |row| {
-                            (0..number_columns)
-                                .map(|i| row.get(i))
-                                .collect()
-                            })?
-                        .map(|item| item.unwrap())  //  TODO
-                        .collect();
 
-                    let results = rmp_serde::to_vec(&results).unwrap();
+                    let results: Vec<HashMap<String, serde_json::Value>> = statement
+                    .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+                        let mut map = HashMap::new();
+                        for (i, column_name) in column_names.iter().enumerate() {
+                            let value: sq::SqlValue = row.get(i)?;
+                            let value_json = match value {
+                                sq::SqlValue::Integer(int) => serde_json::Value::Number(int.into()),
+                                sq::SqlValue::Real(real) => serde_json::Value::Number(serde_json::Number::from_f64(real).unwrap()),
+                                sq::SqlValue::Text(text) => serde_json::Value::String(text),
+                                sq::SqlValue::Blob(blob) => serde_json::Value::String(base64::encode(blob)), // or another representation if you prefer
+                                _ => serde_json::Value::Null,
+                            };
+                            map.insert(column_name.clone(), value_json);
+                        }
+                        Ok(map)
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                    
+                    let results = serde_json::json!(results).to_string();
+                    let results_bytes = results.as_bytes().to_vec();
 
                     Response::new()
                         .ipc_bytes(ipc)
                         .payload(wit::Payload {
                             mime: None,
-                            bytes: results,
+                            bytes: results_bytes,
                         })
                         .send()?;
                 },
