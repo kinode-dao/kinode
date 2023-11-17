@@ -1,5 +1,5 @@
-use crate::types::*;
 use crate::http::types::*;
+use crate::types::*;
 use anyhow::Result;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
