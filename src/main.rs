@@ -8,7 +8,6 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::{fs, time::timeout};
 
-mod encryptor;
 mod eth_rpc;
 mod filesystem;
 mod http_client;
@@ -35,7 +34,6 @@ const HTTP_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
-const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 #[cfg(feature = "llm")]
 const LLM_CHANNEL_CAPACITY: usize = 32;
@@ -104,9 +102,6 @@ async fn main() {
     // vfs maintains metadata about files in fs for processes
     let (vfs_message_sender, vfs_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(VFS_CHANNEL_CAPACITY);
-    // encryptor handles end-to-end encryption for client messages
-    let (encryptor_sender, encryptor_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(ENCRYPTOR_CHANNEL_CAPACITY);
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
@@ -253,11 +248,6 @@ async fn main() {
             vfs_message_sender,
             true,
         ),
-        (
-            ProcessId::new(Some("encryptor"), "sys", "uqbar"),
-            encryptor_sender,
-            false,
-        ),
     ];
 
     #[cfg(feature = "llm")]
@@ -361,13 +351,6 @@ async fn main() {
         vfs_message_receiver,
         caps_oracle_sender.clone(),
         vfs_messages,
-    ));
-    tasks.spawn(encryptor::encryptor(
-        our.name.clone(),
-        networking_keypair_arc.clone(),
-        kernel_message_sender.clone(),
-        encryptor_receiver,
-        print_sender.clone(),
     ));
     #[cfg(feature = "llm")]
     {

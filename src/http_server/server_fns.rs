@@ -114,7 +114,6 @@ pub async fn handle_incoming_ws(
     write_stream: SharedWriteStream,
     ws_id: u64,
 ) {
-    let cloned_parsed_msg = parsed_msg.clone();
     match parsed_msg {
         WebSocketClientMessage::WsRegister(WsRegister {
             ws_auth_token,
@@ -129,19 +128,13 @@ pub async fn handle_incoming_ws(
                 .await;
             // Get node from auth token
             if let Ok(node) = parse_auth_token(ws_auth_token, jwt_secret_bytes.clone()) {
-                let _ = print_tx
-                    .send(Printout {
-                        verbosity: 1,
-                        content: format!("NODE: {}", node),
-                    })
-                    .await;
+                if node != our {
+                    return;
+                }
                 handle_ws_register(
-                    node,
-                    cloned_parsed_msg,
-                    channel_id.clone(),
-                    our.clone(),
+                    &our,
+                    &channel_id,
                     websockets.clone(),
-                    send_to_loop.clone(),
                     print_tx.clone(),
                     write_stream.clone(),
                     ws_id,
@@ -170,29 +163,16 @@ pub async fn handle_incoming_ws(
                     content: format!("ACTION: {}", target.node.clone()),
                 })
                 .await;
-            // TODO: restrict sending actions to ourself and nodes for which we are proxying
-            // TODO: use the channel_id
             if let Ok(node) = parse_auth_token(ws_auth_token, jwt_secret_bytes.clone()) {
-                if node == target.node {
-                    if target.node == our {
-                        handle_ws_message(
-                            target.clone(),
-                            json.clone(),
-                            our.clone(),
-                            send_to_loop.clone(),
-                            print_tx.clone(),
-                        )
-                        .await;
-                    } else {
-                        proxy_ws_message(
-                            node,
-                            cloned_parsed_msg,
-                            our.clone(),
-                            send_to_loop.clone(),
-                            print_tx.clone(),
-                        )
-                        .await;
-                    }
+                if our == target.node && node == target.node {
+                    handle_ws_message(
+                        target.clone(),
+                        json.clone(),
+                        our.clone(),
+                        send_to_loop.clone(),
+                        print_tx.clone(),
+                    )
+                    .await;
                 }
             }
         }
@@ -212,28 +192,17 @@ pub async fn handle_incoming_ws(
                 })
                 .await;
             if let Ok(node) = parse_auth_token(ws_auth_token, jwt_secret_bytes.clone()) {
-                if node == target.node {
-                    if target.node == our {
-                        handle_encrypted_ws_message(
-                            target.clone(),
-                            our.clone(),
-                            channel_id.clone(),
-                            encrypted.clone(),
-                            nonce.clone(),
-                            send_to_loop.clone(),
-                            print_tx.clone(),
-                        )
-                        .await;
-                    } else {
-                        proxy_ws_message(
-                            node,
-                            cloned_parsed_msg,
-                            our.clone(),
-                            send_to_loop.clone(),
-                            print_tx.clone(),
-                        )
-                        .await;
-                    }
+                if node == target.node && our == target.node {
+                    handle_encrypted_ws_message(
+                        target.clone(),
+                        our.clone(),
+                        channel_id.clone(),
+                        encrypted.clone(),
+                        nonce.clone(),
+                        send_to_loop.clone(),
+                        print_tx.clone(),
+                    )
+                    .await;
                 }
             }
         }
@@ -270,12 +239,9 @@ pub fn binary_encoded_string_to_bytes(s: &str) -> Vec<u8> {
 }
 
 pub async fn handle_ws_register(
-    node: String,
-    parsed_msg: WebSocketClientMessage,
-    channel_id: String,
-    our: String,
+    our_name: &str,
+    channel_id: &str,
     websockets: WebSockets,
-    send_to_loop: MessageSender,
     print_tx: PrintSender,
     write_stream: SharedWriteStream,
     ws_id: u64,
@@ -283,45 +249,11 @@ pub async fn handle_ws_register(
     // let _ = print_tx.send(Printout { verbosity: 1, content: format!("1.2 {}", node) }).await;
     // TODO: restrict registration to ourself and nodes for which we are proxying
     let mut ws_map = websockets.lock().await;
-    let node_map = ws_map.entry(node.clone()).or_insert(HashMap::new());
-    let id_map = node_map.entry(channel_id.clone()).or_insert(HashMap::new());
+    let node_map = ws_map.entry(our_name.to_string()).or_insert(HashMap::new());
+    let id_map = node_map
+        .entry(channel_id.to_string())
+        .or_insert(HashMap::new());
     id_map.insert(ws_id, write_stream.clone());
-
-    // Send a message to the target node to add to let it know we are proxying
-    if node != our {
-        let id: u64 = rand::random();
-        let message = KernelMessage {
-            id,
-            source: Address {
-                node: our.clone(),
-                process: HTTP_SERVER_PROCESS_ID.clone(),
-            },
-            target: Address {
-                node: node.clone(),
-                process: HTTP_SERVER_PROCESS_ID.clone(),
-            },
-            rsvp: None,
-            message: Message::Request(Request {
-                inherit: false,
-                expects_response: None,
-                ipc: serde_json::json!(parsed_msg).to_string().into_bytes(),
-                metadata: None,
-            }),
-            payload: Some(Payload {
-                mime: Some("application/octet-stream".to_string()),
-                bytes: vec![],
-            }),
-            signed_capabilities: None,
-        };
-
-        send_to_loop.send(message).await.unwrap();
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 1,
-                content: "WEBSOCKET CHANNEL FORWARDED!".to_string(),
-            })
-            .await;
-    }
 
     let _ = print_tx
         .send(Printout {
@@ -419,54 +351,6 @@ pub async fn handle_encrypted_ws_message(
     };
 
     send_to_loop.send(message).await.unwrap();
-}
-
-pub async fn proxy_ws_message(
-    node: String,
-    parsed_msg: WebSocketClientMessage,
-    our: String,
-    send_to_loop: MessageSender,
-    _print_tx: PrintSender,
-) {
-    let id: u64 = rand::random();
-    let message = KernelMessage {
-        id,
-        source: Address {
-            node: our.clone(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        target: Address {
-            node,
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        rsvp: None,
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: None,
-            ipc: serde_json::json!(parsed_msg).to_string().into_bytes(),
-            metadata: None,
-        }),
-        payload: Some(Payload {
-            mime: Some("application/octet-stream".to_string()),
-            bytes: vec![],
-        }),
-        signed_capabilities: None,
-    };
-
-    send_to_loop.send(message).await.unwrap();
-}
-
-pub async fn add_ws_proxy(ws_proxies: WebSocketProxies, channel_id: String, source_node: String) {
-    let mut locked_proxies = ws_proxies.lock().await;
-    if let Some(proxy_nodes) = locked_proxies.get_mut(&channel_id) {
-        if !proxy_nodes.contains(&source_node) {
-            proxy_nodes.insert(source_node);
-        }
-    } else {
-        let mut proxy_nodes = HashSet::new();
-        proxy_nodes.insert(source_node);
-        locked_proxies.insert(channel_id, proxy_nodes);
-    }
 }
 
 pub async fn send_ws_disconnect(

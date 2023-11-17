@@ -834,53 +834,6 @@ impl VfsError {
 }
 
 //
-// http_client.rs types
-//
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HttpClientRequest {
-    pub uri: String,
-    pub method: String,
-    pub headers: HashMap<String, String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HttpClientResponse {
-    pub status: u16,
-    pub headers: HashMap<String, String>,
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum HttpClientError {
-    #[error("http_client: rsvp is None but message is expecting response")]
-    BadRsvp,
-    #[error("http_client: no json in request")]
-    NoJson,
-    #[error(
-        "http_client: JSON payload could not be parsed to HttpClientRequest: {error}. Got {:?}.",
-        json
-    )]
-    BadJson { json: String, error: String },
-    #[error("http_client: http method not supported: {:?}", method)]
-    BadMethod { method: String },
-    #[error("http_client: failed to execute request {:?}", error)]
-    RequestFailed { error: String },
-}
-
-#[allow(dead_code)]
-impl HttpClientError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            HttpClientError::BadRsvp { .. } => "BadRsvp",
-            HttpClientError::NoJson { .. } => "NoJson",
-            HttpClientError::BadJson { .. } => "BadJson",
-            HttpClientError::BadMethod { .. } => "BadMethod",
-            HttpClientError::RequestFailed { .. } => "RequestFailed",
-        }
-    }
-}
-
-//
 // custom kernel displays
 //
 
@@ -975,22 +928,12 @@ pub enum HttpServerMessage {
     },
     WebSocketPush(WebSocketPush),
     ServerAction(ServerAction),
-    WsRegister(WsRegister),                 // Coming from a proxy
-    WsProxyDisconnect(WsProxyDisconnect),   // Coming from a proxy
-    WsMessage(WsMessage),                   // Coming from a proxy
-    EncryptedWsMessage(EncryptedWsMessage), // Coming from a proxy
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WsRegister {
     pub ws_auth_token: String,
     pub auth_token: String,
-    pub channel_id: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WsProxyDisconnect {
-    // Doesn't require auth because it's coming from the proxy
     pub channel_id: String,
 }
 
@@ -1019,45 +962,3 @@ pub enum WebSocketClientMessage {
     WsMessage(WsMessage),
     EncryptedWsMessage(EncryptedWsMessage),
 }
-// http_server End
-
-// encryptor Start
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetKeyAction {
-    pub channel_id: String,
-    pub public_key_hex: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DecryptAndForwardAction {
-    pub channel_id: String,
-    pub forward_to: Address, // node, process
-    pub json: Option<serde_json::Value>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EncryptAndForwardAction {
-    pub channel_id: String,
-    pub forward_to: Address, // node, process
-    pub json: Option<serde_json::Value>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DecryptAction {
-    pub channel_id: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EncryptAction {
-    pub channel_id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum EncryptorMessage {
-    GetKey(GetKeyAction),
-    DecryptAndForward(DecryptAndForwardAction),
-    EncryptAndForward(EncryptAndForwardAction),
-    Decrypt(DecryptAction),
-    Encrypt(EncryptAction),
-}
-// encryptor End

@@ -112,7 +112,7 @@ fn send_ws_update(our: Address, game: Game) -> anyhow::Result<()> {
         .target(Address::new(&our.node, "encryptor:sys:uqbar").unwrap())?
         .ipc_bytes(
             serde_json::json!({
-                "EncryptAndForwardAction": {
+                "EncryptAndForward": {
                     "channel_id": our.process.to_string(),
                     "forward_to": {
                         "node": our.node.clone(),
