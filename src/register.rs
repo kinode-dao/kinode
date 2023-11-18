@@ -107,7 +107,9 @@ pub async fn register(
                 .and(warp::body::json())
                 .and(warp::any().map(move || import_tx.clone()))
                 .and(warp::any().map(move || import_our_arc.lock().unwrap().take().unwrap()))
-                .and(warp::any().map(move || import_net_keypair_arc.lock().unwrap().take().unwrap()))
+                .and(
+                    warp::any().map(move || import_net_keypair_arc.lock().unwrap().take().unwrap()),
+                )
                 .and_then(handle_import_keyfile),
         ))
         .or(warp::path("login").and(
@@ -233,7 +235,8 @@ async fn handle_boot(
         decoded_keyfile,
         encoded_keyfile,
         encoded_keyfile_str,
-    ).await
+    )
+    .await
 }
 
 async fn handle_import_keyfile(
@@ -280,7 +283,8 @@ async fn handle_import_keyfile(
         decoded_keyfile,
         encoded_keyfile,
         encoded_keyfile_str,
-    ).await
+    )
+    .await
 }
 
 async fn handle_login(
@@ -324,7 +328,8 @@ async fn handle_login(
         decoded_keyfile,
         encoded_keyfile,
         encoded_keyfile_str,
-    ).await
+    )
+    .await
 }
 
 async fn success_response(
@@ -333,7 +338,7 @@ async fn success_response(
     decoded_keyfile: Keyfile,
     encoded_keyfile: Vec<u8>,
     encoded_keyfile_str: String,
-) -> Result<warp::reply::Response, Rejection>  {
+) -> Result<warp::reply::Response, Rejection> {
     let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, our.name.clone()) {
         Some(token) => token,
         None => {
