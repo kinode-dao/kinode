@@ -1,11 +1,23 @@
-use crate::types::Address;
+use crate::types::{Address, Payload};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
 /// HTTP Request type that can be shared over WASM boundary to apps.
+/// This is the one you receive from the http_server:sys:uqbar service.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct HttpRequest {
+pub struct IncomingHttpRequest {
+    pub source_socket_addr: Option<String>, // will parse to SocketAddr
+    pub method: String,                     // will parse to http::Method
+    pub raw_path: String,
+    pub headers: HashMap<String, String>,
+    // BODY is stored in the payload, as bytes
+}
+
+/// HTTP Request type that can be shared over WASM boundary to apps.
+/// This is the one you send to the http_client:sys:uqbar service.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OutgoingHttpRequest {
     pub method: String,          // must parse to http::Method
     pub version: Option<String>, // must parse to http::Version
     pub url: String,             // must parse to url::Url
@@ -22,6 +34,12 @@ pub struct HttpResponse {
     // BODY is stored in the payload, as bytes
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RpcResponseBody {
+    pub ipc: Vec<u8>,
+    pub payload: Option<Payload>,
+}
+
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum HttpClientError {
     #[error("http_client: request could not be parsed to HttpRequest: {}.", req)]
@@ -36,55 +54,67 @@ pub enum HttpClientError {
     RequestFailed { error: String },
 }
 
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum HttpServerError {
-    #[error("http_server: json is None")]
-    NoJson,
-    #[error("http_server: response not ok")]
-    ResponseError,
-    #[error("http_server: bytes are None")]
-    NoBytes,
-    #[error(
-        "http_server: JSON payload could not be parsed to HttpClientRequest: {error}. Got {:?}.",
-        json
-    )]
-    BadJson { json: String, error: String },
-    #[error("http_server: path binding error:  {:?}", error)]
-    PathBind { error: String },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JwtClaims {
-    pub username: String,
-    pub expiration: u64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WebSocketServerTarget {
-    pub node: String,
-    pub id: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct WebSocketPush {
-    pub target: WebSocketServerTarget,
-    pub is_text: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ServerAction {
-    pub action: String,
-}
-
+/// Request type sent to `http_server:sys:uqbar` in order to configure it.
+/// You can also send [`WebSocketPush`], which allows you to push messages
+/// across an existing open WebSocket connection.
+///
+/// If a response is expected, all HttpServerActions will return a Response
+/// with the shape Result<(), HttpServerActionError> serialized to JSON.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpServerAction {
-    BindPath {
+    /// Bind does not expect payload.
+    Bind {
         path: String,
         authenticated: bool,
         local_only: bool,
     },
-    WebSocketPush(WebSocketPush),
-    ServerAction(ServerAction),
+    /// BindStatic expects a payload containing the static file to serve at this path.
+    BindStatic {
+        path: String,
+        authenticated: bool,
+        local_only: bool,
+    },
+    /// Expects a payload containing the WebSocket message bytes to send.
+    WebSocketPush {
+        channel_id: String,
+        message_type: WsMessageType,
+    },
+}
+
+/// The possible message types for WebSocketPush. Ping and Pong are limited to 125 bytes
+/// by the WebSockets protocol. Text will be sent as a Text frame, with the payload bytes
+/// being the UTF-8 encoding of the string. Binary will be sent as a Binary frame containing
+/// the unmodified payload bytes.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum WsMessageType {
+    Text,
+    Binary,
+    Ping,
+    Pong,
+}
+
+/// Part of the Response type issued by http_server
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum HttpServerActionError {
+    #[error(
+        "http_server: request could not be parsed to HttpServerAction: {}.",
+        req
+    )]
+    BadRequest { req: String },
+    #[error("http_server: action expected payload")]
+    NoPayload,
+    #[error("http_server: path binding error: {:?}", error)]
+    PathBindError { error: String },
+    #[error("http_server: WebSocket error: {:?}", error)]
+    WebSocketPushError { error: String },
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum WebSocketClientMessage {
+    /// Must be the first message sent along a newly-opened WebSocket connection.
+    WsRegister(WsRegister),
+    WsMessage(WsMessage),
+    EncryptedWsMessage(EncryptedWsMessage),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -113,9 +143,8 @@ pub struct EncryptedWsMessage {
     pub nonce: String,     // Hex of the 12-byte nonce
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum WebSocketClientMessage {
-    WsRegister(WsRegister),
-    WsMessage(WsMessage),
-    EncryptedWsMessage(EncryptedWsMessage),
+#[derive(Debug, Serialize, Deserialize)]
+pub struct JwtClaims {
+    pub username: String,
+    pub expiration: u64,
 }

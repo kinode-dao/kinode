@@ -1,20 +1,15 @@
 use crate::http::types::*;
 use crate::types::*;
-use futures::stream::SplitSink;
 use hmac::{Hmac, Mac};
 use jwt::{Error, VerifyWithKey};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use warp::http::{header::HeaderName, header::HeaderValue, HeaderMap};
 use warp::ws::WebSocket;
-
-pub type SharedWriteStream = Arc<Mutex<SplitSink<WebSocket, warp::ws::Message>>>;
-pub type WebSockets = Arc<Mutex<HashMap<String, HashMap<String, HashMap<u64, SharedWriteStream>>>>>;
-pub type WebSocketProxies = Arc<Mutex<HashMap<String, HashSet<String>>>>;
 
 pub struct BoundPath {
     pub app: ProcessId,
@@ -52,7 +47,7 @@ pub fn parse_auth_token(auth_token: String, jwt_secret: Vec<u8>) -> Result<Strin
     }
 }
 
-pub fn auth_cookie_valid(our_node: String, cookie: &str, jwt_secret: Vec<u8>) -> bool {
+pub fn auth_cookie_valid(our_node: &str, cookie: &str, jwt_secret: &[u8]) -> bool {
     let cookie_parts: Vec<&str> = cookie.split("; ").collect();
     let mut auth_token = None;
 
@@ -82,19 +77,6 @@ pub fn auth_cookie_valid(our_node: String, cookie: &str, jwt_secret: Vec<u8>) ->
         Ok(data) => data.username == our_node,
         Err(_) => false,
     }
-}
-
-pub fn remove_process_id(path: &str) -> String {
-    // Split the string into parts separated by '/'
-    let mut parts = path.splitn(3, '/');
-    // Skip the first two parts (before and after the first '/')
-    let remaining_path = parts.nth(2).unwrap_or("");
-    // If the result is empty, return "/"
-    if remaining_path.is_empty() {
-        return "/".to_string();
-    }
-    // Otherwise, return the result with a leading "/"
-    format!("/{}", remaining_path)
 }
 
 pub fn normalize_path(path: &str) -> String {
@@ -406,15 +388,15 @@ pub async fn send_ws_disconnect(
 }
 
 pub fn make_error_message(
-    our_name: String,
+    our_name: &str,
     id: u64,
     target: Address,
-    error: HttpServerError,
+    error: &HttpServerActionError,
 ) -> KernelMessage {
     KernelMessage {
         id,
         source: Address {
-            node: our_name.clone(),
+            node: our_name.to_string(),
             process: HTTP_SERVER_PROCESS_ID.clone(),
         },
         target,
@@ -422,7 +404,7 @@ pub fn make_error_message(
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: serde_json::to_vec(&error).unwrap(),
+                ipc: serde_json::to_vec(error).unwrap(),
                 metadata: None,
             },
             None,
