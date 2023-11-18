@@ -197,15 +197,15 @@ async fn handle_boot(
 ) -> Result<impl Reply, Rejection> {
     our.name = info.username;
 
-    let seed = SystemRandom::new();
-    let mut jwt_secret = [0u8, 32];
-    ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
-
     if info.direct {
         our.allowed_routers = vec![];
     } else {
         our.ws_routing = None;
     }
+
+    let seed = SystemRandom::new();
+    let mut jwt_secret = [0u8, 32];
+    ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
 
     let decoded_keyfile = Keyfile {
         username: our.name.clone(),
@@ -298,7 +298,6 @@ async fn handle_login(
         .into_response());
     }
 
-    // if keyfile was not in node or upload or if networking required reset
     let decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
         Ok(k) => {
             our.name = k.username.clone();
