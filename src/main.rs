@@ -228,7 +228,8 @@ async fn main() {
 
     // the boolean flag determines whether the runtime module is *public* or not,
     // where public means that any process can always message it.
-    let runtime_extensions = vec![
+    #[allow(unused_mut)]
+    let mut runtime_extensions = vec![
         (
             ProcessId::new(Some("filesystem"), "sys", "uqbar"),
             fs_message_sender,
