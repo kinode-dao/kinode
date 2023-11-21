@@ -177,6 +177,12 @@ async fn http_handler(
 ) -> Result<impl warp::Reply, warp::Rejection> {
     // TODO this is all so dirty. Figure out what actually matters.
 
+    println!(
+        "http_server: got request from {:?} for {}\r",
+        socket_addr,
+        path.as_str()
+    );
+
     // trim trailing "/"
     let original_path = normalize_path(path.as_str());
     let id: u64 = rand::random();
@@ -188,6 +194,8 @@ async fn http_handler(
     };
     let bound_path = route.handler();
 
+    println!("here1\r");
+
     if bound_path.authenticated {
         let auth_token = serialized_headers
             .get("cookie")
@@ -198,6 +206,8 @@ async fn http_handler(
         }
     }
 
+    println!("here2\r");
+
     let is_local = socket_addr
         .map(|addr| addr.ip().is_loopback())
         .unwrap_or(false);
@@ -205,6 +215,8 @@ async fn http_handler(
     if bound_path.local_only && !is_local {
         return Ok(warp::reply::with_status(vec![], StatusCode::FORBIDDEN).into_response());
     }
+
+    println!("here3\r");
 
     // if path has static content, serve it
     if let Some(static_content) = &bound_path.static_content {
@@ -220,6 +232,8 @@ async fn http_handler(
             .body(static_content.bytes.clone())
             .into_response());
     }
+
+    println!("here4\r");
 
     // RPC functionality: if path is /rpc:sys:uqbar/message,
     // we extract message from base64 encoded bytes in data
@@ -376,7 +390,7 @@ async fn handle_rpc_message(
 async fn maintain_websocket(
     ws: WebSocket,
     our: Arc<String>,
-    jwt_secret_bytes: Arc<Vec<u8>>,
+    _jwt_secret_bytes: Arc<Vec<u8>>,
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
 ) {
@@ -386,7 +400,7 @@ async fn maintain_websocket(
     // channel and verify their identity using JWT. Then we can forward their
     // messages to a specific process.
 
-    let owner_process: ProcessId = todo!();
+    let owner_process: ProcessId = ProcessId::new(Some("chess"), "chess2", "uqbar");
 
     let ws_channel_id: u64 = rand::random();
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
@@ -399,17 +413,44 @@ async fn maintain_websocket(
                     None => {
                         // stream closed, remove and exit
                         websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
-                        return;
+                        break;
                     }
                     Some(Err(e)) => {
                         // stream error, remove and exit
                         println!("http_server websocket channel error: {e}");
                         websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
-                        return;
+                        break;
                     }
                     Some(Ok(msg)) => {
                         // forward message to process associated with this channel
-                        todo!();
+                        let _ = send_to_loop
+                            .send(KernelMessage {
+                                id: rand::random(),
+                                source: Address {
+                                    node: our.to_string(),
+                                    process: HTTP_SERVER_PROCESS_ID.clone(),
+                                },
+                                target: Address {
+                                    node: our.to_string(),
+                                    process: owner_process.clone(),
+                                },
+                                rsvp: None,
+                                message: Message::Request(Request {
+                                    inherit: false,
+                                    expects_response: None,
+                                    ipc: serde_json::to_vec(&HttpServerAction::WebSocketPush {
+                                        channel_id: ws_channel_id,
+                                        message_type: WsMessageType::Binary,
+                                    }).unwrap(),
+                                    metadata: None,
+                                }),
+                                payload: Some(Payload {
+                                    mime: None,
+                                    bytes: msg.into_bytes(),
+                                }),
+                                signed_capabilities: None,
+                            })
+                            .await;
                     }
                 }
             }
@@ -421,12 +462,14 @@ async fn maintain_websocket(
                         // stream error, remove and exit
                         println!("http_server websocket channel error: {e}");
                         websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
-                        return;
+                        break;
                     }
                 }
             }
         }
     }
+    let stream = write_stream.reunite(read_stream).unwrap();
+    let _ = stream.close().await;
 }
 
 async fn websocket_close(
@@ -601,7 +644,6 @@ async fn handle_app_message(
                 } => {
                     let mut path_bindings = path_bindings.write().await;
                     if km.source.process != "homepage:homepage:uqbar" {
-                        // TODO ???
                         path = if path.starts_with('/') {
                             format!("/{}{}", km.source.process, path)
                         } else {
