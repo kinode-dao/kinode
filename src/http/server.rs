@@ -9,7 +9,7 @@ use route_recognizer::Router;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use warp::http::{header::HeaderValue, StatusCode};
 use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
@@ -25,12 +25,17 @@ type HttpSender = tokio::sync::oneshot::Sender<(HttpResponse, Vec<u8>)>;
 /// mapping from an open websocket connection to a channel that will ingest
 /// WebSocketPush messages from the app that handles the connection, and
 /// send them to the connection.
-type WebSocketSenders = Arc<DashMap<u64, WebSocketSender>>;
-type WebSocketSender = tokio::sync::mpsc::Sender<(WsMessageType, Vec<u8>)>;
-
-type StaticAssets = Arc<DashMap<String, Vec<u8>>>;
+type WebSocketSenders = Arc<DashMap<u64, (ProcessId, WebSocketSender)>>;
+type WebSocketSender = tokio::sync::mpsc::Sender<warp::ws::Message>;
 
 type PathBindings = Arc<RwLock<Router<BoundPath>>>;
+
+struct BoundPath {
+    pub app: ProcessId,
+    pub authenticated: bool,
+    pub local_only: bool,
+    pub static_content: Option<Payload>, // TODO store in filesystem and cache
+}
 
 /// HTTP server: a runtime module that handles HTTP requests at a given port.
 /// The server accepts bindings-requests from apps. These can be used in two ways:
@@ -66,7 +71,7 @@ pub async fn http_server(
         app: ProcessId::from_str("rpc:sys:uqbar").unwrap(),
         authenticated: false,
         local_only: true,
-        original_path: "/rpc:sys:uqbar/message".to_string(),
+        static_content: None,
     };
     bindings_map.add("/rpc:sys:uqbar/message", rpc_bound_path);
 
@@ -201,6 +206,21 @@ async fn http_handler(
         return Ok(warp::reply::with_status(vec![], StatusCode::FORBIDDEN).into_response());
     }
 
+    // if path has static content, serve it
+    if let Some(static_content) = &bound_path.static_content {
+        return Ok(warp::http::Response::builder()
+            .status(StatusCode::OK)
+            .header(
+                "Content-Type",
+                static_content
+                    .mime
+                    .as_ref()
+                    .unwrap_or(&"text/plain".to_string()),
+            )
+            .body(static_content.bytes.clone())
+            .into_response());
+    }
+
     // RPC functionality: if path is /rpc:sys:uqbar/message,
     // we extract message from base64 encoded bytes in data
     // and send it to the correct app.
@@ -314,6 +334,17 @@ async fn handle_rpc_message(
         return Err(StatusCode::BAD_REQUEST);
     };
 
+    let payload: Option<Payload> = match rpc_message.data {
+        None => None,
+        Some(b64_bytes) => match base64::decode(b64_bytes) {
+            Ok(bytes) => Some(Payload {
+                mime: rpc_message.mime,
+                bytes,
+            }),
+            Err(_) => None,
+        },
+    };
+
     Ok(KernelMessage {
         id,
         source: Address {
@@ -324,23 +355,20 @@ async fn handle_rpc_message(
             node: rpc_message.node.unwrap_or(our.to_string()),
             process: target_process,
         },
-        rsvp: None,
+        rsvp: Some(Address {
+            node: our.to_string(),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
+        }),
         message: Message::Request(Request {
             inherit: false,
-            expects_response: Some(15), // no effect on runtime
+            expects_response: Some(15), // NB: no effect on runtime
             ipc: match rpc_message.ipc {
                 Some(ipc_string) => ipc_string.into_bytes(),
                 None => Vec::new(),
             },
             metadata: rpc_message.metadata,
         }),
-        payload: match base64::decode(rpc_message.data.unwrap_or("".to_string())) {
-            Ok(bytes) => Some(Payload {
-                mime: rpc_message.mime,
-                bytes,
-            }),
-            Err(_) => None,
-        },
+        payload,
         signed_capabilities: None,
     })
 }
@@ -352,68 +380,91 @@ async fn maintain_websocket(
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
 ) {
-    let (write_stream, mut read_stream) = ws.split();
+    let (mut write_stream, mut read_stream) = ws.split();
 
-    let ws_id: u64 = rand::random();
+    // TODO: the websocket client must send authentication info to encrypt this
+    // channel and verify their identity using JWT. Then we can forward their
+    // messages to a specific process.
 
-    let
+    let owner_process: ProcessId = todo!();
 
-    while let Some(Ok(msg)) = read_stream.next().await {
-        if msg.is_binary() {
-            let bytes = msg.as_bytes();
-            match serde_json::from_slice::<WebSocketClientMessage>(bytes) {
-                Ok(parsed_msg) => {
-                    handle_incoming_ws(
-                        parsed_msg,
-                        our.clone(),
-                        jwt_secret_bytes.clone().to_vec(),
-                        websockets.clone(),
-                        send_to_loop.clone(),
-                        print_tx.clone(),
-                        write_stream.clone(),
-                        ws_id,
-                    )
-                    .await;
-                }
-                Err(e) => {}
-            }
-        } else if msg.is_text() {
-            if let Ok(msg_str) = msg.to_str() {
-                if let Ok(parsed_msg) = serde_json::from_str(msg_str) {
-                    handle_incoming_ws(
-                        parsed_msg,
-                        our.clone(),
-                        jwt_secret_bytes.clone().to_vec(),
-                        websockets.clone(),
-                        send_to_loop.clone(),
-                        print_tx.clone(),
-                        write_stream.clone(),
-                        ws_id,
-                    )
-                    .await;
+    let ws_channel_id: u64 = rand::random();
+    let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
+    ws_senders.insert(ws_channel_id, (owner_process.clone(), ws_sender));
+
+    loop {
+        tokio::select! {
+            read = read_stream.next() => {
+                match read {
+                    None => {
+                        // stream closed, remove and exit
+                        websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
+                        return;
+                    }
+                    Some(Err(e)) => {
+                        // stream error, remove and exit
+                        println!("http_server websocket channel error: {e}");
+                        websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
+                        return;
+                    }
+                    Some(Ok(msg)) => {
+                        // forward message to process associated with this channel
+                        todo!();
+                    }
                 }
             }
-        } else if msg.is_close() {
-            // Delete the websocket from the map
-            ws_senders.remove(&ws_id);
-            let mut ws_map = websockets.lock().await;
-            for (node, node_map) in ws_map.iter_mut() {
-                for (channel_id, id_map) in node_map.iter_mut() {
-                    if id_map.remove(&ws_id).is_some() {
-                        // Send disconnect message
-                        send_ws_disconnect(
-                            node.clone(),
-                            our.clone(),
-                            channel_id.clone(),
-                            send_to_loop.clone(),
-                            print_tx.clone(),
-                        )
-                        .await;
+            Some(outgoing) = ws_receiver.recv() => {
+                // forward message to websocket
+                match write_stream.send(outgoing).await {
+                    Ok(()) => continue,
+                    Err(e) => {
+                        // stream error, remove and exit
+                        println!("http_server websocket channel error: {e}");
+                        websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
+                        return;
                     }
                 }
             }
         }
     }
+}
+
+async fn websocket_close(
+    channel_id: u64,
+    process: ProcessId,
+    ws_senders: &WebSocketSenders,
+    send_to_loop: &MessageSender,
+) {
+    ws_senders.remove(&channel_id);
+    let _ = send_to_loop
+        .send(KernelMessage {
+            id: rand::random(),
+            source: Address {
+                node: "our".to_string(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node: "our".to_string(),
+                process,
+            },
+            rsvp: None,
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: None,
+                ipc: serde_json::to_vec(&HttpServerAction::WebSocketClose(channel_id)).unwrap(),
+                metadata: None,
+            }),
+            payload: Some(Payload {
+                mime: None,
+                bytes: serde_json::to_vec(&RpcResponseBody {
+                    ipc: Vec::new(),
+                    payload: None,
+                })
+                .unwrap(),
+            }),
+            signed_capabilities: None,
+        })
+        .await;
 }
 
 async fn handle_app_message(
@@ -429,295 +480,305 @@ async fn handle_app_message(
     // request and send it there.
     // when we get a Request, parse it into an HttpServerAction and perform it.
     match km.message {
-        Message::Response((ref response, _context)) => {
+        Message::Response((response, _context)) => {
             let Some((_id, (path, sender))) = http_response_senders.remove(&km.id) else {
-                return
+                return;
             };
             // if path is /rpc/message, return accordingly with base64 encoded payload
             if path == "/rpc:sys:uqbar/message" {
-                let payload = km.payload.map(|p| {
-                    Payload {
-                        mime: p.mime,
-                        bytes: base64::encode(p.bytes).into_bytes(),
-                    }
+                let payload = km.payload.map(|p| Payload {
+                    mime: p.mime,
+                    bytes: base64::encode(p.bytes).into_bytes(),
                 });
 
                 let mut default_headers = HashMap::new();
                 default_headers.insert("Content-Type".to_string(), "text/html".to_string());
 
-                let _ = sender.send((HttpResponse {
+                let _ = sender.send((
+                    HttpResponse {
                         status: 200,
                         headers: default_headers,
                     },
                     serde_json::to_vec(&RpcResponseBody {
                         ipc: response.ipc,
                         payload,
-                    }).unwrap(),
+                    })
+                    .unwrap(),
                 ));
             } else {
-                let Ok(response) = serde_json::from_slice::<HttpResponse>(&response.ipc) else {
+                let Ok(mut response) = serde_json::from_slice::<HttpResponse>(&response.ipc) else {
                     // the receiver will automatically trigger a 503 when sender is dropped.
-                    return
+                    return;
                 };
+                let Some((_id, (path, channel))) = http_response_senders.remove(&km.id) else {
+                    return;
+                };
+                // XX REFACTOR THIS:
+                // for the login case, todo refactor out?
+                let segments: Vec<&str> = path
+                    .split('/')
+                    .filter(|&segment| !segment.is_empty())
+                    .collect();
+                // If we're getting back a /login from a proxy (or our own node),
+                // then we should generate a jwt from the secret + the name of the ship,
+                // and then attach it to a header.
+                if response.status < 400
+                    && (segments.len() == 1 || segments.len() == 4)
+                    && matches!(segments.last(), Some(&"login"))
+                {
+                    if let Some(auth_cookie) = response.headers.get("set-cookie") {
+                        let mut ws_auth_username = km.source.node.clone();
 
-            }
-
-            let mut senders = http_response_senders.lock().await;
-            match senders.remove(&id) {
-                // if no corresponding entry, nowhere to send response
-                None => {}
-                Some((path, channel)) => {
-                    } else {
-                        //  else try deserializing ipc into a HttpResponse
-                        let json = serde_json::from_slice::<HttpResponse>(&response.ipc);
-                        match json {
-                            Ok(mut response) => {
-                                let Some(payload) = payload else {
-                                    return Err(HttpServerError::NoBytes);
-                                };
-                                let bytes = payload.bytes;
-
-                                // for the login case, todo refactor out?
-                                let segments: Vec<&str> = path
-                                    .split('/')
-                                    .filter(|&segment| !segment.is_empty())
-                                    .collect();
-
-                                // If we're getting back a /login from a proxy (or our own node), then we should generate a jwt from the secret + the name of the ship, and then attach it to a header
-                                if response.status < 400
-                                    && (segments.len() == 1 || segments.len() == 4)
-                                    && matches!(segments.last(), Some(&"login"))
-                                {
-                                    if let Some(auth_cookie) = response.headers.get("set-cookie") {
-                                        let mut ws_auth_username = our.clone();
-
-                                        if segments.len() == 4
-                                            && matches!(segments.first(), Some(&"http-proxy"))
-                                            && matches!(segments.get(1), Some(&"serve"))
-                                        {
-                                            if let Some(segment) = segments.get(2) {
-                                                ws_auth_username = segment.to_string();
-                                            }
-                                        }
-                                        if let Some(token) = register::generate_jwt(
-                                            jwt_secret_bytes.to_vec().as_slice(),
-                                            ws_auth_username.clone(),
-                                        ) {
-                                            let auth_cookie_with_ws = format!(
-                                                "{}; uqbar-ws-auth_{}={};",
-                                                auth_cookie,
-                                                ws_auth_username.clone(),
-                                                token
-                                            );
-                                            response.headers.insert(
-                                                "set-cookie".to_string(),
-                                                auth_cookie_with_ws,
-                                            );
-
-                                            let _ = print_tx
-                                                .send(Printout {
-                                                    verbosity: 1,
-                                                    content: format!(
-                                                        "SET WS AUTH COOKIE WITH USERNAME: {}",
-                                                        ws_auth_username
-                                                    ),
-                                                })
-                                                .await;
-                                        }
-                                    }
-                                }
-                                let _ = channel.send(HttpResponse {
-                                    status: response.status,
-                                    headers: response.headers,
-                                    body: Some(bytes),
-                                });
+                        if segments.len() == 4
+                            && matches!(segments.first(), Some(&"http-proxy"))
+                            && matches!(segments.get(1), Some(&"serve"))
+                        {
+                            if let Some(segment) = segments.get(2) {
+                                ws_auth_username = segment.to_string();
                             }
-                            Err(_json_parsing_err) => {
-                                let mut error_headers = HashMap::new();
-                                error_headers
-                                    .insert("Content-Type".to_string(), "text/html".to_string());
+                        }
+                        if let Some(token) = register::generate_jwt(
+                            jwt_secret_bytes.to_vec().as_slice(),
+                            ws_auth_username.clone(),
+                        ) {
+                            let auth_cookie_with_ws = format!(
+                                "{}; uqbar-ws-auth_{}={};",
+                                auth_cookie,
+                                ws_auth_username.clone(),
+                                token
+                            );
+                            response
+                                .headers
+                                .insert("set-cookie".to_string(), auth_cookie_with_ws);
 
-                                let _ = channel.send(HttpResponse {
-                                    status: 503,
-                                    headers: error_headers,
-                                    body: Some(
-                                        "Internal Server Error".to_string().as_bytes().to_vec(),
+                            let _ = print_tx
+                                .send(Printout {
+                                    verbosity: 1,
+                                    content: format!(
+                                        "SET WS AUTH COOKIE WITH USERNAME: {}",
+                                        ws_auth_username
                                     ),
-                                });
-                            }
+                                })
+                                .await;
                         }
                     }
                 }
+                let _ = channel.send((
+                    HttpResponse {
+                        status: response.status,
+                        headers: response.headers,
+                    },
+                    match km.payload {
+                        None => vec![],
+                        Some(p) => p.bytes,
+                    },
+                ));
             }
         }
-        Message::Request(Request { ipc, .. }) => {
-            if let Ok(message) = serde_json::from_slice(&ipc) {
-                match message {
-                    HttpServerMessage::BindPath {
-                        path,
-                        authenticated,
-                        local_only,
-                    } => {
-                        let mut path_bindings = path_bindings.write().await;
-                        let app = source.process.clone().to_string();
-
-                        let mut path = path.clone();
-                        if app != "homepage:homepage:uqbar" {
-                            path = if path.starts_with('/') {
-                                format!("/{}{}", app, path)
-                            } else {
-                                format!("/{}/{}", app, path)
-                            };
-                        }
+        Message::Request(Request { ref ipc, .. }) => {
+            let Ok(message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
+                println!(
+                    "http_server: got malformed request from {}: {:?}\r",
+                    km.source, ipc
+                );
+                send_action_response(
+                    km.id,
+                    km.source,
+                    &send_to_loop,
+                    Err(HttpServerError::BadRequest {
+                        req: String::from_utf8_lossy(ipc).to_string(),
+                    }),
+                )
+                .await;
+                return;
+            };
+            match message {
+                HttpServerAction::Bind {
+                    mut path,
+                    authenticated,
+                    local_only,
+                    cache,
+                } => {
+                    let mut path_bindings = path_bindings.write().await;
+                    if km.source.process != "homepage:homepage:uqbar" {
+                        // TODO ???
+                        path = if path.starts_with('/') {
+                            format!("/{}{}", km.source.process, path)
+                        } else {
+                            format!("/{}/{}", km.source.process, path)
+                        };
+                    }
+                    if !cache {
                         // trim trailing "/"
-                        path = normalize_path(&path);
-
-                        let bound_path = BoundPath {
-                            app: source.process,
-                            authenticated,
-                            local_only,
-                            original_path: path.clone(),
-                        };
-
-                        path_bindings.add(&path, bound_path);
-                    }
-                    HttpServerMessage::WebSocketPush(WebSocketPush { target, is_text }) => {
-                        let Some(payload) = payload else {
-                            return Err(HttpServerError::NoBytes);
-                        };
-                        let bytes = payload.bytes;
-
-                        let mut ws_map = websockets.lock().await;
-                        let send_text = is_text.unwrap_or(false);
-                        let response_data = if send_text {
-                            warp::ws::Message::text(
-                                String::from_utf8(bytes.clone()).unwrap_or_default(),
+                        path_bindings.add(
+                            &normalize_path(&path),
+                            BoundPath {
+                                app: km.source.process.clone(),
+                                authenticated,
+                                local_only,
+                                static_content: None,
+                            },
+                        );
+                    } else {
+                        let Some(payload) = km.payload else {
+                            send_action_response(
+                                km.id,
+                                km.source,
+                                &send_to_loop,
+                                Err(HttpServerError::NoPayload),
                             )
-                        } else {
-                            warp::ws::Message::binary(bytes.clone())
+                            .await;
+                            return;
                         };
-
-                        // Send to the proxy, if registered
-                        if let Some(channel_id) = target.id.clone() {
-                            let locked_proxies = ws_proxies.lock().await;
-
-                            if let Some(proxy_nodes) = locked_proxies.get(&channel_id) {
-                                for proxy_node in proxy_nodes {
-                                    let id: u64 = rand::random();
-                                    let bytes_content = bytes.clone();
-
-                                    // Send a message to the encryptor
-                                    let message = KernelMessage {
-                                            id,
-                                            source: Address {
-                                                node: our.clone(),
-                                                process: HTTP_SERVER_PROCESS_ID.clone(),
-                                            },
-                                            target: Address {
-                                                node: proxy_node.clone(),
-                                                process: HTTP_SERVER_PROCESS_ID.clone(),
-                                            },
-                                            rsvp: None,
-                                            message: Message::Request(Request {
-                                                inherit: false,
-                                                expects_response: None,
-                                                ipc: serde_json::json!({ // this is the JSON to forward
-                                                    "WebSocketPush": {
-                                                        "target": {
-                                                            "node": our.clone(), // it's ultimately for us, but through the proxy
-                                                            "id": channel_id.clone(),
-                                                        },
-                                                        "is_text": send_text,
-                                                    }
-                                                }).to_string().into_bytes(),
-                                                metadata: None,
-                                            }),
-                                            payload: Some(Payload {
-                                                mime: Some("application/octet-stream".to_string()),
-                                                bytes: bytes_content,
-                                            }),
-                                            signed_capabilities: None,
-                                        };
-
-                                    send_to_loop.send(message).await.unwrap();
-                                }
-                            }
-                        }
-
-                        // Send to the websocket if registered
-                        if let Some(node_map) = ws_map.get_mut(&target.node) {
-                            if let Some(socket_id) = &target.id {
-                                if let Some(ws_map) = node_map.get_mut(socket_id) {
-                                    // Iterate over ws_map values and send message to all websockets
-                                    for ws in ws_map.values_mut() {
-                                        let mut locked_write_stream = ws.lock().await;
-                                        let _ =
-                                            locked_write_stream.send(response_data.clone()).await;
-                                        // TODO: change this to binary
-                                    }
-                                } else {
-                                    // Send to all websockets
-                                    for ws_map in node_map.values_mut() {
-                                        for ws in ws_map.values_mut() {
-                                            let mut locked_write_stream = ws.lock().await;
-                                            let _ = locked_write_stream
-                                                .send(response_data.clone())
-                                                .await;
-                                        }
-                                    }
-                                }
-                            } else {
-                                // Send to all websockets
-                                for ws_map in node_map.values_mut() {
-                                    for ws in ws_map.values_mut() {
-                                        let mut locked_write_stream = ws.lock().await;
-                                        let _ =
-                                            locked_write_stream.send(response_data.clone()).await;
-                                    }
-                                }
-                            }
-                        } else {
-                            // Do nothing because we don't have a WS for that node
-                        }
+                        // trim trailing "/"
+                        path_bindings.add(
+                            &normalize_path(&path),
+                            BoundPath {
+                                app: km.source.process.clone(),
+                                authenticated,
+                                local_only,
+                                static_content: Some(payload),
+                            },
+                        );
                     }
-                    HttpServerMessage::ServerAction(ServerAction { action }) => {
-                        if action == "get-jwt-secret" && source.node == our {
-                            let id: u64 = rand::random();
-                            let message = KernelMessage {
-                                id,
-                                source: Address {
-                                    node: our.clone(),
-                                    process: HTTP_SERVER_PROCESS_ID.clone(),
-                                },
-                                target: source,
-                                rsvp: Some(Address {
-                                    node: our.clone(),
-                                    process: HTTP_SERVER_PROCESS_ID.clone(),
-                                }),
-                                message: Message::Request(Request {
-                                    inherit: false,
-                                    expects_response: None,
-                                    ipc: serde_json::json!({
-                                        "action": "set-jwt-secret"
-                                    })
-                                    .to_string()
-                                    .into_bytes(),
-                                    metadata: None,
-                                }),
-                                payload: Some(Payload {
-                                    mime: Some("application/octet-stream".to_string()), // TODO adjust MIME type as needed
-                                    bytes: jwt_secret_bytes.clone(),
-                                }),
-                                signed_capabilities: None,
-                            };
-
-                            send_to_loop.send(message).await.unwrap();
+                    send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
+                }
+                HttpServerAction::WebSocketPush {
+                    channel_id,
+                    message_type,
+                } => {
+                    let Some(payload) = km.payload else {
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::NoPayload),
+                        )
+                        .await;
+                        return;
+                    };
+                    let ws_message = match message_type {
+                        WsMessageType::Text => warp::ws::Message::text(
+                            String::from_utf8_lossy(&payload.bytes).to_string(),
+                        ),
+                        WsMessageType::Binary => warp::ws::Message::binary(payload.bytes),
+                        WsMessageType::Ping | WsMessageType::Pong => {
+                            if payload.bytes.len() > 125 {
+                                send_action_response(
+                                    km.id,
+                                    km.source,
+                                    &send_to_loop,
+                                    Err(HttpServerError::WebSocketPushError {
+                                        error: "Ping and Pong messages must be 125 bytes or less"
+                                            .to_string(),
+                                    }),
+                                )
+                                .await;
+                                return;
+                            } else {
+                                if message_type == WsMessageType::Ping {
+                                    warp::ws::Message::ping(payload.bytes)
+                                } else {
+                                    warp::ws::Message::pong(payload.bytes)
+                                }
+                            }
                         }
+                    };
+                    // Send to the websocket if registered
+                    if let Some(got) = ws_senders.get(&channel_id) {
+                        let owner_process = &got.value().0;
+                        let sender = &got.value().1;
+                        if owner_process != &km.source.process {
+                            send_action_response(
+                                km.id,
+                                km.source,
+                                &send_to_loop,
+                                Err(HttpServerError::WebSocketPushError {
+                                    error: "WebSocket channel not owned by this process"
+                                        .to_string(),
+                                }),
+                            )
+                            .await;
+                            return;
+                        }
+                        match sender.send(ws_message).await {
+                            Ok(_) => {
+                                send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
+                            }
+                            Err(_) => {
+                                send_action_response(
+                                    km.id,
+                                    km.source,
+                                    &send_to_loop,
+                                    Err(HttpServerError::WebSocketPushError {
+                                        error: "WebSocket channel closed".to_string(),
+                                    }),
+                                )
+                                .await;
+                            }
+                        }
+                    } else {
+                        send_action_response(
+                            km.id,
+                            km.source,
+                            &send_to_loop,
+                            Err(HttpServerError::WebSocketPushError {
+                                error: "WebSocket channel not found".to_string(),
+                            }),
+                        )
+                        .await;
+                    }
+                }
+                HttpServerAction::WebSocketClose(channel_id) => {
+                    if let Some(got) = ws_senders.get(&channel_id) {
+                        if got.value().0 != km.source.process {
+                            send_action_response(
+                                km.id,
+                                km.source,
+                                &send_to_loop,
+                                Err(HttpServerError::WebSocketPushError {
+                                    error: "WebSocket channel not owned by this process"
+                                        .to_string(),
+                                }),
+                            )
+                            .await;
+                            return;
+                        }
+                        let _ = got.value().1.send(warp::ws::Message::close()).await;
+                        ws_senders.remove(&channel_id);
+                        send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                     }
                 }
             }
         }
     }
+}
 
-    Ok(())
+pub async fn send_action_response(
+    id: u64,
+    target: Address,
+    send_to_loop: &MessageSender,
+    result: Result<(), HttpServerError>,
+) {
+    let _ = send_to_loop
+        .send(KernelMessage {
+            id,
+            source: Address {
+                node: "our".to_string(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            target,
+            rsvp: None,
+            message: Message::Response((
+                Response {
+                    inherit: false,
+                    ipc: serde_json::to_vec(&result).unwrap(),
+                    metadata: None,
+                },
+                None,
+            )),
+            payload: None,
+            signed_capabilities: None,
+        })
+        .await;
 }

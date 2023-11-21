@@ -380,7 +380,7 @@ fn handle_local_request(
                 })?)
                 .send_and_await_response(5)??;
             let Some(payload) = get_payload() else {
-                return Err(anyhow::anyhow!("no metadata payload"));
+                return Err(anyhow::anyhow!("no metadata found!"));
             };
             let metadata = String::from_utf8(payload.bytes)?;
             let metadata = serde_json::from_str::<kt::PackageMetadata>(&metadata)?;

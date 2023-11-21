@@ -91,7 +91,7 @@ fn send_http_response(
     payload_bytes: Vec<u8>,
 ) -> anyhow::Result<()> {
     Response::new()
-        .ipc_bytes(
+        .ipc(
             serde_json::json!({
                 "status": status,
                 "headers": headers,
@@ -109,8 +109,8 @@ fn send_http_response(
 
 fn send_ws_update(our: Address, game: Game) -> anyhow::Result<()> {
     Request::new()
-        .target(Address::new(&our.node, "encryptor:sys:uqbar").unwrap())?
-        .ipc_bytes(
+        .target((&our.node, "encryptor", "sys", "uqbar"))
+        .ipc(
             serde_json::json!({
                 "EncryptAndForward": {
                     "channel_id": our.process.to_string(),
@@ -178,14 +178,13 @@ impl Guest for Component {
 
         grant_messaging(
             &our,
-            &Vec::from([ProcessId::from_str("http_server:sys:uqbar").unwrap()]),
+            vec![ProcessId::new(Some("http_server"), "sys", "uqbar")],
         );
 
         for path in ["/", "/games"] {
-            Request::new()
-                .target(Address::new(&our.node, "http_server:sys:uqbar").unwrap())
-                .unwrap()
-                .ipc_bytes(
+            let _ = Request::new()
+                .target((our.node.as_str(), "http_server", "sys", "uqbar"))
+                .ipc(
                     serde_json::json!({
                         "BindPath": {
                             "path": path,
@@ -285,7 +284,7 @@ fn handle_request(
                 if let Some(game) = state.games.get(&game_id) {
                     if !game.ended {
                         return Response::new()
-                            .ipc_bytes(vec![])
+                            .ipc(vec![])
                             .payload(Payload {
                                 mime: Some("application/octet-stream".to_string()),
                                 bytes: "conflict".as_bytes().to_vec(),
@@ -309,12 +308,12 @@ fn handle_request(
                 };
                 state.games.insert(game_id.clone(), game.clone());
 
-                send_ws_update(our.clone(), game.clone());
+                let _ = send_ws_update(our.clone(), game.clone());
 
                 save_chess_state(state.clone());
 
                 Response::new()
-                    .ipc_bytes(vec![])
+                    .ipc(vec![])
                     .payload(Payload {
                         mime: Some("application/octet-stream".to_string()),
                         bytes: "success".as_bytes().to_vec(),
@@ -325,7 +324,7 @@ fn handle_request(
                 // check the move and then update if correct and send WS update
                 let Some(game) = state.games.get_mut(&game_id) else {
                     return Response::new()
-                        .ipc_bytes(vec![])
+                        .ipc(vec![])
                         .payload(Payload {
                             mime: Some("application/octet-stream".to_string()),
                             bytes: "not found".as_bytes().to_vec(),
@@ -376,11 +375,11 @@ fn handle_request(
                         }
                     }
 
-                    send_ws_update(our.clone(), game.clone());
+                    let _ = send_ws_update(our.clone(), game.clone());
                     save_chess_state(state.clone());
 
                     Response::new()
-                        .ipc_bytes(vec![])
+                        .ipc(vec![])
                         .payload(Payload {
                             mime: Some("application/octet-stream".to_string()),
                             bytes: "success".as_bytes().to_vec(),
@@ -388,7 +387,7 @@ fn handle_request(
                         .send()
                 } else {
                     Response::new()
-                        .ipc_bytes(vec![])
+                        .ipc(vec![])
                         .payload(Payload {
                             mime: Some("application/octet-stream".to_string()),
                             bytes: "invalid move".as_bytes().to_vec(),
@@ -400,7 +399,7 @@ fn handle_request(
                 // end the game and send WS update, update the standings
                 let Some(game) = state.games.get_mut(&game_id) else {
                     return Response::new()
-                        .ipc_bytes(vec![])
+                        .ipc(vec![])
                         .payload(Payload {
                             mime: Some("application/octet-stream".to_string()),
                             bytes: "not found".as_bytes().to_vec(),
@@ -416,11 +415,11 @@ fn handle_request(
                     state.records.insert(game.id.clone(), (1, 0, 0));
                 }
 
-                send_ws_update(our.clone(), game.clone());
+                let _ = send_ws_update(our.clone(), game.clone());
                 save_chess_state(state.clone());
 
                 Response::new()
-                    .ipc_bytes(vec![])
+                    .ipc(vec![])
                     .payload(Payload {
                         mime: Some("application/octet-stream".to_string()),
                         bytes: "success".as_bytes().to_vec(),
@@ -510,8 +509,8 @@ fn handle_request(
                                     .to_string();
 
                                 let response = Request::new()
-                                    .target(Address::new(&game_id, "chess:chess:uqbar")?)?
-                                    .ipc_bytes(
+                                    .target((game_id.as_str(), "chess", "chess", "uqbar"))
+                                    .ipc(
                                         serde_json::json!({
                                             "action": "new_game",
                                             "white": white.clone(),
@@ -618,8 +617,8 @@ fn handle_request(
                                         // check if the game is over
                                         // if so, update the records
                                         let response = Request::new()
-                                            .target(Address::new(&game_id, "chess:chess:uqbar")?)?
-                                            .ipc_bytes(
+                                            .target((game_id.as_str(), "chess", "chess", "uqbar"))
+                                            .ipc(
                                                 serde_json::json!({
                                                     "action": "make_move",
                                                     "move": move_str,
@@ -740,8 +739,7 @@ fn handle_request(
                     "DELETE" => {
                         let game_id = message_json["query_params"]["id"]
                             .as_str()
-                            .unwrap_or("")
-                            .to_string();
+                            .unwrap_or("");
                         if game_id == "" {
                             return send_http_response(
                                 400,
@@ -749,7 +747,7 @@ fn handle_request(
                                 "Bad Request".to_string().as_bytes().to_vec(),
                             );
                         } else {
-                            let Some(game) = state.games.get_mut(&game_id) else {
+                            let Some(game) = state.games.get_mut(game_id) else {
                                 return send_http_response(
                                     400,
                                     default_headers.clone(),
@@ -757,8 +755,8 @@ fn handle_request(
                                 );
                             };
                             let response = Request::new()
-                                .target(Address::new(&game_id, "chess:chess:uqbar")?)?
-                                .ipc_bytes(
+                                .target((game_id, "chess", "chess", "uqbar"))
+                                .ipc(
                                     serde_json::json!({
                                         "action": "end_game",
                                     })

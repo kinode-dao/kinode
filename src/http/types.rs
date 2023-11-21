@@ -62,30 +62,30 @@ pub enum HttpClientError {
 /// with the shape Result<(), HttpServerActionError> serialized to JSON.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpServerAction {
-    /// Bind does not expect payload.
+    /// Bind expects a payload if and only if `cache` is TRUE. The payload should
+    /// be the static file to serve at this path.
     Bind {
         path: String,
         authenticated: bool,
         local_only: bool,
-    },
-    /// BindStatic expects a payload containing the static file to serve at this path.
-    BindStatic {
-        path: String,
-        authenticated: bool,
-        local_only: bool,
+        cache: bool,
     },
     /// Expects a payload containing the WebSocket message bytes to send.
     WebSocketPush {
-        channel_id: String,
+        channel_id: u64,
         message_type: WsMessageType,
     },
+    /// Processes can both SEND and RECEIVE this kind of request. Sending will
+    /// close a socket the process controls. Receiving will indicate that the
+    /// client closed the socket.
+    WebSocketClose(u64),
 }
 
 /// The possible message types for WebSocketPush. Ping and Pong are limited to 125 bytes
 /// by the WebSockets protocol. Text will be sent as a Text frame, with the payload bytes
 /// being the UTF-8 encoding of the string. Binary will be sent as a Binary frame containing
 /// the unmodified payload bytes.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum WsMessageType {
     Text,
     Binary,
@@ -95,7 +95,7 @@ pub enum WsMessageType {
 
 /// Part of the Response type issued by http_server
 #[derive(Error, Debug, Serialize, Deserialize)]
-pub enum HttpServerActionError {
+pub enum HttpServerError {
     #[error(
         "http_server: request could not be parsed to HttpServerAction: {}.",
         req

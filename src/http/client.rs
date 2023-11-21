@@ -57,7 +57,7 @@ async fn handle_message(
     client: reqwest::Client,
     send_to_loop: MessageSender,
 ) {
-    let req: HttpRequest = match serde_json::from_slice(&json) {
+    let req: OutgoingHttpRequest = match serde_json::from_slice(&json) {
         Ok(req) => req,
         Err(_e) => {
             make_error_message(

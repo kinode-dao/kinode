@@ -5,18 +5,8 @@ use jwt::{Error, VerifyWithKey};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashMap;
-use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::Mutex;
 use warp::http::{header::HeaderName, header::HeaderValue, HeaderMap};
-use warp::ws::WebSocket;
-
-pub struct BoundPath {
-    pub app: ProcessId,
-    pub authenticated: bool,
-    pub local_only: bool,
-    pub original_path: String,
-}
 
 #[derive(Serialize, Deserialize)]
 pub struct RpcMessage {
@@ -80,115 +70,9 @@ pub fn auth_cookie_valid(our_node: &str, cookie: &str, jwt_secret: &[u8]) -> boo
 }
 
 pub fn normalize_path(path: &str) -> String {
-    let mut normalized = path.to_string();
-    if normalized != "/" && normalized.ends_with('/') {
-        normalized.pop();
-    }
-    normalized
-}
-
-pub async fn handle_incoming_ws(
-    parsed_msg: WebSocketClientMessage,
-    our: String,
-    jwt_secret_bytes: Vec<u8>,
-    websockets: WebSockets,
-    send_to_loop: MessageSender,
-    print_tx: PrintSender,
-    write_stream: SharedWriteStream,
-    ws_id: u64,
-) {
-    match parsed_msg {
-        WebSocketClientMessage::WsRegister(WsRegister {
-            ws_auth_token,
-            auth_token: _,
-            channel_id,
-        }) => {
-            let _ = print_tx
-                .send(Printout {
-                    verbosity: 1,
-                    content: format!("REGISTER: {} {}", ws_auth_token, channel_id),
-                })
-                .await;
-            // Get node from auth token
-            if let Ok(node) = parse_auth_token(ws_auth_token, jwt_secret_bytes.clone()) {
-                if node != our {
-                    return;
-                }
-                handle_ws_register(
-                    &our,
-                    &channel_id,
-                    websockets.clone(),
-                    print_tx.clone(),
-                    write_stream.clone(),
-                    ws_id,
-                )
-                .await;
-            } else {
-                let _ = print_tx
-                    .send(Printout {
-                        verbosity: 1,
-                        content: "Auth token parsing failed for WsRegister".to_string(),
-                    })
-                    .await;
-            }
-        }
-        // Forward to target's http_server with the auth_token
-        WebSocketClientMessage::WsMessage(WsMessage {
-            ws_auth_token,
-            auth_token: _,
-            target,
-            json,
-            ..
-        }) => {
-            let _ = print_tx
-                .send(Printout {
-                    verbosity: 1,
-                    content: format!("ACTION: {}", target.node.clone()),
-                })
-                .await;
-            if let Ok(node) = parse_auth_token(ws_auth_token, jwt_secret_bytes.clone()) {
-                if our == target.node && node == target.node {
-                    handle_ws_message(
-                        target.clone(),
-                        json.clone(),
-                        our.clone(),
-                        send_to_loop.clone(),
-                        print_tx.clone(),
-                    )
-                    .await;
-                }
-            }
-        }
-        // Forward to target's http_server with the auth_token
-        WebSocketClientMessage::EncryptedWsMessage(EncryptedWsMessage {
-            ws_auth_token,
-            auth_token: _,
-            channel_id,
-            target,
-            encrypted,
-            nonce,
-        }) => {
-            let _ = print_tx
-                .send(Printout {
-                    verbosity: 1,
-                    content: format!("ENCRYPTED ACTION: {}", target.node.clone()),
-                })
-                .await;
-            if let Ok(node) = parse_auth_token(ws_auth_token, jwt_secret_bytes.clone()) {
-                if node == target.node && our == target.node {
-                    handle_encrypted_ws_message(
-                        target.clone(),
-                        our.clone(),
-                        channel_id.clone(),
-                        encrypted.clone(),
-                        nonce.clone(),
-                        send_to_loop.clone(),
-                        print_tx.clone(),
-                    )
-                    .await;
-                }
-            }
-        }
+    match path.strip_suffix('/') {
+        Some(new) => new.to_string(),
+        None => path.to_string(),
     }
 }
 
@@ -206,15 +90,19 @@ pub fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
     let mut header_map = HeaderMap::new();
     for (key, value) in hashmap {
         let key_bytes = key.as_bytes();
-        let key_name = HeaderName::from_bytes(key_bytes).unwrap();
-        let value_header = HeaderValue::from_str(&value).unwrap();
+        let Ok(key_name) = HeaderName::from_bytes(key_bytes) else {
+            continue;
+        };
+        let Ok(value_header) = HeaderValue::from_str(&value) else {
+            continue;
+        };
         header_map.insert(key_name, value_header);
     }
     header_map
 }
 
 pub async fn find_open_port(start_at: u16) -> Option<u16> {
-    for port in start_at..=u16::MAX {
+    for port in start_at..(start_at + 1000) {
         let bind_addr = format!("0.0.0.0:{}", port);
         if is_port_available(&bind_addr).await {
             return Some(port);
@@ -229,187 +117,4 @@ pub async fn is_port_available(bind_addr: &str) -> bool {
 
 pub fn binary_encoded_string_to_bytes(s: &str) -> Vec<u8> {
     s.chars().map(|c| c as u8).collect()
-}
-
-pub async fn handle_ws_register(
-    our_name: &str,
-    channel_id: &str,
-    websockets: WebSockets,
-    print_tx: PrintSender,
-    write_stream: SharedWriteStream,
-    ws_id: u64,
-) {
-    // let _ = print_tx.send(Printout { verbosity: 1, content: format!("1.2 {}", node) }).await;
-    // TODO: restrict registration to ourself and nodes for which we are proxying
-    let mut ws_map = websockets.lock().await;
-    let node_map = ws_map.entry(our_name.to_string()).or_insert(HashMap::new());
-    let id_map = node_map
-        .entry(channel_id.to_string())
-        .or_insert(HashMap::new());
-    id_map.insert(ws_id, write_stream.clone());
-
-    let _ = print_tx
-        .send(Printout {
-            verbosity: 1,
-            content: "WEBSOCKET CHANNEL REGISTERED!".to_string(),
-        })
-        .await;
-}
-
-pub async fn handle_ws_message(
-    target: Address,
-    json: Option<serde_json::Value>,
-    our: String,
-    send_to_loop: MessageSender,
-    _print_tx: PrintSender,
-) {
-    let id: u64 = rand::random();
-    let message = KernelMessage {
-        id,
-        source: Address {
-            node: our.clone(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        target: target.clone(),
-        rsvp: None,
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: None,
-            ipc: vec![],
-            metadata: None,
-        }),
-        payload: Some(Payload {
-            mime: Some("application/octet-stream".to_string()),
-            bytes: json.unwrap_or_default().to_string().as_bytes().to_vec(),
-        }),
-        signed_capabilities: None,
-    };
-
-    send_to_loop.send(message).await.unwrap();
-}
-
-pub async fn handle_encrypted_ws_message(
-    target: Address,
-    our: String,
-    channel_id: String,
-    encrypted: String,
-    nonce: String,
-    send_to_loop: MessageSender,
-    _print_tx: PrintSender,
-) {
-    let encrypted_bytes = binary_encoded_string_to_bytes(&encrypted);
-    let nonce_bytes = binary_encoded_string_to_bytes(&nonce);
-
-    let mut encrypted_data = encrypted_bytes;
-    encrypted_data.extend(nonce_bytes);
-
-    let id: u64 = rand::random();
-
-    // Send a message to the encryptor
-    let message = KernelMessage {
-        id,
-        source: Address {
-            node: our.clone(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        target: Address {
-            node: target.node.clone(),
-            process: ENCRYPTOR_PROCESS_ID.clone(),
-        },
-        rsvp: None,
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: None,
-            ipc: serde_json::json!({
-                "DecryptAndForwardAction": {
-                    "channel_id": channel_id.clone(),
-                    "forward_to": target.clone(),
-                    "json": {
-                        "forwarded_from": {
-                            "node": our.clone(),
-                            "process": "http_server:sys:uqbar",
-                        }
-                    },
-                }
-            })
-            .to_string()
-            .into_bytes(),
-            metadata: None,
-        }),
-        payload: Some(Payload {
-            mime: Some("application/octet-stream".to_string()),
-            bytes: encrypted_data,
-        }),
-        signed_capabilities: None,
-    };
-
-    send_to_loop.send(message).await.unwrap();
-}
-
-pub async fn send_ws_disconnect(
-    node: String,
-    our: String,
-    channel_id: String,
-    send_to_loop: MessageSender,
-    _print_tx: PrintSender,
-) {
-    let id: u64 = rand::random();
-    let message = KernelMessage {
-        id,
-        source: Address {
-            node: our.clone(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        target: Address {
-            node: node.clone(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        rsvp: None,
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: None,
-            ipc: serde_json::json!({
-                "WsProxyDisconnect": {
-                    "channel_id": channel_id.clone(),
-                }
-            })
-            .to_string()
-            .into_bytes(),
-            metadata: None,
-        }),
-        payload: Some(Payload {
-            mime: Some("application/octet-stream".to_string()),
-            bytes: vec![],
-        }),
-        signed_capabilities: None,
-    };
-
-    send_to_loop.send(message).await.unwrap();
-}
-
-pub fn make_error_message(
-    our_name: &str,
-    id: u64,
-    target: Address,
-    error: &HttpServerActionError,
-) -> KernelMessage {
-    KernelMessage {
-        id,
-        source: Address {
-            node: our_name.to_string(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        target,
-        rsvp: None,
-        message: Message::Response((
-            Response {
-                inherit: false,
-                ipc: serde_json::to_vec(error).unwrap(),
-                metadata: None,
-            },
-            None,
-        )),
-        payload: None,
-        signed_capabilities: None,
-    }
 }
