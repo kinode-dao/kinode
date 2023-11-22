@@ -264,7 +264,7 @@ async fn http_handler(
                 ipc: serde_json::to_vec(&IncomingHttpRequest {
                     source_socket_addr: socket_addr.map(|addr| addr.to_string()),
                     method: method.to_string(),
-                    raw_path: original_path.clone(),
+                    raw_path: format!("http://localhost{}", original_path),
                     headers: serialized_headers,
                 })
                 .unwrap(),
