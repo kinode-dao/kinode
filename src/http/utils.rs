@@ -1,7 +1,6 @@
 use crate::http::types::*;
-use crate::types::*;
 use hmac::{Hmac, Mac};
-use jwt::{Error, VerifyWithKey};
+use jwt::VerifyWithKey;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::collections::HashMap;
@@ -21,15 +20,13 @@ pub struct RpcMessage {
     pub data: Option<String>,
 }
 
-pub fn parse_auth_token(auth_token: String, jwt_secret: Vec<u8>) -> Result<String, Error> {
-    let secret: Hmac<Sha256> = match Hmac::new_from_slice(jwt_secret.as_slice()) {
-        Ok(secret) => secret,
-        Err(_) => {
-            return Ok("Error recovering jwt secret".to_string());
-        }
+/// Ingest an auth token given from client and return the node name or an error.
+pub fn verify_auth_token(auth_token: &str, jwt_secret: &[u8]) -> Result<String, jwt::Error> {
+    let Ok(secret) = Hmac::<Sha256>::new_from_slice(jwt_secret) else {
+        return Err(jwt::Error::Format);
     };
 
-    let claims: Result<JwtClaims, Error> = auth_token.verify_with_key(&secret);
+    let claims: Result<JwtClaims, jwt::Error> = auth_token.verify_with_key(&secret);
 
     match claims {
         Ok(data) => Ok(data.username),
@@ -56,9 +53,8 @@ pub fn auth_cookie_valid(our_node: &str, cookie: &str, jwt_secret: &[u8]) -> boo
         _ => return false,
     };
 
-    let secret = match Hmac::<Sha256>::new_from_slice(&jwt_secret) {
-        Ok(secret) => secret,
-        Err(_) => return false,
+    let Ok(secret) = Hmac::<Sha256>::new_from_slice(jwt_secret) else {
+        return false;
     };
 
     let claims: Result<JwtClaims, _> = auth_token.verify_with_key(&secret);

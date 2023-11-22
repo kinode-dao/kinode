@@ -390,21 +390,69 @@ async fn handle_rpc_message(
 async fn maintain_websocket(
     ws: WebSocket,
     our: Arc<String>,
-    _jwt_secret_bytes: Arc<Vec<u8>>,
+    jwt_secret_bytes: Arc<Vec<u8>>,
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
 ) {
     let (mut write_stream, mut read_stream) = ws.split();
 
-    // TODO: the websocket client must send authentication info to encrypt this
-    // channel and verify their identity using JWT. Then we can forward their
-    // messages to a specific process.
+    // first, receive a message from client that contains the target process
+    // and the auth token
 
-    let owner_process: ProcessId = ProcessId::new(Some("chess"), "chess2", "uqbar");
+    let Some(Ok(register_msg)) = read_stream.next().await else {
+        // stream closed, exit
+        let stream = write_stream.reunite(read_stream).unwrap();
+        let _ = stream.close().await;
+        return;
+    };
+
+    let Ok(ws_register) = serde_json::from_slice::<WsRegister>(register_msg.as_bytes()) else {
+        // stream error, exit
+        let stream = write_stream.reunite(read_stream).unwrap();
+        let _ = stream.close().await;
+        return;
+    };
+
+    let Ok(owner_process) = ProcessId::from_str(&ws_register.target_process) else {
+        // invalid process id, exit
+        let stream = write_stream.reunite(read_stream).unwrap();
+        let _ = stream.close().await;
+        return;
+    };
+
+    let Ok(our_name) = verify_auth_token(&ws_register.auth_token, &jwt_secret_bytes) else {
+        // invalid auth token, exit
+        let stream = write_stream.reunite(read_stream).unwrap();
+        let _ = stream.close().await;
+        return;
+    };
+
+    if our_name != *our {
+        // invalid auth token, exit
+        let stream = write_stream.reunite(read_stream).unwrap();
+        let _ = stream.close().await;
+        return;
+    }
 
     let ws_channel_id: u64 = rand::random();
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
     ws_senders.insert(ws_channel_id, (owner_process.clone(), ws_sender));
+
+    // respond to the client notifying them that the channel is now open
+    let Ok(()) = write_stream
+        .send(warp::ws::Message::text(
+            serde_json::to_string(&WsRegisterResponse {
+                channel_id: ws_channel_id,
+            })
+            .unwrap(),
+        ))
+        .await
+    else {
+        // stream error, exit
+        let stream = write_stream.reunite(read_stream).unwrap();
+        let _ = stream.close().await;
+        return;
+    };
 
     loop {
         tokio::select! {
@@ -415,9 +463,8 @@ async fn maintain_websocket(
                         websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
                         break;
                     }
-                    Some(Err(e)) => {
+                    Some(Err(_e)) => {
                         // stream error, remove and exit
-                        println!("http_server websocket channel error: {e}");
                         websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
                         break;
                     }
@@ -458,9 +505,8 @@ async fn maintain_websocket(
                 // forward message to websocket
                 match write_stream.send(outgoing).await {
                     Ok(()) => continue,
-                    Err(e) => {
+                    Err(_e) => {
                         // stream error, remove and exit
-                        println!("http_server websocket channel error: {e}");
                         websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
                         break;
                     }
@@ -684,6 +730,18 @@ async fn handle_app_message(
                         );
                     }
                     send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
+                }
+                HttpServerAction::WebSocketOpen(_) => {
+                    // we cannot receive these, only send them to processes
+                    send_action_response(
+                        km.id,
+                        km.source,
+                        &send_to_loop,
+                        Err(HttpServerError::WebSocketPushError {
+                            error: "WebSocketOpen is not a valid request".to_string(),
+                        }),
+                    )
+                    .await;
                 }
                 HttpServerAction::WebSocketPush {
                     channel_id,
