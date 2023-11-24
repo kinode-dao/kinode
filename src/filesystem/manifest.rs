@@ -285,17 +285,21 @@ impl Manifest {
         }
     }
 
-    pub async fn commit_tx(&self, tx_id: u64, in_memory_file: &mut InMemoryFile) {
+    pub async fn commit_tx(&self, tx_id: u64, in_memory_file: &mut InMemoryFile, memory_buffer: &mut HashMap<u64, Vec<u8>>) {
         let mut chunk_hashes = self.chunk_hashes.write().await;
-
+        println!("commititing tx!");
         let commit_index = MemChunkIndex::CommitTx(tx_id);
 
         if let Some(tx_chunks) = in_memory_file.active_txs.remove(&tx_id) {
             for chunk in tx_chunks {
-                in_memory_file.chunks.insert(chunk.start, chunk.clone());
+                if let Some(old_chunk) = in_memory_file.chunks.insert(chunk.start, chunk.clone()) {
+                    if let ChunkLocation::Memory(old_mem_key) = old_chunk.location {
+                        memory_buffer.remove(&old_mem_key);
+                    }
+                }                
                 match &chunk.location {
                     ChunkLocation::Memory(idx) => {
-                        in_memory_file.mem_chunks.push(MemChunkIndex::Chunk(*idx))
+                        in_memory_file.mem_chunks.push(MemChunkIndex::Chunk(chunk.start));
                     }
                     ChunkLocation::Wal(..) => in_memory_file.wal_chunks.push(chunk.start),
                     _ => {}
@@ -317,12 +321,13 @@ impl Manifest {
 
         // wal_file.write_all(memory_buffer).await?;
         let mut wal_buffer: Vec<u8> = Vec::new();
-
+        println!("flushing to wal!");
         // let mut new_commited_locations: HashMap<FileIdentifier, (u64, ChunkLocation)> = HashMap::new();
         // let mut new_active_locations: HashMap<FileIdentifier, (u64, ChunkLocation)> = HashMap::new();
 
         for (file_id, in_memory_file) in manifest.iter_mut() {
             for index in &in_memory_file.mem_chunks {
+                println!("have index!");
                 match index {
                     MemChunkIndex::Chunk(start) => {
                         if let Some(chunk) = in_memory_file.chunks.get_mut(&start) {
@@ -330,6 +335,7 @@ impl Manifest {
                                 // Serialize the chunk and write it to the buffer
                                 match memory_buffer.get(&memkey) {
                                     None => {
+                                        println!("nothing in buffer!");
                                         // DOUBLECHECK
                                         continue;
                                     }
@@ -384,6 +390,7 @@ impl Manifest {
             }
             in_memory_file.mem_chunks.clear();
         }
+        println!("actually wrote something!");
 
         wal_file.write_all(&wal_buffer).await?;
         memory_buffer.clear();
@@ -394,7 +401,10 @@ impl Manifest {
         // called from main, locks manifest
         // other flush_to_wal gets buffer and others passed in.
         // potentially unify with options.
+        println!("flushing to wal!");
         let mut manifest = self.manifest.write().await;
+        println!("whole manifest: {:?}", manifest);
+
         let mut memory_buffer = self.memory_buffer.write().await;
         let mut wal_file = self.wal_file.write().await;
         let mut chunk_hashes = self.chunk_hashes.write().await;
@@ -406,15 +416,23 @@ impl Manifest {
             for index in &in_memory_file.mem_chunks {
                 match index {
                     MemChunkIndex::Chunk(start) => {
+                        println!("have uindex, start: {}", start);
                         if let Some(chunk) = in_memory_file.chunks.get_mut(&start) {
+                            println!("have chunk");
                             if let ChunkLocation::Memory(memkey) = chunk.location {
+                                println!("have memkey");
+                                println!("entire chunk: {:?}", chunk);
                                 // Serialize the chunk and write it to the buffer
                                 match memory_buffer.get(&memkey) {
                                     None => {
                                         // DOUBLECHECK
+                                        println!("nothing in buffer!");
+
                                         continue;
                                     }
                                     Some(data) => {
+                                        println!("chunk data length: {}", data.len());
+
                                         let serialized_chunk = serialize_chunk(
                                             file_id,
                                             data,
@@ -425,6 +443,7 @@ impl Manifest {
                                             &self.cipher,
                                         )
                                         .await?;
+                                        println!("serialized chunk length: {}", serialized_chunk.len());
                                         chunk.location = ChunkLocation::Wal(
                                             wal_length_before_flush + wal_buffer.len() as u64,
                                         );
@@ -465,8 +484,10 @@ impl Manifest {
             }
             in_memory_file.mem_chunks.clear();
         }
-
+        println!("actually wrote something., buffer length {}", wal_buffer.len());
         wal_file.write_all(&wal_buffer).await?;
+        println!("actually wrote something., buffer length {}", wal_buffer.len());
+
         memory_buffer.clear();
         Ok(())
     }
@@ -493,7 +514,7 @@ impl Manifest {
                 self.flush_to_wal(&mut manifest, &mut memory_buffer).await?;
                 in_memory_file = manifest.get(file).unwrap().clone();
             }
-
+            println!("writing chunk with start {}", chunk_start);
             self.write_chunk(
                 chunk,
                 chunk_start,
@@ -507,7 +528,7 @@ impl Manifest {
             chunk_start += chunk.len() as u64;
         }
 
-        self.commit_tx(tx_id, &mut in_memory_file).await;
+        self.commit_tx(tx_id, &mut in_memory_file, &mut memory_buffer).await;
 
         manifest.insert(file.clone(), in_memory_file);
 
@@ -536,16 +557,15 @@ impl Manifest {
             None => false,
         };
 
-        let (proper_position, mem_buffer_meta) = match copy {
-            true => (copy_location.unwrap(), None),
+        let proper_position = match copy {
+            true => copy_location.unwrap(),
             false => {
-                let mem_buffer_meta = MemBufferMeta { copy, tx_id };
                 let mem_key = rand::random::<u64>();
-
                 memory_buffer.insert(mem_key, chunk.to_vec());
-                (ChunkLocation::Memory(mem_key), Some(mem_buffer_meta))
+                ChunkLocation::Memory(mem_key)
             }
         };
+        let mem_buffer_meta = Some(MemBufferMeta { copy, tx_id });
 
         let entry = Chunk {
             start,
@@ -914,7 +934,7 @@ impl Manifest {
             .await?;
         }
 
-        self.commit_tx(tx_id, &mut file).await;
+        self.commit_tx(tx_id, &mut file, &mut memory_buffer).await;
 
         manifest.insert(file_id.clone(), file);
 
@@ -1016,7 +1036,7 @@ impl Manifest {
                 .retain(|&start| start < new_length);
         }
 
-        self.commit_tx(tx_id, &mut in_memory_file).await;
+        self.commit_tx(tx_id, &mut in_memory_file, &mut memory_buffer).await;
 
         manifest.insert(file_id.clone(), in_memory_file);
 
@@ -1404,7 +1424,7 @@ async fn load_wal(
                         // if it's a copy, we don't have to skip + data_length to get to the next position
                         // if encrypted data, add encryption overhead (nonce 24 + tag 16)
                         current_position += 8 + record_length as u64;
-                        if !entry.copy_location.is_none() {
+                        if entry.copy_location.is_none() {
                             current_position += data_length;
                             if entry.encrypted {
                                 current_position += ENCRYPTION_OVERHEAD as u64;
@@ -1418,7 +1438,7 @@ async fn load_wal(
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                //  println!("Encountered an incomplete record. Truncating the file.");
+                println!("Encountered an incomplete record. Truncating the file.");
                 break;
             }
             Err(e) => return Err(e),
