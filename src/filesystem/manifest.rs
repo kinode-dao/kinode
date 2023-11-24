@@ -169,8 +169,10 @@ pub struct Manifest {
     pub flush_cold_freq: usize,
 
     pub memory_buffer: Arc<RwLock<HashMap<u64, Vec<u8>>>>,
+    pub membuf_size: Arc<RwLock<usize>>,
     pub read_cache: Arc<RwLock<LruCache<[u8; 32], Vec<u8>>>>,
     pub memory_limit: usize,
+
     pub chunk_size: usize,
     pub cipher: Arc<XChaCha20Poly1305>,
     pub encryption: bool,
@@ -221,6 +223,7 @@ impl Manifest {
             fs_directory_path: fs_directory_path.to_path_buf(),
             flush_cold_freq: fs_config.flush_to_cold_interval,
             memory_buffer: Arc::new(RwLock::new(HashMap::new())),
+            membuf_size: Arc::new(RwLock::new(0)),
             read_cache: Arc::new(RwLock::new(read_cache)),
             memory_limit: fs_config.mem_buffer_limit,
             chunk_size: fs_config.chunk_size,
@@ -285,9 +288,8 @@ impl Manifest {
         }
     }
 
-    pub async fn commit_tx(&self, tx_id: u64, in_memory_file: &mut InMemoryFile, memory_buffer: &mut HashMap<u64, Vec<u8>>) {
+    pub async fn commit_tx(&self, tx_id: u64, in_memory_file: &mut InMemoryFile, memory_buffer: &mut HashMap<u64, Vec<u8>>, membuf_size: &mut usize) {
         let mut chunk_hashes = self.chunk_hashes.write().await;
-        println!("commititing tx!");
         let commit_index = MemChunkIndex::CommitTx(tx_id);
 
         if let Some(tx_chunks) = in_memory_file.active_txs.remove(&tx_id) {
@@ -295,16 +297,20 @@ impl Manifest {
                 if let Some(old_chunk) = in_memory_file.chunks.insert(chunk.start, chunk.clone()) {
                     if let ChunkLocation::Memory(old_mem_key) = old_chunk.location {
                         memory_buffer.remove(&old_mem_key);
+                        *membuf_size -= old_chunk.length as usize;
                     }
                 }                
                 match &chunk.location {
-                    ChunkLocation::Memory(idx) => {
+                    ChunkLocation::Memory(_idx) => {
                         in_memory_file.mem_chunks.push(MemChunkIndex::Chunk(chunk.start));
                     }
-                    ChunkLocation::Wal(..) => in_memory_file.wal_chunks.push(chunk.start),
+                    ChunkLocation::Wal(..) => {
+                        in_memory_file.wal_chunks.push(chunk.start);
+                        chunk_hashes.insert(chunk.hash, chunk.location);
+                        // NOTE TODO, DEDUPE IN MEM REFERENCE COUNTING
+                    }
                     _ => {}
                 }
-                chunk_hashes.insert(chunk.hash, chunk.location);
             }
             in_memory_file.mem_chunks.push(commit_index);
         }
@@ -314,20 +320,18 @@ impl Manifest {
         &self,
         manifest: &mut HashMap<FileIdentifier, InMemoryFile>,
         memory_buffer: &mut HashMap<u64, Vec<u8>>,
+        membuf_size: &mut usize,
     ) -> Result<(), FsError> {
         let mut wal_file = self.wal_file.write().await;
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
-        let mut chunk_hashes = self.chunk_hashes.write().await;
 
-        // wal_file.write_all(memory_buffer).await?;
         let mut wal_buffer: Vec<u8> = Vec::new();
-        println!("flushing to wal!");
+        println!("flushing to wal, manifest before: {:?}", manifest);
         // let mut new_commited_locations: HashMap<FileIdentifier, (u64, ChunkLocation)> = HashMap::new();
         // let mut new_active_locations: HashMap<FileIdentifier, (u64, ChunkLocation)> = HashMap::new();
 
         for (file_id, in_memory_file) in manifest.iter_mut() {
             for index in &in_memory_file.mem_chunks {
-                println!("have index!");
                 match index {
                     MemChunkIndex::Chunk(start) => {
                         if let Some(chunk) = in_memory_file.chunks.get_mut(&start) {
@@ -335,7 +339,7 @@ impl Manifest {
                                 // Serialize the chunk and write it to the buffer
                                 match memory_buffer.get(&memkey) {
                                     None => {
-                                        println!("nothing in buffer!");
+                                        println!("BIG ERROR NOT FOUND BBY");
                                         // DOUBLECHECK
                                         continue;
                                     }
@@ -353,6 +357,7 @@ impl Manifest {
                                         chunk.location = ChunkLocation::Wal(
                                             wal_length_before_flush + wal_buffer.len() as u64,
                                         );
+                                        in_memory_file.wal_chunks.push(chunk.start);
                                         wal_buffer.extend_from_slice(&serialized_chunk);
                                     }
                                 }
@@ -384,16 +389,18 @@ impl Manifest {
                         .await?;
                         chunk.location =
                             ChunkLocation::Wal(wal_length_before_flush + wal_buffer.len() as u64);
+                        in_memory_file.wal_chunks.push(chunk.start);
                         wal_buffer.extend_from_slice(&serialized_chunk);
                     }
                 }
             }
             in_memory_file.mem_chunks.clear();
         }
-        println!("actually wrote something!");
+        println!("wal flush, manifest after: {:?}", manifest);
 
         wal_file.write_all(&wal_buffer).await?;
         memory_buffer.clear();
+        *membuf_size = 0;
         Ok(())
     }
 
@@ -401,13 +408,13 @@ impl Manifest {
         // called from main, locks manifest
         // other flush_to_wal gets buffer and others passed in.
         // potentially unify with options.
-        println!("flushing to wal!");
         let mut manifest = self.manifest.write().await;
-        println!("whole manifest: {:?}", manifest);
+        println!("fluhsing to wal, whole manifest: {:?}", manifest);
 
         let mut memory_buffer = self.memory_buffer.write().await;
+        let mut membuf_size = self.membuf_size.write().await;
+
         let mut wal_file = self.wal_file.write().await;
-        let mut chunk_hashes = self.chunk_hashes.write().await;
 
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
         let mut wal_buffer: Vec<u8> = Vec::new();
@@ -416,23 +423,15 @@ impl Manifest {
             for index in &in_memory_file.mem_chunks {
                 match index {
                     MemChunkIndex::Chunk(start) => {
-                        println!("have uindex, start: {}", start);
                         if let Some(chunk) = in_memory_file.chunks.get_mut(&start) {
-                            println!("have chunk");
                             if let ChunkLocation::Memory(memkey) = chunk.location {
-                                println!("have memkey");
-                                println!("entire chunk: {:?}", chunk);
                                 // Serialize the chunk and write it to the buffer
                                 match memory_buffer.get(&memkey) {
                                     None => {
-                                        // DOUBLECHECK
-                                        println!("nothing in buffer!");
-
+                                        println!("BIG ERROR NOT FOUND BBY");
                                         continue;
                                     }
                                     Some(data) => {
-                                        println!("chunk data length: {}", data.len());
-
                                         let serialized_chunk = serialize_chunk(
                                             file_id,
                                             data,
@@ -443,10 +442,10 @@ impl Manifest {
                                             &self.cipher,
                                         )
                                         .await?;
-                                        println!("serialized chunk length: {}", serialized_chunk.len());
                                         chunk.location = ChunkLocation::Wal(
                                             wal_length_before_flush + wal_buffer.len() as u64,
                                         );
+                                        in_memory_file.wal_chunks.push(chunk.start);
                                         wal_buffer.extend_from_slice(&serialized_chunk);
                                     }
                                 }
@@ -478,17 +477,17 @@ impl Manifest {
                         .await?;
                         chunk.location =
                             ChunkLocation::Wal(wal_length_before_flush + wal_buffer.len() as u64);
+                        in_memory_file.wal_chunks.push(chunk.start);
                         wal_buffer.extend_from_slice(&serialized_chunk);
                     }
                 }
             }
             in_memory_file.mem_chunks.clear();
         }
-        println!("actually wrote something., buffer length {}", wal_buffer.len());
         wal_file.write_all(&wal_buffer).await?;
-        println!("actually wrote something., buffer length {}", wal_buffer.len());
-
+        println!("flushed to wal, manifest after: {:?}", manifest);
         memory_buffer.clear();
+        *membuf_size = 0;
         Ok(())
     }
 
@@ -496,6 +495,7 @@ impl Manifest {
         let mut manifest = self.manifest.write().await;
         let mut in_memory_file = InMemoryFile::default();
         let mut memory_buffer = self.memory_buffer.write().await;
+        let mut membuf_size = self.membuf_size.write().await;
 
         let cipher: Option<&XChaCha20Poly1305> = if self.encryption {
             Some(&self.cipher)
@@ -509,12 +509,12 @@ impl Manifest {
         let tx_id = rand::random::<u64>(); // uuid instead?
 
         for chunk in chunks {
-            if memory_buffer.len() + chunk.len() > self.memory_limit {
+            if *membuf_size + chunk.len() > self.memory_limit {
                 manifest.insert(file.clone(), in_memory_file);
-                self.flush_to_wal(&mut manifest, &mut memory_buffer).await?;
+                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
                 in_memory_file = manifest.get(file).unwrap().clone();
             }
-            println!("writing chunk with start {}", chunk_start);
+            
             self.write_chunk(
                 chunk,
                 chunk_start,
@@ -522,13 +522,14 @@ impl Manifest {
                 cipher,
                 &mut in_memory_file,
                 &mut memory_buffer,
+                &mut membuf_size,
             )
             .await?;
 
             chunk_start += chunk.len() as u64;
         }
 
-        self.commit_tx(tx_id, &mut in_memory_file, &mut memory_buffer).await;
+        self.commit_tx(tx_id, &mut in_memory_file, &mut memory_buffer, &mut membuf_size).await;
 
         manifest.insert(file.clone(), in_memory_file);
 
@@ -543,6 +544,7 @@ impl Manifest {
         cipher: Option<&XChaCha20Poly1305>,
         in_memory_file: &mut InMemoryFile,
         memory_buffer: &mut HashMap<u64, Vec<u8>>,
+        membuf_size: &mut usize,
     ) -> Result<(), FsError> {
         let chunk_hashes = self.chunk_hashes.read().await;
 
@@ -562,6 +564,7 @@ impl Manifest {
             false => {
                 let mem_key = rand::random::<u64>();
                 memory_buffer.insert(mem_key, chunk.to_vec());
+                *membuf_size += chunk.len();
                 ChunkLocation::Memory(mem_key)
             }
         };
@@ -860,6 +863,7 @@ impl Manifest {
         let mut manifest = self.manifest.write().await;
 
         let mut memory_buffer = self.memory_buffer.write().await;
+        let mut membuf_size = self.membuf_size.write().await;
 
         let cipher: Option<&XChaCha20Poly1305> = if self.encryption {
             Some(&self.cipher)
@@ -896,9 +900,9 @@ impl Manifest {
             chunk_data[chunk_data_start..chunk_data_start + write_length]
                 .copy_from_slice(data_to_write);
 
-            if memory_buffer.len() + chunk_data.len() > self.memory_limit {
+            if *membuf_size + chunk_data.len() > self.memory_limit {
                 manifest.insert(file_id.clone(), file);
-                self.flush_to_wal(&mut manifest, &mut memory_buffer).await?;
+                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
                 file = manifest.get(file_id).unwrap().clone();
             }
 
@@ -909,6 +913,7 @@ impl Manifest {
                 cipher,
                 &mut file,
                 &mut memory_buffer,
+                &mut membuf_size,
             )
             .await?;
             data_offset += write_length;
@@ -919,8 +924,8 @@ impl Manifest {
             let remaining_data = &data[data_offset..];
             let start = file.get_len();
 
-            if memory_buffer.len() + remaining_data.len() > self.memory_limit {
-                self.flush_to_wal(&mut manifest, &mut memory_buffer).await?;
+            if *membuf_size + remaining_data.len() > self.memory_limit {
+                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
             }
 
             self.write_chunk(
@@ -930,11 +935,12 @@ impl Manifest {
                 cipher,
                 &mut file,
                 &mut memory_buffer,
+                &mut membuf_size,
             )
             .await?;
         }
 
-        self.commit_tx(tx_id, &mut file, &mut memory_buffer).await;
+        self.commit_tx(tx_id, &mut file, &mut memory_buffer, &mut membuf_size).await;
 
         manifest.insert(file_id.clone(), file);
 
@@ -965,6 +971,7 @@ impl Manifest {
             .clone();
 
         let mut memory_buffer = self.memory_buffer.write().await;
+        let mut membuf_size = self.membuf_size.write().await;
 
         let cipher: Option<&XChaCha20Poly1305> = if self.encryption {
             Some(&self.cipher)
@@ -981,8 +988,8 @@ impl Manifest {
             let extension_length = new_length - file_len;
             let extension_data = vec![0; extension_length as usize];
 
-            if memory_buffer.len() + extension_data.len() > self.memory_limit {
-                self.flush_to_wal(&mut manifest, &mut memory_buffer).await?;
+            if *membuf_size + extension_data.len() > self.memory_limit {
+                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
             }
 
             self.write_chunk(
@@ -992,6 +999,7 @@ impl Manifest {
                 cipher,
                 &mut in_memory_file,
                 &mut memory_buffer,
+                &mut membuf_size,
             )
             .await?;
         } else if new_length < file_len {
@@ -1003,8 +1011,8 @@ impl Manifest {
                     .await?;
                 chunk_data.truncate((new_length - chunk.start) as usize);
 
-                if memory_buffer.len() + chunk_data.len() > self.memory_limit {
-                    self.flush_to_wal(&mut manifest, &mut memory_buffer).await?;
+                if *membuf_size + chunk_data.len() > self.memory_limit {
+                    self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
                 }
 
                 self.write_chunk(
@@ -1014,6 +1022,7 @@ impl Manifest {
                     cipher,
                     &mut in_memory_file,
                     &mut memory_buffer,
+                    &mut membuf_size,
                 )
                 .await?;
             }
@@ -1036,7 +1045,7 @@ impl Manifest {
                 .retain(|&start| start < new_length);
         }
 
-        self.commit_tx(tx_id, &mut in_memory_file, &mut memory_buffer).await;
+        self.commit_tx(tx_id, &mut in_memory_file, &mut memory_buffer, &mut membuf_size).await;
 
         manifest.insert(file_id.clone(), in_memory_file);
 
@@ -1052,7 +1061,9 @@ impl Manifest {
         let mut chunk_hashes = self.chunk_hashes.write().await;
         let mut hash_index = self.hash_index.write().await;
         let mut memory_buffer = self.memory_buffer.write().await;
+        let mut membuf_size = self.membuf_size.write().await;
 
+        println!("flushing to cold, whole manifest: {:?}", manifest_lock);
         let mut to_flush: Vec<(FileIdentifier, Vec<Chunk>)> = Vec::new();
         for (file_id, in_memory_file) in manifest_lock.iter_mut() {
             let mut chunks_to_flush: Vec<Chunk> = Vec::new();
@@ -1062,6 +1073,7 @@ impl Manifest {
                     MemChunkIndex::Chunk(start) => {
                         if let Some(chunk) = in_memory_file.chunks.get(&start) {
                             if matches!(chunk.location, ChunkLocation::Memory(_)) {
+                                println!("fluhsing memchunk to cold!");
                                 chunks_to_flush.push(chunk.clone());
                             }
                         }
@@ -1073,6 +1085,7 @@ impl Manifest {
             for &start in &in_memory_file.wal_chunks {
                 if let Some(chunk) = in_memory_file.chunks.get(&start) {
                     if matches!(chunk.location, ChunkLocation::Wal(_)) {
+                        println!("fluhsing walchunk to cold!");
                         chunks_to_flush.push(chunk.clone());
                     }
                 }
@@ -1111,12 +1124,17 @@ impl Manifest {
                     }
                     ChunkLocation::Memory(memkey) => {
                         // convert mem_pos and length to usize
-                        memory_buffer
+                        let mut buffer = memory_buffer
                             .get(&memkey)
                             .ok_or(FsError::MemoryBufferError {
                                 error: format!("No data found for memkey: {}", memkey),
                             })?
-                            .clone()
+                            .clone();
+                        
+                        if chunk.encrypted {
+                            buffer = encrypt(&*self.cipher, &buffer)?;
+                        }
+                        buffer
                     }
                     _ => vec![],
                 };
@@ -1196,6 +1214,8 @@ impl Manifest {
         // clear the WAL file and memory buffer
         wal_file.set_len(0).await?;
         memory_buffer.clear();
+        *membuf_size = 0;
+        println!("flushed to cold, manifest after: {:?}", manifest_lock);
         Ok(())
     }
 
@@ -1260,6 +1280,7 @@ impl Clone for Manifest {
             fs_directory_path: self.fs_directory_path.clone(),
             flush_cold_freq: self.flush_cold_freq,
             memory_buffer: Arc::clone(&self.memory_buffer),
+            membuf_size: Arc::clone(&self.membuf_size),
             read_cache: Arc::clone(&self.read_cache),
             memory_limit: self.memory_limit,
             chunk_size: self.chunk_size,
