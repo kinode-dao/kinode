@@ -115,13 +115,6 @@ async fn handle_message(
         }
     };
 
-    let _ = _print_tx
-        .send(Printout {
-            verbosity: 0,
-            content: format!("llm: {:?}", llm_response.clone().content),
-        })
-        .await;
-
     let message = KernelMessage {
         id,
         source: Address {
