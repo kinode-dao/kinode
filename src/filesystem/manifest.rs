@@ -326,7 +326,7 @@ impl Manifest {
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
 
         let mut wal_buffer: Vec<u8> = Vec::new();
-        println!("flushing to wal, manifest before: {:?}", manifest);
+        // println!("flushing to wal, manifest before: {:?}", manifest);
         // let mut new_commited_locations: HashMap<FileIdentifier, (u64, ChunkLocation)> = HashMap::new();
         // let mut new_active_locations: HashMap<FileIdentifier, (u64, ChunkLocation)> = HashMap::new();
 
@@ -396,7 +396,7 @@ impl Manifest {
             }
             in_memory_file.mem_chunks.clear();
         }
-        println!("wal flush, manifest after: {:?}", manifest);
+        //println!("wal flush, manifest after: {:?}", manifest);
 
         wal_file.write_all(&wal_buffer).await?;
         memory_buffer.clear();
@@ -409,7 +409,7 @@ impl Manifest {
         // other flush_to_wal gets buffer and others passed in.
         // potentially unify with options.
         let mut manifest = self.manifest.write().await;
-        println!("fluhsing to wal, whole manifest: {:?}", manifest);
+        //println!("fluhsing to wal, whole manifest: {:?}", manifest);
 
         let mut memory_buffer = self.memory_buffer.write().await;
         let mut membuf_size = self.membuf_size.write().await;
@@ -485,13 +485,14 @@ impl Manifest {
             in_memory_file.mem_chunks.clear();
         }
         wal_file.write_all(&wal_buffer).await?;
-        println!("flushed to wal, manifest after: {:?}", manifest);
+        //println!("flushed to wal, manifest after: {:?}", manifest);
         memory_buffer.clear();
         *membuf_size = 0;
         Ok(())
     }
 
     pub async fn write(&self, file: &FileIdentifier, data: &[u8]) -> Result<(), FsError> {
+        let instant = tokio::time::Instant::now();
         let mut manifest = self.manifest.write().await;
         let mut in_memory_file = InMemoryFile::default();
         let mut memory_buffer = self.memory_buffer.write().await;
@@ -532,7 +533,7 @@ impl Manifest {
         self.commit_tx(tx_id, &mut in_memory_file, &mut memory_buffer, &mut membuf_size).await;
 
         manifest.insert(file.clone(), in_memory_file);
-
+        println!("write took: {:?}", instant.elapsed());
         Ok(())
     }
 
@@ -1063,7 +1064,7 @@ impl Manifest {
         let mut memory_buffer = self.memory_buffer.write().await;
         let mut membuf_size = self.membuf_size.write().await;
 
-        println!("flushing to cold, whole manifest: {:?}", manifest_lock);
+        //println!("flushing to cold, whole manifest: {:?}", manifest_lock);
         let mut to_flush: Vec<(FileIdentifier, Vec<Chunk>)> = Vec::new();
         for (file_id, in_memory_file) in manifest_lock.iter_mut() {
             let mut chunks_to_flush: Vec<Chunk> = Vec::new();
@@ -1215,7 +1216,7 @@ impl Manifest {
         wal_file.set_len(0).await?;
         memory_buffer.clear();
         *membuf_size = 0;
-        println!("flushed to cold, manifest after: {:?}", manifest_lock);
+        //println!("flushed to cold, manifest after: {:?}", manifest_lock);
         Ok(())
     }
 
