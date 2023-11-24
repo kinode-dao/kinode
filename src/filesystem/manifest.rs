@@ -288,7 +288,13 @@ impl Manifest {
         }
     }
 
-    pub async fn commit_tx(&self, tx_id: u64, in_memory_file: &mut InMemoryFile, memory_buffer: &mut HashMap<u64, Vec<u8>>, membuf_size: &mut usize) {
+    pub async fn commit_tx(
+        &self,
+        tx_id: u64,
+        in_memory_file: &mut InMemoryFile,
+        memory_buffer: &mut HashMap<u64, Vec<u8>>,
+        membuf_size: &mut usize,
+    ) {
         let mut chunk_hashes = self.chunk_hashes.write().await;
         let commit_index = MemChunkIndex::CommitTx(tx_id);
 
@@ -299,10 +305,12 @@ impl Manifest {
                         memory_buffer.remove(&old_mem_key);
                         *membuf_size -= old_chunk.length as usize;
                     }
-                }                
+                }
                 match &chunk.location {
                     ChunkLocation::Memory(_idx) => {
-                        in_memory_file.mem_chunks.push(MemChunkIndex::Chunk(chunk.start));
+                        in_memory_file
+                            .mem_chunks
+                            .push(MemChunkIndex::Chunk(chunk.start));
                     }
                     ChunkLocation::Wal(..) => {
                         in_memory_file.wal_chunks.push(chunk.start);
@@ -512,10 +520,11 @@ impl Manifest {
         for chunk in chunks {
             if *membuf_size + chunk.len() > self.memory_limit {
                 manifest.insert(file.clone(), in_memory_file);
-                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
+                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size)
+                    .await?;
                 in_memory_file = manifest.get(file).unwrap().clone();
             }
-            
+
             self.write_chunk(
                 chunk,
                 chunk_start,
@@ -530,7 +539,13 @@ impl Manifest {
             chunk_start += chunk.len() as u64;
         }
 
-        self.commit_tx(tx_id, &mut in_memory_file, &mut memory_buffer, &mut membuf_size).await;
+        self.commit_tx(
+            tx_id,
+            &mut in_memory_file,
+            &mut memory_buffer,
+            &mut membuf_size,
+        )
+        .await;
 
         manifest.insert(file.clone(), in_memory_file);
         println!("write took: {:?}", instant.elapsed());
@@ -903,7 +918,8 @@ impl Manifest {
 
             if *membuf_size + chunk_data.len() > self.memory_limit {
                 manifest.insert(file_id.clone(), file);
-                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
+                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size)
+                    .await?;
                 file = manifest.get(file_id).unwrap().clone();
             }
 
@@ -926,7 +942,8 @@ impl Manifest {
             let start = file.get_len();
 
             if *membuf_size + remaining_data.len() > self.memory_limit {
-                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
+                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size)
+                    .await?;
             }
 
             self.write_chunk(
@@ -941,7 +958,8 @@ impl Manifest {
             .await?;
         }
 
-        self.commit_tx(tx_id, &mut file, &mut memory_buffer, &mut membuf_size).await;
+        self.commit_tx(tx_id, &mut file, &mut memory_buffer, &mut membuf_size)
+            .await;
 
         manifest.insert(file_id.clone(), file);
 
@@ -990,7 +1008,8 @@ impl Manifest {
             let extension_data = vec![0; extension_length as usize];
 
             if *membuf_size + extension_data.len() > self.memory_limit {
-                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
+                self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size)
+                    .await?;
             }
 
             self.write_chunk(
@@ -1013,7 +1032,8 @@ impl Manifest {
                 chunk_data.truncate((new_length - chunk.start) as usize);
 
                 if *membuf_size + chunk_data.len() > self.memory_limit {
-                    self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
+                    self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size)
+                        .await?;
                 }
 
                 self.write_chunk(
@@ -1046,7 +1066,13 @@ impl Manifest {
                 .retain(|&start| start < new_length);
         }
 
-        self.commit_tx(tx_id, &mut in_memory_file, &mut memory_buffer, &mut membuf_size).await;
+        self.commit_tx(
+            tx_id,
+            &mut in_memory_file,
+            &mut memory_buffer,
+            &mut membuf_size,
+        )
+        .await;
 
         manifest.insert(file_id.clone(), in_memory_file);
 
@@ -1131,7 +1157,7 @@ impl Manifest {
                                 error: format!("No data found for memkey: {}", memkey),
                             })?
                             .clone();
-                        
+
                         if chunk.encrypted {
                             buffer = encrypt(&*self.cipher, &buffer)?;
                         }
