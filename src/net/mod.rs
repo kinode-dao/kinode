@@ -404,7 +404,7 @@ async fn direct_networking(
                                 }).await?;
                                 continue;
                             }
-                            Err(e) => {
+                            Err(_e) => {
                                 print_tx.send(Printout {
                                     verbosity: 0,
                                     content: "net: recv_connection timed out".into(),

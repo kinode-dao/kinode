@@ -177,12 +177,6 @@ async fn http_handler(
 ) -> Result<impl warp::Reply, warp::Rejection> {
     // TODO this is all so dirty. Figure out what actually matters.
 
-    println!(
-        "http_server: got request from {:?} for {}\r",
-        socket_addr,
-        path.as_str()
-    );
-
     // trim trailing "/"
     let original_path = normalize_path(path.as_str());
     let id: u64 = rand::random();
@@ -194,8 +188,6 @@ async fn http_handler(
     };
     let bound_path = route.handler();
 
-    println!("here1\r");
-
     if bound_path.authenticated {
         let auth_token = serialized_headers
             .get("cookie")
@@ -206,8 +198,6 @@ async fn http_handler(
         }
     }
 
-    println!("here2\r");
-
     let is_local = socket_addr
         .map(|addr| addr.ip().is_loopback())
         .unwrap_or(false);
@@ -215,8 +205,6 @@ async fn http_handler(
     if bound_path.local_only && !is_local {
         return Ok(warp::reply::with_status(vec![], StatusCode::FORBIDDEN).into_response());
     }
-
-    println!("here3\r");
 
     // if path has static content, serve it
     if let Some(static_content) = &bound_path.static_content {
@@ -232,8 +220,6 @@ async fn http_handler(
             .body(static_content.bytes.clone())
             .into_response());
     }
-
-    println!("here4\r");
 
     // RPC functionality: if path is /rpc:sys:uqbar/message,
     // we extract message from base64 encoded bytes in data
