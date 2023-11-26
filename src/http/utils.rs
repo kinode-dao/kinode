@@ -111,6 +111,6 @@ pub async fn is_port_available(bind_addr: &str) -> bool {
     TcpListener::bind(bind_addr).await.is_ok()
 }
 
-pub fn binary_encoded_string_to_bytes(s: &str) -> Vec<u8> {
+pub fn _binary_encoded_string_to_bytes(s: &str) -> Vec<u8> {
     s.chars().map(|c| c as u8).collect()
 }

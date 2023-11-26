@@ -152,7 +152,7 @@ async fn handle_message(
                                 ipc: serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(
                                     &Ok(HttpResponse {
                                         status: response.status().as_u16(),
-                                        headers: serialize_headers(&response.headers()),
+                                        headers: serialize_headers(response.headers()),
                                     }),
                                 )
                                 .unwrap(),

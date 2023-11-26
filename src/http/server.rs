@@ -101,7 +101,7 @@ pub async fn http_server(
         )
         .await;
     }
-    return Err(anyhow::anyhow!("http_server: http_server loop exited"));
+    Err(anyhow::anyhow!("http_server: http_server loop exited"))
 }
 
 /// The 'server' part. Listens on a port assigned by runtime, and handles
@@ -775,12 +775,11 @@ async fn handle_app_message(
                                 )
                                 .await;
                                 return;
+                            }
+                            if message_type == WsMessageType::Ping {
+                                warp::ws::Message::ping(payload.bytes)
                             } else {
-                                if message_type == WsMessageType::Ping {
-                                    warp::ws::Message::ping(payload.bytes)
-                                } else {
-                                    warp::ws::Message::pong(payload.bytes)
-                                }
+                                warp::ws::Message::pong(payload.bytes)
                             }
                         }
                     };

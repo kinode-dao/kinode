@@ -31,7 +31,7 @@ pub type NodeId = String; // QNS domain name
 /// the process name can be a random number, or a name chosen by the user.
 /// the formatting is as follows:
 /// `[process name]:[package name]:[node ID]`
-#[derive(Clone, Debug, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub struct ProcessId {
     process_name: String,
     package_name: String,
@@ -47,13 +47,13 @@ pub struct PackageId {
 }
 
 impl PackageId {
-    pub fn new(package_name: &str, publisher_node: &str) -> Self {
+    pub fn _new(package_name: &str, publisher_node: &str) -> Self {
         PackageId {
             package_name: package_name.into(),
             publisher_node: publisher_node.into(),
         }
     }
-    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+    pub fn _from_str(input: &str) -> Result<Self, ProcessIdParseError> {
         // split string on colons into 2 segments
         let mut segments = input.split(':');
         let package_name = segments
@@ -72,10 +72,10 @@ impl PackageId {
             publisher_node,
         })
     }
-    pub fn package(&self) -> &str {
+    pub fn _package(&self) -> &str {
         &self.package_name
     }
-    pub fn publisher(&self) -> &str {
+    pub fn _publisher(&self) -> &str {
         &self.publisher_node
     }
 }
@@ -164,13 +164,13 @@ impl std::fmt::Display for ProcessId {
     }
 }
 
-impl PartialEq for ProcessId {
-    fn eq(&self, other: &Self) -> bool {
-        self.process_name == other.process_name
-            && self.package_name == other.package_name
-            && self.publisher_node == other.publisher_node
-    }
-}
+// impl PartialEq for ProcessId {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.process_name == other.process_name
+//             && self.package_name == other.package_name
+//             && self.publisher_node == other.publisher_node
+//     }
+// }
 
 impl PartialEq<&str> for ProcessId {
     fn eq(&self, other: &&str) -> bool {
@@ -228,7 +228,7 @@ impl Address {
             process: process.into(),
         }
     }
-    pub fn from_str(input: &str) -> Result<Self, AddressParseError> {
+    pub fn _from_str(input: &str) -> Result<Self, AddressParseError> {
         // split string on colons into 4 segments,
         // first one with @, next 3 with :
         let mut name_rest = input.split('@');
@@ -304,6 +304,7 @@ impl std::fmt::Display for Address {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum AddressParseError {
     TooManyColons,
     MissingNodeId,
