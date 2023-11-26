@@ -5,7 +5,8 @@
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [
-            "net:sys:uqbar"
+            "net:sys:uqbar",
+            "http_client:sys:uqbar"
         ],
         "public": true
     }

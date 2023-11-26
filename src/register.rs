@@ -17,7 +17,6 @@ use warp::{
     Filter, Rejection, Reply,
 };
 
-use crate::http_server;
 use crate::keygen;
 use crate::types::*;
 
@@ -29,7 +28,7 @@ pub fn generate_jwt(jwt_secret_bytes: &[u8], username: String) -> Option<String>
         Err(_) => return None,
     };
 
-    let claims = JwtClaims {
+    let claims = crate::http::types::JwtClaims {
         username: username.clone(),
         expiration: 0,
     };
@@ -304,7 +303,7 @@ async fn handle_info(
     };
 
     // TODO: if IP is localhost, don't allow registration as direct
-    let ws_port = http_server::find_open_port(9000).await.unwrap();
+    let ws_port = crate::http::utils::find_open_port(9000).await.unwrap();
 
     let our = Identity {
         networking_key: format!("0x{}", public_key),

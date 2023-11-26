@@ -59,10 +59,10 @@ serde_json = "1.0"
 serde_urlencoded = "0.7"
 sha2 = "0.10"
 snow = { version = "0.9.3", features = ["ring-resolver"] }
-thiserror = "1.0.43"
+thiserror = "1.0"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 tokio-tungstenite = "*"
-url = "*"
+url = "2.4.1"
 uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "e53c124" }
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"

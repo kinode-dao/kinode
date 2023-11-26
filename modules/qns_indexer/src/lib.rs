@@ -6,8 +6,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::string::FromUtf8Error;
 use uqbar_process_lib::{
-    get_typed_state, receive, set_state, Address, Message, Payload, Request,
-    Response,
+    get_typed_state, http, receive, set_state, Address, Message, Payload, Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -67,6 +66,14 @@ pub struct QnsUpdate {
     pub routers: Vec<String>,
 }
 
+impl TryInto<Vec<u8>> for NetActions {
+    type Error = anyhow::Error;
+
+    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
+        Ok(rmp_serde::to_vec(&self)?)
+    }
+}
+
 sol! {
     event WsChanged(
         uint256 indexed node,
@@ -103,14 +110,6 @@ fn subscribe_to_qns(from_block: u64) -> Vec<u8> {
     .to_vec()
 }
 
-fn serialize_message(message: &NetActions) -> anyhow::Result<Vec<u8>> {
-    Ok(rmp_serde::to_vec(message)?)
-}
-
-fn serialize_json_message(message: &serde_json::Value) -> anyhow::Result<Vec<u8>> {
-    Ok(serde_json::to_vec(message)?)
-}
-
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
@@ -143,32 +142,19 @@ impl Guest for Component {
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // shove all state into net::net
     Request::new()
-        .target(Address::new(&our.node, "net:sys:uqbar")?)?
-        .ipc(
-            &NetActions::QnsBatchUpdate(state.nodes.values().cloned().collect::<Vec<_>>()),
-            serialize_message,
-        )?
+        .target((&our.node, "net", "sys", "uqbar"))
+        .try_ipc(NetActions::QnsBatchUpdate(
+            state.nodes.values().cloned().collect::<Vec<_>>(),
+        ))?
         .send()?;
 
     Request::new()
-        .target(Address::new(&our.node, "eth_rpc:sys:uqbar")?)?
-        .ipc_bytes(subscribe_to_qns(state.block - 1))
+        .target((&our.node, "eth_rpc", "sys", "uqbar"))
+        .ipc(subscribe_to_qns(state.block - 1))
         .expects_response(5)
         .send()?;
 
-    Request::new()
-        .target(Address::new(&our.node, "http_server:sys:uqbar")?)?
-        .ipc(
-            &json!({
-                "BindPath": {
-                    "path": "/node/:name",
-                    "authenticated": false,
-                    "local_only": false
-                }
-            }),
-            serialize_json_message,
-        )?
-        .send()?;
+    http::bind_http_path("/node/:name", false, false)?;
 
     loop {
         let Ok((source, message)) = receive() else {
@@ -188,14 +174,15 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         if let Some(node) = state.nodes.get(name) {
                             Response::new()
                                 .ipc(
-                                    &serde_json::json!({
-                                        "status": 200,
-                                        "headers": {
-                                            "Content-Type": "application/json",
-                                        },
-                                    }),
-                                    serialize_json_message,
-                                )?
+                                    serde_json::to_vec(&http::HttpResponse {
+                                        status: 200,
+                                        headers: HashMap::from([(
+                                            "Content-Type".to_string(),
+                                            "application/json".to_string(),
+                                        )]),
+                                    })
+                                    .unwrap(),
+                                )
                                 .payload(Payload {
                                     mime: Some("application/json".to_string()),
                                     bytes: serde_json::to_string(&node)
@@ -211,18 +198,15 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             }
             Response::new()
                 .ipc(
-                    &serde_json::json!({
-                        "status": 404,
-                        "headers": {
-                            "Content-Type": "application/json",
-                        },
-                    }),
-                    serialize_json_message,
-                )?
-                .payload(Payload {
-                    mime: Some("application/json".to_string()),
-                    bytes: "Not Found".to_string().as_bytes().to_vec(),
-                })
+                    serde_json::to_vec(&http::HttpResponse {
+                        status: 404,
+                        headers: HashMap::from([(
+                            "Content-Type".to_string(),
+                            "application/json".to_string(),
+                        )]),
+                    })
+                    .unwrap(),
+                )
                 .send()?;
             continue;
         }
@@ -299,8 +283,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         state.nodes.insert(name.clone(), update.clone());
 
                         Request::new()
-                            .target(Address::new(&our.node, "net:sys:uqbar")?)?
-                            .ipc(&NetActions::QnsUpdate(update.clone()), serialize_message)?
+                            .target((&our.node, "net", "sys", "uqbar"))
+                            .try_ipc(NetActions::QnsUpdate(update))?
                             .send()?;
                     }
                     event => {
@@ -309,7 +293,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
             }
         }
-    set_state(&bincode::serialize(&state)?);
+        set_state(&bincode::serialize(&state)?);
     }
 }
 // helpers

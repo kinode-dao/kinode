@@ -69,7 +69,7 @@ pub async fn timer_service(
                 if !timer_map.contains(pop_time) {
                     timer_tasks.spawn(async move {
                         tokio::time::sleep(std::time::Duration::from_millis(timer_millis - 1)).await;
-                        return pop_time
+                        pop_time
                     });
                 }
                 timer_map.insert(pop_time, km.id, km.rsvp.unwrap_or(km.source));
@@ -96,10 +96,7 @@ struct TimerMap {
 
 impl TimerMap {
     fn insert(&mut self, pop_time: u64, id: u64, addr: Address) {
-        self.timers
-            .entry(pop_time)
-            .or_insert(vec![])
-            .push((id, addr));
+        self.timers.entry(pop_time).or_default().push((id, addr));
     }
 
     fn contains(&mut self, pop_time: u64) -> bool {
