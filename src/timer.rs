@@ -96,10 +96,7 @@ struct TimerMap {
 
 impl TimerMap {
     fn insert(&mut self, pop_time: u64, id: u64, addr: Address) {
-        self.timers
-            .entry(pop_time)
-            .or_default()
-            .push((id, addr));
+        self.timers.entry(pop_time).or_default().push((id, addr));
     }
 
     fn contains(&mut self, pop_time: u64) -> bool {
