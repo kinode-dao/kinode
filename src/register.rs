@@ -176,12 +176,6 @@ async fn handle_boot(
         our.name = info.username;
     }
 
-    if info.direct {
-        our.allowed_routers = vec![];
-    } else {
-        our.ws_routing = None;
-    }
-
     // if keyfile was not present in node and is present from user upload
     let mut encoded_keyfile = if !info.keyfile.clone().is_empty() {
         match base64::decode(info.keyfile.clone()) {
@@ -203,6 +197,12 @@ async fn handle_boot(
         let seed = SystemRandom::new();
         let mut jwt_secret = [0u8, 32];
         ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
+
+        if info.direct {
+            our.allowed_routers = vec![];
+        } else {
+            our.ws_routing = None;
+        }
 
         Keyfile {
             username: our.name.clone(),
