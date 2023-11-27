@@ -1,4 +1,4 @@
-use crate::kernel::uqbar::process::standard as wit;
+use crate::kernel::process::wit;
 use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
