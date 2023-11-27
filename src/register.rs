@@ -440,7 +440,7 @@ async fn success_response(
     match HeaderValue::from_str(&format!("uqbar-auth_{}={};", &our.name, &token)) {
         Ok(v) => {
             headers.append(SET_COOKIE, v);
-        },
+        }
         Err(_) => {
             return Ok(warp::reply::with_status(
                 warp::reply::json(&"Failed to generate Auth JWT".to_string()),
