@@ -216,6 +216,7 @@ async fn main() {
         } => (our, decoded_keyfile, encoded_keyfile),
     };
 
+    // TODO: delete the file if it exists
     fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
         .await
         .unwrap();

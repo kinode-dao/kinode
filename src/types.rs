@@ -678,6 +678,12 @@ pub struct LoginInfo {
     pub password: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginAndResetInfo {
+    pub password: String,
+    pub direct: bool,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Identity {
     pub name: NodeId,

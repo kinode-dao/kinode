@@ -57,11 +57,11 @@ pub async fn register(
     let keyfile_has = keyfile_arc.clone();
     let keyfile_vet = keyfile_arc.clone();
 
-    let static_files = warp::path("static").and(warp::fs::dir("./src/register/build/static/"));
+    let static_files = warp::path("static").and(warp::fs::dir("./src/register-ui/build/static/"));
 
     let react_app = warp::path::end()
         .and(warp::get())
-        .and(warp::fs::file("./src/register/build/index.html"));
+        .and(warp::fs::file("./src/register-ui/build/index.html"));
 
     let keyfile_vet_copy = keyfile_vet.clone();
     let boot_tx = tx.clone();
@@ -70,6 +70,10 @@ pub async fn register(
     let import_tx = tx.clone();
     let import_our_arc = our_arc.clone();
     let import_net_keypair_arc = net_keypair_arc.clone();
+    let login_tx = tx.clone();
+    let login_our_arc = our_arc.clone();
+    let login_net_keypair_arc = net_keypair_arc.clone();
+    let login_keyfile_arc = keyfile_arc.clone();
 
     let api = warp::path("has-keyfile")
         .and(
@@ -116,11 +120,21 @@ pub async fn register(
             warp::post()
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
+                .and(warp::any().map(move || login_tx.clone()))
+                .and(warp::any().map(move || login_our_arc.lock().unwrap().take().unwrap()))
+                .and(warp::any().map(move || login_net_keypair_arc.lock().unwrap().take().unwrap()))
+                .and(warp::any().map(move || login_keyfile_arc.lock().unwrap().take().unwrap()))
+                .and_then(handle_login),
+        ))
+        .or(warp::path("login-and-reset").and(
+            warp::post()
+                .and(warp::body::content_length_limit(1024 * 16))
+                .and(warp::body::json())
                 .and(warp::any().map(move || tx.clone()))
                 .and(warp::any().map(move || our_arc.lock().unwrap().take().unwrap()))
                 .and(warp::any().map(move || net_keypair_arc.lock().unwrap().take().unwrap()))
                 .and(warp::any().map(move || keyfile_arc.lock().unwrap().take().unwrap()))
-                .and_then(handle_login),
+                .and_then(handle_login_and_reset),
         ));
 
     let mut headers = HeaderMap::new();
@@ -260,6 +274,10 @@ async fn handle_import_keyfile(
     let decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
         Ok(k) => {
             our.name = k.username.clone();
+            our.allowed_routers = k.routers.clone();
+            if !our.allowed_routers.is_empty() {
+                our.ws_routing = None;
+            }
             our.networking_key = format!(
                 "0x{}",
                 hex::encode(k.networking_keypair.public_key().as_ref())
@@ -304,6 +322,64 @@ async fn handle_login(
 
     let decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
         Ok(k) => {
+            our.name = k.username.clone();
+            our.allowed_routers = k.routers.clone();
+            if !our.allowed_routers.is_empty() {
+                our.ws_routing = None;
+            }
+            our.networking_key = format!(
+                "0x{}",
+                hex::encode(k.networking_keypair.public_key().as_ref())
+            );
+            k
+        }
+        Err(_) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&"Failed to decode keyfile".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response())
+        }
+    };
+
+    let encoded_keyfile_str = base64::encode(encoded_keyfile.clone());
+
+    success_response(
+        sender,
+        our,
+        decoded_keyfile,
+        encoded_keyfile,
+        encoded_keyfile_str,
+    )
+    .await
+}
+
+async fn handle_login_and_reset(
+    info: LoginAndResetInfo,
+    sender: RegistrationSender,
+    mut our: Identity,
+    networking_keypair: Document,
+    encoded_keyfile: Vec<u8>,
+) -> Result<impl Reply, Rejection> {
+    // TODO: only reset the networking keys, based on direct
+    if encoded_keyfile.is_empty() {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Keyfile not present".to_string()),
+            StatusCode::BAD_REQUEST,
+        )
+        .into_response());
+    }
+
+    // Need to generate a new networking keypair
+
+    let decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
+        Ok(k) => {
+            if info.direct {
+                our.allowed_routers = vec![];
+            } else {
+                our.ws_routing = None;
+            }
+
             our.name = k.username.clone();
             our.networking_key = format!(
                 "0x{}",
@@ -360,14 +436,32 @@ async fn success_response(
             .into_response();
 
     let headers = response.headers_mut();
-    headers.append(
-        SET_COOKIE,
-        HeaderValue::from_str(&format!("uqbar-auth_{}={};", &our.name, &token)).unwrap(),
-    );
-    headers.append(
-        SET_COOKIE,
-        HeaderValue::from_str(&format!("uqbar-ws-auth_{}={};", &our.name, &token)).unwrap(),
-    );
+
+    match HeaderValue::from_str(&format!("uqbar-auth_{}={};", &our.name, &token)) {
+        Ok(v) => {
+            headers.append(SET_COOKIE, v);
+        },
+        Err(_) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&"Failed to generate Auth JWT".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response())
+        }
+    }
+
+    // match HeaderValue::from_str(&format!("uqbar-ws-auth_{}={};", &our.name, &token)) {
+    //     Ok(v) => {
+    //         headers.append(SET_COOKIE, v);
+    //     },
+    //     Err(_) => {
+    //         return Ok(warp::reply::with_status(
+    //             warp::reply::json(&"Failed to generate WS JWT".to_string()),
+    //             StatusCode::INTERNAL_SERVER_ERROR,
+    //         )
+    //         .into_response())
+    //     }
+    // }
 
     Ok(response)
 }
