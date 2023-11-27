@@ -407,6 +407,7 @@ impl Manifest {
         //println!("wal flush, manifest after: {:?}", manifest);
 
         wal_file.write_all(&wal_buffer).await?;
+        wal_file.sync_all().await?;
         memory_buffer.clear();
         *membuf_size = 0;
         Ok(())
@@ -493,6 +494,7 @@ impl Manifest {
             in_memory_file.mem_chunks.clear();
         }
         wal_file.write_all(&wal_buffer).await?;
+        wal_file.sync_all().await?;
         //println!("flushed to wal, manifest after: {:?}", manifest);
         memory_buffer.clear();
         *membuf_size = 0;
@@ -1214,7 +1216,7 @@ impl Manifest {
                     .collect::<Vec<_>>(),
             });
 
-            let serialized_entry = bincode::serialize(&entry).unwrap();
+            let serialized_entry = rmp_serde::encode::to_vec(&entry).unwrap();
             let entry_length = serialized_entry.len() as u64;
 
             let mut buffer = Vec::new();
@@ -1249,7 +1251,7 @@ impl Manifest {
     pub async fn delete(&self, file_id: &FileIdentifier) -> Result<(), FsError> {
         // add a delete entry to the manifest
         let entry = ManifestRecord::Delete(file_id.clone());
-        let serialized_entry = bincode::serialize(&entry).unwrap();
+        let serialized_entry = rmp_serde::encode::to_vec(&entry).unwrap();
         let entry_length = serialized_entry.len() as u64;
         let mut manifest_file = self.manifest_file.write().await;
 
@@ -1344,7 +1346,7 @@ async fn load_manifest(
         // Read serialized metadata
         let mut metadata_buffer = vec![0u8; metadata_length];
         manifest_file.read_exact(&mut metadata_buffer).await?;
-        let record_metadata: Result<ManifestRecord, _> = bincode::deserialize(&metadata_buffer);
+        let record_metadata: Result<ManifestRecord, _> = rmp_serde::decode::from_slice(&metadata_buffer);
 
         match record_metadata {
             Ok(ManifestRecord::Backup(entry)) => {
@@ -1425,7 +1427,7 @@ async fn load_wal(
         let mut record_buffer = vec![0u8; record_length];
         match wal_file.read_exact(&mut record_buffer).await {
             Ok(_) => {
-                let record: Result<WALRecord, _> = bincode::deserialize(&record_buffer);
+                let record: Result<WALRecord, _> = rmp_serde::decode::from_slice(&record_buffer);
                 match record {
                     Ok(WALRecord::CommitTx(tx_id)) => {
                         if let Some((file_id, chunks)) = tx_chunks.remove(&tx_id) {
@@ -1541,7 +1543,7 @@ async fn serialize_chunk(
     };
 
     // serialize the metadata
-    let serialized_metadata = bincode::serialize(&WALRecord::Chunk(entry)).unwrap();
+    let serialized_metadata = rmp_serde::encode::to_vec(&WALRecord::Chunk(entry)).unwrap();
     let metadata_length = serialized_metadata.len() as u64;
 
     let mut buffer = Vec::new();
@@ -1561,7 +1563,7 @@ async fn serialize_chunk(
 async fn serialize_commit(tx_id: u64) -> Result<Vec<u8>, FsError> {
     let mut buffer = Vec::new();
     let commit_tx_record = WALRecord::CommitTx(tx_id);
-    let serialized_commit_tx = bincode::serialize(&commit_tx_record).unwrap();
+    let serialized_commit_tx = rmp_serde::encode::to_vec(&commit_tx_record).unwrap();
     let commit_tx_length = serialized_commit_tx.len() as u64;
 
     buffer.extend_from_slice(&commit_tx_length.to_le_bytes());
