@@ -416,7 +416,8 @@ impl Manifest {
 
         let mut memory_buffer = self.memory_buffer.write().await;
         let mut membuf_size = self.membuf_size.write().await;
-        self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
+        self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size)
+            .await?;
         Ok(())
     }
 
@@ -663,7 +664,8 @@ impl Manifest {
             file: file_id.to_uuid().unwrap_or_default(),
         })?;
         let memory_buffer = self.memory_buffer.read().await;
-        self.read_from_file(&file, &memory_buffer, start, length).await
+        self.read_from_file(&file, &memory_buffer, start, length)
+            .await
     }
 
     pub async fn write_at(
