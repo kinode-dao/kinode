@@ -4,12 +4,7 @@ use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
 use ring::signature;
 use std::collections::{HashMap, VecDeque};
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 use tokio::task::JoinHandle;
 pub use uqbar::process::standard as wit;
 pub use uqbar::process::standard::Host as StandardHost;
@@ -377,52 +372,56 @@ impl ProcessState {
 
 /// create a specific process, and generate a task that will run it.
 pub async fn make_process_loop(
-    booted: Arc<AtomicBool>,
     keypair: Arc<signature::Ed25519KeyPair>,
     metadata: t::ProcessMetadata,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
     mut recv_in_process: ProcessMessageReceiver,
     send_to_process: ProcessMessageSender,
-    wasm_bytes: &Vec<u8>,
+    wasm_bytes: Vec<u8>,
     caps_oracle: t::CapMessageSender,
-    engine: &Engine,
-) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> {
-    // before process can be instantiated, need to await booted message from kernel
-    if !booted.load(Ordering::Relaxed) {
-        let mut pre_boot_queue = Vec::<Result<t::KernelMessage, t::WrappedSendError>>::new();
-        while let Some(message) = recv_in_process.recv().await {
-            match message {
-                Err(_) => {
-                    pre_boot_queue.push(message);
-                    continue;
+    engine: Engine,
+) -> Result<()> {
+    // before process can be instantiated, need to await 'run' message from kernel
+    let mut pre_boot_queue = Vec::<Result<t::KernelMessage, t::WrappedSendError>>::new();
+    while let Some(message) = recv_in_process.recv().await {
+        match message {
+            Err(_) => {
+                pre_boot_queue.push(message);
+                continue;
+            }
+            Ok(message) => {
+                if (message.source
+                    == t::Address {
+                        node: metadata.our.node.clone(),
+                        process: KERNEL_PROCESS_ID.clone(),
+                    })
+                    && (message.message
+                        == t::Message::Request(t::Request {
+                            inherit: false,
+                            expects_response: None,
+                            ipc: b"run".to_vec(),
+                            metadata: None,
+                        }))
+                {
+                    break;
                 }
-                Ok(message) => {
-                    if (message.source
-                        == t::Address {
-                            node: metadata.our.node.clone(),
-                            process: KERNEL_PROCESS_ID.clone(),
-                        })
-                        && (message.message
-                            == t::Message::Request(t::Request {
-                                inherit: false,
-                                expects_response: None,
-                                ipc: "booted".as_bytes().to_vec(),
-                                metadata: None,
-                            }))
-                    {
-                        break;
-                    }
-                    pre_boot_queue.push(Ok(message));
-                }
+                pre_boot_queue.push(Ok(message));
             }
         }
     }
+    // now that we've received the run message, we can send the pre-boot queue
+    for message in pre_boot_queue {
+        send_to_process
+            .send(message)
+            .await
+            .expect("make_process_loop: couldn't send message to process");
+    }
 
     let component =
-        Component::new(engine, wasm_bytes).expect("make_process_loop: couldn't read file");
+        Component::new(&engine, wasm_bytes).expect("make_process_loop: couldn't read file");
 
-    let mut linker = Linker::new(engine);
+    let mut linker = Linker::new(&engine);
     Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
 
     let table = Table::new();
@@ -431,7 +430,7 @@ pub async fn make_process_loop(
     wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
 
     let mut store = Store::new(
-        engine,
+        &engine,
         ProcessWasi {
             process: ProcessState {
                 keypair: keypair.clone(),
@@ -452,158 +451,158 @@ pub async fn make_process_loop(
         },
     );
 
-    Box::pin(async move {
-        let (bindings, _bindings) =
-            match Process::instantiate_async(&mut store, &component, &linker).await {
-                Ok(b) => b,
-                Err(e) => {
-                    let _ = send_to_terminal
-                        .send(t::Printout {
-                            verbosity: 0,
-                            content: format!(
-                                "mk: process {:?} failed to instantiate: {:?}",
-                                metadata.our.process, e,
-                            ),
-                        })
-                        .await;
-                    return Err(e);
-                }
-            };
-
-        // the process will run until it returns from init()
-        let is_error = match bindings
-            .call_init(&mut store, &metadata.our.to_string())
-            .await
-        {
-            Ok(()) => {
-                let _ =
-                    send_to_terminal
-                        .send(t::Printout {
-                            verbosity: 1,
-                            content: format!(
-                                "process {} returned without error",
-                                metadata.our.process,
-                            ),
-                        })
-                        .await;
-                false
-            }
+    let (bindings, _bindings) =
+        match Process::instantiate_async(&mut store, &component, &linker).await {
+            Ok(b) => b,
             Err(e) => {
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
-                        content: format!("process {:?} ended with error:", metadata.our.process,),
+                        content: format!(
+                            "mk: process {:?} failed to instantiate: {:?}",
+                            metadata.our.process, e,
+                        ),
                     })
                     .await;
-                for line in format!("{:?}", e).lines() {
-                    let _ = send_to_terminal
-                        .send(t::Printout {
-                            verbosity: 0,
-                            content: line.into(),
-                        })
-                        .await;
-                }
-                true
+                return Err(e);
             }
         };
 
-        // the process has completed, perform cleanup
-        let our_kernel = t::Address {
-            node: metadata.our.node.clone(),
-            process: KERNEL_PROCESS_ID.clone(),
-        };
-
-        if is_error {
-            // get caps before killing
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = caps_oracle
-                .send(t::CapMessage::GetAll {
-                    on: metadata.our.process.clone(),
-                    responder: tx,
+    // the process will run until it returns from init()
+    let is_error = match bindings
+        .call_init(&mut store, &metadata.our.to_string())
+        .await
+    {
+        Ok(()) => {
+            let _ = send_to_terminal
+                .send(t::Printout {
+                    verbosity: 1,
+                    content: format!("process {} returned without error", metadata.our.process,),
                 })
                 .await;
-            let initial_capabilities = rx.await.unwrap().into_iter().collect();
-
-            // always send message to tell main kernel loop to remove handler
-            send_to_loop
-                .send(t::KernelMessage {
-                    id: rand::random(),
-                    source: our_kernel.clone(),
-                    target: our_kernel.clone(),
-                    rsvp: None,
-                    message: t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        ipc: serde_json::to_vec(&t::KernelCommand::KillProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                        metadata: None,
-                    }),
-                    payload: None,
-                    signed_capabilities: None,
+            false
+        }
+        Err(e) => {
+            let _ = send_to_terminal
+                .send(t::Printout {
+                    verbosity: 0,
+                    content: format!("process {:?} ended with error:", metadata.our.process,),
                 })
-                .await
-                .expect("event loop: fatal: sender died");
+                .await;
+            for line in format!("{:?}", e).lines() {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: line.into(),
+                    })
+                    .await;
+            }
+            true
+        }
+    };
 
-            // fulfill the designated OnPanic behavior
-            match metadata.on_panic {
-                t::OnPanic::None => {}
-                // if restart, tell ourselves to init the app again, with same capabilities
-                t::OnPanic::Restart => {
-                    send_to_loop
-                        .send(t::KernelMessage {
-                            id: rand::random(),
-                            source: our_kernel.clone(),
-                            target: our_kernel.clone(),
-                            rsvp: None,
-                            message: t::Message::Request(t::Request {
-                                inherit: false,
-                                expects_response: None,
-                                ipc: serde_json::to_vec(&t::KernelCommand::RebootProcess {
-                                    process_id: metadata.our.process.clone(),
-                                    persisted: t::PersistedProcess {
-                                        wasm_bytes_handle: metadata.wasm_bytes_handle,
-                                        on_panic: metadata.on_panic,
-                                        capabilities: initial_capabilities,
-                                        public: metadata.public,
-                                    },
-                                })
-                                .unwrap(),
-                                metadata: None,
-                            }),
-                            payload: None,
-                            signed_capabilities: None,
+    // the process has completed, perform cleanup
+    let our_kernel = t::Address {
+        node: metadata.our.node.clone(),
+        process: KERNEL_PROCESS_ID.clone(),
+    };
+
+    if is_error {
+        // get caps before killing
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = caps_oracle
+            .send(t::CapMessage::GetAll {
+                on: metadata.our.process.clone(),
+                responder: tx,
+            })
+            .await;
+        let initial_capabilities = rx.await.unwrap().into_iter().collect();
+
+        // always send message to tell main kernel loop to remove handler
+        send_to_loop
+            .send(t::KernelMessage {
+                id: rand::random(),
+                source: our_kernel.clone(),
+                target: our_kernel.clone(),
+                rsvp: None,
+                message: t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                        metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                    metadata: None,
+                }),
+                payload: None,
+                signed_capabilities: None,
+            })
+            .await
+            .expect("event loop: fatal: sender died");
+
+        // fulfill the designated OnPanic behavior
+        match metadata.on_panic {
+            t::OnPanic::None => {}
+            // if restart, tell ourselves to init the app again, with same capabilities
+            t::OnPanic::Restart => {
+                send_to_loop
+                    .send(t::KernelMessage {
+                        id: rand::random(),
+                        source: our_kernel.clone(),
+                        target: our_kernel.clone(),
+                        rsvp: None,
+                        message: t::Message::Request(t::Request {
+                            inherit: false,
+                            expects_response: None,
+                            ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
+                                id: metadata.our.process.clone(),
+                                wasm_bytes_handle: metadata.wasm_bytes_handle,
+                                on_panic: metadata.on_panic,
+                                initial_capabilities,
+                                public: metadata.public,
+                            })
+                            .unwrap(),
+                            metadata: None,
+                        }),
+                        payload: None,
+                        signed_capabilities: None,
+                    })
+                    .await
+                    .expect("event loop: fatal: sender died");
+            }
+            // if requests, fire them
+            // even in death, a process can only message processes it has capabilities for
+            t::OnPanic::Requests(requests) => {
+                for (address, mut request, payload) in requests {
+                    request.expects_response = None;
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    let _ = caps_oracle
+                        .send(t::CapMessage::Has {
+                            on: metadata.our.process.clone(),
+                            cap: t::Capability {
+                                issuer: address.clone(),
+                                params: "\"messaging\"".into(),
+                            },
+                            responder: tx,
                         })
-                        .await
-                        .expect("event loop: fatal: sender died");
-                }
-                // if requests, fire them
-                // even in death, a process can only message processes it has capabilities for
-                t::OnPanic::Requests(requests) => {
-                    for (address, mut request, payload) in requests {
-                        request.expects_response = None;
-                        if initial_capabilities.contains(&t::Capability {
-                            issuer: address.clone(),
-                            params: "\"messaging\"".into(),
-                        }) {
-                            send_to_loop
-                                .send(t::KernelMessage {
-                                    id: rand::random(),
-                                    source: metadata.our.clone(),
-                                    target: address,
-                                    rsvp: None,
-                                    message: t::Message::Request(request),
-                                    payload,
-                                    signed_capabilities: None,
-                                })
-                                .await
-                                .expect("event loop: fatal: sender died");
-                        }
+                        .await;
+                    if let Ok(true) = rx.await {
+                        send_to_loop
+                            .send(t::KernelMessage {
+                                id: rand::random(),
+                                source: metadata.our.clone(),
+                                target: address,
+                                rsvp: None,
+                                message: t::Message::Request(request),
+                                payload,
+                                signed_capabilities: None,
+                            })
+                            .await
+                            .expect("event loop: fatal: sender died");
                     }
                 }
             }
         }
-        Ok(())
-    })
+    }
+    Ok(())
 }

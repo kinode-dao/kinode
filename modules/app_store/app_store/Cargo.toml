@@ -1,6 +1,6 @@
 [package]
 name = "app_store"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -17,7 +17,7 @@ rand = "0.8"
 serde = {version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10.8"
-uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "e53c124" }
+uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "955badd" }
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "5390bab780733f1660d14c254ec985df2816bf1d" }
 
 [lib]

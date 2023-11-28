@@ -256,7 +256,7 @@ impl StandardHost for process::ProcessWasi {
             self.process.metadata.our.process.package(),
             self.process.metadata.our.process.publisher(),
         );
-        let Ok(Ok((_, response))) = process::send_and_await_response(
+        let Ok(Ok((_, _response))) = process::send_and_await_response(
             self,
             Some(t::Address {
                 node: self.process.metadata.our.node.clone(),
@@ -269,11 +269,10 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5), // TODO evaluate
-                ipc: serde_json::to_vec(&t::KernelCommand::StartProcess {
+                ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                     id: new_process_id.clone(),
                     wasm_bytes_handle: hash,
                     on_panic: t::de_wit_on_panic(on_panic),
-                    // TODO
                     initial_capabilities: match capabilities {
                         wit::Capabilities::None => HashSet::new(),
                         wit::Capabilities::All => {
@@ -286,20 +285,7 @@ impl StandardHost for process::ProcessWasi {
                                     responder: tx,
                                 })
                                 .await;
-                            rx.await
-                                .unwrap()
-                                .into_iter()
-                                .map(|cap| t::SignedCapability {
-                                    issuer: cap.issuer.clone(),
-                                    params: cap.params.clone(),
-                                    signature: self
-                                        .process
-                                        .keypair
-                                        .sign(&rmp_serde::to_vec(&cap).unwrap())
-                                        .as_ref()
-                                        .to_vec(),
-                                })
-                                .collect()
+                            rx.await.unwrap()
                         }
                         wit::Capabilities::Some(caps) => caps
                             .into_iter()
@@ -319,6 +305,32 @@ impl StandardHost for process::ProcessWasi {
                 mime: None,
                 bytes: bytes.to_vec(),
             }),
+        )
+        .await
+        else {
+            // reset payload to what it was
+            self.process.last_payload = old_last_payload;
+            return Ok(Err(wit::SpawnError::NameTaken));
+        };
+        // finally, send the command to run the new process
+        let Ok(Ok((_, response))) = process::send_and_await_response(
+            self,
+            Some(t::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: KERNEL_PROCESS_ID.clone(),
+            }),
+            wit::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: KERNEL_PROCESS_ID.en_wit(),
+            },
+            wit::Request {
+                inherit: false,
+                expects_response: Some(5), // TODO evaluate
+                ipc: serde_json::to_vec(&t::KernelCommand::RunProcess(new_process_id.clone()))
+                    .unwrap(),
+                metadata: None,
+            },
+            None,
         )
         .await
         else {
@@ -389,14 +401,9 @@ impl StandardHost for process::ProcessWasi {
             .unwrap()
             .into_iter()
             .map(|cap| wit::SignedCapability {
-                issuer: cap.issuer.en_wit().to_owned(),
-                params: cap.params.clone(),
-                signature: self
-                    .process
-                    .keypair
-                    .sign(&rmp_serde::to_vec(&cap).unwrap())
-                    .as_ref()
-                    .to_vec(),
+                issuer: cap.issuer.en_wit(),
+                params: cap.params,
+                signature: cap.signature,
             })
             .collect())
     }
