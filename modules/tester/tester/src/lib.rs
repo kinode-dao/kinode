@@ -7,6 +7,9 @@ use uqbar_process_lib::{Address, ProcessId, Request, Response};
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
 
+mod tester_types;
+use tester_types as tt;
+
 wit_bindgen::generate!({
     path: "../../../wit",
     world: "process",
@@ -15,42 +18,7 @@ wit_bindgen::generate!({
     },
 });
 
-type Rsvp = Option<kt::Address>;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct KernelMessage {
-    pub id: u64,
-    pub source: kt::Address,
-    pub target: kt::Address,
-    pub rsvp: Rsvp,
-    pub message: kt::Message,
-    pub payload: Option<kt::Payload>,
-    pub signed_capabilities: Option<Vec<kt::SignedCapability>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum TesterRequest {
-    Run,
-    KernelMessage(KernelMessage),
-    GetFullMessage(kt::Message),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum TesterResponse {
-    Pass,
-    Fail,
-    GetFullMessage(Option<KernelMessage>),
-}
-
-#[derive(Debug, Serialize, Deserialize, thiserror::Error)]
-enum TesterError {
-    #[error("RejectForeign")]
-    RejectForeign,
-    #[error("UnexpectedResponse")]
-    UnexpectedResponse,
-}
-
-type Messages = IndexMap<kt::Message, KernelMessage>;
+type Messages = IndexMap<kt::Message, tt::KernelMessage>;
 
 fn make_vfs_address(our: &wit::Address) -> anyhow::Result<Address> {
     Ok(wit::Address {
@@ -63,29 +31,29 @@ fn handle_message(our: &Address, messages: &mut Messages) -> anyhow::Result<()> 
     let (source, message) = wit::receive().unwrap();
 
     if our.node != source.node {
-        return Err(TesterError::RejectForeign.into());
+        return Err(tt::TesterError::RejectForeign.into());
     }
 
     match message {
         wit::Message::Response((wit::Response { ipc, .. }, _)) => {
             match serde_json::from_slice(&ipc)? {
-                TesterResponse::Pass | TesterResponse::Fail => {
+                tt::TesterResponse::Pass | tt::TesterResponse::Fail { .. } => {
                     if (source.process.package_name != "tester")
                        | (source.process.publisher_node != "uqbar") {
-                        return Err(TesterError::UnexpectedResponse.into());
+                        return Err(tt::TesterError::UnexpectedResponse.into());
                     }
                     Response::new()
                         .ipc_bytes(ipc)
                         .send()
                         .unwrap();
                 },
-                TesterResponse::GetFullMessage(_) => { unimplemented!() }
+                tt::TesterResponse::GetFullMessage(_) => { unimplemented!() }
             }
             Ok(())
         },
         wit::Message::Request(wit::Request { ipc, .. }) => {
             match serde_json::from_slice(&ipc)? {
-                TesterRequest::Run => {
+                tt::TesterRequest::Run => {
                     wit::print_to_terminal(0, "tester: got Run");
 
                     let child = "/test_runner.wasm";
@@ -108,16 +76,16 @@ fn handle_message(our: &Address, messages: &mut Messages) -> anyhow::Result<()> 
                             node: our.node.clone(),
                             process: child_process_id,
                         })?
-                        .ipc_bytes(ipc.clone())
+                        .ipc_bytes(ipc)
                         .expects_response(15)
                         .send()?;
                 },
-                TesterRequest::KernelMessage(kernel_message) => {
+                tt::TesterRequest::KernelMessage(kernel_message) => {
                     messages.insert(kernel_message.message.clone(), kernel_message);
                 },
-                TesterRequest::GetFullMessage(message) => {
+                tt::TesterRequest::GetFullMessage(message) => {
                     Response::new()
-                        .ipc_bytes(serde_json::to_vec(&TesterResponse::GetFullMessage(
+                        .ipc_bytes(serde_json::to_vec(&tt::TesterResponse::GetFullMessage(
                             match messages.get(&message) {
                                 None => None,
                                 Some(m) => Some(m.clone()),
@@ -159,10 +127,7 @@ impl Guest for Component {
                         "tester: error: {:?}",
                         e,
                     ).as_str());
-                    Response::new()
-                        .ipc_bytes(serde_json::to_vec(&TesterResponse::Fail).unwrap())
-                        .send()
-                        .unwrap();
+                    fail!("tester");
                 },
             };
         }

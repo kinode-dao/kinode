@@ -5,6 +5,9 @@ use uqbar_process_lib::{Address, ProcessId, Request, Response};
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
 
+mod tester_types;
+use tester_types as tt;
+
 wit_bindgen::generate!({
     path: "../../../wit",
     world: "process",
@@ -13,41 +16,6 @@ wit_bindgen::generate!({
     },
 });
 
-pub type Rsvp = Option<kt::Address>;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct KernelMessage {
-    pub id: u64,
-    pub source: kt::Address,
-    pub target: kt::Address,
-    pub rsvp: Rsvp,
-    pub message: kt::Message,
-    pub payload: Option<kt::Payload>,
-    pub signed_capabilities: Option<Vec<kt::SignedCapability>>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum TesterRequest {
-    Run,
-    KernelMessage(KernelMessage),
-    GetFullMessage(kt::Message),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum TesterResponse {
-    Pass,
-    Fail,
-    GetFullMessage(Option<KernelMessage>),
-}
-
-#[derive(Debug, Serialize, Deserialize, thiserror::Error)]
-enum TesterError {
-    #[error("RejectForeign")]
-    RejectForeign,
-    #[error("UnexpectedResponse")]
-    UnexpectedResponse,
-}
-
 fn make_vfs_address(our: &wit::Address) -> anyhow::Result<Address> {
     Ok(wit::Address {
         node: our.node.clone(),
@@ -55,20 +23,20 @@ fn make_vfs_address(our: &wit::Address) -> anyhow::Result<Address> {
     })
 }
 
-fn handle_message (our: &Address) -> anyhow::Result<()> {
+fn handle_message(our: &Address) -> anyhow::Result<()> {
     let (source, message) = wit::receive().unwrap();
 
     if our.node != source.node {
-        return Err(TesterError::RejectForeign.into());
+        return Err(tt::TesterError::RejectForeign.into());
     }
 
     match message {
         wit::Message::Response(_) => {
-            return Err(TesterError::UnexpectedResponse.into());
+            return Err(tt::TesterError::UnexpectedResponse.into());
         },
-        wit::Message::Request(wit::Request { ipc, .. }) => {
-            match serde_json::from_slice(&ipc)? {
-                TesterRequest::Run => {
+        wit::Message::Request(wit::Request { ref ipc, .. }) => {
+            match serde_json::from_slice(ipc)? {
+                tt::TesterRequest::Run => {
                     wit::print_to_terminal(0, "test_runner: got Run");
 
                     let (_, response) = Request::new()
@@ -114,19 +82,23 @@ fn handle_message (our: &Address) -> anyhow::Result<()> {
                             .send_and_await_response(5)??;
 
                         let wit::Message::Response((response, _)) = response else { panic!("") };
-                        let TesterResponse::Pass = serde_json::from_slice(&response.ipc)? else {
-                            return Err(anyhow::anyhow!("{} FAIL", child))
-                        };
+                        match serde_json::from_slice(&response.ipc)? {
+                            tt::TesterResponse::Pass => {},
+                            tt::TesterResponse::GetFullMessage(_) => {},
+                            tt::TesterResponse::Fail { test, file, line, column } => {
+                                fail!(test, file, line, column);
+                            },
+                        }
                     }
 
                     wit::print_to_terminal(0, &format!("test_runner: done running {:?}", children));
 
                     Response::new()
-                        .ipc_bytes(serde_json::to_vec(&TesterResponse::Pass).unwrap())
+                        .ipc_bytes(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
                         .send()
                         .unwrap();
                 },
-                TesterRequest::KernelMessage(_) | TesterRequest::GetFullMessage(_) => { unimplemented!() },
+                tt::TesterRequest::KernelMessage(_) | tt::TesterRequest::GetFullMessage(_) => { unimplemented!() },
             }
             Ok(())
         },
@@ -140,17 +112,6 @@ impl Guest for Component {
 
         let our = Address::from_str(&our).unwrap();
 
-        // orchestrate tests using external scripts
-        //  -> must give drive cap to rpc
-        let drive_cap = wit::get_capability(
-            &make_vfs_address(&our).unwrap(),
-            &serde_json::to_string(&serde_json::json!({
-                "kind": "write",
-                "drive": "tester:uqbar",
-            })).unwrap()
-        ).unwrap();
-        wit::share_capability(&ProcessId::from_str("http_server:sys:uqbar").unwrap(), &drive_cap);
-
         loop {
             match handle_message(&our) {
                 Ok(()) => {},
@@ -159,10 +120,7 @@ impl Guest for Component {
                         "test_runner: error: {:?}",
                         e,
                     ).as_str());
-                    Response::new()
-                        .ipc_bytes(serde_json::to_vec(&TesterResponse::Fail).unwrap())
-                        .send()
-                        .unwrap();
+                    fail!("test_runner");
                 },
             };
         }
