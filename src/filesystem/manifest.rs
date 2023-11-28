@@ -214,6 +214,8 @@ impl Manifest {
             None
         };
 
+        println!("fs config right here {:?}", fs_config.chunk_size);
+
         Ok(Self {
             manifest: Arc::new(RwLock::new(manifest)),
             chunk_hashes: Arc::new(RwLock::new(chunk_hashes)),
@@ -300,7 +302,7 @@ impl Manifest {
 
         if let Some(tx_chunks) = in_memory_file.active_txs.remove(&tx_id) {
             for chunk in tx_chunks {
-                if let Some(old_chunk) = in_memory_file.chunks.insert(chunk.start, chunk.clone()) {
+                if let Some(old_chunk) = in_memory_file.chunks.insert(chunk.start, chunk) {
                     if let ChunkLocation::Memory(old_mem_key) = old_chunk.location {
                         memory_buffer.remove(&old_mem_key);
                         *membuf_size -= old_chunk.length as usize;
@@ -330,6 +332,7 @@ impl Manifest {
         memory_buffer: &mut HashMap<u64, Vec<u8>>,
         membuf_size: &mut usize,
     ) -> Result<(), FsError> {
+        let instant = tokio::time::Instant::now();
         let mut wal_file = self.wal_file.write().await;
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
 
@@ -410,6 +413,8 @@ impl Manifest {
         wal_file.sync_all().await?;
         memory_buffer.clear();
         *membuf_size = 0;
+
+        println!("flush to wal took: {:?}", instant.elapsed());
         Ok(())
     }
 
@@ -515,6 +520,7 @@ impl Manifest {
         };
 
         let chunks = data.chunks(self.chunk_size);
+        println!("writing chunks: {:?} chunks", chunks.len());
         let mut chunk_start = 0u64;
 
         let tx_id = rand::random::<u64>(); // uuid instead?
@@ -564,6 +570,7 @@ impl Manifest {
         memory_buffer: &mut HashMap<u64, Vec<u8>>,
         membuf_size: &mut usize,
     ) -> Result<(), FsError> {
+        let instant = tokio::time::Instant::now();
         let chunk_hashes = self.chunk_hashes.read().await;
 
         let chunk_hash: [u8; 32] = blake3::hash(chunk).into();
@@ -572,7 +579,7 @@ impl Manifest {
             .get(&chunk_hash)
             .map_or((false, None), |&location| (true, Some(location)));
 
-        let encrypted = match cipher {
+            let encrypted = match cipher {
             Some(_) => true,
             None => false,
         };
@@ -604,6 +611,7 @@ impl Manifest {
             .or_default()
             .push(entry);
 
+        println!("write chunk took: {:?}", instant.elapsed());
         Ok(())
     }
 
