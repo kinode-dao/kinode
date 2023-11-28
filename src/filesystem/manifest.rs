@@ -579,7 +579,7 @@ impl Manifest {
             .get(&chunk_hash)
             .map_or((false, None), |&location| (true, Some(location)));
 
-            let encrypted = match cipher {
+        let encrypted = match cipher {
             Some(_) => true,
             None => false,
         };
@@ -1354,7 +1354,8 @@ async fn load_manifest(
         // Read serialized metadata
         let mut metadata_buffer = vec![0u8; metadata_length];
         manifest_file.read_exact(&mut metadata_buffer).await?;
-        let record_metadata: Result<ManifestRecord, _> = rmp_serde::decode::from_slice(&metadata_buffer);
+        let record_metadata: Result<ManifestRecord, _> =
+            rmp_serde::decode::from_slice(&metadata_buffer);
 
         match record_metadata {
             Ok(ManifestRecord::Backup(entry)) => {
