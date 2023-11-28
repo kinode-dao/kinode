@@ -214,8 +214,6 @@ impl Manifest {
             None
         };
 
-        println!("fs config right here {:?}", fs_config.chunk_size);
-
         Ok(Self {
             manifest: Arc::new(RwLock::new(manifest)),
             chunk_hashes: Arc::new(RwLock::new(chunk_hashes)),
@@ -332,12 +330,10 @@ impl Manifest {
         memory_buffer: &mut HashMap<u64, Vec<u8>>,
         membuf_size: &mut usize,
     ) -> Result<(), FsError> {
-        let instant = tokio::time::Instant::now();
         let mut wal_file = self.wal_file.write().await;
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
 
         let mut wal_buffer: Vec<u8> = Vec::new();
-        // println!("flushing to wal, manifest before: {:?}", manifest);
         // let mut new_commited_locations: HashMap<FileIdentifier, (u64, ChunkLocation)> = HashMap::new();
         // let mut new_active_locations: HashMap<FileIdentifier, (u64, ChunkLocation)> = HashMap::new();
 
@@ -350,7 +346,6 @@ impl Manifest {
                                 // Serialize the chunk and write it to the buffer
                                 match memory_buffer.get(&memkey) {
                                     None => {
-                                        println!("BIG ERROR NOT FOUND BBY");
                                         // DOUBLECHECK
                                         continue;
                                     }
@@ -407,107 +402,25 @@ impl Manifest {
             }
             in_memory_file.mem_chunks.clear();
         }
-        //println!("wal flush, manifest after: {:?}", manifest);
 
         wal_file.write_all(&wal_buffer).await?;
         wal_file.sync_all().await?;
         memory_buffer.clear();
         *membuf_size = 0;
 
-        println!("flush to wal took: {:?}", instant.elapsed());
         Ok(())
     }
 
     pub async fn flush_to_wal_main(&self) -> Result<(), FsError> {
-        // called from main, locks manifest
-        // other flush_to_wal gets buffer and others passed in.
-        // potentially unify with options.
         let mut manifest = self.manifest.write().await;
-        //println!("fluhsing to wal, whole manifest: {:?}", manifest);
 
         let mut memory_buffer = self.memory_buffer.write().await;
         let mut membuf_size = self.membuf_size.write().await;
-
-        let mut wal_file = self.wal_file.write().await;
-
-        let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
-        let mut wal_buffer: Vec<u8> = Vec::new();
-
-        for (file_id, in_memory_file) in manifest.iter_mut() {
-            for index in &in_memory_file.mem_chunks {
-                match index {
-                    MemChunkIndex::Chunk(start) => {
-                        if let Some(chunk) = in_memory_file.chunks.get_mut(&start) {
-                            if let ChunkLocation::Memory(memkey) = chunk.location {
-                                // Serialize the chunk and write it to the buffer
-                                match memory_buffer.get(&memkey) {
-                                    None => {
-                                        println!("BIG ERROR NOT FOUND BBY");
-                                        continue;
-                                    }
-                                    Some(data) => {
-                                        let serialized_chunk = serialize_chunk(
-                                            file_id,
-                                            data,
-                                            chunk.start,
-                                            chunk.mem_buffer_meta.unwrap().tx_id,
-                                            chunk.encrypted,
-                                            None,
-                                            &self.cipher,
-                                        )
-                                        .await?;
-                                        chunk.location = ChunkLocation::Wal(
-                                            wal_length_before_flush + wal_buffer.len() as u64,
-                                        );
-                                        in_memory_file.wal_chunks.push(chunk.start);
-                                        wal_buffer.extend_from_slice(&serialized_chunk);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    MemChunkIndex::CommitTx(tx_id) => {
-                        let commit_tx = serialize_commit(*tx_id).await?;
-                        wal_buffer.extend_from_slice(&commit_tx);
-                    }
-                }
-            }
-
-            // incomplete txs remain in their place, but location is in wal now
-            for tx_chunks in in_memory_file.active_txs.values_mut() {
-                for chunk in tx_chunks {
-                    if let ChunkLocation::Memory(memkey) = &chunk.location {
-                        // Serialize the chunk and write it to the buffer
-                        let data = memory_buffer.get(memkey).unwrap();
-                        let serialized_chunk = serialize_chunk(
-                            file_id,
-                            data,
-                            chunk.start,
-                            chunk.mem_buffer_meta.unwrap().tx_id,
-                            chunk.encrypted,
-                            None,
-                            &self.cipher,
-                        )
-                        .await?;
-                        chunk.location =
-                            ChunkLocation::Wal(wal_length_before_flush + wal_buffer.len() as u64);
-                        in_memory_file.wal_chunks.push(chunk.start);
-                        wal_buffer.extend_from_slice(&serialized_chunk);
-                    }
-                }
-            }
-            in_memory_file.mem_chunks.clear();
-        }
-        wal_file.write_all(&wal_buffer).await?;
-        wal_file.sync_all().await?;
-        //println!("flushed to wal, manifest after: {:?}", manifest);
-        memory_buffer.clear();
-        *membuf_size = 0;
+        self.flush_to_wal(&mut manifest, &mut memory_buffer, &mut membuf_size).await?;
         Ok(())
     }
 
     pub async fn write(&self, file: &FileIdentifier, data: &[u8]) -> Result<(), FsError> {
-        let instant = tokio::time::Instant::now();
         let mut manifest = self.manifest.write().await;
         let mut in_memory_file = InMemoryFile::default();
         let mut memory_buffer = self.memory_buffer.write().await;
@@ -520,7 +433,6 @@ impl Manifest {
         };
 
         let chunks = data.chunks(self.chunk_size);
-        println!("writing chunks: {:?} chunks", chunks.len());
         let mut chunk_start = 0u64;
 
         let tx_id = rand::random::<u64>(); // uuid instead?
@@ -556,7 +468,6 @@ impl Manifest {
         .await;
 
         manifest.insert(file.clone(), in_memory_file);
-        println!("write took: {:?}", instant.elapsed());
         Ok(())
     }
 
@@ -570,7 +481,6 @@ impl Manifest {
         memory_buffer: &mut HashMap<u64, Vec<u8>>,
         membuf_size: &mut usize,
     ) -> Result<(), FsError> {
-        let instant = tokio::time::Instant::now();
         let chunk_hashes = self.chunk_hashes.read().await;
 
         let chunk_hash: [u8; 32] = blake3::hash(chunk).into();
@@ -611,11 +521,9 @@ impl Manifest {
             .or_default()
             .push(entry);
 
-        println!("write chunk took: {:?}", instant.elapsed());
         Ok(())
     }
 
-    //  TODO: factor this out
     pub async fn read_from_file(
         &self,
         file: &InMemoryFile,
@@ -754,127 +662,8 @@ impl Manifest {
         let file = self.get(file_id).await.ok_or(FsError::NotFound {
             file: file_id.to_uuid().unwrap_or_default(),
         })?;
-        let cipher = &self.cipher;
-
-        let mut data = Vec::new();
-        let mut total_bytes_read = 0;
-
-        // filter chunks based on start and length if they are defined
-        let filtered_chunks = if let (Some(start), Some(length)) = (start, length) {
-            file.find_chunks_in_range(start, length)
-        } else {
-            file.chunks.values().cloned().collect()
-        };
-
-        for chunk in filtered_chunks {
-            let mut read_cache = self.read_cache.write().await;
-
-            let mut chunk_data =
-                if let Some(cached_data) = read_cache.get(&chunk.hash).cloned() {
-                    cached_data
-                } else {
-                    match chunk.location {
-                        ChunkLocation::Memory(memkey) => {
-                            let memory_buffer = self.memory_buffer.read().await;
-                            let chunk_data = memory_buffer
-                                .get(&memkey)
-                                .ok_or(FsError::MemoryBufferError {
-                                    error: format!("No data found for memkey: {}", memkey),
-                                })
-                                .cloned()?;
-                            let _ = read_cache.insert(chunk.hash, chunk_data.clone());
-                            chunk_data
-                        }
-                        ChunkLocation::Wal(offset) => {
-                            let mut wal_file = self.wal_file.write().await;
-                            wal_file.seek(SeekFrom::Start(offset)).await.map_err(|e| {
-                                FsError::IOError {
-                                    error: format!("Local WAL seek failed: {}", e),
-                                }
-                            })?;
-                            let len = if chunk.encrypted {
-                                chunk.length + ENCRYPTION_OVERHEAD as u64
-                            } else {
-                                chunk.length
-                            };
-
-                            let mut buffer: [u8; 8] = [0; 8];
-                            wal_file.read_exact(&mut buffer).await.map_err(|e| {
-                                FsError::IOError {
-                                    error: format!("Local WAL read failed: {}", e),
-                                }
-                            })?;
-                            let metadata_len = u64::from_le_bytes(buffer) as i64;
-                            wal_file
-                                .seek(SeekFrom::Current(metadata_len))
-                                .await
-                                .map_err(|e| FsError::IOError {
-                                    error: format!("Local WAL seek failed: {}", e),
-                                })?;
-                            let mut buffer = vec![0u8; len as usize];
-                            wal_file.read_exact(&mut buffer).await.map_err(|e| {
-                                FsError::IOError {
-                                    error: format!("Local WAL read failed: {}", e),
-                                }
-                            })?;
-                            if chunk.encrypted {
-                                buffer = decrypt(&cipher, &buffer)?;
-                            }
-                            let _ = read_cache.insert(chunk.hash, buffer.clone());
-                            buffer
-                        }
-                        ChunkLocation::ColdStorage(local) => {
-                            if local {
-                                let path = self.fs_directory_path.join(hex::encode(chunk.hash));
-                                let mut buffer =
-                                    fs::read(path).await.map_err(|e| FsError::IOError {
-                                        error: format!("Local Cold read failed: {}", e),
-                                    })?;
-                                if chunk.encrypted {
-                                    buffer = decrypt(&*self.cipher, &buffer)?;
-                                }
-                                buffer
-                            } else {
-                                let file_name = hex::encode(chunk.hash);
-                                let (client, bucket) = self.s3_client.as_ref().unwrap();
-                                let req = GetObjectRequest {
-                                    bucket: bucket.clone(),
-                                    key: file_name.clone(),
-                                    ..Default::default()
-                                };
-                                let res = client.get_object(req).await?;
-                                let body = res.body.unwrap();
-                                let mut stream = body.into_async_read();
-                                let mut buffer = Vec::new();
-                                stream.read_to_end(&mut buffer).await?;
-                                if chunk.encrypted {
-                                    buffer = decrypt(&*self.cipher, &buffer)?;
-                                }
-                                let _ = read_cache.insert(chunk.hash, buffer.clone());
-                                buffer
-                            }
-                        }
-                    }
-                };
-
-            // adjust the chunk data based on the start and length
-            if let Some(start) = start {
-                if start > chunk.start {
-                    chunk_data.drain(..(start - chunk.start) as usize);
-                }
-            }
-            if let Some(length) = length {
-                let remaining_length = length.saturating_sub(total_bytes_read);
-                if remaining_length < chunk_data.len() as u64 {
-                    chunk_data.truncate(remaining_length as usize);
-                }
-                total_bytes_read += chunk_data.len() as u64;
-            }
-
-            data.append(&mut chunk_data);
-        }
-
-        Ok(data)
+        let memory_buffer = self.memory_buffer.read().await;
+        self.read_from_file(&file, &memory_buffer, start, length).await
     }
 
     pub async fn write_at(
@@ -1100,7 +889,6 @@ impl Manifest {
         let mut memory_buffer = self.memory_buffer.write().await;
         let mut membuf_size = self.membuf_size.write().await;
 
-        //println!("flushing to cold, whole manifest: {:?}", manifest_lock);
         let mut to_flush: Vec<(FileIdentifier, Vec<Chunk>)> = Vec::new();
         for (file_id, in_memory_file) in manifest_lock.iter_mut() {
             let mut chunks_to_flush: Vec<Chunk> = Vec::new();
@@ -1110,7 +898,6 @@ impl Manifest {
                     MemChunkIndex::Chunk(start) => {
                         if let Some(chunk) = in_memory_file.chunks.get(&start) {
                             if matches!(chunk.location, ChunkLocation::Memory(_)) {
-                                println!("fluhsing memchunk to cold!");
                                 chunks_to_flush.push(chunk.clone());
                             }
                         }
@@ -1122,7 +909,6 @@ impl Manifest {
             for &start in &in_memory_file.wal_chunks {
                 if let Some(chunk) = in_memory_file.chunks.get(&start) {
                     if matches!(chunk.location, ChunkLocation::Wal(_)) {
-                        println!("fluhsing walchunk to cold!");
                         chunks_to_flush.push(chunk.clone());
                     }
                 }
@@ -1252,7 +1038,6 @@ impl Manifest {
         wal_file.set_len(0).await?;
         memory_buffer.clear();
         *membuf_size = 0;
-        //println!("flushed to cold, manifest after: {:?}", manifest_lock);
         Ok(())
     }
 
