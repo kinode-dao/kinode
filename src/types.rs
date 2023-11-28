@@ -692,6 +692,12 @@ pub struct Identity {
     pub allowed_routers: Vec<NodeId>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UnencryptedIdentity {
+    pub name: NodeId,
+    pub allowed_routers: Vec<NodeId>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IdentityTransaction {
     pub from: String,
