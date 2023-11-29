@@ -315,7 +315,6 @@ impl Manifest {
                     ChunkLocation::Wal(..) => {
                         in_memory_file.wal_chunks.push(chunk.start);
                         chunk_hashes.insert(chunk.hash, chunk.location);
-                        // NOTE TODO, DEDUPE IN MEM REFERENCE COUNTING
                     }
                     _ => {}
                 }
@@ -343,10 +342,10 @@ impl Manifest {
                     MemChunkIndex::Chunk(start) => {
                         if let Some(chunk) = in_memory_file.chunks.get_mut(&start) {
                             if let ChunkLocation::Memory(memkey) = chunk.location {
-                                // Serialize the chunk and write it to the buffer
+                                // serialize the chunk and write it to the buffer
                                 match memory_buffer.get(&memkey) {
                                     None => {
-                                        // DOUBLECHECK
+                                        // should never happen
                                         continue;
                                     }
                                     Some(data) => {
@@ -532,8 +531,6 @@ impl Manifest {
         start: Option<u64>,
         length: Option<u64>,
     ) -> Result<Vec<u8>, FsError> {
-        let cipher = &self.cipher;
-
         let mut data = Vec::new();
         let mut total_bytes_read = 0;
 
@@ -564,39 +561,7 @@ impl Manifest {
                         }
                         ChunkLocation::Wal(offset) => {
                             let mut wal_file = self.wal_file.write().await;
-                            wal_file.seek(SeekFrom::Start(offset)).await.map_err(|e| {
-                                FsError::IOError {
-                                    error: format!("Local WAL seek failed: {}", e),
-                                }
-                            })?;
-                            let len = if chunk.encrypted {
-                                chunk.length + ENCRYPTION_OVERHEAD as u64
-                            } else {
-                                chunk.length
-                            };
-
-                            let mut buffer: [u8; 8] = [0; 8];
-                            wal_file.read_exact(&mut buffer).await.map_err(|e| {
-                                FsError::IOError {
-                                    error: format!("Local WAL read failed: {}", e),
-                                }
-                            })?;
-                            let metadata_len = u64::from_le_bytes(buffer) as i64;
-                            wal_file
-                                .seek(SeekFrom::Current(metadata_len))
-                                .await
-                                .map_err(|e| FsError::IOError {
-                                    error: format!("Local WAL seek failed: {}", e),
-                                })?;
-                            let mut buffer = vec![0u8; len as usize];
-                            wal_file.read_exact(&mut buffer).await.map_err(|e| {
-                                FsError::IOError {
-                                    error: format!("Local WAL read failed: {}", e),
-                                }
-                            })?;
-                            if chunk.encrypted {
-                                buffer = decrypt(&cipher, &buffer)?;
-                            }
+                            let buffer = fetch_from_wal(offset, &mut wal_file, &chunk, &self.cipher).await?;
                             let _ = read_cache.insert(chunk.hash, buffer.clone());
                             buffer
                         }
@@ -880,8 +845,6 @@ impl Manifest {
         Ok(())
     }
 
-    /// big if, do we not flush uncommited txs to cold?
-    /// cannot override user txs..
     pub async fn flush_to_cold(&self) -> Result<(), FsError> {
         let mut manifest_lock = self.manifest.write().await;
         let mut wal_file = self.wal_file.write().await;
@@ -900,7 +863,7 @@ impl Manifest {
                     MemChunkIndex::Chunk(start) => {
                         if let Some(chunk) = in_memory_file.chunks.get(&start) {
                             if matches!(chunk.location, ChunkLocation::Memory(_)) {
-                                chunks_to_flush.push(chunk.clone());
+                                chunks_to_flush.push(*chunk);
                             }
                         }
                     }
@@ -911,10 +874,21 @@ impl Manifest {
             for &start in &in_memory_file.wal_chunks {
                 if let Some(chunk) = in_memory_file.chunks.get(&start) {
                     if matches!(chunk.location, ChunkLocation::Wal(_)) {
-                        chunks_to_flush.push(chunk.clone());
+                        chunks_to_flush.push(*chunk);
                     }
                 }
             }
+
+            // note here, for active_txs continuity. but should our active_txs only be in wal & mem?
+            // somewhat of a strong case here for it. 
+            for txs in &in_memory_file.active_txs {
+                for chunk in txs.1 {
+                    if matches!(chunk.location, ChunkLocation::Memory(_)) {
+                        chunks_to_flush.push(*chunk);
+                    }
+                }
+            }
+
             if !chunks_to_flush.is_empty() {
                 to_flush.push((file_id.clone(), chunks_to_flush));
             }
@@ -1037,6 +1011,7 @@ impl Manifest {
             hash_index.insert(in_memory_file.hash(), file_id.clone());
         }
         // clear the WAL file and memory buffer
+        manifest_file.sync_all().await?;
         wal_file.set_len(0).await?;
         memory_buffer.clear();
         *membuf_size = 0;
@@ -1190,6 +1165,41 @@ async fn load_manifest(
     Ok(())
 }
 
+async fn _compact_manifest(
+    manifest: &mut HashMap<FileIdentifier, InMemoryFile>,
+) -> Result<(), io::Error> {
+    let mut temp_manifest = fs::File::create("manifest.temp").await?;
+
+    let mut buffer = Vec::new();
+    for (file_id, in_memory_file) in manifest.iter() {
+        let entry = ManifestRecord::Backup(BackupEntry {
+            file: file_id.clone(),
+            chunks: in_memory_file
+                .chunks
+                .iter()
+                .map(|(&start, chunk)| {
+                    let local = match chunk.location {
+                        ChunkLocation::ColdStorage(local) => local,
+                        _ => true, // WAL is always local
+                    };
+                    (chunk.hash, start, chunk.length, chunk.encrypted, local)
+                })
+                .collect::<Vec<_>>(),
+        });
+
+        let serialized_entry = rmp_serde::encode::to_vec(&entry).unwrap();
+        let entry_length = serialized_entry.len() as u64;
+
+        buffer.extend_from_slice(&entry_length.to_le_bytes());
+        buffer.extend_from_slice(&serialized_entry);
+    }
+    temp_manifest.write_all(&buffer).await?;
+    temp_manifest.sync_all().await?;
+    fs::rename("manifest.temp", "manifest.bin").await?;
+
+    Ok(())
+}
+
 async fn load_wal(
     wal_file: &mut fs::File,
     manifest: &mut HashMap<FileIdentifier, InMemoryFile>,
@@ -1312,7 +1322,49 @@ async fn verify_manifest(
     Ok(())
 }
 
-// HELPERS
+/// HELPERS
+
+async fn fetch_from_wal(
+    offset: u64,
+    wal_file: &mut fs::File,
+    chunk: &Chunk,
+    cipher: &XChaCha20Poly1305,
+) -> Result<Vec<u8>, FsError> {
+    wal_file.seek(SeekFrom::Start(offset)).await.map_err(|e| {
+        FsError::IOError {
+            error: format!("Local WAL seek failed: {}", e),
+        }
+    })?;
+    let len = if chunk.encrypted {
+        chunk.length + ENCRYPTION_OVERHEAD as u64
+    } else {
+        chunk.length
+    };
+
+    let mut buffer: [u8; 8] = [0; 8];
+    wal_file.read_exact(&mut buffer).await.map_err(|e| {
+        FsError::IOError {
+            error: format!("Local WAL read failed: {}", e),
+        }
+    })?;
+    let metadata_len = u64::from_le_bytes(buffer) as i64;
+    wal_file
+        .seek(SeekFrom::Current(metadata_len))
+        .await
+        .map_err(|e| FsError::IOError {
+            error: format!("Local WAL seek failed: {}", e),
+        })?;
+    let mut buffer = vec![0u8; len as usize];
+    wal_file.read_exact(&mut buffer).await.map_err(|e| {
+        FsError::IOError {
+            error: format!("Local WAL read failed: {}", e),
+        }
+    })?;
+    if chunk.encrypted {
+        buffer = decrypt(cipher, &buffer)?;
+    }
+    Ok(buffer)
+}
 
 /// serialize helpers
 
