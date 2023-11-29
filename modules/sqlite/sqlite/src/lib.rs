@@ -50,10 +50,10 @@ fn forward_if_have_cap(
             .target(wit::Address {
                 node: our.node.clone(),
                 process: process_id.clone(),
-            })?
+            })
             // .target(Address::new(our.node.clone(), process_id.clone()))?
             .inherit(true)
-            .ipc_bytes(ipc)
+            .ipc(ipc)
             .send()?;
         return Ok(());
     } else {
@@ -92,14 +92,12 @@ fn handle_message (
                     }
 
                     //  (1)
-                    let vfs_address = Address {
-                        node: our.node.clone(),
-                        process: ProcessId::new("vfs", "sys", "uqbar"),
-                    };
+                    let vfs_address = Address::from_str("our@vfs:sys:uqbar")?;
+
                     let vfs_drive = format!("{}{}", PREFIX, db);
                     let _ = Request::new()
-                        .target(vfs_address.clone())?
-                        .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                        .target(vfs_address.clone())
+                        .ipc(serde_json::to_vec(&kt::VfsRequest {
                             drive: vfs_drive.clone(),
                             action: kt::VfsAction::New,
                         })?)
@@ -135,8 +133,8 @@ fn handle_message (
                         .target(wit::Address {
                             node: our.node.clone(),
                             process: spawned_process_id.clone(),
-                        })?
-                        .ipc_bytes(ipc.clone())
+                        })
+                        .ipc(ipc.clone())
                         .send()?;
 
                     //  (4)
@@ -144,7 +142,7 @@ fn handle_message (
                     //  TODO: persistence?
 
                     Response::new()
-                        .ipc_bytes(ipc)
+                        .ipc(ipc)
                         .send()?;
                 },
                 sq::SqliteMessage::Write { ref db, ref statement, ref tx_id } => {
@@ -232,7 +230,7 @@ impl Guest for Component {
                     ).as_str());
                     if let Some(e) = e.downcast_ref::<sq::SqliteError>() {
                         Response::new()
-                            .ipc_bytes(serde_json::to_vec(&e).unwrap())
+                            .ipc(serde_json::to_vec(&e).unwrap())
                             .send()
                             .unwrap();
                     }
