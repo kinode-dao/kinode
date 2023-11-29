@@ -504,7 +504,8 @@ async fn confirm_change_network_keys(
     }
 
     // Get our name from our current keyfile
-    let old_decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
+    let old_decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password)
+    {
         Ok(k) => {
             our.name = k.username.clone();
             k
