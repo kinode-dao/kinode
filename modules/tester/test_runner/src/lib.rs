@@ -36,7 +36,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
         },
         wit::Message::Request(wit::Request { ref ipc, .. }) => {
             match serde_json::from_slice(ipc)? {
-                tt::TesterRequest::Run => {
+                tt::TesterRequest::Run(_) => {
                     wit::print_to_terminal(0, "test_runner: got Run");
 
                     let (_, response) = Request::new()

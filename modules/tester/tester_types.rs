@@ -19,7 +19,7 @@ pub struct KernelMessage {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TesterRequest {
-    Run,
+    Run(Vec<String>),
     KernelMessage(KernelMessage),
     GetFullMessage(kt::Message),
 }

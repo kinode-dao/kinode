@@ -27,12 +27,12 @@ fn make_vfs_address(our: &wit::Address) -> anyhow::Result<Address> {
     })
 }
 
-fn handle_message(our: &Address, messages: &mut Messages) -> anyhow::Result<()> {
+fn handle_message(
+    our: &Address,
+    messages: &mut Messages,
+    node_names: &mut Vec<String>,
+) -> anyhow::Result<()> {
     let (source, message) = wit::receive().unwrap();
-
-    if our.node != source.node {
-        return Err(tt::TesterError::RejectForeign.into());
-    }
 
     match message {
         wit::Message::Response((wit::Response { ipc, .. }, _)) => {
@@ -53,37 +53,70 @@ fn handle_message(our: &Address, messages: &mut Messages) -> anyhow::Result<()> 
         },
         wit::Message::Request(wit::Request { ipc, .. }) => {
             match serde_json::from_slice(&ipc)? {
-                tt::TesterRequest::Run => {
+                tt::TesterRequest::Run(input_node_names) => {
                     wit::print_to_terminal(0, "tester: got Run");
 
-                    let child = "/test_runner.wasm";
-                    let child_process_id = match wit::spawn(
-                        None,
-                        child,
-                        &wit::OnPanic::None, //  TODO: notify us
-                        &wit::Capabilities::All,
-                        false, // not public
-                    ) {
-                        Ok(child_process_id) => child_process_id,
-                        Err(e) => {
-                            wit::print_to_terminal(0, &format!("couldn't spawn {}: {}", child, e));
-                            panic!("couldn't spawn"); //  TODO
-                        }
-                    };
+                    assert!(input_node_names.len() >= 1);
+                    *node_names = input_node_names.clone();
 
-                    Request::new()
-                        .target(Address {
-                            node: our.node.clone(),
-                            process: child_process_id,
-                        })?
-                        .ipc_bytes(ipc)
-                        .expects_response(15)
-                        .send()?;
+                    if our.node != node_names[0] {
+                        Response::new()
+                            .ipc_bytes(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
+                            .send()
+                            .unwrap();
+                    } else {
+                        // we are master node
+                        let child = "/test_runner.wasm";
+                        let child_process_id = match wit::spawn(
+                            None,
+                            child,
+                            &wit::OnPanic::None, //  TODO: notify us
+                            &wit::Capabilities::All,
+                            false, // not public
+                        ) {
+                            Ok(child_process_id) => child_process_id,
+                            Err(e) => {
+                                wit::print_to_terminal(0, &format!("couldn't spawn {}: {}", child, e));
+                                panic!("couldn't spawn"); //  TODO
+                            }
+                        };
+                        Request::new()
+                            .target(Address {
+                                node: our.node.clone(),
+                                process: child_process_id,
+                            })?
+                            .ipc_bytes(ipc)
+                            .expects_response(15)
+                            .send()?;
+                    }
                 },
                 tt::TesterRequest::KernelMessage(kernel_message) => {
-                    messages.insert(kernel_message.message.clone(), kernel_message);
+                    wit::print_to_terminal(0, "tester: km");
+                    // if node_names.len() >= 1 {
+                    //     if our.node == node_names[0] {
+                    //         // we are master node
+                    //         messages.insert(
+                    //             kernel_message.message.clone(),
+                    //             kernel_message,
+                    //         );
+                    //     } else {
+                    //         Request::new()
+                    //             .target(Address {
+                    //                 node: node_names[0].clone(),
+                    //                 process: our.process.clone(),
+                    //             })?
+                    //             .ipc_bytes(ipc)
+                    //             .send()?;
+                    //     }
+                    // }
                 },
                 tt::TesterRequest::GetFullMessage(message) => {
+                    wit::print_to_terminal(0, "tester: gfm");
+                    assert!(node_names.len() >= 1);
+                    if our.node == node_names[0] {
+                        // TODO
+                        // we are master node
+                    }
                     Response::new()
                         .ipc_bytes(serde_json::to_vec(&tt::TesterResponse::GetFullMessage(
                             match messages.get(&message) {
@@ -107,6 +140,7 @@ impl Guest for Component {
 
         let our = Address::from_str(&our).unwrap();
         let mut messages: Messages = IndexMap::new();
+        let mut node_names: Vec<String> = Vec::new();
 
         // orchestrate tests using external scripts
         //  -> must give drive cap to rpc
@@ -120,7 +154,7 @@ impl Guest for Component {
         wit::share_capability(&ProcessId::from_str("http_server:sys:uqbar").unwrap(), &drive_cap);
 
         loop {
-            match handle_message(&our, &mut messages) {
+            match handle_message(&our, &mut messages, &mut node_names) {
                 Ok(()) => {},
                 Err(e) => {
                     wit::print_to_terminal(0, format!(
