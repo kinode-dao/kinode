@@ -2,6 +2,9 @@
 name = "uqbar"
 version = "0.3.0"
 edition = "2021"
+description = "a general-purpose sovereign cloud computing platform"
+homepage = "https://uqbar.network"
+repository = "https://github.com/uqbar-dao/uqbar"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

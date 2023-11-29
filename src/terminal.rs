@@ -137,6 +137,7 @@ pub async fn terminal(
            !UU  lUL  UU       !UUl^                            888
             `"  lUL  UU       '^                               888    {}
                      ""                                        888    version {}
+                                                 a general purpose sovereign cloud computer
 
   networking public key: {}
                 "#,
@@ -159,6 +160,7 @@ pub async fn terminal(
                888
                888    {}
                888    version {}
+ a general purpose sovereign cloud computer
 
  networking pubkey: {}
                 "#,

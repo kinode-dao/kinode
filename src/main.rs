@@ -49,9 +49,9 @@ const REVEAL_IP: bool = true;
 #[tokio::main]
 async fn main() {
     let matches = Command::new("Uqbar")
-        .version("0.1.0")
+        .version("0.3.0")
         .author("Uqbar DAO")
-        .about("A decentralized operating system")
+        .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
         .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true))
         .arg(arg!(--llm <LLM_URL> "LLM endpoint"))
