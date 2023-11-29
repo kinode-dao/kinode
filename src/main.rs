@@ -37,8 +37,6 @@ const CAP_CHANNEL_CAPACITY: usize = 1_000;
 #[cfg(feature = "llm")]
 const LLM_CHANNEL_CAPACITY: usize = 32;
 
-// const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
-
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// This can and should be an environment variable / setting. It configures networking
@@ -209,7 +207,7 @@ async fn main() {
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-        _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, disk_keyfile)
+        _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, rpc_url.clone(), disk_keyfile)
             => panic!("registration failed"),
         (our, decoded_keyfile, encoded_keyfile) = async {
             rx.recv().await.expect("registration failed")
