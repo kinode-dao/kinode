@@ -83,16 +83,18 @@ fn handle_message (
                 sq::SqliteMessage::New { ref db } => {
                     //  TODO: make atomic
                     //  (1): create vfs drive
-                    //  (2): spin up worker, granting vfs caps
+                    //  (2): spin up worker, granting vfs caps & msg_cap
                     //  (3): issue new caps
-                    //  (4): persist
 
                     if db_to_process.contains_key(db) {
                         return Err(sq::SqliteError::DbAlreadyExists.into());
                     }
 
                     //  (1)
-                    let vfs_address = Address::from_str("our@vfs:sys:uqbar")?;
+                    let vfs_address = Address {
+                        node: our.node.clone(),
+                        process: ProcessId::new(Some("vfs"), "sys", "uqbar"),
+                    };
 
                     let vfs_drive = format!("{}{}", PREFIX, db);
                     let _ = Request::new()
@@ -108,15 +110,22 @@ fn handle_message (
                         &vfs_address,
                         &make_vfs_cap("read", &vfs_drive),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'read' capability found"))?;
+
                     let vfs_write = wit::get_capability(
                         &vfs_address,
                         &make_vfs_cap("write", &vfs_drive),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
+
+                    let msg_cap = wit::get_capability(
+                        &source,
+                        &"\"messaging\"".into(),
+                    ).ok_or(anyhow::anyhow!("New failed: no msg capability passed"))?;
+
                     let spawned_process_id = match wit::spawn(
                         None,
                         "/sqlite_worker.wasm",
-                        &wit::OnPanic::None,  //  TODO: notify us
-                        &wit::Capabilities::Some(vec![vfs_read, vfs_write]),
+                        &wit::OnPanic::None,  
+                        &wit::Capabilities::Some(vec![vfs_read, vfs_write, msg_cap]),
                         false, // not public
                     ) {
                         Ok(spawned_process_id) => spawned_process_id,
@@ -137,9 +146,7 @@ fn handle_message (
                         .ipc(ipc.clone())
                         .send()?;
 
-                    //  (4)
                     db_to_process.insert(db.into(), spawned_process_id);
-                    //  TODO: persistence?
 
                     Response::new()
                         .ipc(ipc)
@@ -183,7 +190,9 @@ impl Guest for Component {
         wit::print_to_terminal(0, "sqlite: begin");
 
         let our = Address::from_str(&our).unwrap();
+
         let mut db_to_process: DbToProcess = HashMap::new();
+
         let read_keywords: HashSet<String> = [
             "ANALYZE",
             "ATTACH",
