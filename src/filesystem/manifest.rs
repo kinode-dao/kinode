@@ -330,11 +330,7 @@ impl Manifest {
         membuf_size: &mut usize,
     ) -> Result<(), FsError> {
         let mut wal_file = self.wal_file.write().await;
-        let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
-
-        let mut wal_buffer: Vec<u8> = Vec::new();
-        // let mut new_commited_locations: HashMap<FileIdentifier, (u64, ChunkLocation)> = HashMap::new();
-        // let mut new_active_locations: HashMap<FileIdentifier, (u64, ChunkLocation)> = HashMap::new();
+        let mut wal_length = wal_file.seek(SeekFrom::End(0)).await?;
 
         for (file_id, in_memory_file) in manifest.iter_mut() {
             for index in &in_memory_file.mem_chunks {
@@ -359,11 +355,12 @@ impl Manifest {
                                             &self.cipher,
                                         )
                                         .await?;
-                                        chunk.location = ChunkLocation::Wal(
-                                            wal_length_before_flush + wal_buffer.len() as u64,
-                                        );
+                                        let pre_flush_len = wal_length;
+                                        wal_file.write_all(&serialized_chunk).await?;
+                                        wal_length += serialized_chunk.len() as u64;
+                                        chunk.location = ChunkLocation::Wal(pre_flush_len);
+
                                         in_memory_file.wal_chunks.push(chunk.start);
-                                        wal_buffer.extend_from_slice(&serialized_chunk);
                                     }
                                 }
                             }
@@ -371,7 +368,8 @@ impl Manifest {
                     }
                     MemChunkIndex::CommitTx(tx_id) => {
                         let commit_tx = serialize_commit(*tx_id).await?;
-                        wal_buffer.extend_from_slice(&commit_tx);
+                        wal_file.write_all(&commit_tx).await?;
+                        wal_length += commit_tx.len() as u64;
                     }
                 }
             }
@@ -392,17 +390,17 @@ impl Manifest {
                             &self.cipher,
                         )
                         .await?;
-                        chunk.location =
-                            ChunkLocation::Wal(wal_length_before_flush + wal_buffer.len() as u64);
+                        let pre_flush_len = wal_length;
+                        wal_file.write_all(&serialized_chunk).await?;
+                        wal_length += serialized_chunk.len() as u64;
+                        chunk.location = ChunkLocation::Wal(pre_flush_len);
                         in_memory_file.wal_chunks.push(chunk.start);
-                        wal_buffer.extend_from_slice(&serialized_chunk);
                     }
                 }
             }
             in_memory_file.mem_chunks.clear();
         }
 
-        wal_file.write_all(&wal_buffer).await?;
         wal_file.sync_all().await?;
         memory_buffer.clear();
         *membuf_size = 0;
