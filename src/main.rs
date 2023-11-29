@@ -8,11 +8,9 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::{fs, time::timeout};
 
-mod encryptor;
 mod eth_rpc;
 mod filesystem;
-mod http_client;
-mod http_server;
+mod http;
 mod kernel;
 mod keygen;
 mod net;
@@ -35,7 +33,6 @@ const HTTP_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
-const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 #[cfg(feature = "llm")]
 const LLM_CHANNEL_CAPACITY: usize = 32;
@@ -52,9 +49,9 @@ const REVEAL_IP: bool = true;
 #[tokio::main]
 async fn main() {
     let matches = Command::new("Uqbar")
-        .version("0.1.0")
+        .version("0.3.0")
         .author("Uqbar DAO")
-        .about("A decentralized operating system")
+        .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
         .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true))
         .arg(arg!(--llm <LLM_URL> "LLM endpoint"))
@@ -104,9 +101,6 @@ async fn main() {
     // vfs maintains metadata about files in fs for processes
     let (vfs_message_sender, vfs_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(VFS_CHANNEL_CAPACITY);
-    // encryptor handles end-to-end encryption for client messages
-    let (encryptor_sender, encryptor_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(ENCRYPTOR_CHANNEL_CAPACITY);
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
@@ -204,7 +198,7 @@ async fn main() {
     // username, networking key, and routing info.
     // if any do not match, we should prompt user to create a "transaction"
     // that updates their PKI info on-chain.
-    let http_server_port = http_server::find_open_port(8080).await.unwrap();
+    let http_server_port = http::utils::find_open_port(8080).await.unwrap();
     println!("login or register at http://localhost:{}", http_server_port);
     let (kill_tx, kill_rx) = oneshot::channel::<bool>();
 
@@ -259,11 +253,6 @@ async fn main() {
             ProcessId::new(Some("vfs"), "sys", "uqbar"),
             vfs_message_sender,
             true,
-        ),
-        (
-            ProcessId::new(Some("encryptor"), "sys", "uqbar"),
-            encryptor_sender,
-            false,
         ),
     ];
 
@@ -334,7 +323,7 @@ async fn main() {
         fs_kill_recv,
         fs_kill_confirm_send,
     ));
-    tasks.spawn(http_server::http_server(
+    tasks.spawn(http::server::http_server(
         our.name.clone(),
         http_server_port,
         decoded_keyfile.jwt_secret_bytes.clone(),
@@ -342,7 +331,7 @@ async fn main() {
         kernel_message_sender.clone(),
         print_sender.clone(),
     ));
-    tasks.spawn(http_client::http_client(
+    tasks.spawn(http::client::http_client(
         our.name.clone(),
         kernel_message_sender.clone(),
         http_client_receiver,
@@ -368,13 +357,6 @@ async fn main() {
         vfs_message_receiver,
         caps_oracle_sender.clone(),
         vfs_messages,
-    ));
-    tasks.spawn(encryptor::encryptor(
-        our.name.clone(),
-        networking_keypair_arc.clone(),
-        kernel_message_sender.clone(),
-        encryptor_receiver,
-        print_sender.clone(),
     ));
     #[cfg(feature = "llm")]
     {

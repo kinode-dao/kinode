@@ -1,4 +1,4 @@
-use crate::kernel::uqbar::process::standard as wit;
+use crate::kernel::process::wit;
 use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -18,10 +18,10 @@ lazy_static::lazy_static! {
 
 //
 // types shared between kernel and processes. frustratingly, this is an exact copy
-// of the types in process_lib/src/kernel_types.rs
+// of the types in process_lib
 // this is because even though the types are identical, they will not match when
 // used in the kernel context which generates bindings differently than the process
-// standard library. make sure to keep this synced with kernel_types.rs
+// standard library. make sure to keep this synced with process_lib.
 //
 pub type Context = Vec<u8>;
 pub type NodeId = String; // QNS domain name
@@ -31,14 +31,82 @@ pub type NodeId = String; // QNS domain name
 /// the process name can be a random number, or a name chosen by the user.
 /// the formatting is as follows:
 /// `[process name]:[package name]:[node ID]`
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ProcessId {
     process_name: String,
     package_name: String,
     publisher_node: NodeId,
 }
 
-#[allow(dead_code)]
+impl Serialize for ProcessId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        format!("{}", self).serialize(serializer)
+    }
+}
+
+impl<'a> Deserialize<'a> for ProcessId {
+    fn deserialize<D>(deserializer: D) -> Result<ProcessId, D::Error>
+    where
+        D: serde::de::Deserializer<'a>,
+    {
+        let s = String::deserialize(deserializer)?;
+        ProcessId::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+/// PackageId is like a ProcessId, but for a package. Only contains the name
+/// of the package and the name of the publisher.
+#[derive(Hash, Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct PackageId {
+    package_name: String,
+    publisher_node: String,
+}
+
+impl PackageId {
+    pub fn _new(package_name: &str, publisher_node: &str) -> Self {
+        PackageId {
+            package_name: package_name.into(),
+            publisher_node: publisher_node.into(),
+        }
+    }
+    pub fn _from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+        // split string on colons into 2 segments
+        let mut segments = input.split(':');
+        let package_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let publisher_node = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        if segments.next().is_some() {
+            return Err(ProcessIdParseError::TooManyColons);
+        }
+        Ok(PackageId {
+            package_name,
+            publisher_node,
+        })
+    }
+    pub fn _package(&self) -> &str {
+        &self.package_name
+    }
+    pub fn _publisher(&self) -> &str {
+        &self.publisher_node
+    }
+}
+
+impl std::fmt::Display for PackageId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.package_name, self.publisher_node)
+    }
+}
+
+/// ProcessId is defined in the wit bindings, but constructors and methods
+/// are defined here.
 impl ProcessId {
     /// generates a random u64 number if process_name is not declared
     pub fn new(process_name: Option<&str>, package_name: &str, publisher_node: &str) -> Self {
@@ -99,19 +167,122 @@ impl ProcessId {
     }
 }
 
+impl From<(&str, &str, &str)> for ProcessId {
+    fn from(input: (&str, &str, &str)) -> Self {
+        ProcessId::new(Some(input.0), input.1, input.2)
+    }
+}
+
+impl std::fmt::Display for ProcessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{}:{}",
+            self.process_name, self.package_name, self.publisher_node
+        )
+    }
+}
+
+// impl PartialEq for ProcessId {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.process_name == other.process_name
+//             && self.package_name == other.package_name
+//             && self.publisher_node == other.publisher_node
+//     }
+// }
+
+impl PartialEq<&str> for ProcessId {
+    fn eq(&self, other: &&str) -> bool {
+        &self.to_string() == other
+    }
+}
+
+impl PartialEq<ProcessId> for &str {
+    fn eq(&self, other: &ProcessId) -> bool {
+        self == &other.to_string()
+    }
+}
+
 #[derive(Debug)]
 pub enum ProcessIdParseError {
     TooManyColons,
     MissingField,
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
+impl std::fmt::Display for ProcessIdParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                ProcessIdParseError::TooManyColons => "Too many colons in ProcessId string",
+                ProcessIdParseError::MissingField => "Missing field in ProcessId string",
+            }
+        )
+    }
+}
+
+impl std::error::Error for ProcessIdParseError {
+    fn description(&self) -> &str {
+        match self {
+            ProcessIdParseError::TooManyColons => "Too many colons in ProcessId string",
+            ProcessIdParseError::MissingField => "Missing field in ProcessId string",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct Address {
     pub node: NodeId,
     pub process: ProcessId,
 }
 
 impl Address {
+    pub fn new<T>(node: &str, process: T) -> Address
+    where
+        T: Into<ProcessId>,
+    {
+        Address {
+            node: node.to_string(),
+            process: process.into(),
+        }
+    }
+    pub fn from_str(input: &str) -> Result<Self, AddressParseError> {
+        // split string on colons into 4 segments,
+        // first one with @, next 3 with :
+        let mut name_rest = input.split('@');
+        let node = name_rest
+            .next()
+            .ok_or(AddressParseError::MissingField)?
+            .to_string();
+        let mut segments = name_rest
+            .next()
+            .ok_or(AddressParseError::MissingNodeId)?
+            .split(':');
+        let process_name = segments
+            .next()
+            .ok_or(AddressParseError::MissingField)?
+            .to_string();
+        let package_name = segments
+            .next()
+            .ok_or(AddressParseError::MissingField)?
+            .to_string();
+        let publisher_node = segments
+            .next()
+            .ok_or(AddressParseError::MissingField)?
+            .to_string();
+        if segments.next().is_some() {
+            return Err(AddressParseError::TooManyColons);
+        }
+        Ok(Address {
+            node,
+            process: ProcessId {
+                process_name,
+                package_name,
+                publisher_node,
+            },
+        })
+    }
     pub fn en_wit(&self) -> wit::Address {
         wit::Address {
             node: self.node.clone(),
@@ -126,6 +297,78 @@ impl Address {
                 package_name: wit.process.package_name,
                 publisher_node: wit.process.publisher_node,
             },
+        }
+    }
+}
+
+impl Serialize for Address {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        format!("{}", self).serialize(serializer)
+    }
+}
+
+impl<'a> Deserialize<'a> for Address {
+    fn deserialize<D>(deserializer: D) -> Result<Address, D::Error>
+    where
+        D: serde::de::Deserializer<'a>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Address::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+impl From<(&str, &str, &str, &str)> for Address {
+    fn from(input: (&str, &str, &str, &str)) -> Self {
+        Address::new(input.0, (input.1, input.2, input.3))
+    }
+}
+
+impl<T> From<(&str, T)> for Address
+where
+    T: Into<ProcessId>,
+{
+    fn from(input: (&str, T)) -> Self {
+        Address::new(input.0, input.1)
+    }
+}
+
+impl std::fmt::Display for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}@{}", self.node, self.process)
+    }
+}
+
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum AddressParseError {
+    TooManyColons,
+    MissingNodeId,
+    MissingField,
+}
+
+impl std::fmt::Display for AddressParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                AddressParseError::TooManyColons => "Too many colons in ProcessId string",
+                AddressParseError::MissingNodeId => "Node ID missing",
+                AddressParseError::MissingField => "Missing field in ProcessId string",
+            }
+        )
+    }
+}
+
+impl std::error::Error for AddressParseError {
+    fn description(&self) -> &str {
+        match self {
+            AddressParseError::TooManyColons => "Too many colons in ProcessId string",
+            AddressParseError::MissingNodeId => "Node ID missing",
+            AddressParseError::MissingField => "Missing field in ProcessId string",
         }
     }
 }
@@ -198,28 +441,6 @@ impl OnPanic {
             OnPanic::Restart => true,
             OnPanic::Requests(_) => false,
         }
-    }
-}
-
-//
-// display impls
-//
-
-impl std::fmt::Display for ProcessId {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{}:{}:{}",
-            self.process(),
-            self.package(),
-            self.publisher()
-        )
-    }
-}
-
-impl std::fmt::Display for Address {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}@{}", self.node, self.process)
     }
 }
 
@@ -382,7 +603,7 @@ pub fn de_wit_on_panic(wit: wit::OnPanic) -> OnPanic {
     }
 }
 //
-// END SYNC WITH kernel_types.rs
+// END SYNC WITH process_lib
 //
 
 //
@@ -488,6 +709,24 @@ pub struct KernelMessage {
     pub signed_capabilities: Option<Vec<SignedCapability>>,
 }
 
+impl std::fmt::Display for KernelMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n}}",
+            self.id,
+            self.source,
+            self.target,
+            match &self.rsvp {
+                Some(rsvp) => rsvp.to_string(),
+                None => "None".to_string()
+            },
+            self.message,
+            self.payload.is_some(),
+        )
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WrappedSendError {
     pub id: u64,
@@ -509,43 +748,52 @@ pub struct Printout {
 //   -> kernel sets `Some(A) = Rsvp` for B's request to C
 pub type Rsvp = Option<Address>;
 
-//
-//  boot/startup specific types???
-//
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BootOutboundRequest {
-    pub target_process: ProcessId,
-    pub json: Option<String>,
-    pub bytes: Option<Vec<u8>>,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DebugCommand {
     Toggle,
     Step,
 }
 
+/// IPC format for requests sent to kernel runtime module
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KernelCommand {
+    /// RUNTIME ONLY: used to notify the kernel that booting is complete and
+    /// all processes have been loaded in from their persisted or bootstrapped state.
     Booted,
-    StartProcess {
+    /// Tell the kernel to install and prepare a new process for execution.
+    /// The process will not begin execution until the kernel receives a
+    /// `RunProcess` command with the same `id`.
+    ///
+    /// The process that sends this command will be given messaging capabilities
+    /// for the new process if `public` is false.
+    InitializeProcess {
         id: ProcessId,
         wasm_bytes_handle: u128,
         on_panic: OnPanic,
         initial_capabilities: HashSet<SignedCapability>,
         public: bool,
     },
-    KillProcess(ProcessId), // this is extrajudicial killing: we might lose messages!
-    // kernel only
-    RebootProcess {
-        process_id: ProcessId,
-        persisted: PersistedProcess,
-    },
+    /// Tell the kernel to run a process that has already been installed.
+    /// TODO: in the future, this command could be extended to allow for
+    /// resource provision.
+    RunProcess(ProcessId),
+    /// Kill a running process immediately. This may result in the dropping / mishandling of messages!
+    KillProcess(ProcessId),
+    /// RUNTIME ONLY: notify the kernel that the runtime is shutting down and it
+    /// should gracefully stop and persist the running processes.
     Shutdown,
 }
 
-#[allow(dead_code)]
+/// IPC format for all KernelCommand responses
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KernelResponse {
+    InitializedProcess,
+    InitializeProcessError,
+    StartedProcess,
+    RunProcessError,
+    KilledProcess(ProcessId),
+}
+
 #[derive(Debug)]
 pub enum CapMessage {
     Add {
@@ -553,7 +801,7 @@ pub enum CapMessage {
         cap: Capability,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
-    Drop {
+    _Drop {
         // not used yet!
         on: ProcessId,
         cap: Capability,
@@ -567,15 +815,8 @@ pub enum CapMessage {
     },
     GetAll {
         on: ProcessId,
-        responder: tokio::sync::oneshot::Sender<HashSet<Capability>>,
+        responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
     },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KernelResponse {
-    StartedProcess,
-    StartProcessError,
-    KilledProcess(ProcessId),
 }
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
@@ -598,14 +839,6 @@ pub struct ProcessContext {
     pub context: Option<Context>,
 }
 
-//
-// runtime-module-specific types
-//
-
-//
-// filesystem.rs types
-//
-
 pub type PackageVersion = (u32, u32, u32);
 
 /// the type that gets deserialized from `metadata.json` in a package
@@ -625,7 +858,8 @@ pub struct PackageManifestEntry {
     pub process_wasm_path: String,
     pub on_panic: OnPanic,
     pub request_networking: bool,
-    pub request_messaging: Vec<String>,
+    pub request_messaging: Option<Vec<String>>,
+    pub grant_messaging: Option<Vec<String>>,
     pub public: bool,
 }
 
@@ -833,232 +1067,3 @@ impl VfsError {
         }
     }
 }
-
-//
-// http_client.rs types
-//
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HttpClientRequest {
-    pub uri: String,
-    pub method: String,
-    pub headers: HashMap<String, String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HttpClientResponse {
-    pub status: u16,
-    pub headers: HashMap<String, String>,
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum HttpClientError {
-    #[error("http_client: rsvp is None but message is expecting response")]
-    BadRsvp,
-    #[error("http_client: no json in request")]
-    NoJson,
-    #[error(
-        "http_client: JSON payload could not be parsed to HttpClientRequest: {error}. Got {:?}.",
-        json
-    )]
-    BadJson { json: String, error: String },
-    #[error("http_client: http method not supported: {:?}", method)]
-    BadMethod { method: String },
-    #[error("http_client: failed to execute request {:?}", error)]
-    RequestFailed { error: String },
-}
-
-#[allow(dead_code)]
-impl HttpClientError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            HttpClientError::BadRsvp { .. } => "BadRsvp",
-            HttpClientError::NoJson { .. } => "NoJson",
-            HttpClientError::BadJson { .. } => "BadJson",
-            HttpClientError::BadMethod { .. } => "BadMethod",
-            HttpClientError::RequestFailed { .. } => "RequestFailed",
-        }
-    }
-}
-
-//
-// custom kernel displays
-//
-
-impl std::fmt::Display for KernelMessage {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n}}",
-            self.id,
-            self.source,
-            self.target,
-            match &self.rsvp {
-                Some(rsvp) => rsvp.to_string(),
-                None => "None".to_string()
-            },
-            self.message,
-            self.payload.is_some(),
-        )
-    }
-}
-
-//
-// http_server.rs types
-//
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HttpResponse {
-    pub status: u16,
-    pub headers: HashMap<String, String>,
-    pub body: Option<Vec<u8>>, // TODO does this use a lot of memory?
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum HttpServerError {
-    #[error("http_server: json is None")]
-    NoJson,
-    #[error("http_server: response not ok")]
-    ResponseError,
-    #[error("http_server: bytes are None")]
-    NoBytes,
-    #[error(
-        "http_server: JSON payload could not be parsed to HttpClientRequest: {error}. Got {:?}.",
-        json
-    )]
-    BadJson { json: String, error: String },
-    #[error("http_server: path binding error:  {:?}", error)]
-    PathBind { error: String },
-}
-
-#[allow(dead_code)]
-impl HttpServerError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            HttpServerError::NoJson { .. } => "NoJson",
-            HttpServerError::NoBytes { .. } => "NoBytes",
-            HttpServerError::BadJson { .. } => "BadJson",
-            HttpServerError::ResponseError { .. } => "ResponseError",
-            HttpServerError::PathBind { .. } => "PathBind",
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct JwtClaims {
-    pub username: String,
-    pub expiration: u64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WebSocketServerTarget {
-    pub node: String,
-    pub id: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct WebSocketPush {
-    pub target: WebSocketServerTarget,
-    pub is_text: Option<bool>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ServerAction {
-    pub action: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum HttpServerMessage {
-    BindPath {
-        path: String,
-        authenticated: bool,
-        local_only: bool,
-    },
-    WebSocketPush(WebSocketPush),
-    ServerAction(ServerAction),
-    WsRegister(WsRegister),                 // Coming from a proxy
-    WsProxyDisconnect(WsProxyDisconnect),   // Coming from a proxy
-    WsMessage(WsMessage),                   // Coming from a proxy
-    EncryptedWsMessage(EncryptedWsMessage), // Coming from a proxy
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WsRegister {
-    pub ws_auth_token: String,
-    pub auth_token: String,
-    pub channel_id: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WsProxyDisconnect {
-    // Doesn't require auth because it's coming from the proxy
-    pub channel_id: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WsMessage {
-    pub ws_auth_token: String,
-    pub auth_token: String,
-    pub channel_id: String,
-    pub target: Address,
-    pub json: Option<serde_json::Value>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EncryptedWsMessage {
-    pub ws_auth_token: String,
-    pub auth_token: String,
-    pub channel_id: String,
-    pub target: Address,
-    pub encrypted: String, // Encrypted JSON as hex with the 32-byte authentication tag appended
-    pub nonce: String,     // Hex of the 12-byte nonce
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum WebSocketClientMessage {
-    WsRegister(WsRegister),
-    WsMessage(WsMessage),
-    EncryptedWsMessage(EncryptedWsMessage),
-}
-// http_server End
-
-// encryptor Start
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GetKeyAction {
-    pub channel_id: String,
-    pub public_key_hex: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DecryptAndForwardAction {
-    pub channel_id: String,
-    pub forward_to: Address, // node, process
-    pub json: Option<serde_json::Value>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EncryptAndForwardAction {
-    pub channel_id: String,
-    pub forward_to: Address, // node, process
-    pub json: Option<serde_json::Value>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DecryptAction {
-    pub channel_id: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EncryptAction {
-    pub channel_id: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum EncryptorMessage {
-    GetKey(GetKeyAction),
-    DecryptAndForward(DecryptAndForwardAction),
-    EncryptAndForward(EncryptAndForwardAction),
-    Decrypt(DecryptAction),
-    Encrypt(EncryptAction),
-}
-// encryptor End

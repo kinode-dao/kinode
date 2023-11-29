@@ -196,8 +196,7 @@
 
       <h4>Apps:</h4>
       <!-- <a id="file-transfer" href="/file-transfer">File Transfer</a> -->
-      <a id="chess" href="/chess:chess:uqbar/">Chess</a>
-      <a id="http-proxy" href="/http_proxy:http_proxy:uqbar/">HTTP Proxy</a>
+      <a id="chess" href="/chess:chess:uqbar/">Chess [NOT WORKING]</a>
     </div>
     <script>window.ourName = window.our = '${our}'</script>
     <script>
@@ -216,8 +215,6 @@
         // fileTransferLink.attributes.href.value = (window.location.pathname + fileTransferLink.attributes.href.value).replace('//', '/')
         const chessLink = document.getElementById('chess')
         chessLink.attributes.href.value = (window.location.pathname + chessLink.attributes.href.value).replace('//', '/')
-        const httpProxyLink = document.getElementById('http-proxy')
-        httpProxyLink.attributes.href.value = (window.location.pathname + httpProxyLink.attributes.href.value).replace('//', '/')
 
         console.log('OUR NODE NAME:', window.our)
         console.log(getCookie(`uqbar-ws-auth_${window.our}`))

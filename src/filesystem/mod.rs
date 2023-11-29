@@ -313,15 +313,18 @@ async fn bootstrap(
                 "{}:{}:{}",
                 entry.process_name, package_name, package_publisher
             );
-            entry.request_messaging.push(our_process_id.clone());
-            for process_name in &entry.request_messaging {
-                requested_caps.insert(Capability {
-                    issuer: Address {
-                        node: our_name.to_string(),
-                        process: ProcessId::from_str(process_name).unwrap(),
-                    },
-                    params: "\"messaging\"".into(),
-                });
+            entry.request_messaging = Some(entry.request_messaging.unwrap_or_default());
+            if let Some(ref mut request_messaging) = entry.request_messaging {
+                request_messaging.push(our_process_id.clone());
+                for process_name in request_messaging {
+                    requested_caps.insert(Capability {
+                        issuer: Address {
+                            node: our_name.to_string(),
+                            process: ProcessId::from_str(process_name).unwrap(),
+                        },
+                        params: "\"messaging\"".into(),
+                    });
+                }
             }
 
             if entry.request_networking {

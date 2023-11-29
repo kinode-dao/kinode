@@ -384,7 +384,7 @@ async fn direct_networking(
                 // to prevent some amount of potential DDoS attacks.
                 // can also block based on socket_addr
                 // ignore connections we failed to accept...?
-                if let Ok(websocket) = accept_async(MaybeTlsStream::Plain(stream)).await {
+                if let Ok(Ok(websocket)) = time::timeout(TIMEOUT, accept_async(MaybeTlsStream::Plain(stream))).await {
                     print_debug(&print_tx, "net: received new websocket connection").await;
                     let (peer_id, routing_for, conn) =
                         match time::timeout(TIMEOUT, recv_connection(
@@ -404,7 +404,7 @@ async fn direct_networking(
                                 }).await?;
                                 continue;
                             }
-                            Err(e) => {
+                            Err(_e) => {
                                 print_tx.send(Printout {
                                     verbosity: 0,
                                     content: "net: recv_connection timed out".into(),
