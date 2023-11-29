@@ -18,12 +18,6 @@ rustup target add wasm32-wasi
 rustup target add wasm32-wasi --toolchain nightly
 cargo install cargo-wasi
 
-# Initialize submodules, in particular the register app
-
-git submodule update --init --recursive
-# Build the register app
-cd src/register && ./build_all.sh && cd ../..
-
 # Build the runtime, along with a number of booted-at-startup WASM modules including terminal and key_value
 # OPTIONAL: --release flag
 
