@@ -161,7 +161,7 @@ async fn handle_kernel_request(
                             node: our_name.clone(),
                             process: KERNEL_PROCESS_ID.clone(),
                         },
-                        target: km.source,
+                        target: km.rsvp.unwrap_or(km.source),
                         rsvp: None,
                         message: t::Message::Response((
                             t::Response {
@@ -240,8 +240,8 @@ async fn handle_kernel_request(
                 engine,
                 caps_oracle,
                 &StartProcessMetadata {
-                    source: if let Some(rsvp) = km.rsvp {
-                        rsvp
+                    source: if let Some(ref rsvp) = km.rsvp {
+                        rsvp.clone()
                     } else {
                         km.source.clone()
                     },
@@ -266,7 +266,7 @@ async fn handle_kernel_request(
                                 node: our_name.clone(),
                                 process: KERNEL_PROCESS_ID.clone(),
                             },
-                            target: km.source,
+                            target: km.rsvp.unwrap_or(km.source),
                             rsvp: None,
                             message: t::Message::Response((
                                 t::Response {
@@ -320,7 +320,7 @@ async fn handle_kernel_request(
                                 node: our_name.clone(),
                                 process: KERNEL_PROCESS_ID.clone(),
                             },
-                            target: km.source,
+                            target: km.rsvp.unwrap_or(km.source),
                             rsvp: None,
                             message: t::Message::Response((
                                 t::Response {
@@ -352,7 +352,7 @@ async fn handle_kernel_request(
                             node: our_name.clone(),
                             process: KERNEL_PROCESS_ID.clone(),
                         },
-                        target: km.source,
+                        target: km.rsvp.unwrap_or(km.source),
                         rsvp: None,
                         message: t::Message::Response((
                             t::Response {
@@ -406,7 +406,7 @@ async fn handle_kernel_request(
                         node: our_name.clone(),
                         process: KERNEL_PROCESS_ID.clone(),
                     },
-                    target: km.source,
+                    target: km.rsvp.unwrap_or(km.source),
                     rsvp: None,
                     message: t::Message::Response((
                         t::Response {
