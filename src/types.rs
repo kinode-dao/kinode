@@ -1,4 +1,4 @@
-use crate::kernel::uqbar::process::standard as wit;
+use crate::kernel::process::wit;
 use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -31,11 +31,30 @@ pub type NodeId = String; // QNS domain name
 /// the process name can be a random number, or a name chosen by the user.
 /// the formatting is as follows:
 /// `[process name]:[package name]:[node ID]`
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct ProcessId {
     process_name: String,
     package_name: String,
     publisher_node: NodeId,
+}
+
+impl Serialize for ProcessId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        format!("{}", self).serialize(serializer)
+    }
+}
+
+impl<'a> Deserialize<'a> for ProcessId {
+    fn deserialize<D>(deserializer: D) -> Result<ProcessId, D::Error>
+    where
+        D: serde::de::Deserializer<'a>,
+    {
+        let s = String::deserialize(deserializer)?;
+        ProcessId::from_str(&s).map_err(serde::de::Error::custom)
+    }
 }
 
 /// PackageId is like a ProcessId, but for a package. Only contains the name
@@ -212,7 +231,7 @@ impl std::error::Error for ProcessIdParseError {
     }
 }
 
-#[derive(Clone, Debug, Hash, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct Address {
     pub node: NodeId,
     pub process: ProcessId,
@@ -228,7 +247,7 @@ impl Address {
             process: process.into(),
         }
     }
-    pub fn _from_str(input: &str) -> Result<Self, AddressParseError> {
+    pub fn from_str(input: &str) -> Result<Self, AddressParseError> {
         // split string on colons into 4 segments,
         // first one with @, next 3 with :
         let mut name_rest = input.split('@');
@@ -279,6 +298,25 @@ impl Address {
                 publisher_node: wit.process.publisher_node,
             },
         }
+    }
+}
+
+impl Serialize for Address {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::ser::Serializer,
+    {
+        format!("{}", self).serialize(serializer)
+    }
+}
+
+impl<'a> Deserialize<'a> for Address {
+    fn deserialize<D>(deserializer: D) -> Result<Address, D::Error>
+    where
+        D: serde::de::Deserializer<'a>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Address::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 
@@ -716,23 +754,44 @@ pub enum DebugCommand {
     Step,
 }
 
+/// IPC format for requests sent to kernel runtime module
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KernelCommand {
+    /// RUNTIME ONLY: used to notify the kernel that booting is complete and
+    /// all processes have been loaded in from their persisted or bootstrapped state.
     Booted,
-    StartProcess {
+    /// Tell the kernel to install and prepare a new process for execution.
+    /// The process will not begin execution until the kernel receives a
+    /// `RunProcess` command with the same `id`.
+    ///
+    /// The process that sends this command will be given messaging capabilities
+    /// for the new process if `public` is false.
+    InitializeProcess {
         id: ProcessId,
         wasm_bytes_handle: u128,
         on_panic: OnPanic,
         initial_capabilities: HashSet<SignedCapability>,
         public: bool,
     },
-    KillProcess(ProcessId), // this is extrajudicial killing: we might lose messages!
-    // kernel only
-    RebootProcess {
-        process_id: ProcessId,
-        persisted: PersistedProcess,
-    },
+    /// Tell the kernel to run a process that has already been installed.
+    /// TODO: in the future, this command could be extended to allow for
+    /// resource provision.
+    RunProcess(ProcessId),
+    /// Kill a running process immediately. This may result in the dropping / mishandling of messages!
+    KillProcess(ProcessId),
+    /// RUNTIME ONLY: notify the kernel that the runtime is shutting down and it
+    /// should gracefully stop and persist the running processes.
     Shutdown,
+}
+
+/// IPC format for all KernelCommand responses
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KernelResponse {
+    InitializedProcess,
+    InitializeProcessError,
+    StartedProcess,
+    RunProcessError,
+    KilledProcess(ProcessId),
 }
 
 #[derive(Debug)]
@@ -756,15 +815,8 @@ pub enum CapMessage {
     },
     GetAll {
         on: ProcessId,
-        responder: tokio::sync::oneshot::Sender<HashSet<Capability>>,
+        responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
     },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum KernelResponse {
-    StartedProcess,
-    StartProcessError,
-    KilledProcess(ProcessId),
 }
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
@@ -806,7 +858,8 @@ pub struct PackageManifestEntry {
     pub process_wasm_path: String,
     pub on_panic: OnPanic,
     pub request_networking: bool,
-    pub request_messaging: Vec<String>,
+    pub request_messaging: Option<Vec<String>>,
+    pub grant_messaging: Option<Vec<String>>,
     pub public: bool,
 }
 
