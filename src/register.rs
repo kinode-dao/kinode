@@ -504,9 +504,10 @@ async fn confirm_change_network_keys(
     }
 
     // Get our name from our current keyfile
-    match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
+    let old_decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
         Ok(k) => {
             our.name = k.username.clone();
+            k
         }
         Err(_) => {
             return Ok(warp::reply::with_status(
@@ -524,17 +525,13 @@ async fn confirm_change_network_keys(
         our.ws_routing = None;
     }
 
-    let seed = SystemRandom::new();
-    let mut jwt_secret = [0u8, 32];
-    ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
-
     let decoded_keyfile = Keyfile {
         username: our.name.clone(),
         routers: our.allowed_routers.clone(),
         networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
             .unwrap(),
-        jwt_secret_bytes: jwt_secret.to_vec(),
-        file_key: keygen::generate_file_key(),
+        jwt_secret_bytes: old_decoded_keyfile.jwt_secret_bytes,
+        file_key: old_decoded_keyfile.file_key,
     };
 
     let encoded_keyfile = keygen::encode_keyfile(
