@@ -22,9 +22,60 @@ use warp::{
 use crate::keygen;
 use crate::types::*;
 
+// Human readable ABI
+abigen!(
+    QNSRegistry,
+    r"[
+    function ws(uint256 node) external view returns (bytes32,uint32,uint16,bytes32[])
+]"
+);
+
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
 pub const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
+
+pub fn ip_to_number(ip: &str) -> Result<u32, &'static str> {
+    let octets: Vec<&str> = ip.split('.').collect();
+
+    if octets.len() != 4 {
+        return Err("Invalid IP address");
+    }
+
+    let mut ip_num: u32 = 0;
+    for &octet in octets.iter() {
+        ip_num <<= 8;
+        match octet.parse::<u32>() {
+            Ok(num) => {
+                if num > 255 {
+                    return Err("Invalid octet in IP address");
+                }
+                ip_num += num;
+            }
+            Err(_) => return Err("Invalid number in IP address"),
+        }
+    }
+
+    Ok(ip_num)
+}
+
+fn hex_string_to_u8_array(hex_str: &str) -> Result<[u8; 32], &'static str> {
+    if !hex_str.starts_with("0x") || hex_str.len() != 66 {
+        // "0x" + 64 hex chars
+        return Err("Invalid hex format or length");
+    }
+
+    let no_prefix = &hex_str[2..];
+    let mut bytes = [0_u8; 32];
+    for (i, byte) in no_prefix.as_bytes().chunks(2).enumerate() {
+        let hex_byte = std::str::from_utf8(byte)
+            .map_err(|_| "Invalid UTF-8 sequence")?
+            .parse::<u8>()
+            .map_err(|_| "Failed to parse hex byte")?;
+        bytes[i] = hex_byte;
+    }
+
+    Ok(bytes)
+}
 
 pub fn generate_jwt(jwt_secret_bytes: &[u8], username: String) -> Option<String> {
     let jwt_secret: Hmac<Sha256> = match Hmac::new_from_slice(jwt_secret_bytes) {
@@ -72,7 +123,8 @@ pub async fn register(
     let boot_our_arc = our_temp_arc.clone();
     let boot_net_keypair_arc = net_keypair_arc.clone();
     let import_tx = tx.clone();
-    let import_our_arc = our_temp_arc.clone();
+    let import_ip = ip.clone();
+    let import_rpc_url = rpc_url.clone();
     let login_tx = tx.clone();
     let login_keyfile_arc = keyfile_arc.clone();
     let generate_keys_ip = ip.clone();
@@ -110,8 +162,9 @@ pub async fn register(
             warp::post()
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
+                .and(warp::any().map(move || import_ip.clone()))
+                .and(warp::any().map(move || import_rpc_url.clone()))
                 .and(warp::any().map(move || import_tx.clone()))
-                .and(warp::any().map(move || import_our_arc.lock().unwrap().take().unwrap()))
                 .and_then(handle_import_keyfile),
         ))
         .or(warp::path("login").and(
@@ -292,8 +345,9 @@ async fn handle_boot(
 
 async fn handle_import_keyfile(
     info: ImportKeyfileInfo,
+    ip: String,
+    rpc_url: String,
     sender: RegistrationSender,
-    mut our: Identity,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
     let encoded_keyfile = match base64::decode(info.keyfile.clone()) {
@@ -307,27 +361,49 @@ async fn handle_import_keyfile(
         }
     };
 
-    let decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
-        Ok(k) => {
-            our.name = k.username.clone();
-            our.allowed_routers = k.routers.clone();
-            if !our.allowed_routers.is_empty() {
-                our.ws_routing = None;
-            }
-            our.networking_key = format!(
-                "0x{}",
-                hex::encode(k.networking_keypair.public_key().as_ref())
-            );
-            k
-        }
-        Err(_) => {
-            return Ok(warp::reply::with_status(
-                warp::reply::json(&"Failed to decode keyfile".to_string()),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            )
-            .into_response())
-        }
+    let Some(ws_port) = crate::http::utils::find_open_port(9000).await else {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Unable to find free port".to_string()),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response());
     };
+
+    let (decoded_keyfile, our) =
+        match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
+            Ok(k) => {
+                let our = Identity {
+                    name: k.username.clone(),
+                    networking_key: format!(
+                        "0x{}",
+                        hex::encode(k.networking_keypair.public_key().as_ref())
+                    ),
+                    ws_routing: if k.routers.is_empty() {
+                        Some((ip, ws_port))
+                    } else {
+                        None
+                    },
+                    allowed_routers: k.routers.clone(),
+                };
+
+                (k, our)
+            }
+            Err(_) => {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&"Failed to decode keyfile".to_string()),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+                .into_response())
+            }
+        };
+
+    // if !networking_info_valid(rpc_url, ip, ws_port, &our).await {
+    //     return Ok(warp::reply::with_status(
+    //         warp::reply::json(&"Networking info invalid".to_string()),
+    //         StatusCode::UNAUTHORIZED,
+    //     )
+    //     .into_response());
+    // }
 
     let encoded_keyfile_str = info.keyfile.clone();
 
@@ -356,22 +432,30 @@ async fn handle_login(
         .into_response());
     }
 
+    let Some(ws_port) = crate::http::utils::find_open_port(9000).await else {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Unable to find free port".to_string()),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response());
+    };
+
     let (decoded_keyfile, our) =
         match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
             Ok(k) => {
-                let mut our = Identity {
+                let our = Identity {
                     name: k.username.clone(),
                     networking_key: format!(
                         "0x{}",
                         hex::encode(k.networking_keypair.public_key().as_ref())
                     ),
-                    ws_routing: None, // TODO: look on line 362 for this
+                    ws_routing: if k.routers.is_empty() {
+                        Some((ip, ws_port))
+                    } else {
+                        None
+                    },
                     allowed_routers: k.routers.clone(),
                 };
-
-                if !our.allowed_routers.is_empty() {
-                    our.ws_routing = None;
-                }
 
                 (k, our)
             }
@@ -384,49 +468,13 @@ async fn handle_login(
             }
         };
 
-    // check if Identity for this username has correct networking keys,
-    // if not, prompt user to reset them.
-    let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Could not connect to RPC endpoint".to_string()),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response());
-    };
-    let qns_address: EthAddress = QNS_SEPOLIA_ADDRESS.parse().unwrap();
-    let contract = QNSRegistry::new(qns_address, ws_rpc.into());
-    let node_id: U256 = namehash(&our.name).as_bytes().into();
-    let onchain_id = contract.ws(node_id).call().await.unwrap(); // TODO unwrap
-
-    // The open port should match the registry
-    let ws_port = crate::http::utils::find_open_port(9000).await.unwrap();
-
-    // double check that routers match on-chain information
-    let namehashed_routers: Vec<[u8; 32]> = our
-        .allowed_routers
-        .clone()
-        .into_iter()
-        .map(|name| {
-            let hash = namehash(&name);
-            let mut result = [0u8; 32];
-            result.copy_from_slice(hash.as_bytes());
-            result
-        })
-        .collect();
-
-    let current_ip_and_port = combineIpAndPort(ip, ws_port);
-
-    // double check that keys match on-chain information
-    if onchain_id.routers != namehashed_routers
-        || onchain_id.public_key != our.networking_key
-        || (onchain_id.ip_and_port > 0 && onchain_id.ip_and_port != current_ip_and_port)
-    {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&format!("Your onchain routing info of {}, does not match your current IP and port of {}", onchain_id.ip_and_port, current_ip_and_port).to_string()),
-            StatusCode::CONFLICT,
-        )
-        .into_response());
-    }
+    // if !networking_info_valid(rpc_url, ip, ws_port, &our).await {
+    //     return Ok(warp::reply::with_status(
+    //         warp::reply::json(&"Networking info invalid".to_string()),
+    //         StatusCode::UNAUTHORIZED,
+    //     )
+    //     .into_response());
+    // }
 
     let encoded_keyfile_str = base64::encode(encoded_keyfile.clone());
 
@@ -450,7 +498,7 @@ async fn confirm_change_network_keys(
     if encoded_keyfile.is_empty() {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Keyfile not present".to_string()),
-            StatusCode::BAD_REQUEST,
+            StatusCode::NOT_FOUND,
         )
         .into_response());
     }
@@ -462,8 +510,8 @@ async fn confirm_change_network_keys(
         }
         Err(_) => {
             return Ok(warp::reply::with_status(
-                warp::reply::json(&"Failed to decode keyfile".to_string()),
-                StatusCode::INTERNAL_SERVER_ERROR,
+                warp::reply::json(&"Invalid password".to_string()),
+                StatusCode::UNAUTHORIZED,
             )
             .into_response());
         }
@@ -566,4 +614,68 @@ async fn success_response(
     // }
 
     Ok(response)
+}
+
+async fn networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: &Identity) -> bool {
+    // check if Identity for this username has correct networking keys,
+    // if not, prompt user to reset them.
+    let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
+        println!("1");
+        return false;
+    };
+    let Ok(qns_address): Result<EthAddress, _> = QNS_SEPOLIA_ADDRESS.parse() else {
+        println!("2");
+        return false;
+    };
+    let contract = QNSRegistry::new(qns_address, ws_rpc.into());
+    let node_id: U256 = namehash(&our.name).as_bytes().into();
+    let Ok((chain_pubkey, chain_ip, chain_port, chain_routers)) = contract.ws(node_id).call().await
+    else {
+        println!("3");
+        return false;
+    };
+
+    // double check that routers match on-chain information
+    let namehashed_routers: Vec<[u8; 32]> = our
+        .allowed_routers
+        .clone()
+        .into_iter()
+        .map(|name| {
+            let hash = namehash(&name);
+            let mut result = [0u8; 32];
+            result.copy_from_slice(hash.as_bytes());
+            result
+        })
+        .collect();
+
+    let current_ip = match ip_to_number(&ip) {
+        Ok(ip_num) => ip_num,
+        Err(_) => {
+            println!("5");
+            return false;
+        }
+    };
+
+    let Ok(networking_key_bytes) = hex_string_to_u8_array(&our.networking_key) else {
+        println!("6");
+        return false;
+    };
+
+    let address_match = chain_ip == current_ip && chain_port == ws_port;
+    let routers_match = chain_routers == namehashed_routers;
+
+    let routing_match = if chain_ip == 0 {
+        routers_match
+    } else {
+        address_match
+    };
+    let pubkey_match = chain_pubkey == networking_key_bytes;
+
+    // double check that keys match on-chain information
+    if !routing_match || !pubkey_match {
+        println!("7");
+        return false;
+    }
+
+    true
 }
