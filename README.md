@@ -1,4 +1,3 @@
-Last updated: 11/01/23
 ## Setup
 
 ### Building components
