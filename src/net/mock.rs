@@ -1,7 +1,11 @@
 use futures::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use tokio_tungstenite::{connect_async, tungstenite::protocol::Message::{Binary, Text}, WebSocketStream};
+use tokio_tungstenite::{
+    connect_async,
+    tungstenite::protocol::Message::{Binary, Text},
+    WebSocketStream,
+};
 use url::Url;
 
 use crate::types;
@@ -44,4 +48,3 @@ pub async fn mock_client(
         }
     }
 }
-
