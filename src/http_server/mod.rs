@@ -20,6 +20,7 @@ use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
 
 mod server_fns;
+pub use server_fns::is_port_available;
 
 // types and constants
 type HttpSender = tokio::sync::oneshot::Sender<HttpResponse>;

@@ -18,6 +18,12 @@ use tokio_tungstenite::{
 mod types;
 mod utils;
 
+// Re-export for testing.
+#[cfg(feature = "simulation-mode")]
+mod mock;
+#[cfg(feature = "simulation-mode")]
+pub use mock::mock_client;
+
 // only used in connection initialization, otherwise, nacks and Responses are only used for "timeouts"
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 

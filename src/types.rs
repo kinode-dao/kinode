@@ -16,6 +16,7 @@ lazy_static::lazy_static! {
     pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "sys", "uqbar");
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 #[derive(Parser, Debug)]
 /// Uqbar: your p2p personal node integrating cryptocurrency and AI
 #[command(author, version, about, long_about = None)]
@@ -35,6 +36,31 @@ pub struct Args {
     /// Networking password
     #[arg(short, long, value_parser)]
     pub password: Option<String>,
+}
+#[cfg(feature = "simulation-mode")]
+#[derive(Parser, Debug)]
+/// Uqbar: your p2p personal node integrating cryptocurrency and AI
+#[command(author, version, about, long_about = None)]
+pub struct Args {
+    /// Home directory
+    #[arg(short, long)]
+    pub home: String,
+
+    /// Ethereum RPC endpoint
+    #[arg(short, long, default_value_t = String::new())]
+    pub rpc: String,
+
+    /// First port to try binding
+    #[arg(long, default_value_t = 8080)]
+    pub port: u16,
+
+    /// Networking password
+    #[arg(short, long, value_parser)]
+    pub password: Option<String>,
+
+    /// Network router port
+    #[arg(short, long, default_value_t = 9001)]
+    pub network_router_port: u16,
 }
 
 //

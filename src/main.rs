@@ -282,6 +282,7 @@ async fn main() {
         vfs_message_sender,
         encryptor_sender,
     ));
+    #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(net::networking(
         our.clone(),
         our_ip.to_string(),
@@ -292,6 +293,13 @@ async fn main() {
         net_message_sender,
         net_message_receiver,
         REVEAL_IP,
+    ));
+    #[cfg(feature = "simulation-mode")]
+    tasks.spawn(net::mock_client(
+        args.network_router_port,
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        net_message_receiver,
     ));
     tasks.spawn(filesystem::fs_sender(
         our.name.clone(),
