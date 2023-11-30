@@ -8,6 +8,9 @@ Last updated: 11/01/23
 
 git clone git@github.com:uqbar-dao/uqbar.git
 
+# Configure dependency retrieval from GitHub
+mkdir .cargo
+echo "net.git-fetch-with-cli = true" > .cargo/config
 
 # Get some stuff so we can build wasm.
 
