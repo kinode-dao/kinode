@@ -354,19 +354,13 @@ impl ProcessState {
             println!("need non-None prompting_message to handle Response");
             return None;
         };
-        match &prompting_message.rsvp {
-            None => {
-                let _ = self
-                    .send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 1,
-                        content: "kernel: prompting_message has no rsvp".into(),
-                    })
-                    .await;
-                None
-            }
-            Some(address) => Some((prompting_message.id, address.clone())),
-        }
+        Some((
+            prompting_message.id,
+            match &prompting_message.rsvp {
+                None => prompting_message.source.clone(),
+                Some(address) => address.clone(),
+            },
+        ))
     }
 }
 
@@ -419,7 +413,7 @@ pub async fn make_process_loop(
     }
 
     let component =
-        Component::new(&engine, wasm_bytes).expect("make_process_loop: couldn't read file");
+        Component::new(&engine, wasm_bytes.clone()).expect("make_process_loop: couldn't read file");
 
     let mut linker = Linker::new(&engine);
     Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
@@ -564,7 +558,10 @@ pub async fn make_process_loop(
                             .unwrap(),
                             metadata: None,
                         }),
-                        payload: None,
+                        payload: Some(t::Payload {
+                            mime: None,
+                            bytes: wasm_bytes,
+                        }),
                         signed_capabilities: None,
                     })
                     .await

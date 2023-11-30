@@ -585,9 +585,6 @@ async fn handle_app_message(
                     // the receiver will automatically trigger a 503 when sender is dropped.
                     return;
                 };
-                let Some((_id, (path, channel))) = http_response_senders.remove(&km.id) else {
-                    return;
-                };
                 // XX REFACTOR THIS:
                 // for the login case, todo refactor out?
                 let segments: Vec<&str> = path
@@ -638,7 +635,7 @@ async fn handle_app_message(
                         }
                     }
                 }
-                let _ = channel.send((
+                let _ = sender.send((
                     HttpResponse {
                         status: response.status,
                         headers: response.headers,
