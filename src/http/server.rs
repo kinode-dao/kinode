@@ -25,7 +25,7 @@ type HttpSender = tokio::sync::oneshot::Sender<(HttpResponse, Vec<u8>)>;
 /// mapping from an open websocket connection to a channel that will ingest
 /// WebSocketPush messages from the app that handles the connection, and
 /// send them to the connection.
-type WebSocketSenders = Arc<DashMap<u64, (ProcessId, WebSocketSender)>>;
+type WebSocketSenders = Arc<DashMap<u32, (ProcessId, WebSocketSender)>>;
 type WebSocketSender = tokio::sync::mpsc::Sender<warp::ws::Message>;
 
 type PathBindings = Arc<RwLock<Router<BoundPath>>>;
@@ -424,8 +424,7 @@ async fn maintain_websocket(
         return;
     }
 
-    let max_js_safe_integer: u64 = (1u64 << 53) - 1;
-    let ws_channel_id: u64 = rand::random::<u64>() & max_js_safe_integer;
+    let ws_channel_id: u32 = rand::random();
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
     ws_senders.insert(ws_channel_id, (owner_process.clone(), ws_sender));
 
@@ -510,7 +509,7 @@ async fn maintain_websocket(
 }
 
 async fn websocket_close(
-    channel_id: u64,
+    channel_id: u32,
     process: ProcessId,
     ws_senders: &WebSocketSenders,
     send_to_loop: &MessageSender,
