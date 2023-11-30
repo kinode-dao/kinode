@@ -72,8 +72,8 @@ pub enum HttpServerAction {
         cache: bool,
     },
     /// Processes will RECEIVE this kind of request when a client connects to them.
-    /// If a process does not want this websocket open, they can respond with an
-    /// [`enum@HttpServerAction::WebSocketClose`] message.
+    /// If a process does not want this websocket open, they should issue a *request*
+    /// containing a [`enum@HttpServerAction::WebSocketClose`] message and this channel ID.
     WebSocketOpen(u32),
     /// Processes can both SEND and RECEIVE this kind of request.
     /// When sent, expects a payload containing the WebSocket message bytes to send.

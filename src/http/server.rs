@@ -436,6 +436,31 @@ async fn maintain_websocket(
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
     ws_senders.insert(ws_channel_id, (owner_process.clone(), ws_sender));
 
+    // send a message to the process associated with this channel
+    // notifying them that the channel is now open
+    let _ = send_to_loop
+        .send(KernelMessage {
+            id: rand::random(),
+            source: Address {
+                node: our.to_string(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node: our.to_string(),
+                process: owner_process.clone(),
+            },
+            rsvp: None,
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: None,
+                ipc: serde_json::to_vec(&HttpServerAction::WebSocketOpen(ws_channel_id)).unwrap(),
+                metadata: None,
+            }),
+            payload: None,
+            signed_capabilities: None,
+        })
+        .await;
+
     // respond to the client notifying them that the channel is now open
     let Ok(()) = write_stream
         .send(warp::ws::Message::text(
