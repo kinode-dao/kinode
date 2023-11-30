@@ -143,7 +143,15 @@ async fn serve(
              send_to_loop: MessageSender,
              print_tx: PrintSender| {
                 ws_connection.on_upgrade(move |ws: WebSocket| async move {
-                    maintain_websocket(ws, our, jwt_secret_bytes, ws_senders, send_to_loop, print_tx).await
+                    maintain_websocket(
+                        ws,
+                        our,
+                        jwt_secret_bytes,
+                        ws_senders,
+                        send_to_loop,
+                        print_tx,
+                    )
+                    .await
                 })
             },
         );
