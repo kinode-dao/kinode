@@ -127,20 +127,23 @@ async fn serve(
     let cloned_msg_tx = send_to_loop.clone();
     let cloned_our = our.clone();
     let cloned_jwt_secret_bytes = jwt_secret_bytes.clone();
+    let cloned_print_tx = print_tx.clone();
     let ws_route = warp::path::end()
         .and(warp::ws())
         .and(warp::any().map(move || cloned_our.clone()))
         .and(warp::any().map(move || cloned_jwt_secret_bytes.clone()))
         .and(warp::any().map(move || ws_senders.clone()))
         .and(warp::any().map(move || cloned_msg_tx.clone()))
+        .and(warp::any().map(move || cloned_print_tx.clone()))
         .map(
             |ws_connection: Ws,
              our: Arc<String>,
              jwt_secret_bytes: Arc<Vec<u8>>,
              ws_senders: WebSocketSenders,
-             send_to_loop: MessageSender| {
+             send_to_loop: MessageSender,
+             print_tx: PrintSender| {
                 ws_connection.on_upgrade(move |ws: WebSocket| async move {
-                    maintain_websocket(ws, our, jwt_secret_bytes, ws_senders, send_to_loop).await
+                    maintain_websocket(ws, our, jwt_secret_bytes, ws_senders, send_to_loop, print_tx).await
                 })
             },
         );
@@ -379,6 +382,7 @@ async fn maintain_websocket(
     jwt_secret_bytes: Arc<Vec<u8>>,
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
+    _print_tx: PrintSender,
 ) {
     let (mut write_stream, mut read_stream) = ws.split();
 
@@ -420,7 +424,8 @@ async fn maintain_websocket(
         return;
     }
 
-    let ws_channel_id: u64 = rand::random();
+    let max_js_safe_integer: u64 = (1u64 << 53) - 1;
+    let ws_channel_id: u64 = rand::random::<u64>() & max_js_safe_integer;
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
     ws_senders.insert(ws_channel_id, (owner_process.clone(), ws_sender));
 
