@@ -25,7 +25,7 @@ type HttpSender = tokio::sync::oneshot::Sender<(HttpResponse, Vec<u8>)>;
 /// mapping from an open websocket connection to a channel that will ingest
 /// WebSocketPush messages from the app that handles the connection, and
 /// send them to the connection.
-type WebSocketSenders = Arc<DashMap<u64, (ProcessId, WebSocketSender)>>;
+type WebSocketSenders = Arc<DashMap<u32, (ProcessId, WebSocketSender)>>;
 type WebSocketSender = tokio::sync::mpsc::Sender<warp::ws::Message>;
 
 type PathBindings = Arc<RwLock<Router<BoundPath>>>;
@@ -127,20 +127,31 @@ async fn serve(
     let cloned_msg_tx = send_to_loop.clone();
     let cloned_our = our.clone();
     let cloned_jwt_secret_bytes = jwt_secret_bytes.clone();
+    let cloned_print_tx = print_tx.clone();
     let ws_route = warp::path::end()
         .and(warp::ws())
         .and(warp::any().map(move || cloned_our.clone()))
         .and(warp::any().map(move || cloned_jwt_secret_bytes.clone()))
         .and(warp::any().map(move || ws_senders.clone()))
         .and(warp::any().map(move || cloned_msg_tx.clone()))
+        .and(warp::any().map(move || cloned_print_tx.clone()))
         .map(
             |ws_connection: Ws,
              our: Arc<String>,
              jwt_secret_bytes: Arc<Vec<u8>>,
              ws_senders: WebSocketSenders,
-             send_to_loop: MessageSender| {
+             send_to_loop: MessageSender,
+             print_tx: PrintSender| {
                 ws_connection.on_upgrade(move |ws: WebSocket| async move {
-                    maintain_websocket(ws, our, jwt_secret_bytes, ws_senders, send_to_loop).await
+                    maintain_websocket(
+                        ws,
+                        our,
+                        jwt_secret_bytes,
+                        ws_senders,
+                        send_to_loop,
+                        print_tx,
+                    )
+                    .await
                 })
             },
         );
@@ -379,6 +390,7 @@ async fn maintain_websocket(
     jwt_secret_bytes: Arc<Vec<u8>>,
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
+    _print_tx: PrintSender,
 ) {
     let (mut write_stream, mut read_stream) = ws.split();
 
@@ -420,7 +432,7 @@ async fn maintain_websocket(
         return;
     }
 
-    let ws_channel_id: u64 = rand::random();
+    let ws_channel_id: u32 = rand::random();
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
     ws_senders.insert(ws_channel_id, (owner_process.clone(), ws_sender));
 
@@ -505,7 +517,7 @@ async fn maintain_websocket(
 }
 
 async fn websocket_close(
-    channel_id: u64,
+    channel_id: u32,
     process: ProcessId,
     ws_senders: &WebSocketSenders,
     send_to_loop: &MessageSender,
