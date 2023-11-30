@@ -201,30 +201,30 @@ async fn handle_kernel_request(
                 valid_capabilities.insert(cap);
             }
 
-            // if process is not public, give the initializer and itself the messaging cap.
-            if !public {
-                valid_capabilities.insert(t::Capability {
-                    issuer: t::Address {
-                        node: our_name.clone(),
-                        process: id.clone(),
-                    },
-                    params: "\"messaging\"".into(),
-                });
-                caps_oracle
-                    .send(t::CapMessage::Add {
-                        on: km.source.process.clone(),
-                        cap: t::Capability {
-                            issuer: t::Address {
-                                node: our_name.clone(),
-                                process: id.clone(),
-                            },
-                            params: "\"messaging\"".into(),
+            // give the initializer and itself the messaging cap.
+            // NOTE: we do this even if the process is public, because
+            // a process might redundantly call grant_messaging.
+            valid_capabilities.insert(t::Capability {
+                issuer: t::Address {
+                    node: our_name.clone(),
+                    process: id.clone(),
+                },
+                params: "\"messaging\"".into(),
+            });
+            caps_oracle
+                .send(t::CapMessage::Add {
+                    on: km.source.process.clone(),
+                    cap: t::Capability {
+                        issuer: t::Address {
+                            node: our_name.clone(),
+                            process: id.clone(),
                         },
-                        responder: tokio::sync::oneshot::channel().0,
-                    })
-                    .await
-                    .expect("event loop: fatal: sender died");
-            }
+                        params: "\"messaging\"".into(),
+                    },
+                    responder: tokio::sync::oneshot::channel().0,
+                })
+                .await
+                .expect("event loop: fatal: sender died");
 
             // fires "success" response back if successful
             match start_process(
