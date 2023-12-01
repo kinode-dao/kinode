@@ -246,19 +246,18 @@ async fn main() {
     let (our, decoded_keyfile) = match args.fake_node_name {
         None => {
             match args.password {
-                None => {
-                    match args.rpc {
-                        None => panic!(""),
-                        Some(rpc_url) => {
-                            serve_register_fe(
-                                &home_directory_path,
-                                our_ip.to_string(),
-                                http_server_port.clone(),
-                                rpc_url.clone(),
-                            ).await
-                        }
+                None => match args.rpc {
+                    None => panic!(""),
+                    Some(rpc_url) => {
+                        serve_register_fe(
+                            &home_directory_path,
+                            our_ip.to_string(),
+                            http_server_port.clone(),
+                            rpc_url.clone(),
+                        )
+                        .await
                     }
-                }
+                },
                 Some(password) => {
                     match fs::read(format!("{}/.keys", home_directory_path)).await {
                         Err(e) => panic!("could not read keyfile: {}", e),
