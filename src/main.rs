@@ -47,19 +47,19 @@ const REVEAL_IP: bool = true;
 
 #[tokio::main]
 async fn main() {
-//     let matches = Command::new("Uqbar")
-//         .version("0.3.0")
-//         .author("Uqbar DAO")
-//         .about("A General Purpose Sovereign Cloud Computing Platform")
-//         .arg(arg!([home] "Path to home directory").required(true))
-//         .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true))
-//         .arg(arg!(--llm <LLM_URL> "LLM endpoint"))
-//         .get_matches();
-//     let home_directory_path = matches.get_one::<String>("home").unwrap();
-//     let rpc_url = matches.get_one::<String>("rpc").unwrap();
-//     let llm_url = matches.get_one::<String>("llm");
-//
-// <<<<<<< HEAD
+    //     let matches = Command::new("Uqbar")
+    //         .version("0.3.0")
+    //         .author("Uqbar DAO")
+    //         .about("A General Purpose Sovereign Cloud Computing Platform")
+    //         .arg(arg!([home] "Path to home directory").required(true))
+    //         .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true))
+    //         .arg(arg!(--llm <LLM_URL> "LLM endpoint"))
+    //         .get_matches();
+    //     let home_directory_path = matches.get_one::<String>("home").unwrap();
+    //     let rpc_url = matches.get_one::<String>("rpc").unwrap();
+    //     let llm_url = matches.get_one::<String>("llm");
+    //
+    // <<<<<<< HEAD
     let args = types::Args::parse();
 
     let home_directory_path = &args.home;
@@ -69,17 +69,17 @@ async fn main() {
     // read PKI from websocket endpoint served by public RPC
     // if you get rate-limited or something, pass in your own RPC as a boot argument
     let rpc_url = args.rpc;
-// =======
-//     // create home directory if it does not already exist
-//     if let Err(e) = fs::create_dir_all(home_directory_path).await {
-//         panic!("failed to create home directory: {:?}", e);
-//     }
-//
-//     #[cfg(not(feature = "llm"))]
-//     if let Some(llm_url) = llm_url {
-//         panic!("You passed in --llm {:?} but you do not have the llm feature enabled. Please re-run with `--features llm`", llm_url);
-//     }
-// >>>>>>> v0.4.0
+    // =======
+    //     // create home directory if it does not already exist
+    //     if let Err(e) = fs::create_dir_all(home_directory_path).await {
+    //         panic!("failed to create home directory: {:?}", e);
+    //     }
+    //
+    //     #[cfg(not(feature = "llm"))]
+    //     if let Some(llm_url) = llm_url {
+    //         panic!("You passed in --llm {:?} but you do not have the llm feature enabled. Please re-run with `--features llm`", llm_url);
+    //     }
+    // >>>>>>> v0.4.0
 
     // kernel receives system messages via this channel, all other modules send messages
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
@@ -200,7 +200,10 @@ async fn main() {
 
     let http_server_port = http::utils::find_open_port(args.port).await.unwrap();
     println!("runtime bound port {}\r", http_server_port);
-    println!("login or register at http://localhost:{}\r", http_server_port);
+    println!(
+        "login or register at http://localhost:{}\r",
+        http_server_port
+    );
     let (our, decoded_keyfile) = match args.password {
         Some(password) => {
             match fs::read(format!("{}/.keys", home_directory_path)).await {
