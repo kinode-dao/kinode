@@ -73,8 +73,8 @@ pub struct Args {
     pub home: String,
 
     /// Ethereum RPC endpoint (must be wss://)
-    #[arg(required(true), short, long)]
-    pub rpc: String,
+    #[arg(short, long)]
+    pub rpc: Option<String>,
 
     /// First port to try binding
     #[arg(long, default_value_t = 8080)]

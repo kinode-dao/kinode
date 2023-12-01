@@ -108,6 +108,7 @@ async fn main() {
     println!("home at {}\r", home_directory_path);
     // read PKI from websocket endpoint served by public RPC
     // if you get rate-limited or something, pass in your own RPC as a boot argument
+    #[cfg(not(feature = "simulation-mode"))]
     let rpc_url = args.rpc;
 
     // kernel receives system messages via this channel, all other modules send messages
@@ -246,13 +247,17 @@ async fn main() {
         None => {
             match args.password {
                 None => {
-                    serve_register_fe(
-                        &home_directory_path,
-                        our_ip.to_string(),
-                        http_server_port.clone(),
-                        rpc_url.clone(),
-                    )
-                    .await
+                    match args.rpc {
+                        None => panic!(""),
+                        Some(rpc_url) => {
+                            serve_register_fe(
+                                &home_directory_path,
+                                our_ip.to_string(),
+                                http_server_port.clone(),
+                                rpc_url.clone(),
+                            ).await
+                        }
+                    }
                 }
                 Some(password) => {
                     match fs::read(format!("{}/.keys", home_directory_path)).await {
@@ -453,6 +458,7 @@ async fn main() {
         timer_service_receiver,
         print_sender.clone(),
     ));
+    #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(eth_rpc::eth_rpc(
         our.name.clone(),
         rpc_url.clone(),
