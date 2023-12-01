@@ -3,6 +3,8 @@
 use crate::types::*;
 use anyhow::Result;
 use clap::Parser;
+use ring::rand::SystemRandom;
+use ring::signature;
 use ring::signature::KeyPair;
 use std::env;
 use std::sync::Arc;
@@ -45,6 +47,56 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// such that only their routers can ever see their physical networking details.
 const REVEAL_IP: bool = true;
 
+async fn serve_register_fe(
+    home_directory_path: &str,
+    our_ip: String,
+    http_server_port: u16,
+    rpc_url: String,
+) -> (Identity, Keyfile) {
+    // check if we have keys saved on disk, encrypted
+    // if so, prompt user for "password" to decrypt with
+
+    // once password is received, use to decrypt local keys file,
+    // and pass the keys into boot process as is done in registration.
+
+    // NOTE: when we log in, we MUST check the PKI to make sure our
+    // information matches what we think it should be. this includes
+    // username, networking key, and routing info.
+    // if any do not match, we should prompt user to create a "transaction"
+    // that updates their PKI info on-chain.
+    let (kill_tx, kill_rx) = oneshot::channel::<bool>();
+
+    let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
+        Ok(keyfile) => keyfile,
+        Err(_) => Vec::new(),
+    };
+
+    let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
+    let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
+        _ = register::register(tx, kill_rx, our_ip, http_server_port, rpc_url, disk_keyfile) => {
+            panic!("registration failed")
+        }
+        Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
+            (our, decoded_keyfile, encoded_keyfile)
+        }
+    };
+
+    println!(
+        "saving encrypted networking keys to {}/.keys",
+        home_directory_path
+    );
+
+    fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
+        .await
+        .unwrap();
+
+    println!("registration complete!");
+
+    let _ = kill_tx.send(true);
+
+    (our, decoded_keyfile)
+}
+
 #[tokio::main]
 async fn main() {
     //     let matches = Command::new("Uqbar")
@@ -66,6 +118,7 @@ async fn main() {
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {:?}", e);
     }
+    println!("home at {}\r", home_directory_path);
     // read PKI from websocket endpoint served by public RPC
     // if you get rate-limited or something, pass in your own RPC as a boot argument
     let rpc_url = args.rpc;
@@ -204,71 +257,90 @@ async fn main() {
         "login or register at http://localhost:{}\r",
         http_server_port
     );
-    let (our, decoded_keyfile) = match args.password {
-        Some(password) => {
-            match fs::read(format!("{}/.keys", home_directory_path)).await {
-                Err(e) => panic!("could not read keyfile: {}", e),
-                Ok(keyfile) => {
-                    match keygen::decode_keyfile(keyfile, &password) {
-                        Err(e) => panic!("could not decode keyfile: {}", e),
-                        Ok(decoded_keyfile) => {
-                            let our = Identity {
-                                name: decoded_keyfile.username.clone(),
-                                networking_key: format!(
-                                    "0x{}",
-                                    hex::encode(
-                                        decoded_keyfile.networking_keypair.public_key().as_ref()
-                                    )
-                                ),
-                                ws_routing: None, //  TODO
-                                allowed_routers: decoded_keyfile.routers.clone(),
-                            };
-                            (our, decoded_keyfile)
+    #[cfg(not(feature = "simulation-mode"))]
+    let (our, decoded_keyfile) = serve_register_fe(
+        &home_directory_path,
+        our_ip.to_string(),
+        http_server_port.clone(),
+        rpc_url.clone(),
+    ).await;
+    #[cfg(feature = "simulation-mode")]
+    let (our, decoded_keyfile) = match args.fake_node_name {
+        None => {
+            match args.password {
+                None => {
+                    serve_register_fe(
+                        &home_directory_path,
+                        our_ip.to_string(),
+                        http_server_port.clone(),
+                        rpc_url.clone(),
+                    ).await
+                }
+                Some(password) => {
+                    match fs::read(format!("{}/.keys", home_directory_path)).await {
+                        Err(e) => panic!("could not read keyfile: {}", e),
+                        Ok(keyfile) => {
+                            match keygen::decode_keyfile(keyfile, &password) {
+                                Err(e) => panic!("could not decode keyfile: {}", e),
+                                Ok(decoded_keyfile) => {
+                                    let our = Identity {
+                                        name: decoded_keyfile.username.clone(),
+                                        networking_key: format!(
+                                            "0x{}",
+                                            hex::encode(
+                                                decoded_keyfile.networking_keypair.public_key().as_ref()
+                                            )
+                                        ),
+                                        ws_routing: None, //  TODO
+                                        allowed_routers: decoded_keyfile.routers.clone(),
+                                    };
+                                    (our, decoded_keyfile)
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        None => {
-            // check if we have keys saved on disk, encrypted
-            // if so, prompt user for "password" to decrypt with
+        Some(name) => {
+            let password = match args.password {
+                None => "123".to_string(),
+                Some(password) => password.to_string(),
+            };
+            let (pubkey, networking_keypair) = keygen::generate_networking_key();
 
-            // once password is received, use to decrypt local keys file,
-            // and pass the keys into boot process as is done in registration.
+            let seed = SystemRandom::new();
+            let mut jwt_secret = [0u8, 32];
+            ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
 
-            // NOTE: when we log in, we MUST check the PKI to make sure our
-            // information matches what we think it should be. this includes
-            // username, networking key, and routing info.
-            // if any do not match, we should prompt user to create a "transaction"
-            // that updates their PKI info on-chain.
-            let (kill_tx, kill_rx) = oneshot::channel::<bool>();
-
-            let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
-                Ok(keyfile) => keyfile,
-                Err(_) => Vec::new(),
+            let our = Identity {
+                name: name.clone(),
+                networking_key: pubkey,
+                ws_routing: None,
+                allowed_routers: vec![],
             };
 
-            let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
-            let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-                _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, rpc_url.clone(), disk_keyfile)
-                    => panic!("registration failed"),
-                (our, decoded_keyfile, encoded_keyfile) = async {
-                    rx.recv().await.expect("registration failed")
-                } => (our, decoded_keyfile, encoded_keyfile),
+            let decoded_keyfile = Keyfile {
+                username: name.clone(),
+                routers: vec![],
+                networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
+                    .unwrap(),
+                jwt_secret_bytes: jwt_secret.to_vec(),
+                file_key: keygen::generate_file_key(),
             };
 
-            println!(
-                "saving encrypted networking keys to {}/.keys",
-                home_directory_path
+            let encoded_keyfile = keygen::encode_keyfile(
+                password,
+                name,
+                decoded_keyfile.routers.clone(),
+                networking_keypair,
+                decoded_keyfile.jwt_secret_bytes.clone(),
+                decoded_keyfile.file_key.clone(),
             );
 
             fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
                 .await
                 .unwrap();
-
-            println!("registration complete!");
-
-            let _ = kill_tx.send(true);
 
             (our, decoded_keyfile)
         }
@@ -326,13 +398,6 @@ async fn main() {
     )
     .await
     .expect("fs load failed!");
-
-    let _ = print_sender
-        .send(Printout {
-            verbosity: 0,
-            content: format!("our networking public key: {}", our.networking_key),
-        })
-        .await;
 
     /*
      *  the kernel module will handle our userspace processes and receives

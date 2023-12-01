@@ -35,9 +35,9 @@ pub struct Args {
     #[arg(long, default_value_t = 8080)]
     pub port: u16,
 
-    /// Networking password
-    #[arg(short, long, value_parser)]
-    pub password: Option<String>,
+    // /// Networking password
+    // #[arg(short, long, value_parser)]
+    // pub password: Option<String>,
 }
 #[cfg(not(feature = "simulation-mode"))]
 #[cfg(feature = "llm")]
@@ -57,9 +57,9 @@ pub struct Args {
     #[arg(long, default_value_t = 8080)]
     pub port: u16,
 
-    /// Networking password
-    #[arg(short, long, value_parser)]
-    pub password: Option<String>,
+    // /// Networking password
+    // #[arg(short, long, value_parser)]
+    // pub password: Option<String>,
 
     /// LLM endpoint
     #[arg(required(true), short, long, value_parser)]
@@ -82,13 +82,17 @@ pub struct Args {
     #[arg(long, default_value_t = 8080)]
     pub port: u16,
 
+    /// Network router port
+    #[arg(short, long, default_value_t = 9001)]
+    pub network_router_port: u16,
+
     /// Networking password
     #[arg(short, long, value_parser)]
     pub password: Option<String>,
 
-    /// Network router port
-    #[arg(short, long, default_value_t = 9001)]
-    pub network_router_port: u16,
+    /// Networking password
+    #[arg(short, long, value_parser)]
+    pub fake_node_name: Option<String>,
 }
 
 //
