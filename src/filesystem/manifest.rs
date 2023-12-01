@@ -5,6 +5,7 @@ use chacha20poly1305::{
     aead::{Aead, KeyInit},
     XChaCha20Poly1305, XNonce,
 };
+use lru_mem::LruCache;
 use rand::RngCore;
 use rusoto_core::{Region, RusotoError};
 use rusoto_s3::{
@@ -13,12 +14,11 @@ use rusoto_s3::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::io::{self, AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
 use tokio::sync::RwLock;
-use uuid;
 
 /// Contains interface for filesystem manifest log, and write ahead log.
 
@@ -45,7 +45,7 @@ pub struct ChunkEntry {
 
 #[derive(Debug, Serialize, Deserialize, Clone, Eq, Hash, PartialEq)]
 pub enum FileIdentifier {
-    UUID(u128),
+    Uuid(u128),
     Process(ProcessId),
 }
 
@@ -66,7 +66,7 @@ pub struct BackupEntry {
 #[derive(Debug, Clone, Copy)]
 pub enum ChunkLocation {
     ColdStorage(bool), // bool local
-    WAL(u64),          // offset in wal,
+    Wal(u64),          // offset in wal,
     Memory(u64),       // offset in memory buffer
 }
 
@@ -74,7 +74,7 @@ const NONCE_SIZE: usize = 24;
 const TAG_SIZE: usize = 16;
 const ENCRYPTION_OVERHEAD: usize = NONCE_SIZE + TAG_SIZE;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct InMemoryFile {
     //  chunks: (start) -> (hash, length, chunk_location, encrypted) [commited txs]
     pub chunks: BTreeMap<u64, ([u8; 32], u64, ChunkLocation, bool)>,
@@ -90,7 +90,7 @@ pub struct InMemoryFile {
 impl InMemoryFile {
     pub fn hash(&self) -> [u8; 32] {
         let mut hasher = Hasher::new();
-        for (_, (hash, _, _, _)) in &self.chunks {
+        for (hash, _, _, _) in self.chunks.values() {
             hasher.update(hash);
         }
         hasher.finalize().into()
@@ -138,32 +138,21 @@ impl InMemoryFile {
     }
 }
 
-impl Default for InMemoryFile {
-    fn default() -> Self {
-        Self {
-            chunks: BTreeMap::new(),
-            active_txs: HashMap::new(),
-            mem_chunks: Vec::new(),
-            wal_chunks: Vec::new(),
-        }
-    }
-}
-
 impl FileIdentifier {
     pub fn new_uuid() -> Self {
-        Self::UUID(uuid::Uuid::new_v4().as_u128())
+        Self::Uuid(uuid::Uuid::new_v4().as_u128())
     }
 
     pub fn to_uuid(&self) -> Option<u128> {
         match self {
-            Self::UUID(uuid) => Some(*uuid),
+            Self::Uuid(uuid) => Some(*uuid),
             _ => None,
         }
     }
 }
 pub struct Manifest {
     pub manifest: Arc<RwLock<HashMap<FileIdentifier, InMemoryFile>>>,
-    pub chunk_hashes: Arc<RwLock<HashMap<[u8; 32], bool>>>,
+    pub chunk_hashes: Arc<RwLock<HashMap<[u8; 32], ChunkLocation>>>,
     pub hash_index: Arc<RwLock<HashMap<[u8; 32], FileIdentifier>>>,
 
     pub manifest_file: Arc<RwLock<fs::File>>,
@@ -173,6 +162,7 @@ pub struct Manifest {
     pub flush_cold_freq: usize,
 
     pub memory_buffer: Arc<RwLock<Vec<u8>>>,
+    pub read_cache: Arc<RwLock<LruCache<[u8; 32], Vec<u8>>>>,
     pub memory_limit: usize,
     pub chunk_size: usize,
     pub cipher: Arc<XChaCha20Poly1305>,
@@ -186,7 +176,7 @@ impl Manifest {
     pub async fn load(
         manifest_file: fs::File,
         wal_file: fs::File,
-        fs_directory_path: &PathBuf,
+        fs_directory_path: &Path,
         file_key: Vec<u8>,
         fs_config: FsConfig,
     ) -> io::Result<Self> {
@@ -201,6 +191,8 @@ impl Manifest {
 
         verify_manifest(&mut manifest, &mut chunk_hashes, &mut hash_index).await?;
         let cipher = XChaCha20Poly1305::new_from_slice(&file_key).unwrap();
+
+        let read_cache: LruCache<[u8; 32], Vec<u8>> = LruCache::new(fs_config.read_cache_limit);
 
         let s3_client = if let Some(s3_config) = fs_config.s3_config {
             match parse_s3_config(s3_config) {
@@ -220,9 +212,10 @@ impl Manifest {
             hash_index: Arc::new(RwLock::new(hash_index)),
             manifest_file: Arc::new(RwLock::new(manifest_file)),
             wal_file: Arc::new(RwLock::new(wal_file)),
-            fs_directory_path: fs_directory_path.clone(),
+            fs_directory_path: fs_directory_path.to_path_buf(),
             flush_cold_freq: fs_config.flush_to_cold_interval,
             memory_buffer: Arc::new(RwLock::new(Vec::new())),
+            read_cache: Arc::new(RwLock::new(read_cache)),
             memory_limit: fs_config.mem_buffer_limit,
             chunk_size: fs_config.chunk_size,
             cipher: Arc::new(cipher),
@@ -234,12 +227,12 @@ impl Manifest {
 
     pub async fn get(&self, file: &FileIdentifier) -> Option<InMemoryFile> {
         let read_lock = self.manifest.read().await;
-        read_lock.get(&file).cloned()
+        read_lock.get(file).cloned()
     }
 
     pub async fn get_length(&self, file: &FileIdentifier) -> Option<u64> {
         let read_lock = self.manifest.read().await;
-        read_lock.get(&file).map(|f| f.get_len())
+        read_lock.get(file).map(|f| f.get_len())
     }
 
     pub async fn _get_memory_buffer_size(&self) -> usize {
@@ -266,7 +259,7 @@ impl Manifest {
     pub async fn _get_chunk_hashes(&self) -> HashSet<[u8; 32]> {
         let mut in_use_hashes = HashSet::new();
         for file in self.manifest.read().await.values() {
-            for (_start, (hash, _length, _wal_position, _encrypted)) in &file.chunks {
+            for (hash, _length, _wal_position, _encrypted) in file.chunks.values() {
                 in_use_hashes.insert(*hash);
             }
         }
@@ -296,6 +289,8 @@ impl Manifest {
         in_memory_file: &mut InMemoryFile,
         memory_buffer: &mut Vec<u8>,
     ) {
+        let mut chunk_hashes = self.chunk_hashes.write().await;
+
         let commit_tx_record = WALRecord::CommitTx(tx_id);
         let serialized_commit_tx = bincode::serialize(&commit_tx_record).unwrap();
         let commit_tx_length = serialized_commit_tx.len() as u64;
@@ -307,12 +302,13 @@ impl Manifest {
             for (start, hash, length, location, encrypted) in tx_chunks {
                 in_memory_file
                     .chunks
-                    .insert(start, (hash, length, location.clone(), encrypted));
+                    .insert(start, (hash, length, location, encrypted));
                 match &location {
-                    &ChunkLocation::Memory(..) => in_memory_file.mem_chunks.push(start),
-                    &ChunkLocation::WAL(..) => in_memory_file.wal_chunks.push(start),
+                    ChunkLocation::Memory(..) => in_memory_file.mem_chunks.push(start),
+                    ChunkLocation::Wal(..) => in_memory_file.wal_chunks.push(start),
                     _ => {}
                 }
+                chunk_hashes.insert(hash, location);
             }
         }
     }
@@ -324,18 +320,20 @@ impl Manifest {
     ) -> Result<(), FsError> {
         let mut wal_file = self.wal_file.write().await;
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
+        let mut chunk_hashes = self.chunk_hashes.write().await;
 
-        wal_file.write_all(&memory_buffer).await?;
+        wal_file.write_all(memory_buffer).await?;
 
         for in_memory_file in manifest.values_mut() {
             // update the locations of the in-memory chunks
             for &start in &in_memory_file.mem_chunks {
-                if let Some((_hash, _length, location, _encrypted)) =
+                if let Some((hash, _length, location, _encrypted)) =
                     in_memory_file.chunks.get_mut(&start)
                 {
                     if let ChunkLocation::Memory(offset) = location {
-                        *location = ChunkLocation::WAL(wal_length_before_flush + *offset);
+                        *location = ChunkLocation::Wal(wal_length_before_flush + *offset);
                         in_memory_file.wal_chunks.push(start);
+                        chunk_hashes.insert(*hash, *location);
                     }
                 }
             }
@@ -344,7 +342,7 @@ impl Manifest {
             for tx_chunks in in_memory_file.active_txs.values_mut() {
                 for (_start, _hash, _length, location, _encrypted) in tx_chunks {
                     if let ChunkLocation::Memory(offset) = location {
-                        *location = ChunkLocation::WAL(wal_length_before_flush + *offset);
+                        *location = ChunkLocation::Wal(wal_length_before_flush + *offset);
                     }
                 }
             }
@@ -363,6 +361,8 @@ impl Manifest {
         let mut manifest = self.manifest.write().await;
         let mut memory_buffer = self.memory_buffer.write().await;
         let mut wal_file = self.wal_file.write().await;
+        let mut chunk_hashes = self.chunk_hashes.write().await;
+
         let wal_length_before_flush = wal_file.seek(SeekFrom::End(0)).await?;
 
         wal_file.write_all(&memory_buffer).await?;
@@ -370,12 +370,13 @@ impl Manifest {
         for in_memory_file in manifest.values_mut() {
             // update the locations of the in-memory chunks
             for &start in &in_memory_file.mem_chunks {
-                if let Some((_hash, _length, location, _encrypted)) =
+                if let Some((hash, _length, location, _encrypted)) =
                     in_memory_file.chunks.get_mut(&start)
                 {
                     if let ChunkLocation::Memory(offset) = location {
-                        *location = ChunkLocation::WAL(wal_length_before_flush + *offset);
+                        *location = ChunkLocation::Wal(wal_length_before_flush + *offset);
                         in_memory_file.wal_chunks.push(start);
+                        chunk_hashes.insert(*hash, *location);
                     }
                 }
             }
@@ -384,7 +385,7 @@ impl Manifest {
             for tx_chunks in in_memory_file.active_txs.values_mut() {
                 for (_start, _hash, _length, location, _encrypted) in tx_chunks {
                     if let ChunkLocation::Memory(offset) = location {
-                        *location = ChunkLocation::WAL(wal_length_before_flush + *offset);
+                        *location = ChunkLocation::Wal(wal_length_before_flush + *offset);
                     }
                 }
             }
@@ -406,12 +407,12 @@ impl Manifest {
             None
         };
 
-        let mut chunks = data.chunks(self.chunk_size);
+        let chunks = data.chunks(self.chunk_size);
         let mut chunk_start = 0u64;
 
         let tx_id = rand::random::<u64>(); // uuid instead?
 
-        while let Some(chunk) = chunks.next() {
+        for chunk in chunks {
             if memory_buffer.len() + chunk.len() > self.memory_limit {
                 manifest.insert(file.clone(), in_memory_file);
                 self.flush_to_wal(&mut manifest, &mut memory_buffer).await?;
@@ -452,19 +453,17 @@ impl Manifest {
     ) -> Result<(), FsError> {
         let chunk_hashes = self.chunk_hashes.read().await;
 
-        let chunk_hash: [u8; 32] = blake3::hash(&chunk).into();
+        let chunk_hash: [u8; 32] = blake3::hash(chunk).into();
         let chunk_length = chunk.len() as u64;
-        let (copy, is_local) = if let Some(is_local) = chunk_hashes.get(&chunk_hash) {
-            (true, *is_local)
-        } else {
-            (false, false)
-        };
+        let (copy, copy_location) = chunk_hashes
+            .get(&chunk_hash)
+            .map_or((false, None), |&location| (true, Some(location)));
 
         let mut encrypted = false;
         let mut chunk_data = chunk.to_vec();
 
         if let Some(cipher) = cipher {
-            chunk_data = encrypt(&cipher, &chunk_data)?;
+            chunk_data = encrypt(cipher, &chunk_data)?;
             encrypted = true;
         }
 
@@ -491,18 +490,20 @@ impl Manifest {
 
         // calculate the position for the chunk in memory chunks
         let proper_position = if copy {
-            ChunkLocation::ColdStorage(is_local)
+            copy_location.unwrap()
         } else {
             let position = memory_buffer.len() - chunk_data.len();
             ChunkLocation::Memory(position as u64)
         };
 
         // update the in_memory_file directly
-        in_memory_file
-            .active_txs
-            .entry(tx_id)
-            .or_insert_with(Vec::new)
-            .push((start, chunk_hash, chunk_length, proper_position, encrypted));
+        in_memory_file.active_txs.entry(tx_id).or_default().push((
+            start,
+            chunk_hash,
+            chunk_length,
+            proper_position,
+            encrypted,
+        ));
 
         Ok(())
     }
@@ -526,89 +527,98 @@ impl Manifest {
         } else {
             file.chunks
                 .iter()
-                .map(|(&start, value)| (start, value.clone()))
+                .map(|(&start, value)| (start, *value))
                 .collect()
         };
 
         for (start_chunk, (hash, len, location, encrypted)) in filtered_chunks {
-            let mut chunk_data = match location {
-                ChunkLocation::Memory(offset) => {
-                    let len = if encrypted {
-                        len + ENCRYPTION_OVERHEAD as u64
-                    } else {
-                        len
-                    };
+            let mut read_cache = self.read_cache.write().await;
 
-                    if offset as usize + len as usize > memory_buffer.len() {
-                        return Err(FsError::MemoryBufferError {
-                            error: format!(
-                                "Out of bounds read: offset={}, len={}, memory_buffer size={}",
-                                offset,
-                                len,
-                                memory_buffer.len()
-                            ),
-                        });
-                    }
-                    let mut chunk_data =
-                        memory_buffer[offset as usize..(offset + len) as usize].to_vec();
-                    if encrypted {
-                        chunk_data = decrypt(&cipher, &chunk_data)?;
-                    }
-                    chunk_data
-                }
-                ChunkLocation::WAL(offset) => {
-                    let mut wal_file = self.wal_file.write().await;
-                    wal_file
-                        .seek(SeekFrom::Start(offset))
-                        .await
-                        .map_err(|e| FsError::IOError {
-                            error: format!("Local WAL seek failed: {}", e),
-                        })?;
-                    let len = if encrypted {
-                        len + ENCRYPTION_OVERHEAD as u64
-                    } else {
-                        len
-                    };
-
-                    let mut buffer = vec![0u8; len as usize];
-                    wal_file
-                        .read_exact(&mut buffer)
-                        .await
-                        .map_err(|e| FsError::IOError {
-                            error: format!("Local WAL read failed: {}", e),
-                        })?;
-                    if encrypted {
-                        buffer = decrypt(&cipher, &buffer)?;
-                    }
-                    buffer
-                }
-                ChunkLocation::ColdStorage(local) => {
-                    if local {
-                        let path = self.fs_directory_path.join(hex::encode(hash));
-                        let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
-                            error: format!("Local Cold read failed: {}", e),
-                        })?;
-                        if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
-                        }
-                        buffer
-                    } else {
-                        let file_name = hex::encode(hash);
-                        let (client, bucket) = self.s3_client.as_ref().unwrap();
-                        let req = GetObjectRequest {
-                            bucket: bucket.clone(),
-                            key: file_name.clone(),
-                            ..Default::default()
+            let mut chunk_data = if let Some(cached_data) = read_cache.get(&hash).cloned() {
+                cached_data
+            } else {
+                match location {
+                    ChunkLocation::Memory(offset) => {
+                        let len = if encrypted {
+                            len + ENCRYPTION_OVERHEAD as u64
+                        } else {
+                            len
                         };
-                        let res = client.get_object(req).await?;
-                        let body = res.body.unwrap();
-                        let mut stream = body.into_async_read();
-                        let mut buffer = Vec::new();
-                        stream.read_to_end(&mut buffer).await?;
-                        if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
+
+                        if offset as usize + len as usize > memory_buffer.len() {
+                            return Err(FsError::MemoryBufferError {
+                                error: format!(
+                                    "Out of bounds read: offset={}, len={}, memory_buffer size={}",
+                                    offset,
+                                    len,
+                                    memory_buffer.len()
+                                ),
+                            });
                         }
+                        let mut chunk_data =
+                            memory_buffer[offset as usize..(offset + len) as usize].to_vec();
+                        if encrypted {
+                            chunk_data = decrypt(&cipher, &chunk_data)?;
+                        }
+                        let _ = read_cache.insert(hash, chunk_data.clone());
+                        chunk_data
+                    }
+                    ChunkLocation::Wal(offset) => {
+                        let mut wal_file = self.wal_file.write().await;
+                        wal_file.seek(SeekFrom::Start(offset)).await.map_err(|e| {
+                            FsError::IOError {
+                                error: format!("Local WAL seek failed: {}", e),
+                            }
+                        })?;
+                        let len = if encrypted {
+                            len + ENCRYPTION_OVERHEAD as u64
+                        } else {
+                            len
+                        };
+
+                        let mut buffer = vec![0u8; len as usize];
+                        wal_file
+                            .read_exact(&mut buffer)
+                            .await
+                            .map_err(|e| FsError::IOError {
+                                error: format!("Local WAL read failed: {}", e),
+                            })?;
+                        if encrypted {
+                            buffer = decrypt(&cipher, &buffer)?;
+                        }
+                        let _ = read_cache.insert(hash, buffer.clone());
                         buffer
+                    }
+                    ChunkLocation::ColdStorage(local) => {
+                        if local {
+                            let path = self.fs_directory_path.join(hex::encode(hash));
+                            let mut buffer =
+                                fs::read(path).await.map_err(|e| FsError::IOError {
+                                    error: format!("Local Cold read failed: {}", e),
+                                })?;
+                            if encrypted {
+                                buffer = decrypt(&*self.cipher, &buffer)?;
+                            }
+                            buffer
+                        } else {
+                            let file_name = hex::encode(hash);
+                            let (client, bucket) = self.s3_client.as_ref().unwrap();
+                            let req = GetObjectRequest {
+                                bucket: bucket.clone(),
+                                key: file_name.clone(),
+                                ..Default::default()
+                            };
+                            let res = client.get_object(req).await?;
+                            let body = res.body.unwrap();
+                            let mut stream = body.into_async_read();
+                            let mut buffer = Vec::new();
+                            stream.read_to_end(&mut buffer).await?;
+                            if encrypted {
+                                buffer = decrypt(&*self.cipher, &buffer)?;
+                            }
+                            let _ = read_cache.insert(hash, buffer.clone());
+                            buffer
+                        }
                     }
                 }
             };
@@ -653,90 +663,99 @@ impl Manifest {
         } else {
             file.chunks
                 .iter()
-                .map(|(&start, value)| (start, value.clone()))
+                .map(|(&start, value)| (start, *value))
                 .collect()
         };
 
         for (start_chunk, (hash, len, location, encrypted)) in filtered_chunks {
-            let mut chunk_data = match location {
-                ChunkLocation::Memory(offset) => {
-                    let memory_buffer = self.memory_buffer.read().await;
-                    let len = if encrypted {
-                        len + ENCRYPTION_OVERHEAD as u64
-                    } else {
-                        len
-                    };
+            let mut read_cache = self.read_cache.write().await;
 
-                    if offset as usize + len as usize > memory_buffer.len() {
-                        return Err(FsError::MemoryBufferError {
-                            error: format!(
-                                "Out of bounds read: offset={}, len={}, memory_buffer size={}",
-                                offset,
-                                len,
-                                memory_buffer.len()
-                            ),
-                        });
-                    }
-                    let mut chunk_data =
-                        memory_buffer[offset as usize..(offset + len) as usize].to_vec();
-                    if encrypted {
-                        chunk_data = decrypt(&cipher, &chunk_data)?;
-                    }
-                    chunk_data
-                }
-                ChunkLocation::WAL(offset) => {
-                    let mut wal_file = self.wal_file.write().await;
-                    wal_file
-                        .seek(SeekFrom::Start(offset))
-                        .await
-                        .map_err(|e| FsError::IOError {
-                            error: format!("Local WAL seek failed: {}", e),
-                        })?;
-                    let len = if encrypted {
-                        len + ENCRYPTION_OVERHEAD as u64
-                    } else {
-                        len
-                    };
-
-                    let mut buffer = vec![0u8; len as usize];
-                    wal_file
-                        .read_exact(&mut buffer)
-                        .await
-                        .map_err(|e| FsError::IOError {
-                            error: format!("Local WAL read failed: {}", e),
-                        })?;
-                    if encrypted {
-                        buffer = decrypt(&cipher, &buffer)?;
-                    }
-                    buffer
-                }
-                ChunkLocation::ColdStorage(local) => {
-                    if local {
-                        let path = self.fs_directory_path.join(hex::encode(hash));
-                        let mut buffer = fs::read(path).await.map_err(|e| FsError::IOError {
-                            error: format!("Local Cold read failed: {}", e),
-                        })?;
-                        if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
-                        }
-                        buffer
-                    } else {
-                        let file_name = hex::encode(hash);
-                        let (client, bucket) = self.s3_client.as_ref().unwrap();
-                        let req = GetObjectRequest {
-                            bucket: bucket.clone(),
-                            key: file_name.clone(),
-                            ..Default::default()
+            let mut chunk_data = if let Some(cached_data) = read_cache.get(&hash).cloned() {
+                cached_data
+            } else {
+                match location {
+                    ChunkLocation::Memory(offset) => {
+                        let memory_buffer = self.memory_buffer.read().await;
+                        let len = if encrypted {
+                            len + ENCRYPTION_OVERHEAD as u64
+                        } else {
+                            len
                         };
-                        let res = client.get_object(req).await?;
-                        let body = res.body.unwrap();
-                        let mut stream = body.into_async_read();
-                        let mut buffer = Vec::new();
-                        stream.read_to_end(&mut buffer).await?;
-                        if encrypted {
-                            buffer = decrypt(&*self.cipher, &buffer)?;
+
+                        if offset as usize + len as usize > memory_buffer.len() {
+                            return Err(FsError::MemoryBufferError {
+                                error: format!(
+                                    "Out of bounds read: offset={}, len={}, memory_buffer size={}",
+                                    offset,
+                                    len,
+                                    memory_buffer.len()
+                                ),
+                            });
                         }
+                        let mut chunk_data =
+                            memory_buffer[offset as usize..(offset + len) as usize].to_vec();
+                        if encrypted {
+                            chunk_data = decrypt(&cipher, &chunk_data)?;
+                        }
+                        let _ = read_cache.insert(hash, chunk_data.clone());
+                        chunk_data
+                    }
+                    ChunkLocation::Wal(offset) => {
+                        let mut wal_file = self.wal_file.write().await;
+                        wal_file.seek(SeekFrom::Start(offset)).await.map_err(|e| {
+                            FsError::IOError {
+                                error: format!("Local WAL seek failed: {}", e),
+                            }
+                        })?;
+                        let len = if encrypted {
+                            len + ENCRYPTION_OVERHEAD as u64
+                        } else {
+                            len
+                        };
+
+                        let mut buffer = vec![0u8; len as usize];
+                        wal_file
+                            .read_exact(&mut buffer)
+                            .await
+                            .map_err(|e| FsError::IOError {
+                                error: format!("Local WAL read failed: {}", e),
+                            })?;
+                        if encrypted {
+                            buffer = decrypt(&cipher, &buffer)?;
+                        }
+                        let _ = read_cache.insert(hash, buffer.clone());
                         buffer
+                    }
+                    ChunkLocation::ColdStorage(local) => {
+                        if local {
+                            let path = self.fs_directory_path.join(hex::encode(hash));
+                            let mut buffer =
+                                fs::read(path).await.map_err(|e| FsError::IOError {
+                                    error: format!("Local Cold read failed: {}", e),
+                                })?;
+                            if encrypted {
+                                buffer = decrypt(&*self.cipher, &buffer)?;
+                            }
+                            buffer
+                        } else {
+                            let file_name = hex::encode(hash);
+                            let (client, bucket) = self.s3_client.as_ref().unwrap();
+                            let req = GetObjectRequest {
+                                bucket: bucket.clone(),
+                                key: file_name.clone(),
+                                ..Default::default()
+                            };
+                            let res = client.get_object(req).await?;
+                            let body = res.body.unwrap();
+                            let mut stream = body.into_async_read();
+                            let mut buffer = Vec::new();
+                            stream.read_to_end(&mut buffer).await?;
+                            if encrypted {
+                                buffer = decrypt(&*self.cipher, &buffer)?;
+                            }
+                            let _ = read_cache.insert(hash, buffer.clone());
+                            buffer
+                        }
                     }
                 }
             };
@@ -805,8 +824,8 @@ impl Manifest {
                 0,
             ); // extend the chunk data if necessary
 
-            let data_to_write = &data[data_offset..data_offset + write_length as usize];
-            chunk_data[chunk_data_start..chunk_data_start + write_length as usize]
+            let data_to_write = &data[data_offset..data_offset + write_length];
+            chunk_data[chunk_data_start..chunk_data_start + write_length]
                 .copy_from_slice(data_to_write);
 
             if memory_buffer.len() + chunk_data.len() > self.memory_limit {
@@ -966,32 +985,30 @@ impl Manifest {
             let mut chunks_to_flush: Vec<([u8; 32], u64, u64, ChunkLocation, bool)> = Vec::new();
 
             for &start in &in_memory_file.mem_chunks {
-                if let Some((hash, length, location, encrypted)) = in_memory_file.chunks.get(&start)
+                if let Some((hash, length, ChunkLocation::Memory(mem_pos), encrypted)) =
+                    in_memory_file.chunks.get(&start)
                 {
-                    if let ChunkLocation::Memory(mem_pos) = location {
-                        chunks_to_flush.push((
-                            *hash,
-                            start,
-                            *length,
-                            ChunkLocation::Memory(*mem_pos),
-                            *encrypted,
-                        ));
-                    }
+                    chunks_to_flush.push((
+                        *hash,
+                        start,
+                        *length,
+                        ChunkLocation::Memory(*mem_pos),
+                        *encrypted,
+                    ));
                 }
             }
 
             for &start in &in_memory_file.wal_chunks {
-                if let Some((hash, length, location, encrypted)) = in_memory_file.chunks.get(&start)
+                if let Some((hash, length, ChunkLocation::Wal(wal_pos), encrypted)) =
+                    in_memory_file.chunks.get(&start)
                 {
-                    if let ChunkLocation::WAL(wal_pos) = location {
-                        chunks_to_flush.push((
-                            *hash,
-                            start,
-                            *length,
-                            ChunkLocation::WAL(*wal_pos),
-                            *encrypted,
-                        ));
-                    }
+                    chunks_to_flush.push((
+                        *hash,
+                        start,
+                        *length,
+                        ChunkLocation::Wal(*wal_pos),
+                        *encrypted,
+                    ));
                 }
             }
             if !chunks_to_flush.is_empty() {
@@ -1009,7 +1026,7 @@ impl Manifest {
                 };
 
                 let buffer = match location {
-                    ChunkLocation::WAL(wal_pos) => {
+                    ChunkLocation::Wal(wal_pos) => {
                         // seek to the chunk in the WAL file
                         wal_file.seek(SeekFrom::Start(*wal_pos)).await?;
                         // read the chunk data from the WAL file
@@ -1028,9 +1045,8 @@ impl Manifest {
                             });
                         }
                         // copy the chunk data from the memory buffer
-                        let temp_buffer =
-                            memory_buffer[mem_pos..mem_pos + total_len as usize].to_vec();
-                        temp_buffer
+
+                        memory_buffer[mem_pos..mem_pos + total_len as usize].to_vec()
                     }
                     _ => vec![],
                 };
@@ -1060,7 +1076,7 @@ impl Manifest {
                         *encrypted,
                     ),
                 );
-                chunk_hashes.insert(*hash, !self.cloud_enabled);
+                chunk_hashes.insert(*hash, ChunkLocation::ColdStorage(!self.cloud_enabled));
             }
             in_memory_file.mem_chunks.clear();
             in_memory_file.wal_chunks.clear();
@@ -1172,6 +1188,7 @@ impl Clone for Manifest {
             fs_directory_path: self.fs_directory_path.clone(),
             flush_cold_freq: self.flush_cold_freq,
             memory_buffer: Arc::clone(&self.memory_buffer),
+            read_cache: Arc::clone(&self.read_cache),
             memory_limit: self.memory_limit,
             chunk_size: self.chunk_size,
             cipher: Arc::clone(&self.cipher),
@@ -1290,13 +1307,12 @@ async fn load_wal(
                 match record {
                     Ok(WALRecord::CommitTx(tx_id)) => {
                         if let Some((file_id, chunks)) = tx_chunks.remove(&tx_id) {
-                            let in_memory_file =
-                                manifest.entry(file_id).or_insert(InMemoryFile::default());
+                            let in_memory_file = manifest.entry(file_id).or_default();
                             for (start, hash, length, location, encrypted) in chunks {
                                 in_memory_file
                                     .chunks
-                                    .insert(start, (hash, length, location.clone(), encrypted));
-                                if let ChunkLocation::WAL(_) = location {
+                                    .insert(start, (hash, length, location, encrypted));
+                                if let ChunkLocation::Wal(_) = location {
                                     in_memory_file.wal_chunks.push(start);
                                 }
                             }
@@ -1310,7 +1326,7 @@ async fn load_wal(
                         let location = if entry.copy {
                             ChunkLocation::ColdStorage(entry.local)
                         } else {
-                            ChunkLocation::WAL(data_position)
+                            ChunkLocation::Wal(data_position)
                         };
                         let chunks = tx_chunks
                             .entry(entry.tx_id)
@@ -1327,15 +1343,14 @@ async fn load_wal(
                         // if encrypted data, add encryption overhead (nonce 24 + tag 16)
                         current_position += 8 + record_length as u64;
                         if !entry.copy {
-                            current_position += data_length as u64;
+                            current_position += data_length;
                             if entry.encrypted {
                                 current_position += ENCRYPTION_OVERHEAD as u64;
                             }
                         }
                     }
                     Ok(WALRecord::SetLength(file_id, new_length)) => {
-                        let in_memory_file =
-                            manifest.entry(file_id).or_insert(InMemoryFile::default());
+                        let in_memory_file = manifest.entry(file_id).or_default();
                         in_memory_file.chunks.retain(|&start, _| start < new_length);
 
                         // update mem_chunks and wal_chunks
@@ -1369,19 +1384,14 @@ async fn load_wal(
 
 async fn verify_manifest(
     manifest: &mut HashMap<FileIdentifier, InMemoryFile>,
-    chunk_hashes: &mut HashMap<[u8; 32], bool>,
+    chunk_hashes: &mut HashMap<[u8; 32], ChunkLocation>,
     hash_index: &mut HashMap<[u8; 32], FileIdentifier>,
 ) -> tokio::io::Result<()> {
     for (file, in_memory_file) in manifest.iter_mut() {
         let file_hash = in_memory_file.hash();
 
         for (chunk_hash, _, location, _encrypted) in in_memory_file.chunks.values() {
-            match location {
-                ChunkLocation::ColdStorage(local) => {
-                    chunk_hashes.insert(*chunk_hash, *local);
-                }
-                _ => {}
-            }
+            chunk_hashes.insert(*chunk_hash, *location);
         }
         hash_index.insert(file_hash, file.clone());
     }
@@ -1398,7 +1408,7 @@ fn generate_nonce() -> [u8; 24] {
 
 fn encrypt(cipher: &XChaCha20Poly1305, bytes: &[u8]) -> Result<Vec<u8>, FsError> {
     let nonce = generate_nonce();
-    let ciphertext = cipher.encrypt(&XNonce::from_slice(&nonce), bytes)?;
+    let ciphertext = cipher.encrypt(XNonce::from_slice(&nonce), bytes)?;
     Ok([nonce.to_vec(), ciphertext].concat())
 }
 

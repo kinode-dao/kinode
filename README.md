@@ -8,6 +8,9 @@ Last updated: 11/01/23
 
 git clone git@github.com:uqbar-dao/uqbar.git
 
+# Configure dependency retrieval from GitHub
+mkdir .cargo
+echo "net.git-fetch-with-cli = true" > .cargo/config
 
 # Get some stuff so we can build wasm.
 
@@ -17,15 +20,6 @@ rustup install nightly
 rustup target add wasm32-wasi
 rustup target add wasm32-wasi --toolchain nightly
 cargo install cargo-wasi
-cargo install --git https://github.com/bytecodealliance/cargo-component --locked cargo-component
-
-
-# Initialize submodules, in particular the register app
-
-git submodule update --init --recursive
-# Build the register app
-cd src/register && ./build_all.sh && cd ../..
-
 
 # Build the runtime, along with a number of booted-at-startup WASM modules including terminal and key_value
 # OPTIONAL: --release flag
@@ -34,14 +28,14 @@ cargo +nightly build --release
 ```
 
 ### Boot
-If you do not receive QNS updates in terminal, it's a sign that the default public-access RPC endpoint is rate-limiting or blocking you. Get an eth-sepolia-rpc API key and pass that as an argument. You can get one for free at `alchemy.com`.
+Get an eth-sepolia-rpc API key and pass that as an argument. You can get one for free at `alchemy.com`.
 
-Also, make sure not to use the same home directory for two nodes at once! You can use any name for the home directory.
+Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`.
 ```bash
 cargo +nightly run --release -- --home home --rpc wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>
 ```
 
-On boot you will be prompted to navigate to `localhost:8080`. Make sure your eth wallet is connected to the Sepolia test network. Login should be very straightforward, just submit the transactions and follow the flow.
+On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH wallet is connected to the Sepolia test network. Login should be straightforward, just submit the transactions and follow the flow. If you want to register a new ID you will either need [Sepolia testnet tokens](https://www.infura.io/faucet/sepolia) or an invite code.
 
 
 ## Terminal syntax

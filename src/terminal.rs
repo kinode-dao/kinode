@@ -55,7 +55,7 @@ impl CommandHistory {
     }
 
     fn get_prev(&mut self, working_line: &str) -> Option<String> {
-        if self.lines.len() == 0 || self.index == self.lines.len() {
+        if self.lines.is_empty() || self.index == self.lines.len() {
             return None;
         }
         self.index += 1;
@@ -67,7 +67,7 @@ impl CommandHistory {
     }
 
     fn get_next(&mut self) -> Option<String> {
-        if self.lines.len() == 0 || self.index == 0 || self.index == 1 {
+        if self.lines.is_empty() || self.index == 0 || self.index == 1 {
             self.index = 0;
             if let Some(line) = self.working_line.clone() {
                 self.working_line = None;
@@ -83,12 +83,10 @@ impl CommandHistory {
     /// provided string. otherwise, skip the first <depth> matches.
     /// yes this is O(n) to provide desired ordering, can revisit if slow
     fn search(&mut self, find: &str, depth: usize) -> Option<String> {
-        let mut skips = 0;
-        for line in &self.lines {
+        for (skips, line) in self.lines.iter().enumerate() {
             if line.contains(find) && skips == depth {
                 return Some(line.to_string());
             }
-            skips += 1;
         }
         None
     }
@@ -113,12 +111,13 @@ pub async fn terminal(
         terminal::SetTitle(format!("{}@{}", our.name, "uqbar"))
     )?;
 
-    // print initial splash screen
-    println!(
-        "\x1b[38;5;128m{}\x1b[0m",
-        format!(
-            r#"
-
+    let (mut win_cols, mut win_rows) = terminal::size().unwrap();
+    // print initial splash screen, large if there's room, small otherwise
+    if win_cols >= 93 {
+        println!(
+            "\x1b[38;5;128m{}\x1b[0m",
+            format_args!(
+                r#"
                 ,,   UU
             s#  lUL  UU       !p
            !UU  lUL  UU       !UUlb
@@ -138,23 +137,45 @@ pub async fn terminal(
            !UU  lUL  UU       !UUl^                            888
             `"  lUL  UU       '^                               888    {}
                      ""                                        888    version {}
+                                                 a general purpose sovereign cloud computer
 
-            "#,
-            our.name, version
-        )
-    );
+  networking public key: {}
+                "#,
+                our.name, version, our.networking_key,
+            )
+        );
+    } else {
+        println!(
+            "\x1b[38;5;128m{}\x1b[0m",
+            format_args!(
+                r#"
+                   888
+                   888
+                   888
+ 888  888  .d88888 88888b.   8888b.  888d888
+ 888  888 d88" 888 888 "88b     "88b 888P"
+ 888  888 888  888 888  888 .d888888 888
+ Y88b 888 Y88b 888 888 d88P 888  888 888
+  "Y88888  "Y88888 88888P"  "Y888888 888
+               888
+               888    {}
+               888    version {}
+ a general purpose sovereign cloud computer
+
+ networking pubkey: {}
+                "#,
+                our.name, version, our.networking_key,
+            )
+        );
+    }
 
     enable_raw_mode()?;
     let mut reader = EventStream::new();
     let mut current_line = format!("{} > ", our.name);
     let prompt_len: usize = our.name.len() + 3;
-    let (mut win_cols, mut win_rows) = terminal::size().unwrap();
     let mut cursor_col: u16 = prompt_len.try_into().unwrap();
     let mut line_col: usize = cursor_col as usize;
     let mut in_step_through: bool = false;
-    // TODO add more verbosity levels as needed?
-    // defaulting to TRUE for now, as we are BUIDLING
-    // DEMO: default to false
     let mut verbose_mode: bool = false;
     let mut search_mode: bool = false;
     let mut search_depth: usize = 0;

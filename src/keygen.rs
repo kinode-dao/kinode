@@ -43,7 +43,7 @@ pub fn encode_keyfile(
     );
 
     let key = Key::<Aes256Gcm>::from_slice(&disk_key);
-    let cipher = Aes256Gcm::new(&key);
+    let cipher = Aes256Gcm::new(key);
 
     let network_nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
     let jwt_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
@@ -82,7 +82,7 @@ pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'sta
     );
 
     let cipher_key = Key::<Aes256Gcm>::from_slice(&disk_key);
-    let cipher = Aes256Gcm::new(&cipher_key);
+    let cipher = Aes256Gcm::new(cipher_key);
 
     let net_nonce = generic_array::GenericArray::from_slice(&key_enc[..12]);
     let jwt_nonce = generic_array::GenericArray::from_slice(&jwt_enc[..12]);
@@ -110,6 +110,14 @@ pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'sta
         jwt_secret_bytes,
         file_key,
     })
+}
+
+pub fn get_username_and_routers(keyfile: Vec<u8>) -> Result<(String, Vec<String>), &'static str> {
+    let (username, routers, _salt, _key_enc, _jwt_enc, _file_enc) =
+        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(&keyfile)
+            .map_err(|_| "failed to deserialize keyfile")?;
+
+    Ok((username, routers))
 }
 
 /// # Returns

@@ -112,6 +112,11 @@ impl Guest for Component {
 
         let our = Address::from_str(&our).unwrap();
 
+        wit::create_capability(
+            &ProcessId::new("vfs", "sys", "uqbar"),
+            &"\"messaging\"".into(),
+        );
+
         loop {
             match handle_message(&our) {
                 Ok(()) => {},

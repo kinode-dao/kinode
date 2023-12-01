@@ -3,27 +3,20 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SqliteMessage {
     New { db: String },
-    Write { db: String, statement: String },
+    Write { db: String, statement: String, tx_id: Option<u64> },
     Read { db: String, query: String },
+    Commit { db: String, tx_id: u64 },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum SqlValue {
     Integer(i64),
     Real(f64),
     Text(String),
     Blob(Vec<u8>),
+    Boolean(bool),
+    Null,
 }
-
-pub trait Deserializable: for<'de> Deserialize<'de> + Sized {
-    fn from_serialized(bytes: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
-        rmp_serde::from_slice(bytes)
-    }
-}
-
-impl Deserializable for Vec<SqlValue> {}
-impl Deserializable for Vec<Vec<SqlValue>> {}
-
 
 #[derive(Debug, Serialize, Deserialize, thiserror::Error)]
 pub enum SqliteError {
@@ -31,6 +24,8 @@ pub enum SqliteError {
     DbDoesNotExist,
     #[error("DbAlreadyExists")]
     DbAlreadyExists,
+    #[error("NoTx")]
+    NoTx,
     #[error("NoCap")]
     NoCap,
     #[error("RejectForeign")]
@@ -41,4 +36,6 @@ pub enum SqliteError {
     NotAWriteKeyword,
     #[error("NotAReadKeyword")]
     NotAReadKeyword,
+    #[error("Invalid Parameters")]
+    InvalidParameters,
 }

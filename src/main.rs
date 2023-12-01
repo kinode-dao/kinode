@@ -1,25 +1,29 @@
+#![feature(btree_extract_if)]
+
 use crate::types::*;
 use anyhow::Result;
 use clap::Parser;
-use dotenv;
 use ring::signature::KeyPair;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::{fs, time::timeout};
 
-mod encryptor;
 mod eth_rpc;
 mod filesystem;
-mod http_client;
-mod http_server;
+mod http;
 mod kernel;
 mod keygen;
 mod net;
 mod register;
 mod terminal;
+mod timer;
 mod types;
 mod vfs;
+
+// extensions
+#[cfg(feature = "llm")]
+mod llm;
 
 const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
@@ -30,10 +34,9 @@ const HTTP_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
-const ENCRYPTOR_CHANNEL_CAPACITY: usize = 32;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
-
-// const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
+#[cfg(feature = "llm")]
+const LLM_CHANNEL_CAPACITY: usize = 32;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -44,9 +47,19 @@ const REVEAL_IP: bool = true;
 
 #[tokio::main]
 async fn main() {
-    // For use with https://github.com/tokio-rs/console
-    // console_subscriber::init();
-
+//     let matches = Command::new("Uqbar")
+//         .version("0.3.0")
+//         .author("Uqbar DAO")
+//         .about("A General Purpose Sovereign Cloud Computing Platform")
+//         .arg(arg!([home] "Path to home directory").required(true))
+//         .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true))
+//         .arg(arg!(--llm <LLM_URL> "LLM endpoint"))
+//         .get_matches();
+//     let home_directory_path = matches.get_one::<String>("home").unwrap();
+//     let rpc_url = matches.get_one::<String>("rpc").unwrap();
+//     let llm_url = matches.get_one::<String>("llm");
+//
+// <<<<<<< HEAD
     let args = types::Args::parse();
 
     let home_directory_path = &args.home;
@@ -56,6 +69,17 @@ async fn main() {
     // read PKI from websocket endpoint served by public RPC
     // if you get rate-limited or something, pass in your own RPC as a boot argument
     let rpc_url = args.rpc;
+// =======
+//     // create home directory if it does not already exist
+//     if let Err(e) = fs::create_dir_all(home_directory_path).await {
+//         panic!("failed to create home directory: {:?}", e);
+//     }
+//
+//     #[cfg(not(feature = "llm"))]
+//     if let Some(llm_url) = llm_url {
+//         panic!("You passed in --llm {:?} but you do not have the llm feature enabled. Please re-run with `--features llm`", llm_url);
+//     }
+// >>>>>>> v0.4.0
 
     // kernel receives system messages via this channel, all other modules send messages
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
@@ -74,29 +98,37 @@ async fn main() {
         mpsc::channel(WEBSOCKET_SENDER_CHANNEL_CAPACITY);
     // filesystem receives request messages via this channel, kernel sends messages
     let (fs_message_sender, fs_message_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY.clone());
+        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY);
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
-    // http client performs http requests on behalf of processes
+    let (timer_service_sender, timer_service_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(HTTP_CHANNEL_CAPACITY);
     let (eth_rpc_sender, eth_rpc_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ETH_RPC_CHANNEL_CAPACITY);
+    // http client performs http requests on behalf of processes
     let (http_client_sender, http_client_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CLIENT_CHANNEL_CAPACITY);
     // vfs maintains metadata about files in fs for processes
     let (vfs_message_sender, vfs_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(VFS_CHANNEL_CAPACITY);
-    // encryptor handles end-to-end encryption for client messages
-    let (encryptor_sender, encryptor_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(ENCRYPTOR_CHANNEL_CAPACITY);
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
+    // optional llm extension
+    #[cfg(feature = "llm")]
+    let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(LLM_CHANNEL_CAPACITY);
 
     //  fs config in .env file (todo add -- arguments cleanly (with clap?))
     dotenv::dotenv().ok();
 
     let mem_buffer_limit = env::var("MEM_BUFFER_LIMIT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1024 * 1024 * 5); // 5mb default
+
+    let read_cache_limit = env::var("READ_CACHE_LIMIT")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(1024 * 1024 * 5); // 5mb default
@@ -142,6 +174,7 @@ async fn main() {
     let fs_config = FsConfig {
         s3_config,
         mem_buffer_limit,
+        read_cache_limit,
         chunk_size,
         flush_to_cold_interval,
         encryption,
@@ -165,8 +198,9 @@ async fn main() {
         }
     };
 
-    let http_server_port = http_server::find_open_port(args.port).await.unwrap();
+    let http_server_port = http::utils::find_open_port(args.port).await.unwrap();
     println!("runtime bound port {}\r", http_server_port);
+    println!("login or register at http://localhost:{}\r", http_server_port);
     let (our, decoded_keyfile) = match args.password {
         Some(password) => {
             match fs::read(format!("{}/.keys", home_directory_path)).await {
@@ -213,11 +247,10 @@ async fn main() {
 
             let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
             let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-                _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, disk_keyfile)
+                _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, rpc_url.clone(), disk_keyfile)
                     => panic!("registration failed"),
                 (our, decoded_keyfile, encoded_keyfile) = async {
-                    while let Some(fin) = rx.recv().await { return fin }
-                    panic!("registration failed")
+                    rx.recv().await.expect("registration failed")
                 } => (our, decoded_keyfile, encoded_keyfile),
             };
 
@@ -238,11 +271,55 @@ async fn main() {
         }
     };
 
+    // the boolean flag determines whether the runtime module is *public* or not,
+    // where public means that any process can always message it.
+    #[allow(unused_mut)]
+    let mut runtime_extensions = vec![
+        (
+            ProcessId::new(Some("filesystem"), "sys", "uqbar"),
+            fs_message_sender,
+            false,
+        ),
+        (
+            ProcessId::new(Some("http_server"), "sys", "uqbar"),
+            http_server_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("http_client"), "sys", "uqbar"),
+            http_client_sender,
+            false,
+        ),
+        (
+            ProcessId::new(Some("timer"), "sys", "uqbar"),
+            timer_service_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
+            eth_rpc_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("vfs"), "sys", "uqbar"),
+            vfs_message_sender,
+            true,
+        ),
+    ];
+
+    #[cfg(feature = "llm")]
+    runtime_extensions.push((
+        ProcessId::new(Some("llm"), "sys", "uqbar"), // TODO llm:extensions:uqbar ?
+        llm_sender,
+        true,
+    ));
+
     let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
         our.name.clone(),
         home_directory_path.clone(),
         decoded_keyfile.file_key,
         fs_config,
+        runtime_extensions.clone(),
     )
     .await
     .expect("fs load failed!");
@@ -275,12 +352,7 @@ async fn main() {
         network_error_receiver,
         kernel_debug_message_receiver,
         net_message_sender.clone(),
-        fs_message_sender,
-        http_server_sender,
-        http_client_sender,
-        eth_rpc_sender,
-        vfs_message_sender,
-        encryptor_sender,
+        runtime_extensions,
     ));
     #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(net::networking(
@@ -310,7 +382,7 @@ async fn main() {
         fs_kill_recv,
         fs_kill_confirm_send,
     ));
-    tasks.spawn(http_server::http_server(
+    tasks.spawn(http::server::http_server(
         our.name.clone(),
         http_server_port,
         decoded_keyfile.jwt_secret_bytes.clone(),
@@ -318,10 +390,16 @@ async fn main() {
         kernel_message_sender.clone(),
         print_sender.clone(),
     ));
-    tasks.spawn(http_client::http_client(
+    tasks.spawn(http::client::http_client(
         our.name.clone(),
         kernel_message_sender.clone(),
         http_client_receiver,
+        print_sender.clone(),
+    ));
+    tasks.spawn(timer::timer_service(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        timer_service_receiver,
         print_sender.clone(),
     ));
     tasks.spawn(eth_rpc::eth_rpc(
@@ -339,29 +417,24 @@ async fn main() {
         caps_oracle_sender.clone(),
         vfs_messages,
     ));
-    tasks.spawn(encryptor::encryptor(
-        our.name.clone(),
-        networking_keypair_arc.clone(),
-        kernel_message_sender.clone(),
-        encryptor_receiver,
-        print_sender.clone(),
-    ));
+    #[cfg(feature = "llm")]
+    {
+        tasks.spawn(llm::llm(
+            our.name.clone(),
+            kernel_message_sender.clone(),
+            llm_receiver,
+            llm_url.unwrap().to_string(),
+            print_sender.clone(),
+        ));
+    }
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
     let quit_msg: String = tokio::select! {
-        Some(res) = tasks.join_next() => {
-            if let Err(e) = res {
-                format!("what does this mean? {:?}", e)
-            } else if let Ok(Err(e)) = res {
-                format!(
-                    "\x1b[38;5;196muh oh, a kernel process crashed: {}\x1b[0m",
-                    e
-                )
-                // TODO restart the task?
-            } else {
-                format!("what does this mean???")
-                // TODO restart the task?
-            }
+        Some(Ok(res)) = tasks.join_next() => {
+            format!(
+                "\x1b[38;5;196muh oh, a kernel process crashed -- this should never happen: {:?}\x1b[0m",
+                res
+            )
         }
         quit = terminal::terminal(
             our.clone(),
@@ -378,10 +451,10 @@ async fn main() {
             }
         }
     };
+
     // shutdown signal to fs for flush
     let _ = fs_kill_send.send(());
     let _ = fs_kill_confirm_recv.await;
-    // println!("fs shutdown complete.");
 
     // gracefully abort all running processes in kernel
     let _ = kernel_message_sender
@@ -406,10 +479,10 @@ async fn main() {
             signed_capabilities: None,
         })
         .await;
+
     // abort all remaining tasks
     tasks.shutdown().await;
     let _ = crossterm::terminal::disable_raw_mode();
-    println!("");
-    println!("\x1b[38;5;196m{}\x1b[0m", quit_msg);
+    println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
     return;
 }

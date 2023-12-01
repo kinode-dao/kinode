@@ -2,11 +2,11 @@ use core::ffi::{c_char, c_int, c_ulonglong, CStr};
 use std::ffi::CString;
 
 use rusqlite::{types::FromSql, types::FromSqlError, types::ToSql, types::ValueRef};
+use std::collections::HashMap;
 
-use uqbar_process_lib::{Address, ProcessId, Response};
+use uqbar_process_lib::{Address, create_capability, ProcessId, Response};
 use uqbar_process_lib::uqbar::process::standard as wit;
 
-use crate::sqlite_types::Deserializable;
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -28,6 +28,8 @@ impl ToSql for sq::SqlValue {
             sq::SqlValue::Real(f) => f.to_sql(),
             sq::SqlValue::Text(ref s) => s.to_sql(),
             sq::SqlValue::Blob(ref b) => b.to_sql(),
+            sq::SqlValue::Boolean(b) => b.to_sql(),
+            sq::SqlValue::Null => Ok(rusqlite::types::ToSqlOutput::Owned(rusqlite::types::Value::Null)),
         }
     }
 }
@@ -345,9 +347,45 @@ pub extern "C" fn send_and_await_response_wrapped(
     CIpcMetadata::copy_to_ptr(return_val, ipc, metadata);
 }
 
-fn handle_message (
+fn json_to_sqlite(value: &serde_json::Value) -> Result<sq::SqlValue, sq::SqliteError> {
+    match value {
+        serde_json::Value::Number(n) => {
+            if let Some(int_val) = n.as_i64() {
+                Ok(sq::SqlValue::Integer(int_val))
+            } else if let Some(float_val) = n.as_f64() {
+                Ok(sq::SqlValue::Real(float_val))
+            } else {
+                Err(sq::SqliteError::InvalidParameters)
+            }
+        },
+        serde_json::Value::String(s) => {
+            match base64::decode(&s) {
+                Ok(decoded_bytes) => {
+                    // Convert to SQLite Blob if it's a valid base64 string
+                    Ok(sq::SqlValue::Blob(decoded_bytes))
+                },
+                Err(_) => {
+                    // If it's not base64, just use the string itself
+                    Ok(sq::SqlValue::Text(s.clone()))
+                }
+            }
+        },
+        serde_json::Value::Bool(b) => {
+            Ok(sq::SqlValue::Boolean(*b))
+        },
+        serde_json::Value::Null => {
+            Ok(sq::SqlValue::Null)
+        },
+        _ => {
+            Err(sq::SqliteError::InvalidParameters)
+        }
+    }
+}
+
+fn handle_message(
     our: &wit::Address,
-    db_handle: &mut Option<rusqlite::Connection>,
+    conn: &mut Option<rusqlite::Connection>,
+    txs: &mut HashMap<u64, Vec<(String, Vec<sq::SqlValue>)>>,
 ) -> anyhow::Result<()> {
     let (source, message) = wit::receive().unwrap();
 
@@ -362,13 +400,13 @@ fn handle_message (
                 sq::SqliteMessage::New { db } => {
                     let vfs_drive = format!("{}{}", PREFIX, db);
 
-                    match db_handle {
+                    match conn {
                         Some(_) => {
                             return Err(sq::SqliteError::DbAlreadyExists.into());
                         },
                         None => {
                             let flags = rusqlite::OpenFlags::default();
-                            *db_handle = Some(rusqlite::Connection::open_with_flags_and_vfs(
+                            *conn = Some(rusqlite::Connection::open_with_flags_and_vfs(
                                 format!(
                                     "{}:{}:/{}.sql",
                                     our.node,
@@ -381,40 +419,80 @@ fn handle_message (
                         },
                     }
                 },
-                sq::SqliteMessage::Write { ref statement, .. } => {
-                    let Some(db_handle) = db_handle else {
+                sq::SqliteMessage::Write { ref statement, tx_id, .. } => {
+                    let Some(ref conn) = conn else {
                         return Err(sq::SqliteError::DbDoesNotExist.into());
                     };
 
-                    match wit::get_payload() {
-                        None => {
-                            let parameters: Vec<&dyn rusqlite::ToSql> = vec![];
-                            db_handle.execute(
-                                statement,
-                                &parameters[..],
-                            )?;
-                        },
+                    let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
+                        None => vec![],
                         Some(wit::Payload { mime: _, ref bytes }) => {
-                            let parameters = Vec::<sq::SqlValue>::from_serialized(&bytes)?;
-                            let parameters: Vec<&dyn rusqlite::ToSql> = parameters
-                                .iter()
-                                .map(|param| param as &dyn rusqlite::ToSql)
-                                .collect();
-
-                            db_handle.execute(
-                                statement,
-                                &parameters[..],
-                            )?;
+                            let json_params = serde_json::from_slice::<serde_json::Value>(bytes)?;
+                            match json_params {
+                                serde_json::Value::Array(vec) => {
+                                    vec.iter().map(|value| json_to_sqlite(value)).collect::<Result<Vec<_>, _>>()?
+                                },
+                                _ => {
+                                    return Err(sq::SqliteError::InvalidParameters.into());
+                                }
+                            }
                         },
-                    }
+                    };
+
+                    match tx_id {
+                        Some(tx_id) => {
+                            txs.entry(tx_id)
+                                .or_insert_with(Vec::new)
+                                .push((statement.clone(), parameters));
+                        },
+                        None => {
+                            let mut stmt = conn.prepare(statement)?;
+                            stmt.execute(rusqlite::params_from_iter(parameters.iter()))?;
+                        },
+                    };
 
                     Response::new()
-                        .ipc_bytes(ipc)
+                        .ipc(ipc)
+                        .send()?;
+                },
+                sq::SqliteMessage::Commit { ref tx_id, .. } => {
+                    let Some(queries) = txs.remove(tx_id) else {
+                        return Err(sq::SqliteError::NoTx.into());
+                    };
+
+                    let Some(ref mut conn) = conn else {
+                        return Err(sq::SqliteError::DbDoesNotExist.into());
+                    };
+
+                    let tx = conn.transaction()?;
+                    for (query, params) in queries {
+                        tx.execute(&query, rusqlite::params_from_iter(params.iter()))?;
+                    }
+
+                    tx.commit()?;
+
+                    Response::new()
+                        .ipc(ipc)
                         .send()?;
                 },
                 sq::SqliteMessage::Read { ref query, .. } => {
-                    let Some(db_handle) = db_handle else {
+                    let Some(ref db_handle) = conn else {
                         return Err(sq::SqliteError::DbDoesNotExist.into());
+                    };
+
+                    let parameters: Vec<sq::SqlValue> = match wit::get_payload() {
+                        None => vec![],
+                        Some(wit::Payload { mime: _, ref bytes }) => {
+                            let json_params = serde_json::from_slice::<serde_json::Value>(bytes)?;
+                            match json_params {
+                                serde_json::Value::Array(vec) => {
+                                    vec.iter().map(|value| json_to_sqlite(value)).collect::<Result<Vec<_>, _>>()?
+                                },
+                                _ => {
+                                    return Err(sq::SqliteError::InvalidParameters.into());
+                                }
+                            }
+                        },
                     };
 
                     let mut statement = db_handle.prepare(query)?;
@@ -423,23 +501,33 @@ fn handle_message (
                         .iter()
                         .map(|c| c.to_string())
                         .collect();
-                    let number_columns = column_names.len();
-                    let results: Vec<Vec<sq::SqlValue>> = statement
-                        .query_map([], |row| {
-                            (0..number_columns)
-                                .map(|i| row.get(i))
-                                .collect()
-                            })?
-                        .map(|item| item.unwrap())  //  TODO
-                        .collect();
 
-                    let results = rmp_serde::to_vec(&results).unwrap();
+                    let results: Vec<HashMap<String, serde_json::Value>> = statement
+                    .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+                        let mut map = HashMap::new();
+                        for (i, column_name) in column_names.iter().enumerate() {
+                            let value: sq::SqlValue = row.get(i)?;
+                            let value_json = match value {
+                                sq::SqlValue::Integer(int) => serde_json::Value::Number(int.into()),
+                                sq::SqlValue::Real(real) => serde_json::Value::Number(serde_json::Number::from_f64(real).unwrap()),
+                                sq::SqlValue::Text(text) => serde_json::Value::String(text),
+                                sq::SqlValue::Blob(blob) => serde_json::Value::String(base64::encode(blob)), // or another representation if you prefer
+                                _ => serde_json::Value::Null,
+                            };
+                            map.insert(column_name.clone(), value_json);
+                        }
+                        Ok(map)
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                    let results = serde_json::json!(results).to_string();
+                    let results_bytes = results.as_bytes().to_vec();
 
                     Response::new()
-                        .ipc_bytes(ipc)
+                        .ipc(ipc)
                         .payload(wit::Payload {
                             mime: None,
-                            bytes: results,
+                            bytes: results_bytes,
                         })
                         .send()?;
                 },
@@ -454,12 +542,19 @@ struct Component;
 impl Guest for Component {
     fn init(our: String) {
         wit::print_to_terminal(1, "sqlite_worker: begin");
-
         let our = Address::from_str(&our).unwrap();
-        let mut db_handle: Option<rusqlite::Connection> = None;
+
+        let mut conn: Option<rusqlite::Connection> = None;
+        let mut txs: HashMap<u64, Vec<(String, Vec<sq::SqlValue>)>> = HashMap::new();
+
+        let vfs_address = ProcessId::from_str("vfs:sys:uqbar").unwrap();
+        create_capability(
+            &vfs_address,
+            &"\"messaging\"".into(),
+        );
 
         loop {
-            match handle_message(&our, &mut db_handle) {
+            match handle_message(&our, &mut conn, &mut txs) {
                 Ok(()) => {},
                 Err(e) => {
                     //  TODO: should we send an error on failure?
@@ -469,7 +564,7 @@ impl Guest for Component {
                     ).as_str());
                     if let Some(e) = e.downcast_ref::<sq::SqliteError>() {
                         Response::new()
-                            .ipc_bytes(serde_json::to_vec(&e).unwrap())
+                            .ipc(serde_json::to_vec(&e).unwrap())
                             .send()
                             .unwrap();
                     }

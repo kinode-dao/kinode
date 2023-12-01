@@ -5,7 +5,7 @@ use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
 use uqbar_process_lib::{
     get_capability, get_payload, get_typed_state, grant_messaging, println, receive, set_state,
-    Address, Message, NodeId, PackageId, ProcessId, Request, Response,
+    share_capability, Address, Message, NodeId, PackageId, ProcessId, Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -165,10 +165,11 @@ impl Guest for Component {
         // so that they can send us requests.
         grant_messaging(
             &our,
-            &Vec::from([
-                ProcessId::from_str("http_server:sys:uqbar").unwrap(),
-                ProcessId::from_str("terminal:terminal:uqbar").unwrap(),
-            ]),
+            vec![
+                ProcessId::new(Some("http_server"), "sys", "uqbar"),
+                ProcessId::new(Some("terminal"), "terminal", "uqbar"),
+                ProcessId::new(Some("vfs"), "sys", "uqbar"),
+            ],
         );
         println!("{}: start", our.process);
 
@@ -211,9 +212,7 @@ fn handle_message(
                         Ok(None) => return Ok(()),
                         Ok(Some(resp)) => {
                             if req.expects_response.is_some() {
-                                Response::new()
-                                    .ipc_bytes(serde_json::to_vec(&resp)?)
-                                    .send()?;
+                                Response::new().ipc(serde_json::to_vec(&resp)?).send()?;
                             }
                         }
                         Err(err) => {
@@ -226,9 +225,7 @@ fn handle_message(
                         Ok(None) => return Ok(()),
                         Ok(Some(resp)) => {
                             if req.expects_response.is_some() {
-                                Response::new()
-                                    .ipc_bytes(serde_json::to_vec(&resp)?)
-                                    .send()?;
+                                Response::new().ipc(serde_json::to_vec(&resp)?).send()?;
                             }
                         }
                         Err(err) => {
@@ -250,9 +247,9 @@ fn handle_message(
                     if state.requested_packages.remove(&package_id) {
                         // auto-take zip from payload and request ourself with New
                         Request::new()
-                            .target(our.clone())?
+                            .target(our.clone())
                             .inherit(true)
-                            .ipc_bytes(serde_json::to_vec(&Req::LocalRequest(
+                            .ipc(serde_json::to_vec(&Req::LocalRequest(
                                 LocalRequest::NewPackage {
                                     package: package_id,
                                     mirror: true,
@@ -321,18 +318,13 @@ fn handle_local_request(
     }
     match request {
         LocalRequest::NewPackage { package, mirror } => {
-            let vfs_address = Address {
-                node: our.node.clone(),
-                process: ProcessId::from_str("vfs:sys:uqbar")?,
-            };
-
             let Some(mut payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
 
             Request::new()
-                .target(vfs_address.clone())?
-                .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                .target(Address::from_str("our@vfs:sys:uqbar")?)
+                .ipc(serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::New,
                 })?)
@@ -346,8 +338,8 @@ fn handle_local_request(
             // add zip bytes
             payload.mime = Some("application/zip".to_string());
             Request::new()
-                .target(vfs_address.clone())?
-                .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                .target(Address::from_str("our@vfs:sys:uqbar")?)
+                .ipc(serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::Add {
                         full_path: package.to_string(),
@@ -360,9 +352,9 @@ fn handle_local_request(
             // save the zip file itself in VFS for sharing with other nodes
             // call it <package>.zip
             Request::new()
-                .target(vfs_address.clone())?
+                .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .inherit(true)
-                .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                .ipc(serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::Add {
                         full_path: format!("/{}.zip", package.to_string()),
@@ -372,14 +364,14 @@ fn handle_local_request(
                 .payload(payload)
                 .send_and_await_response(5)??;
             Request::new()
-                .target(vfs_address.clone())?
-                .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                .target(Address::from_str("our@vfs:sys:uqbar")?)
+                .ipc(serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry("/metadata.json".into()),
                 })?)
                 .send_and_await_response(5)??;
             let Some(payload) = get_payload() else {
-                return Err(anyhow::anyhow!("no metadata payload"));
+                return Err(anyhow::anyhow!("no metadata found!"));
             };
             let metadata = String::from_utf8(payload.bytes)?;
             let metadata = serde_json::from_str::<kt::PackageMetadata>(&metadata)?;
@@ -407,9 +399,9 @@ fn handle_local_request(
             install_from,
         } => Ok(Some(Resp::DownloadResponse(
             match Request::new()
-                .target(Address::new(&install_from, our.process.clone())?)?
+                .target(Address::new(install_from, our.process.clone()))
                 .inherit(true)
-                .ipc_bytes(serde_json::to_vec(&RemoteRequest::Download(
+                .ipc(serde_json::to_vec(&RemoteRequest::Download(
                     package.clone(),
                 ))?)
                 .send_and_await_response(5)
@@ -429,13 +421,9 @@ fn handle_local_request(
             },
         ))),
         LocalRequest::Install(package) => {
-            let vfs_address = Address {
-                node: our.node.clone(),
-                process: ProcessId::from_str("vfs:sys:uqbar")?,
-            };
             Request::new()
-                .target(Address::new(&our.node, "vfs:sys:uqbar")?)?
-                .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                .target(Address::from_str("our@vfs:sys:uqbar")?)
+                .ipc(serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry("/manifest.json".into()),
                 })?)
@@ -445,16 +433,43 @@ fn handle_local_request(
             };
             let manifest = String::from_utf8(payload.bytes)?;
             let manifest = serde_json::from_str::<Vec<kt::PackageManifestEntry>>(&manifest)?;
-            for entry in manifest {
+            // always grant read/write to their drive, which we created for them
+            let Some(read_cap) = get_capability(
+                &Address::new(&our.node, ("vfs", "sys", "uqbar")),
+                &serde_json::to_string(&serde_json::json!({
+                    "kind": "read",
+                    "drive": package.to_string(),
+                }))?,
+            ) else {
+                return Err(anyhow::anyhow!("app-store: no read cap"));
+            };
+            let Some(write_cap) = get_capability(
+                &Address::new(&our.node, ("vfs", "sys", "uqbar")),
+                &serde_json::to_string(&serde_json::json!({
+                    "kind": "write",
+                    "drive": package.to_string(),
+                }))?,
+            ) else {
+                return Err(anyhow::anyhow!("app-store: no write cap"));
+            };
+            let Some(networking_cap) = get_capability(
+                &Address::new(&our.node, ("kernel", "sys", "uqbar")),
+                &"\"network\"".to_string(),
+            ) else {
+                return Err(anyhow::anyhow!("app-store: no net cap"));
+            };
+            // first, for each process in manifest, initialize it
+            // then, once all have been initialized, grant them requested caps
+            // and finally start them.
+            for entry in &manifest {
                 let path = if entry.process_wasm_path.starts_with("/") {
-                    entry.process_wasm_path
+                    entry.process_wasm_path.clone()
                 } else {
                     format!("/{}", entry.process_wasm_path)
                 };
-
                 let (_, hash_response) = Request::new()
-                    .target(Address::new(&our.node, "vfs:sys:uqbar")?)?
-                    .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                    .target(Address::from_str("our@vfs:sys:uqbar")?)
+                    .ipc(serde_json::to_vec(&kt::VfsRequest {
                         drive: package.to_string(),
                         action: kt::VfsAction::GetHash(path.clone()),
                     })?)
@@ -466,95 +481,93 @@ fn handle_local_request(
                 let kt::VfsResponse::GetHash(Some(hash)) = serde_json::from_slice(&ipc)? else {
                     return Err(anyhow::anyhow!("no hash in vfs"));
                 };
-
                 // build initial caps
                 let mut initial_capabilities: HashSet<kt::SignedCapability> = HashSet::new();
                 if entry.request_networking {
-                    let Some(networking_cap) = get_capability(
-                        &Address {
-                            node: our.node.clone(),
-                            process: ProcessId::from_str("kernel:sys:uqbar")?,
-                        },
-                        &"\"network\"".to_string(),
-                    ) else {
-                        return Err(anyhow::anyhow!("app-store: no net cap"));
-                    };
-                    initial_capabilities.insert(kt::de_wit_signed_capability(networking_cap));
+                    initial_capabilities.insert(kt::de_wit_signed_capability(networking_cap.clone()));
                 }
-                let Some(read_cap) = get_capability(
-                    &vfs_address.clone(),
-                    &serde_json::to_string(&serde_json::json!({
-                        "kind": "read",
-                        "drive": package.to_string(),
-                    }))?,
-                ) else {
-                    return Err(anyhow::anyhow!("app-store: no read cap"));
-                };
-                initial_capabilities.insert(kt::de_wit_signed_capability(read_cap));
-                let Some(write_cap) = get_capability(
-                    &vfs_address.clone(),
-                    &serde_json::to_string(&serde_json::json!({
-                        "kind": "write",
-                        "drive": package.to_string(),
-                    }))?,
-                ) else {
-                    return Err(anyhow::anyhow!("app-store: no write cap"));
-                };
-                initial_capabilities.insert(kt::de_wit_signed_capability(write_cap));
-
-                for process_name in &entry.request_messaging {
-                    let Ok(parsed_process_id) = ProcessId::from_str(&process_name) else {
-                        // TODO handle arbitrary caps here
-                        continue;
-                    };
-                    let Some(messaging_cap) = get_capability(
-                        &Address {
-                            node: our.node.clone(),
-                            process: parsed_process_id.clone(),
-                        },
-                        &"\"messaging\"".into(),
-                    ) else {
-                        println!("app-store: no cap for {} to give away!", process_name);
-                        continue;
-                    };
-                    initial_capabilities.insert(kt::de_wit_signed_capability(messaging_cap));
-                }
-
+                initial_capabilities.insert(kt::de_wit_signed_capability(read_cap.clone()));
+                initial_capabilities.insert(kt::de_wit_signed_capability(write_cap.clone()));
                 let process_id = format!("{}:{}", entry.process_name, package.to_string());
                 let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {
                     return Err(anyhow::anyhow!("app-store: invalid process id!"));
                 };
+                // kill process if it already exists
                 Request::new()
-                    .target(Address::new(&our.node, "kernel:sys:uqbar")?)?
-                    .ipc_bytes(serde_json::to_vec(&kt::KernelCommand::KillProcess(
-                        kt::ProcessId::de_wit(parsed_new_process_id.clone()),
+                    .target(Address::from_str("our@kernel:sys:uqbar")?)
+                    .ipc(serde_json::to_vec(&kt::KernelCommand::KillProcess(
+                        parsed_new_process_id.clone(),
                     ))?)
                     .send()?;
 
-                // kernel start process takes bytes as payload + wasm_bytes_handle...
-                // reconsider perhaps
                 let (_, _bytes_response) = Request::new()
-                    .target(Address::new(&our.node, "vfs:sys:uqbar")?)?
-                    .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                    .target(Address::from_str("our@vfs:sys:uqbar")?)
+                    .ipc(serde_json::to_vec(&kt::VfsRequest {
                         drive: package.to_string(),
                         action: kt::VfsAction::GetEntry(path),
                     })?)
                     .send_and_await_response(5)??;
-
-                let Some(payload) = get_payload() else {
-                    return Err(anyhow::anyhow!("no wasm bytes payload."));
-                };
-
                 Request::new()
-                    .target(Address::new(&our.node, "kernel:sys:uqbar")?)?
-                    .ipc_bytes(serde_json::to_vec(&kt::KernelCommand::StartProcess {
-                        id: kt::ProcessId::de_wit(parsed_new_process_id),
+                    .target(Address::from_str("our@kernel:sys:uqbar")?)
+                    .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
+                        id: parsed_new_process_id,
                         wasm_bytes_handle: hash,
-                        on_panic: entry.on_panic,
+                        on_panic: entry.on_panic.clone(),
                         initial_capabilities,
                         public: entry.public,
                     })?)
-                    .payload(payload)
+                    .inherit(true)
+                    .send_and_await_response(5)?;
+            }
+            for entry in &manifest {
+                let process_id = ProcessId::new(
+                    Some(&entry.process_name),
+                    package.package(),
+                    package.publisher(),
+                );
+                if let Some(to_request) = &entry.request_messaging {
+                    for process_name in to_request {
+                        let Ok(parsed_process_id) = ProcessId::from_str(&process_name) else {
+                            // TODO handle arbitrary caps here
+                            continue;
+                        };
+                        let Some(messaging_cap) = get_capability(
+                            &Address {
+                                node: our.node.clone(),
+                                process: parsed_process_id.clone(),
+                            },
+                            &"\"messaging\"".into(),
+                        ) else {
+                            println!("app-store: no cap for {} to give away!", process_name);
+                            continue;
+                        };
+                        share_capability(&process_id, &messaging_cap);
+                    }
+                }
+                if let Some(to_grant) = &entry.grant_messaging {
+                    let Some(messaging_cap) = get_capability(
+                        &Address {
+                            node: our.node.clone(),
+                            process: process_id.clone(),
+                        },
+                        &"\"messaging\"".into(),
+                    ) else {
+                        println!("app-store: no cap for {} to give away!", process_id);
+                        continue;
+                    };
+                    for process_name in to_grant {
+                        let Ok(parsed_process_id) = ProcessId::from_str(&process_name) else {
+                            // TODO handle arbitrary caps here
+                            continue;
+                        };
+                        share_capability(&parsed_process_id, &messaging_cap);
+                    }
+                }
+                Request::new()
+                    .target(Address::from_str("our@kernel:sys:uqbar")?)
+                    .ipc(serde_json::to_vec(&kt::KernelCommand::RunProcess(
+                        process_id,
+                    ))?)
                     .send_and_await_response(5)?;
             }
             Ok(Some(Resp::InstallResponse(InstallResponse::Success)))
@@ -587,8 +600,8 @@ fn handle_remote_request(
             // get the .zip from VFS and attach as payload to response
             let file_name = format!("/{}.zip", package.to_string());
             Request::new()
-                .target(Address::new(&our.node, "vfs:sys:uqbar")?)?
-                .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                .target(Address::from_str("our@vfs:sys:uqbar")?)
+                .ipc(serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry(file_name.clone()),
                 })?)

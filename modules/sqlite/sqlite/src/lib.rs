@@ -50,10 +50,10 @@ fn forward_if_have_cap(
             .target(wit::Address {
                 node: our.node.clone(),
                 process: process_id.clone(),
-            })?
+            })
             // .target(Address::new(our.node.clone(), process_id.clone()))?
             .inherit(true)
-            .ipc_bytes(ipc)
+            .ipc(ipc)
             .send()?;
         return Ok(());
     } else {
@@ -83,9 +83,8 @@ fn handle_message (
                 sq::SqliteMessage::New { ref db } => {
                     //  TODO: make atomic
                     //  (1): create vfs drive
-                    //  (2): spin up worker, granting vfs caps
+                    //  (2): spin up worker, granting vfs caps & msg_cap
                     //  (3): issue new caps
-                    //  (4): persist
 
                     if db_to_process.contains_key(db) {
                         return Err(sq::SqliteError::DbAlreadyExists.into());
@@ -94,12 +93,13 @@ fn handle_message (
                     //  (1)
                     let vfs_address = Address {
                         node: our.node.clone(),
-                        process: ProcessId::new("vfs", "sys", "uqbar"),
+                        process: ProcessId::new(Some("vfs"), "sys", "uqbar"),
                     };
+
                     let vfs_drive = format!("{}{}", PREFIX, db);
                     let _ = Request::new()
-                        .target(vfs_address.clone())?
-                        .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                        .target(vfs_address.clone())
+                        .ipc(serde_json::to_vec(&kt::VfsRequest {
                             drive: vfs_drive.clone(),
                             action: kt::VfsAction::New,
                         })?)
@@ -110,19 +110,22 @@ fn handle_message (
                         &vfs_address,
                         &make_vfs_cap("read", &vfs_drive),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'read' capability found"))?;
+
                     let vfs_write = wit::get_capability(
                         &vfs_address,
                         &make_vfs_cap("write", &vfs_drive),
                     ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
-                    let messaging = wit::get_capability(
+
+                    let msg_cap = wit::get_capability(
                         &source,
                         &"\"messaging\"".into(),
-                    ).ok_or(anyhow::anyhow!("New failed: no source 'messaging' capability found"))?;
+                    ).ok_or(anyhow::anyhow!("New failed: no msg capability passed"))?;
+
                     let spawned_process_id = match wit::spawn(
                         None,
                         "/sqlite_worker.wasm",
-                        &wit::OnPanic::None,  //  TODO: notify us
-                        &wit::Capabilities::Some(vec![vfs_read, vfs_write, messaging]),
+                        &wit::OnPanic::None,
+                        &wit::Capabilities::Some(vec![vfs_read, vfs_write, msg_cap]),
                         false, // not public
                     ) {
                         Ok(spawned_process_id) => spawned_process_id,
@@ -139,19 +142,17 @@ fn handle_message (
                         .target(wit::Address {
                             node: our.node.clone(),
                             process: spawned_process_id.clone(),
-                        })?
-                        .ipc_bytes(ipc.clone())
+                        })
+                        .ipc(ipc.clone())
                         .send()?;
 
-                    //  (4)
                     db_to_process.insert(db.into(), spawned_process_id);
-                    //  TODO: persistence?
 
                     Response::new()
-                        .ipc_bytes(ipc)
+                        .ipc(ipc)
                         .send()?;
                 },
-                sq::SqliteMessage::Write { ref db, ref statement } => {
+                sq::SqliteMessage::Write { ref db, ref statement, .. } => {
                     let first_word = statement
                         .split_whitespace()
                         .next()
@@ -173,6 +174,9 @@ fn handle_message (
                     }
                     forward_if_have_cap(our, "read", db, ipc, db_to_process)?;
                 },
+                sq::SqliteMessage::Commit { ref db, .. } => {
+                    forward_if_have_cap(our, "write", db, ipc, db_to_process)?;
+                },
             }
 
             Ok(())
@@ -186,7 +190,9 @@ impl Guest for Component {
         wit::print_to_terminal(0, "sqlite: begin");
 
         let our = Address::from_str(&our).unwrap();
+
         let mut db_to_process: DbToProcess = HashMap::new();
+
         let read_keywords: HashSet<String> = [
             "ANALYZE",
             "ATTACH",
@@ -233,7 +239,7 @@ impl Guest for Component {
                     ).as_str());
                     if let Some(e) = e.downcast_ref::<sq::SqliteError>() {
                         Response::new()
-                            .ipc_bytes(serde_json::to_vec(&e).unwrap())
+                            .ipc(serde_json::to_vec(&e).unwrap())
                             .send()
                             .unwrap();
                     }
