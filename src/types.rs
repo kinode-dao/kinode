@@ -34,7 +34,6 @@ pub struct Args {
     /// First port to try binding
     #[arg(long, default_value_t = 8080)]
     pub port: u16,
-
     // /// Networking password
     // #[arg(short, long, value_parser)]
     // pub password: Option<String>,
@@ -60,7 +59,6 @@ pub struct Args {
     // /// Networking password
     // #[arg(short, long, value_parser)]
     // pub password: Option<String>,
-
     /// LLM endpoint
     #[arg(required(true), short, long, value_parser)]
     pub password: String,

@@ -263,7 +263,8 @@ async fn main() {
         our_ip.to_string(),
         http_server_port.clone(),
         rpc_url.clone(),
-    ).await;
+    )
+    .await;
     #[cfg(feature = "simulation-mode")]
     let (our, decoded_keyfile) = match args.fake_node_name {
         None => {
@@ -274,7 +275,8 @@ async fn main() {
                         our_ip.to_string(),
                         http_server_port.clone(),
                         rpc_url.clone(),
-                    ).await
+                    )
+                    .await
                 }
                 Some(password) => {
                     match fs::read(format!("{}/.keys", home_directory_path)).await {
@@ -288,7 +290,10 @@ async fn main() {
                                         networking_key: format!(
                                             "0x{}",
                                             hex::encode(
-                                                decoded_keyfile.networking_keypair.public_key().as_ref()
+                                                decoded_keyfile
+                                                    .networking_keypair
+                                                    .public_key()
+                                                    .as_ref()
                                             )
                                         ),
                                         ws_routing: None, //  TODO
@@ -323,8 +328,10 @@ async fn main() {
             let decoded_keyfile = Keyfile {
                 username: name.clone(),
                 routers: vec![],
-                networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
-                    .unwrap(),
+                networking_keypair: signature::Ed25519KeyPair::from_pkcs8(
+                    networking_keypair.as_ref(),
+                )
+                .unwrap(),
                 jwt_secret_bytes: jwt_secret.to_vec(),
                 file_key: keygen::generate_file_key(),
             };
