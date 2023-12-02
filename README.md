@@ -41,8 +41,11 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH
 
 - CTRL+C or CTRL+D to shutdown node
 - CTRL+V to toggle verbose mode, which is on by default
+
 - CTRL+J to toggle debug mode
 - CTRL+S to step through events in debug mode
+
+- CTRL+L to toggle logging mode, which writes all terminal output to the `.terminal_log` file. Off by default, this will write all events and verbose prints with timestamps.
 
 - CTRL+A to jump to beginning of input
 - CTRL+E to jump to end of input
