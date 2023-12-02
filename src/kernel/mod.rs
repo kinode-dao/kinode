@@ -380,7 +380,7 @@ async fn handle_kernel_request(
                 None => {
                     let _ = send_to_terminal
                         .send(t::Printout {
-                            verbosity: 1,
+                            verbosity: 2,
                             content: format!("kernel: no such process {:?} to kill", process_id),
                         })
                         .await;
@@ -768,7 +768,7 @@ pub async fn kernel(
             Some(wrapped_network_error) = network_error_recv.recv() => {
                 let _ = send_to_terminal.send(
                     t::Printout {
-                        verbosity: 1,
+                        verbosity: 2,
                         content: format!("event loop: got network error: {:?}", wrapped_network_error)
                     }
                 ).await;
@@ -920,7 +920,7 @@ pub async fn kernel(
                 // display every single event when verbose
                 let _ = send_to_terminal.send(
                         t::Printout {
-                            verbosity: 1,
+                            verbosity: 3,
                             content: format!("event loop: got message: {}", kernel_message)
                         }
                     ).await;
