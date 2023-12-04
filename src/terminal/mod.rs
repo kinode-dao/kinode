@@ -565,7 +565,7 @@ pub async fn terminal(
                                 command_history.add(command.clone());
                                 cursor_col = prompt_len.try_into().unwrap();
                                 line_col = prompt_len;
-                                let _err = event_loop.send(
+                                event_loop.send(
                                     KernelMessage {
                                         id: rand::random(),
                                         source: Address {
@@ -586,7 +586,7 @@ pub async fn terminal(
                                         payload: None,
                                         signed_capabilities: None,
                                     }
-                                ).await;
+                                ).await.expect("terminal: couldn't execute command!");
                             },
                             _ => {},
                         }
