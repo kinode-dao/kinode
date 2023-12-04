@@ -112,12 +112,12 @@ pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'sta
     })
 }
 
-pub fn get_username(keyfile: Vec<u8>) -> Result<String, &'static str> {
-    let (username, _routers, _salt, _key_enc, _jwt_enc, _file_enc) =
+pub fn get_username_and_routers(keyfile: Vec<u8>) -> Result<(String, Vec<String>), &'static str> {
+    let (username, routers, _salt, _key_enc, _jwt_enc, _file_enc) =
         bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(&keyfile)
             .map_err(|_| "failed to deserialize keyfile")?;
 
-    Ok(username)
+    Ok((username, routers))
 }
 
 /// # Returns

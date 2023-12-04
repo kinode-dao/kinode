@@ -4,10 +4,9 @@ use std::ffi::CString;
 use rusqlite::{types::FromSql, types::FromSqlError, types::ToSql, types::ValueRef};
 use std::collections::HashMap;
 
-use uqbar_process_lib::{Address, ProcessId, Response, grant_messaging};
+use uqbar_process_lib::{Address, ProcessId, Response, create_capability};
 use uqbar_process_lib::uqbar::process::standard as wit;
 
-use crate::sqlite_types::Deserializable;
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -453,7 +452,7 @@ fn handle_message(
                     };
 
                     Response::new()
-                        .ipc_bytes(ipc)
+                        .ipc(ipc)
                         .send()?;
                 },
                 sq::SqliteMessage::Commit { ref tx_id, .. } => {
@@ -473,7 +472,7 @@ fn handle_message(
                     tx.commit()?;
 
                     Response::new()
-                        .ipc_bytes(ipc)
+                        .ipc(ipc)
                         .send()?;
                 },
                 sq::SqliteMessage::Read { ref query, .. } => {
@@ -525,7 +524,7 @@ fn handle_message(
                     let results_bytes = results.as_bytes().to_vec();
 
                     Response::new()
-                        .ipc_bytes(ipc)
+                        .ipc(ipc)
                         .payload(wit::Payload {
                             mime: None,
                             bytes: results_bytes,
@@ -548,9 +547,11 @@ impl Guest for Component {
         let mut conn: Option<rusqlite::Connection> = None;
         let mut txs: HashMap<u64, Vec<(String, Vec<sq::SqlValue>)>> = HashMap::new();
 
-        grant_messaging(
-            &our,
-            &Vec::from([ProcessId::from_str("vfs:sys:uqbar").unwrap()])
+        let vfs_address = ProcessId::from_str("vfs:sys:uqbar").unwrap();
+
+        create_capability(
+            &vfs_address,
+            &"\"messaging\"".into(),
         );
 
         loop {
@@ -564,7 +565,7 @@ impl Guest for Component {
                     ).as_str());
                     if let Some(e) = e.downcast_ref::<sq::SqliteError>() {
                         Response::new()
-                            .ipc_bytes(serde_json::to_vec(&e).unwrap())
+                            .ipc(serde_json::to_vec(&e).unwrap())
                             .send()
                             .unwrap();
                     }

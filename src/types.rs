@@ -662,9 +662,25 @@ pub struct KeyfileVetted {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BootInfo {
     pub password: String,
-    pub keyfile: String,
     pub username: String,
     pub reset: bool,
+    pub direct: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportKeyfileInfo {
+    pub password: String,
+    pub keyfile: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginInfo {
+    pub password: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoginAndResetInfo {
+    pub password: String,
     pub direct: bool,
 }
 
@@ -673,6 +689,12 @@ pub struct Identity {
     pub name: NodeId,
     pub networking_key: String,
     pub ws_routing: Option<(String, u16)>,
+    pub allowed_routers: Vec<NodeId>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UnencryptedIdentity {
+    pub name: NodeId,
     pub allowed_routers: Vec<NodeId>,
 }
 
@@ -734,10 +756,11 @@ pub struct WrappedSendError {
     pub error: SendError,
 }
 
-/// A terminal printout. Verbosity level is from low to high, and for
-/// now, only 0 and 1 are used. Level 0 is always printed, level 1 is
-/// only printed if the terminal is in verbose mode. Numbers greater
-/// than 1 are reserved for future use and will be ignored for now.
+/// A terminal printout. Verbosity level is from low to high.
+/// - `0`: always printed
+/// - `1`: verbose, used for debugging
+/// - `2`: very verbose: shows runtime information
+/// - `3`: very verbose: shows every event in event loop
 pub struct Printout {
     pub verbosity: u8,
     pub content: String,

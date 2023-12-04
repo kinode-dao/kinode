@@ -25,7 +25,7 @@ type HttpSender = tokio::sync::oneshot::Sender<(HttpResponse, Vec<u8>)>;
 /// mapping from an open websocket connection to a channel that will ingest
 /// WebSocketPush messages from the app that handles the connection, and
 /// send them to the connection.
-type WebSocketSenders = Arc<DashMap<u64, (ProcessId, WebSocketSender)>>;
+type WebSocketSenders = Arc<DashMap<u32, (ProcessId, WebSocketSender)>>;
 type WebSocketSender = tokio::sync::mpsc::Sender<warp::ws::Message>;
 
 type PathBindings = Arc<RwLock<Router<BoundPath>>>;
@@ -127,20 +127,31 @@ async fn serve(
     let cloned_msg_tx = send_to_loop.clone();
     let cloned_our = our.clone();
     let cloned_jwt_secret_bytes = jwt_secret_bytes.clone();
+    let cloned_print_tx = print_tx.clone();
     let ws_route = warp::path::end()
         .and(warp::ws())
         .and(warp::any().map(move || cloned_our.clone()))
         .and(warp::any().map(move || cloned_jwt_secret_bytes.clone()))
         .and(warp::any().map(move || ws_senders.clone()))
         .and(warp::any().map(move || cloned_msg_tx.clone()))
+        .and(warp::any().map(move || cloned_print_tx.clone()))
         .map(
             |ws_connection: Ws,
              our: Arc<String>,
              jwt_secret_bytes: Arc<Vec<u8>>,
              ws_senders: WebSocketSenders,
-             send_to_loop: MessageSender| {
+             send_to_loop: MessageSender,
+             print_tx: PrintSender| {
                 ws_connection.on_upgrade(move |ws: WebSocket| async move {
-                    maintain_websocket(ws, our, jwt_secret_bytes, ws_senders, send_to_loop).await
+                    maintain_websocket(
+                        ws,
+                        our,
+                        jwt_secret_bytes,
+                        ws_senders,
+                        send_to_loop,
+                        print_tx,
+                    )
+                    .await
                 })
             },
         );
@@ -379,6 +390,7 @@ async fn maintain_websocket(
     jwt_secret_bytes: Arc<Vec<u8>>,
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
+    _print_tx: PrintSender,
 ) {
     let (mut write_stream, mut read_stream) = ws.split();
 
@@ -420,9 +432,34 @@ async fn maintain_websocket(
         return;
     }
 
-    let ws_channel_id: u64 = rand::random();
+    let ws_channel_id: u32 = rand::random();
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
     ws_senders.insert(ws_channel_id, (owner_process.clone(), ws_sender));
+
+    // send a message to the process associated with this channel
+    // notifying them that the channel is now open
+    let _ = send_to_loop
+        .send(KernelMessage {
+            id: rand::random(),
+            source: Address {
+                node: our.to_string(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node: our.to_string(),
+                process: owner_process.clone(),
+            },
+            rsvp: None,
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: None,
+                ipc: serde_json::to_vec(&HttpServerAction::WebSocketOpen(ws_channel_id)).unwrap(),
+                metadata: None,
+            }),
+            payload: None,
+            signed_capabilities: None,
+        })
+        .await;
 
     // respond to the client notifying them that the channel is now open
     let Ok(()) = write_stream
@@ -505,7 +542,7 @@ async fn maintain_websocket(
 }
 
 async fn websocket_close(
-    channel_id: u64,
+    channel_id: u32,
     process: ProcessId,
     ws_senders: &WebSocketSenders,
     send_to_loop: &MessageSender,
@@ -585,9 +622,6 @@ async fn handle_app_message(
                     // the receiver will automatically trigger a 503 when sender is dropped.
                     return;
                 };
-                let Some((_id, (path, channel))) = http_response_senders.remove(&km.id) else {
-                    return;
-                };
                 // XX REFACTOR THIS:
                 // for the login case, todo refactor out?
                 let segments: Vec<&str> = path
@@ -628,7 +662,7 @@ async fn handle_app_message(
 
                             let _ = print_tx
                                 .send(Printout {
-                                    verbosity: 1,
+                                    verbosity: 2,
                                     content: format!(
                                         "SET WS AUTH COOKIE WITH USERNAME: {}",
                                         ws_auth_username
@@ -638,7 +672,7 @@ async fn handle_app_message(
                         }
                     }
                 }
-                let _ = channel.send((
+                let _ = sender.send((
                     HttpResponse {
                         status: response.status,
                         headers: response.headers,
