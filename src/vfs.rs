@@ -717,7 +717,7 @@ async fn handle_request(
     } else {
         send_to_terminal
             .send(Printout {
-                verbosity: 1,
+                verbosity: 2,
                 content: format!(
                     "vfs: not sending response: {:?}",
                     serde_json::from_slice::<VfsResponse>(&ipc)
@@ -798,7 +798,7 @@ async fn match_request(
                         } else {
                             send_to_terminal
                                 .send(Printout {
-                                    verbosity: 1,
+                                    verbosity: 2,
                                     content: format!("vfs: overwriting file {}", full_path),
                                 })
                                 .await
@@ -866,7 +866,7 @@ async fn match_request(
                     if vfs.path_to_key.contains_key(&full_path) {
                         send_to_terminal
                             .send(Printout {
-                                verbosity: 1,
+                                verbosity: 2,
                                 content: format!("vfs: overwriting file {}", full_path),
                             })
                             .await
@@ -924,7 +924,7 @@ async fn match_request(
                                 } else {
                                     send_to_terminal
                                         .send(Printout {
-                                            verbosity: 1,
+                                            verbosity: 2,
                                             content: format!("vfs: overwriting file {}", full_path),
                                         })
                                         .await

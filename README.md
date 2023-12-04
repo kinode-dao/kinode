@@ -1,4 +1,3 @@
-Last updated: 11/01/23
 ## Setup
 
 ### Building components
@@ -32,7 +31,7 @@ Get an eth-sepolia-rpc API key and pass that as an argument. You can get one for
 
 Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`.
 ```bash
-cargo +nightly run --release -- --home home --rpc wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>
+cargo +nightly run --release -- home --rpc wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>
 ```
 
 On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH wallet is connected to the Sepolia test network. Login should be straightforward, just submit the transactions and follow the flow. If you want to register a new ID you will either need [Sepolia testnet tokens](https://www.infura.io/faucet/sepolia) or an invite code.
@@ -40,20 +39,33 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH
 
 ## Terminal syntax
 
-- CTRL+C or CTRL+D to shutdown node
-- CTRL+V to toggle verbose mode, which is on by default
+- CTRL+C or CTRL+D to gracefully shutdown node
+- CTRL+V to toggle through verbose modes (0-3, 0 is default and lowest verbosity)
+
 - CTRL+J to toggle debug mode
 - CTRL+S to step through events in debug mode
+
+- CTRL+L to toggle logging mode, which writes all terminal output to the `.terminal_log` file. Off by default, this will write all events and verbose prints with timestamps.
 
 - CTRL+A to jump to beginning of input
 - CTRL+E to jump to end of input
 - UpArrow/DownArrow or CTRL+P/CTRL+N to move up and down through command history
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
-- `!message <name> <app> <json>`: send a card with a JSON value to another node or yourself. <name> can be `our`, which will be interpreted as our node's username.
-- `!hi <name> <string>`: send a text message to another node's command line.
-- `<name>` is either the name of a node or `our`, which will fill in the present node name
-- more to come
+- `/message <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>.
+    - Example: `/message our@net:sys:uqbar diagnostics`
+    - `our` will always be interpolated by the system as your node's name
+    - Can also use `/m` for same command: `/m our@net:sys:uqbar diagnostics`
+- `/app <address>`: set the terminal to a mode where all messages go to a specific app. To clear this selection, use `/app clear` or simply `/app`. This is useful for apps that have a command line interface.
+    - Example: `/app our@net:sys:uqbar`, then `/m diagnostics`
+    - Can also use `/a` for same command: `/a our@net:sys:uqbar`
+    - Example of sending many messages:
+        - `/a ben.uq@net:sys:uqbar`
+        - `/m hey there`
+        - `/m how are you?`
+        - `/a` (to exit app mode)
+- `/hi <name> <string>`: send a text message to another node's command line.
+    - Example: `/hi ben.uq hello world`
 
 ## Example usage
 
