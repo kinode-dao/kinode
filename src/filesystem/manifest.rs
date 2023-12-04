@@ -876,16 +876,7 @@ impl Manifest {
                     }
                 }
             }
-
-            // note here, for active_txs continuity. but should our active_txs only be in wal & mem?
-            // somewhat of a strong case here for it.
-            for txs in &in_memory_file.active_txs {
-                for chunk in txs.1 {
-                    if matches!(chunk.location, ChunkLocation::Memory(_)) {
-                        chunks_to_flush.push(*chunk);
-                    }
-                }
-            }
+            // note incomplete txs and how they're not flushed.
 
             if !chunks_to_flush.is_empty() {
                 to_flush.push((file_id.clone(), chunks_to_flush));
