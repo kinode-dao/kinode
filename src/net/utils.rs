@@ -499,7 +499,7 @@ pub async fn parse_hello_message(
 pub async fn print_debug(print_tx: &PrintSender, content: &str) {
     let _ = print_tx
         .send(Printout {
-            verbosity: 1,
+            verbosity: 2,
             content: content.into(),
         })
         .await;

@@ -662,7 +662,7 @@ async fn handle_app_message(
 
                             let _ = print_tx
                                 .send(Printout {
-                                    verbosity: 1,
+                                    verbosity: 2,
                                     content: format!(
                                         "SET WS AUTH COOKIE WITH USERNAME: {}",
                                         ws_auth_username

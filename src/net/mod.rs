@@ -148,7 +148,7 @@ async fn indirect_networking(
                         Ok(()) => continue,
                         Err(e) => {
                             print_tx.send(Printout {
-                                verbosity: 0,
+                                verbosity: 2,
                                 content: format!("net: error handling local message: {e}")
                             }).await?;
                             continue
@@ -316,7 +316,7 @@ async fn direct_networking(
                         Ok(()) => continue,
                         Err(e) => {
                             print_tx.send(Printout {
-                                verbosity: 0,
+                                verbosity: 2,
                                 content: format!("net: error handling local message: {}", e)
                             }).await?;
                             continue;
@@ -399,14 +399,14 @@ async fn direct_networking(
                             Ok(Ok(res)) => res,
                             Ok(Err(e)) => {
                                 print_tx.send(Printout {
-                                    verbosity: 0,
+                                    verbosity: 2,
                                     content: format!("net: recv_connection failed: {e}"),
                                 }).await?;
                                 continue;
                             }
                             Err(_e) => {
                                 print_tx.send(Printout {
-                                    verbosity: 0,
+                                    verbosity: 2,
                                     content: "net: recv_connection timed out".into(),
                                 }).await?;
                                 continue;

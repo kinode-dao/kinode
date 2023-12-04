@@ -213,7 +213,7 @@ impl ProcessState {
                 let _ = self
                     .send_to_terminal
                     .send(t::Printout {
-                        verbosity: 1,
+                        verbosity: 2,
                         content: format!("kernel: dropping Response {:?}", response),
                     })
                     .await;
@@ -470,7 +470,7 @@ pub async fn make_process_loop(
         Ok(()) => {
             let _ = send_to_terminal
                 .send(t::Printout {
-                    verbosity: 1,
+                    verbosity: 2,
                     content: format!("process {} returned without error", metadata.our.process,),
                 })
                 .await;
