@@ -2,7 +2,7 @@
 
 use crate::types::*;
 use anyhow::Result;
-use clap::{arg, Command, value_parser};
+use clap::{arg, value_parser, Command};
 use ring::rand::SystemRandom;
 use ring::signature;
 use ring::signature::KeyPair;
@@ -104,23 +104,24 @@ async fn main() {
         .author("Uqbar DAO: https://github.com/uqbar-dao")
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
-        .arg(arg!(--port <PORT> "First port to try binding")
-            .default_value("8080")
-            .value_parser(value_parser!(u16))
+        .arg(
+            arg!(--port <PORT> "First port to try binding")
+                .default_value("8080")
+                .value_parser(value_parser!(u16)),
         );
 
     #[cfg(not(feature = "simulation-mode"))]
-    let app = app
-        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true));
+    let app = app.arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true));
 
     #[cfg(feature = "simulation-mode")]
     let app = app
         .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)"))
         .arg(arg!(--password <PASSWORD> "Networking password"))
         .arg(arg!(--"fake-node-name" <NAME> "Name of fake node to boot"))
-        .arg(arg!(--"network-router-port" <PORT> "Network router port")
-            .default_value("9001")
-            .value_parser(value_parser!(u16))
+        .arg(
+            arg!(--"network-router-port" <PORT> "Network router port")
+                .default_value("9001")
+                .value_parser(value_parser!(u16)),
         );
 
     #[cfg(feature = "llm")]
@@ -138,7 +139,10 @@ async fn main() {
     let (rpc_url, password, network_router_port, fake_node_name) = (
         matches.get_one::<String>("rpc"),
         matches.get_one::<String>("password"),
-        matches.get_one::<u16>("network-router-port").unwrap().clone(),
+        matches
+            .get_one::<u16>("network-router-port")
+            .unwrap()
+            .clone(),
         matches.get_one::<String>("fake-node-name"),
     );
 
