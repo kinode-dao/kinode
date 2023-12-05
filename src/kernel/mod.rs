@@ -928,39 +928,6 @@ pub async fn kernel(
                         }
                     ).await;
 
-                // send every single event to tester
-                // TODO: assess if performance will allow this
-                // #[cfg(feature = "simulation-mode")]
-                // match senders.get(&tester_process_id) {
-                //     None => {}
-                //     Some(ProcessSender::Runtime(_)) => {}
-                //     Some(ProcessSender::Userspace(sender)) => {
-                //         let wrapped_kernel_message = t::KernelMessage {
-                //             id: 0,
-                //             source: t::Address {
-                //                 node: our_name.clone(),
-                //                 process: KERNEL_PROCESS_ID.clone(),
-                //             },
-                //             target: t::Address {
-                //                 node: our_name.clone(),
-                //                 process: tester_process_id.clone(),
-                //             },
-                //             rsvp: None,
-                //             message: t::Message::Request(t::Request {
-                //                 inherit: false,
-                //                 expects_response: None,
-                //                 ipc: serde_json::to_vec(&serde_json::json!({
-                //                     "KernelMessage": kernel_message,
-                //                 })).unwrap(),
-                //                 metadata: None,
-                //             }),
-                //             payload: None,
-                //             signed_capabilities: None,
-                //         };
-                //         sender.send(Ok(wrapped_kernel_message)).await.unwrap();
-                //     }
-                // }
-
                 if our.name != kernel_message.target.node {
                     send_to_net.send(kernel_message).await.expect("fatal: net module died");
                 } else if kernel_message.target.process.process() == "kernel" {

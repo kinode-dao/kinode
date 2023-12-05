@@ -1,6 +1,3 @@
-use serde::{Serialize, Deserialize};
-use std::collections::{HashMap, HashSet};
-
 use indexmap::map::IndexMap;
 
 use uqbar_process_lib::{Address, ProcessId, Request, Response};
@@ -29,7 +26,7 @@ fn make_vfs_address(our: &wit::Address) -> anyhow::Result<Address> {
 
 fn handle_message(
     our: &Address,
-    messages: &mut Messages,
+    _messages: &mut Messages,
     node_names: &mut Vec<String>,
 ) -> anyhow::Result<()> {
     let (source, message) = wit::receive().unwrap();
@@ -90,43 +87,7 @@ fn handle_message(
                             .send()?;
                     }
                 },
-                tt::TesterRequest::KernelMessage(kernel_message) => {
-                    wit::print_to_terminal(0, "tester: km");
-                    // if node_names.len() >= 1 {
-                    //     if our.node == node_names[0] {
-                    //         // we are master node
-                    //         messages.insert(
-                    //             kernel_message.message.clone(),
-                    //             kernel_message,
-                    //         );
-                    //     } else {
-                    //         Request::new()
-                    //             .target(Address {
-                    //                 node: node_names[0].clone(),
-                    //                 process: our.process.clone(),
-                    //             })?
-                    //             .ipc_bytes(ipc)
-                    //             .send()?;
-                    //     }
-                    // }
-                },
-                tt::TesterRequest::GetFullMessage(message) => {
-                    wit::print_to_terminal(0, "tester: gfm");
-                    assert!(node_names.len() >= 1);
-                    if our.node == node_names[0] {
-                        // TODO
-                        // we are master node
-                    }
-                    Response::new()
-                        .ipc_bytes(serde_json::to_vec(&tt::TesterResponse::GetFullMessage(
-                            match messages.get(&message) {
-                                None => None,
-                                Some(m) => Some(m.clone()),
-                            }
-                        )).unwrap())
-                        .send()
-                        .unwrap();
-                },
+                tt::TesterRequest::KernelMessage(_) | tt::TesterRequest::GetFullMessage(_) => { unimplemented!() },
             }
             Ok(())
         },
