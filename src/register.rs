@@ -32,9 +32,9 @@ abigen!(
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
-pub const QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
+pub const _QNS_SEPOLIA_ADDRESS: &str = "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776";
 
-pub fn ip_to_number(ip: &str) -> Result<u32, &'static str> {
+pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
     let octets: Vec<&str> = ip.split('.').collect();
 
     if octets.len() != 4 {
@@ -58,7 +58,7 @@ pub fn ip_to_number(ip: &str) -> Result<u32, &'static str> {
     Ok(ip_num)
 }
 
-fn hex_string_to_u8_array(hex_str: &str) -> Result<[u8; 32], &'static str> {
+fn _hex_string_to_u8_array(hex_str: &str) -> Result<[u8; 32], &'static str> {
     if !hex_str.starts_with("0x") || hex_str.len() != 66 {
         // "0x" + 64 hex chars
         return Err("Invalid hex format or length");
@@ -346,7 +346,7 @@ async fn handle_boot(
 async fn handle_import_keyfile(
     info: ImportKeyfileInfo,
     ip: String,
-    rpc_url: String,
+    _rpc_url: String,
     sender: RegistrationSender,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
@@ -420,7 +420,7 @@ async fn handle_import_keyfile(
 async fn handle_login(
     info: LoginInfo,
     ip: String,
-    rpc_url: String,
+    _rpc_url: String,
     sender: RegistrationSender,
     encoded_keyfile: Vec<u8>,
 ) -> Result<impl Reply, Rejection> {
@@ -614,14 +614,14 @@ async fn success_response(
     Ok(response)
 }
 
-async fn networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: &Identity) -> bool {
+async fn _networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: &Identity) -> bool {
     // check if Identity for this username has correct networking keys,
     // if not, prompt user to reset them.
     let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
         println!("1");
         return false;
     };
-    let Ok(qns_address): Result<EthAddress, _> = QNS_SEPOLIA_ADDRESS.parse() else {
+    let Ok(qns_address): Result<EthAddress, _> = _QNS_SEPOLIA_ADDRESS.parse() else {
         println!("2");
         return false;
     };
@@ -646,7 +646,7 @@ async fn networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: &
         })
         .collect();
 
-    let current_ip = match ip_to_number(&ip) {
+    let current_ip = match _ip_to_number(&ip) {
         Ok(ip_num) => ip_num,
         Err(_) => {
             println!("5");
@@ -654,7 +654,7 @@ async fn networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: &
         }
     };
 
-    let Ok(networking_key_bytes) = hex_string_to_u8_array(&our.networking_key) else {
+    let Ok(networking_key_bytes) = _hex_string_to_u8_array(&our.networking_key) else {
         println!("6");
         return false;
     };

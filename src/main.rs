@@ -3,13 +3,13 @@
 use crate::types::*;
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
-use ring::rand::SystemRandom;
-use ring::signature;
-use ring::signature::KeyPair;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::{fs, time::timeout};
+
+#[cfg(feature = "simulation-mode")]
+use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
 mod eth_rpc;
 mod filesystem;
