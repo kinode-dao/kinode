@@ -2,7 +2,7 @@
 
 use crate::types::*;
 use anyhow::Result;
-use clap::Parser;
+use clap::{arg, Command, value_parser};
 use ring::rand::SystemRandom;
 use ring::signature;
 use ring::signature::KeyPair;
@@ -99,17 +99,56 @@ async fn serve_register_fe(
 
 #[tokio::main]
 async fn main() {
-    let args = types::Args::parse();
+    let app = Command::new("Uqbar")
+        .version(VERSION)
+        .author("Uqbar DAO: https://github.com/uqbar-dao")
+        .about("A General Purpose Sovereign Cloud Computing Platform")
+        .arg(arg!([home] "Path to home directory").required(true))
+        .arg(arg!(--port <PORT> "First port to try binding")
+            .default_value("8080")
+            .value_parser(value_parser!(u16))
+        );
 
-    let home_directory_path = &args.home;
+    #[cfg(not(feature = "simulation-mode"))]
+    let app = app
+        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true));
+
+    #[cfg(feature = "simulation-mode")]
+    let app = app
+        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)"))
+        .arg(arg!(--password <PASSWORD> "Networking password"))
+        .arg(arg!(--"fake-node-name" <NAME> "Name of fake node to boot"))
+        .arg(arg!(--"network-router-port" <PORT> "Network router port")
+            .default_value("9001")
+            .value_parser(value_parser!(u16))
+        );
+
+    #[cfg(feature = "llm")]
+    let app = app.arg(arg!(--llm <LLM_URL> "LLM endpoint"));
+
+    let matches = app.get_matches();
+
+    let home_directory_path = matches.get_one::<String>("home").unwrap();
+    let port = matches.get_one::<u16>("port").unwrap().clone();
+
+    #[cfg(not(feature = "simulation-mode"))]
+    let rpc_url = matches.get_one::<String>("rpc").unwrap();
+
+    #[cfg(feature = "simulation-mode")]
+    let (rpc_url, password, network_router_port, fake_node_name) = (
+        matches.get_one::<String>("rpc"),
+        matches.get_one::<String>("password"),
+        matches.get_one::<u16>("network-router-port").unwrap().clone(),
+        matches.get_one::<String>("fake-node-name"),
+    );
+
+    #[cfg(feature = "llm")]
+    let llm_url = matches.get_one::<String>("llm").unwrap();
+
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {:?}", e);
     }
     println!("home at {}\r", home_directory_path);
-    // read PKI from websocket endpoint served by public RPC
-    // if you get rate-limited or something, pass in your own RPC as a boot argument
-    #[cfg(not(feature = "simulation-mode"))]
-    let rpc_url = args.rpc;
 
     // kernel receives system messages via this channel, all other modules send messages
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
@@ -228,7 +267,7 @@ async fn main() {
         }
     };
 
-    let http_server_port = http::utils::find_open_port(args.port).await.unwrap();
+    let http_server_port = http::utils::find_open_port(port).await.unwrap();
     println!("runtime bound port {}\r", http_server_port);
     println!(
         "login or register at http://localhost:{}\r",
@@ -243,10 +282,10 @@ async fn main() {
     )
     .await;
     #[cfg(feature = "simulation-mode")]
-    let (our, decoded_keyfile) = match args.fake_node_name {
+    let (our, decoded_keyfile) = match fake_node_name {
         None => {
-            match args.password {
-                None => match args.rpc {
+            match password {
+                None => match rpc_url {
                     None => panic!(""),
                     Some(rpc_url) => {
                         serve_register_fe(
@@ -288,7 +327,7 @@ async fn main() {
             }
         }
         Some(name) => {
-            let password = match args.password {
+            let password = match password {
                 None => "123".to_string(),
                 Some(password) => password.to_string(),
             };
@@ -318,7 +357,7 @@ async fn main() {
 
             let encoded_keyfile = keygen::encode_keyfile(
                 password,
-                name,
+                name.clone(),
                 decoded_keyfile.routers.clone(),
                 networking_keypair,
                 decoded_keyfile.jwt_secret_bytes.clone(),
@@ -423,7 +462,7 @@ async fn main() {
     ));
     #[cfg(feature = "simulation-mode")]
     tasks.spawn(net::mock_client(
-        args.network_router_port,
+        network_router_port,
         our.name.clone(),
         kernel_message_sender.clone(),
         net_message_receiver,
@@ -479,7 +518,7 @@ async fn main() {
             our.name.clone(),
             kernel_message_sender.clone(),
             llm_receiver,
-            llm_url.unwrap().to_string(),
+            llm_url.to_string(),
             print_sender.clone(),
         ));
     }
