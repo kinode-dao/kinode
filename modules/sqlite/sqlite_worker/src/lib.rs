@@ -4,7 +4,7 @@ use std::ffi::CString;
 use rusqlite::{types::FromSql, types::FromSqlError, types::ToSql, types::ValueRef};
 use std::collections::HashMap;
 
-use uqbar_process_lib::{Address, ProcessId, Response, create_capability};
+use uqbar_process_lib::{Address, create_capability, ProcessId, Response};
 use uqbar_process_lib::uqbar::process::standard as wit;
 
 
@@ -519,7 +519,7 @@ fn handle_message(
                         Ok(map)
                     })?
                     .collect::<Result<Vec<_>, _>>()?;
-                    
+
                     let results = serde_json::json!(results).to_string();
                     let results_bytes = results.as_bytes().to_vec();
 
@@ -548,7 +548,6 @@ impl Guest for Component {
         let mut txs: HashMap<u64, Vec<(String, Vec<sq::SqlValue>)>> = HashMap::new();
 
         let vfs_address = ProcessId::from_str("vfs:sys:uqbar").unwrap();
-
         create_capability(
             &vfs_address,
             &"\"messaging\"".into(),

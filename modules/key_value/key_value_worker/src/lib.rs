@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use redb::ReadableTable;
 use serde::{Deserialize, Serialize};
 
-use uqbar_process_lib::{Address, ProcessId, Response};
+use uqbar_process_lib::{Address, create_capability, ProcessId, Response};
 use uqbar_process_lib::uqbar::process::standard as wit;
 
 wit_bindgen::generate!({
@@ -177,6 +177,12 @@ impl Guest for Component {
 
         let our = Address::from_str(&our).unwrap();
         let mut db_handle: Option<redb::Database> = None;
+
+        let vfs_address = ProcessId::from_str("vfs:sys:uqbar").unwrap();
+        create_capability(
+            &vfs_address,
+            &"\"messaging\"".into(),
+        );
 
         loop {
             match handle_message(&our, &mut db_handle) {

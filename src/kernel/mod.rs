@@ -753,6 +753,9 @@ pub async fn kernel(
         .await
         .expect("fatal: kernel event loop died");
 
+    #[cfg(feature = "simulation-mode")]
+    let tester_process_id = t::ProcessId::new(Some("tester"), "tester", "uqbar");
+
     // main event loop
     loop {
         tokio::select! {
@@ -924,6 +927,7 @@ pub async fn kernel(
                             content: format!("event loop: got message: {}", kernel_message)
                         }
                     ).await;
+
                 if our.name != kernel_message.target.node {
                     send_to_net.send(kernel_message).await.expect("fatal: net module died");
                 } else if kernel_message.target.process.process() == "kernel" {

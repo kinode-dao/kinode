@@ -124,7 +124,7 @@ fn handle_message (
                     let spawned_process_id = match wit::spawn(
                         None,
                         "/sqlite_worker.wasm",
-                        &wit::OnPanic::None,  
+                        &wit::OnPanic::None,
                         &wit::Capabilities::Some(vec![vfs_read, vfs_write, msg_cap]),
                         false, // not public
                     ) {
@@ -152,7 +152,7 @@ fn handle_message (
                         .ipc(ipc)
                         .send()?;
                 },
-                sq::SqliteMessage::Write { ref db, ref statement, ref tx_id } => {
+                sq::SqliteMessage::Write { ref db, ref statement, .. } => {
                     let first_word = statement
                         .split_whitespace()
                         .next()
@@ -174,7 +174,7 @@ fn handle_message (
                     }
                     forward_if_have_cap(our, "read", db, ipc, db_to_process)?;
                 },
-                sq::SqliteMessage::Commit { ref db, ref tx_id } => {
+                sq::SqliteMessage::Commit { ref db, .. } => {
                     forward_if_have_cap(our, "write", db, ipc, db_to_process)?;
                 },
             }

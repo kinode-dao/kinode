@@ -8,7 +8,7 @@ pub enum SqliteMessage {
     Commit { db: String, tx_id: u64 },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum SqlValue {
     Integer(i64),
     Real(f64),
@@ -17,16 +17,6 @@ pub enum SqlValue {
     Boolean(bool),
     Null,
 }
-
-pub trait Deserializable: for<'de> Deserialize<'de> + Sized {
-    fn from_serialized(bytes: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
-        rmp_serde::from_slice(bytes)
-    }
-}
-
-impl Deserializable for Vec<SqlValue> {}
-impl Deserializable for Vec<Vec<SqlValue>> {}
-
 
 #[derive(Debug, Serialize, Deserialize, thiserror::Error)]
 pub enum SqliteError {

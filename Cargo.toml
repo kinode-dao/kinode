@@ -1,8 +1,9 @@
 [package]
 name = "uqbar"
+authors = ["UqbarDAO"]
 version = "0.4.0"
 edition = "2021"
-description = "a general-purpose sovereign cloud computing platform"
+description = "A general-purpose sovereign cloud computing platform"
 homepage = "https://uqbar.network"
 repository = "https://github.com/uqbar-dao/uqbar"
 
@@ -13,6 +14,9 @@ sha2 = "0.10"
 walkdir = "2.4"
 zip = "0.6"
 
+[features]
+llm = []
+simulation-mode = []
 
 [dependencies]
 aes-gcm = "0.10.2"
@@ -26,6 +30,7 @@ bytes = "1.4.0"
 cap-std = "2.0.0"
 chacha20poly1305 = "0.10.1"
 chrono = "0.4.31"
+clap = { version = "4.4", features = ["derive"] }
 crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"] }
 dashmap = "5.5.3"
 digest = "0.10"
@@ -44,6 +49,7 @@ http = "0.2.9"
 jwt = "0.16"
 lazy_static = "1.4.0"
 log = "*"
+lru-mem = "0.3.0"
 nohash-hasher = "0.2.0"
 num-traits = "0.2"
 open = "5.0.0"
@@ -66,14 +72,9 @@ thiserror = "1.0"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 tokio-tungstenite = "0.20.1"
 url = "2.4.1"
-uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "e53c124" }
+uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "77ebb26" }
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"
 wasmtime = "14.0.4"
 wasmtime-wasi = "14.0.4"
 zip = "0.6"
-lru-mem = "0.3.0"
-clap = "4.4.8"
-
-[features]
-llm = []
