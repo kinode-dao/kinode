@@ -67,8 +67,28 @@ pub enum HttpServerAction {
     /// be the static file to serve at this path.
     Bind {
         path: String,
+        /// Set whether the HTTP request needs a valid login cookie, AKA, whether
+        /// the user needs to be logged in to access this path.
         authenticated: bool,
+        /// Set whether requests can be fielded from anywhere, or only the loopback address.
         local_only: bool,
+        /// Set whether to bind the payload statically to this path. That is, take the
+        /// payload bytes and serve them as the response to any request to this path.
+        cache: bool,
+    },
+    /// SecureBind expects a payload if and only if `cache` is TRUE. The payload should
+    /// be the static file to serve at this path.
+    ///
+    /// SecureBind is the same as Bind, except that it forces requests to be made from
+    /// the unique subdomain of the process that bound the path. These requests are
+    /// *always* authenticated, and *never* local_only. The purpose of SecureBind is to
+    /// serve elements of an app frontend or API in an exclusive manner, such that other
+    /// apps installed on this node cannot access them. Since the subdomain is unique, it
+    /// will require the user to be logged in separately to the general domain authentication.
+    SecureBind {
+        path: String,
+        /// Set whether to bind the payload statically to this path. That is, take the
+        /// payload bytes and serve them as the response to any request to this path.
         cache: bool,
     },
     /// Processes will RECEIVE this kind of request when a client connects to them.

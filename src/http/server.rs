@@ -5,7 +5,9 @@ use crate::types::*;
 use anyhow::Result;
 use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
+use http::uri::Authority;
 use route_recognizer::Router;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -32,6 +34,7 @@ type PathBindings = Arc<RwLock<Router<BoundPath>>>;
 
 struct BoundPath {
     pub app: ProcessId,
+    pub secure_subdomain: Option<String>,
     pub authenticated: bool,
     pub local_only: bool,
     pub static_content: Option<Payload>, // TODO store in filesystem and cache
@@ -69,6 +72,7 @@ pub async fn http_server(
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
         app: ProcessId::from_str("rpc:sys:uqbar").unwrap(),
+        secure_subdomain: None, // TODO maybe RPC should have subdomain?
         authenticated: false,
         local_only: true,
         static_content: None,
@@ -158,6 +162,7 @@ async fn serve(
     // Filter to receive HTTP requests
     let filter = warp::filters::method::method()
         .and(warp::addr::remote())
+        .and(warp::filters::host::optional())
         .and(warp::path::full())
         .and(warp::filters::header::headers_cloned())
         .and(warp::filters::body::bytes())
@@ -177,6 +182,7 @@ async fn serve(
 async fn http_handler(
     method: warp::http::Method,
     socket_addr: Option<SocketAddr>,
+    host: Option<Authority>,
     path: warp::path::FullPath,
     headers: warp::http::HeaderMap,
     body: warp::hyper::body::Bytes,
@@ -200,6 +206,7 @@ async fn http_handler(
     let bound_path = route.handler();
 
     if bound_path.authenticated {
+        println!("got request for path that requires auth\r");
         let auth_token = serialized_headers
             .get("cookie")
             .cloned()
@@ -208,6 +215,22 @@ async fn http_handler(
             return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
         }
     }
+    println!("subdomain request passed the vibe check #1\r");
+
+    if let Some(ref subdomain) = bound_path.secure_subdomain {
+        println!("got request for path bound by subdomain {:?}: {}\r", path, subdomain);
+        // assert that host matches what this app wants it to be
+        if host.is_none() {
+            return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
+        }
+        let host = host.unwrap();
+        // parse out subdomain from host (there can only be one)
+        let request_subdomain = host.host().split('.').next().unwrap_or("");
+        if request_subdomain != subdomain {
+            return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
+        }
+    }
+    println!("subdomain request passed the vibe check #2\r");
 
     let is_local = socket_addr
         .map(|addr| addr.ip().is_loopback())
@@ -722,6 +745,7 @@ async fn handle_app_message(
                             &normalize_path(&path),
                             BoundPath {
                                 app: km.source.process.clone(),
+                                secure_subdomain: None,
                                 authenticated,
                                 local_only,
                                 static_content: None,
@@ -743,6 +767,7 @@ async fn handle_app_message(
                             &normalize_path(&path),
                             BoundPath {
                                 app: km.source.process.clone(),
+                                secure_subdomain: None,
                                 authenticated,
                                 local_only,
                                 static_content: Some(payload),
@@ -750,6 +775,49 @@ async fn handle_app_message(
                         );
                     }
                     send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
+                }
+                HttpServerAction::SecureBind { path, cache } => {
+                    let process_id_hash =
+                        format!("{:x}", Sha256::digest(km.source.process.to_string()));
+                    let subdomain = process_id_hash.split_at(16).0.to_owned();
+                    println!("generated secure subdomain for {}: {}\r", km.source.process, subdomain);
+                    let mut path_bindings = path_bindings.write().await;
+                    if !cache {
+                        // trim trailing "/"
+                        path_bindings.add(
+                            &normalize_path(&path),
+                            BoundPath {
+                                app: km.source.process.clone(),
+                                secure_subdomain: Some(subdomain),
+                                authenticated: true,
+                                local_only: false,
+                                static_content: None,
+                            },
+                        );
+                    } else {
+                        let Some(payload) = km.payload else {
+                            send_action_response(
+                                km.id,
+                                km.source,
+                                &send_to_loop,
+                                Err(HttpServerError::NoPayload),
+                            )
+                            .await;
+                            return;
+                        };
+                        // trim trailing "/"
+                        path_bindings.add(
+                            &normalize_path(&path),
+                            BoundPath {
+                                app: km.source.process.clone(),
+                                secure_subdomain: Some(subdomain),
+                                authenticated: true,
+                                local_only: false,
+                                static_content: Some(payload),
+                            },
+                        );
+                    }
+                    unimplemented!();
                 }
                 HttpServerAction::WebSocketOpen(_) => {
                     // we cannot receive these, only send them to processes
