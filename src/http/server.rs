@@ -218,7 +218,10 @@ async fn http_handler(
     println!("subdomain request passed the vibe check #1\r");
 
     if let Some(ref subdomain) = bound_path.secure_subdomain {
-        println!("got request for path bound by subdomain {:?}: {}\r", path, subdomain);
+        println!(
+            "got request for path bound by subdomain {:?}: {}\r",
+            path, subdomain
+        );
         // assert that host matches what this app wants it to be
         if host.is_none() {
             return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
@@ -780,7 +783,10 @@ async fn handle_app_message(
                     let process_id_hash =
                         format!("{:x}", Sha256::digest(km.source.process.to_string()));
                     let subdomain = process_id_hash.split_at(16).0.to_owned();
-                    println!("generated secure subdomain for {}: {}\r", km.source.process, subdomain);
+                    println!(
+                        "generated secure subdomain for {}: {}\r",
+                        km.source.process, subdomain
+                    );
                     let mut path_bindings = path_bindings.write().await;
                     if !cache {
                         // trim trailing "/"
