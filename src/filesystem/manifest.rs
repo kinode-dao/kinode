@@ -301,11 +301,13 @@ impl Manifest {
                         *membuf_size -= old_chunk.length as usize;
                     }
                 }
+                in_memory_file
+                    .mem_chunks
+                    .push(MemChunkIndex::Chunk(chunk.start));
+
                 match &chunk.location {
-                    ChunkLocation::Memory(_idx) => {
-                        in_memory_file
-                            .mem_chunks
-                            .push(MemChunkIndex::Chunk(chunk.start));
+                    ChunkLocation::ColdStorage(..) => {
+                        chunk_hashes.insert(chunk.hash, chunk.location);
                     }
                     ChunkLocation::Wal(..) => {
                         in_memory_file.wal_chunks.push(chunk.start);
