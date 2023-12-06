@@ -121,12 +121,7 @@ impl InMemoryFile {
         self.chunks
             .values()
             .filter(|chunk| {
-                let chunk_length = if chunk.encrypted {
-                    chunk.length + ENCRYPTION_OVERHEAD as u64
-                } else {
-                    chunk.length
-                };
-                let chunk_end = chunk.start + chunk_length;
+                let chunk_end = chunk.start + chunk.length;
                 chunk.start < end && chunk_end > start
             })
             .cloned()
@@ -654,9 +649,8 @@ impl Manifest {
         let affected_chunks = file.find_chunks_in_range(offset, data.len() as u64);
         let mut data_offset = 0;
 
-        let tx_id = rand::random::<u64>(); // uuid instead?
+        let tx_id = rand::random::<u64>();
 
-        let initial_length = file.get_len();
         for chunk in affected_chunks {
             let chunk_data_start = if chunk.start < offset {
                 (offset - chunk.start) as usize
@@ -671,10 +665,11 @@ impl Manifest {
             let mut chunk_data = self
                 .read_from_file(&file, &memory_buffer, Some(chunk.start), Some(chunk.length))
                 .await?;
-            chunk_data.resize(
-                std::cmp::max(chunk_data_start + write_length, initial_length as usize),
-                0,
-            ); // extend the chunk data if necessary
+            let chunk_end = (chunk.start + chunk.length) as usize;
+            let end_position = chunk_data_start + write_length;
+            let new_length = std::cmp::max(chunk_end, end_position);
+            
+            chunk_data.resize(new_length, 0); // extend the chunk data to the new length
 
             let data_to_write = &data[data_offset..data_offset + write_length];
             chunk_data[chunk_data_start..chunk_data_start + write_length]
@@ -1283,7 +1278,7 @@ async fn load_wal(
                 }
             }
             Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => {
-                println!("Encountered an incomplete record. Truncating the file.");
+                println!("Encountered an incomplete record. Truncating the WAL file.");
                 break;
             }
             Err(e) => return Err(e),
