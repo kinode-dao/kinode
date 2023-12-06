@@ -668,7 +668,7 @@ impl Manifest {
             let chunk_end = (chunk.start + chunk.length) as usize;
             let end_position = chunk_data_start + write_length;
             let new_length = std::cmp::max(chunk_end, end_position);
-            
+
             chunk_data.resize(new_length, 0); // extend the chunk data to the new length
 
             let data_to_write = &data[data_offset..data_offset + write_length];
