@@ -780,9 +780,13 @@ async fn handle_app_message(
                     send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                 }
                 HttpServerAction::SecureBind { path, cache } => {
+                    // the process ID is hashed to generate a unique subdomain
+                    // only the first 32 chars, or 128 bits are used.
+                    // we hash because the process ID can contain many more than
+                    // simply alphanumeric characters that will cause issues as a subdomain.
                     let process_id_hash =
                         format!("{:x}", Sha256::digest(km.source.process.to_string()));
-                    let subdomain = process_id_hash.split_at(16).0.to_owned();
+                    let subdomain = process_id_hash.split_at(32).0.to_owned();
                     println!(
                         "generated secure subdomain for {}: {}\r",
                         km.source.process, subdomain
