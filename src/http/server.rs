@@ -226,7 +226,7 @@ async fn http_handler(
         if host.is_none() {
             return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
         }
-        let host = host.unwrap();
+        let host = host.as_ref().unwrap();
         // parse out subdomain from host (there can only be one)
         let request_subdomain = host.host().split('.').next().unwrap_or("");
         if request_subdomain != subdomain {
@@ -287,7 +287,12 @@ async fn http_handler(
                 ipc: serde_json::to_vec(&IncomingHttpRequest {
                     source_socket_addr: socket_addr.map(|addr| addr.to_string()),
                     method: method.to_string(),
-                    raw_path: format!("http://localhost{}", original_path),
+                    raw_path: format!(
+                        "{}{}",
+                        host.unwrap_or(Authority::from_static("localhost"))
+                            .to_string(),
+                        original_path
+                    ),
                     headers: serialized_headers,
                 })
                 .unwrap(),
