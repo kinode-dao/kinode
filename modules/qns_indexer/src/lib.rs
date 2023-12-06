@@ -247,6 +247,14 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
                 let node = state.nodes.entry(name.clone()).or_insert_with(QnsUpdate::default);
 
+                if node.name == "" {
+                    node.name = name.clone();
+                }
+
+                if node.node == "" {
+                    node.node = nodeId.clone();
+                }
+
                 match decode_hex(&e.topics[0].clone()) {
                     NodeRegistered::SIGNATURE_HASH => {}
                     KeyUpdate::SIGNATURE_HASH => {
