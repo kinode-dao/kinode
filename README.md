@@ -29,9 +29,11 @@ cargo +nightly build --release
 ### Boot
 Get an eth-sepolia-rpc API key and pass that as an argument. You can get one for free at `alchemy.com`.
 
-Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`.
+Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`. The `--` here separates cargo arguments from binary arguments.
+
+TODO: document feature flags here, `--llm` and `--simulation-mode`
 ```bash
-cargo +nightly run --release home --rpc wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>
+cargo +nightly run --release -- home --rpc wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>
 ```
 
 On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH wallet is connected to the Sepolia test network. Login should be straightforward, just submit the transactions and follow the flow. If you want to register a new ID you will either need [Sepolia testnet tokens](https://www.infura.io/faucet/sepolia) or an invite code.
@@ -71,6 +73,6 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH
 
 Download and install an app:
 ```
-!message our main:app_store:uqbar {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
-!message our main:app_store:uqbar {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
+!m our@main:app_store:uqbar {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
+!m our@main:app_store:uqbar {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
 ```
