@@ -998,8 +998,19 @@ async fn match_request(
                                 }
                             }
                         } else if is_dir {
-                            println!("vfs: zip dir not yet implemented");
-                            return Err(VfsError::InternalError);
+                            // If it's a directory, create it
+                            match create_entry(
+                                &mut vfs.lock().await,
+                                &full_path,
+                                Key::Dir { id: rand::random() },
+                            )
+                            .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    return Err(e);
+                                }
+                            }
                         } else {
                             println!("vfs: zip with non-file non-dir");
                             return Err(VfsError::InternalError);
