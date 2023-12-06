@@ -48,7 +48,7 @@ fn send_and_await_response_wrapped(
         &wit::Address {
             node: target_node,
             process: ProcessId::new(
-                &target_process,
+                Some(&target_process),
                 &target_package,
                 &target_publisher,
             ),
@@ -118,7 +118,7 @@ fn handle_message (
                     write_txn.commit()?;
 
                     Response::new()
-                        .ipc_bytes(ipc)
+                        .ipc(ipc)
                         .send()?;
                 },
                 kv::KeyValueMessage::Read { ref key, .. } => {
@@ -133,7 +133,7 @@ fn handle_message (
                     match table.get(&key[..])? {
                         None => {
                             Response::new()
-                                .ipc_bytes(ipc)
+                                .ipc(ipc)
                                 .send()?;
                         },
                         Some(v) => {
@@ -151,7 +151,7 @@ fn handle_message (
                                 ),
                             );
                             Response::new()
-                                .ipc_bytes(ipc)
+                                .ipc(ipc)
                                 .payload(wit::Payload {
                                     mime: None,
                                     bytes,
@@ -194,7 +194,7 @@ impl Guest for Component {
                     ).as_str());
                     if let Some(e) = e.downcast_ref::<kv::KeyValueError>() {
                         Response::new()
-                            .ipc_bytes(serde_json::to_vec(&e).unwrap())
+                            .ipc(serde_json::to_vec(&e).unwrap())
                             .send()
                             .unwrap();
                     }

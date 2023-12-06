@@ -40,8 +40,8 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     wit::print_to_terminal(0, "test_runner: got Run");
 
                     let (_, response) = Request::new()
-                        .target(make_vfs_address(&our)?)?
-                        .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                        .target(make_vfs_address(&our)?)
+                        .ipc(serde_json::to_vec(&kt::VfsRequest {
                             drive: "tester:uqbar".into(),
                             action: kt::VfsAction::GetEntry("/".into()),
                         })?)
@@ -77,8 +77,8 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                             .target(Address {
                                 node: our.node.clone(),
                                 process: child_process_id,
-                            })?
-                            .ipc_bytes(ipc.clone())
+                            })
+                            .ipc(ipc.clone())
                             .send_and_await_response(5)??;
 
                         let wit::Message::Response((response, _)) = response else { panic!("") };
@@ -94,7 +94,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     wit::print_to_terminal(0, &format!("test_runner: done running {:?}", children));
 
                     Response::new()
-                        .ipc_bytes(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
+                        .ipc(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
                         .send()
                         .unwrap();
                 },
@@ -113,7 +113,7 @@ impl Guest for Component {
         let our = Address::from_str(&our).unwrap();
 
         wit::create_capability(
-            &ProcessId::new("vfs", "sys", "uqbar"),
+            &ProcessId::new(Some("vfs"), "sys", "uqbar"),
             &"\"messaging\"".into(),
         );
 
