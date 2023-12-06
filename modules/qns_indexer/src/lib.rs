@@ -6,7 +6,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::string::FromUtf8Error;
 use uqbar_process_lib::{
-    get_typed_state, http, receive, set_state, Address, Message, Payload, Request, Response,
+    get_typed_state, http, println, receive, set_state, 
+    Address, Message, Payload, Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -136,8 +137,6 @@ impl Guest for Component {
             None => {}
         }
 
-        println!("qns_indexer: starting at block {}", state.block);
-
         match main(our, state) {
             Ok(_) => {}
             Err(e) => {
@@ -148,6 +147,7 @@ impl Guest for Component {
 }
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
+
     // shove all state into net::net
     Request::new()
         .target((&our.node, "net", "sys", "uqbar"))
@@ -291,7 +291,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         node.routers = routers_raw    
                             .iter()
                             .map(|r| {
-                                let key = hex::encode(r);
+                                let key = format!("0x{}", hex::encode(r));
                                 match state.names.get(&key) {
                                     Some(name) => name.clone(),
                                     None => format!("proposed router did not exist: 0x{}", key),

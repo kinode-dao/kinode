@@ -621,7 +621,7 @@ async fn _networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: 
         println!("1");
         return false;
     };
-    let Ok(qns_address): Result<EthAddress, _> = _QNS_SEPOLIA_ADDRESS.parse() else {
+    let Ok(qns_address): Result<EthAddress, _> = QNS_SEPOLIA_ADDRESS.parse() else {
         println!("2");
         return false;
     };
