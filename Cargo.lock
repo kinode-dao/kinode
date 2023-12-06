@@ -5184,7 +5184,7 @@ dependencies = [
 [[package]]
 name = "uqbar_process_lib"
 version = "0.3.0"
-source = "git+ssh://git@github.com/uqbar-dao/process_lib.git?rev=77ebb26#77ebb261bf74f2183fb81856ce9a6b66b8360a6d"
+source = "git+ssh://git@github.com/uqbar-dao/process_lib.git?rev=5e1b94a#5e1b94ae2f85c66da33ec52117a72b90d53c4d22"
 dependencies = [
  "anyhow",
  "bincode",

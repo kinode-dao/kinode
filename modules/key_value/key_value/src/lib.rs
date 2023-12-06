@@ -53,10 +53,10 @@ fn forward_if_have_cap(
             .target(wit::Address {
                 node: our.node.clone(),
                 process: process_id.clone(),
-            })?
+            })
             // .target(Address::new(our.node.clone(), process_id.clone()))?
             .inherit(true)
-            .ipc_bytes(ipc)
+            .ipc(ipc)
             .send()?;
         return Ok(());
     } else {
@@ -92,12 +92,12 @@ fn handle_message(our: &Address, db_to_process: &mut DbToProcess) -> anyhow::Res
                     //  (1)
                     let vfs_address = Address {
                         node: our.node.clone(),
-                        process: ProcessId::new("vfs", "sys", "uqbar"),
+                        process: ProcessId::new(Some("vfs"), "sys", "uqbar"),
                     };
                     let vfs_drive = format!("{}{}", PREFIX, db);
                     let _ = Request::new()
-                        .target(vfs_address.clone())?
-                        .ipc_bytes(serde_json::to_vec(&kt::VfsRequest {
+                        .target(vfs_address.clone())
+                        .ipc(serde_json::to_vec(&kt::VfsRequest {
                             drive: vfs_drive.clone(),
                             action: kt::VfsAction::New,
                         })?)
@@ -137,8 +137,8 @@ fn handle_message(our: &Address, db_to_process: &mut DbToProcess) -> anyhow::Res
                         .target(wit::Address {
                             node: our.node.clone(),
                             process: spawned_process_id.clone(),
-                        })?
-                        .ipc_bytes(ipc.clone())
+                        })
+                        .ipc(ipc.clone())
                         .send()?;
 
                     //  (4)
@@ -146,7 +146,7 @@ fn handle_message(our: &Address, db_to_process: &mut DbToProcess) -> anyhow::Res
                     //  TODO: persistence?
 
                     Response::new()
-                        .ipc_bytes(ipc)
+                        .ipc(ipc)
                         .send()?;
                 }
                 kv::KeyValueMessage::Write { ref db, .. } => {
@@ -180,7 +180,7 @@ impl Guest for Component {
                     wit::print_to_terminal(0, format!("key_value: error: {:?}", e,).as_str());
                     if let Some(e) = e.downcast_ref::<kv::KeyValueError>() {
                         Response::new()
-                            .ipc_bytes(serde_json::to_vec(&e).unwrap())
+                            .ipc(serde_json::to_vec(&e).unwrap())
                             .send()
                             .unwrap();
                     }

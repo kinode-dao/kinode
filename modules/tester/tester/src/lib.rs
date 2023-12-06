@@ -40,7 +40,7 @@ fn handle_message(
                         return Err(tt::TesterError::UnexpectedResponse.into());
                     }
                     Response::new()
-                        .ipc_bytes(ipc)
+                        .ipc(ipc)
                         .send()
                         .unwrap();
                 },
@@ -58,7 +58,7 @@ fn handle_message(
 
                     if our.node != node_names[0] {
                         Response::new()
-                            .ipc_bytes(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
+                            .ipc(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
                             .send()
                             .unwrap();
                     } else {
@@ -81,8 +81,8 @@ fn handle_message(
                             .target(Address {
                                 node: our.node.clone(),
                                 process: child_process_id,
-                            })?
-                            .ipc_bytes(ipc)
+                            })
+                            .ipc(ipc)
                             .expects_response(15)
                             .send()?;
                     }
