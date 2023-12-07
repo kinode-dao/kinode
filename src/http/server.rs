@@ -1,6 +1,7 @@
 use crate::http::types::*;
 use crate::http::utils::*;
 use crate::types::*;
+use crate::{keygen, register};
 use anyhow::Result;
 use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
@@ -16,6 +17,8 @@ use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
 
 const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 15;
+
+const LOGIN_HTML: &str = include_str!("login.html");
 
 /// mapping from a given HTTP request (assigned an ID) to the oneshot
 /// channel that will get a response from the app that handles the request,
@@ -69,7 +72,7 @@ pub async fn http_server(
     let http_response_senders: HttpResponseSenders = Arc::new(DashMap::new());
     let ws_senders: WebSocketSenders = Arc::new(DashMap::new());
 
-    // Add RPC path
+    // add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
         app: ProcessId::from_str("rpc:sys:uqbar").unwrap(),
@@ -79,7 +82,6 @@ pub async fn http_server(
         static_content: None,
     };
     bindings_map.add("/rpc:sys:uqbar/message", rpc_bound_path);
-
     let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
     tokio::spawn(serve(
@@ -162,11 +164,19 @@ async fn serve(
         );
 
     // filter to receive and handle login requests
+    let cloned_our = our.clone();
     let login = warp::path("login")
         .and(warp::path::end())
-        .and(warp::filters::method::method())
-        .and(warp::any().map(move || encoded_keyfile.clone()))
-        .and_then(login_handler);
+        .and(
+            warp::get()
+                .map(|| warp::reply::with_status(warp::reply::html(LOGIN_HTML), StatusCode::OK)),
+        )
+        .or(warp::post()
+            .and(warp::body::content_length_limit(1024 * 16))
+            .and(warp::body::json())
+            .and(warp::any().map(move || cloned_our.clone()))
+            .and(warp::any().map(move || encoded_keyfile.clone()))
+            .and_then(login_handler));
 
     // filter to receive all other HTTP requests
     let filter = warp::filters::method::method()
@@ -184,21 +194,59 @@ async fn serve(
         .and(warp::any().map(move || print_tx.clone()))
         .and_then(http_handler);
 
-    let filter_with_ws = ws_route.or(filter).or(login);
+    let filter_with_ws = ws_route.or(login).or(filter);
     warp::serve(filter_with_ws)
         .run(([0, 0, 0, 0], our_port))
         .await;
 }
 
-/// handle requests on /login. if GET, serve form to enter password. if POST,
-/// validate password and return auth token, which will be stored in a cookie.
+/// handle non-GET requests on /login. if POST, validate password
+/// and return auth token, which will be stored in a cookie.
 /// then redirect to wherever they were trying to go.
 async fn login_handler(
-    _method: warp::http::Method,
-    _encoded_keyfile: Arc<Vec<u8>>,
+    info: LoginInfo,
+    our: Arc<String>,
+    encoded_keyfile: Arc<Vec<u8>>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    let reply = warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR);
-    Ok(reply.into_response())
+    match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
+        Ok(keyfile) => {
+            let token = match register::generate_jwt(&keyfile.jwt_secret_bytes, our.as_ref()) {
+                Some(token) => token,
+                None => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&"Failed to generate JWT".to_string()),
+                        StatusCode::SERVICE_UNAVAILABLE,
+                    )
+                    .into_response())
+                }
+            };
+
+            let mut response = warp::reply::with_status(
+                warp::reply::json(&base64::encode(encoded_keyfile.to_vec())),
+                StatusCode::FOUND,
+            )
+            .into_response();
+
+            match HeaderValue::from_str(&format!("uqbar-auth_{}={};", our.as_ref(), &token)) {
+                Ok(v) => {
+                    response.headers_mut().append(http::header::SET_COOKIE, v);
+                    Ok(response)
+                }
+                Err(_) => {
+                    return Ok(warp::reply::with_status(
+                        warp::reply::json(&"Failed to generate Auth JWT".to_string()),
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                    .into_response())
+                }
+            }
+        }
+        Err(_) => Ok(warp::reply::with_status(
+            warp::reply::json(&"Failed to decode keyfile".to_string()),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response()),
+    }
 }
 
 async fn http_handler(
@@ -250,7 +298,7 @@ async fn http_handler(
                 let _ = print_tx
                     .send(Printout {
                         verbosity: 1,
-                        content: format!("redirecting to login page"),
+                        content: format!("redirecting request from {socket_addr:?} to login page"),
                     })
                     .await;
                 return Ok(warp::http::Response::builder()
