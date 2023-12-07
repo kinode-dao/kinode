@@ -52,7 +52,7 @@ async fn serve_register_fe(
     our_ip: String,
     http_server_port: u16,
     rpc_url: String,
-) -> (Identity, Keyfile) {
+) -> (Identity, Vec<u8>, Keyfile) {
     // check if we have keys saved on disk, encrypted
     // if so, prompt user for "password" to decrypt with
 
@@ -86,7 +86,7 @@ async fn serve_register_fe(
         home_directory_path
     );
 
-    fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
+    fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile.clone())
         .await
         .unwrap();
 
@@ -94,7 +94,7 @@ async fn serve_register_fe(
 
     let _ = kill_tx.send(true);
 
-    (our, decoded_keyfile)
+    (our, encoded_keyfile, decoded_keyfile)
 }
 
 #[tokio::main]
@@ -278,7 +278,7 @@ async fn main() {
         http_server_port
     );
     #[cfg(not(feature = "simulation-mode"))]
-    let (our, decoded_keyfile) = serve_register_fe(
+    let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
         &home_directory_path,
         our_ip.to_string(),
         http_server_port.clone(),
@@ -286,7 +286,7 @@ async fn main() {
     )
     .await;
     #[cfg(feature = "simulation-mode")]
-    let (our, decoded_keyfile) = match fake_node_name {
+    let (our, encoded_keyfile, decoded_keyfile) = match fake_node_name {
         None => {
             match password {
                 None => match rpc_url {
@@ -322,7 +322,7 @@ async fn main() {
                                         ws_routing: None, //  TODO
                                         allowed_routers: decoded_keyfile.routers.clone(),
                                     };
-                                    (our, decoded_keyfile)
+                                    (our, keyfile, decoded_keyfile)
                                 }
                             }
                         }
@@ -372,7 +372,7 @@ async fn main() {
                 .await
                 .unwrap();
 
-            (our, decoded_keyfile)
+            (our, encoded_keyfile, decoded_keyfile)
         }
     };
 
@@ -483,6 +483,7 @@ async fn main() {
     tasks.spawn(http::server::http_server(
         our.name.clone(),
         http_server_port,
+        encoded_keyfile,
         decoded_keyfile.jwt_secret_bytes.clone(),
         http_server_receiver,
         kernel_message_sender.clone(),

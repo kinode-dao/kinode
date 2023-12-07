@@ -1,6 +1,5 @@
 use crate::http::types::*;
 use crate::http::utils::*;
-use crate::register;
 use crate::types::*;
 use anyhow::Result;
 use dashmap::DashMap;
@@ -58,12 +57,14 @@ struct BoundPath {
 pub async fn http_server(
     our_name: String,
     our_port: u16,
+    encoded_keyfile: Vec<u8>,
     jwt_secret_bytes: Vec<u8>,
     mut recv_in_server: MessageReceiver,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) -> Result<()> {
     let our_name = Arc::new(our_name);
+    let encoded_keyfile = Arc::new(encoded_keyfile);
     let jwt_secret_bytes = Arc::new(jwt_secret_bytes);
     let http_response_senders: HttpResponseSenders = Arc::new(DashMap::new());
     let ws_senders: WebSocketSenders = Arc::new(DashMap::new());
@@ -87,6 +88,7 @@ pub async fn http_server(
         http_response_senders.clone(),
         path_bindings.clone(),
         ws_senders.clone(),
+        encoded_keyfile.clone(),
         jwt_secret_bytes.clone(),
         send_to_loop.clone(),
         print_tx.clone(),
@@ -99,9 +101,7 @@ pub async fn http_server(
             http_response_senders.clone(),
             path_bindings.clone(),
             ws_senders.clone(),
-            jwt_secret_bytes.clone(),
             send_to_loop.clone(),
-            print_tx.clone(),
         )
         .await;
     }
@@ -116,6 +116,7 @@ async fn serve(
     http_response_senders: HttpResponseSenders,
     path_bindings: PathBindings,
     ws_senders: WebSocketSenders,
+    encoded_keyfile: Arc<Vec<u8>>,
     jwt_secret_bytes: Arc<Vec<u8>>,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
@@ -127,7 +128,7 @@ async fn serve(
         })
         .await;
 
-    // Filter to receive websockets
+    // filter to receive websockets
     let cloned_msg_tx = send_to_loop.clone();
     let cloned_our = our.clone();
     let cloned_jwt_secret_bytes = jwt_secret_bytes.clone();
@@ -159,11 +160,20 @@ async fn serve(
                 })
             },
         );
-    // Filter to receive HTTP requests
+
+    // filter to receive and handle login requests
+    let login = warp::path("login")
+        .and(warp::path::end())
+        .and(warp::filters::method::method())
+        .and(warp::any().map(move || encoded_keyfile.clone()))
+        .and_then(login_handler);
+
+    // filter to receive all other HTTP requests
     let filter = warp::filters::method::method()
         .and(warp::addr::remote())
         .and(warp::filters::host::optional())
         .and(warp::path::full())
+        .and(warp::query::<HashMap<String, String>>())
         .and(warp::filters::header::headers_cloned())
         .and(warp::filters::body::bytes())
         .and(warp::any().map(move || our.clone()))
@@ -171,12 +181,24 @@ async fn serve(
         .and(warp::any().map(move || path_bindings.clone()))
         .and(warp::any().map(move || jwt_secret_bytes.clone()))
         .and(warp::any().map(move || send_to_loop.clone()))
+        .and(warp::any().map(move || print_tx.clone()))
         .and_then(http_handler);
 
-    let filter_with_ws = ws_route.or(filter);
+    let filter_with_ws = ws_route.or(filter).or(login);
     warp::serve(filter_with_ws)
         .run(([0, 0, 0, 0], our_port))
         .await;
+}
+
+/// handle requests on /login. if GET, serve form to enter password. if POST,
+/// validate password and return auth token, which will be stored in a cookie.
+/// then redirect to wherever they were trying to go.
+async fn login_handler(
+    _method: warp::http::Method,
+    _encoded_keyfile: Arc<Vec<u8>>,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    let reply = warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR);
+    Ok(reply.into_response())
 }
 
 async fn http_handler(
@@ -184,6 +206,7 @@ async fn http_handler(
     socket_addr: Option<SocketAddr>,
     host: Option<Authority>,
     path: warp::path::FullPath,
+    query_params: HashMap<String, String>,
     headers: warp::http::HeaderMap,
     body: warp::hyper::body::Bytes,
     our: Arc<String>,
@@ -191,11 +214,18 @@ async fn http_handler(
     path_bindings: PathBindings,
     jwt_secret_bytes: Arc<Vec<u8>>,
     send_to_loop: MessageSender,
+    print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     // TODO this is all so dirty. Figure out what actually matters.
 
     // trim trailing "/"
     let original_path = normalize_path(path.as_str());
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("got request for path {original_path}"),
+        })
+        .await;
     let id: u64 = rand::random();
     let serialized_headers = serialize_headers(&headers);
     let path_bindings = path_bindings.read().await;
@@ -206,22 +236,47 @@ async fn http_handler(
     let bound_path = route.handler();
 
     if bound_path.authenticated {
-        println!("got request for path that requires auth\r");
-        let auth_token = serialized_headers
-            .get("cookie")
-            .cloned()
-            .unwrap_or_default();
-        if !auth_cookie_valid(&our, &auth_token, &jwt_secret_bytes) {
-            return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
+        match serialized_headers.get("cookie") {
+            Some(auth_token) => {
+                // they have an auth token, validate
+                if !auth_cookie_valid(&our, &auth_token, &jwt_secret_bytes) {
+                    return Ok(
+                        warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response()
+                    );
+                }
+            }
+            None => {
+                // redirect to login page so they can get an auth token
+                let _ = print_tx
+                    .send(Printout {
+                        verbosity: 1,
+                        content: format!("redirecting to login page"),
+                    })
+                    .await;
+                return Ok(warp::http::Response::builder()
+                    .status(StatusCode::TEMPORARY_REDIRECT)
+                    .header(
+                        "Location",
+                        format!(
+                            "http://{}/login",
+                            host.unwrap_or(Authority::from_static("localhost"))
+                        ),
+                    )
+                    .body(vec![])
+                    .into_response());
+            }
         }
     }
-    println!("subdomain request passed the vibe check #1\r");
 
     if let Some(ref subdomain) = bound_path.secure_subdomain {
-        println!(
-            "got request for path bound by subdomain {:?}: {}\r",
-            path, subdomain
-        );
+        let _ = print_tx
+            .send(Printout {
+                verbosity: 1,
+                content: format!(
+                    "got request for path {original_path} bound by subdomain {subdomain}"
+                ),
+            })
+            .await;
         // assert that host matches what this app wants it to be
         if host.is_none() {
             return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
@@ -233,7 +288,6 @@ async fn http_handler(
             return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
         }
     }
-    println!("subdomain request passed the vibe check #2\r");
 
     let is_local = socket_addr
         .map(|addr| addr.ip().is_loopback())
@@ -284,19 +338,20 @@ async fn http_handler(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: Some(HTTP_SELF_IMPOSED_TIMEOUT),
-                ipc: serde_json::to_vec(&IncomingHttpRequest {
+                ipc: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
                     source_socket_addr: socket_addr.map(|addr| addr.to_string()),
                     method: method.to_string(),
                     raw_path: format!(
-                        "{}{}",
+                        "http://{}{}",
                         host.unwrap_or(Authority::from_static("localhost"))
                             .to_string(),
                         original_path
                     ),
                     headers: serialized_headers,
-                })
+                    query_params,
+                }))
                 .unwrap(),
-                metadata: None,
+                metadata: Some("http".into()),
             }),
             payload: Some(Payload {
                 mime: None,
@@ -421,15 +476,28 @@ async fn maintain_websocket(
     jwt_secret_bytes: Arc<Vec<u8>>,
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
-    _print_tx: PrintSender,
+    print_tx: PrintSender,
 ) {
     let (mut write_stream, mut read_stream) = ws.split();
 
     // first, receive a message from client that contains the target process
     // and the auth token
 
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("got new client websocket connection"),
+        })
+        .await;
+
     let Some(Ok(register_msg)) = read_stream.next().await else {
         // stream closed, exit
+        let _ = print_tx
+            .send(Printout {
+                verbosity: 1,
+                content: format!("client failed to send registration message"),
+            })
+            .await;
         let stream = write_stream.reunite(read_stream).unwrap();
         let _ = stream.close().await;
         return;
@@ -437,6 +505,12 @@ async fn maintain_websocket(
 
     let Ok(ws_register) = serde_json::from_slice::<WsRegister>(register_msg.as_bytes()) else {
         // stream error, exit
+        let _ = print_tx
+            .send(Printout {
+                verbosity: 1,
+                content: format!("couldn't parse registration message from client"),
+            })
+            .await;
         let stream = write_stream.reunite(read_stream).unwrap();
         let _ = stream.close().await;
         return;
@@ -444,10 +518,23 @@ async fn maintain_websocket(
 
     let Ok(owner_process) = ProcessId::from_str(&ws_register.target_process) else {
         // invalid process id, exit
+        let _ = print_tx
+            .send(Printout {
+                verbosity: 1,
+                content: format!("client sent malformed process ID"),
+            })
+            .await;
         let stream = write_stream.reunite(read_stream).unwrap();
         let _ = stream.close().await;
         return;
     };
+
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("channel is intended for {owner_process}"),
+        })
+        .await;
 
     let Ok(our_name) = verify_auth_token(&ws_register.auth_token, &jwt_secret_bytes) else {
         // invalid auth token, exit
@@ -484,8 +571,8 @@ async fn maintain_websocket(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&HttpServerAction::WebSocketOpen(ws_channel_id)).unwrap(),
-                metadata: None,
+                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketOpen(ws_channel_id)).unwrap(),
+                metadata: Some("ws".into()),
             }),
             payload: None,
             signed_capabilities: None,
@@ -507,6 +594,13 @@ async fn maintain_websocket(
         let _ = stream.close().await;
         return;
     };
+
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("websocket channel {ws_channel_id} opened"),
+        })
+        .await;
 
     loop {
         tokio::select! {
@@ -539,11 +633,11 @@ async fn maintain_websocket(
                                 message: Message::Request(Request {
                                     inherit: false,
                                     expects_response: None,
-                                    ipc: serde_json::to_vec(&HttpServerAction::WebSocketPush {
+                                    ipc: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
                                         channel_id: ws_channel_id,
                                         message_type: WsMessageType::Binary,
                                     }).unwrap(),
-                                    metadata: None,
+                                    metadata: Some("ws".into()),
                                 }),
                                 payload: Some(Payload {
                                     mime: None,
@@ -594,8 +688,8 @@ async fn websocket_close(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&HttpServerAction::WebSocketClose(channel_id)).unwrap(),
-                metadata: None,
+                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketClose(channel_id)).unwrap(),
+                metadata: Some("ws".into()),
             }),
             payload: Some(Payload {
                 mime: None,
@@ -615,9 +709,7 @@ async fn handle_app_message(
     http_response_senders: HttpResponseSenders,
     path_bindings: PathBindings,
     ws_senders: WebSocketSenders,
-    jwt_secret_bytes: Arc<Vec<u8>>,
     send_to_loop: MessageSender,
-    print_tx: PrintSender,
 ) {
     // when we get a Response, try to match it to an outstanding HTTP
     // request and send it there.
@@ -649,60 +741,10 @@ async fn handle_app_message(
                     .unwrap(),
                 ));
             } else {
-                let Ok(mut response) = serde_json::from_slice::<HttpResponse>(&response.ipc) else {
+                let Ok(response) = serde_json::from_slice::<HttpResponse>(&response.ipc) else {
                     // the receiver will automatically trigger a 503 when sender is dropped.
                     return;
                 };
-                // XX REFACTOR THIS:
-                // for the login case, todo refactor out?
-                let segments: Vec<&str> = path
-                    .split('/')
-                    .filter(|&segment| !segment.is_empty())
-                    .collect();
-                // If we're getting back a /login from a proxy (or our own node),
-                // then we should generate a jwt from the secret + the name of the ship,
-                // and then attach it to a header.
-                if response.status < 400
-                    && (segments.len() == 1 || segments.len() == 4)
-                    && matches!(segments.last(), Some(&"login"))
-                {
-                    if let Some(auth_cookie) = response.headers.get("set-cookie") {
-                        let mut ws_auth_username = km.source.node.clone();
-
-                        if segments.len() == 4
-                            && matches!(segments.first(), Some(&"http-proxy"))
-                            && matches!(segments.get(1), Some(&"serve"))
-                        {
-                            if let Some(segment) = segments.get(2) {
-                                ws_auth_username = segment.to_string();
-                            }
-                        }
-                        if let Some(token) = register::generate_jwt(
-                            jwt_secret_bytes.to_vec().as_slice(),
-                            ws_auth_username.clone(),
-                        ) {
-                            let auth_cookie_with_ws = format!(
-                                "{}; uqbar-ws-auth_{}={};",
-                                auth_cookie,
-                                ws_auth_username.clone(),
-                                token
-                            );
-                            response
-                                .headers
-                                .insert("set-cookie".to_string(), auth_cookie_with_ws);
-
-                            let _ = print_tx
-                                .send(Printout {
-                                    verbosity: 2,
-                                    content: format!(
-                                        "SET WS AUTH COOKIE WITH USERNAME: {}",
-                                        ws_auth_username
-                                    ),
-                                })
-                                .await;
-                        }
-                    }
-                }
                 let _ = sender.send((
                     HttpResponse {
                         status: response.status,
@@ -832,7 +874,7 @@ async fn handle_app_message(
                             },
                         );
                     }
-                    unimplemented!();
+                    send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                 }
                 HttpServerAction::WebSocketOpen(_) => {
                     // we cannot receive these, only send them to processes
