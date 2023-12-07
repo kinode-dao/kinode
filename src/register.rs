@@ -77,14 +77,14 @@ fn _hex_string_to_u8_array(hex_str: &str) -> Result<[u8; 32], &'static str> {
     Ok(bytes)
 }
 
-pub fn generate_jwt(jwt_secret_bytes: &[u8], username: String) -> Option<String> {
+pub fn generate_jwt(jwt_secret_bytes: &[u8], username: &str) -> Option<String> {
     let jwt_secret: Hmac<Sha256> = match Hmac::new_from_slice(jwt_secret_bytes) {
         Ok(secret) => secret,
         Err(_) => return None,
     };
 
     let claims = crate::http::types::JwtClaims {
-        username: username.clone(),
+        username: username.to_string(),
         expiration: 0,
     };
 
@@ -213,7 +213,7 @@ async fn get_unencrypted_info(
 ) -> Result<impl Reply, Rejection> {
     let (name, allowed_routers) = {
         match keyfile_arc.lock().unwrap().clone() {
-            Some(encoded_keyfile) => match keygen::get_username_and_routers(encoded_keyfile) {
+            Some(encoded_keyfile) => match keygen::get_username_and_routers(&encoded_keyfile) {
                 Ok(k) => k,
                 Err(_) => {
                     return Ok(warp::reply::with_status(
@@ -278,7 +278,7 @@ async fn handle_keyfile_vet(
         false => base64::decode(payload.keyfile).unwrap(),
     };
 
-    let decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile, &payload.password) {
+    let decoded_keyfile = match keygen::decode_keyfile(&encoded_keyfile, &payload.password) {
         Ok(k) => k,
         Err(_) => return Err(warp::reject()),
     };
@@ -369,33 +369,32 @@ async fn handle_import_keyfile(
         .into_response());
     };
 
-    let (decoded_keyfile, our) =
-        match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
-            Ok(k) => {
-                let our = Identity {
-                    name: k.username.clone(),
-                    networking_key: format!(
-                        "0x{}",
-                        hex::encode(k.networking_keypair.public_key().as_ref())
-                    ),
-                    ws_routing: if k.routers.is_empty() {
-                        Some((ip, ws_port))
-                    } else {
-                        None
-                    },
-                    allowed_routers: k.routers.clone(),
-                };
+    let (decoded_keyfile, our) = match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
+        Ok(k) => {
+            let our = Identity {
+                name: k.username.clone(),
+                networking_key: format!(
+                    "0x{}",
+                    hex::encode(k.networking_keypair.public_key().as_ref())
+                ),
+                ws_routing: if k.routers.is_empty() {
+                    Some((ip, ws_port))
+                } else {
+                    None
+                },
+                allowed_routers: k.routers.clone(),
+            };
 
-                (k, our)
-            }
-            Err(_) => {
-                return Ok(warp::reply::with_status(
-                    warp::reply::json(&"Failed to decode keyfile".to_string()),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                )
-                .into_response())
-            }
-        };
+            (k, our)
+        }
+        Err(_) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&"Failed to decode keyfile".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response())
+        }
+    };
 
     // if !networking_info_valid(rpc_url, ip, ws_port, &our).await {
     //     return Ok(warp::reply::with_status(
@@ -440,33 +439,32 @@ async fn handle_login(
         .into_response());
     };
 
-    let (decoded_keyfile, our) =
-        match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password) {
-            Ok(k) => {
-                let our = Identity {
-                    name: k.username.clone(),
-                    networking_key: format!(
-                        "0x{}",
-                        hex::encode(k.networking_keypair.public_key().as_ref())
-                    ),
-                    ws_routing: if k.routers.is_empty() {
-                        Some((ip, ws_port))
-                    } else {
-                        None
-                    },
-                    allowed_routers: k.routers.clone(),
-                };
+    let (decoded_keyfile, our) = match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
+        Ok(k) => {
+            let our = Identity {
+                name: k.username.clone(),
+                networking_key: format!(
+                    "0x{}",
+                    hex::encode(k.networking_keypair.public_key().as_ref())
+                ),
+                ws_routing: if k.routers.is_empty() {
+                    Some((ip, ws_port))
+                } else {
+                    None
+                },
+                allowed_routers: k.routers.clone(),
+            };
 
-                (k, our)
-            }
-            Err(_) => {
-                return Ok(warp::reply::with_status(
-                    warp::reply::json(&"Failed to decode keyfile".to_string()),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                )
-                .into_response())
-            }
-        };
+            (k, our)
+        }
+        Err(_) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&"Failed to decode keyfile".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response())
+        }
+    };
 
     // if !networking_info_valid(rpc_url, ip, ws_port, &our).await {
     //     return Ok(warp::reply::with_status(
@@ -504,8 +502,7 @@ async fn confirm_change_network_keys(
     }
 
     // Get our name from our current keyfile
-    let old_decoded_keyfile = match keygen::decode_keyfile(encoded_keyfile.clone(), &info.password)
-    {
+    let old_decoded_keyfile = match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
         Ok(k) => {
             our.name = k.username.clone();
             k
@@ -563,7 +560,7 @@ async fn success_response(
     encoded_keyfile: Vec<u8>,
     encoded_keyfile_str: String,
 ) -> Result<warp::reply::Response, Rejection> {
-    let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, our.name.clone()) {
+    let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, &our.name) {
         Some(token) => token,
         None => {
             return Ok(warp::reply::with_status(

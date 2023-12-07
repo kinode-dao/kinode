@@ -6,11 +6,31 @@ use thiserror::Error;
 /// HTTP Request type that can be shared over WASM boundary to apps.
 /// This is the one you receive from the `http_server:sys:uqbar` service.
 #[derive(Debug, Serialize, Deserialize)]
+pub enum HttpServerRequest {
+    Http(IncomingHttpRequest),
+    /// Processes will receive this kind of request when a client connects to them.
+    /// If a process does not want this websocket open, they should issue a *request*
+    /// containing a [`type@HttpServerAction::WebSocketClose`] message and this channel ID.
+    WebSocketOpen(u32),
+    /// Processes can both SEND and RECEIVE this kind of request
+    /// (send as [`type@HttpServerAction::WebSocketPush`]).
+    /// When received, will contain the message bytes as payload.
+    WebSocketPush {
+        channel_id: u32,
+        message_type: WsMessageType,
+    },
+    /// Receiving will indicate that the client closed the socket. Can be sent to close
+    /// from the server-side, as [`type@HttpServerAction::WebSocketClose`].
+    WebSocketClose(u32),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct IncomingHttpRequest {
     pub source_socket_addr: Option<String>, // will parse to SocketAddr
     pub method: String,                     // will parse to http::Method
     pub raw_path: String,
     pub headers: HashMap<String, String>,
+    pub query_params: HashMap<String, String>,
     // BODY is stored in the payload, as bytes
 }
 
@@ -56,8 +76,8 @@ pub enum HttpClientError {
 }
 
 /// Request type sent to `http_server:sys:uqbar` in order to configure it.
-/// You can also send [`WebSocketPush`], which allows you to push messages
-/// across an existing open WebSocket connection.
+/// You can also send [`type@HttpServerAction::WebSocketPush`], which
+/// allows you to push messages across an existing open WebSocket connection.
 ///
 /// If a response is expected, all HttpServerActions will return a Response
 /// with the shape Result<(), HttpServerActionError> serialized to JSON.
@@ -67,23 +87,40 @@ pub enum HttpServerAction {
     /// be the static file to serve at this path.
     Bind {
         path: String,
+        /// Set whether the HTTP request needs a valid login cookie, AKA, whether
+        /// the user needs to be logged in to access this path.
         authenticated: bool,
+        /// Set whether requests can be fielded from anywhere, or only the loopback address.
         local_only: bool,
+        /// Set whether to bind the payload statically to this path. That is, take the
+        /// payload bytes and serve them as the response to any request to this path.
+        cache: bool,
+    },
+    /// SecureBind expects a payload if and only if `cache` is TRUE. The payload should
+    /// be the static file to serve at this path.
+    ///
+    /// SecureBind is the same as Bind, except that it forces requests to be made from
+    /// the unique subdomain of the process that bound the path. These requests are
+    /// *always* authenticated, and *never* local_only. The purpose of SecureBind is to
+    /// serve elements of an app frontend or API in an exclusive manner, such that other
+    /// apps installed on this node cannot access them. Since the subdomain is unique, it
+    /// will require the user to be logged in separately to the general domain authentication.
+    SecureBind {
+        path: String,
+        /// Set whether to bind the payload statically to this path. That is, take the
+        /// payload bytes and serve them as the response to any request to this path.
         cache: bool,
     },
     /// Processes will RECEIVE this kind of request when a client connects to them.
     /// If a process does not want this websocket open, they should issue a *request*
-    /// containing a [`enum@HttpServerAction::WebSocketClose`] message and this channel ID.
+    /// containing a [`type@HttpServerAction::WebSocketClose`] message and this channel ID.
     WebSocketOpen(u32),
-    /// Processes can both SEND and RECEIVE this kind of request.
     /// When sent, expects a payload containing the WebSocket message bytes to send.
     WebSocketPush {
         channel_id: u32,
         message_type: WsMessageType,
     },
-    /// Processes can both SEND and RECEIVE this kind of request. Sending will
-    /// close a socket the process controls. Receiving will indicate that the
-    /// client closed the socket.
+    /// Sending will close a socket the process controls.
     WebSocketClose(u32),
 }
 
