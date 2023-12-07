@@ -24,19 +24,20 @@
       <form id="signup-form" class="col">
         <div class="login-row col" style="margin-left: 0.4em;"> Login as ${node} </div>
         <div class="login-row row" style="margin-top: 1em;"> Enter Password </div>
-        <input type="password" id="password" required="" minlength="6" name="password" placeholder="Min 6 characters"
+        <input type="password" id="password" required="" minlength="6" name="password" placeholder="Min 6 characters" oninput="document.getElementById('password-err').style.display = 'none';"
           value="" style="width: 100%;">
-        <div id="password-err" class="login-row row"> Incorrect Password </div>
-        <div class="col" style="width: 100%; line-height: 1.5;"><button type="submit"> Login </button>
+        <div id="password-err" class="login-row row" style="display: none;"> Incorrect Password </div>
+        <div class="col" style="width: 100%; line-height: 1.5;">
+          <button> Login </button>
           <div class="login-row col" style="margin-left: 0.4em; font-size: 0.8em; line-height: 1.5;">
-            Registered as an ${node_type} node
+            Registered as ${node_type} node
           </div>
           <div class="login-row col" style="margin-left: 0.4em; font-size: 0.8em; line-height: 1.5;">
             Restart node to change networking info
           </div>
         </div>
       </form>
-      <div id="loading" class="col" style="display: none;">
+      <div id="loading" class="col">
         <h3>Logging in...</h3>
         <div id="loader">
           <div />
@@ -72,10 +73,11 @@
       // otherwise should get redirected by the server
     }
 
-    document.addEventListener("load", () => {
+    document.addEventListener("DOMContentLoaded", () => {
       const form = document.getElementById("signup-form");
       form.addEventListener("submit", (e) => {
         e.preventDefault();
+        e.stopPropagation();
         const password = document.getElementById("password").value;
         login(password);
       });
