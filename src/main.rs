@@ -86,9 +86,12 @@ async fn serve_register_fe(
         home_directory_path
     );
 
-    fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile.clone())
-        .await
-        .unwrap();
+    fs::write(
+        format!("{}/.keys", home_directory_path),
+        encoded_keyfile.clone(),
+    )
+    .await
+    .unwrap();
 
     println!("registration complete!");
 
