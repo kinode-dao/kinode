@@ -369,33 +369,32 @@ async fn handle_import_keyfile(
         .into_response());
     };
 
-    let (decoded_keyfile, our) =
-        match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
-            Ok(k) => {
-                let our = Identity {
-                    name: k.username.clone(),
-                    networking_key: format!(
-                        "0x{}",
-                        hex::encode(k.networking_keypair.public_key().as_ref())
-                    ),
-                    ws_routing: if k.routers.is_empty() {
-                        Some((ip, ws_port))
-                    } else {
-                        None
-                    },
-                    allowed_routers: k.routers.clone(),
-                };
+    let (decoded_keyfile, our) = match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
+        Ok(k) => {
+            let our = Identity {
+                name: k.username.clone(),
+                networking_key: format!(
+                    "0x{}",
+                    hex::encode(k.networking_keypair.public_key().as_ref())
+                ),
+                ws_routing: if k.routers.is_empty() {
+                    Some((ip, ws_port))
+                } else {
+                    None
+                },
+                allowed_routers: k.routers.clone(),
+            };
 
-                (k, our)
-            }
-            Err(_) => {
-                return Ok(warp::reply::with_status(
-                    warp::reply::json(&"Failed to decode keyfile".to_string()),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                )
-                .into_response())
-            }
-        };
+            (k, our)
+        }
+        Err(_) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&"Failed to decode keyfile".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response())
+        }
+    };
 
     // if !networking_info_valid(rpc_url, ip, ws_port, &our).await {
     //     return Ok(warp::reply::with_status(
@@ -440,33 +439,32 @@ async fn handle_login(
         .into_response());
     };
 
-    let (decoded_keyfile, our) =
-        match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
-            Ok(k) => {
-                let our = Identity {
-                    name: k.username.clone(),
-                    networking_key: format!(
-                        "0x{}",
-                        hex::encode(k.networking_keypair.public_key().as_ref())
-                    ),
-                    ws_routing: if k.routers.is_empty() {
-                        Some((ip, ws_port))
-                    } else {
-                        None
-                    },
-                    allowed_routers: k.routers.clone(),
-                };
+    let (decoded_keyfile, our) = match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
+        Ok(k) => {
+            let our = Identity {
+                name: k.username.clone(),
+                networking_key: format!(
+                    "0x{}",
+                    hex::encode(k.networking_keypair.public_key().as_ref())
+                ),
+                ws_routing: if k.routers.is_empty() {
+                    Some((ip, ws_port))
+                } else {
+                    None
+                },
+                allowed_routers: k.routers.clone(),
+            };
 
-                (k, our)
-            }
-            Err(_) => {
-                return Ok(warp::reply::with_status(
-                    warp::reply::json(&"Failed to decode keyfile".to_string()),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                )
-                .into_response())
-            }
-        };
+            (k, our)
+        }
+        Err(_) => {
+            return Ok(warp::reply::with_status(
+                warp::reply::json(&"Failed to decode keyfile".to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response())
+        }
+    };
 
     // if !networking_info_valid(rpc_url, ip, ws_port, &our).await {
     //     return Ok(warp::reply::with_status(
@@ -504,8 +502,7 @@ async fn confirm_change_network_keys(
     }
 
     // Get our name from our current keyfile
-    let old_decoded_keyfile = match keygen::decode_keyfile(&encoded_keyfile, &info.password)
-    {
+    let old_decoded_keyfile = match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
         Ok(k) => {
             our.name = k.username.clone();
             k
