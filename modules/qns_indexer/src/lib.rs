@@ -255,11 +255,14 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     node.node = nodeId.clone();
                 }
 
+                let mut send = false;
+
                 match decode_hex(&e.topics[0].clone()) {
                     NodeRegistered::SIGNATURE_HASH => {}
                     KeyUpdate::SIGNATURE_HASH => {
                         let decoded = KeyUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                         node.public_key = format!("0x{}", hex::encode(decoded.0));
+                        send = true;
                     }
                     IpUpdate::SIGNATURE_HASH => {
                         let decoded = IpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
@@ -271,10 +274,12 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             (ip >> 8) & 0xFF,
                             ip & 0xFF
                         );
+                        send = true;
                     }
                     WsUpdate::SIGNATURE_HASH => {
                         let decoded = WsUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                         node.port = decoded.0;
+                        send = true;
                     }
                     WtUpdate::SIGNATURE_HASH => {
                         let decoded = WtUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
@@ -298,14 +303,14 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                                 }
                             })
                             .collect::<Vec<String>>();
-
+                        send = true;
                     }
                     event => {
                         println!("qns_indexer: got unknown event: {:?}", event);
                     }
                 }
 
-                if node.public_key != "0x" && (( node.ip != "" && node.port != 0) || node.routers.len() > 0) {
+                if send {
 
                     Request::new()
                         .target((&our.node, "net", "sys", "uqbar"))
