@@ -165,18 +165,16 @@ async fn serve(
 
     // filter to receive and handle login requests
     let cloned_our = our.clone();
-    let login = warp::path("login")
-        .and(warp::path::end())
-        .and(
-            warp::get()
-                .map(|| warp::reply::with_status(warp::reply::html(LOGIN_HTML), StatusCode::OK)),
-        )
-        .or(warp::post()
-            .and(warp::body::content_length_limit(1024 * 16))
-            .and(warp::body::json())
-            .and(warp::any().map(move || cloned_our.clone()))
-            .and(warp::any().map(move || encoded_keyfile.clone()))
-            .and_then(login_handler));
+    let login = warp::path("login").and(warp::path::end()).and(
+        warp::get()
+            .map(|| warp::reply::with_status(warp::reply::html(LOGIN_HTML), StatusCode::OK))
+            .or(warp::post()
+                .and(warp::body::content_length_limit(1024 * 16))
+                .and(warp::body::json())
+                .and(warp::any().map(move || cloned_our.clone()))
+                .and(warp::any().map(move || encoded_keyfile.clone()))
+                .and_then(login_handler)),
+    );
 
     // filter to receive all other HTTP requests
     let filter = warp::filters::method::method()
@@ -214,7 +212,7 @@ async fn login_handler(
                 Some(token) => token,
                 None => {
                     return Ok(warp::reply::with_status(
-                        warp::reply::json(&"Failed to generate JWT".to_string()),
+                        warp::reply::json(&"Failed to generate JWT"),
                         StatusCode::SERVICE_UNAVAILABLE,
                     )
                     .into_response())
@@ -234,7 +232,7 @@ async fn login_handler(
                 }
                 Err(_) => {
                     return Ok(warp::reply::with_status(
-                        warp::reply::json(&"Failed to generate Auth JWT".to_string()),
+                        warp::reply::json(&"Failed to generate Auth JWT"),
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
                     .into_response())
@@ -242,7 +240,7 @@ async fn login_handler(
             }
         }
         Err(_) => Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to decode keyfile".to_string()),
+            warp::reply::json(&"Failed to decode keyfile"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response()),
@@ -882,10 +880,6 @@ async fn handle_app_message(
                     let process_id_hash =
                         format!("{:x}", Sha256::digest(km.source.process.to_string()));
                     let subdomain = process_id_hash.split_at(32).0.to_owned();
-                    println!(
-                        "generated secure subdomain for {}: {}\r",
-                        km.source.process, subdomain
-                    );
                     let mut path_bindings = path_bindings.write().await;
                     if !cache {
                         // trim trailing "/"

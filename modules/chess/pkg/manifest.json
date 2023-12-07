@@ -5,8 +5,11 @@
         "on_panic": "Restart",
         "request_networking": true,
         "request_messaging": [
+            "net:sys:uqbar"
+        ],
+        "grant_messaging": [
             "http_server:sys:uqbar"
         ],
-        "public": false
+        "public": true
     }
 ]

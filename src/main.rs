@@ -81,19 +81,12 @@ async fn serve_register_fe(
         }
     };
 
-    println!(
-        "saving encrypted networking keys to {}/.keys",
-        home_directory_path
-    );
-
     fs::write(
         format!("{}/.keys", home_directory_path),
         encoded_keyfile.clone(),
     )
     .await
     .unwrap();
-
-    println!("registration complete!");
 
     let _ = kill_tx.send(true);
 
@@ -275,7 +268,6 @@ async fn main() {
     };
 
     let http_server_port = http::utils::find_open_port(port).await.unwrap();
-    println!("runtime bound port {}\r", http_server_port);
     println!(
         "login or register at http://localhost:{}\r",
         http_server_port

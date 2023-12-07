@@ -64,7 +64,7 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chess"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -73,6 +73,7 @@ dependencies = [
  "serde",
  "serde_json",
  "uqbar_process_lib",
+ "url",
  "wit-bindgen",
 ]
 
@@ -631,7 +632,7 @@ checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
 [[package]]
 name = "uqbar_process_lib"
 version = "0.3.0"
-source = "git+ssh://git@github.com/uqbar-dao/process_lib.git?rev=5e1b94a#5e1b94ae2f85c66da33ec52117a72b90d53c4d22"
+source = "git+ssh://git@github.com/uqbar-dao/process_lib.git?rev=d451af9#d451af9c2a273c004c0451f88b7f67387ba76416"
 dependencies = [
  "anyhow",
  "bincode",
