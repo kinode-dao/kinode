@@ -363,9 +363,12 @@ async fn main() {
                 decoded_keyfile.file_key.clone(),
             );
 
-            fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile.clone())
-                .await
-                .unwrap();
+            fs::write(
+                format!("{}/.keys", home_directory_path),
+                encoded_keyfile.clone(),
+            )
+            .await
+            .unwrap();
 
             (our, encoded_keyfile, decoded_keyfile)
         }
