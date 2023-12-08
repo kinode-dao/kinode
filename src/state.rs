@@ -1,18 +1,16 @@
-use rocksdb::{DB, Options, ColumnFamilyDescriptor};
-use std::{sync::Arc, io::Read};
+use crate::filesystem::manifest::{FileIdentifier, Manifest};
 use crate::types::*;
 use anyhow::Result;
-use crate::filesystem::manifest::{FileIdentifier, Manifest};
+use rocksdb::{ColumnFamilyDescriptor, Options, DB};
 use std::collections::{HashMap, HashSet};
+use std::{io::Read, sync::Arc};
 use tokio::fs;
-
 
 pub async fn load_state(
     our_name: String,
     home_directory_path: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, bool)>,
 ) -> Result<(ProcessMap, DB, Vec<KernelMessage>), FsError> {
-
     let state_directory_path_str = format!("{}/kernel", &home_directory_path);
 
     if let Err(e) = fs::create_dir_all(&state_directory_path_str).await {
@@ -38,16 +36,9 @@ pub async fn load_state(
             process_map = bincode::deserialize(&value).expect("state map deserialization error!");
             vec![]
         }
-        Ok(None) => {
-            bootstrap(
-                &our_name,
-                runtime_extensions,
-                &mut process_map,
-                &mut db,
-            )
+        Ok(None) => bootstrap(&our_name, runtime_extensions, &mut process_map, &mut db)
             .await
-            .expect("fresh bootstrap failed!")
-        }
+            .expect("fresh bootstrap failed!"),
         Err(e) => panic!("operational problem encountered: {}", e),
     };
 
@@ -63,7 +54,6 @@ pub async fn state_sender(
     // mut recv_kill: Receiver<()>,
     // send_kill_confirm: Sender<()>,
 ) -> Result<(), anyhow::Error> {
-
     let db = Arc::new(db);
     //  into main loop
 
@@ -152,17 +142,17 @@ async fn handle_request(
                 Ok(Some(value)) => {
                     println!("found value wasm");
                     (StateResponse::Read(handle), Some(value))
-                },
+                }
                 Ok(None) => {
                     println!("nothing found");
                     return Err(FsError::NoJson);
-                },
+                }
                 Err(e) => {
                     println!("read rockdsb error: {:?}", e);
                     return Err(FsError::NoJson);
-                },
+                }
             }
-        },
+        }
         StateAction::SetState(process_id) => {
             let key = process_id.to_hash();
             let Some(ref payload) = payload else {
@@ -175,30 +165,30 @@ async fn handle_request(
                 Ok(_) => {
                     println!("set state success");
                     (StateResponse::SetState, None)
-                },
+                }
                 Err(e) => {
                     println!("set state error: {:?}", e);
                     return Err(FsError::NoJson);
-                },
+                }
             }
-        },
+        }
         StateAction::GetState(process_id) => {
             let key = process_id.to_hash();
             match db.get(key) {
                 Ok(Some(value)) => {
                     println!("found value");
                     (StateResponse::GetState, Some(value))
-                },
+                }
                 Ok(None) => {
                     println!("nothing found");
                     return Err(FsError::NoJson);
-                },
+                }
                 Err(e) => {
                     println!("get state error: {:?}", e);
                     return Err(FsError::NoJson);
-                },
+                }
             }
-        },
+        }
         StateAction::DeleteState(process_id) => {
             // handle DeleteState action
             println!("got deleteState");
@@ -207,13 +197,13 @@ async fn handle_request(
                 Ok(_) => {
                     println!("delete state success");
                     (StateResponse::DeleteState, None)
-                },
+                }
                 Err(e) => {
                     println!("delete state error: {:?}", e);
                     return Err(FsError::NoJson);
-                },
+                }
             }
-        },
+        }
     };
 
     if expects_response.is_some() {
@@ -245,7 +235,6 @@ async fn handle_request(
 
     Ok(())
 }
-
 
 /// function run only upon fresh boot.
 ///
@@ -550,7 +539,8 @@ async fn bootstrap(
     let serialized_process_map =
         bincode::serialize(&process_map).expect("state map serialization error!");
 
-    db.put(KERNEL_PROCESS_ID.to_hash(), serialized_process_map).unwrap();
+    db.put(KERNEL_PROCESS_ID.to_hash(), serialized_process_map)
+        .unwrap();
 
     Ok(vfs_messages)
 }
@@ -583,7 +573,6 @@ async fn get_zipped_packages() -> Vec<(String, zip::ZipArchive<std::io::Cursor<V
 
     packages
 }
-
 
 fn make_error_message(our_name: String, km: &KernelMessage, error: FsError) -> KernelMessage {
     KernelMessage {

@@ -911,7 +911,6 @@ pub enum StateResponse {
     DeleteState,
 }
 
-
 #[derive(Serialize, Deserialize, Debug)]
 pub enum FsAction {
     Write(Option<u128>),

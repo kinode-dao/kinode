@@ -18,11 +18,11 @@ mod kernel;
 mod keygen;
 mod net;
 mod register;
+mod state;
 mod terminal;
 mod timer;
 mod types;
 mod vfs;
-mod state;
 
 // extensions
 #[cfg(feature = "llm")]
@@ -442,7 +442,9 @@ async fn main() {
         home_directory_path.clone(),
         fs_config,
         decoded_keyfile.file_key,
-    ).await.expect("temp manifest failed!");
+    )
+    .await
+    .expect("temp manifest failed!");
     /*
      *  the kernel module will handle our userspace processes and receives
      *  all "messages", the basic message format for uqbar.
