@@ -9,7 +9,58 @@ use tokio::fs;
 use tokio::sync::oneshot::{Receiver, Sender};
 use tokio::sync::Mutex;
 use tokio::time::{interval, Duration};
-mod manifest;
+pub mod manifest;
+
+pub async fn temp_manifest(
+    our_name: String,
+    home_directory_path: String,
+    fs_config: FsConfig,
+    file_key: Vec<u8>,
+) -> Result<Manifest, FsError> {
+    let fs_directory_path_str = format!("{}/fs", &home_directory_path);
+
+    if let Err(e) = fs::create_dir_all(&fs_directory_path_str).await {
+        panic!("failed creating fs dir! {:?}", e);
+    }
+
+    let fs_directory_path: std::path::PathBuf =
+        fs::canonicalize(fs_directory_path_str).await.unwrap();
+
+    //  open and load manifest+log
+
+    let manifest_path = fs_directory_path.join("manifest.bin");
+
+    let manifest_file = fs::OpenOptions::new()
+        .append(true)
+        .read(true)
+        .create(true)
+        .open(&manifest_path)
+        .await
+        .expect("fs: failed to open manifest file");
+
+    let wal_path = fs_directory_path.join("wal.bin");
+
+    let wal_file = fs::OpenOptions::new()
+        .append(true)
+        .read(true)
+        .create(true)
+        .open(&wal_path)
+        .await
+        .expect("fs: failed to open WAL file");
+
+    //  in memory details about files.
+    let mut manifest = Manifest::load(
+        manifest_file,
+        wal_file,
+        &fs_directory_path,
+        file_key,
+        fs_config,
+    )
+    .await
+    .expect("manifest load failed!");
+
+    Ok(manifest)
+}
 
 pub async fn load_fs(
     our_name: String,

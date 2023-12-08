@@ -14,6 +14,8 @@ lazy_static::lazy_static! {
     pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "uqbar");
     pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "sys", "uqbar");
     pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "sys", "uqbar");
+    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "sys", "uqbar");
+
 }
 
 //
@@ -150,6 +152,13 @@ impl ProcessId {
     }
     pub fn publisher(&self) -> &str {
         &self.publisher_node
+    }
+    pub fn to_hash(&self) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(self.process_name.as_bytes());
+        hasher.update(self.package_name.as_bytes());
+        hasher.update(self.publisher_node.as_bytes());
+        hasher.finalize().into()
     }
     pub fn en_wit(&self) -> wit::ProcessId {
         wit::ProcessId {
@@ -885,6 +894,23 @@ pub struct PackageManifestEntry {
     pub grant_messaging: Option<Vec<String>>,
     pub public: bool,
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub enum StateAction {
+    Read(u128),
+    GetState(ProcessId),
+    SetState(ProcessId),
+    DeleteState(ProcessId),
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub enum StateResponse {
+    Read(u128),
+    GetState,
+    SetState,
+    DeleteState,
+}
+
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum FsAction {

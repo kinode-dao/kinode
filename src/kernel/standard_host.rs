@@ -4,6 +4,7 @@ use crate::types as t;
 use crate::FILESYSTEM_PROCESS_ID;
 use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
+use crate::types::STATE_PROCESS_ID;
 use anyhow::Result;
 use ring::signature::{self, KeyPair};
 use std::collections::HashSet;
@@ -57,12 +58,12 @@ impl StandardHost for process::ProcessWasi {
             }),
             wit::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: FILESYSTEM_PROCESS_ID.en_wit(),
+                process: STATE_PROCESS_ID.en_wit(),
             },
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::FsAction::GetState(
+                ipc: serde_json::to_vec(&t::StateAction::GetState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
@@ -98,12 +99,12 @@ impl StandardHost for process::ProcessWasi {
             }),
             wit::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: FILESYSTEM_PROCESS_ID.en_wit(),
+                process: STATE_PROCESS_ID.en_wit(),
             },
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::FsAction::SetState(
+                ipc: serde_json::to_vec(&t::StateAction::SetState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
@@ -137,7 +138,7 @@ impl StandardHost for process::ProcessWasi {
             }),
             wit::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: FILESYSTEM_PROCESS_ID.en_wit(),
+                process: STATE_PROCESS_ID.en_wit(),
             },
             wit::Request {
                 inherit: false,

@@ -22,6 +22,7 @@ mod terminal;
 mod timer;
 mod types;
 mod vfs;
+mod state;
 
 // extensions
 #[cfg(feature = "llm")]
@@ -172,6 +173,10 @@ async fn main() {
     // filesystem receives request messages via this channel, kernel sends messages
     let (fs_message_sender, fs_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY);
+
+    let (state_sender, state_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY);
+
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
@@ -410,6 +415,11 @@ async fn main() {
             vfs_message_sender,
             true,
         ),
+        (
+            ProcessId::new(Some("state"), "sys", "uqbar"),
+            state_sender,
+            true,
+        ),
     ];
 
     #[cfg(feature = "llm")]
@@ -419,16 +429,20 @@ async fn main() {
         true,
     ));
 
-    let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
+    let (kernel_process_map, db, vfs_messages) = state::load_state(
         our.name.clone(),
         home_directory_path.clone(),
-        decoded_keyfile.file_key,
-        fs_config,
         runtime_extensions.clone(),
     )
     .await
-    .expect("fs load failed!");
+    .expect("state load failed!");
 
+    let manifest = filesystem::temp_manifest(
+        our.name.clone(),
+        home_directory_path.clone(),
+        fs_config,
+        decoded_keyfile.file_key,
+    ).await.expect("temp manifest failed!");
     /*
      *  the kernel module will handle our userspace processes and receives
      *  all "messages", the basic message format for uqbar.
@@ -479,6 +493,13 @@ async fn main() {
         fs_message_receiver,
         fs_kill_recv,
         fs_kill_confirm_send,
+    ));
+    tasks.spawn(state::state_sender(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        print_sender.clone(),
+        state_receiver,
+        db,
     ));
     tasks.spawn(http::server::http_server(
         our.name.clone(),

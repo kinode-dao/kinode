@@ -1,6 +1,7 @@
 use crate::types as t;
 use crate::FILESYSTEM_PROCESS_ID;
 use crate::KERNEL_PROCESS_ID;
+use crate::types::STATE_PROCESS_ID;
 use anyhow::Result;
 use ring::signature::{self, KeyPair};
 use serde::{Deserialize, Serialize};
@@ -57,7 +58,7 @@ async fn persist_state(
             },
             target: t::Address {
                 node: our_name.to_string(),
-                process: FILESYSTEM_PROCESS_ID.clone(),
+                process: STATE_PROCESS_ID.clone(),
             },
             rsvp: None,
             message: t::Message::Request(t::Request {
@@ -454,7 +455,7 @@ async fn handle_kernel_response(
         return;
     };
     // ignore responses that aren't filesystem responses
-    if km.source.process != *FILESYSTEM_PROCESS_ID {
+    if km.source.process != *STATE_PROCESS_ID {
         return;
     }
     let Some(ref metadata) = response.metadata else {
@@ -669,13 +670,13 @@ pub async fn kernel(
                     },
                     target: t::Address {
                         node: our.name.clone(),
-                        process: FILESYSTEM_PROCESS_ID.clone(),
+                        process: STATE_PROCESS_ID.clone(),
                     },
                     rsvp: None,
                     message: t::Message::Request(t::Request {
                         inherit: true,
                         expects_response: Some(5), // TODO evaluate
-                        ipc: serde_json::to_vec(&t::FsAction::Read(persisted.wasm_bytes_handle))
+                        ipc: serde_json::to_vec(&t::StateAction::Read(persisted.wasm_bytes_handle))
                             .unwrap(),
                         metadata: Some(
                             serde_json::to_string(&StartProcessMetadata {
@@ -881,7 +882,7 @@ pub async fn kernel(
                     // enforce that local process has capability to message a target process of this name
                     // kernel and filesystem can ALWAYS message any local process
                     if kernel_message.source.process != *KERNEL_PROCESS_ID
-                        && kernel_message.source.process != *FILESYSTEM_PROCESS_ID
+                        && kernel_message.source.process != *STATE_PROCESS_ID
                     {
                         let Some(persisted_source) = process_map.get(&kernel_message.source.process) else {
                             continue
