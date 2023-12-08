@@ -300,7 +300,7 @@ async fn main() {
                     match fs::read(format!("{}/.keys", home_directory_path)).await {
                         Err(e) => panic!("could not read keyfile: {}", e),
                         Ok(keyfile) => {
-                            match keygen::decode_keyfile(keyfile, &password) {
+                            match keygen::decode_keyfile(&keyfile, &password) {
                                 Err(e) => panic!("could not decode keyfile: {}", e),
                                 Ok(decoded_keyfile) => {
                                     let our = Identity {
@@ -363,7 +363,7 @@ async fn main() {
                 decoded_keyfile.file_key.clone(),
             );
 
-            fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
+            fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile.clone())
                 .await
                 .unwrap();
 
