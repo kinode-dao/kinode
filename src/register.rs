@@ -243,9 +243,7 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
     .into_response())
 }
 
-async fn generate_networking_info(
-    our_temp_id: Arc<Identity>,
-) -> Result<impl Reply, Rejection> {
+async fn generate_networking_info(our_temp_id: Arc<Identity>) -> Result<impl Reply, Rejection> {
     Ok(warp::reply::json(our_temp_id.as_ref()))
 }
 
@@ -506,7 +504,10 @@ async fn success_response(
         }
     };
 
-    sender.send((our.clone(), decoded_keyfile, encoded_keyfile)).await.unwrap();
+    sender
+        .send((our.clone(), decoded_keyfile, encoded_keyfile))
+        .await
+        .unwrap();
 
     let mut response =
         warp::reply::with_status(warp::reply::json(&encoded_keyfile_str), StatusCode::FOUND)
