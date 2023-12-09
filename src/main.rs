@@ -66,10 +66,9 @@ async fn serve_register_fe(
     // that updates their PKI info on-chain.
     let (kill_tx, kill_rx) = oneshot::channel::<bool>();
 
-    let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
-        Ok(keyfile) => keyfile,
-        Err(_) => Vec::new(),
-    };
+    let disk_keyfile: Option<Vec<u8>> = fs::read(format!("{}/.keys", home_directory_path))
+        .await
+        .ok();
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
