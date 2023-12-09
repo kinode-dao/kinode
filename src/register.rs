@@ -1,15 +1,13 @@
 use aes_gcm::aead::KeyInit;
-
 use ethers::prelude::{abigen, namehash, Address as EthAddress, Provider, U256};
 use ethers_providers::Ws;
 use hmac::Hmac;
 use jwt::SignWithKey;
-use ring::pkcs8::Document;
 use ring::rand::SystemRandom;
 use ring::signature;
 use ring::signature::KeyPair;
 use sha2::Sha256;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use warp::{
     http::{
@@ -105,29 +103,30 @@ pub async fn register(
 ) {
     // Networking info is generated and passed to the UI, but not used until confirmed
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
-    let net_keypair = Arc::new(Mutex::new(serialized_networking_keypair.as_ref().to_vec()));
+    let net_keypair = Arc::new(serialized_networking_keypair.as_ref().to_vec());
+    let tx = Arc::new(tx);
 
     // TODO: if IP is localhost, don't allow registration as direct
     let ws_port = crate::http::utils::find_open_port(9000).await.unwrap();
 
     // This is a temporary identity, passed to the UI. If it is confirmed through a /boot or /confirm-change-network-keys, then it will be used to replace the current identity
-    let our_temp_id = Arc::new(Mutex::new(Identity {
+    let our_temp_id = Arc::new(Identity {
         networking_key: format!("0x{}", public_key),
         name: "".to_string(),
-        ws_routing: Some((ip, ws_port)),
+        ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
             "uqbar-router-1.uq".into(), // "0x8d9e54427c50660c6d4802f63edca86a9ca5fd6a78070c4635950e9d149ed441".into(),
             "uqbar-router-2.uq".into(), // "0x06d331ed65843ecf0860c73292005d8103af20820546b2f8f9007d01f60595b1".into(),
             "uqbar-router-3.uq".into(), // "0xe6ab611eb62e8aee0460295667f8179cda4315982717db4b0b3da6022deecac1".into(),
         ],
-    }));
+    });
 
-    let keyfile = warp::any().map(move || keyfile);
-    let our_temp_id = warp::any().map(move || our_temp_id);
-    let net_keypair = warp::any().map(move || net_keypair);
-    let tx = warp::any().map(move || tx);
-    let ip = warp::any().map(move || ip);
-    let rpc_url = warp::any().map(move || rpc_url);
+    let keyfile = warp::any().map(move || keyfile.clone());
+    let our_temp_id = warp::any().map(move || our_temp_id.clone());
+    let net_keypair = warp::any().map(move || net_keypair.clone());
+    let tx = warp::any().map(move || tx.clone());
+    let ip = warp::any().map(move || ip.clone());
+    let rpc_url = warp::any().map(move || rpc_url.clone());
 
     let static_files = warp::path("static").and(warp::fs::dir("./src/register-ui/build/static/"));
 
@@ -143,7 +142,7 @@ pub async fn register(
         )
         .or(warp::path("generate-networking-info").and(
             warp::post()
-                .and(our_temp_id)
+                .and(our_temp_id.clone())
                 .and_then(generate_networking_info),
         ))
         .or(warp::path("vet-keyfile").and(
@@ -219,7 +218,7 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
                 Ok(k) => k,
                 Err(_) => {
                     return Ok(warp::reply::with_status(
-                        warp::reply::json(&"Failed to decode keyfile".to_string()),
+                        warp::reply::json(&"Failed to decode keyfile"),
                         StatusCode::INTERNAL_SERVER_ERROR,
                     )
                     .into_response())
@@ -227,7 +226,7 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
             },
             None => {
                 return Ok(warp::reply::with_status(
-                    warp::reply::json(&"Keyfile not present".to_string()),
+                    warp::reply::json(&"Keyfile not present"),
                     StatusCode::NOT_FOUND,
                 )
                 .into_response())
@@ -245,9 +244,9 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
 }
 
 async fn generate_networking_info(
-    our_temp_id: Arc<Mutex<Identity>>,
+    our_temp_id: Arc<Identity>,
 ) -> Result<impl Reply, Rejection> {
-    Ok(warp::reply::json(&*our_temp_id.lock().unwrap()))
+    Ok(warp::reply::json(our_temp_id.as_ref()))
 }
 
 async fn handle_keyfile_vet(
@@ -274,15 +273,12 @@ async fn handle_keyfile_vet(
 
 async fn handle_boot(
     info: BootInfo,
-    sender: RegistrationSender,
-    our: Arc<Mutex<Identity>>,
-    networking_keypair: Arc<Mutex<Vec<u8>>>,
+    sender: Arc<RegistrationSender>,
+    our: Arc<Identity>,
+    networking_keypair: Arc<Vec<u8>>,
 ) -> Result<impl Reply, Rejection> {
-    let networking_keypair = networking_keypair.lock().unwrap();
-    let mut our = our.lock().unwrap();
-
+    let mut our = our.as_ref().clone();
     our.name = info.username;
-
     if info.direct {
         our.allowed_routers = vec![];
     } else {
@@ -311,21 +307,21 @@ async fn handle_boot(
         decoded_keyfile.file_key.clone(),
     );
 
-    success_response(sender, our.clone(), decoded_keyfile, encoded_keyfile)
+    success_response(sender, our, decoded_keyfile, encoded_keyfile).await
 }
 
 async fn handle_import_keyfile(
     info: ImportKeyfileInfo,
     ip: String,
     _rpc_url: String,
-    sender: RegistrationSender,
+    sender: Arc<RegistrationSender>,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
     let encoded_keyfile = match base64::decode(info.keyfile.clone()) {
         Ok(k) => k,
         Err(_) => {
             return Ok(warp::reply::with_status(
-                warp::reply::json(&"Keyfile not valid base64".to_string()),
+                warp::reply::json(&"Keyfile not valid base64"),
                 StatusCode::BAD_REQUEST,
             )
             .into_response())
@@ -334,7 +330,7 @@ async fn handle_import_keyfile(
 
     let Some(ws_port) = crate::http::utils::find_open_port(9000).await else {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Unable to find free port".to_string()),
+            warp::reply::json(&"Unable to find free port"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
@@ -382,12 +378,12 @@ async fn handle_login(
     info: LoginInfo,
     ip: String,
     _rpc_url: String,
-    sender: RegistrationSender,
+    sender: Arc<RegistrationSender>,
     encoded_keyfile: Option<Vec<u8>>,
 ) -> Result<impl Reply, Rejection> {
     if encoded_keyfile.is_none() {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Keyfile not present".to_string()),
+            warp::reply::json(&"Keyfile not present"),
             StatusCode::NOT_FOUND,
         )
         .into_response());
@@ -396,7 +392,7 @@ async fn handle_login(
 
     let Some(ws_port) = crate::http::utils::find_open_port(9000).await else {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Unable to find free port".to_string()),
+            warp::reply::json(&"Unable to find free port"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
@@ -422,54 +418,32 @@ async fn handle_login(
         }
         Err(_) => {
             return Ok(warp::reply::with_status(
-                warp::reply::json(&"Failed to decode keyfile".to_string()),
+                warp::reply::json(&"Failed to decode keyfile"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
             .into_response())
         }
     };
 
-    // if !networking_info_valid(rpc_url, ip, ws_port, &our).await {
-    //     return Ok(warp::reply::with_status(
-    //         warp::reply::json(&"Networking info invalid".to_string()),
-    //         StatusCode::UNAUTHORIZED,
-    //     )
-    //     .into_response());
-    // }
-
     success_response(sender, our, decoded_keyfile, encoded_keyfile).await
 }
 
 async fn confirm_change_network_keys(
     info: LoginAndResetInfo,
-    sender: RegistrationSender,
-    our: Option<Identity>, // the arc of our temporary identity
-    networking_keypair: Option<&Document>,
+    sender: Arc<RegistrationSender>,
+    our: Arc<Identity>,
+    networking_keypair: Arc<Vec<u8>>,
     encoded_keyfile: Option<Vec<u8>>,
 ) -> Result<impl Reply, Rejection> {
     if encoded_keyfile.is_none() {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Keyfile not present".to_string()),
+            warp::reply::json(&"Keyfile not present"),
             StatusCode::NOT_FOUND,
         )
         .into_response());
     }
     let encoded_keyfile = encoded_keyfile.unwrap();
-
-    let Some(networking_keypair) = networking_keypair else {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Networking keypair not present".to_string()),
-            StatusCode::NOT_FOUND,
-        )
-        .into_response());
-    };
-    let Some(mut our) = our else {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Temporary identity not present".to_string()),
-            StatusCode::NOT_FOUND,
-        )
-        .into_response());
-    };
+    let mut our = our.as_ref().clone();
 
     // Get our name from our current keyfile
     let old_decoded_keyfile = match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
@@ -479,7 +453,7 @@ async fn confirm_change_network_keys(
         }
         Err(_) => {
             return Ok(warp::reply::with_status(
-                warp::reply::json(&"Invalid password".to_string()),
+                warp::reply::json(&"Invalid password"),
                 StatusCode::UNAUTHORIZED,
             )
             .into_response());
@@ -506,16 +480,16 @@ async fn confirm_change_network_keys(
         info.password,
         decoded_keyfile.username.clone(),
         decoded_keyfile.routers.clone(),
-        &networking_keypair,
+        networking_keypair.as_ref(),
         decoded_keyfile.jwt_secret_bytes.clone(),
         decoded_keyfile.file_key.clone(),
     );
 
-    success_response(sender, our, decoded_keyfile, encoded_keyfile).await
+    success_response(sender, our.clone(), decoded_keyfile, encoded_keyfile).await
 }
 
-fn success_response(
-    sender: RegistrationSender,
+async fn success_response(
+    sender: Arc<RegistrationSender>,
     our: Identity,
     decoded_keyfile: Keyfile,
     encoded_keyfile: Vec<u8>,
@@ -525,17 +499,14 @@ fn success_response(
         Some(token) => token,
         None => {
             return Ok(warp::reply::with_status(
-                warp::reply::json(&"Failed to generate JWT".to_string()),
+                warp::reply::json(&"Failed to generate JWT"),
                 StatusCode::SERVICE_UNAVAILABLE,
             )
             .into_response())
         }
     };
 
-    sender
-        .send((our.clone(), decoded_keyfile, encoded_keyfile))
-        .await
-        .unwrap();
+    sender.send((our.clone(), decoded_keyfile, encoded_keyfile)).await.unwrap();
 
     let mut response =
         warp::reply::with_status(warp::reply::json(&encoded_keyfile_str), StatusCode::FOUND)
@@ -549,7 +520,7 @@ fn success_response(
         }
         Err(_) => {
             return Ok(warp::reply::with_status(
-                warp::reply::json(&"Failed to generate Auth JWT".to_string()),
+                warp::reply::json(&"Failed to generate Auth JWT"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
             .into_response())
