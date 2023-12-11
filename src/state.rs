@@ -3,7 +3,7 @@ use crate::types::*;
 use anyhow::Result;
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::checkpoint::Checkpoint;
-use rocksdb::{ColumnFamilyDescriptor, Options, DB, Env};
+use rocksdb::{ColumnFamilyDescriptor, Env, Options, DB};
 use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
@@ -145,9 +145,7 @@ async fn handle_request(
             // handle Read action
             let key = handle.to_le_bytes();
             match db.get(key) {
-                Ok(Some(value)) => {
-                    (StateResponse::Read(handle), Some(value))
-                }
+                Ok(Some(value)) => (StateResponse::Read(handle), Some(value)),
                 Ok(None) => {
                     println!("nothing found");
                     return Err(FsError::NoJson);
@@ -216,7 +214,7 @@ async fn handle_request(
 
             if Path::new(&checkpoint_dir).exists() {
                 let _ = fs::remove_dir_all(&checkpoint_dir).await;
-            }            
+            }
             let checkpoint = Checkpoint::new(&db).unwrap();
             checkpoint.create_checkpoint(&checkpoint_dir).unwrap();
             (StateResponse::Backup, None)
