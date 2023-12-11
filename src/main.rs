@@ -502,6 +502,7 @@ async fn main() {
         print_sender.clone(),
         state_receiver,
         db,
+        home_directory_path.clone(),
     ));
     tasks.spawn(http::server::http_server(
         our.name.clone(),

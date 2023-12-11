@@ -901,6 +901,7 @@ pub enum StateAction {
     GetState(ProcessId),
     SetState(ProcessId),
     DeleteState(ProcessId),
+    Backup,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -909,6 +910,7 @@ pub enum StateResponse {
     GetState,
     SetState,
     DeleteState,
+    Backup,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
