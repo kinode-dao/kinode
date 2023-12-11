@@ -1,0 +1,20 @@
+[
+    {
+        "process_name": "main",
+        "process_wasm_path": "/vector_db.wasm",
+        "on_panic": "Restart",
+        "request_networking": true,
+        "request_messaging": [
+            "terminal:terminal:uqbar",
+            "filesystem:sys:uqbar",
+            "http_server:sys:uqbar",
+            "http_client:sys:uqbar",
+            "encryptor:sys:uqbar",
+            "net:sys:uqbar",
+            "vfs:sys:uqbar",
+            "kernel:sys:uqbar",
+            "eth_rpc:sys:uqbar"
+        ],
+        "public": true
+    }
+]

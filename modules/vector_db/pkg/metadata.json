@@ -1,0 +1,6 @@
+{
+    "package": "vector_db",
+    "publisher": "uqbar",
+    "version": [0, 1, 0],
+    "description": "A Vector Database for Uqbar that uses the shinkai vector db"
+}
