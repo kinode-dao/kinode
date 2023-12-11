@@ -218,8 +218,8 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
                 Ok(k) => k,
                 Err(_) => {
                     return Ok(warp::reply::with_status(
-                        warp::reply::json(&"Failed to decode keyfile"),
-                        StatusCode::INTERNAL_SERVER_ERROR,
+                        warp::reply::json(&"Incorrect password"),
+                        StatusCode::UNAUTHORIZED,
                     )
                     .into_response())
                 }
@@ -354,8 +354,8 @@ async fn handle_import_keyfile(
         }
         Err(_) => {
             return Ok(warp::reply::with_status(
-                warp::reply::json(&"Failed to decode keyfile".to_string()),
-                StatusCode::INTERNAL_SERVER_ERROR,
+                warp::reply::json(&"Incorrect Password".to_string()),
+                StatusCode::UNAUTHORIZED,
             )
             .into_response())
         }
@@ -416,8 +416,8 @@ async fn handle_login(
         }
         Err(_) => {
             return Ok(warp::reply::with_status(
-                warp::reply::json(&"Failed to decode keyfile"),
-                StatusCode::INTERNAL_SERVER_ERROR,
+                warp::reply::json(&"Incorrect Password"),
+                StatusCode::UNAUTHORIZED,
             )
             .into_response())
         }
