@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
-use uqbar_process_lib::uqbar::process::standard::*;
+//use uqbar_process_lib::uqbar::process::standard::*;
+
+use uqbar_process_lib::uqbar::process::standard::{Message as StdMessage, Request as StdRequest, Response as StdResponse, SendErrorKind};
+use uqbar_process_lib::{await_message, get_payload, print_to_terminal, send_and_await_response, send_request, send_response, Address, Message, Payload, Request};
 
 mod ft_worker_lib;
 use ft_worker_lib::*;
@@ -25,11 +28,11 @@ impl Guest for Component {
         let our = Address::from_str(&our).unwrap();
         print_to_terminal(1, &format!("{}: start", our.process));
 
-        let Ok((parent_process, Message::Request(req))) = receive() else {
+        let Ok(Message::Request { source: parent_process, ipc, .. }) = await_message() else {
             panic!("ft_worker: got bad init message");
         };
 
-        let command = serde_json::from_slice::<FTWorkerCommand>(&req.ipc)
+        let command = serde_json::from_slice::<FTWorkerCommand>(&ipc)
             .expect("ft_worker: got unparseable init message");
 
         match command {
@@ -55,7 +58,7 @@ impl Guest for Component {
                 // acknowledgement.
                 match send_and_await_response(
                     &Address::from_str(&target).unwrap(),
-                    &Request {
+                    &StdRequest {
                         inherit: false,
                         expects_response: Some(timeout),
                         ipc: serde_json::to_vec(&FTWorkerCommand::Receive {
@@ -76,7 +79,7 @@ impl Guest for Component {
                             SendErrorKind::Timeout => TransferError::TargetTimeout,
                         }))
                     }
-                    Ok((opp_worker, Message::Response((response, _)))) => {
+                    Ok((opp_worker, StdMessage::Response((response, _)))) => {
                         let Ok(FTWorkerProtocol::Ready) = serde_json::from_slice(&response.ipc) else {
                             respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected));
                             return;
@@ -94,7 +97,7 @@ impl Guest for Component {
                                 };
                                 send_request(
                                     &opp_worker,
-                                    &Request {
+                                    &StdRequest {
                                         inherit: false,
                                         expects_response: Some(timeout),
                                         ipc: vec![],
@@ -113,7 +116,7 @@ impl Guest for Component {
                             };
                             send_request(
                                 &opp_worker,
-                                &Request {
+                                &StdRequest {
                                     inherit: false,
                                     expects_response: None,
                                     ipc: vec![],
@@ -126,11 +129,11 @@ impl Guest for Component {
                             offset += chunk_size;
                         }
                         // now wait for Finished response
-                        let Ok((receiving_worker, Message::Response((resp, _)))) = receive() else {
+                        let Ok(Message::Response { source: receiving_worker, ipc, .. }) = await_message() else {
                             respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected));
                             return;
                         };
-                        let Ok(FTWorkerProtocol::Finished) = serde_json::from_slice(&resp.ipc) else {
+                        let Ok(FTWorkerProtocol::Finished) = serde_json::from_slice(&ipc) else {
                             respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected));
                             return;
                         };
@@ -149,7 +152,7 @@ impl Guest for Component {
             } => {
                 // send Ready response to counterparty
                 send_response(
-                    &Response {
+                    &StdResponse {
                         inherit: false,
                         ipc: serde_json::to_vec(&FTWorkerProtocol::Ready).unwrap(),
                         metadata: None,
@@ -163,7 +166,7 @@ impl Guest for Component {
                 let mut chunks_received = 0;
                 let start_time = std::time::Instant::now();
                 loop {
-                    let Ok((source, Message::Request(req))) = receive() else {
+                    let Ok(Message::Request { .. }) = await_message() else {
                         respond_to_parent(FTWorkerResult::Err(TransferError::SourceFailed));
                         return;
                     };
@@ -183,7 +186,7 @@ impl Guest for Component {
                 }
                 // send Finished message to sender
                 send_response(
-                    &Response {
+                    &StdResponse {
                         inherit: false,
                         ipc: serde_json::to_vec(&FTWorkerProtocol::Finished).unwrap(),
                         metadata: None,
@@ -193,7 +196,7 @@ impl Guest for Component {
                 // send Success message to parent
                 send_request(
                     &parent_process,
-                    &Request {
+                    &StdRequest {
                         inherit: false,
                         expects_response: None,
                         ipc: serde_json::to_vec(&FTWorkerResult::ReceiveSuccess(file_name))
@@ -213,7 +216,7 @@ impl Guest for Component {
 
 fn respond_to_parent(result: FTWorkerResult) {
     send_response(
-        &Response {
+        &StdResponse {
             inherit: false,
             ipc: serde_json::to_vec(&result).unwrap(),
             metadata: None,

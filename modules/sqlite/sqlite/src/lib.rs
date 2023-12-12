@@ -103,7 +103,7 @@ fn handle_message (
                             drive: vfs_drive.clone(),
                             action: kt::VfsAction::New,
                         })?)
-                        .send_and_await_response(15)??;
+                        .send_and_await_response(15)?.unwrap();
 
                     //  (2)
                     let vfs_read = wit::get_capability(
