@@ -1,12 +1,12 @@
+use dashmap::DashMap;
 use std::collections::{HashMap, VecDeque};
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::sync::{Mutex, MutexGuard};
 use tokio::fs;
 use tokio::fs::OpenOptions;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
-use dashmap::DashMap;
+use tokio::sync::{Mutex, MutexGuard};
 
 use crate::types::*;
 
@@ -27,7 +27,7 @@ pub async fn vfs(
     let open_files: Arc<DashMap<PathBuf, Arc<Mutex<fs::File>>>> = Arc::new(DashMap::new());
     let process_queues = Arc::new(Mutex::new(
         HashMap::<ProcessId, VecDeque<KernelMessage>>::new(),
-    ));    
+    ));
     // note: queues should be based on drive, not process
     loop {
         tokio::select! {
@@ -40,7 +40,7 @@ pub async fn vfs(
                     );
                     continue;
                 }
-    
+
                 // clone Arcs for thread
                 let our_node = our_node.clone();
                 let send_to_caps_oracle = send_to_caps_oracle.clone();
@@ -48,9 +48,9 @@ pub async fn vfs(
                 let send_to_loop = send_to_loop.clone();
                 let open_files = open_files.clone();
                 let vfs_path = vfs_path.clone();
-    
+
                 let mut process_lock = process_queues.lock().await;
-    
+
                 if let Some(queue) = process_lock.get_mut(&km.source.process) {
                     queue.push_back(km.clone());
                 } else {
@@ -58,10 +58,10 @@ pub async fn vfs(
                     new_queue.push_back(km.clone());
                     process_lock.insert(km.source.process.clone(), new_queue);
                 }
-    
+
                 // clone Arc for thread
                 let process_queues_clone = process_queues.clone();
-    
+
                 tokio::spawn(async move {
                     let mut process_lock = process_queues_clone.lock().await;
                     if let Some(km) = process_lock.get_mut(&km.source.process).and_then(|q| q.pop_front()) {
@@ -126,8 +126,13 @@ async fn handle_request(
         }
     };
 
-    check_caps(our_node.clone(), source.clone(), send_to_caps_oracle.clone(), &request)
-        .await?;
+    check_caps(
+        our_node.clone(),
+        source.clone(),
+        send_to_caps_oracle.clone(),
+        &request,
+    )
+    .await?;
 
     let (ipc, bytes) = match request.action {
         VfsAction::New => {
@@ -140,13 +145,17 @@ async fn handle_request(
         } => {
             match entry_type {
                 AddEntryType::Dir => {
-                    let path = validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+                    let path =
+                        validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone())
+                            .await?;
 
                     // create dir.
                     fs::create_dir_all(path).await.unwrap();
                 }
                 AddEntryType::NewFile => {
-                    let path = validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+                    let path =
+                        validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone())
+                            .await?;
                     // open and create file
                     let file = open_file(open_files.clone(), path).await?;
                     let mut file = file.lock().await;
@@ -187,7 +196,8 @@ async fn handle_request(
                         if is_file {
                             // create file
                             println!("writing a file!, orig filename {:?}", path);
-                            let path = validate_path(vfs_path.clone(), request.drive.clone(), path).await?;
+                            let path = validate_path(vfs_path.clone(), request.drive.clone(), path)
+                                .await?;
                             println!("with the path: {:?}", path);
                             println!("and original path: {:?}", full_path);
                             let file = open_file(open_files.clone(), path).await?;
@@ -195,9 +205,13 @@ async fn handle_request(
                             let mut file = file.lock().await;
                             file.write_all(&file_contents).await.unwrap();
                             println!("actually wrote file!");
-        
                         } else if is_dir {
-                            let path = validate_path(vfs_path.clone(), request.drive.clone(), path.clone()).await?;
+                            let path = validate_path(
+                                vfs_path.clone(),
+                                request.drive.clone(),
+                                path.clone(),
+                            )
+                            .await?;
 
                             // If it's a directory, create it
                             fs::create_dir_all(path).await.unwrap();
@@ -211,7 +225,8 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Delete(mut full_path) => {
-            let path = validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+            let path =
+                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
 
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
@@ -219,7 +234,8 @@ async fn handle_request(
             mut full_path,
             offset,
         } => {
-            let path = validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+            let path =
+                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
             let file = open_file(open_files.clone(), path).await?;
             let mut file = file.lock().await;
             file.seek(SeekFrom::Start(offset)).await.unwrap();
@@ -227,7 +243,8 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Append(mut full_path) => {
-            let path = validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+            let path =
+                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
             let file = open_file(open_files.clone(), path).await?;
             let mut file = file.lock().await;
             file.seek(SeekFrom::End(0)).await.unwrap();
@@ -239,7 +256,8 @@ async fn handle_request(
             mut full_path,
             size,
         } => {
-            let path = validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+            let path =
+                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
             let file = open_file(open_files.clone(), path).await?;
             let mut file = file.lock().await;
             file.set_len(size).await.unwrap();
@@ -248,18 +266,26 @@ async fn handle_request(
         }
         VfsAction::GetEntry(mut full_path) => {
             println!("getting entry for path: {:?}", full_path);
-            let path = validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+            let path =
+                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
             println!("getentry path resolved to: {:?}", path);
             let metadata = fs::metadata(&path).await.unwrap();
             if metadata.is_dir() {
                 let mut children = Vec::new();
                 let mut entries = fs::read_dir(&path).await.unwrap();
-            
+
                 while let Some(entry) = entries.next_entry().await.unwrap() {
                     children.push(entry.path().display().to_string());
                 }
 
-                (serde_json::to_vec(&VfsResponse::GetEntry { is_file: false, children }).unwrap(), None)
+                (
+                    serde_json::to_vec(&VfsResponse::GetEntry {
+                        is_file: false,
+                        children,
+                    })
+                    .unwrap(),
+                    None,
+                )
             } else if metadata.is_file() {
                 println!("is file!");
                 let file = open_file(open_files.clone(), path).await?;
@@ -268,10 +294,16 @@ async fn handle_request(
                 let mut contents = Vec::new();
                 file.read_to_end(&mut contents).await.unwrap();
                 println!("read contents to last part");
-                (serde_json::to_vec(&VfsResponse::GetEntry { is_file: true, children: Vec::new() }).unwrap(), Some(contents))
-
+                (
+                    serde_json::to_vec(&VfsResponse::GetEntry {
+                        is_file: true,
+                        children: Vec::new(),
+                    })
+                    .unwrap(),
+                    Some(contents),
+                )
             } else {
-                return Err(VfsError::InternalError)
+                return Err(VfsError::InternalError);
             }
         }
         VfsAction::GetFileChunk {
@@ -279,31 +311,33 @@ async fn handle_request(
             offset,
             length,
         } => {
-            let path = validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+            let path =
+                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
             let file = open_file(open_files.clone(), path).await?;
             let mut file = file.lock().await;
             let mut contents = vec![0; length as usize];
 
             file.seek(SeekFrom::Start(offset)).await.unwrap();
             file.read_exact(&mut contents).await.unwrap();
-                    (
+            (
                 serde_json::to_vec(&VfsResponse::GetFileChunk).unwrap(),
                 Some(contents),
             )
         }
         VfsAction::GetEntryLength(mut full_path) => {
-            let path = validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+            let path =
+                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
             let file = open_file(open_files.clone(), path).await?;
             let mut file = file.lock().await;
 
             let length = file.metadata().await.unwrap().len();
 
-                (
-                    serde_json::to_vec(&VfsResponse::GetEntryLength(Some(length))).unwrap(),
-                    None,
-                )
-            }
-        };
+            (
+                serde_json::to_vec(&VfsResponse::GetEntryLength(Some(length))).unwrap(),
+                None,
+            )
+        }
+    };
 
     if let Some(target) = km.rsvp.or_else(|| {
         expects_response.map(|_| Address {
@@ -352,7 +386,11 @@ async fn handle_request(
     Ok(())
 }
 
-async fn validate_path(vfs_path: String, drive: String, request_path: String) -> Result<PathBuf, VfsError> {
+async fn validate_path(
+    vfs_path: String,
+    drive: String,
+    request_path: String,
+) -> Result<PathBuf, VfsError> {
     let drive_base = Path::new(&vfs_path).join(&drive);
     if let Err(e) = fs::create_dir_all(&drive_base).await {
         println!("failed creating drive dir! {:?}", e);

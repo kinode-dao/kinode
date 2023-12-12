@@ -1060,7 +1060,7 @@ pub enum VfsAction {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum AddEntryType {
     Dir,
-    NewFile,                     //  add a new file to fs and add name in vfs
+    NewFile, //  add a new file to fs and add name in vfs
     ZipArchive,
 }
 

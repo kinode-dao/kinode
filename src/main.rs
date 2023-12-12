@@ -550,7 +550,6 @@ async fn main() {
         }
     };
 
-
     // gracefully abort all running processes in kernel
     let _ = kernel_message_sender
         .send(KernelMessage {
