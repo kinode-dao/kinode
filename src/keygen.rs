@@ -23,7 +23,7 @@ pub fn encode_keyfile(
     password: String,
     username: String,
     routers: Vec<String>,
-    networking_key: Document,
+    networking_key: &[u8],
     jwt: Vec<u8>,
     file_key: Vec<u8>,
 ) -> Vec<u8> {
@@ -49,9 +49,7 @@ pub fn encode_keyfile(
     let jwt_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let file_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
-    let keyciphertext: Vec<u8> = cipher
-        .encrypt(&network_nonce, networking_key.as_ref())
-        .unwrap();
+    let keyciphertext: Vec<u8> = cipher.encrypt(&network_nonce, networking_key).unwrap();
     let jwtciphertext: Vec<u8> = cipher.encrypt(&jwt_nonce, jwt.as_ref()).unwrap();
     let fileciphertext: Vec<u8> = cipher.encrypt(&file_nonce, file_key.as_ref()).unwrap();
 

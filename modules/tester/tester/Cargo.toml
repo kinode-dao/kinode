@@ -17,7 +17,7 @@ indexmap = "2.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "1.0"
-uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "ba71fc9" }
+uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "3ea3a23" }
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "efcc759" }
 
 [lib]
@@ -25,8 +25,3 @@ crate-type = ["cdylib"]
 
 [package.metadata.component]
 package = "uqbar:process"
-
-[package.metadata.component.target]
-path = "wit"
-
-[package.metadata.component.dependencies]

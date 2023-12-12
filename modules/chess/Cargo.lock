@@ -552,9 +552,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.40"
+version = "2.0.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13fa70a4ee923979ffb522cacce59d34421ebdea5625e1073c4326ef9d2dd42e"
+checksum = "44c8b28c477cc3bf0e7966561e3460130e1255f7a1cf71931075f1c5e7a7e269"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -631,7 +631,8 @@ checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
 
 [[package]]
 name = "uqbar_process_lib"
-version = "0.3.0"
+version = "0.4.0"
+source = "git+ssh://git@github.com/uqbar-dao/process_lib.git?rev=3ea3a23#3ea3a23de46cda8ebe1ea8f3b9f764b57e7feada"
 dependencies = [
  "anyhow",
  "bincode",

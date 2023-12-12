@@ -23,10 +23,6 @@ mod timer;
 mod types;
 mod vfs;
 
-// extensions
-#[cfg(feature = "llm")]
-mod llm;
-
 const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
 const TERMINAL_CHANNEL_CAPACITY: usize = 32;
@@ -37,8 +33,6 @@ const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
-#[cfg(feature = "llm")]
-const LLM_CHANNEL_CAPACITY: usize = 32;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -66,10 +60,9 @@ async fn serve_register_fe(
     // that updates their PKI info on-chain.
     let (kill_tx, kill_rx) = oneshot::channel::<bool>();
 
-    let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
-        Ok(keyfile) => keyfile,
-        Err(_) => Vec::new(),
-    };
+    let disk_keyfile: Option<Vec<u8>> = fs::read(format!("{}/.keys", home_directory_path))
+        .await
+        .ok();
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
@@ -120,9 +113,6 @@ async fn main() {
                 .value_parser(value_parser!(u16)),
         );
 
-    #[cfg(feature = "llm")]
-    let app = app.arg(arg!(--llm <LLM_URL> "LLM endpoint"));
-
     let matches = app.get_matches();
 
     let home_directory_path = matches.get_one::<String>("home").unwrap();
@@ -141,9 +131,6 @@ async fn main() {
             .clone(),
         matches.get_one::<String>("fake-node-name"),
     );
-
-    #[cfg(feature = "llm")]
-    let llm_url = matches.get_one::<String>("llm").unwrap();
 
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {:?}", e);
@@ -184,10 +171,6 @@ async fn main() {
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
-    // optional llm extension
-    #[cfg(feature = "llm")]
-    let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(LLM_CHANNEL_CAPACITY);
 
     //  fs config in .env file (todo add -- arguments cleanly (with clap?))
     dotenv::dotenv().ok();
@@ -410,13 +393,6 @@ async fn main() {
         ),
     ];
 
-    #[cfg(feature = "llm")]
-    runtime_extensions.push((
-        ProcessId::new(Some("llm"), "sys", "uqbar"), // TODO llm:extensions:uqbar ?
-        llm_sender,
-        true,
-    ));
-
     let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
         our.name.clone(),
         home_directory_path.clone(),
@@ -515,16 +491,6 @@ async fn main() {
         caps_oracle_sender.clone(),
         vfs_messages,
     ));
-    #[cfg(feature = "llm")]
-    {
-        tasks.spawn(llm::llm(
-            our.name.clone(),
-            kernel_message_sender.clone(),
-            llm_receiver,
-            llm_url.to_string(),
-            print_sender.clone(),
-        ));
-    }
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
     let quit_msg: String = tokio::select! {
