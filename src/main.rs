@@ -170,9 +170,6 @@ async fn main() {
     // websocket sender receives send messages via this channel, kernel send messages
     let (net_message_sender, net_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(WEBSOCKET_SENDER_CHANNEL_CAPACITY);
-    // filesystem receives request messages via this channel, kernel sends messages
-    let (fs_message_sender, fs_message_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY);
 
     let (state_sender, state_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY);
@@ -386,11 +383,6 @@ async fn main() {
     #[allow(unused_mut)]
     let mut runtime_extensions = vec![
         (
-            ProcessId::new(Some("filesystem"), "sys", "uqbar"),
-            fs_message_sender,
-            false,
-        ),
-        (
             ProcessId::new(Some("http_server"), "sys", "uqbar"),
             http_server_sender,
             true,
@@ -437,14 +429,6 @@ async fn main() {
     .await
     .expect("state load failed!");
 
-    let manifest = filesystem::temp_manifest(
-        our.name.clone(),
-        home_directory_path.clone(),
-        fs_config,
-        decoded_keyfile.file_key,
-    )
-    .await
-    .expect("temp manifest failed!");
     /*
      *  the kernel module will handle our userspace processes and receives
      *  all "messages", the basic message format for uqbar.
@@ -486,15 +470,6 @@ async fn main() {
         our.name.clone(),
         kernel_message_sender.clone(),
         net_message_receiver,
-    ));
-    tasks.spawn(filesystem::fs_sender(
-        our.name.clone(),
-        manifest,
-        kernel_message_sender.clone(),
-        print_sender.clone(),
-        fs_message_receiver,
-        fs_kill_recv,
-        fs_kill_confirm_send,
     ));
     tasks.spawn(state::state_sender(
         our.name.clone(),
@@ -538,7 +513,7 @@ async fn main() {
         print_sender.clone(),
         vfs_message_receiver,
         caps_oracle_sender.clone(),
-        vfs_messages,
+        home_directory_path.clone(),
     ));
     #[cfg(feature = "llm")]
     {
@@ -575,9 +550,6 @@ async fn main() {
         }
     };
 
-    // shutdown signal to fs for flush
-    let _ = fs_kill_send.send(());
-    let _ = fs_kill_confirm_recv.await;
 
     // gracefully abort all running processes in kernel
     let _ = kernel_message_sender

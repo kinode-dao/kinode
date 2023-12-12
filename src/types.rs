@@ -897,6 +897,8 @@ pub struct PackageManifestEntry {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum StateAction {
+    // AddWasm (ID + hash?)
+    // GetWasm
     Read(u128),
     GetState(ProcessId),
     SetState(ProcessId),
@@ -1036,10 +1038,6 @@ pub enum VfsAction {
         full_path: String,
         entry_type: AddEntryType,
     },
-    Rename {
-        full_path: String,
-        new_full_path: String,
-    },
     Delete(String),
     WriteOffset {
         full_path: String,
@@ -1050,8 +1048,6 @@ pub enum VfsAction {
         full_path: String,
         size: u64,
     },
-    GetPath(u128),
-    GetHash(String),
     GetEntry(String),
     GetFileChunk {
         full_path: String,
@@ -1065,7 +1061,6 @@ pub enum VfsAction {
 pub enum AddEntryType {
     Dir,
     NewFile,                     //  add a new file to fs and add name in vfs
-    ExistingFile { hash: u128 }, //  link an existing file in fs to a new name in vfs
     ZipArchive,
 }
 
