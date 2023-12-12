@@ -136,38 +136,36 @@ async fn handle_message(
 
     match client.execute(request).await {
         Ok(response) => {
-            if expects_response.is_some() {
-                let _ = send_to_loop
-                    .send(KernelMessage {
-                        id,
-                        source: Address {
-                            node: our.to_string(),
-                            process: ProcessId::new(Some("http_client"), "sys", "uqbar"),
+            let _ = send_to_loop
+                .send(KernelMessage {
+                    id,
+                    source: Address {
+                        node: our.to_string(),
+                        process: ProcessId::new(Some("http_client"), "sys", "uqbar"),
+                    },
+                    target,
+                    rsvp: None,
+                    message: Message::Response((
+                        Response {
+                            inherit: false,
+                            ipc: serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(&Ok(
+                                HttpResponse {
+                                    status: response.status().as_u16(),
+                                    headers: serialize_headers(response.headers()),
+                                },
+                            ))
+                            .unwrap(),
+                            metadata: None,
                         },
-                        target,
-                        rsvp: None,
-                        message: Message::Response((
-                            Response {
-                                inherit: false,
-                                ipc: serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(
-                                    &Ok(HttpResponse {
-                                        status: response.status().as_u16(),
-                                        headers: serialize_headers(response.headers()),
-                                    }),
-                                )
-                                .unwrap(),
-                                metadata: None,
-                            },
-                            None,
-                        )),
-                        payload: Some(Payload {
-                            mime: None,
-                            bytes: response.bytes().await.unwrap_or_default().to_vec(),
-                        }),
-                        signed_capabilities: None,
-                    })
-                    .await;
-            }
+                        None,
+                    )),
+                    payload: Some(Payload {
+                        mime: None,
+                        bytes: response.bytes().await.unwrap_or_default().to_vec(),
+                    }),
+                    signed_capabilities: None,
+                })
+                .await;
         }
         Err(e) => {
             make_error_message(
