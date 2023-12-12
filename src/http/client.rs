@@ -148,12 +148,12 @@ async fn handle_message(
                     message: Message::Response((
                         Response {
                             inherit: false,
-                            ipc: serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(
-                                &Ok(HttpResponse {
+                            ipc: serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(&Ok(
+                                HttpResponse {
                                     status: response.status().as_u16(),
                                     headers: serialize_headers(response.headers()),
-                                }),
-                            )
+                                },
+                            ))
                             .unwrap(),
                             metadata: None,
                         },
