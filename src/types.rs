@@ -1035,8 +1035,10 @@ pub enum VfsError {
     BadRequest { error: String },
     #[error("vfs: error parsing path: {path}, error: {error}")]
     ParseError { error: String, path: String },    
-    #[error("vfs: IO error: {source}, at path {path}.")]
-    IOError { source: tokio::io::Error, path: String },
+    #[error("vfs: IO error: {error}, at path {path}.")]
+    IOError { error: String, path: String },
+    #[error("vfs: kernel capability channel error: {error}")]
+    CapChannelFail { error: String },
     #[error("vfs: Bad JSON payload: {error}.")]
     BadJson { error: String  },
     #[error("vfs: File not found at path {path}.")]
@@ -1054,6 +1056,7 @@ impl VfsError {
             VfsError::BadRequest { .. } => "BadRequest",
             VfsError::ParseError { .. } => "ParseError",
             VfsError::IOError { .. } => "IOError",
+            VfsError::CapChannelFail { .. } => "CapChannelFail",
             VfsError::BadJson { .. } => "NoJson",
             VfsError::NotFound { .. } => "NotFound",
             VfsError::CreateDirError { .. } => "CreateDirError",
