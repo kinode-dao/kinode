@@ -21,10 +21,16 @@ pub async fn vfs(
     let vfs_path = format!("{}/vfs", &home_directory_path);
 
     if let Err(e) = fs::create_dir_all(&vfs_path).await {
-        panic!("failed creating fs dir! {:?}", e);
+        panic!("failed creating vfs dir! {:?}", e);
     }
 
+    //process_A has drive A 
+    //process_B creates drive A, conflict. 
+
+    //process_A has drive A, your processId => drive => folder =>
+
     let open_files: Arc<DashMap<PathBuf, Arc<Mutex<fs::File>>>> = Arc::new(DashMap::new());
+
     let process_queues = Arc::new(Mutex::new(
         HashMap::<ProcessId, VecDeque<KernelMessage>>::new(),
     ));
@@ -41,7 +47,7 @@ pub async fn vfs(
                     continue;
                 }
 
-                // clone Arcs for thread
+                // clone arcs for thread
                 let our_node = our_node.clone();
                 let send_to_caps_oracle = send_to_caps_oracle.clone();
                 let send_to_terminal = send_to_terminal.clone();
@@ -59,7 +65,6 @@ pub async fn vfs(
                     process_lock.insert(km.source.process.clone(), new_queue);
                 }
 
-                // clone Arc for thread
                 let process_queues_clone = process_queues.clone();
 
                 tokio::spawn(async move {
@@ -106,25 +111,28 @@ async fn handle_request(
         id,
         source,
         message,
+        payload,
         ..
     } = km.clone();
     let Message::Request(Request {
         ipc,
         expects_response,
         metadata,
-        inherit,
+        ..
     }) = message.clone()
     else {
-        return Err(VfsError::BadJson);
+        return Err(VfsError::BadRequest { error: "not a request".into() })
     };
 
     let request: VfsRequest = match serde_json::from_slice(&ipc) {
         Ok(r) => r,
         Err(e) => {
             println!("vfs: got invalid Request: {}", e);
-            return Err(VfsError::BadJson);
+            return Err(VfsError::BadJson { error: e.to_string() })
         }
     };
+
+    let (process_id, drive) = parse_process_and_drive(&request.path).await?;
 
     check_caps(
         our_node.clone(),
@@ -134,210 +142,222 @@ async fn handle_request(
     )
     .await?;
 
+    let path = request.path; // validate
+
     let (ipc, bytes) = match request.action {
-        VfsAction::New => {
-            // handled in check_caps
+        VfsAction::CreateDrive => {
+            // handled in check_caps.
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
-        VfsAction::Add {
-            mut full_path,
-            entry_type,
-        } => {
-            match entry_type {
-                AddEntryType::Dir => {
-                    let path =
-                        validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone())
-                            .await?;
-
-                    // create dir.
-                    fs::create_dir_all(path).await.unwrap();
-                }
-                AddEntryType::NewFile => {
-                    let path =
-                        validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone())
-                            .await?;
-                    // open and create file
-                    let file = open_file(open_files.clone(), path).await?;
-                    let mut file = file.lock().await;
-                    file.write_all(&km.payload.unwrap().bytes).await.unwrap();
-                }
-                AddEntryType::ZipArchive => {
-                    let Some(payload) = km.payload else {
-                        return Err(VfsError::BadPayload);
-                    };
-                    let Some(mime) = payload.mime else {
-                        return Err(VfsError::BadPayload);
-                    };
-                    if "application/zip" != mime {
-                        return Err(VfsError::BadPayload);
-                    }
-                    let file = std::io::Cursor::new(&payload.bytes);
-                    let mut zip = match zip::ZipArchive::new(file) {
-                        Ok(f) => f,
-                        Err(_) => return Err(VfsError::InternalError),
-                    };
-
-                    // loop through items in archive; recursively add to root
-                    for i in 0..zip.len() {
-                        // must destruct the zip file created in zip.by_index()
-                        //  Before any `.await`s are called since ZipFile is not
-                        //  Send and so does not play nicely with await
-                        let (is_file, is_dir, path, file_contents) = {
-                            let mut file = zip.by_index(i).unwrap();
-                            let is_file = file.is_file();
-                            let is_dir = file.is_dir();
-                            let full_path = format!("/{}", file.name());
-                            let mut file_contents = Vec::new();
-                            if is_file {
-                                file.read_to_end(&mut file_contents).unwrap();
-                            };
-                            (is_file, is_dir, full_path, file_contents)
-                        };
-                        if is_file {
-                            // create file
-                            println!("writing a file!, orig filename {:?}", path);
-                            let path = validate_path(vfs_path.clone(), request.drive.clone(), path)
-                                .await?;
-                            println!("with the path: {:?}", path);
-                            println!("and original path: {:?}", full_path);
-                            let file = open_file(open_files.clone(), path).await?;
-                            println!("opening file!:");
-                            let mut file = file.lock().await;
-                            file.write_all(&file_contents).await.unwrap();
-                            println!("actually wrote file!");
-                        } else if is_dir {
-                            let path = validate_path(
-                                vfs_path.clone(),
-                                request.drive.clone(),
-                                path.clone(),
-                            )
-                            .await?;
-
-                            // If it's a directory, create it
-                            fs::create_dir_all(path).await.unwrap();
-                        } else {
-                            println!("vfs: zip with non-file non-dir");
-                            return Err(VfsError::InternalError);
-                        };
-                    }
-                }
-            }
+        VfsAction::CreateDir => {
+            // check error mapping
+            //     fs::create_dir_all(path).await.map_err(|e| VfsError::IOError { source: e, path: path.clone() })?;
+            fs::create_dir(path).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
-        VfsAction::Delete(mut full_path) => {
-            let path =
-                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+        VfsAction::CreateDirAll => {
+            fs::create_dir_all(path).await?;
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::CreateFile => {
+            let file = open_file(open_files.clone(), path).await?;
 
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
-        VfsAction::WriteOffset {
-            mut full_path,
-            offset,
-        } => {
-            let path =
-                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+        VfsAction::OpenFile => {
+            // shouldn't create?
+            let file = open_file(open_files.clone(), path).await?;
+
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::CloseFile => {
+            open_files.remove(&path);
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::WriteAll => {
+            // should expect open file.
             let file = open_file(open_files.clone(), path).await?;
             let mut file = file.lock().await;
-            file.seek(SeekFrom::Start(offset)).await.unwrap();
-            file.write_all(&km.payload.unwrap().bytes).await.unwrap();
+            file.write_all(&payload.bytes).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
-        VfsAction::Append(mut full_path) => {
-            let path =
-                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+        VfsAction::Write => {
             let file = open_file(open_files.clone(), path).await?;
             let mut file = file.lock().await;
-            file.seek(SeekFrom::End(0)).await.unwrap();
-            file.write_all(&km.payload.unwrap().bytes).await.unwrap();
+            file.write_all(&payload.bytes).await?;
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::WriteAt(offset) => {
+            let file = open_file(open_files.clone(), path).await?;
+            let mut file = file.lock().await;
+            file.seek(SeekFrom::Start(offset)).await?;
+            file.write_all(&payload.bytes).await?;
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::Append => {
+            let file = open_file(open_files.clone(), path).await?;
+            let mut file = file.lock().await;
+            file.seek(SeekFrom::End(0)).await?;
+            file.write_all(&payload.bytes).await?;
 
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
-        VfsAction::SetSize {
-            mut full_path,
-            size,
-        } => {
-            let path =
-                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+        VfsAction::SyncAll => {
             let file = open_file(open_files.clone(), path).await?;
             let mut file = file.lock().await;
-            file.set_len(size).await.unwrap();
-
+            file.sync_all().await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
-        VfsAction::GetEntry(mut full_path) => {
-            println!("getting entry for path: {:?}", full_path);
-            let path =
-                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
-            println!("getentry path resolved to: {:?}", path);
-            let metadata = fs::metadata(&path).await.unwrap();
-            if metadata.is_dir() {
-                let mut children = Vec::new();
-                let mut entries = fs::read_dir(&path).await.unwrap();
-
-                while let Some(entry) = entries.next_entry().await.unwrap() {
-                    children.push(entry.path().display().to_string());
-                }
-
-                (
-                    serde_json::to_vec(&VfsResponse::GetEntry {
-                        is_file: false,
-                        children,
-                    })
-                    .unwrap(),
-                    None,
-                )
-            } else if metadata.is_file() {
-                println!("is file!");
-                let file = open_file(open_files.clone(), path).await?;
-                let mut file = file.lock().await;
-                println!("got file lock.");
-                let mut contents = Vec::new();
-                file.read_to_end(&mut contents).await.unwrap();
-                println!("read contents to last part");
-                (
-                    serde_json::to_vec(&VfsResponse::GetEntry {
-                        is_file: true,
-                        children: Vec::new(),
-                    })
-                    .unwrap(),
-                    Some(contents),
-                )
-            } else {
-                return Err(VfsError::InternalError);
-            }
-        }
-        VfsAction::GetFileChunk {
-            mut full_path,
-            offset,
-            length,
-        } => {
-            let path =
-                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+        VfsAction::Read => {
             let file = open_file(open_files.clone(), path).await?;
             let mut file = file.lock().await;
-            let mut contents = vec![0; length as usize];
-
-            file.seek(SeekFrom::Start(offset)).await.unwrap();
-            file.read_exact(&mut contents).await.unwrap();
+            let mut contents = Vec::new();
+            file.read_to_end(&mut contents).await?;
             (
-                serde_json::to_vec(&VfsResponse::GetFileChunk).unwrap(),
+                serde_json::to_vec(&VfsResponse::Read).unwrap(),
                 Some(contents),
             )
         }
-        VfsAction::GetEntryLength(mut full_path) => {
-            let path =
-                validate_path(vfs_path.clone(), request.drive.clone(), full_path.clone()).await?;
+        VfsAction::ReadDir => {
+            let mut dir = fs::read_dir(path).await?;
+            let mut entries = Vec::new();
+            while let Some(entry) = dir.next_entry().await? {
+                // risky non-unicode 
+                entries.push(entry.path().to_str()?);
+            }
+            (
+                serde_json::to_vec(&VfsResponse::ReadDir(entries)).unwrap(),
+                None
+            )
+        }
+        VfsAction::ReadExact(length) => {
             let file = open_file(open_files.clone(), path).await?;
             let mut file = file.lock().await;
-
-            let length = file.metadata().await.unwrap().len();
-
+            let mut contents = vec![0; length as usize];
+            file.read_exact(&mut contents).await?;
             (
-                serde_json::to_vec(&VfsResponse::GetEntryLength(Some(length))).unwrap(),
+                serde_json::to_vec(&VfsResponse::ReadExact).unwrap(),
+                Some(contents),
+            )
+        }
+        VfsAction::ReadToString => {
+            let file = open_file(open_files.clone(), path).await?;
+            let mut file = file.lock().await;
+            let mut contents = String::new();
+            file.read_to_string(&mut contents).await?;
+            (
+                serde_json::to_vec(&VfsResponse::ReadToString).unwrap(),
+                Some(contents.into_bytes()),
+            )
+        }
+        VfsAction::Seek(seek_from) => {
+            let file = open_file(open_files.clone(), path).await?;
+            let mut file = file.lock().await;
+            file.seek(seek_from).await?;
+
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::RemoveFile => {
+            fs::remove_file(path).await?;
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::RemoveDir => {
+            fs::remove_dir(path).await?;
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::RemoveDirAll => {
+            fs::remove_dir_all(path).await?;
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::Rename(new_path) => {
+            // doublecheck permission weirdness, sanitize new path
+            fs::rename(path, new_path).await?;
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::Len => {
+            let file = open_file(open_files.clone(), path).await?;
+            let mut file = file.lock().await;
+            let len = file.metadata().await?.len();
+            (
+                serde_json::to_vec(&VfsResponse::Len(Some(len))).unwrap(),
                 None,
             )
         }
-    };
+        VfsAction::SetLen(len) => {
+            let file = open_file(open_files.clone(), path).await?;
+            let mut file = file.lock().await;
+            file.set_len(len).await?;
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::Hash => {
+            let file = open_file(open_files.clone(), path).await?;
+            let mut file = file.lock().await;
+            let mut hasher = blake3::Hasher::new();
+            let mut buffer = [0; 1024];
+            loop {
+                let bytes_read = file.read(&mut buffer).await?;
+                if bytes_read == 0 {
+                    break;
+                }
+                hasher.update(&buffer[..bytes_read]);
+            }
+            let hash = hasher.finalize();
+            (
+                serde_json::to_vec(&VfsResponse::Hash(Some(hash.to_vec()))).unwrap(),
+                None,
+            )
+        }
+        VfsAction::AddZip => {
+            let Some(mime) = payload.mime else {
+                return Err(VfsError::BadRequest { error: "payload mime type needs to exist for AddZip".into() })
+            };
+            if "application/zip" != mime {
+                return Err(VfsError::BadRequest { error: "payload mime type needs to be application/zip for AddZip".into() })
+            }
+            let file = std::io::Cursor::new(&payload.bytes);
+            let mut zip = match zip::ZipArchive::new(file) {
+                Ok(f) => f,
+                Err(_) => return Err(VfsError::InternalError),
+            };
+
+            // loop through items in archive; recursively add to root
+            for i in 0..zip.len() {
+                // must destruct the zip file created in zip.by_index()
+                //  Before any `.await`s are called since ZipFile is not
+                //  Send and so does not play nicely with await
+                let (is_file, is_dir, path, file_contents) = {
+                    let mut file = zip.by_index(i).unwrap();
+                    let is_file = file.is_file();
+                    let is_dir = file.is_dir();
+                    let full_path = format!("/{}", file.name());
+                    let mut file_contents = Vec::new();
+                    if is_file {
+                        file.read_to_end(&mut file_contents).unwrap();
+                    };
+                    (is_file, is_dir, full_path, file_contents)
+                };
+                if is_file {
+                    let file = open_file(open_files.clone(), path).await?;
+                    let mut file = file.lock().await;
+                    file.write_all(&file_contents).await.unwrap();
+                } else if is_dir {
+                    let path = validate_path(
+                        vfs_path.clone(),
+                        request.drive.clone(),
+                        path.clone(),
+                    )
+                    .await?;
+
+                    // If it's a directory, create it
+                    fs::create_dir_all(path).await.unwrap();
+                } else {
+                    println!("vfs: zip with non-file non-dir");
+                    return Err(VfsError::CreateDirError { path: path, error: "vfs: zip with non-file non-dir".into() });
+                };
+            }
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+    }
 
     if let Some(target) = km.rsvp.or_else(|| {
         expects_response.map(|_| Address {
@@ -384,6 +404,25 @@ async fn handle_request(
     }
 
     Ok(())
+}
+
+async fn parse_process_and_drive(path: &str) -> Result<(ProcessId, String), VfsError> {
+    if !path.starts_with('/') {
+        return Err(VfsError::ParseError { error: "path does not start with /".into(), path: path.to_string() }); 
+    }
+    let parts: Vec<&str> = path.split('/').collect();
+
+    let process_id = match ProcessId::from_str(parts[1]) {
+        Ok(id) => id,
+        Err(e) => return Err(VfsError::ParseError { error: e.to_string(), path: path.to_string() }),
+    };
+
+    let drive = match parts.get(2) {
+        Some(d) => d.to_string(),
+        None => return Err(VfsError::ParseError { error: "no drive specified".into(), path: path.to_string() }),
+    };
+    
+    Ok((process_id, drive))
 }
 
 async fn validate_path(
@@ -436,6 +475,7 @@ async fn check_caps(
 ) -> Result<(), VfsError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     //  check caps
+    // process_id + drive. + kernel needs auto_access. 
     match &request.action {
         VfsAction::Add { .. }
         | VfsAction::Delete { .. }
@@ -452,6 +492,7 @@ async fn check_caps(
                         },
                         params: serde_json::to_string(&serde_json::json!({
                             "kind": "write",
+                            "process_id": process_id.to_string(),
                             "drive": request.drive,
                         }))
                         .unwrap(),
@@ -537,6 +578,74 @@ async fn check_caps(
             Ok(())
         }
     }
+}
+
+async fn check_capss(
+    our_node: String,
+    source: Address,
+    send_to_caps_oracle: CapMessageSender,
+    request: &VfsRequest,
+) -> Result<(), VfsError> {
+    match request.action {
+        VfsAction::CreateDir
+        | VfsAction::CreateDirAll
+        | VfsAction::CreateFile
+        | VfsAction::OpenFile
+        | VfsAction::CloseFile
+        | VfsAction::WriteAll
+        | VfsAction::Write
+        | VfsAction::WriteAt(_)
+        | VfsAction::Append
+        | VfsAction::SyncAll
+        | VfsAction::RemoveFile
+        | VfsAction::RemoveDir
+        | VfsAction::RemoveDirAll
+        | VfsAction::Rename(_)
+        | VfsAction::SetLen(_) => {
+            send_to_caps_oracle
+                .send(CapMessage::Has {
+                    on: source.process.clone(),
+                    cap: Capability {
+                        issuer: Address {
+                            node: our_node.clone(),
+                            process: VFS_PROCESS_ID.clone(),
+                        },
+                        params: serde_json::to_string(&serde_json::json!({
+                            "kind": "write",
+                            "process_id": process_id.to_string(),
+                            "drive": request.drive,
+                        }))
+                        .unwrap(),
+                    },
+                    responder: send_cap_bool,
+                })
+                .await
+                .unwrap();
+            let has_cap = recv_cap_bool.await.unwrap();
+            if !has_cap {
+                return Err(VfsError::NoCap);
+            }
+            Ok(())
+        }
+        VfsAction::Read
+        | VfsAction::ReadDir
+        | VfsAction::ReadExact(_)
+        | VfsAction::ReadToString
+        | VfsAction::Seek(_)
+        | VfsAction::Hash
+        | VfsAction::Len => {
+            if !caps.read {
+                return Err(VfsError::NoCap {
+                    action: format!("{:?}", action),
+                    path: caps.path.clone(),
+                });
+            }
+        }
+        VfsAction::CreateDrive {
+
+        }
+    }
+    Ok(())
 }
 
 fn make_error_message(

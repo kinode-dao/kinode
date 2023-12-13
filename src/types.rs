@@ -970,145 +970,93 @@ pub struct FsConfig {
     // pub flush_to_wal_interval: usize,
 }
 
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum FsError {
-    #[error("fs: Bytes payload required for {action}.")]
-    BadBytes { action: String },
-    #[error(
-        "fs: JSON payload could not be parsed to FsAction: {:?}, error: {:?}.",
-        json,
-        error
-    )]
-    BadJson { json: String, error: String },
-    #[error("fs: No JSON payload.")]
-    NoJson,
-    #[error("fs: Read failed to file {file}: {error}.")]
-    ReadFailed { file: u128, error: String },
-    #[error("fs: Write failed to file {file}: {error}.")]
-    WriteFailed { file: u128, error: String },
-    #[error("fs: file not found: {file}")]
-    NotFound { file: u128 },
-    #[error("fs: S3 error: {error}")]
-    S3Error { error: String },
-    #[error("fs: IO error: {error}")]
-    IOError { error: String },
-    #[error("fs: Encryption error: {error}")]
-    EncryptionError { error: String },
-    #[error("fs: Limit error: {error}")]
-    LimitError { error: String },
-    #[error("fs: memory buffer error: {error}")]
-    MemoryBufferError { error: String },
-    #[error("fs: length operation error: {error}")]
-    LengthError { error: String },
-    #[error("fs: creating fs dir failed at path: {path}: {error}")]
-    CreateInitialDirError { path: String, error: String },
-}
-
-#[allow(dead_code)]
-impl FsError {
-    pub fn kind(&self) -> &str {
-        match *self {
-            FsError::BadBytes { .. } => "BadBytes",
-            FsError::BadJson { .. } => "BadJson",
-            FsError::NoJson { .. } => "NoJson",
-            FsError::ReadFailed { .. } => "ReadFailed",
-            FsError::WriteFailed { .. } => "WriteFailed",
-            FsError::S3Error { .. } => "S3Error",
-            FsError::IOError { .. } => "IOError",
-            FsError::EncryptionError { .. } => "EncryptionError",
-            FsError::LimitError { .. } => "LimitError",
-            FsError::MemoryBufferError { .. } => "MemoryBufferError",
-            FsError::NotFound { .. } => "NotFound",
-            FsError::LengthError { .. } => "LengthError",
-            FsError::CreateInitialDirError { .. } => "CreateInitialDirError",
-        }
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VfsRequest {
-    pub drive: String,
+    pub path: String,
     pub action: VfsAction,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsAction {
-    New,
-    Add {
-        full_path: String,
-        entry_type: AddEntryType,
-    },
-    Delete(String),
-    WriteOffset {
-        full_path: String,
-        offset: u64,
-    },
-    Append(String),
-    SetSize {
-        full_path: String,
-        size: u64,
-    },
-    GetEntry(String),
-    GetFileChunk {
-        full_path: String,
-        offset: u64,
-        length: u64,
-    },
-    GetEntryLength(String),
+    CreateDrive,
+    CreateDir,
+    CreateDirAll,
+    CreateFile,
+    OpenFile,
+    CloseFile,
+    WriteAll,
+    Write,
+    WriteAt(u64),
+    Append,
+    SyncAll,
+    Read,
+    ReadDir,
+    ReadExact(u64),
+    ReadToString,
+    Seek(SeekFrom),
+    RemoveFile,
+    RemoveDir,
+    RemoveDirAll,
+    Rename(String),
+    AddZip,
+    // Metadata,
+    Len,
+    SetLen(u64),
+    Hash,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum AddEntryType {
-    Dir,
-    NewFile, //  add a new file to fs and add name in vfs
-    ZipArchive,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum GetEntryType {
-    Dir,
-    File,
+pub enum SeekFrom {
+    Start(u64),
+    End(i64),
+    Current(i64),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsResponse {
     Ok,
     Err(VfsError),
-    GetPath(Option<String>),
-    GetHash(Option<u128>),
-    GetEntry {
-        // file bytes in payload, if entry was a file
-        is_file: bool,
-        children: Vec<String>,
-    },
-    GetFileChunk, // chunk in payload, if file exists
-    GetEntryLength(Option<u64>),
+    Read,
+    ReadDir(Vec<String>),
+    ReadToString(String),
+    Len(u64),
+    Hash([u8; 32]),
+
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum VfsError {
-    BadJson,
-    BadPayload,
-    BadDriveName,
-    BadDescriptor,
-    NoCap,
-    EntryNotFound,
-    PersistError,
-    InternalError, // String
+    #[error("vfs: No capability for action {action} at path {path}.")]
+    NoCap { action: String, path: String },
+    #[error("vfs: Bytes payload required for {action} at path {path}.")]
+    BadBytes { action: String, path: String },
+    #[error("vfs: bad request error: {error}")]
+    BadRequest { error: String },
+    #[error("vfs: error parsing path: {path}, error: {error}")]
+    ParseError { error: String, path: String },    
+    #[error("vfs: IO error: {source}, at path {path}.")]
+    IOError { source: tokio::io::Error, path: String },
+    #[error("vfs: Bad JSON payload: {error}.")]
+    BadJson { error: String  },
+    #[error("vfs: File not found at path {path}.")]
+    NotFound { path: String },
+    #[error("vfs: Creating directory failed at path: {path}: {error}")]
+    CreateDirError { path: String, error: String },
 }
 
 #[allow(dead_code)]
 impl VfsError {
     pub fn kind(&self) -> &str {
         match *self {
-            VfsError::BadJson => "BadJson",
-            VfsError::BadPayload => "BadPayload",
-            VfsError::BadDriveName => "BadDriveName",
-            VfsError::BadDescriptor => "BadDescriptor",
-            VfsError::NoCap => "NoCap",
-            VfsError::EntryNotFound => "EntryNotFound",
-            VfsError::PersistError => "PersistError",
-            VfsError::InternalError => "InternalError",
+            VfsError::NoCap { .. } => "NoCap",
+            VfsError::BadBytes { .. } => "BadBytes",
+            VfsError::BadRequest { .. } => "BadRequest",
+            VfsError::ParseError { .. } => "ParseError",
+            VfsError::IOError { .. } => "IOError",
+            VfsError::BadJson { .. } => "NoJson",
+            VfsError::NotFound { .. } => "NotFound",
+            VfsError::CreateDirError { .. } => "CreateDirError",
         }
     }
 }
