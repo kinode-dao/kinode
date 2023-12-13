@@ -16,7 +16,10 @@ use warp::http::{header::HeaderValue, StatusCode};
 use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
 
+#[cfg(not(feature = "simulation-mode"))]
 const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 15;
+#[cfg(feature = "simulation-mode")]
+const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 600;
 
 const LOGIN_HTML: &str = include_str!("login.html");
 

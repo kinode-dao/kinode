@@ -341,7 +341,7 @@ async fn main() {
                 password,
                 name.clone(),
                 decoded_keyfile.routers.clone(),
-                networking_keypair,
+                networking_keypair.as_ref(),
                 decoded_keyfile.jwt_secret_bytes.clone(),
                 decoded_keyfile.file_key.clone(),
             );

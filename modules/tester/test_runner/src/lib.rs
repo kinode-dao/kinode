@@ -36,7 +36,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
         },
         wit::Message::Request(wit::Request { ref ipc, .. }) => {
             match serde_json::from_slice(ipc)? {
-                tt::TesterRequest::Run(_) => {
+                tt::TesterRequest::Run { test_timeout, .. } => {
                     wit::print_to_terminal(0, "test_runner: got Run");
 
                     let response = Request::new()
@@ -45,11 +45,11 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                             drive: "tester:uqbar".into(),
                             action: kt::VfsAction::GetEntry("/".into()),
                         })?)
-                        .send_and_await_response(5)?.unwrap();
+                        .send_and_await_response(test_timeout)?.unwrap();
 
-                    let Message::Response { ipc, .. } = response else { panic!("") };
+                    let Message::Response { ipc: vfs_ipc, .. } = response else { panic!("") };
                     let kt::VfsResponse::GetEntry { children, .. } =
-                        serde_json::from_slice(&ipc)? else { panic!("") };
+                        serde_json::from_slice(&vfs_ipc)? else { panic!("") };
                     let mut children: HashSet<_> = children.into_iter().collect();
                     children.remove("/manifest.json");
                     children.remove("/metadata.json");
@@ -79,7 +79,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                                 process: child_process_id,
                             })
                             .ipc(ipc.clone())
-                            .send_and_await_response(5)?.unwrap();
+                            .send_and_await_response(test_timeout)?.unwrap();
 
                         let Message::Response { ipc, .. } = response else { panic!("") };
                         match serde_json::from_slice(&ipc)? {
