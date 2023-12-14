@@ -134,7 +134,7 @@ async fn handle_request(
     // current prepend to filepaths needs to be: /package_id/drive/path
     let (package_id, drive, rest) = parse_package_and_drive(&request.path).await?;
     let drive = format!("/{}/{}", package_id, drive);
-    let path = PathBuf::from(request.path.clone()); 
+    let path = PathBuf::from(request.path.clone());
 
     // temp, replaced with ROOT cap
     let app_store_process_id = ProcessId::new(Some("main"), "app_store", "uqbar");
@@ -247,7 +247,11 @@ async fn handle_request(
             file.seek(SeekFrom::Start(0)).await?;
             file.read_to_end(&mut contents).await?;
 
-            println!("read path to end with x bytes: {}, {}", path.display(), contents.len());
+            println!(
+                "read path to end with x bytes: {}, {}",
+                path.display(),
+                contents.len()
+            );
 
             (
                 serde_json::to_vec(&VfsResponse::Read).unwrap(),
@@ -604,7 +608,8 @@ async fn check_caps(
         VfsAction::CreateDrive => {
             // TODO add helper to types.rs?
             println!("got create drive!");
-            let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
+            let src_package_id =
+                PackageId::new(source.process.package(), source.process.publisher());
             if src_package_id != package_id {
                 println!("not equal..");
                 // might have root caps

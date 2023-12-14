@@ -372,7 +372,7 @@ async fn bootstrap(
         fs::create_dir_all(&pkg_path)
             .await
             .expect("bootstrap vfs dir pkg creation failed!");
-        
+
         let drive_path = format!("/{}/pkg", &our_drive_name);
 
         // for each file in package.zip, recursively through all dirs, send a newfile KM to VFS
@@ -452,7 +452,10 @@ async fn bootstrap(
                                     requested_caps.insert(Capability {
                                         issuer: Address {
                                             node: our_name.to_string(),
-                                            process: ProcessId::from_str(process_name.as_str().unwrap()).unwrap(),
+                                            process: ProcessId::from_str(
+                                                process_name.as_str().unwrap(),
+                                            )
+                                            .unwrap(),
                                         },
                                         params: params.to_string(),
                                     });
@@ -504,7 +507,10 @@ async fn bootstrap(
             let public_process = entry.public;
 
             let wasm_bytes_handle = format!("{}/{}", &drive_path, &file_path);
-            println!("giving bootstrapped process the following caps: {:?}", requested_caps.clone());
+            println!(
+                "giving bootstrapped process the following caps: {:?}",
+                requested_caps.clone()
+            );
             process_map.insert(
                 ProcessId::new(Some(&entry.process_name), package_name, package_publisher),
                 PersistedProcess {

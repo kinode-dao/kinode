@@ -949,7 +949,7 @@ pub struct VfsRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsAction {
     CreateDrive,
-    CreateDir,  
+    CreateDir,
     CreateDirAll,
     CreateFile,
     OpenFile,
