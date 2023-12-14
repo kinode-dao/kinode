@@ -17,7 +17,7 @@ rand = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10.8"
-uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "3ea3a23" }
+uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "954c267" }
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "efcc759" }
 
 [lib]

@@ -317,12 +317,13 @@ fn handle_local_request(
             let Some(mut payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
+            let drive = format!("/{}/{}", our.process.to_string(), package.to_string());
 
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::New,
+                    path: drive.clone(),
+                    action: kt::VfsAction::CreateDrive,
                 })?)
                 .send_and_await_response(5)?.unwrap();
 
@@ -336,44 +337,38 @@ fn handle_local_request(
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::Add {
-                        full_path: package.to_string(),
-                        entry_type: kt::AddEntryType::ZipArchive,
-                    },
+                    path: drive.clone(),
+                    action: kt::VfsAction::AddZip,
                 })?)
                 .payload(payload.clone())
                 .send_and_await_response(5)?.unwrap();
 
             // save the zip file itself in VFS for sharing with other nodes
             // call it <package>.zip
+            let zip_path = format!("{}/{}.zip", drive.clone(), package.to_string());
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .inherit(true)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::Add {
-                        full_path: format!("/{}.zip", package.to_string()),
-                        entry_type: kt::AddEntryType::NewFile,
-                    },
+                    path: zip_path,
+                    action: kt::VfsAction::Write,
                 })?)
                 .payload(payload)
                 .send_and_await_response(5)?.unwrap();
+            let metadata_path = format!("{}/metadata.json", drive.clone());
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::GetEntry("/metadata.json".into()),
+                    path: metadata_path,
+                    action: kt::VfsAction::Read,
                 })?)
                 .send_and_await_response(5)?.unwrap();
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no metadata found!"));
             };
-            println!("got metadata 1");
+
             let metadata = String::from_utf8(payload.bytes)?;
-            println!("from bytes");
             let metadata = serde_json::from_str::<kt::PackageMetadata>(&metadata)?;
-            println!("parsed metadata");
 
             let listing_data = PackageListing {
                 name: metadata.package,
@@ -420,11 +415,12 @@ fn handle_local_request(
             },
         ))),
         LocalRequest::Install(package) => {
+            let drive_path = format!("/{}/{}", our.process.to_string(), package.to_string());
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::GetEntry("/manifest.json".into()),
+                    path: format!("{}/metadata.json", drive_path),
+                    action: kt::VfsAction::Read,
                 })?)
                 .send_and_await_response(5)?.unwrap();
             let Some(payload) = get_payload() else {
@@ -437,7 +433,7 @@ fn handle_local_request(
                 &Address::new(&our.node, ("vfs", "sys", "uqbar")),
                 &serde_json::to_string(&serde_json::json!({
                     "kind": "read",
-                    "drive": package.to_string(),
+                    "drive": drive_path,
                 }))?,
             ) else {
                 return Err(anyhow::anyhow!("app-store: no read cap"));
@@ -446,7 +442,7 @@ fn handle_local_request(
                 &Address::new(&our.node, ("vfs", "sys", "uqbar")),
                 &serde_json::to_string(&serde_json::json!({
                     "kind": "write",
-                    "drive": package.to_string(),
+                    "drive": drive_path,
                 }))?,
             ) else {
                 return Err(anyhow::anyhow!("app-store: no write cap"));
@@ -461,25 +457,12 @@ fn handle_local_request(
             // then, once all have been initialized, grant them requested caps
             // and finally start them.
             for entry in &manifest {
-                let path = if entry.process_wasm_path.starts_with("/") {
+                let wasm_path = if entry.process_wasm_path.starts_with("/") {
                     entry.process_wasm_path.clone()
                 } else {
                     format!("/{}", entry.process_wasm_path)
                 };
-                let hash_response = Request::new()
-                    .target(Address::from_str("our@vfs:sys:uqbar")?)
-                    .ipc(serde_json::to_vec(&kt::VfsRequest {
-                        drive: package.to_string(),
-                        action: kt::VfsAction::GetHash(path.clone()),
-                    })?)
-                    .send_and_await_response(5)?.unwrap();
-
-                let Message::Response { ipc, .. } = hash_response else {
-                    return Err(anyhow::anyhow!("bad vfs response"));
-                };
-                let kt::VfsResponse::GetHash(Some(hash)) = serde_json::from_slice(&ipc)? else {
-                    return Err(anyhow::anyhow!("no hash in vfs"));
-                };
+                let wasm_path = format!("{}{}", drive_path, wasm_path);
                 // build initial caps
                 let mut initial_capabilities: HashSet<kt::SignedCapability> = HashSet::new();
                 if entry.request_networking {
@@ -502,15 +485,15 @@ fn handle_local_request(
                 let _bytes_response = Request::new()
                     .target(Address::from_str("our@vfs:sys:uqbar")?)
                     .ipc(serde_json::to_vec(&kt::VfsRequest {
-                        drive: package.to_string(),
-                        action: kt::VfsAction::GetEntry(path),
+                        path: wasm_path.clone(),
+                        action: kt::VfsAction::Read,
                     })?)
                     .send_and_await_response(5)?.unwrap();
                 Request::new()
                     .target(Address::from_str("our@kernel:sys:uqbar")?)
                     .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                         id: parsed_new_process_id,
-                        wasm_bytes_handle: hash,
+                        wasm_bytes_handle: wasm_path,
                         on_panic: entry.on_panic.clone(),
                         initial_capabilities,
                         public: entry.public,
@@ -597,15 +580,17 @@ fn handle_remote_request(
                 return Ok(Some(Resp::RemoteResponse(RemoteResponse::DownloadDenied)));
             }
             // get the .zip from VFS and attach as payload to response
-            let file_name = format!("/{}.zip", package.to_string());
+            let drive_name = format!("/{}/{}", our.process.to_string(), package.to_string());
+            let file_path = format!("{}/{}.zip", drive_name, package.to_string());
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::GetEntry(file_name.clone()),
+                    path: file_path,
+                    action: kt::VfsAction::Read,
                 })?)
                 .send_and_await_response(5)?.unwrap();
             // transfer will inherit the payload bytes we receive from VFS
+            let file_name = format!("/{}.zip", package.to_string());
             spawn_transfer(&our, &file_name, None, &source);
             Ok(Some(Resp::RemoteResponse(RemoteResponse::DownloadApproved)))
         }
