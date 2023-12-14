@@ -6,7 +6,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::string::FromUtf8Error;
 use uqbar_process_lib::{
-    get_typed_state, http, receive, set_state, Address, Message, Payload, Request, Response,
+    await_message, get_typed_state, http, set_state, Address, Message, Payload, Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -157,18 +157,18 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     http::bind_http_path("/node/:name", false, false)?;
 
     loop {
-        let Ok((source, message)) = receive() else {
+        let Ok(message) = await_message() else {
             println!("qns_indexer: got network error");
             continue;
         };
-        let Message::Request(request) = message else {
+        let Message::Request { source, ipc, .. } = message else {
             // TODO we should store the subscription ID for eth_rpc
             // incase we want to cancel/reset it
             continue;
         };
 
         if source.process == "http_server:sys:uqbar" {
-            if let Ok(ipc_json) = serde_json::from_slice::<serde_json::Value>(&request.ipc) {
+            if let Ok(ipc_json) = serde_json::from_slice::<serde_json::Value>(&ipc) {
                 if ipc_json["path"].as_str().unwrap_or_default() == "/node/:name" {
                     if let Some(name) = ipc_json["url_params"]["name"].as_str() {
                         if let Some(node) = state.nodes.get(name) {
@@ -211,7 +211,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         }
 
-        let Ok(msg) = serde_json::from_slice::<AllActions>(&request.ipc) else {
+        let Ok(msg) = serde_json::from_slice::<AllActions>(&ipc) else {
             println!("qns_indexer: got invalid message");
             continue;
         };

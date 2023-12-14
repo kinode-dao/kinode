@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use std::collections::{HashMap, HashSet};
 
-use uqbar_process_lib::{Address, ProcessId, Request, Response};
+use uqbar_process_lib::{Address, Message, ProcessId, Request, Response};
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
 
@@ -36,20 +36,20 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
         },
         wit::Message::Request(wit::Request { ref ipc, .. }) => {
             match serde_json::from_slice(ipc)? {
-                tt::TesterRequest::Run(_) => {
+                tt::TesterRequest::Run { test_timeout, .. } => {
                     wit::print_to_terminal(0, "test_runner: got Run");
 
-                    let (_, response) = Request::new()
+                    let response = Request::new()
                         .target(make_vfs_address(&our)?)
                         .ipc(serde_json::to_vec(&kt::VfsRequest {
                             drive: "tester:uqbar".into(),
                             action: kt::VfsAction::GetEntry("/".into()),
                         })?)
-                        .send_and_await_response(5)??;
+                        .send_and_await_response(test_timeout)?.unwrap();
 
-                    let wit::Message::Response((response, _)) = response else { panic!("") };
+                    let Message::Response { ipc: vfs_ipc, .. } = response else { panic!("") };
                     let kt::VfsResponse::GetEntry { children, .. } =
-                        serde_json::from_slice(&response.ipc)? else { panic!("") };
+                        serde_json::from_slice(&vfs_ipc)? else { panic!("") };
                     let mut children: HashSet<_> = children.into_iter().collect();
                     children.remove("/manifest.json");
                     children.remove("/metadata.json");
@@ -73,16 +73,16 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                             }
                         };
 
-                        let (_, response) = Request::new()
+                        let response = Request::new()
                             .target(Address {
                                 node: our.node.clone(),
                                 process: child_process_id,
                             })
                             .ipc(ipc.clone())
-                            .send_and_await_response(5)??;
+                            .send_and_await_response(test_timeout)?.unwrap();
 
-                        let wit::Message::Response((response, _)) = response else { panic!("") };
-                        match serde_json::from_slice(&response.ipc)? {
+                        let Message::Response { ipc, .. } = response else { panic!("") };
+                        match serde_json::from_slice(&ipc)? {
                             tt::TesterResponse::Pass => {},
                             tt::TesterResponse::GetFullMessage(_) => {},
                             tt::TesterResponse::Fail { test, file, line, column } => {

@@ -31,7 +31,7 @@ Get an eth-sepolia-rpc API key and pass that as an argument. You can get one for
 
 Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`. The `--` here separates cargo arguments from binary arguments.
 
-TODO: document feature flags here, `--llm` and `--simulation-mode`
+TODO: document feature flags `--simulation-mode`
 ```bash
 cargo +nightly run --release -- home --rpc wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>
 ```
@@ -73,6 +73,6 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH
 
 Download and install an app:
 ```
-!m our@main:app_store:uqbar {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
-!m our@main:app_store:uqbar {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
+/m our@main:app_store:uqbar {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
+/m our@main:app_store:uqbar {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
 ```

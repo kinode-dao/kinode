@@ -50,7 +50,7 @@ fn handle_message(
         },
         wit::Message::Request(wit::Request { ipc, .. }) => {
             match serde_json::from_slice(&ipc)? {
-                tt::TesterRequest::Run(input_node_names) => {
+                tt::TesterRequest::Run { input_node_names, test_timeout } => {
                     wit::print_to_terminal(0, "tester: got Run");
 
                     assert!(input_node_names.len() >= 1);
@@ -83,7 +83,7 @@ fn handle_message(
                                 process: child_process_id,
                             })
                             .ipc(ipc)
-                            .expects_response(15)
+                            .expects_response(test_timeout)
                             .send()?;
                     }
                 },

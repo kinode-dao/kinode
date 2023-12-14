@@ -15,7 +15,6 @@ walkdir = "2.4"
 zip = "0.6"
 
 [features]
-llm = []
 simulation-mode = []
 
 [dependencies]
@@ -63,7 +62,7 @@ rsa = "0.9"
 rusoto_core = "0.48.0"
 rusoto_s3 = "0.48.0"
 rusoto_credential = "0.48.0"
-serde = {version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_urlencoded = "0.7"
 sha2 = "0.10"
@@ -72,10 +71,10 @@ thiserror = "1.0"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 tokio-tungstenite = "0.20.1"
 url = "2.4.1"
-uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "5e1b94a" }
+uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "3ea3a23" }
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"
-wasmtime = "14.0.4"
-wasmtime-wasi = "14.0.4"
+wasmtime = "15.0.1"
+wasmtime-wasi = "15.0.1"
 zip = "0.6"
 rocksdb = { version = "0.21.0", features = ["multi-threaded-cf"] }

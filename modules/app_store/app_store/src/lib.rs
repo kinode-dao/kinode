@@ -2,9 +2,8 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::{HashMap, HashSet};
 use uqbar_process_lib::kernel_types as kt;
-use uqbar_process_lib::uqbar::process::standard as wit;
 use uqbar_process_lib::{
-    get_capability, get_payload, get_typed_state, grant_messaging, println, receive, set_state,
+    await_message, get_capability, get_payload, get_typed_state, grant_messaging, println, set_state,
     share_capability, Address, Message, NodeId, PackageId, ProcessId, Request, Response,
 };
 
@@ -182,17 +181,15 @@ impl Guest for Component {
 
         // active the main messaging loop: handle requests and responses
         loop {
-            let (source, message) = match receive() {
-                Ok((source, message)) => (source, message),
-                Err((error, _context)) => {
-                    // TODO handle net errors more usefully based on their context
-                    println!("net error: {:?}", error.kind);
+            match await_message() {
+                Err(send_error) => {
+                    println!("{our}: got network error: {send_error:?}");
                     continue;
                 }
-            };
-            match handle_message(&our, &source, &mut state, &message) {
-                Ok(()) => {}
-                Err(e) => println!("app-store: error handling message: {:?}", e),
+                Ok(message) => match handle_message(&our, &mut state, &message) {
+                    Ok(()) => {}
+                    Err(e) => println!("app-store: error handling message: {:?}", e),
+                }
             }
         }
     }
@@ -200,18 +197,17 @@ impl Guest for Component {
 
 fn handle_message(
     our: &Address,
-    source: &Address,
     mut state: &mut State,
     message: &Message,
 ) -> anyhow::Result<()> {
     match message {
-        Message::Request(req) => {
-            match &serde_json::from_slice::<Req>(&req.ipc) {
+        Message::Request { source, expects_response, ipc, .. } => {
+            match &serde_json::from_slice::<Req>(&ipc) {
                 Ok(Req::LocalRequest(local_request)) => {
                     match handle_local_request(&our, &source, local_request, &mut state) {
                         Ok(None) => return Ok(()),
                         Ok(Some(resp)) => {
-                            if req.expects_response.is_some() {
+                            if expects_response.is_some() {
                                 Response::new().ipc(serde_json::to_vec(&resp)?).send()?;
                             }
                         }
@@ -224,7 +220,7 @@ fn handle_message(
                     match handle_remote_request(&our, &source, remote_request, &mut state) {
                         Ok(None) => return Ok(()),
                         Ok(Some(resp)) => {
-                            if req.expects_response.is_some() {
+                            if expects_response.is_some() {
                                 Response::new().ipc(serde_json::to_vec(&resp)?).send()?;
                             }
                         }
@@ -259,19 +255,19 @@ fn handle_message(
                     }
                 }
                 Ok(Req::FTWorkerCommand(_)) => {
-                    spawn_receive_transfer(&our, &req.ipc);
+                    spawn_receive_transfer(&our, &ipc);
                 }
                 e => {
                     return Err(anyhow::anyhow!(
                         "app store bad request: {:?}, error {:?}",
-                        req.ipc,
+                        ipc,
                         e
                     ))
                 }
             }
         }
-        Message::Response((response, context)) => {
-            match &serde_json::from_slice::<Resp>(&response.ipc) {
+        Message::Response { ipc, context, .. } => {
+            match &serde_json::from_slice::<Resp>(&ipc) {
                 Ok(Resp::RemoteResponse(remote_response)) => match remote_response {
                     RemoteResponse::DownloadApproved => {
                         println!("app store: download approved, should be starting");
@@ -328,7 +324,7 @@ fn handle_local_request(
                     drive: package.to_string(),
                     action: kt::VfsAction::New,
                 })?)
-                .send_and_await_response(5)??;
+                .send_and_await_response(5)?.unwrap();
 
             // produce the version hash for this new package
             let mut hasher = sha2::Sha256::new();
@@ -347,7 +343,7 @@ fn handle_local_request(
                     },
                 })?)
                 .payload(payload.clone())
-                .send_and_await_response(5)??;
+                .send_and_await_response(5)?.unwrap();
 
             // save the zip file itself in VFS for sharing with other nodes
             // call it <package>.zip
@@ -362,14 +358,14 @@ fn handle_local_request(
                     },
                 })?)
                 .payload(payload)
-                .send_and_await_response(5)??;
+                .send_and_await_response(5)?.unwrap();
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry("/metadata.json".into()),
                 })?)
-                .send_and_await_response(5)??;
+                .send_and_await_response(5)?.unwrap();
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no metadata found!"));
             };
@@ -409,8 +405,8 @@ fn handle_local_request(
                 ))?)
                 .send_and_await_response(5)
             {
-                Ok(Ok((_source, Message::Response((resp, _context))))) => {
-                    let resp = serde_json::from_slice::<Resp>(&resp.ipc)?;
+                Ok(Ok(Message::Response { ipc, .. })) => {
+                    let resp = serde_json::from_slice::<Resp>(&ipc)?;
                     match resp {
                         Resp::RemoteResponse(RemoteResponse::DownloadApproved) => {
                             state.requested_packages.insert(package.clone());
@@ -430,7 +426,7 @@ fn handle_local_request(
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry("/manifest.json".into()),
                 })?)
-                .send_and_await_response(5)??;
+                .send_and_await_response(5)?.unwrap();
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
@@ -470,15 +466,15 @@ fn handle_local_request(
                 } else {
                     format!("/{}", entry.process_wasm_path)
                 };
-                let (_, hash_response) = Request::new()
+                let hash_response = Request::new()
                     .target(Address::from_str("our@vfs:sys:uqbar")?)
                     .ipc(serde_json::to_vec(&kt::VfsRequest {
                         drive: package.to_string(),
                         action: kt::VfsAction::GetHash(path.clone()),
                     })?)
-                    .send_and_await_response(5)??;
+                    .send_and_await_response(5)?.unwrap();
 
-                let Message::Response((wit::Response { ipc, .. }, _)) = hash_response else {
+                let Message::Response { ipc, .. } = hash_response else {
                     return Err(anyhow::anyhow!("bad vfs response"));
                 };
                 let kt::VfsResponse::GetHash(Some(hash)) = serde_json::from_slice(&ipc)? else {
@@ -503,13 +499,13 @@ fn handle_local_request(
                     ))?)
                     .send()?;
 
-                let (_, _bytes_response) = Request::new()
+                let _bytes_response = Request::new()
                     .target(Address::from_str("our@vfs:sys:uqbar")?)
                     .ipc(serde_json::to_vec(&kt::VfsRequest {
                         drive: package.to_string(),
                         action: kt::VfsAction::GetEntry(path),
                     })?)
-                    .send_and_await_response(5)??;
+                    .send_and_await_response(5)?.unwrap();
                 Request::new()
                     .target(Address::from_str("our@kernel:sys:uqbar")?)
                     .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
@@ -520,7 +516,7 @@ fn handle_local_request(
                         public: entry.public,
                     })?)
                     .inherit(true)
-                    .send_and_await_response(5)?;
+                    .send_and_await_response(5)?.unwrap();
             }
             for entry in &manifest {
                 let process_id = ProcessId::new(
@@ -571,7 +567,7 @@ fn handle_local_request(
                     .ipc(serde_json::to_vec(&kt::KernelCommand::RunProcess(
                         process_id,
                     ))?)
-                    .send_and_await_response(5)?;
+                    .send_and_await_response(5)?.unwrap();
             }
             Ok(Some(Resp::InstallResponse(InstallResponse::Success)))
         }
@@ -608,7 +604,7 @@ fn handle_remote_request(
                     drive: package.to_string(),
                     action: kt::VfsAction::GetEntry(file_name.clone()),
                 })?)
-                .send_and_await_response(5)?;
+                .send_and_await_response(5)?.unwrap();
             // transfer will inherit the payload bytes we receive from VFS
             spawn_transfer(&our, &file_name, None, &source);
             Ok(Some(Resp::RemoteResponse(RemoteResponse::DownloadApproved)))

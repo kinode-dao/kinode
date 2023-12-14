@@ -855,7 +855,7 @@ pub async fn kernel(
                                 verbosity: 0,
                                 content: format!(
                                     "event loop: don't have {} amongst registered processes (got message for it from network)",
-                                    kernel_message.source.process,
+                                    kernel_message.target.process,
                                 )
                             })
                             .await;

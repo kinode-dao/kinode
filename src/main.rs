@@ -23,10 +23,6 @@ mod timer;
 mod types;
 mod vfs;
 
-// extensions
-#[cfg(feature = "llm")]
-mod llm;
-
 const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
 const TERMINAL_CHANNEL_CAPACITY: usize = 32;
@@ -36,8 +32,6 @@ const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
-#[cfg(feature = "llm")]
-const LLM_CHANNEL_CAPACITY: usize = 32;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -51,7 +45,7 @@ async fn serve_register_fe(
     our_ip: String,
     http_server_port: u16,
     rpc_url: String,
-) -> (Identity, Keyfile) {
+) -> (Identity, Vec<u8>, Keyfile) {
     // check if we have keys saved on disk, encrypted
     // if so, prompt user for "password" to decrypt with
 
@@ -65,10 +59,9 @@ async fn serve_register_fe(
     // that updates their PKI info on-chain.
     let (kill_tx, kill_rx) = oneshot::channel::<bool>();
 
-    let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
-        Ok(keyfile) => keyfile,
-        Err(_) => Vec::new(),
-    };
+    let disk_keyfile: Option<Vec<u8>> = fs::read(format!("{}/.keys", home_directory_path))
+        .await
+        .ok();
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
@@ -80,20 +73,16 @@ async fn serve_register_fe(
         }
     };
 
-    println!(
-        "saving encrypted networking keys to {}/.keys",
-        home_directory_path
-    );
-
-    fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
-        .await
-        .unwrap();
-
-    println!("registration complete!");
+    fs::write(
+        format!("{}/.keys", home_directory_path),
+        encoded_keyfile.clone(),
+    )
+    .await
+    .unwrap();
 
     let _ = kill_tx.send(true);
 
-    (our, decoded_keyfile)
+    (our, encoded_keyfile, decoded_keyfile)
 }
 
 #[tokio::main]
@@ -123,9 +112,6 @@ async fn main() {
                 .value_parser(value_parser!(u16)),
         );
 
-    #[cfg(feature = "llm")]
-    let app = app.arg(arg!(--llm <LLM_URL> "LLM endpoint"));
-
     let matches = app.get_matches();
 
     let home_directory_path = matches.get_one::<String>("home").unwrap();
@@ -144,9 +130,6 @@ async fn main() {
             .clone(),
         matches.get_one::<String>("fake-node-name"),
     );
-
-    #[cfg(feature = "llm")]
-    let llm_url = matches.get_one::<String>("llm").unwrap();
 
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {:?}", e);
@@ -188,10 +171,6 @@ async fn main() {
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
-    // optional llm extension
-    #[cfg(feature = "llm")]
-    let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(LLM_CHANNEL_CAPACITY);
 
     println!("finding public IP address...");
     let our_ip: std::net::Ipv4Addr = {
@@ -207,13 +186,12 @@ async fn main() {
     };
 
     let http_server_port = http::utils::find_open_port(port).await.unwrap();
-    println!("runtime bound port {}\r", http_server_port);
     println!(
         "login or register at http://localhost:{}\r",
         http_server_port
     );
     #[cfg(not(feature = "simulation-mode"))]
-    let (our, decoded_keyfile) = serve_register_fe(
+    let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
         &home_directory_path,
         our_ip.to_string(),
         http_server_port.clone(),
@@ -221,7 +199,7 @@ async fn main() {
     )
     .await;
     #[cfg(feature = "simulation-mode")]
-    let (our, decoded_keyfile) = match fake_node_name {
+    let (our, encoded_keyfile, decoded_keyfile) = match fake_node_name {
         None => {
             match password {
                 None => match rpc_url {
@@ -240,7 +218,7 @@ async fn main() {
                     match fs::read(format!("{}/.keys", home_directory_path)).await {
                         Err(e) => panic!("could not read keyfile: {}", e),
                         Ok(keyfile) => {
-                            match keygen::decode_keyfile(keyfile, &password) {
+                            match keygen::decode_keyfile(&keyfile, &password) {
                                 Err(e) => panic!("could not decode keyfile: {}", e),
                                 Ok(decoded_keyfile) => {
                                     let our = Identity {
@@ -257,7 +235,7 @@ async fn main() {
                                         ws_routing: None, //  TODO
                                         allowed_routers: decoded_keyfile.routers.clone(),
                                     };
-                                    (our, decoded_keyfile)
+                                    (our, keyfile, decoded_keyfile)
                                 }
                             }
                         }
@@ -298,16 +276,19 @@ async fn main() {
                 password,
                 name.clone(),
                 decoded_keyfile.routers.clone(),
-                networking_keypair,
+                networking_keypair.as_ref(),
                 decoded_keyfile.jwt_secret_bytes.clone(),
                 decoded_keyfile.file_key.clone(),
             );
 
-            fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
-                .await
-                .unwrap();
+            fs::write(
+                format!("{}/.keys", home_directory_path),
+                encoded_keyfile.clone(),
+            )
+            .await
+            .unwrap();
 
-            (our, decoded_keyfile)
+            (our, encoded_keyfile, decoded_keyfile)
         }
     };
 
@@ -415,6 +396,7 @@ async fn main() {
     tasks.spawn(http::server::http_server(
         our.name.clone(),
         http_server_port,
+        encoded_keyfile,
         decoded_keyfile.jwt_secret_bytes.clone(),
         http_server_receiver,
         kernel_message_sender.clone(),
@@ -448,16 +430,6 @@ async fn main() {
         caps_oracle_sender.clone(),
         home_directory_path.clone(),
     ));
-    #[cfg(feature = "llm")]
-    {
-        tasks.spawn(llm::llm(
-            our.name.clone(),
-            kernel_message_sender.clone(),
-            llm_receiver,
-            llm_url.to_string(),
-            print_sender.clone(),
-        ));
-    }
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
     let quit_msg: String = tokio::select! {

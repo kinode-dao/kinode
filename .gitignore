@@ -1,4 +1,5 @@
 target/
+uqbar
 .vscode
 .app-signing
 .DS_Store
