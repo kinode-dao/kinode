@@ -72,19 +72,19 @@ pub enum HttpServerAction {
         cache: bool,
     },
     /// Processes will RECEIVE this kind of request when a client connects to them.
-    /// If a process does not want this websocket open, they should issue a *request*
-    /// containing a [`enum@HttpServerAction::WebSocketClose`] message and this channel ID.
-    WebSocketOpen(u32),
+    /// If a process does not want this websocket open, they can respond with an
+    /// [`enum@HttpServerAction::WebSocketClose`] message.
+    WebSocketOpen(u64),
     /// Processes can both SEND and RECEIVE this kind of request.
     /// When sent, expects a payload containing the WebSocket message bytes to send.
     WebSocketPush {
-        channel_id: u32,
+        channel_id: u64,
         message_type: WsMessageType,
     },
     /// Processes can both SEND and RECEIVE this kind of request. Sending will
     /// close a socket the process controls. Receiving will indicate that the
     /// client closed the socket.
-    WebSocketClose(u32),
+    WebSocketClose(u64),
 }
 
 /// The possible message types for WebSocketPush. Ping and Pong are limited to 125 bytes
@@ -129,7 +129,7 @@ pub struct WsRegister {
 /// Structure sent from this server to client websocket upon opening a new connection.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WsRegisterResponse {
-    pub channel_id: u32,
+    pub channel_id: u64,
     // TODO symmetric key exchange here
 }
 
