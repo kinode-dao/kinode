@@ -1,5 +1,5 @@
-use crate::types::{self as t, VFS_PROCESS_ID};
 use crate::types::STATE_PROCESS_ID;
+use crate::types::{self as t, VFS_PROCESS_ID};
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
 use ring::signature::{self, KeyPair};
@@ -63,7 +63,8 @@ async fn persist_state(
             message: t::Message::Request(t::Request {
                 inherit: true,
                 expects_response: None,
-                ipc: serde_json::to_vec(&t::StateAction::SetState(KERNEL_PROCESS_ID.clone())).unwrap(),
+                ipc: serde_json::to_vec(&t::StateAction::SetState(KERNEL_PROCESS_ID.clone()))
+                    .unwrap(),
                 metadata: None,
             }),
             payload: Some(t::Payload { mime: None, bytes }),
@@ -678,7 +679,8 @@ pub async fn kernel(
                         ipc: serde_json::to_vec(&t::VfsRequest {
                             path: persisted.wasm_bytes_handle.clone(),
                             action: t::VfsAction::Read,
-                        }).unwrap(),
+                        })
+                        .unwrap(),
                         metadata: Some(
                             serde_json::to_string(&StartProcessMetadata {
                                 source: t::Address {

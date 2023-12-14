@@ -921,7 +921,7 @@ pub enum StateError {
     #[error("kernel_state: bad request error: {error}")]
     BadRequest { error: String },
     #[error("kernel_state: Bad JSON payload: {error}")]
-    BadJson { error: String  },
+    BadJson { error: String },
     #[error("kernel_state: state not found for ProcessId {process_id}")]
     NotFound { process_id: ProcessId },
 }
@@ -991,7 +991,6 @@ pub enum VfsResponse {
     ReadToString(String),
     Len(u64),
     Hash([u8; 32]),
-
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -1003,13 +1002,13 @@ pub enum VfsError {
     #[error("vfs: bad request error: {error}")]
     BadRequest { error: String },
     #[error("vfs: error parsing path: {path}, error: {error}")]
-    ParseError { error: String, path: String },    
+    ParseError { error: String, path: String },
     #[error("vfs: IO error: {error}, at path {path}")]
     IOError { error: String, path: String },
     #[error("vfs: kernel capability channel error: {error}")]
     CapChannelFail { error: String },
     #[error("vfs: Bad JSON payload: {error}")]
-    BadJson { error: String  },
+    BadJson { error: String },
     #[error("vfs: File not found at path {path}")]
     NotFound { path: String },
     #[error("vfs: Creating directory failed at path: {path}: {error}")]

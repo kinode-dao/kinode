@@ -193,7 +193,6 @@ async fn main() {
     let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(LLM_CHANNEL_CAPACITY);
 
-
     println!("finding public IP address...");
     let our_ip: std::net::Ipv4Addr = {
         if let Ok(Some(ip)) = timeout(std::time::Duration::from_secs(5), public_ip::addr_v4()).await

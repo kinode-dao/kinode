@@ -109,7 +109,9 @@ async fn handle_request(
         ..
     }) = message
     else {
-        return Err(StateError::BadRequest { error: "not a request".into() });
+        return Err(StateError::BadRequest {
+            error: "not a request".into(),
+        });
     };
 
     let action: StateAction = match serde_json::from_slice(&ipc) {
@@ -127,28 +129,35 @@ async fn handle_request(
             // TODO consistency with to_stirngs
             let Some(ref payload) = payload else {
                 return Err(StateError::BadBytes {
-                    action: "SetState".into()
+                    action: "SetState".into(),
                 });
             };
 
             db.put(key, &payload.bytes)?;
             (serde_json::to_vec(&StateResponse::SetState).unwrap(), None)
-
         }
         StateAction::GetState(process_id) => {
             let key = process_id.to_hash();
             match db.get(key) {
                 Ok(Some(value)) => {
                     println!("found value");
-                    (serde_json::to_vec(&StateResponse::GetState).unwrap(), Some(value))
+                    (
+                        serde_json::to_vec(&StateResponse::GetState).unwrap(),
+                        Some(value),
+                    )
                 }
                 Ok(None) => {
                     println!("nothing found");
-                    return Err(StateError::NotFound { process_id: process_id.clone() } );
+                    return Err(StateError::NotFound {
+                        process_id: process_id.clone(),
+                    });
                 }
                 Err(e) => {
                     println!("get state error: {:?}", e);
-                    return Err(StateError::RocksDBError { action: "GetState".into(), error: e.to_string() });
+                    return Err(StateError::RocksDBError {
+                        action: "GetState".into(),
+                        error: e.to_string(),
+                    });
                 }
             }
         }
@@ -159,11 +168,17 @@ async fn handle_request(
             match db.delete(key) {
                 Ok(_) => {
                     println!("delete state success");
-                    (serde_json::to_vec(&StateResponse::DeleteState).unwrap(), None)
+                    (
+                        serde_json::to_vec(&StateResponse::DeleteState).unwrap(),
+                        None,
+                    )
                 }
                 Err(e) => {
                     println!("delete state error: {:?}", e);
-                    return Err(StateError::RocksDBError { action: "DeleteState".into(), error: e.to_string() });
+                    return Err(StateError::RocksDBError {
+                        action: "DeleteState".into(),
+                        error: e.to_string(),
+                    });
                 }
             }
         }
@@ -243,11 +258,17 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -
 
 impl From<std::io::Error> for VfsError {
     fn from(err: std::io::Error) -> Self {
-        VfsError::IOError { error: err.to_string(), path: "".to_string() } // replace with appropriate VfsError variant and fields
+        VfsError::IOError {
+            error: err.to_string(),
+            path: "".to_string(),
+        } // replace with appropriate VfsError variant and fields
     }
 }
 impl From<rocksdb::Error> for StateError {
     fn from(error: rocksdb::Error) -> Self {
-        StateError::RocksDBError { action: "ass".into(), error: error.to_string() } 
-    }  
+        StateError::RocksDBError {
+            action: "ass".into(),
+            error: error.to_string(),
+        }
+    }
 }

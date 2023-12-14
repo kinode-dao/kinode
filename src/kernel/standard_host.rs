@@ -182,7 +182,12 @@ impl StandardHost for process::ProcessWasi {
             process: VFS_PROCESS_ID.en_wit(),
         };
         // TODO: note, drive could just be your basic process maybe.
-        let path = format!("/{}/{}/{}", self.process.metadata.our.process.to_string() ,self.process.metadata.our.process.package(), wasm_path);
+        let path = format!(
+            "/{}/{}/{}",
+            self.process.metadata.our.process.to_string(),
+            self.process.metadata.our.process.package(),
+            wasm_path
+        );
         // let our_drive_name = [
         //     self.process.metadata.our.process.package(),
         //     self.process.metadata.our.process.publisher(),
