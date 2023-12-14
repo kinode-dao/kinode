@@ -239,7 +239,7 @@ async fn handle_request(
             let file = open_file(open_files.clone(), path, false).await?;
             let mut file = file.lock().await;
             let mut contents = Vec::new();
-            file.seek(SeekFrom::Start(0)).await?; 
+            file.seek(SeekFrom::Start(0)).await?;
             file.read_to_end(&mut contents).await?;
 
             (
