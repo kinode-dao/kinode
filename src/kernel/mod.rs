@@ -1,6 +1,5 @@
-use crate::types as t;
+use crate::types::{self as t, VFS_PROCESS_ID};
 use crate::types::STATE_PROCESS_ID;
-use crate::FILESYSTEM_PROCESS_ID;
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
 use ring::signature::{self, KeyPair};
@@ -64,7 +63,7 @@ async fn persist_state(
             message: t::Message::Request(t::Request {
                 inherit: true,
                 expects_response: None,
-                ipc: serde_json::to_vec(&t::FsAction::SetState(KERNEL_PROCESS_ID.clone())).unwrap(),
+                ipc: serde_json::to_vec(&t::StateAction::SetState(KERNEL_PROCESS_ID.clone())).unwrap(),
                 metadata: None,
             }),
             payload: Some(t::Payload { mime: None, bytes }),
@@ -572,7 +571,7 @@ async fn start_process(
             node: our_name.clone(),
             process: id.clone(),
         },
-        wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle,
+        wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle.clone(),
         on_panic: process_metadata.persisted.on_panic.clone(),
         public: process_metadata.persisted.public,
     };
@@ -660,7 +659,7 @@ pub async fn kernel(
     for (process_id, persisted) in &process_map {
         // runtime extensions will have a bytes_handle of 0, because they have no
         // WASM code saved in filesystem.
-        if persisted.on_panic.is_restart() && persisted.wasm_bytes_handle != 0 {
+        if persisted.on_panic.is_restart() && persisted.wasm_bytes_handle != "" {
             send_to_loop
                 .send(t::KernelMessage {
                     id: rand::random(),
@@ -670,14 +669,16 @@ pub async fn kernel(
                     },
                     target: t::Address {
                         node: our.name.clone(),
-                        process: STATE_PROCESS_ID.clone(),
+                        process: VFS_PROCESS_ID.clone(),
                     },
                     rsvp: None,
                     message: t::Message::Request(t::Request {
                         inherit: true,
                         expects_response: Some(5), // TODO evaluate
-                        ipc: serde_json::to_vec(&t::StateAction::Read(persisted.wasm_bytes_handle))
-                            .unwrap(),
+                        ipc: serde_json::to_vec(&t::VfsRequest {
+                            path: persisted.wasm_bytes_handle.clone(),
+                            action: t::VfsAction::Read,
+                        }).unwrap(),
                         metadata: Some(
                             serde_json::to_string(&StartProcessMetadata {
                                 source: t::Address {

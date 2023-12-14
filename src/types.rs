@@ -724,7 +724,7 @@ pub struct IdentityTransaction {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProcessMetadata {
     pub our: Address,
-    pub wasm_bytes_handle: u128,
+    pub wasm_bytes_handle: String,
     pub on_panic: OnPanic,
     pub public: bool,
 }
@@ -800,7 +800,7 @@ pub enum KernelCommand {
     /// for the new process if `public` is false.
     InitializeProcess {
         id: ProcessId,
-        wasm_bytes_handle: u128,
+        wasm_bytes_handle: String,
         on_panic: OnPanic,
         initial_capabilities: HashSet<SignedCapability>,
         public: bool,
@@ -855,9 +855,7 @@ pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistedProcess {
-    pub wasm_bytes_handle: u128,
-    // pub drive: String,
-    // pub full_path: String,
+    pub wasm_bytes_handle: String,
     pub on_panic: OnPanic,
     pub capabilities: HashSet<Capability>,
     pub public: bool, // marks if a process allows messages from any process
@@ -897,79 +895,50 @@ pub struct PackageManifestEntry {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum StateAction {
-    // AddWasm (ID + hash?)
-    // GetWasm
-    Read(u128),
     GetState(ProcessId),
     SetState(ProcessId),
     DeleteState(ProcessId),
     Backup,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum StateResponse {
-    Read(u128),
     GetState,
     SetState,
     DeleteState,
     Backup,
+    Err(StateError),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub enum FsAction {
-    Write(Option<u128>),
-    WriteOffset((u128, u64)),
-    Append(Option<u128>),
-    Read(u128),
-    ReadChunk(ReadChunkRequest),
-    Delete(u128),
-    Length(u128),
-    SetLength((u128, u64)),
-    GetState(ProcessId),
-    SetState(ProcessId),
-    DeleteState(ProcessId),
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum StateError {
+    #[error("kernel_state: rocksdb internal error: {error}")]
+    RocksDBError { action: String, error: String },
+    #[error("kernel_state: startup error")]
+    StartupError { action: String },
+    #[error("vfs: Bytes payload required for {action}")]
+    BadBytes { action: String },
+    #[error("kernel_state: bad request error: {error}")]
+    BadRequest { error: String },
+    #[error("kernel_state: Bad JSON payload: {error}")]
+    BadJson { error: String  },
+    #[error("kernel_state: state not found for ProcessId {process_id}")]
+    NotFound { process_id: ProcessId },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ReadChunkRequest {
-    pub file: u128,
-    pub start: u64,
-    pub length: u64,
+#[allow(dead_code)]
+impl StateError {
+    pub fn kind(&self) -> &str {
+        match *self {
+            StateError::RocksDBError { .. } => "RocksDBError",
+            StateError::StartupError { .. } => "StartupError",
+            StateError::BadBytes { .. } => "BadBytes",
+            StateError::BadRequest { .. } => "BadRequest",
+            StateError::BadJson { .. } => "NoJson",
+            StateError::NotFound { .. } => "NotFound",
+        }
+    }
 }
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum FsResponse {
-    Write(u128),
-    Read(u128),
-    ReadChunk(u128), //  TODO: remove?
-    Append(u128),
-    Delete(u128),
-    Length(u64),
-    GetState,
-    SetState,
-}
-
-#[derive(Debug)]
-pub struct S3Config {
-    pub access_key: String,
-    pub secret_key: String,
-    pub region: String,
-    pub bucket: String,
-    pub endpoint: String,
-}
-
-#[derive(Debug)]
-pub struct FsConfig {
-    pub s3_config: Option<S3Config>,
-    pub mem_buffer_limit: usize,
-    pub read_cache_limit: usize,
-    pub chunk_size: usize,
-    pub flush_to_cold_interval: usize,
-    pub encryption: bool,
-    pub cloud_enabled: bool,
-    // pub flush_to_wal_interval: usize,
-}
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VfsRequest {
@@ -1027,21 +996,21 @@ pub enum VfsResponse {
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum VfsError {
-    #[error("vfs: No capability for action {action} at path {path}.")]
+    #[error("vfs: No capability for action {action} at path {path}")]
     NoCap { action: String, path: String },
-    #[error("vfs: Bytes payload required for {action} at path {path}.")]
+    #[error("vfs: Bytes payload required for {action} at path {path}")]
     BadBytes { action: String, path: String },
     #[error("vfs: bad request error: {error}")]
     BadRequest { error: String },
     #[error("vfs: error parsing path: {path}, error: {error}")]
     ParseError { error: String, path: String },    
-    #[error("vfs: IO error: {error}, at path {path}.")]
+    #[error("vfs: IO error: {error}, at path {path}")]
     IOError { error: String, path: String },
     #[error("vfs: kernel capability channel error: {error}")]
     CapChannelFail { error: String },
-    #[error("vfs: Bad JSON payload: {error}.")]
+    #[error("vfs: Bad JSON payload: {error}")]
     BadJson { error: String  },
-    #[error("vfs: File not found at path {path}.")]
+    #[error("vfs: File not found at path {path}")]
     NotFound { path: String },
     #[error("vfs: Creating directory failed at path: {path}: {error}")]
     CreateDirError { path: String, error: String },

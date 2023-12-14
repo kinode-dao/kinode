@@ -609,12 +609,6 @@ fn make_error_message(
     }
 }
 
-impl From<std::io::Error> for VfsError {
-    fn from(err: std::io::Error) -> Self {
-        VfsError::IOError { error: err.to_string(), path: "".to_string() } // replace with appropriate VfsError variant and fields
-    }
-}
-
 impl From<tokio::sync::oneshot::error::RecvError> for VfsError {
     fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
         VfsError::CapChannelFail { error: err.to_string() } 

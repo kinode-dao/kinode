@@ -12,7 +12,6 @@ use tokio::{fs, time::timeout};
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
 mod eth_rpc;
-mod filesystem;
 mod http;
 mod kernel;
 mod keygen;
@@ -32,7 +31,6 @@ const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
 const TERMINAL_CHANNEL_CAPACITY: usize = 32;
 const WEBSOCKET_SENDER_CHANNEL_CAPACITY: usize = 32;
-const FILESYSTEM_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
@@ -172,7 +170,7 @@ async fn main() {
         mpsc::channel(WEBSOCKET_SENDER_CHANNEL_CAPACITY);
 
     let (state_sender, state_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY);
+        mpsc::channel(VFS_CHANNEL_CAPACITY);
 
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
@@ -195,70 +193,6 @@ async fn main() {
     let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(LLM_CHANNEL_CAPACITY);
 
-    //  fs config in .env file (todo add -- arguments cleanly (with clap?))
-    dotenv::dotenv().ok();
-
-    let mem_buffer_limit = env::var("MEM_BUFFER_LIMIT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1024 * 1024 * 5); // 5mb default
-
-    let read_cache_limit = env::var("READ_CACHE_LIMIT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1024 * 1024 * 5); // 5mb default
-
-    let chunk_size = env::var("CHUNK_SIZE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1024 * 256); // 256kb default
-
-    let flush_to_cold_interval = env::var("FLUSH_TO_COLD_INTERVAL")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(60); // 60s default
-
-    let encryption = env::var("ENCRYPTION")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(true); // default true
-
-    let cloud_enabled = env::var("CLOUD_ENABLED")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(false); // default false
-
-    let s3_config = if let (Ok(access_key), Ok(secret_key), Ok(region), Ok(bucket), Ok(endpoint)) = (
-        env::var("S3_ACCESS_KEY"),
-        env::var("S3_SECRET_KEY"),
-        env::var("S3_REGION"),
-        env::var("S3_BUCKET"),
-        env::var("S3_ENDPOINT"),
-    ) {
-        Some(S3Config {
-            access_key,
-            secret_key,
-            region,
-            bucket,
-            endpoint,
-        })
-    } else {
-        None
-    };
-
-    let fs_config = FsConfig {
-        s3_config,
-        mem_buffer_limit,
-        read_cache_limit,
-        chunk_size,
-        flush_to_cold_interval,
-        encryption,
-        cloud_enabled,
-    };
-
-    // shutdown signal send and await to fs
-    let (fs_kill_send, fs_kill_recv) = oneshot::channel::<()>();
-    let (fs_kill_confirm_send, fs_kill_confirm_recv) = oneshot::channel::<()>();
 
     println!("finding public IP address...");
     let our_ip: std::net::Ipv4Addr = {
