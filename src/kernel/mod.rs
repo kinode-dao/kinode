@@ -454,8 +454,8 @@ async fn handle_kernel_response(
             .await;
         return;
     };
-    // ignore responses that aren't filesystem responses
-    if km.source.process != *STATE_PROCESS_ID {
+    // ignore responses that aren't filesystem or state responses
+    if km.source.process != *STATE_PROCESS_ID && km.source.process != *VFS_PROCESS_ID {
         return;
     }
     let Some(ref metadata) = response.metadata else {

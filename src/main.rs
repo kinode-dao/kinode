@@ -354,7 +354,7 @@ async fn main() {
         true,
     ));
 
-    let (kernel_process_map, db, vfs_messages) = state::load_state(
+    let (kernel_process_map, db) = state::load_state(
         our.name.clone(),
         home_directory_path.clone(),
         runtime_extensions.clone(),

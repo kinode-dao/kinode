@@ -133,20 +133,24 @@ async fn handle_request(
 
     // sort by package_id instead? pros/cons?
     // current prepend to filepaths needs to be: /process_id/drive/path
-    let (process_id, drive) = parse_process_and_drive(&request.path).await?;
+    let (process_id, drive, rest) = parse_process_and_drive(&request.path).await?;
     let drive = format!("/{}/{}", process_id, drive);
     let path = PathBuf::from(request.path.clone()); // validate
 
-    check_caps(
-        our_node.clone(),
-        source.clone(),
-        send_to_caps_oracle.clone(),
-        &request,
-        path.clone(),
-        drive,
-        vfs_path.clone(),
-    )
-    .await?;
+    if km.source.process != *KERNEL_PROCESS_ID {
+        check_caps(
+            our_node.clone(),
+            source.clone(),
+            send_to_caps_oracle.clone(),
+            &request,
+            path.clone(),
+            drive.clone(),
+            vfs_path.clone(),
+        )
+        .await?;
+    }
+
+    let path = PathBuf::from(format!("{}{}/{}", vfs_path, drive, rest));
 
     let (ipc, bytes) = match request.action {
         VfsAction::CreateDrive => {
@@ -438,7 +442,7 @@ async fn handle_request(
     Ok(())
 }
 
-async fn parse_process_and_drive(path: &str) -> Result<(ProcessId, String), VfsError> {
+async fn parse_process_and_drive(path: &str) -> Result<(ProcessId, String, String), VfsError> {
     if !path.starts_with('/') {
         return Err(VfsError::ParseError {
             error: "path does not start with /".into(),
@@ -467,7 +471,9 @@ async fn parse_process_and_drive(path: &str) -> Result<(ProcessId, String), VfsE
         }
     };
 
-    Ok((process_id, drive))
+    let remaining_path = parts[3..].join("/");
+
+    Ok((process_id, drive, remaining_path))
 }
 
 async fn open_file<P: AsRef<Path>>(
