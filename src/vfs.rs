@@ -185,7 +185,7 @@ async fn handle_request(
             // should expect open file.
             let Some(payload) = payload else {
                 return Err(VfsError::BadRequest {
-                    error: "payload needs to exist for AddZip".into(),
+                    error: "payload needs to exist for WriteAll".into(),
                 });
             };
             let file = open_file(open_files.clone(), path, false).await?;
@@ -196,7 +196,7 @@ async fn handle_request(
         VfsAction::Write => {
             let Some(payload) = payload else {
                 return Err(VfsError::BadRequest {
-                    error: "payload needs to exist for AddZip".into(),
+                    error: "payload needs to exist for Write".into(),
                 });
             };
             let file = open_file(open_files.clone(), path, true).await?;
@@ -207,7 +207,7 @@ async fn handle_request(
         VfsAction::WriteAt(offset) => {
             let Some(payload) = payload else {
                 return Err(VfsError::BadRequest {
-                    error: "payload needs to exist for AddZip".into(),
+                    error: "payload needs to exist for WriteAt".into(),
                 });
             };
             let file = open_file(open_files.clone(), path, false).await?;
@@ -219,7 +219,7 @@ async fn handle_request(
         VfsAction::Append => {
             let Some(payload) = payload else {
                 return Err(VfsError::BadRequest {
-                    error: "payload needs to exist for AddZip".into(),
+                    error: "payload needs to exist for Append".into(),
                 });
             };
             let file = open_file(open_files.clone(), path, false).await?;
@@ -239,7 +239,9 @@ async fn handle_request(
             let file = open_file(open_files.clone(), path, false).await?;
             let mut file = file.lock().await;
             let mut contents = Vec::new();
+            file.seek(SeekFrom::Start(0)).await?; 
             file.read_to_end(&mut contents).await?;
+
             (
                 serde_json::to_vec(&VfsResponse::Read).unwrap(),
                 Some(contents),
@@ -365,28 +367,28 @@ async fn handle_request(
                 // must destruct the zip file created in zip.by_index()
                 //  Before any `.await`s are called since ZipFile is not
                 //  Send and so does not play nicely with await
-                let (is_file, is_dir, path, file_contents) = {
+                let (is_file, is_dir, local_path, file_contents) = {
                     let mut file = zip.by_index(i).unwrap();
                     let is_file = file.is_file();
                     let is_dir = file.is_dir();
-                    let full_path = format!("/{}", file.name());
                     let mut file_contents = Vec::new();
                     if is_file {
                         file.read_to_end(&mut file_contents).unwrap();
                     };
-                    (is_file, is_dir, full_path, file_contents)
+                    let local_path = path.join(file.name());
+                    (is_file, is_dir, local_path, file_contents)
                 };
                 if is_file {
-                    let file = open_file(open_files.clone(), path, true).await?;
+                    let file = open_file(open_files.clone(), local_path, true).await?;
                     let mut file = file.lock().await;
                     file.write_all(&file_contents).await?;
                 } else if is_dir {
                     // If it's a directory, create it
-                    fs::create_dir_all(path).await?;
+                    fs::create_dir_all(local_path).await?;
                 } else {
                     println!("vfs: zip with non-file non-dir");
                     return Err(VfsError::CreateDirError {
-                        path: path,
+                        path: path.display().to_string(),
                         error: "vfs: zip with non-file non-dir".into(),
                     });
                 };

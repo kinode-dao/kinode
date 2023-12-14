@@ -419,7 +419,7 @@ fn handle_local_request(
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    path: format!("{}/metadata.json", drive_path),
+                    path: format!("{}/manifest.json", drive_path),
                     action: kt::VfsAction::Read,
                 })?)
                 .send_and_await_response(5)?.unwrap();
