@@ -68,13 +68,13 @@ pub struct PackageId {
 }
 
 impl PackageId {
-    pub fn _new(package_name: &str, publisher_node: &str) -> Self {
+    pub fn new(package_name: &str, publisher_node: &str) -> Self {
         PackageId {
             package_name: package_name.into(),
             publisher_node: publisher_node.into(),
         }
     }
-    pub fn _from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
         // split string on colons into 2 segments
         let mut segments = input.split(':');
         let package_name = segments
@@ -888,8 +888,8 @@ pub struct PackageManifestEntry {
     pub process_wasm_path: String,
     pub on_panic: OnPanic,
     pub request_networking: bool,
-    pub request_messaging: Option<Vec<String>>,
-    pub grant_messaging: Option<Vec<String>>,
+    pub request_messaging: Option<Vec<serde_json::Value>>,
+    pub grant_messaging: Option<Vec<serde_json::Value>>,
     pub public: bool,
 }
 
@@ -949,7 +949,7 @@ pub struct VfsRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsAction {
     CreateDrive,
-    CreateDir,
+    CreateDir,  
     CreateDirAll,
     CreateFile,
     OpenFile,

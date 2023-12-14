@@ -317,12 +317,12 @@ fn handle_local_request(
             let Some(mut payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
-            let drive = format!("/{}/{}", our.process.to_string(), package.to_string());
+            let drive = format!("/{}/pkg", package);
 
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    path: drive.clone(),
+                    path: drive.clone(),                    
                     action: kt::VfsAction::CreateDrive,
                 })?)
                 .send_and_await_response(5)?.unwrap();
@@ -345,7 +345,7 @@ fn handle_local_request(
 
             // save the zip file itself in VFS for sharing with other nodes
             // call it <package>.zip
-            let zip_path = format!("{}/{}.zip", drive.clone(), package.to_string());
+            let zip_path = format!("{}/{}.zip", drive.clone(), package);
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .inherit(true)
@@ -356,6 +356,8 @@ fn handle_local_request(
                 .payload(payload)
                 .send_and_await_response(5)?.unwrap();
             let metadata_path = format!("{}/metadata.json", drive.clone());
+
+            println!("looking for metadata at {}", metadata_path);
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
@@ -415,7 +417,7 @@ fn handle_local_request(
             },
         ))),
         LocalRequest::Install(package) => {
-            let drive_path = format!("/{}/{}", our.process.to_string(), package.to_string());
+            let drive_path = format!("/{}/pkg", package);
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
@@ -470,7 +472,7 @@ fn handle_local_request(
                 }
                 initial_capabilities.insert(kt::de_wit_signed_capability(read_cap.clone()));
                 initial_capabilities.insert(kt::de_wit_signed_capability(write_cap.clone()));
-                let process_id = format!("{}:{}", entry.process_name, package.to_string());
+                let process_id = format!("{}:{}", entry.process_name, package);
                 let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {
                     return Err(anyhow::anyhow!("app-store: invalid process id!"));
                 };
@@ -580,8 +582,8 @@ fn handle_remote_request(
                 return Ok(Some(Resp::RemoteResponse(RemoteResponse::DownloadDenied)));
             }
             // get the .zip from VFS and attach as payload to response
-            let drive_name = format!("/{}/{}", our.process.to_string(), package.to_string());
-            let file_path = format!("{}/{}.zip", drive_name, package.to_string());
+            let drive_name = format!("/{}/pkg", package);
+            let file_path = format!("/{}.zip", drive_name);
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
@@ -590,7 +592,7 @@ fn handle_remote_request(
                 })?)
                 .send_and_await_response(5)?.unwrap();
             // transfer will inherit the payload bytes we receive from VFS
-            let file_name = format!("/{}.zip", package.to_string());
+            let file_name = format!("/{}.zip", package);
             spawn_transfer(&our, &file_name, None, &source);
             Ok(Some(Resp::RemoteResponse(RemoteResponse::DownloadApproved)))
         }

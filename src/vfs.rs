@@ -131,11 +131,13 @@ async fn handle_request(
         }
     };
 
-    // sort by package_id instead? pros/cons?
-    // current prepend to filepaths needs to be: /process_id/drive/path
-    let (process_id, drive, rest) = parse_process_and_drive(&request.path).await?;
-    let drive = format!("/{}/{}", process_id, drive);
-    let path = PathBuf::from(request.path.clone()); // validate
+    // current prepend to filepaths needs to be: /package_id/drive/path
+    let (package_id, drive, rest) = parse_package_and_drive(&request.path).await?;
+    let drive = format!("/{}/{}", package_id, drive);
+    let path = PathBuf::from(request.path.clone()); 
+
+    // temp, replaced with ROOT cap
+    let app_store_process_id = ProcessId::new(Some("main"), "app_store", "uqbar");
 
     if km.source.process != *KERNEL_PROCESS_ID {
         check_caps(
@@ -145,13 +147,15 @@ async fn handle_request(
             &request,
             path.clone(),
             drive.clone(),
+            package_id,
             vfs_path.clone(),
         )
         .await?;
     }
-
+    // real safe path that the vfs will use
     let path = PathBuf::from(format!("{}{}/{}", vfs_path, drive, rest));
-
+    println!("real path: {}", path.display());
+    println!("action path: {}", request.action.to_string());
     let (ipc, bytes) = match request.action {
         VfsAction::CreateDrive => {
             // handled in check_caps.
@@ -236,11 +240,14 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Read => {
-            let file = open_file(open_files.clone(), path, false).await?;
+            println!("tryna read a file bruh");
+            let file = open_file(open_files.clone(), path.clone(), false).await?;
             let mut file = file.lock().await;
             let mut contents = Vec::new();
             file.seek(SeekFrom::Start(0)).await?;
             file.read_to_end(&mut contents).await?;
+
+            println!("read path to end with x bytes: {}, {}", path.display(), contents.len());
 
             (
                 serde_json::to_vec(&VfsResponse::Read).unwrap(),
@@ -323,6 +330,7 @@ async fn handle_request(
         VfsAction::Hash => {
             let file = open_file(open_files.clone(), path, false).await?;
             let mut file = file.lock().await;
+            file.seek(SeekFrom::Start(0)).await?;
             let mut hasher = blake3::Hasher::new();
             let mut buffer = [0; 1024];
             loop {
@@ -444,7 +452,7 @@ async fn handle_request(
     Ok(())
 }
 
-async fn parse_process_and_drive(path: &str) -> Result<(ProcessId, String, String), VfsError> {
+async fn parse_package_and_drive(path: &str) -> Result<(PackageId, String, String), VfsError> {
     if !path.starts_with('/') {
         return Err(VfsError::ParseError {
             error: "path does not start with /".into(),
@@ -453,7 +461,7 @@ async fn parse_process_and_drive(path: &str) -> Result<(ProcessId, String, Strin
     }
     let parts: Vec<&str> = path.split('/').collect();
 
-    let process_id = match ProcessId::from_str(parts[1]) {
+    let package_id = match PackageId::from_str(parts[1]) {
         Ok(id) => id,
         Err(e) => {
             return Err(VfsError::ParseError {
@@ -475,7 +483,7 @@ async fn parse_process_and_drive(path: &str) -> Result<(ProcessId, String, Strin
 
     let remaining_path = parts[3..].join("/");
 
-    Ok((process_id, drive, remaining_path))
+    Ok((package_id, drive, remaining_path))
 }
 
 async fn open_file<P: AsRef<Path>>(
@@ -512,11 +520,11 @@ async fn check_caps(
     request: &VfsRequest,
     path: PathBuf,
     drive: String,
+    package_id: PackageId,
     vfs_dir_path: String,
 ) -> Result<(), VfsError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-    //  check caps
-    // process_id + drive. + kernel needs auto_access.
+    println!("checking caps!");
     match &request.action {
         VfsAction::CreateDir
         | VfsAction::CreateDirAll
@@ -594,6 +602,39 @@ async fn check_caps(
             Ok(())
         }
         VfsAction::CreateDrive => {
+            // TODO add helper to types.rs?
+            println!("got create drive!");
+            let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
+            if src_package_id != package_id {
+                println!("not equal..");
+                // might have root caps
+                send_to_caps_oracle
+                    .send(CapMessage::Has {
+                        on: source.process.clone(),
+                        cap: Capability {
+                            issuer: Address {
+                                node: our_node.clone(),
+                                process: VFS_PROCESS_ID.clone(),
+                            },
+                            params: serde_json::to_string(&serde_json::json!({
+                                "root": true,
+                            }))
+                            .unwrap(),
+                        },
+                        responder: send_cap_bool,
+                    })
+                    .await?;
+                let has_cap = recv_cap_bool.await?;
+                if !has_cap {
+                    println!("oh nooo no cap");
+                    return Err(VfsError::NoCap {
+                        action: request.action.to_string(),
+                        path: path.display().to_string(),
+                    });
+                }
+                println!("has cap B)");
+            }
+
             add_capability("read", &drive, &our_node, &source, &mut send_to_caps_oracle).await?;
             add_capability(
                 "write",

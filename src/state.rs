@@ -327,11 +327,6 @@ async fn bootstrap(
             });
     }
 
-    let distro_path = format!("{}/vfs/kernel:sys:uqbar/", &home_directory_path);
-    fs::create_dir_all(&distro_path)
-        .await
-        .expect("bootstrap vfs dir creation failed!");
-
     let packages: Vec<(String, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> =
         get_zipped_packages().await;
 
@@ -373,12 +368,12 @@ async fn bootstrap(
 
         // create a new package in VFS
         let our_drive_name = [package_name, package_publisher].join(":");
-        let drive_path = format!("/kernel:sys:uqbar/{}", &our_drive_name);
-
-        let full_drive_path = format!("{}/{}", &distro_path, &our_drive_name);
-        fs::create_dir(&full_drive_path)
+        let pkg_path = format!("{}/vfs/{}/pkg", &home_directory_path, &our_drive_name);
+        fs::create_dir_all(&pkg_path)
             .await
-            .expect("vfs dir creation failed!");
+            .expect("bootstrap vfs dir pkg creation failed!");
+        
+        let drive_path = format!("/{}/pkg", &our_drive_name);
 
         // for each file in package.zip, recursively through all dirs, send a newfile KM to VFS
         for i in 0..package.len() {
@@ -395,7 +390,7 @@ async fn bootstrap(
                 println!("fs: found file {}...\r", file_path);
                 let mut file_content = Vec::new();
                 file.read_to_end(&mut file_content).unwrap();
-                let path = format!("{}/{}", &full_drive_path, file_path);
+                let path = format!("{}/{}", &pkg_path, file_path);
                 fs::write(&path, file_content).await.unwrap();
             }
         }
@@ -439,15 +434,36 @@ async fn bootstrap(
             );
             entry.request_messaging = Some(entry.request_messaging.unwrap_or_default());
             if let Some(ref mut request_messaging) = entry.request_messaging {
-                request_messaging.push(our_process_id.clone());
-                for process_name in request_messaging {
-                    requested_caps.insert(Capability {
-                        issuer: Address {
-                            node: our_name.to_string(),
-                            process: ProcessId::from_str(process_name).unwrap(),
-                        },
-                        params: "\"messaging\"".into(),
-                    });
+                request_messaging.push(serde_json::Value::String(our_process_id.clone()));
+                for value in request_messaging {
+                    match value {
+                        serde_json::Value::String(process_name) => {
+                            requested_caps.insert(Capability {
+                                issuer: Address {
+                                    node: our_name.to_string(),
+                                    process: ProcessId::from_str(process_name).unwrap(),
+                                },
+                                params: "\"messaging\"".into(),
+                            });
+                        }
+                        serde_json::Value::Object(map) => {
+                            if let Some(process_name) = map.get("process") {
+                                if let Some(params) = map.get("params") {
+                                    requested_caps.insert(Capability {
+                                        issuer: Address {
+                                            node: our_name.to_string(),
+                                            process: ProcessId::from_str(process_name.as_str().unwrap()).unwrap(),
+                                        },
+                                        params: params.to_string(),
+                                    });
+                                }
+                            }
+                        }
+                        _ => {
+                            // other json types
+                            continue;
+                        }
+                    }
                 }
             }
 
@@ -488,7 +504,7 @@ async fn bootstrap(
             let public_process = entry.public;
 
             let wasm_bytes_handle = format!("{}/{}", &drive_path, &file_path);
-
+            println!("giving bootstrapped process the following caps: {:?}", requested_caps.clone());
             process_map.insert(
                 ProcessId::new(Some(&entry.process_name), package_name, package_publisher),
                 PersistedProcess {

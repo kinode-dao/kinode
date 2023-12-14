@@ -13,7 +13,13 @@
             "net:sys:uqbar",
             "vfs:sys:uqbar",
             "kernel:sys:uqbar",
-            "eth_rpc:sys:uqbar"
+            "eth_rpc:sys:uqbar",
+            {
+                "process": "vfs:sys:uqbar",
+                "params": {
+                    "root": true
+                }
+            }
         ],
         "public": false
     }
