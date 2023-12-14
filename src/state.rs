@@ -43,7 +43,9 @@ pub async fn load_state(
                 home_directory_path.clone(),
                 runtime_extensions.clone(),
                 &mut process_map,
-            ).await.unwrap();
+            )
+            .await
+            .unwrap();
 
             db.put(kernel_id, bincode::serialize(&process_map).unwrap())
                 .unwrap();
@@ -52,7 +54,7 @@ pub async fn load_state(
             panic!("failed to load kernel state from db: {:?}", e);
         }
     }
-    
+
     Ok((process_map, db))
 }
 
@@ -157,12 +159,10 @@ async fn handle_request(
         StateAction::GetState(process_id) => {
             let key = process_id.to_hash();
             match db.get(key) {
-                Ok(Some(value)) => {
-                    (
-                        serde_json::to_vec(&StateResponse::GetState).unwrap(),
-                        Some(value),
-                    )
-                }
+                Ok(Some(value)) => (
+                    serde_json::to_vec(&StateResponse::GetState).unwrap(),
+                    Some(value),
+                ),
                 Ok(None) => {
                     return Err(StateError::NotFound {
                         process_id: process_id.clone(),
@@ -328,7 +328,9 @@ async fn bootstrap(
     }
 
     let distro_path = format!("{}/vfs/kernel:sys:uqbar/", &home_directory_path);
-    fs::create_dir_all(&distro_path).await.expect("bootstrap vfs dir creation failed!");
+    fs::create_dir_all(&distro_path)
+        .await
+        .expect("bootstrap vfs dir creation failed!");
 
     let packages: Vec<(String, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> =
         get_zipped_packages().await;
@@ -374,8 +376,9 @@ async fn bootstrap(
         let drive_path = format!("/kernel:sys:uqbar/{}", &our_drive_name);
 
         let full_drive_path = format!("{}/{}", &distro_path, &our_drive_name);
-        fs::create_dir(&full_drive_path).await.expect("vfs dir creation failed!");
-
+        fs::create_dir(&full_drive_path)
+            .await
+            .expect("vfs dir creation failed!");
 
         // for each file in package.zip, recursively through all dirs, send a newfile KM to VFS
         for i in 0..package.len() {
@@ -484,10 +487,7 @@ async fn bootstrap(
 
             let public_process = entry.public;
 
-            let wasm_bytes_handle = format!(
-                "{}/{}",
-                &drive_path, &file_path
-            );
+            let wasm_bytes_handle = format!("{}/{}", &drive_path, &file_path);
 
             process_map.insert(
                 ProcessId::new(Some(&entry.process_name), package_name, package_publisher),
