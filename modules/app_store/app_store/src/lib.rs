@@ -373,8 +373,11 @@ fn handle_local_request(
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no metadata found!"));
             };
+            println!("got metadata 1");
             let metadata = String::from_utf8(payload.bytes)?;
+            println!("from bytes");
             let metadata = serde_json::from_str::<kt::PackageMetadata>(&metadata)?;
+            println!("parsed metadata");
 
             let listing_data = PackageListing {
                 name: metadata.package,
