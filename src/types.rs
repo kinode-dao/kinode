@@ -153,13 +153,6 @@ impl ProcessId {
     pub fn publisher(&self) -> &str {
         &self.publisher_node
     }
-    pub fn to_hash(&self) -> [u8; 32] {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(self.process_name.as_bytes());
-        hasher.update(self.package_name.as_bytes());
-        hasher.update(self.publisher_node.as_bytes());
-        hasher.finalize().into()
-    }
     pub fn en_wit(&self) -> wit::ProcessId {
         wit::ProcessId {
             process_name: self.process_name.clone(),

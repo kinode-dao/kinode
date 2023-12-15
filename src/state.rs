@@ -32,8 +32,8 @@ pub async fn load_state(
     let db = DB::open_default(state_path).unwrap();
     let mut process_map: ProcessMap = HashMap::new();
 
-    let kernel_id = KERNEL_PROCESS_ID.to_hash();
-    match db.get(kernel_id) {
+    let kernel_id = process_to_vec(KERNEL_PROCESS_ID.clone());
+    match db.get(&kernel_id) {
         Ok(Some(value)) => {
             process_map = bincode::deserialize::<ProcessMap>(&value).unwrap();
         }
@@ -47,7 +47,7 @@ pub async fn load_state(
             .await
             .unwrap();
 
-            db.put(kernel_id, bincode::serialize(&process_map).unwrap())
+            db.put(&kernel_id, bincode::serialize(&process_map).unwrap())
                 .unwrap();
         }
         Err(e) => {
@@ -145,8 +145,8 @@ async fn handle_request(
 
     let (ipc, bytes) = match action {
         StateAction::SetState(process_id) => {
-            let key = process_id.to_hash();
-            // TODO consistency with to_stirngs
+            let key = process_to_vec(process_id);
+
             let Some(ref payload) = payload else {
                 return Err(StateError::BadBytes {
                     action: "SetState".into(),
@@ -157,7 +157,7 @@ async fn handle_request(
             (serde_json::to_vec(&StateResponse::SetState).unwrap(), None)
         }
         StateAction::GetState(process_id) => {
-            let key = process_id.to_hash();
+            let key = process_to_vec(process_id.clone());
             match db.get(key) {
                 Ok(Some(value)) => (
                     serde_json::to_vec(&StateResponse::GetState).unwrap(),
@@ -178,7 +178,7 @@ async fn handle_request(
             }
         }
         StateAction::DeleteState(process_id) => {
-            let key = process_id.to_hash();
+            let key = process_to_vec(process_id);
             match db.delete(key) {
                 Ok(_) => (
                     serde_json::to_vec(&StateResponse::DeleteState).unwrap(),
@@ -621,6 +621,10 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -
         payload: None,
         signed_capabilities: None,
     }
+}
+
+fn process_to_vec(process: ProcessId) -> Vec<u8> {
+    process.to_string().as_bytes().to_vec()
 }
 
 impl From<std::io::Error> for VfsError {
