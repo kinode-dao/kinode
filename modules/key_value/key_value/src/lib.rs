@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 // use serde::{Deserialize, Serialize};
 
-use uqbar_process_lib::{Address, ProcessId, Request, Response};
+use uqbar_process_lib::{spawn, OnExit, Address, ProcessId, Request, Response};
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
 
@@ -116,10 +116,10 @@ fn handle_message(our: &Address, db_to_process: &mut DbToProcess) -> anyhow::Res
                         &source,
                         &"\"messaging\"".into(),
                     ).ok_or(anyhow::anyhow!("New failed: no source 'messaging' capability found"))?;
-                    let spawned_process_id = match wit::spawn(
+                    let spawned_process_id = match spawn(
                         None,
                         "/key_value_worker.wasm",
-                        &wit::OnPanic::None, //  TODO: notify us
+                        OnExit::None, //  TODO: notify us
                         &wit::Capabilities::Some(vec![vfs_read, vfs_write, messaging]),
                         false, // not public
                     ) {

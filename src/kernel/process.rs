@@ -534,11 +534,11 @@ pub async fn make_process_loop(
             .await
             .expect("event loop: fatal: sender died");
 
-        // fulfill the designated OnPanic behavior
-        match metadata.on_panic {
-            t::OnPanic::None => {}
+        // fulfill the designated OnExit behavior
+        match metadata.on_exit {
+            t::OnExit::None => {}
             // if restart, tell ourselves to init the app again, with same capabilities
-            t::OnPanic::Restart => {
+            t::OnExit::Restart => {
                 send_to_loop
                     .send(t::KernelMessage {
                         id: rand::random(),
@@ -551,7 +551,7 @@ pub async fn make_process_loop(
                             ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                                 id: metadata.our.process.clone(),
                                 wasm_bytes_handle: metadata.wasm_bytes_handle,
-                                on_panic: metadata.on_panic,
+                                on_exit: metadata.on_exit,
                                 initial_capabilities,
                                 public: metadata.public,
                             })
@@ -569,7 +569,7 @@ pub async fn make_process_loop(
             }
             // if requests, fire them
             // even in death, a process can only message processes it has capabilities for
-            t::OnPanic::Requests(requests) => {
+            t::OnExit::Requests(requests) => {
                 for (address, mut request, payload) in requests {
                     request.expects_response = None;
                     let (tx, rx) = tokio::sync::oneshot::channel();

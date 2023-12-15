@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
-use uqbar_process_lib::{Address, ProcessId, Request, Response};
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
+use uqbar_process_lib::{spawn, Address, OnExit, ProcessId, Request, Response};
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -23,14 +23,16 @@ fn make_vfs_cap(kind: &str, drive: &str) -> String {
     serde_json::to_string(&serde_json::json!({
         "kind": kind,
         "drive": drive,
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
 fn make_db_cap(kind: &str, db: &str) -> String {
     serde_json::to_string(&serde_json::json!({
         "kind": kind,
         "db": db,
-    })).unwrap()
+    }))
+    .unwrap()
 }
 
 fn forward_if_have_cap(
@@ -62,7 +64,7 @@ fn forward_if_have_cap(
     }
 }
 
-fn handle_message (
+fn handle_message(
     our: &Address,
     db_to_process: &mut DbToProcess,
     read_keywords: &HashSet<String>,
@@ -77,7 +79,7 @@ fn handle_message (
     match message {
         wit::Message::Response(_) => {
             return Err(sq::SqliteError::UnexpectedResponse.into());
-        },
+        }
         wit::Message::Request(wit::Request { ipc, .. }) => {
             match serde_json::from_slice(&ipc)? {
                 sq::SqliteMessage::New { ref db } => {
@@ -103,36 +105,37 @@ fn handle_message (
                             drive: vfs_drive.clone(),
                             action: kt::VfsAction::New,
                         })?)
-                        .send_and_await_response(15)?.unwrap();
+                        .send_and_await_response(15)?
+                        .unwrap();
 
                     //  (2)
-                    let vfs_read = wit::get_capability(
-                        &vfs_address,
-                        &make_vfs_cap("read", &vfs_drive),
-                    ).ok_or(anyhow::anyhow!("New failed: no vfs 'read' capability found"))?;
+                    let vfs_read =
+                        wit::get_capability(&vfs_address, &make_vfs_cap("read", &vfs_drive))
+                            .ok_or(anyhow::anyhow!(
+                                "New failed: no vfs 'read' capability found"
+                            ))?;
 
-                    let vfs_write = wit::get_capability(
-                        &vfs_address,
-                        &make_vfs_cap("write", &vfs_drive),
-                    ).ok_or(anyhow::anyhow!("New failed: no vfs 'write' capability found"))?;
+                    let vfs_write =
+                        wit::get_capability(&vfs_address, &make_vfs_cap("write", &vfs_drive))
+                            .ok_or(anyhow::anyhow!(
+                                "New failed: no vfs 'write' capability found"
+                            ))?;
 
-                    let msg_cap = wit::get_capability(
-                        &source,
-                        &"\"messaging\"".into(),
-                    ).ok_or(anyhow::anyhow!("New failed: no msg capability passed"))?;
+                    let msg_cap = wit::get_capability(&source, &"\"messaging\"".into())
+                        .ok_or(anyhow::anyhow!("New failed: no msg capability passed"))?;
 
-                    let spawned_process_id = match wit::spawn(
+                    let spawned_process_id = match spawn(
                         None,
                         "/sqlite_worker.wasm",
-                        &wit::OnPanic::None,
+                        OnExit::None,
                         &wit::Capabilities::Some(vec![vfs_read, vfs_write, msg_cap]),
                         false, // not public
                     ) {
                         Ok(spawned_process_id) => spawned_process_id,
                         Err(e) => {
                             wit::print_to_terminal(0, &format!("couldn't spawn: {}", e));
-                            panic!("couldn't spawn");  //  TODO
-                        },
+                            panic!("couldn't spawn"); //  TODO
+                        }
                     };
                     //  grant caps
                     wit::create_capability(&source.process, &make_db_cap("read", db));
@@ -148,21 +151,23 @@ fn handle_message (
 
                     db_to_process.insert(db.into(), spawned_process_id);
 
-                    Response::new()
-                        .ipc(ipc)
-                        .send()?;
-                },
-                sq::SqliteMessage::Write { ref db, ref statement, .. } => {
+                    Response::new().ipc(ipc).send()?;
+                }
+                sq::SqliteMessage::Write {
+                    ref db,
+                    ref statement,
+                    ..
+                } => {
                     let first_word = statement
                         .split_whitespace()
                         .next()
                         .map(|word| word.to_uppercase())
                         .unwrap_or("".to_string());
                     if !write_keywords.contains(&first_word) {
-                        return Err(sq::SqliteError::NotAWriteKeyword.into())
+                        return Err(sq::SqliteError::NotAWriteKeyword.into());
                     }
                     forward_if_have_cap(our, "write", db, ipc, db_to_process)?;
-                },
+                }
                 sq::SqliteMessage::Read { ref db, ref query } => {
                     let first_word = query
                         .split_whitespace()
@@ -170,17 +175,17 @@ fn handle_message (
                         .map(|word| word.to_uppercase())
                         .unwrap_or("".to_string());
                     if !read_keywords.contains(&first_word) {
-                        return Err(sq::SqliteError::NotAReadKeyword.into())
+                        return Err(sq::SqliteError::NotAReadKeyword.into());
                     }
                     forward_if_have_cap(our, "read", db, ipc, db_to_process)?;
-                },
+                }
                 sq::SqliteMessage::Commit { ref db, .. } => {
                     forward_if_have_cap(our, "write", db, ipc, db_to_process)?;
-                },
+                }
             }
 
             Ok(())
-        },
+        }
     }
 }
 
@@ -194,18 +199,11 @@ impl Guest for Component {
         let mut db_to_process: DbToProcess = HashMap::new();
 
         let read_keywords: HashSet<String> = [
-            "ANALYZE",
-            "ATTACH",
-            "BEGIN",
-            "EXPLAIN",
-            "PRAGMA",
-            "SELECT",
-            "VALUES",
-            "WITH",
+            "ANALYZE", "ATTACH", "BEGIN", "EXPLAIN", "PRAGMA", "SELECT", "VALUES", "WITH",
         ]
-            .iter()
-            .map(|x| x.to_string())
-            .collect();
+        .iter()
+        .map(|x| x.to_string())
+        .collect();
         let write_keywords: HashSet<String> = [
             "ALTER",
             "ANALYZE",
@@ -225,25 +223,22 @@ impl Guest for Component {
             "UPDATE",
             "VACUUM",
         ]
-            .iter()
-            .map(|x| x.to_string())
-            .collect();
+        .iter()
+        .map(|x| x.to_string())
+        .collect();
 
         loop {
             match handle_message(&our, &mut db_to_process, &read_keywords, &write_keywords) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) => {
-                    wit::print_to_terminal(0, format!(
-                        "sqlite: error: {:?}",
-                        e,
-                    ).as_str());
+                    wit::print_to_terminal(0, format!("sqlite: error: {:?}", e,).as_str());
                     if let Some(e) = e.downcast_ref::<sq::SqliteError>() {
                         Response::new()
                             .ipc(serde_json::to_vec(&e).unwrap())
                             .send()
                             .unwrap();
                     }
-                },
+                }
             };
         }
     }

@@ -2,7 +2,7 @@
     {
         "process_name": "sqlite",
         "process_wasm_path": "/sqlite.wasm",
-        "on_panic": "Restart",
+        "on_exit": "Restart",
         "request_networking": false,
         "request_messaging": [
             "vfs:sys:uqbar"

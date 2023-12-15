@@ -1,4 +1,4 @@
-package uqbar:process@0.4.0;
+package uqbar:process@0.5.0;
 
 interface standard {
     // JSON is passed over WASM boundary as a string.
@@ -18,7 +18,6 @@ interface standard {
         publisher-node: node-id,
     }
 
-    // TODO better name for this
     record address {
         node: node-id,
         process: process-id,
@@ -69,9 +68,9 @@ interface standard {
         signature: list<u8>,
     }
 
-    // on-panic is a setting that determines what happens when a process panics.
+    // on-exit is a setting that determines what happens when a process panics, completes, or otherwise "ends"
     // NOTE: requests should have expects-response set to false, will always be set to that by kernel
-    variant on-panic {
+    variant on-exit {
         none,
         restart,
         requests(list<tuple<address, request, option<payload>>>),
@@ -109,7 +108,9 @@ interface standard {
 
     // process management:
 
-    set-on-panic: func(on-panic: on-panic);
+    set-on-exit: func(on-exit: on-exit);
+
+    get-on-exit: func() -> on-exit;
 
     get-state: func() -> option<list<u8>>;
 
@@ -120,7 +121,7 @@ interface standard {
     spawn: func(
                 name: option<string>,
                 wasm-path: string, // must be located within package's drive
-                on-panic: on-panic,
+                on-exit: on-exit,
                 capabilities: capabilities,
                 public: bool
             ) -> result<process-id, spawn-error>;

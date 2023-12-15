@@ -508,7 +508,7 @@ fn handle_local_request(
                     .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                         id: parsed_new_process_id,
                         wasm_bytes_handle: hash,
-                        on_panic: entry.on_panic.clone(),
+                        on_exit: entry.on_exit.clone(),
                         initial_capabilities,
                         public: entry.public,
                     })?)

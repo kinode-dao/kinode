@@ -428,18 +428,54 @@ pub enum SendErrorKind {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum OnPanic {
+pub enum OnExit {
     None,
     Restart,
     Requests(Vec<(Address, Request, Option<Payload>)>),
 }
 
-impl OnPanic {
+impl OnExit {
     pub fn is_restart(&self) -> bool {
         match self {
-            OnPanic::None => false,
-            OnPanic::Restart => true,
-            OnPanic::Requests(_) => false,
+            OnExit::None => false,
+            OnExit::Restart => true,
+            OnExit::Requests(_) => false,
+        }
+    }
+
+    pub fn en_wit(&self) -> wit::OnExit {
+        match self {
+            OnExit::None => wit::OnExit::None,
+            OnExit::Restart => wit::OnExit::Restart,
+            OnExit::Requests(reqs) => wit::OnExit::Requests(
+                reqs.iter()
+                    .map(|(address, request, payload)| {
+                        (
+                            address.en_wit(),
+                            en_wit_request(request.clone()),
+                            en_wit_payload(payload.clone()),
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    pub fn de_wit(wit: wit::OnExit) -> Self {
+        match wit {
+            wit::OnExit::None => OnExit::None,
+            wit::OnExit::Restart => OnExit::Restart,
+            wit::OnExit::Requests(reqs) => OnExit::Requests(
+                reqs.into_iter()
+                    .map(|(address, request, payload)| {
+                        (
+                            Address::de_wit(address),
+                            de_wit_request(request),
+                            de_wit_payload(payload),
+                        )
+                    })
+                    .collect(),
+            ),
         }
     }
 }
@@ -585,23 +621,6 @@ pub fn en_wit_send_error_kind(kind: SendErrorKind) -> wit::SendErrorKind {
     }
 }
 
-pub fn de_wit_on_panic(wit: wit::OnPanic) -> OnPanic {
-    match wit {
-        wit::OnPanic::None => OnPanic::None,
-        wit::OnPanic::Restart => OnPanic::Restart,
-        wit::OnPanic::Requests(reqs) => OnPanic::Requests(
-            reqs.into_iter()
-                .map(|(address, request, payload)| {
-                    (
-                        Address::de_wit(address),
-                        de_wit_request(request),
-                        de_wit_payload(payload),
-                    )
-                })
-                .collect(),
-        ),
-    }
-}
 //
 // END SYNC WITH process_lib
 //
@@ -716,7 +735,7 @@ pub struct IdentityTransaction {
 pub struct ProcessMetadata {
     pub our: Address,
     pub wasm_bytes_handle: u128,
-    pub on_panic: OnPanic,
+    pub on_exit: OnExit,
     pub public: bool,
 }
 
@@ -792,7 +811,7 @@ pub enum KernelCommand {
     InitializeProcess {
         id: ProcessId,
         wasm_bytes_handle: u128,
-        on_panic: OnPanic,
+        on_exit: OnExit,
         initial_capabilities: HashSet<SignedCapability>,
         public: bool,
     },
@@ -849,7 +868,7 @@ pub struct PersistedProcess {
     pub wasm_bytes_handle: u128,
     // pub drive: String,
     // pub full_path: String,
-    pub on_panic: OnPanic,
+    pub on_exit: OnExit,
     pub capabilities: HashSet<Capability>,
     pub public: bool, // marks if a process allows messages from any process
 }
@@ -879,7 +898,7 @@ pub struct PackageMetadata {
 pub struct PackageManifestEntry {
     pub process_name: String,
     pub process_wasm_path: String,
-    pub on_panic: OnPanic,
+    pub on_exit: OnExit,
     pub request_networking: bool,
     pub request_messaging: Option<Vec<String>>,
     pub grant_messaging: Option<Vec<String>>,
