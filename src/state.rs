@@ -470,6 +470,60 @@ async fn bootstrap(
                 }
             }
 
+            // grant capabilities to other initially spawned processes, distro
+            if let Some(to_grant) = &entry.grant_messaging {
+                for value in to_grant {
+                    let mut capability = None;
+                    let mut to_process = None;
+                    match value {
+                        serde_json::Value::String(process_name) => {
+                            if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
+                                capability = Some(Capability {
+                                    issuer: Address {
+                                        node: our_name.to_string(),
+                                        process: ProcessId::from_str(process_name).unwrap(),
+                                    },
+                                    params: "\"messaging\"".into(),
+                                });
+                                to_process = Some(parsed_process_id);
+                            }
+                        }
+                        serde_json::Value::Object(map) => {
+                            if let Some(process_name) = map.get("process") {
+                                if let Ok(parsed_process_id) =
+                                    ProcessId::from_str(&process_name.as_str().unwrap())
+                                {
+                                    if let Some(params) = map.get("params") {
+                                        capability = Some(Capability {
+                                            issuer: Address {
+                                                node: our_name.to_string(),
+                                                process: ProcessId::from_str(
+                                                    process_name.as_str().unwrap(),
+                                                )
+                                                .unwrap(),
+                                            },
+                                            params: params.to_string(),
+                                        });
+                                        to_process = Some(parsed_process_id);
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            continue;
+                        }
+                    }
+            
+                    if let Some(cap) = capability {
+                        if let Some(process) = process_map.get_mut(&to_process.unwrap()) {
+                            process.capabilities.insert(cap);
+                        }
+                    } else {
+                        println!("REMOVVV me-store: no cap: {}, for {} to grant!", value.to_string(), our_process_id);
+                    }
+                }
+            }
+
             if entry.request_networking {
                 requested_caps.insert(Capability {
                     issuer: Address {
