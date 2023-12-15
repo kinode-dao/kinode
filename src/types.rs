@@ -889,6 +889,7 @@ pub struct PackageMetadata {
     pub package: String,
     pub publisher: String,
     pub version: PackageVersion,
+    pub wit_version: Option<(u32, u32, u32)>,
     pub description: Option<String>,
     pub website: Option<String>,
 }
