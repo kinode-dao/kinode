@@ -74,7 +74,7 @@ pub async fn state_sender(
             Some(km) = recv_state.recv() => {
                 if our_name != km.source.node {
                     println!(
-                        "fs: request must come from our_name={}, got: {}",
+                        "state: request must come from our_name={}, got: {}",
                         our_name, &km,
                     );
                     continue;
@@ -178,12 +178,9 @@ async fn handle_request(
             }
         }
         StateAction::DeleteState(process_id) => {
-            // handle DeleteState action
-            println!("got deleteState");
             let key = process_id.to_hash();
             match db.delete(key) {
                 Ok(_) => {
-                    println!("delete state success");
                     (
                         serde_json::to_vec(&StateResponse::DeleteState).unwrap(),
                         None,
@@ -518,8 +515,6 @@ async fn bootstrap(
                         if let Some(process) = process_map.get_mut(&to_process.unwrap()) {
                             process.capabilities.insert(cap);
                         }
-                    } else {
-                        println!("REMOVVV me-store: no cap: {}, for {} to grant!", value.to_string(), our_process_id);
                     }
                 }
             }
@@ -561,10 +556,7 @@ async fn bootstrap(
             let public_process = entry.public;
 
             let wasm_bytes_handle = format!("{}/{}", &drive_path, &file_path);
-            println!(
-                "giving bootstrapped process the following caps: {:?}",
-                requested_caps.clone()
-            );
+
             process_map.insert(
                 ProcessId::new(Some(&entry.process_name), package_name, package_publisher),
                 PersistedProcess {

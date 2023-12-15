@@ -136,8 +136,6 @@ async fn handle_request(
     let drive = format!("/{}/{}", package_id, drive);
     let path = PathBuf::from(request.path.clone());
 
-    // temp, replaced with ROOT cap
-    let app_store_process_id = ProcessId::new(Some("main"), "app_store", "uqbar");
 
     if km.source.process != *KERNEL_PROCESS_ID {
         check_caps(
@@ -154,8 +152,6 @@ async fn handle_request(
     }
     // real safe path that the vfs will use
     let path = PathBuf::from(format!("{}{}/{}", vfs_path, drive, rest));
-    println!("real path: {}", path.display());
-    println!("action path: {}", request.action.to_string());
     let (ipc, bytes) = match request.action {
         VfsAction::CreateDrive => {
             // handled in check_caps.
@@ -240,18 +236,11 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Read => {
-            println!("tryna read a file bruh");
             let file = open_file(open_files.clone(), path.clone(), false).await?;
             let mut file = file.lock().await;
             let mut contents = Vec::new();
             file.seek(SeekFrom::Start(0)).await?;
             file.read_to_end(&mut contents).await?;
-
-            println!(
-                "read path to end with x bytes: {}, {}",
-                path.display(),
-                contents.len()
-            );
 
             (
                 serde_json::to_vec(&VfsResponse::Read).unwrap(),
@@ -528,7 +517,6 @@ async fn check_caps(
     vfs_dir_path: String,
 ) -> Result<(), VfsError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-    println!("checking caps!");
     match &request.action {
         VfsAction::CreateDir
         | VfsAction::CreateDirAll
@@ -607,11 +595,9 @@ async fn check_caps(
         }
         VfsAction::CreateDrive => {
             // TODO add helper to types.rs?
-            println!("got create drive!");
             let src_package_id =
                 PackageId::new(source.process.package(), source.process.publisher());
             if src_package_id != package_id {
-                println!("not equal..");
                 // might have root caps
                 send_to_caps_oracle
                     .send(CapMessage::Has {
@@ -631,13 +617,11 @@ async fn check_caps(
                     .await?;
                 let has_cap = recv_cap_bool.await?;
                 if !has_cap {
-                    println!("oh nooo no cap");
                     return Err(VfsError::NoCap {
                         action: request.action.to_string(),
                         path: path.display().to_string(),
                     });
                 }
-                println!("has cap B)");
             }
 
             add_capability("read", &drive, &our_node, &source, &mut send_to_caps_oracle).await?;
