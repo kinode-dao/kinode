@@ -180,12 +180,10 @@ async fn handle_request(
         StateAction::DeleteState(process_id) => {
             let key = process_id.to_hash();
             match db.delete(key) {
-                Ok(_) => {
-                    (
-                        serde_json::to_vec(&StateResponse::DeleteState).unwrap(),
-                        None,
-                    )
-                }
+                Ok(_) => (
+                    serde_json::to_vec(&StateResponse::DeleteState).unwrap(),
+                    None,
+                ),
                 Err(e) => {
                     println!("delete state error: {:?}", e);
                     return Err(StateError::RocksDBError {
@@ -510,7 +508,7 @@ async fn bootstrap(
                             continue;
                         }
                     }
-            
+
                     if let Some(cap) = capability {
                         if let Some(process) = process_map.get_mut(&to_process.unwrap()) {
                             process.capabilities.insert(cap);

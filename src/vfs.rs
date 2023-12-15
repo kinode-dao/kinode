@@ -136,7 +136,6 @@ async fn handle_request(
     let drive = format!("/{}/{}", package_id, drive);
     let path = PathBuf::from(request.path.clone());
 
-
     if km.source.process != *KERNEL_PROCESS_ID {
         check_caps(
             our_node.clone(),
