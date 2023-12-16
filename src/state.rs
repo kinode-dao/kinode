@@ -69,8 +69,8 @@ pub async fn state_sender(
 ) -> Result<(), anyhow::Error> {
     let db = Arc::new(db);
 
-    let process_queues: Arc<Mutex<HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>>>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
+        HashMap::new();
 
     loop {
         tokio::select! {
@@ -83,13 +83,10 @@ pub async fn state_sender(
                     continue;
                 }
 
-                let queue = {
-                    let mut process_lock = process_queues.lock().await;
-                    process_lock
-                        .entry(km.source.process.clone())
-                        .or_insert_with(|| Arc::new(Mutex::new(VecDeque::new())))
-                        .clone()
-                };
+                let queue = process_queues
+                    .entry(km.source.process.clone())
+                    .or_insert_with(|| Arc::new(Mutex::new(VecDeque::new())))
+                    .clone();
 
                 {
                     let mut queue_lock = queue.lock().await;
