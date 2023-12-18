@@ -1043,7 +1043,7 @@ pub enum KvAction {
     New,
     Set { key: Vec<u8>, tx_id: Option<u64> },
     Delete { key: Vec<u8>, tx_id: Option<u64> },
-    Get { key: Vec<u8>  },
+    Get { key: Vec<u8> },
     BeginTx,
     Commit { tx_id: u64 },
     Backup,
@@ -1051,7 +1051,7 @@ pub enum KvAction {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum KvResponse {
-    Ok, 
+    Ok,
     BeginTx { tx_id: u64 },
     Get { key: Vec<u8> },
     Err { error: KvError },
@@ -1068,7 +1068,7 @@ pub enum KvError {
     #[error("kv: no Tx found")]
     NoTx,
     #[error("kv: No capability error: {error}")]
-    NoCap { error: String },    
+    NoCap { error: String },
     #[error("kv: RejectForeign")]
     RejectForeign,
     #[error("kv: rocksdb internal error: {error}")]

@@ -170,10 +170,11 @@ async fn handle_request(
                 });
             };
 
-            db.put(key, &payload.bytes).map_err(|e| StateError::RocksDBError {
-                action: "SetState".into(),
-                error: e.to_string(),
-            })?;
+            db.put(key, &payload.bytes)
+                .map_err(|e| StateError::RocksDBError {
+                    action: "SetState".into(),
+                    error: e.to_string(),
+                })?;
 
             (serde_json::to_vec(&StateResponse::SetState).unwrap(), None)
         }

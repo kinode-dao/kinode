@@ -110,28 +110,31 @@ async fn handle_request(
         ..
     }) = message.clone()
     else {
-        return Err(KvError::InputError { error: "not a request".into() })
+        return Err(KvError::InputError {
+            error: "not a request".into(),
+        });
     };
 
     let request: KvRequest = match serde_json::from_slice(&ipc) {
         Ok(r) => r,
         Err(e) => {
             println!("kv: got invalid Request: {}", e);
-            return Err(KvError::InputError { error: "didn't serialize to KvAction.".into() })
+            return Err(KvError::InputError {
+                error: "didn't serialize to KvAction.".into(),
+            });
         }
     };
 
-        check_caps(
-            our_node.clone(),
-            source.clone(),
-            open_kvs.clone(),
-            send_to_caps_oracle.clone(),
-            &request,
-            kv_path.clone(),
-        )
-        .await?;
+    check_caps(
+        our_node.clone(),
+        source.clone(),
+        open_kvs.clone(),
+        send_to_caps_oracle.clone(),
+        &request,
+        kv_path.clone(),
+    )
+    .await?;
 
-    
     let (ipc, bytes) = match &request.action {
         KvAction::New => {
             // handled in check_caps.
@@ -154,14 +157,20 @@ async fn handle_request(
                     return Err(KvError::KeyNotFound);
                 }
                 Err(e) => {
-                    return Err(KvError::RocksDBError { action: request.action.to_string(), error: e.to_string() })
+                    return Err(KvError::RocksDBError {
+                        action: request.action.to_string(),
+                        error: e.to_string(),
+                    })
                 }
             }
         }
         KvAction::BeginTx => {
             let tx_id = rand::random::<u64>();
             txs.insert(tx_id, Vec::new());
-            (serde_json::to_vec(&KvResponse::BeginTx { tx_id }).unwrap(), None)
+            (
+                serde_json::to_vec(&KvResponse::BeginTx { tx_id }).unwrap(),
+                None,
+            )
         }
         KvAction::Set { key, tx_id } => {
             let db = match open_kvs.get(&request.db) {
@@ -171,7 +180,9 @@ async fn handle_request(
                 Some(db) => db,
             };
             let Some(payload) = payload else {
-                return Err(KvError::InputError { error: "no payload".into() })
+                return Err(KvError::InputError {
+                    error: "no payload".into(),
+                });
             };
 
             match tx_id {
@@ -197,7 +208,7 @@ async fn handle_request(
                     return Err(KvError::NoDb);
                 }
                 Some(db) => db,
-            };     
+            };
             match tx_id {
                 None => {
                     db.delete(key)?;
@@ -211,7 +222,7 @@ async fn handle_request(
                     };
                     tx.push((request.action.clone(), None));
                 }
-            }       
+            }
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
         KvAction::Commit { tx_id } => {
@@ -221,7 +232,7 @@ async fn handle_request(
                 }
                 Some(db) => db,
             };
-        
+
             let txs = match txs.remove(&tx_id).map(|(_, tx)| tx) {
                 None => {
                     return Err(KvError::NoTx);
@@ -229,7 +240,7 @@ async fn handle_request(
                 Some(tx) => tx,
             };
             let tx = db.transaction();
-        
+
             for (action, payload) in txs {
                 match action {
                     KvAction::Set { key, .. } => {
@@ -243,15 +254,20 @@ async fn handle_request(
                     _ => {}
                 }
             }
-        
+
             match tx.commit() {
                 Ok(_) => (serde_json::to_vec(&KvResponse::Ok).unwrap(), None),
-                Err(e) => return Err(KvError::RocksDBError { action: request.action.to_string(), error: e.to_string() }),
+                Err(e) => {
+                    return Err(KvError::RocksDBError {
+                        action: request.action.to_string(),
+                        error: e.to_string(),
+                    })
+                }
             }
         }
         KvAction::Backup => {
             // loop through all db directories and backup.
-            // 
+            //
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
     };
@@ -302,7 +318,6 @@ async fn handle_request(
     Ok(())
 }
 
-
 async fn check_caps(
     our_node: String,
     source: Address,
@@ -312,8 +327,7 @@ async fn check_caps(
     kv_path: String,
 ) -> Result<(), KvError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-    let src_package_id =
-    PackageId::new(source.process.package(), source.process.publisher());
+    let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
 
     match &request.action {
         KvAction::Delete { .. }
@@ -378,7 +392,14 @@ async fn check_caps(
                 });
             }
 
-            add_capability("read", &request.db.to_string(), &our_node, &source, &mut send_to_caps_oracle).await?;
+            add_capability(
+                "read",
+                &request.db.to_string(),
+                &our_node,
+                &source,
+                &mut send_to_caps_oracle,
+            )
+            .await?;
             add_capability(
                 "write",
                 &request.db.to_string(),
@@ -389,7 +410,7 @@ async fn check_caps(
             .await?;
 
             let db_path = format!("{}{}", kv_path, request.db.to_string());
-            
+
             fs::create_dir_all(&db_path).await?;
 
             let db = OptimisticTransactionDB::open_default(&db_path)?;
@@ -408,7 +429,6 @@ async fn check_caps(
     }
 }
 
-
 async fn add_capability(
     kind: &str,
     db: &str,
@@ -421,8 +441,7 @@ async fn add_capability(
             node: our_node.to_string(),
             process: KV_PROCESS_ID.clone(),
         },
-        params: serde_json::to_string(&serde_json::json!({ "kind": kind, "db": db }))
-            .unwrap(),
+        params: serde_json::to_string(&serde_json::json!({ "kind": kind, "db": db })).unwrap(),
     };
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     send_to_caps_oracle
@@ -435,7 +454,6 @@ async fn add_capability(
     let _ = recv_cap_bool.await?;
     Ok(())
 }
-
 
 fn make_error_message(our_name: String, km: &KernelMessage, error: KvError) -> KernelMessage {
     KernelMessage {
@@ -494,7 +512,7 @@ impl From<std::io::Error> for KvError {
     fn from(err: std::io::Error) -> Self {
         KvError::IOError {
             error: err.to_string(),
-        } 
+        }
     }
 }
 impl From<rocksdb::Error> for KvError {

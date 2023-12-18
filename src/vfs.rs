@@ -506,8 +506,7 @@ async fn check_caps(
     package_id: PackageId,
     vfs_dir_path: String,
 ) -> Result<(), VfsError> {
-    let src_package_id =
-    PackageId::new(source.process.package(), source.process.publisher());
+    let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
 
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     match &request.action {
@@ -715,7 +714,6 @@ impl From<std::io::Error> for VfsError {
         }
     }
 }
-
 
 impl std::fmt::Display for VfsAction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
