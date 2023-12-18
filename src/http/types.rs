@@ -83,6 +83,13 @@ pub enum HttpClientError {
 /// with the shape Result<(), HttpServerActionError> serialized to JSON.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpServerAction {
+    // Binding an address for websockets. Doesn't need a cache since does not serve assets
+    // and might not need local_only.
+    BindWs {
+        path: String,
+        authenticated: bool,
+        local_only: bool,
+    },
     /// Bind expects a payload if and only if `cache` is TRUE. The payload should
     /// be the static file to serve at this path.
     Bind {
