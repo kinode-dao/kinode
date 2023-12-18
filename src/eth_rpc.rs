@@ -280,7 +280,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: EthRpcError) 
         id: km.id,
         source: Address {
             node: our_name.clone(),
-            process: FILESYSTEM_PROCESS_ID.clone(),
+            process: ETH_RPC_PROCESS_ID.clone(),
         },
         target: match &km.rsvp {
             None => km.source.clone(),
