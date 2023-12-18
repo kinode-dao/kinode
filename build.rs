@@ -135,6 +135,17 @@ fn main() {
 
     let pwd = std::env::current_dir().unwrap();
 
+    // Pull wit from git repo
+    let wit_dir = pwd.join("wit");
+    fs::create_dir_all(&wit_dir).unwrap();
+    let wit_file = wit_dir.join("uqbar.wit");
+    if !wit_file.exists() {
+        let mut wit_file = std::fs::File::create(&wit_file).unwrap();
+        let uqbar_wit_url = "https://raw.githubusercontent.com/uqbar-dao/uqwit/dr/0.5.0/uqbar.wit";
+        let mut response = reqwest::blocking::get(uqbar_wit_url).unwrap();
+        io::copy(&mut response, &mut wit_file).unwrap();
+    }
+
     // Create target.wasm (compiled .wit) & world
     run_command(Command::new("wasm-tools").args([
         "component",

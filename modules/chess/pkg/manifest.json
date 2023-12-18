@@ -2,7 +2,7 @@
     {
         "process_name": "chess",
         "process_wasm_path": "/chess.wasm",
-        "on_panic": "Restart",
+        "on_exit": "Restart",
         "request_networking": true,
         "request_messaging": [
             "net:sys:uqbar"

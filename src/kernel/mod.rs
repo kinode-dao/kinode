@@ -142,7 +142,7 @@ async fn handle_kernel_request(
         t::KernelCommand::InitializeProcess {
             id,
             wasm_bytes_handle,
-            on_panic,
+            on_exit,
             initial_capabilities,
             public,
         } => {
@@ -248,7 +248,7 @@ async fn handle_kernel_request(
                     process_id: id,
                     persisted: t::PersistedProcess {
                         wasm_bytes_handle,
-                        on_panic,
+                        on_exit,
                         capabilities: valid_capabilities,
                         public,
                     },
@@ -572,7 +572,7 @@ async fn start_process(
             process: id.clone(),
         },
         wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle,
-        on_panic: process_metadata.persisted.on_panic.clone(),
+        on_exit: process_metadata.persisted.on_exit.clone(),
         public: process_metadata.persisted.public,
     };
     process_handles.insert(
@@ -659,7 +659,7 @@ pub async fn kernel(
     for (process_id, persisted) in &process_map {
         // runtime extensions will have a bytes_handle of 0, because they have no
         // WASM code saved in filesystem.
-        if persisted.on_panic.is_restart() && persisted.wasm_bytes_handle != 0 {
+        if persisted.on_exit.is_restart() && persisted.wasm_bytes_handle != 0 {
             send_to_loop
                 .send(t::KernelMessage {
                     id: rand::random(),
@@ -696,7 +696,7 @@ pub async fn kernel(
                 .await
                 .expect("event loop: fatal: sender died");
         }
-        if let t::OnPanic::Requests(requests) = &persisted.on_panic {
+        if let t::OnExit::Requests(requests) = &persisted.on_exit {
             // if a persisted process had on-death-requests, we should perform them now
             // even in death, a process can only message processes it has capabilities for
             for (address, request, payload) in requests {
