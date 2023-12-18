@@ -18,8 +18,8 @@ mod keygen;
 mod kv;
 mod net;
 mod register;
-mod state;
 mod sqlite;
+mod state;
 mod terminal;
 mod timer;
 mod types;
@@ -36,7 +36,6 @@ const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
-
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -336,11 +335,7 @@ async fn main() {
             state_sender,
             true,
         ),
-        (
-            ProcessId::new(Some("kv"), "sys", "uqbar"),
-            kv_sender,
-            true,
-        ),
+        (ProcessId::new(Some("kv"), "sys", "uqbar"), kv_sender, true),
         (
             ProcessId::new(Some("sqlite"), "sys", "uqbar"),
             sqlite_sender,

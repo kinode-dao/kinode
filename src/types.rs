@@ -1087,13 +1087,19 @@ pub struct SqliteRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SqliteAction {
     New,
-    Write { statement: String, tx_id: Option<u64> },
-    Read { query: String },
+    Write {
+        statement: String,
+        tx_id: Option<u64>,
+    },
+    Read {
+        query: String,
+    },
     BeginTx,
-    Commit { tx_id: u64 },
+    Commit {
+        tx_id: u64,
+    },
     Backup,
 }
-
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SqliteResponse {

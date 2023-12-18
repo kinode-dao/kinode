@@ -1,11 +1,11 @@
 use anyhow::Result;
 use dashmap::DashMap;
+use rusqlite::types::{FromSql, FromSqlError, ToSql, ValueRef};
+use rusqlite::Connection;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::Mutex;
-use rusqlite::Connection;
-use rusqlite::types::{FromSql, FromSqlError, ToSql, ValueRef};
 
 use crate::types::*;
 
@@ -25,7 +25,7 @@ pub async fn sqlite(
 
     let open_dbs: Arc<DashMap<DBKey, Mutex<Connection>>> = Arc::new(DashMap::new());
     let txs: Arc<DashMap<u64, Vec<(String, Vec<SqlValue>)>>> = Arc::new(DashMap::new());
-    
+
     let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
         HashMap::new();
 
@@ -137,7 +137,7 @@ async fn handle_request(
 
     let (ipc, bytes) = match request.action {
         SqliteAction::New => {
-            // handled in check_caps 
+            // handled in check_caps
             //
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
@@ -160,27 +160,32 @@ async fn handle_request(
                 .collect();
 
             let results: Vec<HashMap<String, serde_json::Value>> = statement
-            .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
-                let mut map = HashMap::new();
-                for (i, column_name) in column_names.iter().enumerate() {
-                    let value: SqlValue = row.get(i)?;
-                    let value_json = match value {
-                        SqlValue::Integer(int) => serde_json::Value::Number(int.into()),
-                        SqlValue::Real(real) => serde_json::Value::Number(serde_json::Number::from_f64(real).unwrap()),
-                        SqlValue::Text(text) => serde_json::Value::String(text),
-                        SqlValue::Blob(blob) => serde_json::Value::String(base64::encode(blob)), // or another representation if you prefer
-                        _ => serde_json::Value::Null,
-                    };
-                    map.insert(column_name.clone(), value_json);
-                }
-                Ok(map)
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+                .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
+                    let mut map = HashMap::new();
+                    for (i, column_name) in column_names.iter().enumerate() {
+                        let value: SqlValue = row.get(i)?;
+                        let value_json = match value {
+                            SqlValue::Integer(int) => serde_json::Value::Number(int.into()),
+                            SqlValue::Real(real) => serde_json::Value::Number(
+                                serde_json::Number::from_f64(real).unwrap(),
+                            ),
+                            SqlValue::Text(text) => serde_json::Value::String(text),
+                            SqlValue::Blob(blob) => serde_json::Value::String(base64::encode(blob)), // or another representation if you prefer
+                            _ => serde_json::Value::Null,
+                        };
+                        map.insert(column_name.clone(), value_json);
+                    }
+                    Ok(map)
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
 
             let results = serde_json::json!(results).to_string();
             let results_bytes = results.as_bytes().to_vec();
 
-            (serde_json::to_vec(&SqliteResponse::Read).unwrap(), Some(results_bytes))
+            (
+                serde_json::to_vec(&SqliteResponse::Read).unwrap(),
+                Some(results_bytes),
+            )
         }
         SqliteAction::Write { statement, tx_id } => {
             let db = match open_dbs.get(&request.db) {
@@ -198,11 +203,11 @@ async fn handle_request(
                     txs.entry(tx_id)
                         .or_insert_with(Vec::new)
                         .push((statement.clone(), parameters));
-                },
+                }
                 None => {
                     let mut stmt = db.prepare(&statement)?;
                     stmt.execute(rusqlite::params_from_iter(parameters.iter()))?;
-                },
+                }
             };
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
@@ -240,7 +245,7 @@ async fn handle_request(
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Backup => {
-            // execute WAL flush. 
+            // execute WAL flush.
             //
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
@@ -304,9 +309,7 @@ async fn check_caps(
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
 
     match &request.action {
-        SqliteAction::Write { .. }
-        | SqliteAction::BeginTx
-        | SqliteAction::Commit { .. } => {
+        SqliteAction::Write { .. } | SqliteAction::BeginTx | SqliteAction::Commit { .. } => {
             send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
@@ -439,42 +442,35 @@ fn json_to_sqlite(value: &serde_json::Value) -> Result<SqlValue, SqliteError> {
             } else {
                 Err(SqliteError::InvalidParameters)
             }
-        },
+        }
         serde_json::Value::String(s) => {
             match base64::decode(&s) {
                 Ok(decoded_bytes) => {
                     // convert to SQLite Blob if it's a valid base64 string
                     Ok(SqlValue::Blob(decoded_bytes))
-                },
+                }
                 Err(_) => {
                     // if it's not base64, just use the string itself
                     Ok(SqlValue::Text(s.clone()))
                 }
             }
-        },
-        serde_json::Value::Bool(b) => {
-            Ok(SqlValue::Boolean(*b))
-        },
-        serde_json::Value::Null => {
-            Ok(SqlValue::Null)
-        },
-        _ => {
-            Err(SqliteError::InvalidParameters)
         }
+        serde_json::Value::Bool(b) => Ok(SqlValue::Boolean(*b)),
+        serde_json::Value::Null => Ok(SqlValue::Null),
+        _ => Err(SqliteError::InvalidParameters),
     }
 }
 
 fn get_json_params(payload: Option<Payload>) -> Result<Vec<SqlValue>, SqliteError> {
     match payload {
         None => Ok(vec![]),
-        Some(payload) => {
-            match serde_json::from_slice::<serde_json::Value>(&payload.bytes) {
-                Ok(serde_json::Value::Array(vec)) => {
-                    vec.iter().map(|value| json_to_sqlite(value)).collect::<Result<Vec<_>, _>>()
-                },
-                _ => Err(SqliteError::InvalidParameters),
-            }
-        }
+        Some(payload) => match serde_json::from_slice::<serde_json::Value>(&payload.bytes) {
+            Ok(serde_json::Value::Array(vec)) => vec
+                .iter()
+                .map(|value| json_to_sqlite(value))
+                .collect::<Result<Vec<_>, _>>(),
+            _ => Err(SqliteError::InvalidParameters),
+        },
     }
 }
 
@@ -510,7 +506,9 @@ impl ToSql for SqlValue {
             SqlValue::Text(ref s) => s.to_sql(),
             SqlValue::Blob(ref b) => b.to_sql(),
             SqlValue::Boolean(b) => b.to_sql(),
-            SqlValue::Null => Ok(rusqlite::types::ToSqlOutput::Owned(rusqlite::types::Value::Null)),
+            SqlValue::Null => Ok(rusqlite::types::ToSqlOutput::Owned(
+                rusqlite::types::Value::Null,
+            )),
         }
     }
 }
@@ -523,7 +521,7 @@ impl FromSql for SqlValue {
             ValueRef::Text(t) => {
                 let text_str = std::str::from_utf8(t).map_err(|_| FromSqlError::InvalidType)?;
                 Ok(SqlValue::Text(text_str.to_string()))
-            },
+            }
             ValueRef::Blob(b) => Ok(SqlValue::Blob(b.to_vec())),
             _ => Err(FromSqlError::InvalidType),
         }
