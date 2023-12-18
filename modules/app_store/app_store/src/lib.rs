@@ -359,7 +359,6 @@ fn handle_local_request(
                 .unwrap();
             let metadata_path = format!("{}/metadata.json", drive.clone());
 
-            println!("looking for metadata at {}", metadata_path);
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
