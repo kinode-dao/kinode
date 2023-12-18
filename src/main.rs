@@ -19,6 +19,7 @@ mod kv;
 mod net;
 mod register;
 mod state;
+mod sqlite;
 mod terminal;
 mod timer;
 mod types;
@@ -34,6 +35,8 @@ const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
+const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
+
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -159,6 +162,9 @@ async fn main() {
     // kv sender and receiver
     let (kv_sender, kv_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(KV_CHANNEL_CAPACITY);
+    // sqlite sender and receiver
+    let (sqlite_sender, sqlite_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(SQLITE_CHANNEL_CAPACITY);
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
@@ -330,7 +336,16 @@ async fn main() {
             state_sender,
             true,
         ),
-        (ProcessId::new(Some("kv"), "sys", "uqbar"), kv_sender, true),
+        (
+            ProcessId::new(Some("kv"), "sys", "uqbar"),
+            kv_sender,
+            true,
+        ),
+        (
+            ProcessId::new(Some("sqlite"), "sys", "uqbar"),
+            sqlite_sender,
+            true,
+        ),
     ];
 
     #[cfg(feature = "llm")]
@@ -403,6 +418,14 @@ async fn main() {
         kernel_message_sender.clone(),
         print_sender.clone(),
         kv_receiver,
+        caps_oracle_sender.clone(),
+        home_directory_path.clone(),
+    ));
+    tasks.spawn(sqlite::sqlite(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        print_sender.clone(),
+        sqlite_receiver,
         caps_oracle_sender.clone(),
         home_directory_path.clone(),
     ));

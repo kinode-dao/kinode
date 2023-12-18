@@ -78,3 +78,4 @@ wasmtime = "15.0.1"
 wasmtime-wasi = "15.0.1"
 zip = "0.6"
 rocksdb = { version = "0.21.0", features = ["multi-threaded-cf"] }
+rusqlite = { version = "0.30.0", features = ["bundled"] }
