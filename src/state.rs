@@ -170,7 +170,11 @@ async fn handle_request(
                 });
             };
 
-            db.put(key, &payload.bytes)?;
+            db.put(key, &payload.bytes).map_err(|e| StateError::RocksDBError {
+                action: "SetState".into(),
+                error: e.to_string(),
+            })?;
+
             (serde_json::to_vec(&StateResponse::SetState).unwrap(), None)
         }
         StateAction::GetState(process_id) => {
@@ -642,21 +646,4 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -
 
 fn process_to_vec(process: ProcessId) -> Vec<u8> {
     process.to_string().as_bytes().to_vec()
-}
-
-impl From<std::io::Error> for VfsError {
-    fn from(err: std::io::Error) -> Self {
-        VfsError::IOError {
-            error: err.to_string(),
-            path: "".to_string(),
-        } // replace with appropriate VfsError variant and fields
-    }
-}
-impl From<rocksdb::Error> for StateError {
-    fn from(error: rocksdb::Error) -> Self {
-        StateError::RocksDBError {
-            action: "ass".into(),
-            error: error.to_string(),
-        }
-    }
 }

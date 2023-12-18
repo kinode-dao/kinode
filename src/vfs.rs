@@ -506,6 +506,9 @@ async fn check_caps(
     package_id: PackageId,
     vfs_dir_path: String,
 ) -> Result<(), VfsError> {
+    let src_package_id =
+    PackageId::new(source.process.package(), source.process.publisher());
+
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     match &request.action {
         VfsAction::CreateDir
@@ -524,6 +527,9 @@ async fn check_caps(
         | VfsAction::Rename(_)
         | VfsAction::AddZip
         | VfsAction::SetLen(_) => {
+            if src_package_id == package_id {
+                return Ok(());
+            }
             send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
@@ -557,6 +563,9 @@ async fn check_caps(
         | VfsAction::Seek(_)
         | VfsAction::Hash
         | VfsAction::Len => {
+            if src_package_id == package_id {
+                return Ok(());
+            }
             send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
@@ -584,9 +593,6 @@ async fn check_caps(
             Ok(())
         }
         VfsAction::CreateDrive => {
-            // TODO add helper to types.rs?
-            let src_package_id =
-                PackageId::new(source.process.package(), source.process.publisher());
             if src_package_id != package_id {
                 // might have root caps
                 send_to_caps_oracle
@@ -700,6 +706,16 @@ impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for VfsError {
         }
     }
 }
+
+impl From<std::io::Error> for VfsError {
+    fn from(err: std::io::Error) -> Self {
+        VfsError::IOError {
+            path: "".into(),
+            error: err.to_string(),
+        }
+    }
+}
+
 
 impl std::fmt::Display for VfsAction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
