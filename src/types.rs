@@ -1078,7 +1078,7 @@ pub enum KvResponse {
     Err { error: KvError },
 }
 
-#[derive(Debug, Serialize, Deserialize, thiserror::Error)]
+#[derive(Debug, Serialize, Deserialize, Error)]
 pub enum KvError {
     #[error("kv: DbDoesNotExist")]
     NoDb,
@@ -1139,7 +1139,7 @@ pub enum SqlValue {
     Null,
 }
 
-#[derive(Debug, Serialize, Deserialize, thiserror::Error)]
+#[derive(Debug, Serialize, Deserialize, Error)]
 pub enum SqliteError {
     #[error("sqlite: DbDoesNotExist")]
     NoDb,
