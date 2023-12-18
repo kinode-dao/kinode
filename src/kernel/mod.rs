@@ -1010,9 +1010,11 @@ pub async fn kernel(
                     t::CapMessage::Add { on, cap, responder } => {
                         // insert cap in process map
                         let Some(entry) = process_map.get_mut(&on) else {
+                            println!("cap oracle: process {:?} dne; not adding {:?}\r", on, cap);
                             let _ = responder.send(false);
                             continue;
                         };
+                        println!("cap oracle: process {:?} with {:?} caps adding {:?}\r", on, entry.capabilities, cap);
                         entry.capabilities.insert(cap);
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);

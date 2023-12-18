@@ -553,6 +553,7 @@ impl StandardHost for process::ProcessWasi {
         to: wit::ProcessId,
         signed_cap: wit::SignedCapability,
     ) -> Result<()> {
+        println!("share_cap: {:?} <- {:?}\r", to, signed_cap);
         let pk = signature::UnparsedPublicKey::new(
             &signature::ED25519,
             self.process.keypair.public_key(),
