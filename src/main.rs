@@ -22,6 +22,7 @@ mod terminal;
 mod timer;
 mod types;
 mod vfs;
+mod kv;
 
 const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
@@ -32,10 +33,12 @@ const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
+const KV_CHANNEL_CAPACITY: usize = 1_000;
+
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// This can and should be an environment variable / setting. It configures networking
+/// Tshis can and should be an environment variable / setting. It configures networking
 /// such that indirect nodes always use routers, even when target is a direct node,
 /// such that only their routers can ever see their physical networking details.
 const REVEAL_IP: bool = true;
@@ -151,10 +154,12 @@ async fn main() {
     // websocket sender receives send messages via this channel, kernel send messages
     let (net_message_sender, net_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(WEBSOCKET_SENDER_CHANNEL_CAPACITY);
-
+    // kernel_state sender and receiver
     let (state_sender, state_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(VFS_CHANNEL_CAPACITY);
-
+    // kv sender and receiver
+    let (kv_sender, kv_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(KV_CHANNEL_CAPACITY);
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
@@ -326,6 +331,11 @@ async fn main() {
             state_sender,
             true,
         ),
+        (
+            ProcessId::new(Some("kv"), "sys", "uqbar"),
+            kv_sender,
+            true,
+        ),
     ];
 
     #[cfg(feature = "llm")]
@@ -391,6 +401,14 @@ async fn main() {
         print_sender.clone(),
         state_receiver,
         db,
+        home_directory_path.clone(),
+    ));
+    tasks.spawn(kv::kv(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        print_sender.clone(),
+        kv_receiver,
+        caps_oracle_sender.clone(),
         home_directory_path.clone(),
     ));
     tasks.spawn(http::server::http_server(

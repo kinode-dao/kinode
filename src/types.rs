@@ -7,7 +7,6 @@ use thiserror::Error;
 lazy_static::lazy_static! {
     pub static ref ENCRYPTOR_PROCESS_ID: ProcessId = ProcessId::new(Some("encryptor"), "sys", "uqbar");
     pub static ref ETH_RPC_PROCESS_ID: ProcessId = ProcessId::new(Some("eth_rpc"), "sys", "uqbar");
-    pub static ref FILESYSTEM_PROCESS_ID: ProcessId = ProcessId::new(Some("filesystem"), "sys", "uqbar");
     pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "sys", "uqbar");
     pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "sys", "uqbar");
     pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "sys", "uqbar");
@@ -15,7 +14,7 @@ lazy_static::lazy_static! {
     pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "sys", "uqbar");
     pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "sys", "uqbar");
     pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "sys", "uqbar");
-
+    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "sys", "uqbar");
 }
 
 //
@@ -917,6 +916,8 @@ pub enum StateError {
     BadJson { error: String },
     #[error("kernel_state: state not found for ProcessId {process_id}")]
     NotFound { process_id: ProcessId },
+    #[error("kernel_state: IO error: {error}")]
+    IOError { error: String },
 }
 
 #[allow(dead_code)]
@@ -929,6 +930,7 @@ impl StateError {
             StateError::BadRequest { .. } => "BadRequest",
             StateError::BadJson { .. } => "NoJson",
             StateError::NotFound { .. } => "NotFound",
+            StateError::IOError { .. } => "IOError",
         }
     }
 }
@@ -962,7 +964,6 @@ pub enum VfsAction {
     RemoveDirAll,
     Rename(String),
     AddZip,
-    // Metadata,
     Len,
     SetLen(u64),
     Hash,
@@ -1023,4 +1024,57 @@ impl VfsError {
             VfsError::CreateDirError { .. } => "CreateDirError",
         }
     }
+}
+
+#[derive(Debug, Serialize, Clone, Deserialize, PartialEq, Eq, Hash)]
+pub struct DBKey {
+    pub package_id: PackageId,
+    pub db: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KvRequest {
+    pub db: DBKey,
+    pub action: KvAction,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum KvAction {
+    New,
+    Set { key: Vec<u8>, tx_id: Option<u64> },
+    Delete { key: Vec<u8>, tx_id: Option<u64> },
+    Get { key: Vec<u8>  },
+    BeginTx,
+    Commit { tx_id: u64 },
+    Backup,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KvResponse {
+    Ok, 
+    BeginTx { tx_id: u64 },
+    Get { key: Vec<u8> },
+    Err { error: KvError },
+}
+
+#[derive(Debug, Serialize, Deserialize, thiserror::Error)]
+pub enum KvError {
+    #[error("kv: DbDoesNotExist")]
+    NoDb,
+    #[error("kv: DbAlreadyExists")]
+    DbAlreadyExists,
+    #[error("kv: KeyNotFound")]
+    KeyNotFound,
+    #[error("kv: no Tx found")]
+    NoTx,
+    #[error("kv: No capability error: {error}")]
+    NoCap { error: String },    
+    #[error("kv: RejectForeign")]
+    RejectForeign,
+    #[error("kv: rocksdb internal error: {error}")]
+    RocksDBError { action: String, error: String },
+    #[error("kv: input bytes/json/key error: {error}")]
+    InputError { error: String },
+    #[error("kv: IO error: {error}")]
+    IOError { error: String },
 }
