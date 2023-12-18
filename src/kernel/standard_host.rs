@@ -40,9 +40,13 @@ impl StandardHost for process::ProcessWasi {
     //
 
     ///  TODO critical: move to kernel logic to enable persistence of choice made here
-    async fn set_on_panic(&mut self, on_panic: wit::OnPanic) -> Result<()> {
-        self.process.metadata.on_panic = t::de_wit_on_panic(on_panic);
+    async fn set_on_exit(&mut self, on_exit: wit::OnExit) -> Result<()> {
+        self.process.metadata.on_exit = t::OnExit::de_wit(on_exit);
         Ok(())
+    }
+
+    async fn get_on_exit(&mut self) -> Result<wit::OnExit> {
+        Ok(self.process.metadata.on_exit.en_wit())
     }
 
     /// create a message from the *kernel* to the filesystem,
@@ -171,7 +175,7 @@ impl StandardHost for process::ProcessWasi {
         &mut self,
         name: Option<String>,
         wasm_path: String, // must be located within package's drive
-        on_panic: wit::OnPanic,
+        on_exit: wit::OnExit,
         capabilities: wit::Capabilities,
         public: bool,
     ) -> Result<Result<wit::ProcessId, wit::SpawnError>> {
@@ -257,7 +261,7 @@ impl StandardHost for process::ProcessWasi {
                 ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                     id: new_process_id.clone(),
                     wasm_bytes_handle: path,
-                    on_panic: t::de_wit_on_panic(on_panic),
+                    on_exit: t::OnExit::de_wit(on_exit),
                     initial_capabilities: match capabilities {
                         wit::Capabilities::None => HashSet::new(),
                         wit::Capabilities::All => {

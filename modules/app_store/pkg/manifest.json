@@ -2,7 +2,7 @@
     {
         "process_name": "main",
         "process_wasm_path": "/app_store.wasm",
-        "on_panic": "Restart",
+        "on_exit": "Restart",
         "request_networking": true,
         "request_messaging": [
             "terminal:terminal:uqbar",
