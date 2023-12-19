@@ -83,13 +83,6 @@ pub enum HttpClientError {
 /// with the shape Result<(), HttpServerActionError> serialized to JSON.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpServerAction {
-    // Binding an address for websockets. Doesn't need a cache since does not serve assets
-    // and might not need local_only.
-    BindWs {
-        path: String,
-        authenticated: bool,
-        local_only: bool,
-    },
     /// Bind expects a payload if and only if `cache` is TRUE. The payload should
     /// be the static file to serve at this path.
     Bind {
@@ -118,10 +111,30 @@ pub enum HttpServerAction {
         /// payload bytes and serve them as the response to any request to this path.
         cache: bool,
     },
+    /// Bind a path to receive incoming WebSocket connections.
+    /// Doesn't need a cache since does not serve assets.
+    WebSocketBind {
+        path: String,
+        authenticated: bool,
+        encrypted: bool,
+    },
+    /// SecureBind is the same as Bind, except that it forces new connections to be made
+    /// from the unique subdomain of the process that bound the path. These are *always*
+    /// authenticated. Since the subdomain is unique, it will require the user to be
+    /// logged in separately to the general domain authentication.
+    WebSocketSecureBind {
+        path: String,
+        encrypted: bool,
+    },
     /// Processes will RECEIVE this kind of request when a client connects to them.
     /// If a process does not want this websocket open, they should issue a *request*
     /// containing a [`type@HttpServerAction::WebSocketClose`] message and this channel ID.
-    WebSocketOpen(u32),
+    WebSocketOpen {
+        path: String,
+        channel_id: u32,
+        authenticated: bool,
+        encrypted: bool,
+    },
     /// When sent, expects a payload containing the WebSocket message bytes to send.
     WebSocketPush {
         channel_id: u32,
