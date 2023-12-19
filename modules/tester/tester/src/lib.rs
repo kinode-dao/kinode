@@ -117,7 +117,7 @@ impl Guest for Component {
             &make_vfs_address(&our).unwrap(),
             &serde_json::to_string(&serde_json::json!({
                 "kind": "write",
-                "drive": "tester:uqbar/",
+                "drive": "/tester:uqbar/pkg",
             }))
             .unwrap(),
         )
