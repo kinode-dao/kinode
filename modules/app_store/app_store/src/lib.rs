@@ -333,7 +333,7 @@ fn handle_local_request(
 
             // add zip bytes
             payload.mime = Some("application/zip".to_string());
-            Request::new()
+            let response = Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
                     drive: package.to_string(),
@@ -344,6 +344,13 @@ fn handle_local_request(
                 })?)
                 .payload(payload.clone())
                 .send_and_await_response(5)?.unwrap();
+            let Message::Response { ipc: ref vfs_ipc, .. } = response else {
+                panic!("app_store: send_and_await_response must return Response");
+            };
+            let vfs_ipc = serde_json::from_slice::<serde_json::Value>(vfs_ipc)?;
+            if vfs_ipc == serde_json::json!({"Err": "NoCap"}) {
+                return Err(anyhow::anyhow!("cannot add NewPackage: do not have capability to access vfs"));
+            }
 
             // save the zip file itself in VFS for sharing with other nodes
             // call it <package>.zip
