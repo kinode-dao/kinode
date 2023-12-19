@@ -66,7 +66,7 @@ fn handle_message(
                             .unwrap();
                     } else {
                         // we are master node
-                        let child = "/test_runner.wasm";
+                        let child = "/tester:uqbar/pkg/test_runner.wasm";
                         let child_process_id = match spawn(
                             None,
                             child,
@@ -117,7 +117,7 @@ impl Guest for Component {
             &make_vfs_address(&our).unwrap(),
             &serde_json::to_string(&serde_json::json!({
                 "kind": "write",
-                "drive": "tester:uqbar",
+                "drive": "tester:uqbar/",
             }))
             .unwrap(),
         )

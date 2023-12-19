@@ -268,8 +268,10 @@ async fn handle_request(
             let mut dir = fs::read_dir(path).await?;
             let mut entries = Vec::new();
             while let Some(entry) = dir.next_entry().await? {
-                // risky non-unicode
-                entries.push(entry.path().display().to_string());
+                let entry_path = entry.path();
+                let relative_path = entry_path.strip_prefix(&vfs_path).unwrap_or(&entry_path);
+
+                entries.push(relative_path.display().to_string());
             }
             (
                 serde_json::to_vec(&VfsResponse::ReadDir(entries)).unwrap(),
@@ -466,15 +468,19 @@ async fn handle_request(
 }
 
 async fn parse_package_and_drive(path: &str) -> Result<(PackageId, String, String), VfsError> {
-    if !path.starts_with('/') {
+    let mut parts: Vec<&str> = path.split('/').collect();
+
+    if parts[0].is_empty() {
+        parts.remove(0);
+    }
+    if parts.len() < 2 {
         return Err(VfsError::ParseError {
-            error: "path does not start with /".into(),
+            error: "malformed path".into(),
             path: path.to_string(),
         });
     }
-    let parts: Vec<&str> = path.split('/').collect();
 
-    let package_id = match PackageId::from_str(parts[1]) {
+    let package_id = match PackageId::from_str(parts[0]) {
         Ok(id) => id,
         Err(e) => {
             return Err(VfsError::ParseError {
@@ -484,17 +490,8 @@ async fn parse_package_and_drive(path: &str) -> Result<(PackageId, String, Strin
         }
     };
 
-    let drive = match parts.get(2) {
-        Some(d) => d.to_string(),
-        None => {
-            return Err(VfsError::ParseError {
-                error: "no drive specified".into(),
-                path: path.to_string(),
-            })
-        }
-    };
-
-    let remaining_path = parts[3..].join("/");
+    let drive = parts[1].to_string();
+    let remaining_path = parts[2..].join("/");
 
     Ok((package_id, drive, remaining_path))
 }
