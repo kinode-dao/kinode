@@ -929,7 +929,7 @@ pub enum StateError {
     RocksDBError { action: String, error: String },
     #[error("kernel_state: startup error")]
     StartupError { action: String },
-    #[error("vfs: Bytes payload required for {action}")]
+    #[error("kernel_state: bytes payload required for {action}")]
     BadBytes { action: String },
     #[error("kernel_state: bad request error: {error}")]
     BadRequest { error: String },
@@ -1049,15 +1049,10 @@ impl VfsError {
     }
 }
 
-#[derive(Debug, Serialize, Clone, Deserialize, PartialEq, Eq, Hash)]
-pub struct DBKey {
-    pub package_id: PackageId,
-    pub db: String,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KvRequest {
-    pub db: DBKey,
+    pub package_id: PackageId,
+    pub db: String, 
     pub action: KvAction,
 }
 
@@ -1102,7 +1097,8 @@ pub enum KvError {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SqliteRequest {
-    pub db: DBKey,
+    pub package_id: PackageId,
+    pub db: String, 
     pub action: SqliteAction,
 }
 

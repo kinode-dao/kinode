@@ -23,7 +23,7 @@ pub async fn kv(
         panic!("failed creating kv dir! {:?}", e);
     }
 
-    let open_kvs: Arc<DashMap<DBKey, OptimisticTransactionDB>> = Arc::new(DashMap::new());
+    let open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>> = Arc::new(DashMap::new());
     let txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>> = Arc::new(DashMap::new());
 
     let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
@@ -89,7 +89,7 @@ pub async fn kv(
 async fn handle_request(
     our_node: String,
     km: KernelMessage,
-    open_kvs: Arc<DashMap<DBKey, OptimisticTransactionDB>>,
+    open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
     txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
@@ -141,7 +141,7 @@ async fn handle_request(
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
         KvAction::Get { key } => {
-            let db = match open_kvs.get(&request.db) {
+            let db = match open_kvs.get(&(request.package_id, request.db)) {
                 None => {
                     return Err(KvError::NoDb);
                 }
@@ -173,7 +173,7 @@ async fn handle_request(
             )
         }
         KvAction::Set { key, tx_id } => {
-            let db = match open_kvs.get(&request.db) {
+            let db = match open_kvs.get(&(request.package_id, request.db)) {
                 None => {
                     return Err(KvError::NoDb);
                 }
@@ -203,7 +203,7 @@ async fn handle_request(
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
         KvAction::Delete { key, tx_id } => {
-            let db = match open_kvs.get(&request.db) {
+            let db = match open_kvs.get(&(request.package_id, request.db)) {
                 None => {
                     return Err(KvError::NoDb);
                 }
@@ -226,7 +226,7 @@ async fn handle_request(
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
         KvAction::Commit { tx_id } => {
-            let db = match open_kvs.get(&request.db) {
+            let db = match open_kvs.get(&(request.package_id, request.db)) {
                 None => {
                     return Err(KvError::NoDb);
                 }
@@ -321,7 +321,7 @@ async fn handle_request(
 async fn check_caps(
     our_node: String,
     source: Address,
-    open_kvs: Arc<DashMap<DBKey, OptimisticTransactionDB>>,
+    open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
     mut send_to_caps_oracle: CapMessageSender,
     request: &KvRequest,
     kv_path: String,
@@ -386,7 +386,7 @@ async fn check_caps(
             Ok(())
         }
         KvAction::New { .. } => {
-            if src_package_id != request.db.package_id {
+            if src_package_id != request.package_id {
                 return Err(KvError::NoCap {
                     error: request.action.to_string(),
                 });
@@ -415,7 +415,7 @@ async fn check_caps(
 
             let db = OptimisticTransactionDB::open_default(&db_path)?;
 
-            open_kvs.insert(request.db.clone(), db);
+            open_kvs.insert((request.package_id.clone(), request.db.clone()), db);
             Ok(())
         }
         KvAction::Backup { .. } => {
@@ -483,12 +483,6 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: KvError) -> K
 impl std::fmt::Display for KvAction {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?}", self)
-    }
-}
-
-impl std::fmt::Display for DBKey {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "/{}/{}", self.package_id, self.db)
     }
 }
 

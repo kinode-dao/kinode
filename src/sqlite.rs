@@ -23,7 +23,7 @@ pub async fn sqlite(
         panic!("failed creating sqlite dir! {:?}", e);
     }
 
-    let open_dbs: Arc<DashMap<DBKey, Mutex<Connection>>> = Arc::new(DashMap::new());
+    let open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>> = Arc::new(DashMap::new());
     let txs: Arc<DashMap<u64, Vec<(String, Vec<SqlValue>)>>> = Arc::new(DashMap::new());
 
     let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
@@ -89,7 +89,7 @@ pub async fn sqlite(
 async fn handle_request(
     our_node: String,
     km: KernelMessage,
-    open_dbs: Arc<DashMap<DBKey, Mutex<Connection>>>,
+    open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
     txs: Arc<DashMap<u64, Vec<(String, Vec<SqlValue>)>>>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
@@ -142,7 +142,7 @@ async fn handle_request(
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Read { query } => {
-            let db = match open_dbs.get(&request.db) {
+            let db = match open_dbs.get(&(request.package_id, request.db)) {
                 Some(db) => db,
                 None => {
                     return Err(SqliteError::NoDb);
@@ -188,7 +188,7 @@ async fn handle_request(
             )
         }
         SqliteAction::Write { statement, tx_id } => {
-            let db = match open_dbs.get(&request.db) {
+            let db = match open_dbs.get(&(request.package_id, request.db)) {
                 Some(db) => db,
                 None => {
                     return Err(SqliteError::NoDb);
@@ -221,7 +221,7 @@ async fn handle_request(
             )
         }
         SqliteAction::Commit { tx_id } => {
-            let db = match open_dbs.get(&request.db) {
+            let db = match open_dbs.get(&(request.package_id, request.db)) {
                 Some(db) => db,
                 None => {
                     return Err(SqliteError::NoDb);
@@ -300,7 +300,7 @@ async fn handle_request(
 async fn check_caps(
     our_node: String,
     source: Address,
-    open_dbs: Arc<DashMap<DBKey, Mutex<Connection>>>,
+    open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
     mut send_to_caps_oracle: CapMessageSender,
     request: &SqliteRequest,
     sqlite_path: String,
@@ -362,7 +362,7 @@ async fn check_caps(
             Ok(())
         }
         SqliteAction::New => {
-            if src_package_id != request.db.package_id {
+            if src_package_id != request.package_id {
                 return Err(SqliteError::NoCap {
                     error: request.action.to_string(),
                 });
@@ -392,7 +392,7 @@ async fn check_caps(
             let db = Connection::open(&db_path)?;
             db.execute("PRAGMA journal_mode=WAL;", [])?;
 
-            open_dbs.insert(request.db.clone(), Mutex::new(db));
+            open_dbs.insert((request.package_id.clone(), request.db.clone()), Mutex::new(db));
             Ok(())
         }
         SqliteAction::Backup => {
