@@ -7,6 +7,7 @@ use ring::rand::SystemRandom;
 use ring::signature;
 use ring::signature::KeyPair;
 use sha2::Sha256;
+use static_dir::static_dir;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use warp::{
@@ -128,11 +129,11 @@ pub async fn register(
     let ip = warp::any().map(move || ip.clone());
     let rpc_url = warp::any().map(move || rpc_url.clone());
 
-    let static_files = warp::path("static").and(warp::fs::dir("./src/register-ui/build/static/"));
+    let static_files = warp::path("static").and(static_dir!("src/register-ui/build/static/"));
 
     let react_app = warp::path::end()
         .and(warp::get())
-        .and(warp::fs::file("./src/register-ui/build/index.html"));
+        .map(move || warp::reply::html(include_str!("register-ui/build/index.html")));
 
     let api = warp::path("info")
         .and(
