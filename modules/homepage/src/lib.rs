@@ -43,6 +43,22 @@ fn main(our: Address) -> anyhow::Result<()> {
             .to_vec(),
     )?;
 
+    bind_http_static_path(
+        "/our",
+        false,
+        false,
+        Some("text/html".to_string()),
+        our.node.clone().as_bytes().to_vec(),
+    )?;
+
+    bind_http_static_path(
+        "/our.js",
+        false,
+        false,
+        Some("application/javascript".to_string()),
+        format!("window.our = {{}}; window.our.node = '{}';", &our.node).as_bytes().to_vec(),
+    )?;
+
     loop {
         let Ok(ref message) = await_message() else {
             println!("homepage: got network error??");
