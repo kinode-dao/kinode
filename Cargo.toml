@@ -21,7 +21,6 @@ simulation-mode = []
 [dependencies]
 aes-gcm = "0.10.2"
 anyhow = "1.0.71"
-async-recursion = "1.0.4"
 async-trait = "0.1.71"
 base64 = "0.13"
 bincode = "1.3.3"
@@ -34,7 +33,6 @@ clap = { version = "4.4", features = ["derive"] }
 crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"] }
 dashmap = "5.5.3"
 digest = "0.10"
-dotenv = "0.15.0"
 elliptic-curve = { version = "0.13.5", features = ["ecdh"] }
 ethers = "2.0"
 ethers-providers = "2.0.9"
@@ -49,7 +47,6 @@ http = "0.2.9"
 jwt = "0.16"
 lazy_static = "1.4.0"
 log = "*"
-lru-mem = "0.3.0"
 nohash-hasher = "0.2.0"
 num-traits = "0.2"
 open = "5.0.0"
@@ -59,10 +56,6 @@ reqwest = "0.11.18"
 ring = "0.16.20"
 rmp-serde = "1.1.2"
 route-recognizer = "0.3.1"
-rsa = "0.9"
-rusoto_core = "0.48.0"
-rusoto_s3 = "0.48.0"
-rusoto_credential = "0.48.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_urlencoded = "0.7"
@@ -72,7 +65,6 @@ thiserror = "1.0"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 tokio-tungstenite = "0.20.1"
 url = "2.4.1"
-uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "3ea3a23" }
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"
 wasmtime = "15.0.1"
