@@ -36,6 +36,7 @@ type WebSocketSenders = Arc<DashMap<u32, (ProcessId, WebSocketSender)>>;
 type WebSocketSender = tokio::sync::mpsc::Sender<warp::ws::Message>;
 
 type PathBindings = Arc<RwLock<Router<BoundPath>>>;
+type WsPathBindings = Arc<RwLock<Router<BoundWsPath>>>;
 
 struct BoundPath {
     pub app: ProcessId,
@@ -43,6 +44,13 @@ struct BoundPath {
     pub authenticated: bool,
     pub local_only: bool,
     pub static_content: Option<Payload>, // TODO store in filesystem and cache
+}
+
+struct BoundWsPath {
+    pub app: ProcessId,
+    pub secure_subdomain: Option<String>,
+    pub authenticated: bool,
+    pub encrypted: bool, // TODO use
 }
 
 /// HTTP server: a runtime module that handles HTTP requests at a given port.
@@ -87,11 +95,15 @@ pub async fn http_server(
     bindings_map.add("/rpc:sys:uqbar/message", rpc_bound_path);
     let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
+    // ws path bindings
+    let ws_path_bindings: WsPathBindings = Arc::new(RwLock::new(Router::new()));
+
     tokio::spawn(serve(
         our_name.clone(),
         our_port,
         http_response_senders.clone(),
         path_bindings.clone(),
+        ws_path_bindings.clone(),
         ws_senders.clone(),
         encoded_keyfile.clone(),
         jwt_secret_bytes.clone(),
@@ -105,6 +117,7 @@ pub async fn http_server(
             km,
             http_response_senders.clone(),
             path_bindings.clone(),
+            ws_path_bindings.clone(),
             ws_senders.clone(),
             send_to_loop.clone(),
         )
@@ -120,6 +133,7 @@ async fn serve(
     our_port: u16,
     http_response_senders: HttpResponseSenders,
     path_bindings: PathBindings,
+    ws_path_bindings: WsPathBindings,
     ws_senders: WebSocketSenders,
     encoded_keyfile: Arc<Vec<u8>>,
     jwt_secret_bytes: Arc<Vec<u8>>,
@@ -138,33 +152,17 @@ async fn serve(
     let cloned_our = our.clone();
     let cloned_jwt_secret_bytes = jwt_secret_bytes.clone();
     let cloned_print_tx = print_tx.clone();
-    let ws_route = warp::path::end()
-        .and(warp::ws())
+    let ws_route = warp::ws()
+        .and(warp::path::full())
+        .and(warp::filters::host::optional())
+        .and(warp::filters::header::headers_cloned())
         .and(warp::any().map(move || cloned_our.clone()))
         .and(warp::any().map(move || cloned_jwt_secret_bytes.clone()))
         .and(warp::any().map(move || ws_senders.clone()))
+        .and(warp::any().map(move || ws_path_bindings.clone()))
         .and(warp::any().map(move || cloned_msg_tx.clone()))
         .and(warp::any().map(move || cloned_print_tx.clone()))
-        .map(
-            |ws_connection: Ws,
-             our: Arc<String>,
-             jwt_secret_bytes: Arc<Vec<u8>>,
-             ws_senders: WebSocketSenders,
-             send_to_loop: MessageSender,
-             print_tx: PrintSender| {
-                ws_connection.on_upgrade(move |ws: WebSocket| async move {
-                    maintain_websocket(
-                        ws,
-                        our,
-                        jwt_secret_bytes,
-                        ws_senders,
-                        send_to_loop,
-                        print_tx,
-                    )
-                    .await
-                })
-            },
-        );
+        .and_then(ws_handler);
 
     // filter to receive and handle login requests
     let cloned_our = our.clone();
@@ -248,6 +246,84 @@ async fn login_handler(
         )
         .into_response()),
     }
+}
+
+async fn ws_handler(
+    ws_connection: Ws,
+    path: warp::path::FullPath,
+    host: Option<Authority>,
+    headers: warp::http::HeaderMap,
+    our: Arc<String>,
+    jwt_secret_bytes: Arc<Vec<u8>>,
+    ws_senders: WebSocketSenders,
+    ws_path_bindings: WsPathBindings,
+    send_to_loop: MessageSender,
+    print_tx: PrintSender,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    let original_path = normalize_path(path.as_str());
+    let _ = print_tx.send(Printout {
+        verbosity: 1,
+        content: format!("got ws request for {original_path}"),
+    });
+
+    let serialized_headers = serialize_headers(&headers);
+    let ws_path_bindings = ws_path_bindings.read().await;
+
+    let Ok(route) = ws_path_bindings.recognize(&original_path) else {
+        return Err(warp::reject::not_found());
+    };
+
+    let bound_path = route.handler();
+    if let Some(ref subdomain) = bound_path.secure_subdomain {
+        let _ = print_tx
+            .send(Printout {
+                verbosity: 1,
+                content: format!(
+                    "got request for path {original_path} bound by subdomain {subdomain}"
+                ),
+            })
+            .await;
+        // assert that host matches what this app wants it to be
+        if host.is_none() {
+            return Err(warp::reject::not_found());
+        }
+        let host = host.as_ref().unwrap();
+        // parse out subdomain from host (there can only be one)
+        let request_subdomain = host.host().split('.').next().unwrap_or("");
+        if request_subdomain != subdomain {
+            return Err(warp::reject::not_found());
+        }
+    }
+
+    if bound_path.authenticated {
+        let Some(auth_token) = serialized_headers.get("cookie") else {
+            return Err(warp::reject::not_found());
+        };
+        if !auth_cookie_valid(&our, &auth_token, &jwt_secret_bytes) {
+            return Err(warp::reject::not_found());
+        }
+    }
+
+    let app = bound_path.app.clone();
+    Ok(ws_connection.on_upgrade(move |ws: WebSocket| async move {
+        maintain_websocket(
+            ws,
+            our.clone(),
+            app,
+            // remove process id from beginning of path by splitting into segments
+            // separated by "/" and taking all but the first
+            original_path
+                .split('/')
+                .skip(1)
+                .collect::<Vec<&str>>()
+                .join("/"),
+            jwt_secret_bytes.clone(),
+            ws_senders.clone(),
+            send_to_loop.clone(),
+            print_tx.clone(),
+        )
+        .await;
+    }))
 }
 
 async fn http_handler(
@@ -522,16 +598,14 @@ async fn handle_rpc_message(
 async fn maintain_websocket(
     ws: WebSocket,
     our: Arc<String>,
-    jwt_secret_bytes: Arc<Vec<u8>>,
+    app: ProcessId,
+    path: String,
+    _jwt_secret_bytes: Arc<Vec<u8>>, // TODO use for encrypted channels
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) {
     let (mut write_stream, mut read_stream) = ws.split();
-
-    // first, receive a message from client that contains the target process
-    // and the auth token
-
     let _ = print_tx
         .send(Printout {
             verbosity: 1,
@@ -539,72 +613,10 @@ async fn maintain_websocket(
         })
         .await;
 
-    let Some(Ok(register_msg)) = read_stream.next().await else {
-        // stream closed, exit
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 1,
-                content: format!("client failed to send registration message"),
-            })
-            .await;
-        let stream = write_stream.reunite(read_stream).unwrap();
-        let _ = stream.close().await;
-        return;
-    };
-
-    let Ok(ws_register) = serde_json::from_slice::<WsRegister>(register_msg.as_bytes()) else {
-        // stream error, exit
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 1,
-                content: format!("couldn't parse registration message from client"),
-            })
-            .await;
-        let stream = write_stream.reunite(read_stream).unwrap();
-        let _ = stream.close().await;
-        return;
-    };
-
-    let Ok(owner_process) = ProcessId::from_str(&ws_register.target_process) else {
-        // invalid process id, exit
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 1,
-                content: format!("client sent malformed process ID"),
-            })
-            .await;
-        let stream = write_stream.reunite(read_stream).unwrap();
-        let _ = stream.close().await;
-        return;
-    };
-
-    let _ = print_tx
-        .send(Printout {
-            verbosity: 1,
-            content: format!("channel is intended for {owner_process}"),
-        })
-        .await;
-
-    let Ok(our_name) = verify_auth_token(&ws_register.auth_token, &jwt_secret_bytes) else {
-        // invalid auth token, exit
-        let stream = write_stream.reunite(read_stream).unwrap();
-        let _ = stream.close().await;
-        return;
-    };
-
-    if our_name != *our {
-        // invalid auth token, exit
-        let stream = write_stream.reunite(read_stream).unwrap();
-        let _ = stream.close().await;
-        return;
-    }
-
-    let ws_channel_id: u32 = rand::random();
+    let channel_id: u32 = rand::random();
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
-    ws_senders.insert(ws_channel_id, (owner_process.clone(), ws_sender));
+    ws_senders.insert(channel_id, (app.clone(), ws_sender));
 
-    // send a message to the process associated with this channel
-    // notifying them that the channel is now open
     let _ = send_to_loop
         .send(KernelMessage {
             id: rand::random(),
@@ -613,14 +625,15 @@ async fn maintain_websocket(
                 process: HTTP_SERVER_PROCESS_ID.clone(),
             },
             target: Address {
-                node: our.to_string(),
-                process: owner_process.clone(),
+                node: our.clone().to_string(),
+                process: app.clone(),
             },
             rsvp: None,
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketOpen(ws_channel_id)).unwrap(),
+                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketOpen { path, channel_id })
+                    .unwrap(),
                 metadata: Some("ws".into()),
             }),
             payload: None,
@@ -628,83 +641,53 @@ async fn maintain_websocket(
         })
         .await;
 
-    // respond to the client notifying them that the channel is now open
-    let Ok(()) = write_stream
-        .send(warp::ws::Message::text(
-            serde_json::to_string(&WsRegisterResponse {
-                channel_id: ws_channel_id,
-            })
-            .unwrap(),
-        ))
-        .await
-    else {
-        // stream error, exit
-        let stream = write_stream.reunite(read_stream).unwrap();
-        let _ = stream.close().await;
-        return;
-    };
-
-    let _ = print_tx
-        .send(Printout {
-            verbosity: 1,
-            content: format!("websocket channel {ws_channel_id} opened"),
-        })
-        .await;
-
+    let _ = print_tx.send(Printout {
+        verbosity: 1,
+        content: format!("websocket channel {channel_id} opened"),
+    });
     loop {
         tokio::select! {
             read = read_stream.next() => {
                 match read {
-                    None => {
-                        // stream closed, remove and exit
-                        websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
-                        break;
-                    }
-                    Some(Err(_e)) => {
-                        // stream error, remove and exit
-                        websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
-                        break;
-                    }
                     Some(Ok(msg)) => {
-                        // forward message to process associated with this channel
-                        let _ = send_to_loop
-                            .send(KernelMessage {
-                                id: rand::random(),
-                                source: Address {
-                                    node: our.to_string(),
-                                    process: HTTP_SERVER_PROCESS_ID.clone(),
-                                },
-                                target: Address {
-                                    node: our.to_string(),
-                                    process: owner_process.clone(),
-                                },
-                                rsvp: None,
-                                message: Message::Request(Request {
-                                    inherit: false,
-                                    expects_response: None,
-                                    ipc: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
-                                        channel_id: ws_channel_id,
-                                        message_type: WsMessageType::Binary,
-                                    }).unwrap(),
-                                    metadata: Some("ws".into()),
-                                }),
-                                payload: Some(Payload {
-                                    mime: None,
-                                    bytes: msg.into_bytes(),
-                                }),
-                                signed_capabilities: None,
-                            })
-                            .await;
+                        let _ = send_to_loop.send(KernelMessage {
+                            id: rand::random(),
+                            source: Address {
+                                node: our.to_string(),
+                                process: HTTP_SERVER_PROCESS_ID.clone(),
+                            },
+                            target: Address {
+                                node: our.to_string(),
+                                process: app.clone(),
+                            },
+                            rsvp: None,
+                            message: Message::Request(Request {
+                                inherit: false,
+                                expects_response: None,
+                                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
+                                    channel_id,
+                                    message_type: WsMessageType::Binary,
+                                }).unwrap(),
+                                metadata: Some("ws".into()),
+                            }),
+                            payload: Some(Payload {
+                                mime: None,
+                                bytes: msg.into_bytes(),
+                            }),
+                            signed_capabilities: None,
+                        });
+                    }
+                    _ => {
+                        websocket_close(channel_id, app.clone(), &ws_senders, &send_to_loop).await;
+                        break;
                     }
                 }
             }
             Some(outgoing) = ws_receiver.recv() => {
-                // forward message to websocket
                 match write_stream.send(outgoing).await {
                     Ok(()) => continue,
-                    Err(_e) => {
-                        // stream error, remove and exit
-                        websocket_close(ws_channel_id, owner_process, &ws_senders, &send_to_loop).await;
+                    Err(_) => {
+                        websocket_close(channel_id, app.clone(), &ws_senders, &send_to_loop).await;
                         break;
                     }
                 }
@@ -757,6 +740,7 @@ async fn handle_app_message(
     km: KernelMessage,
     http_response_senders: HttpResponseSenders,
     path_bindings: PathBindings,
+    ws_path_bindings: WsPathBindings,
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
 ) {
@@ -921,7 +905,53 @@ async fn handle_app_message(
                     }
                     send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                 }
-                HttpServerAction::WebSocketOpen(_) => {
+                HttpServerAction::WebSocketBind {
+                    mut path,
+                    authenticated,
+                    encrypted,
+                } => {
+                    path = if path.starts_with('/') {
+                        format!("/{}{}", km.source.process, path)
+                    } else {
+                        format!("/{}/{}", km.source.process, path)
+                    };
+                    let mut ws_path_bindings = ws_path_bindings.write().await;
+                    ws_path_bindings.add(
+                        &normalize_path(&path),
+                        BoundWsPath {
+                            app: km.source.process.clone(),
+                            secure_subdomain: None,
+                            authenticated,
+                            encrypted,
+                        },
+                    );
+                    send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
+                }
+                HttpServerAction::WebSocketSecureBind {
+                    mut path,
+                    encrypted,
+                } => {
+                    path = if path.starts_with('/') {
+                        format!("/{}{}", km.source.process, path)
+                    } else {
+                        format!("/{}/{}", km.source.process, path)
+                    };
+                    let process_id_hash =
+                        format!("{:x}", Sha256::digest(km.source.process.to_string()));
+                    let subdomain = process_id_hash.split_at(32).0.to_owned();
+                    let mut ws_path_bindings = ws_path_bindings.write().await;
+                    ws_path_bindings.add(
+                        &normalize_path(&path),
+                        BoundWsPath {
+                            app: km.source.process.clone(),
+                            secure_subdomain: Some(subdomain),
+                            authenticated: true,
+                            encrypted,
+                        },
+                    );
+                    send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
+                }
+                HttpServerAction::WebSocketOpen { .. } => {
                     // we cannot receive these, only send them to processes
                     send_action_response(
                         km.id,
