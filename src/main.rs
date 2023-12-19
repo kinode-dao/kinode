@@ -195,6 +195,15 @@ async fn main() {
     };
 
     let http_server_port = http::utils::find_open_port(port).await.unwrap();
+    if http_server_port != port {
+        let error_message = format!(
+            "uqbar: couldn't bind {}; first available port found {}. Set an available port with `--port` and try again.",
+            port,
+            http_server_port,
+        );
+        println!("{error_message}");
+        panic!("{error_message}");
+    }
     println!(
         "login or register at http://localhost:{}\r",
         http_server_port
