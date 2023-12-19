@@ -42,8 +42,8 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     let response = Request::new()
                         .target(make_vfs_address(&our)?)
                         .ipc(serde_json::to_vec(&kt::VfsRequest {
-                            drive: "tester:uqbar".into(),
-                            action: kt::VfsAction::GetEntry("/".into()),
+                            path: "/tester:uqbar/pkg".into(),
+                            action: kt::VfsAction::ReadDir,
                         })?)
                         .send_and_await_response(test_timeout)?
                         .unwrap();
@@ -51,7 +51,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     let Message::Response { ipc: vfs_ipc, .. } = response else {
                         panic!("")
                     };
-                    let kt::VfsResponse::GetEntry { children, .. } =
+                    let kt::VfsResponse::ReadDir(children) =
                         serde_json::from_slice(&vfs_ipc)?
                     else {
                         panic!("")
@@ -63,6 +63,8 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     children.remove("/test_runner.wasm");
 
                     wit::print_to_terminal(0, &format!("test_runner: running {:?}...", children));
+
+                    // todo: are children returned as absolute paths. 
 
                     for child in &children {
                         let child_process_id = match spawn(

@@ -1,7 +1,7 @@
 use crate::kernel::process;
 use crate::kernel::process::uqbar::process::standard as wit;
 use crate::types as t;
-use crate::FILESYSTEM_PROCESS_ID;
+use crate::types::STATE_PROCESS_ID;
 use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
 use anyhow::Result;
@@ -61,12 +61,12 @@ impl StandardHost for process::ProcessWasi {
             }),
             wit::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: FILESYSTEM_PROCESS_ID.en_wit(),
+                process: STATE_PROCESS_ID.en_wit(),
             },
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::FsAction::GetState(
+                ipc: serde_json::to_vec(&t::StateAction::GetState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
@@ -102,12 +102,12 @@ impl StandardHost for process::ProcessWasi {
             }),
             wit::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: FILESYSTEM_PROCESS_ID.en_wit(),
+                process: STATE_PROCESS_ID.en_wit(),
             },
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::FsAction::SetState(
+                ipc: serde_json::to_vec(&t::StateAction::SetState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
@@ -141,12 +141,12 @@ impl StandardHost for process::ProcessWasi {
             }),
             wit::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: FILESYSTEM_PROCESS_ID.en_wit(),
+                process: STATE_PROCESS_ID.en_wit(),
             },
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::FsAction::DeleteState(
+                ipc: serde_json::to_vec(&t::StateAction::DeleteState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
@@ -185,11 +185,18 @@ impl StandardHost for process::ProcessWasi {
             node: self.process.metadata.our.node.clone(),
             process: VFS_PROCESS_ID.en_wit(),
         };
-        let our_drive_name = [
+        // TODO: note, drive could just be your basic process maybe.
+        let path = format!(
+            "/{}/{}/{}",
+            self.process.metadata.our.process.to_string(),
             self.process.metadata.our.process.package(),
-            self.process.metadata.our.process.publisher(),
-        ]
-        .join(":");
+            wasm_path
+        );
+        // let our_drive_name = [
+        //     self.process.metadata.our.process.package(),
+        //     self.process.metadata.our.process.publisher(),
+        // ]
+        // .join(":");
         let Ok(Ok((_, hash_response))) = process::send_and_await_response(
             self,
             None,
@@ -198,8 +205,8 @@ impl StandardHost for process::ProcessWasi {
                 inherit: false,
                 expects_response: Some(5),
                 ipc: serde_json::to_vec(&t::VfsRequest {
-                    drive: our_drive_name.clone(),
-                    action: t::VfsAction::GetHash(wasm_path.clone()),
+                    path: path.clone(),
+                    action: t::VfsAction::Read,
                 })
                 .unwrap(),
                 metadata: None,
@@ -218,29 +225,7 @@ impl StandardHost for process::ProcessWasi {
             self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let t::VfsResponse::GetHash(Some(hash)) = serde_json::from_slice(&ipc).unwrap() else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
-            return Ok(Err(wit::SpawnError::NoFileAtPath));
-        };
-        let Ok(Ok(_)) = process::send_and_await_response(
-            self,
-            None,
-            vfs_address,
-            wit::Request {
-                inherit: false,
-                expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::VfsRequest {
-                    drive: our_drive_name,
-                    action: t::VfsAction::GetEntry(wasm_path.clone()),
-                })
-                .unwrap(),
-                metadata: None,
-            },
-            None,
-        )
-        .await
-        else {
+        let t::VfsResponse::Read = serde_json::from_slice(&ipc).unwrap() else {
             // reset payload to what it was
             self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
@@ -275,7 +260,7 @@ impl StandardHost for process::ProcessWasi {
                 expects_response: Some(5), // TODO evaluate
                 ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                     id: new_process_id.clone(),
-                    wasm_bytes_handle: hash,
+                    wasm_bytes_handle: path,
                     on_exit: t::OnExit::de_wit(on_exit),
                     initial_capabilities: match capabilities {
                         wit::Capabilities::None => HashSet::new(),
