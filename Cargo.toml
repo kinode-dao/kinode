@@ -61,6 +61,7 @@ serde_json = "1.0"
 serde_urlencoded = "0.7"
 sha2 = "0.10"
 snow = { version = "0.9.3", features = ["ring-resolver"] }
+static_dir = "0.2.0"
 thiserror = "1.0"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 tokio-tungstenite = "0.20.1"
