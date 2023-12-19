@@ -30,7 +30,7 @@ abigen!(
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
-pub const QNS_SEPOLIA_ADDRESS: &str = "0x1C5595336Fd763a81887472D30D6CbD736Acf0E3";
+pub const _QNS_SEPOLIA_ADDRESS: &str = "0x1C5595336Fd763a81887472D30D6CbD736Acf0E3";
 
 pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
     let octets: Vec<&str> = ip.split('.').collect();
@@ -535,18 +535,15 @@ async fn _networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: 
     // check if Identity for this username has correct networking keys,
     // if not, prompt user to reset them.
     let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
-        println!("1");
         return false;
     };
-    let Ok(qns_address): Result<EthAddress, _> = QNS_SEPOLIA_ADDRESS.parse() else {
-        println!("2");
+    let Ok(qns_address): Result<EthAddress, _> = _QNS_SEPOLIA_ADDRESS.parse() else {
         return false;
     };
     let contract = QNSRegistry::new(qns_address, ws_rpc.into());
     let node_id: U256 = namehash(&our.name).as_bytes().into();
     let Ok((chain_pubkey, chain_ip, chain_port, chain_routers)) = contract.ws(node_id).call().await
     else {
-        println!("3");
         return false;
     };
 
@@ -566,13 +563,11 @@ async fn _networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: 
     let current_ip = match _ip_to_number(&ip) {
         Ok(ip_num) => ip_num,
         Err(_) => {
-            println!("5");
             return false;
         }
     };
 
     let Ok(networking_key_bytes) = _hex_string_to_u8_array(&our.networking_key) else {
-        println!("6");
         return false;
     };
 
@@ -588,7 +583,6 @@ async fn _networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: 
 
     // double check that keys match on-chain information
     if !routing_match || !pubkey_match {
-        println!("7");
         return false;
     }
 

@@ -140,7 +140,7 @@ impl Guest for Component {
         match main(our, state) {
             Ok(_) => {}
             Err(e) => {
-                println!("qns_indexer: ended with error: {:?}", e);
+                println!("qns_indexer: error: {:?}", e);
             }
         }
     }
@@ -187,13 +187,11 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                                             "Content-Type".to_string(),
                                             "application/json".to_string(),
                                         )]),
-                                    })
-                                    .unwrap(),
+                                    })?,
                                 )
                                 .payload(Payload {
                                     mime: Some("application/json".to_string()),
-                                    bytes: serde_json::to_string(&node)
-                                        .unwrap()
+                                    bytes: serde_json::to_string(&node)?
                                         .as_bytes()
                                         .to_vec(),
                                 })
@@ -211,8 +209,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             "Content-Type".to_string(),
                             "application/json".to_string(),
                         )]),
-                    })
-                    .unwrap(),
+                    })?,
                 )
                 .send()?;
             continue;
@@ -224,12 +221,11 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         };
 
         match msg {
-            // Probably more message types later...maybe not...
             AllActions::EventSubscription(e) => {
-                state.block = hex_to_u64(&e.block_number).unwrap();
+                state.block = hex_to_u64(&e.block_number)?;
                 let nodeId = &e.topics[1];
 
-                let name = if decode_hex(&e.topics[0].clone()) == NodeRegistered::SIGNATURE_HASH {
+                let name = if decode_hex(&e.topics[0]) == NodeRegistered::SIGNATURE_HASH {
                     let decoded =
                         NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                     match dnswire_decode(decoded.0.clone()) {
@@ -242,7 +238,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     }
                     continue;
                 } else if let Some(name) = state.names.get(nodeId) {
-                    name.clone()
+                    name
                 } else {
                     println!("qns_indexer: failed to find name: {:?}", nodeId);
                     continue;
@@ -250,7 +246,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
                 let node = state
                     .nodes
-                    .entry(name.clone())
+                    .entry(name.to_string())
                     .or_insert_with(QnsUpdate::default);
 
                 if node.name == "" {
@@ -264,7 +260,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 let mut send = false;
 
                 match decode_hex(&e.topics[0].clone()) {
-                    NodeRegistered::SIGNATURE_HASH => {}
+                    NodeRegistered::SIGNATURE_HASH => {} // will never hit this
                     KeyUpdate::SIGNATURE_HASH => {
                         let decoded =
                             KeyUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
