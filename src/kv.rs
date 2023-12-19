@@ -23,7 +23,8 @@ pub async fn kv(
         panic!("failed creating kv dir! {:?}", e);
     }
 
-    let open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>> = Arc::new(DashMap::new());
+    let open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>> =
+        Arc::new(DashMap::new());
     let txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>> = Arc::new(DashMap::new());
 
     let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =

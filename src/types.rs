@@ -1052,7 +1052,7 @@ impl VfsError {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct KvRequest {
     pub package_id: PackageId,
-    pub db: String, 
+    pub db: String,
     pub action: KvAction,
 }
 
@@ -1098,7 +1098,7 @@ pub enum KvError {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SqliteRequest {
     pub package_id: PackageId,
-    pub db: String, 
+    pub db: String,
     pub action: SqliteAction,
 }
 

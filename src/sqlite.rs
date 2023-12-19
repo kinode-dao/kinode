@@ -392,7 +392,10 @@ async fn check_caps(
             let db = Connection::open(&db_path)?;
             db.execute("PRAGMA journal_mode=WAL;", [])?;
 
-            open_dbs.insert((request.package_id.clone(), request.db.clone()), Mutex::new(db));
+            open_dbs.insert(
+                (request.package_id.clone(), request.db.clone()),
+                Mutex::new(db),
+            );
             Ok(())
         }
         SqliteAction::Backup => {
