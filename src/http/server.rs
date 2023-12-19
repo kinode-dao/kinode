@@ -299,10 +299,7 @@ async fn ws_handler(
         let Some(auth_token) = serialized_headers.get("cookie") else {
             return Err(warp::reject::not_found());
         };
-        let Ok(our_name) = verify_auth_token(&auth_token, &jwt_secret_bytes) else {
-            return Err(warp::reject::not_found());
-        };
-        if our_name != *our {
+        if !auth_cookie_valid(&our, &auth_token, &jwt_secret_bytes) {
             return Err(warp::reject::not_found());
         }
     }
@@ -313,6 +310,13 @@ async fn ws_handler(
             ws,
             our.clone(),
             app,
+            // remove process id from beginning of path by splitting into segments
+            // separated by "/" and taking all but the first
+            original_path
+                .split('/')
+                .skip(1)
+                .collect::<Vec<&str>>()
+                .join("/"),
             jwt_secret_bytes.clone(),
             ws_senders.clone(),
             send_to_loop.clone(),
@@ -595,6 +599,7 @@ async fn maintain_websocket(
     ws: WebSocket,
     our: Arc<String>,
     app: ProcessId,
+    path: String,
     _jwt_secret_bytes: Arc<Vec<u8>>, // TODO use for encrypted channels
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
@@ -608,9 +613,9 @@ async fn maintain_websocket(
         })
         .await;
 
-    let ws_channel_id: u32 = rand::random();
+    let channel_id: u32 = rand::random();
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
-    ws_senders.insert(ws_channel_id, (app.clone(), ws_sender));
+    ws_senders.insert(channel_id, (app.clone(), ws_sender));
 
     let _ = send_to_loop
         .send(KernelMessage {
@@ -627,7 +632,8 @@ async fn maintain_websocket(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketOpen(ws_channel_id)).unwrap(),
+                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketOpen { path, channel_id })
+                    .unwrap(),
                 metadata: Some("ws".into()),
             }),
             payload: None,
@@ -637,7 +643,7 @@ async fn maintain_websocket(
 
     let _ = print_tx.send(Printout {
         verbosity: 1,
-        content: format!("websocket channel {ws_channel_id} opened"),
+        content: format!("websocket channel {channel_id} opened"),
     });
     loop {
         tokio::select! {
@@ -659,7 +665,7 @@ async fn maintain_websocket(
                                 inherit: false,
                                 expects_response: None,
                                 ipc: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
-                                    channel_id: ws_channel_id,
+                                    channel_id,
                                     message_type: WsMessageType::Binary,
                                 }).unwrap(),
                                 metadata: Some("ws".into()),
@@ -672,7 +678,7 @@ async fn maintain_websocket(
                         });
                     }
                     _ => {
-                        websocket_close(ws_channel_id, app.clone(), &ws_senders, &send_to_loop).await;
+                        websocket_close(channel_id, app.clone(), &ws_senders, &send_to_loop).await;
                         break;
                     }
                 }
@@ -681,7 +687,7 @@ async fn maintain_websocket(
                 match write_stream.send(outgoing).await {
                     Ok(()) => continue,
                     Err(_) => {
-                        websocket_close(ws_channel_id, app.clone(), &ws_senders, &send_to_loop).await;
+                        websocket_close(channel_id, app.clone(), &ws_senders, &send_to_loop).await;
                         break;
                     }
                 }
@@ -900,10 +906,15 @@ async fn handle_app_message(
                     send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                 }
                 HttpServerAction::WebSocketBind {
-                    path,
+                    mut path,
                     authenticated,
                     encrypted,
                 } => {
+                    path = if path.starts_with('/') {
+                        format!("/{}{}", km.source.process, path)
+                    } else {
+                        format!("/{}/{}", km.source.process, path)
+                    };
                     let mut ws_path_bindings = ws_path_bindings.write().await;
                     ws_path_bindings.add(
                         &normalize_path(&path),
@@ -914,8 +925,17 @@ async fn handle_app_message(
                             encrypted,
                         },
                     );
+                    send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                 }
-                HttpServerAction::WebSocketSecureBind { path, encrypted } => {
+                HttpServerAction::WebSocketSecureBind {
+                    mut path,
+                    encrypted,
+                } => {
+                    path = if path.starts_with('/') {
+                        format!("/{}{}", km.source.process, path)
+                    } else {
+                        format!("/{}/{}", km.source.process, path)
+                    };
                     let process_id_hash =
                         format!("{:x}", Sha256::digest(km.source.process.to_string()));
                     let subdomain = process_id_hash.split_at(32).0.to_owned();
@@ -929,6 +949,7 @@ async fn handle_app_message(
                             encrypted,
                         },
                     );
+                    send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                 }
                 HttpServerAction::WebSocketOpen { .. } => {
                     // we cannot receive these, only send them to processes

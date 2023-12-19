@@ -147,6 +147,8 @@ fn initialize(our: Address) {
     )
     .unwrap();
     http::bind_http_path("/games", true, false).unwrap();
+    // Allow websockets to be opened at / (our process ID will be prepended).
+    http::bind_ws_path("/", true, false).unwrap();
 
     // Grab our state, then enter the main event loop.
     let mut state: ChessState = load_chess_state();
@@ -178,7 +180,7 @@ fn handle_request(our: &Address, message: &Message, state: &mut ChessState) -> a
     // chess protocol request, we *await* its response in-place. This is appropriate
     // for direct node<>node comms, less appropriate for other circumstances...
     if !message.is_request() {
-        return Err(anyhow::anyhow!("message was response"));
+        return Ok(());
     }
     // If the request is from another node, handle it as an incoming request.
     // Note that we can enforce the ProcessId as well, but it shouldn't be a trusted
@@ -221,8 +223,10 @@ fn handle_request(our: &Address, message: &Message, state: &mut ChessState) -> a
                     }
                 }
             }
-            http::HttpServerRequest::WebSocketOpen(channel_id) => {
-                // client frontend opened a websocket
+            http::HttpServerRequest::WebSocketOpen { path, channel_id } => {
+                // We know this is authenticated and unencrypted because we only
+                // bound one path, the root path. So we know that client
+                // frontend opened a websocket and can send updates
                 state.clients.insert(channel_id);
                 Ok(())
             }
@@ -295,7 +299,7 @@ fn handle_chess_request(
                 // If we don't have a game with them, reject the move.
                 return Response::new()
                     .ipc(serde_json::to_vec(&ChessResponse::MoveRejected)?)
-                    .send()
+                    .send();
             };
             // Convert the saved board to one we can manipulate.
             let mut board = Board::from_fen(&game.board).unwrap();
@@ -359,9 +363,12 @@ fn handle_local_request(
             let Ok(Message::Response { ref ipc, .. }) = Request::new()
                 .target((game_id.as_ref(), our.process.clone()))
                 .ipc(serde_json::to_vec(&action)?)
-                .send_and_await_response(5)? else {
-                    return Err(anyhow::anyhow!("other player did not respond properly to new game request"))
-                };
+                .send_and_await_response(5)?
+            else {
+                return Err(anyhow::anyhow!(
+                    "other player did not respond properly to new game request"
+                ));
+            };
             // If they accept, create a new game -- otherwise, error out.
             if serde_json::from_slice::<ChessResponse>(ipc)? != ChessResponse::NewGameAccepted {
                 return Err(anyhow::anyhow!("other player rejected new game request!"));
@@ -402,9 +409,12 @@ fn handle_local_request(
             let Ok(Message::Response { ref ipc, .. }) = Request::new()
                 .target((game_id.as_ref(), our.process.clone()))
                 .ipc(serde_json::to_vec(&action)?)
-                .send_and_await_response(5)? else {
-                    return Err(anyhow::anyhow!("other player did not respond properly to our move"))
-                };
+                .send_and_await_response(5)?
+            else {
+                return Err(anyhow::anyhow!(
+                    "other player did not respond properly to our move"
+                ));
+            };
             if serde_json::from_slice::<ChessResponse>(ipc)? != ChessResponse::MoveAccepted {
                 return Err(anyhow::anyhow!("other player rejected our move"));
             }
@@ -487,9 +497,12 @@ fn handle_http_request(
                     white: player_white.clone(),
                     black: player_black.clone(),
                 })?)
-                .send_and_await_response(5)? else {
-                    return Err(anyhow::anyhow!("other player did not respond properly to new game request"))
-                };
+                .send_and_await_response(5)?
+            else {
+                return Err(anyhow::anyhow!(
+                    "other player did not respond properly to new game request"
+                ));
+            };
             // if they accept, create a new game
             // otherwise, should surface error to FE...
             if serde_json::from_slice::<ChessResponse>(msg.ipc())? != ChessResponse::NewGameAccepted
@@ -553,9 +566,12 @@ fn handle_http_request(
                     game_id: game_id.to_string(),
                     move_str: move_str.to_string(),
                 })?)
-                .send_and_await_response(5)? else {
-                    return Err(anyhow::anyhow!("other player did not respond properly to our move"))
-                };
+                .send_and_await_response(5)?
+            else {
+                return Err(anyhow::anyhow!(
+                    "other player did not respond properly to our move"
+                ));
+            };
             if serde_json::from_slice::<ChessResponse>(msg.ipc())? != ChessResponse::MoveAccepted {
                 return Err(anyhow::anyhow!("other player rejected our move"));
             }
