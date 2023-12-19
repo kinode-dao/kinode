@@ -65,7 +65,7 @@ pub async fn maintain_connection(
                         if km.source.node != peer_name {
                             let _ = print_tx.send(Printout {
                                 verbosity: 0,
-                                content: format!("net: got message with spoofed source from {peer_name}")
+                                content: format!("net: got message with spoofed source from {peer_name}!")
                             }).await;
                             break
                         } else {
@@ -136,7 +136,9 @@ pub async fn maintain_passthrough(mut conn: PassthroughConnection) {
             maybe_recv = conn.read_stream_1.next() => {
                 match maybe_recv {
                     Some(Ok(msg)) => {
-                        conn.write_stream_2.send(msg).await.expect("net error: fatal: kernel died");
+                        let Ok(()) = conn.write_stream_2.send(msg).await else {
+                            break
+                        };
                         last_message = std::time::Instant::now();
                     }
                     _ => break,
@@ -145,7 +147,9 @@ pub async fn maintain_passthrough(mut conn: PassthroughConnection) {
             maybe_recv = conn.read_stream_2.next() => {
                 match maybe_recv {
                     Some(Ok(msg)) => {
-                        conn.write_stream_1.send(msg).await.expect("net error: fatal: kernel died");
+                        let Ok(()) = conn.write_stream_1.send(msg).await else {
+                            break
+                        };
                         last_message = std::time::Instant::now();
                     }
                     _ => break,

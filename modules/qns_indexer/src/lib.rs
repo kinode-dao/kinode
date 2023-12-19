@@ -6,8 +6,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::string::FromUtf8Error;
 use uqbar_process_lib::{
-    get_typed_state, http, println, receive, set_state, 
-    Address, Message, Payload, Request, Response,
+    await_message, get_typed_state, http, println, receive, set_state, Address, Message, Payload,
+    Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -147,7 +147,6 @@ impl Guest for Component {
 }
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
-
     // shove all state into net::net
     Request::new()
         .target((&our.node, "net", "sys", "uqbar"))
@@ -165,18 +164,18 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     http::bind_http_path("/node/:name", false, false)?;
 
     loop {
-        let Ok((source, message)) = receive() else {
+        let Ok(message) = await_message() else {
             println!("qns_indexer: got network error");
             continue;
         };
-        let Message::Request(request) = message else {
+        let Message::Request { source, ipc, .. } = message else {
             // TODO we should store the subscription ID for eth_rpc
             // incase we want to cancel/reset it
             continue;
         };
 
         if source.process == "http_server:sys:uqbar" {
-            if let Ok(ipc_json) = serde_json::from_slice::<serde_json::Value>(&request.ipc) {
+            if let Ok(ipc_json) = serde_json::from_slice::<serde_json::Value>(&ipc) {
                 if ipc_json["path"].as_str().unwrap_or_default() == "/node/:name" {
                     if let Some(name) = ipc_json["url_params"]["name"].as_str() {
                         if let Some(node) = state.nodes.get(name) {
@@ -219,11 +218,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         }
 
-        let Ok(msg) = serde_json::from_slice::<AllActions>(&request.ipc) else {
+        let Ok(msg) = serde_json::from_slice::<AllActions>(&ipc) else {
             println!("qns_indexer: got invalid message");
             continue;
         };
-
 
         match msg {
             // Probably more message types later...maybe not...
@@ -232,10 +230,15 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 let nodeId = &e.topics[1];
 
                 let name = if decode_hex(&e.topics[0].clone()) == NodeRegistered::SIGNATURE_HASH {
-                    let decoded = NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                    let decoded =
+                        NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                     match dnswire_decode(decoded.0.clone()) {
-                        Ok(name) => { state.names.insert(nodeId.to_string(), name.clone()); }
-                        Err(_) => { println!("qns_indexer: failed to decode name: {:?}", decoded.0); }
+                        Ok(name) => {
+                            state.names.insert(nodeId.to_string(), name.clone());
+                        }
+                        Err(_) => {
+                            println!("qns_indexer: failed to decode name: {:?}", decoded.0);
+                        }
                     }
                     continue;
                 } else if let Some(name) = state.names.get(nodeId) {
@@ -245,7 +248,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     continue;
                 };
 
-                let node = state.nodes.entry(name.clone()).or_insert_with(QnsUpdate::default);
+                let node = state
+                    .nodes
+                    .entry(name.clone())
+                    .or_insert_with(QnsUpdate::default);
 
                 if node.name == "" {
                     node.name = name.clone();
@@ -260,12 +266,14 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 match decode_hex(&e.topics[0].clone()) {
                     NodeRegistered::SIGNATURE_HASH => {}
                     KeyUpdate::SIGNATURE_HASH => {
-                        let decoded = KeyUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        let decoded =
+                            KeyUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                         node.public_key = format!("0x{}", hex::encode(decoded.0));
                         send = true;
                     }
                     IpUpdate::SIGNATURE_HASH => {
-                        let decoded = IpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        let decoded =
+                            IpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                         let ip = decoded.0;
                         node.ip = format!(
                             "{}.{}.{}.{}",
@@ -277,23 +285,28 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         send = true;
                     }
                     WsUpdate::SIGNATURE_HASH => {
-                        let decoded = WsUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        let decoded =
+                            WsUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                         node.port = decoded.0;
                         send = true;
                     }
                     WtUpdate::SIGNATURE_HASH => {
-                        let decoded = WtUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        let decoded =
+                            WtUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                     }
                     TcpUpdate::SIGNATURE_HASH => {
-                        let decoded = TcpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        let decoded =
+                            TcpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                     }
-                    UdpUpdate::SIGNATURE_HASH => { 
-                        let decoded = UdpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                    UdpUpdate::SIGNATURE_HASH => {
+                        let decoded =
+                            UdpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                     }
                     RoutingUpdate::SIGNATURE_HASH => {
-                        let decoded = RoutingUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        let decoded =
+                            RoutingUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
                         let routers_raw = decoded.0;
-                        node.routers = routers_raw    
+                        node.routers = routers_raw
                             .iter()
                             .map(|r| {
                                 let key = format!("0x{}", hex::encode(r));
@@ -311,14 +324,11 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
 
                 if send {
-
                     Request::new()
                         .target((&our.node, "net", "sys", "uqbar"))
                         .try_ipc(NetActions::QnsUpdate(node.clone()))?
                         .send()?;
-
                 }
-
             }
         }
         set_state(&bincode::serialize(&state)?);

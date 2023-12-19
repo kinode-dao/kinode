@@ -19,7 +19,7 @@ pub struct KernelMessage {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TesterRequest {
-    Run(Vec<String>),
+    Run { input_node_names: Vec<String>, test_timeout: u64 },
     KernelMessage(KernelMessage),
     GetFullMessage(kt::Message),
 }
@@ -61,6 +61,7 @@ macro_rules! fail {
             }).unwrap())
             .send()
             .unwrap();
+        panic!("")
     };
     ($test:expr, $file:expr, $line:expr, $column:expr) => {
         Response::new()
@@ -72,6 +73,6 @@ macro_rules! fail {
             }).unwrap())
             .send()
             .unwrap();
-        panic!("");
+        panic!("")
     };
 }

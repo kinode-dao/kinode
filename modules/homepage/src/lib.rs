@@ -1,7 +1,7 @@
 #![feature(let_chains)]
 use uqbar_process_lib::{
-    grant_messaging, http::bind_http_static_path, http::HttpServerError, println, receive, Address,
-    Message, ProcessId, Response,
+    await_message, grant_messaging, http::bind_http_static_path, http::HttpServerError, println, Address,
+    Message, ProcessId,
 };
 
 wit_bindgen::generate!({
@@ -43,21 +43,38 @@ fn main(our: Address) -> anyhow::Result<()> {
             .to_vec(),
     )?;
 
+    bind_http_static_path(
+        "/our",
+        false,
+        false,
+        Some("text/html".to_string()),
+        our.node.clone().as_bytes().to_vec(),
+    )?;
+
+    bind_http_static_path(
+        "/our.js",
+        false,
+        false,
+        Some("application/javascript".to_string()),
+        format!("window.our = {{}}; window.our.node = '{}';", &our.node).as_bytes().to_vec(),
+    )?;
+
     loop {
-        let Ok((ref source, ref message)) = receive() else {
+        let Ok(ref message) = await_message() else {
             println!("homepage: got network error??");
             continue;
         };
-        if let Message::Response((ref msg, _)) = message
+        if let Message::Response { source, ipc, ..} = message
             && source.process == "http_server:sys:uqbar"
         {
-            match serde_json::from_slice::<Result<(), HttpServerError>>(&msg.ipc) {
+            match serde_json::from_slice::<Result<(), HttpServerError>>(&ipc) {
                 Ok(Ok(())) => continue,
                 Ok(Err(e)) => println!("homepage: got error from http_server: {e}"),
                 Err(_e) => println!("homepage: got malformed message from http_server!"),
             }
         } else {
-            println!("homepage: got message from {source:?}: {message:?}");
+            println!("homepage: got message: {message:?}");
+            //println!("homepage: got message from {source:?}: {message:?}");
         }
     }
 }

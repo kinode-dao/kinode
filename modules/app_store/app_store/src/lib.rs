@@ -2,10 +2,9 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::{HashMap, HashSet};
 use uqbar_process_lib::kernel_types as kt;
-use uqbar_process_lib::uqbar::process::standard as wit;
 use uqbar_process_lib::{
-    get_capability, get_payload, get_typed_state, grant_messaging, println, receive, set_state,
-    share_capability, Address, Message, NodeId, PackageId, ProcessId, Request, Response,
+    await_message, get_capability, get_payload, get_typed_state, grant_messaging, println,
+    set_state, share_capability, Address, Message, NodeId, PackageId, ProcessId, Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -182,36 +181,34 @@ impl Guest for Component {
 
         // active the main messaging loop: handle requests and responses
         loop {
-            let (source, message) = match receive() {
-                Ok((source, message)) => (source, message),
-                Err((error, _context)) => {
-                    // TODO handle net errors more usefully based on their context
-                    println!("net error: {:?}", error.kind);
+            match await_message() {
+                Err(send_error) => {
+                    println!("{our}: got network error: {send_error:?}");
                     continue;
                 }
-            };
-            match handle_message(&our, &source, &mut state, &message) {
-                Ok(()) => {}
-                Err(e) => println!("app-store: error handling message: {:?}", e),
+                Ok(message) => match handle_message(&our, &mut state, &message) {
+                    Ok(()) => {}
+                    Err(e) => println!("app-store: error handling message: {:?}", e),
+                },
             }
         }
     }
 }
 
-fn handle_message(
-    our: &Address,
-    source: &Address,
-    mut state: &mut State,
-    message: &Message,
-) -> anyhow::Result<()> {
+fn handle_message(our: &Address, mut state: &mut State, message: &Message) -> anyhow::Result<()> {
     match message {
-        Message::Request(req) => {
-            match &serde_json::from_slice::<Req>(&req.ipc) {
+        Message::Request {
+            source,
+            expects_response,
+            ipc,
+            ..
+        } => {
+            match &serde_json::from_slice::<Req>(&ipc) {
                 Ok(Req::LocalRequest(local_request)) => {
                     match handle_local_request(&our, &source, local_request, &mut state) {
                         Ok(None) => return Ok(()),
                         Ok(Some(resp)) => {
-                            if req.expects_response.is_some() {
+                            if expects_response.is_some() {
                                 Response::new().ipc(serde_json::to_vec(&resp)?).send()?;
                             }
                         }
@@ -224,7 +221,7 @@ fn handle_message(
                     match handle_remote_request(&our, &source, remote_request, &mut state) {
                         Ok(None) => return Ok(()),
                         Ok(Some(resp)) => {
-                            if req.expects_response.is_some() {
+                            if expects_response.is_some() {
                                 Response::new().ipc(serde_json::to_vec(&resp)?).send()?;
                             }
                         }
@@ -259,50 +256,48 @@ fn handle_message(
                     }
                 }
                 Ok(Req::FTWorkerCommand(_)) => {
-                    spawn_receive_transfer(&our, &req.ipc);
+                    spawn_receive_transfer(&our, &ipc);
                 }
                 e => {
                     return Err(anyhow::anyhow!(
                         "app store bad request: {:?}, error {:?}",
-                        req.ipc,
+                        ipc,
                         e
                     ))
                 }
             }
         }
-        Message::Response((response, context)) => {
-            match &serde_json::from_slice::<Resp>(&response.ipc) {
-                Ok(Resp::RemoteResponse(remote_response)) => match remote_response {
-                    RemoteResponse::DownloadApproved => {
-                        println!("app store: download approved, should be starting");
-                    }
-                    RemoteResponse::DownloadDenied => {
-                        println!("app store: could not download package from that node!");
-                    }
-                },
-                Ok(Resp::FTWorkerResult(ft_worker_result)) => {
-                    let Ok(context) =
-                        serde_json::from_slice::<FileTransferContext>(&context.as_ref().unwrap())
-                    else {
-                        return Err(anyhow::anyhow!("file_transfer: got weird local request"));
-                    };
-                    match ft_worker_result {
-                        FTWorkerResult::SendSuccess => {
-                            println!(
-                                "file_transfer: successfully shared app {} in {:.4}s",
-                                context.file_name,
-                                std::time::SystemTime::now()
-                                    .duration_since(context.start_time)
-                                    .unwrap()
-                                    .as_secs_f64(),
-                            );
-                        }
-                        e => return Err(anyhow::anyhow!("file_transfer: {:?}", e)),
-                    }
+        Message::Response { ipc, context, .. } => match &serde_json::from_slice::<Resp>(&ipc) {
+            Ok(Resp::RemoteResponse(remote_response)) => match remote_response {
+                RemoteResponse::DownloadApproved => {
+                    println!("app store: download approved, should be starting");
                 }
-                _ => return Err(anyhow::anyhow!("bad response from file transfer worker")),
+                RemoteResponse::DownloadDenied => {
+                    println!("app store: could not download package from that node!");
+                }
+            },
+            Ok(Resp::FTWorkerResult(ft_worker_result)) => {
+                let Ok(context) =
+                    serde_json::from_slice::<FileTransferContext>(&context.as_ref().unwrap())
+                else {
+                    return Err(anyhow::anyhow!("file_transfer: got weird local request"));
+                };
+                match ft_worker_result {
+                    FTWorkerResult::SendSuccess => {
+                        println!(
+                            "file_transfer: successfully shared app {} in {:.4}s",
+                            context.file_name,
+                            std::time::SystemTime::now()
+                                .duration_since(context.start_time)
+                                .unwrap()
+                                .as_secs_f64(),
+                        );
+                    }
+                    e => return Err(anyhow::anyhow!("file_transfer: {:?}", e)),
+                }
             }
-        }
+            _ => return Err(anyhow::anyhow!("bad response from file transfer worker")),
+        },
     }
     Ok(())
 }
@@ -321,14 +316,16 @@ fn handle_local_request(
             let Some(mut payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
+            let drive = format!("/{}/pkg", package);
 
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::New,
+                    path: drive.clone(),
+                    action: kt::VfsAction::CreateDrive,
                 })?)
-                .send_and_await_response(5)??;
+                .send_and_await_response(5)?
+                .unwrap();
 
             // produce the version hash for this new package
             let mut hasher = sha2::Sha256::new();
@@ -337,42 +334,49 @@ fn handle_local_request(
 
             // add zip bytes
             payload.mime = Some("application/zip".to_string());
-            Request::new()
+            let response = Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::Add {
-                        full_path: package.to_string(),
-                        entry_type: kt::AddEntryType::ZipArchive,
-                    },
+                    path: drive.clone(),
+                    action: kt::VfsAction::AddZip,
                 })?)
                 .payload(payload.clone())
-                .send_and_await_response(5)??;
+                .send_and_await_response(5)?.unwrap();
+            let Message::Response { ipc: ref vfs_ipc, .. } = response else {
+                panic!("app_store: send_and_await_response must return Response");
+            };
+            let vfs_ipc = serde_json::from_slice::<serde_json::Value>(vfs_ipc)?;
+            if vfs_ipc == serde_json::json!({"Err": "NoCap"}) {
+                return Err(anyhow::anyhow!("cannot add NewPackage: do not have capability to access vfs"));
+            }
 
             // save the zip file itself in VFS for sharing with other nodes
             // call it <package>.zip
+            let zip_path = format!("{}/{}.zip", drive.clone(), package);
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .inherit(true)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::Add {
-                        full_path: format!("/{}.zip", package.to_string()),
-                        entry_type: kt::AddEntryType::NewFile,
-                    },
+                    path: zip_path,
+                    action: kt::VfsAction::ReWrite,
                 })?)
                 .payload(payload)
-                .send_and_await_response(5)??;
+                .send_and_await_response(5)?
+                .unwrap();
+            let metadata_path = format!("{}/metadata.json", drive.clone());
+
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::GetEntry("/metadata.json".into()),
+                    path: metadata_path,
+                    action: kt::VfsAction::Read,
                 })?)
-                .send_and_await_response(5)??;
+                .send_and_await_response(5)?
+                .unwrap();
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no metadata found!"));
             };
+
             let metadata = String::from_utf8(payload.bytes)?;
             let metadata = serde_json::from_str::<kt::PackageMetadata>(&metadata)?;
 
@@ -406,8 +410,8 @@ fn handle_local_request(
                 ))?)
                 .send_and_await_response(5)
             {
-                Ok(Ok((_source, Message::Response((resp, _context))))) => {
-                    let resp = serde_json::from_slice::<Resp>(&resp.ipc)?;
+                Ok(Ok(Message::Response { ipc, .. })) => {
+                    let resp = serde_json::from_slice::<Resp>(&ipc)?;
                     match resp {
                         Resp::RemoteResponse(RemoteResponse::DownloadApproved) => {
                             state.requested_packages.insert(package.clone());
@@ -421,13 +425,15 @@ fn handle_local_request(
             },
         ))),
         LocalRequest::Install(package) => {
+            let drive_path = format!("/{}/pkg", package);
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::GetEntry("/manifest.json".into()),
+                    path: format!("{}/manifest.json", drive_path),
+                    action: kt::VfsAction::Read,
                 })?)
-                .send_and_await_response(5)??;
+                .send_and_await_response(5)?
+                .unwrap();
             let Some(payload) = get_payload() else {
                 return Err(anyhow::anyhow!("no payload"));
             };
@@ -438,7 +444,7 @@ fn handle_local_request(
                 &Address::new(&our.node, ("vfs", "sys", "uqbar")),
                 &serde_json::to_string(&serde_json::json!({
                     "kind": "read",
-                    "drive": package.to_string(),
+                    "drive": drive_path,
                 }))?,
             ) else {
                 return Err(anyhow::anyhow!("app-store: no read cap"));
@@ -447,7 +453,7 @@ fn handle_local_request(
                 &Address::new(&our.node, ("vfs", "sys", "uqbar")),
                 &serde_json::to_string(&serde_json::json!({
                     "kind": "write",
-                    "drive": package.to_string(),
+                    "drive": drive_path,
                 }))?,
             ) else {
                 return Err(anyhow::anyhow!("app-store: no write cap"));
@@ -462,33 +468,21 @@ fn handle_local_request(
             // then, once all have been initialized, grant them requested caps
             // and finally start them.
             for entry in &manifest {
-                let path = if entry.process_wasm_path.starts_with("/") {
+                let wasm_path = if entry.process_wasm_path.starts_with("/") {
                     entry.process_wasm_path.clone()
                 } else {
                     format!("/{}", entry.process_wasm_path)
                 };
-                let (_, hash_response) = Request::new()
-                    .target(Address::from_str("our@vfs:sys:uqbar")?)
-                    .ipc(serde_json::to_vec(&kt::VfsRequest {
-                        drive: package.to_string(),
-                        action: kt::VfsAction::GetHash(path.clone()),
-                    })?)
-                    .send_and_await_response(5)??;
-
-                let Message::Response((wit::Response { ipc, .. }, _)) = hash_response else {
-                    return Err(anyhow::anyhow!("bad vfs response"));
-                };
-                let kt::VfsResponse::GetHash(Some(hash)) = serde_json::from_slice(&ipc)? else {
-                    return Err(anyhow::anyhow!("no hash in vfs"));
-                };
+                let wasm_path = format!("{}{}", drive_path, wasm_path);
                 // build initial caps
                 let mut initial_capabilities: HashSet<kt::SignedCapability> = HashSet::new();
                 if entry.request_networking {
-                    initial_capabilities.insert(kt::de_wit_signed_capability(networking_cap.clone()));
+                    initial_capabilities
+                        .insert(kt::de_wit_signed_capability(networking_cap.clone()));
                 }
                 initial_capabilities.insert(kt::de_wit_signed_capability(read_cap.clone()));
                 initial_capabilities.insert(kt::de_wit_signed_capability(write_cap.clone()));
-                let process_id = format!("{}:{}", entry.process_name, package.to_string());
+                let process_id = format!("{}:{}", entry.process_name, package);
                 let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {
                     return Err(anyhow::anyhow!("app-store: invalid process id!"));
                 };
@@ -500,24 +494,26 @@ fn handle_local_request(
                     ))?)
                     .send()?;
 
-                let (_, _bytes_response) = Request::new()
+                let _bytes_response = Request::new()
                     .target(Address::from_str("our@vfs:sys:uqbar")?)
                     .ipc(serde_json::to_vec(&kt::VfsRequest {
-                        drive: package.to_string(),
-                        action: kt::VfsAction::GetEntry(path),
+                        path: wasm_path.clone(),
+                        action: kt::VfsAction::Read,
                     })?)
-                    .send_and_await_response(5)??;
+                    .send_and_await_response(5)?
+                    .unwrap();
                 Request::new()
                     .target(Address::from_str("our@kernel:sys:uqbar")?)
                     .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                         id: parsed_new_process_id,
-                        wasm_bytes_handle: hash,
-                        on_panic: entry.on_panic.clone(),
+                        wasm_bytes_handle: wasm_path,
+                        on_exit: entry.on_exit.clone(),
                         initial_capabilities,
                         public: entry.public,
                     })?)
                     .inherit(true)
-                    .send_and_await_response(5)?;
+                    .send_and_await_response(5)?
+                    .unwrap();
             }
             for entry in &manifest {
                 let process_id = ProcessId::new(
@@ -526,41 +522,93 @@ fn handle_local_request(
                     package.publisher(),
                 );
                 if let Some(to_request) = &entry.request_messaging {
-                    for process_name in to_request {
-                        let Ok(parsed_process_id) = ProcessId::from_str(&process_name) else {
-                            // TODO handle arbitrary caps here
-                            continue;
-                        };
-                        let Some(messaging_cap) = get_capability(
-                            &Address {
-                                node: our.node.clone(),
-                                process: parsed_process_id.clone(),
-                            },
-                            &"\"messaging\"".into(),
-                        ) else {
-                            println!("app-store: no cap for {} to give away!", process_name);
-                            continue;
-                        };
-                        share_capability(&process_id, &messaging_cap);
+                    for value in to_request {
+                        let mut capability = None;
+                        match value {
+                            serde_json::Value::String(process_name) => {
+                                if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
+                                    capability = get_capability(
+                                        &Address {
+                                            node: our.node.clone(),
+                                            process: parsed_process_id.clone(),
+                                        },
+                                        &"\"messaging\"".into(),
+                                    );
+                                }
+                            }
+                            serde_json::Value::Object(map) => {
+                                if let Some(process_name) = map.get("process") {
+                                    if let Ok(parsed_process_id) =
+                                        ProcessId::from_str(&process_name.to_string())
+                                    {
+                                        if let Some(params) = map.get("params") {
+                                            capability = get_capability(
+                                                &Address {
+                                                    node: our.node.clone(),
+                                                    process: parsed_process_id.clone(),
+                                                },
+                                                &params.to_string(),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                continue;
+                            }
+                        }
+                        if let Some(cap) = capability {
+                            share_capability(&process_id, &cap);
+                        } else {
+                            println!("app-store: no cap: {}, for {} to request!", value.to_string(), process_id);
+                        }
                     }
                 }
                 if let Some(to_grant) = &entry.grant_messaging {
-                    let Some(messaging_cap) = get_capability(
-                        &Address {
-                            node: our.node.clone(),
-                            process: process_id.clone(),
-                        },
-                        &"\"messaging\"".into(),
-                    ) else {
-                        println!("app-store: no cap for {} to give away!", process_id);
-                        continue;
-                    };
-                    for process_name in to_grant {
-                        let Ok(parsed_process_id) = ProcessId::from_str(&process_name) else {
-                            // TODO handle arbitrary caps here
-                            continue;
-                        };
-                        share_capability(&parsed_process_id, &messaging_cap);
+                    for value in to_grant {
+                        let mut capability = None;
+                        let mut to_process = None;
+                        match value {
+                            serde_json::Value::String(process_name) => {
+                                if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
+                                    capability = get_capability(
+                                        &Address {
+                                            node: our.node.clone(),
+                                            process: process_id.clone(),
+                                        },
+                                        &"\"messaging\"".into(),
+                                    );
+                                    to_process = Some(parsed_process_id);
+                                }
+                            }
+                            serde_json::Value::Object(map) => {
+                                if let Some(process_name) = map.get("process") {
+                                    if let Ok(parsed_process_id) =
+                                        ProcessId::from_str(&process_name.to_string())
+                                    {
+                                        if let Some(params) = map.get("params") {
+                                            capability = get_capability(
+                                                &Address {
+                                                    node: our.node.clone(),
+                                                    process: process_id.clone(),
+                                                },
+                                                &params.to_string(),
+                                            );
+                                            to_process = Some(parsed_process_id);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                continue;
+                            }
+                        }
+
+                        if let Some(cap) = capability {
+                            share_capability(&to_process.unwrap(), &cap);
+                        } else {
+                            println!("app-store: no cap: {}, for {} to grant!", value.to_string(), process_id);
+                        }
                     }
                 }
                 Request::new()
@@ -568,7 +616,8 @@ fn handle_local_request(
                     .ipc(serde_json::to_vec(&kt::KernelCommand::RunProcess(
                         process_id,
                     ))?)
-                    .send_and_await_response(5)?;
+                    .send_and_await_response(5)?
+                    .unwrap();
             }
             Ok(Some(Resp::InstallResponse(InstallResponse::Success)))
         }
@@ -598,15 +647,18 @@ fn handle_remote_request(
                 return Ok(Some(Resp::RemoteResponse(RemoteResponse::DownloadDenied)));
             }
             // get the .zip from VFS and attach as payload to response
-            let file_name = format!("/{}.zip", package.to_string());
+            let drive_name = format!("/{}/pkg", package);
+            let file_path = format!("/{}.zip", drive_name);
             Request::new()
                 .target(Address::from_str("our@vfs:sys:uqbar")?)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
-                    drive: package.to_string(),
-                    action: kt::VfsAction::GetEntry(file_name.clone()),
+                    path: file_path,
+                    action: kt::VfsAction::Read,
                 })?)
-                .send_and_await_response(5)?;
+                .send_and_await_response(5)?
+                .unwrap();
             // transfer will inherit the payload bytes we receive from VFS
+            let file_name = format!("/{}.zip", package);
             spawn_transfer(&our, &file_name, None, &source);
             Ok(Some(Resp::RemoteResponse(RemoteResponse::DownloadApproved)))
         }
