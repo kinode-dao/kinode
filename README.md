@@ -73,6 +73,6 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH
 
 Download and install an app:
 ```
-!m our@main:app_store:uqbar {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
-!m our@main:app_store:uqbar {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
+/m our@main:app_store:uqbar {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
+/m our@main:app_store:uqbar {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
 ```

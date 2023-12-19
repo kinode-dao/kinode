@@ -1,8 +1,8 @@
 use indexmap::map::IndexMap;
 
-use uqbar_process_lib::{Address, ProcessId, Request, Response};
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
+use uqbar_process_lib::{spawn, Address, OnExit, ProcessId, Request, Response};
 
 mod tester_types;
 use tester_types as tt;
@@ -36,21 +36,24 @@ fn handle_message(
             match serde_json::from_slice(&ipc)? {
                 tt::TesterResponse::Pass | tt::TesterResponse::Fail { .. } => {
                     if (source.process.package_name != "tester")
-                       | (source.process.publisher_node != "uqbar") {
+                        | (source.process.publisher_node != "uqbar")
+                    {
                         return Err(tt::TesterError::UnexpectedResponse.into());
                     }
-                    Response::new()
-                        .ipc(ipc)
-                        .send()
-                        .unwrap();
-                },
-                tt::TesterResponse::GetFullMessage(_) => { unimplemented!() }
+                    Response::new().ipc(ipc).send().unwrap();
+                }
+                tt::TesterResponse::GetFullMessage(_) => {
+                    unimplemented!()
+                }
             }
             Ok(())
-        },
+        }
         wit::Message::Request(wit::Request { ipc, .. }) => {
             match serde_json::from_slice(&ipc)? {
-                tt::TesterRequest::Run(input_node_names) => {
+                tt::TesterRequest::Run {
+                    input_node_names,
+                    test_timeout,
+                } => {
                     wit::print_to_terminal(0, "tester: got Run");
 
                     assert!(input_node_names.len() >= 1);
@@ -64,16 +67,19 @@ fn handle_message(
                     } else {
                         // we are master node
                         let child = "/test_runner.wasm";
-                        let child_process_id = match wit::spawn(
+                        let child_process_id = match spawn(
                             None,
                             child,
-                            &wit::OnPanic::None, //  TODO: notify us
+                            OnExit::None, //  TODO: notify us
                             &wit::Capabilities::All,
                             false, // not public
                         ) {
                             Ok(child_process_id) => child_process_id,
                             Err(e) => {
-                                wit::print_to_terminal(0, &format!("couldn't spawn {}: {}", child, e));
+                                wit::print_to_terminal(
+                                    0,
+                                    &format!("couldn't spawn {}: {}", child, e),
+                                );
                                 panic!("couldn't spawn"); //  TODO
                             }
                         };
@@ -83,14 +89,16 @@ fn handle_message(
                                 process: child_process_id,
                             })
                             .ipc(ipc)
-                            .expects_response(15)
+                            .expects_response(test_timeout)
                             .send()?;
                     }
-                },
-                tt::TesterRequest::KernelMessage(_) | tt::TesterRequest::GetFullMessage(_) => { unimplemented!() },
+                }
+                tt::TesterRequest::KernelMessage(_) | tt::TesterRequest::GetFullMessage(_) => {
+                    unimplemented!()
+                }
             }
             Ok(())
-        },
+        }
     }
 }
 
@@ -110,20 +118,22 @@ impl Guest for Component {
             &serde_json::to_string(&serde_json::json!({
                 "kind": "write",
                 "drive": "tester:uqbar",
-            })).unwrap()
-        ).unwrap();
-        wit::share_capability(&ProcessId::from_str("http_server:sys:uqbar").unwrap(), &drive_cap);
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        wit::share_capability(
+            &ProcessId::from_str("http_server:sys:uqbar").unwrap(),
+            &drive_cap,
+        );
 
         loop {
             match handle_message(&our, &mut messages, &mut node_names) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) => {
-                    wit::print_to_terminal(0, format!(
-                        "tester: error: {:?}",
-                        e,
-                    ).as_str());
+                    wit::print_to_terminal(0, format!("tester: error: {:?}", e,).as_str());
                     fail!("tester");
-                },
+                }
             };
         }
     }

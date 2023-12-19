@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 //use uqbar_process_lib::uqbar::process::standard::*;
 
 use uqbar_process_lib::uqbar::process::standard::{Message as StdMessage, Request as StdRequest, Response as StdResponse, SendErrorKind};
-use uqbar_process_lib::{await_message, get_payload, print_to_terminal, send_and_await_response, send_request, send_response, Address, Message, Payload, Request};
+use uqbar_process_lib::{await_message, get_payload, print_to_terminal, send_and_await_response, send_request, send_response, Address, Message, Payload};
 
 mod ft_worker_lib;
 use ft_worker_lib::*;
@@ -129,7 +129,7 @@ impl Guest for Component {
                             offset += chunk_size;
                         }
                         // now wait for Finished response
-                        let Ok(Message::Response { source: receiving_worker, ipc, .. }) = await_message() else {
+                        let Ok(Message::Response { ipc, .. }) = await_message() else {
                             respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected));
                             return;
                         };
@@ -144,11 +144,10 @@ impl Guest for Component {
                 }
             }
             FTWorkerCommand::Receive {
-                transfer_id,
                 file_name,
-                file_size,
                 total_chunks,
                 timeout,
+                ..
             } => {
                 // send Ready response to counterparty
                 send_response(

@@ -3,21 +3,10 @@ use pleco::Board;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use uqbar_process_lib::{
-    await_message, get_payload, get_typed_state, http, println, set_state, Address, Message,
-    NodeId, Payload, Request, Response,
+    await_message, call_init, get_payload, get_typed_state, http, println, set_state, Address,
+    Message, NodeId, Payload, Request, Response,
 };
-
 extern crate base64;
-
-// Boilerplate: generate the wasm bindings for an Uqbar app
-wit_bindgen::generate!({
-    path: "../../wit",
-    world: "process",
-    exports: {
-        world: Component,
-    },
-});
-struct Component;
 
 // Lazy way to include our static files in the binary. We'll use these to serve
 // our chess app's frontend.
@@ -111,51 +100,57 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
     Ok(())
 }
 
-impl Guest for Component {
-    fn init(our: String) {
-        let our = Address::from_str(&our).unwrap();
-        // A little printout to show in terminal that the process has started.
-        println!(
-            "{} by {}: start",
-            our.process.process_name, our.process.publisher_node
-        );
+// Boilerplate: generate the wasm bindings for an Uqbar app
+wit_bindgen::generate!({
+    path: "../../wit",
+    world: "process",
+    exports: {
+        world: Component,
+    },
+});
+// After generating bindings, use this macro to define the Component struct
+// and its init() function, which the kernel will look for on startup.
+call_init!(initialize);
 
-        // serve static page at /index.html, /index.js, /index.css
-        // dynamically handle requests to /games
-        http::bind_http_static_path(
-            "/",
-            true,  // only serve for ourselves
-            false, // can access remotely
-            Some("text/html".to_string()),
-            CHESS_HTML
-                .replace("${node}", &our.node)
-                .replace("${process}", &our.process.to_string())
-                .as_bytes()
-                .to_vec(),
-        )
-        .unwrap();
-        http::bind_http_static_path(
-            "/index.js",
-            true,
-            false,
-            Some("text/javascript".to_string()),
-            CHESS_JS.as_bytes().to_vec(),
-        )
-        .unwrap();
-        http::bind_http_static_path(
-            "/index.css",
-            true,
-            false,
-            Some("text/css".to_string()),
-            CHESS_CSS.as_bytes().to_vec(),
-        )
-        .unwrap();
-        http::bind_http_path("/games", true, false).unwrap();
+fn initialize(our: Address) {
+    // A little printout to show in terminal that the process has started.
+    println!("{} by {}: start", our.process(), our.publisher());
 
-        // Grab our state, then enter the main event loop.
-        let mut state: ChessState = load_chess_state();
-        main_loop(&our, &mut state);
-    }
+    // serve static page at /index.html, /index.js, /index.css
+    // dynamically handle requests to /games
+    http::bind_http_static_path(
+        "/",
+        true,  // only serve for ourselves
+        false, // can access remotely
+        Some("text/html".to_string()),
+        CHESS_HTML
+            .replace("${node}", &our.node)
+            .replace("${process}", &our.process.to_string())
+            .as_bytes()
+            .to_vec(),
+    )
+    .unwrap();
+    http::bind_http_static_path(
+        "/index.js",
+        true,
+        false,
+        Some("text/javascript".to_string()),
+        CHESS_JS.as_bytes().to_vec(),
+    )
+    .unwrap();
+    http::bind_http_static_path(
+        "/index.css",
+        true,
+        false,
+        Some("text/css".to_string()),
+        CHESS_CSS.as_bytes().to_vec(),
+    )
+    .unwrap();
+    http::bind_http_path("/games", true, false).unwrap();
+
+    // Grab our state, then enter the main event loop.
+    let mut state: ChessState = load_chess_state();
+    main_loop(&our, &mut state);
 }
 
 fn main_loop(our: &Address, state: &mut ChessState) {

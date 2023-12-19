@@ -1,9 +1,9 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-use uqbar_process_lib::{Address, Message, ProcessId, Request, Response};
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
+use uqbar_process_lib::{spawn, Address, Message, OnExit, ProcessId, Request, Response};
 
 mod tester_types;
 use tester_types as tt;
@@ -33,10 +33,10 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
     match message {
         wit::Message::Response(_) => {
             return Err(tt::TesterError::UnexpectedResponse.into());
-        },
+        }
         wit::Message::Request(wit::Request { ref ipc, .. }) => {
             match serde_json::from_slice(ipc)? {
-                tt::TesterRequest::Run(_) => {
+                tt::TesterRequest::Run { test_timeout, .. } => {
                     wit::print_to_terminal(0, "test_runner: got Run");
 
                     let response = Request::new()
@@ -45,11 +45,17 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                             drive: "tester:uqbar".into(),
                             action: kt::VfsAction::GetEntry("/".into()),
                         })?)
-                        .send_and_await_response(5)?.unwrap();
+                        .send_and_await_response(test_timeout)?
+                        .unwrap();
 
-                    let Message::Response { ipc, .. } = response else { panic!("") };
+                    let Message::Response { ipc: vfs_ipc, .. } = response else {
+                        panic!("")
+                    };
                     let kt::VfsResponse::GetEntry { children, .. } =
-                        serde_json::from_slice(&ipc)? else { panic!("") };
+                        serde_json::from_slice(&vfs_ipc)?
+                    else {
+                        panic!("")
+                    };
                     let mut children: HashSet<_> = children.into_iter().collect();
                     children.remove("/manifest.json");
                     children.remove("/metadata.json");
@@ -59,16 +65,19 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     wit::print_to_terminal(0, &format!("test_runner: running {:?}...", children));
 
                     for child in &children {
-                        let child_process_id = match wit::spawn(
+                        let child_process_id = match spawn(
                             None,
                             child,
-                            &wit::OnPanic::None, //  TODO: notify us
+                            OnExit::None, //  TODO: notify us
                             &wit::Capabilities::All,
                             false, // not public
                         ) {
                             Ok(child_process_id) => child_process_id,
                             Err(e) => {
-                                wit::print_to_terminal(0, &format!("couldn't spawn {}: {}", child, e));
+                                wit::print_to_terminal(
+                                    0,
+                                    &format!("couldn't spawn {}: {}", child, e),
+                                );
                                 panic!("couldn't spawn"); //  TODO
                             }
                         };
@@ -79,15 +88,23 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                                 process: child_process_id,
                             })
                             .ipc(ipc.clone())
-                            .send_and_await_response(5)?.unwrap();
+                            .send_and_await_response(test_timeout)?
+                            .unwrap();
 
-                        let Message::Response { ipc, .. } = response else { panic!("") };
+                        let Message::Response { ipc, .. } = response else {
+                            panic!("")
+                        };
                         match serde_json::from_slice(&ipc)? {
-                            tt::TesterResponse::Pass => {},
-                            tt::TesterResponse::GetFullMessage(_) => {},
-                            tt::TesterResponse::Fail { test, file, line, column } => {
+                            tt::TesterResponse::Pass => {}
+                            tt::TesterResponse::GetFullMessage(_) => {}
+                            tt::TesterResponse::Fail {
+                                test,
+                                file,
+                                line,
+                                column,
+                            } => {
                                 fail!(test, file, line, column);
-                            },
+                            }
                         }
                     }
 
@@ -97,11 +114,13 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                         .ipc(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
                         .send()
                         .unwrap();
-                },
-                tt::TesterRequest::KernelMessage(_) | tt::TesterRequest::GetFullMessage(_) => { unimplemented!() },
+                }
+                tt::TesterRequest::KernelMessage(_) | tt::TesterRequest::GetFullMessage(_) => {
+                    unimplemented!()
+                }
             }
             Ok(())
-        },
+        }
     }
 }
 
@@ -119,14 +138,11 @@ impl Guest for Component {
 
         loop {
             match handle_message(&our) {
-                Ok(()) => {},
+                Ok(()) => {}
                 Err(e) => {
-                    wit::print_to_terminal(0, format!(
-                        "test_runner: error: {:?}",
-                        e,
-                    ).as_str());
+                    wit::print_to_terminal(0, format!("test_runner: error: {:?}", e,).as_str());
                     fail!("test_runner");
-                },
+                }
             };
         }
     }

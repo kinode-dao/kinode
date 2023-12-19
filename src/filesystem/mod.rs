@@ -146,7 +146,7 @@ async fn bootstrap(
         .entry(ProcessId::from_str("kernel:sys:uqbar").unwrap())
         .or_insert(PersistedProcess {
             wasm_bytes_handle: 0,
-            on_panic: OnPanic::Restart,
+            on_exit: OnExit::Restart,
             capabilities: runtime_caps.clone(),
             public: false,
         });
@@ -154,7 +154,7 @@ async fn bootstrap(
         .entry(ProcessId::from_str("net:sys:uqbar").unwrap())
         .or_insert(PersistedProcess {
             wasm_bytes_handle: 0,
-            on_panic: OnPanic::Restart,
+            on_exit: OnExit::Restart,
             capabilities: runtime_caps.clone(),
             public: false,
         });
@@ -163,7 +163,7 @@ async fn bootstrap(
             .entry(runtime_module.0)
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: 0,
-                on_panic: OnPanic::Restart,
+                on_exit: OnExit::Restart,
                 capabilities: runtime_caps.clone(),
                 public: runtime_module.2,
             });
@@ -380,7 +380,7 @@ async fn bootstrap(
                 ProcessId::new(Some(&entry.process_name), package_name, package_publisher),
                 PersistedProcess {
                     wasm_bytes_handle,
-                    on_panic: entry.on_panic,
+                    on_exit: entry.on_exit,
                     capabilities: requested_caps,
                     public: public_process,
                 },
