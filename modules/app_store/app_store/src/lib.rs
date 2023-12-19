@@ -352,7 +352,7 @@ fn handle_local_request(
                 .inherit(true)
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
                     path: zip_path,
-                    action: kt::VfsAction::Write,
+                    action: kt::VfsAction::ReWrite,
                 })?)
                 .payload(payload)
                 .send_and_await_response(5)?

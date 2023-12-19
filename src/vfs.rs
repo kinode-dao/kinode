@@ -194,6 +194,21 @@ async fn handle_request(
             file.write_all(&payload.bytes).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
+        VfsAction::ReWrite => {
+            let Some(payload) = payload else {
+                return Err(VfsError::BadRequest {
+                    error: "payload needs to exist for Write".into(),
+                });
+            };
+            let file = open_file(open_files.clone(), path, true).await?;
+            let mut file = file.lock().await;
+
+            file.seek(SeekFrom::Start(0)).await?;
+            file.write_all(&payload.bytes).await?;
+            file.set_len(payload.bytes.len() as u64).await?;
+
+            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
         VfsAction::WriteAt(offset) => {
             let Some(payload) = payload else {
                 return Err(VfsError::BadRequest {
@@ -230,6 +245,18 @@ async fn handle_request(
             let mut file = file.lock().await;
             let mut contents = Vec::new();
             file.seek(SeekFrom::Start(0)).await?;
+            file.read_to_end(&mut contents).await?;
+
+            (
+                serde_json::to_vec(&VfsResponse::Read).unwrap(),
+                Some(contents),
+            )
+        }
+        VfsAction::ReadToEnd => {
+            let file = open_file(open_files.clone(), path.clone(), false).await?;
+            let mut file = file.lock().await;
+            let mut contents = Vec::new();
+            
             file.read_to_end(&mut contents).await?;
 
             (
@@ -372,7 +399,10 @@ async fn handle_request(
                 if is_file {
                     let file = open_file(open_files.clone(), local_path, true).await?;
                     let mut file = file.lock().await;
+
+                    file.seek(SeekFrom::Start(0)).await?;
                     file.write_all(&file_contents).await?;
+                    file.set_len(file_contents.len() as u64).await?;
                 } else if is_dir {
                     // If it's a directory, create it
                     fs::create_dir_all(local_path).await?;
@@ -517,6 +547,7 @@ async fn check_caps(
         | VfsAction::CloseFile
         | VfsAction::WriteAll
         | VfsAction::Write
+        | VfsAction::ReWrite
         | VfsAction::WriteAt(_)
         | VfsAction::Append
         | VfsAction::SyncAll
@@ -558,6 +589,7 @@ async fn check_caps(
         VfsAction::Read
         | VfsAction::ReadDir
         | VfsAction::ReadExact(_)
+        | VfsAction::ReadToEnd
         | VfsAction::ReadToString
         | VfsAction::Seek(_)
         | VfsAction::Hash
