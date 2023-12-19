@@ -10,6 +10,8 @@ use tokio::sync::Mutex;
 
 use crate::types::*;
 
+include!("bootstrapped_processes.rs");
+
 pub async fn load_state(
     our_name: String,
     home_directory_path: String,
@@ -344,8 +346,7 @@ async fn bootstrap(
             });
     }
 
-    let packages: Vec<(String, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> =
-        get_zipped_packages().await;
+    let packages = get_zipped_packages().await;
 
     for (package_name, mut package) in packages {
         // special case tester: only load it in if in simulation mode
@@ -591,29 +592,17 @@ async fn bootstrap(
     Ok(())
 }
 
-/// go into /target folder and get all .zip package files
-async fn get_zipped_packages() -> Vec<(String, zip::ZipArchive<std::io::Cursor<Vec<u8>>>)> {
+/// read in `include!()`ed .zip package files
+async fn get_zipped_packages() -> Vec<(String, zip::ZipArchive<std::io::Cursor<&'static [u8]>>)> {
     println!("fs: reading distro packages...\r");
-    let target_path = std::path::Path::new("target");
 
     let mut packages = Vec::new();
 
-    if let Ok(mut entries) = fs::read_dir(target_path).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            if entry.file_name().to_string_lossy().ends_with(".zip") {
-                let package_name = entry
-                    .file_name()
-                    .to_string_lossy()
-                    .trim_end_matches(".zip")
-                    .to_string();
-                if let Ok(bytes) = fs::read(entry.path()).await {
-                    if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) {
-                        // add to list of packages
-                        println!("fs: found package: {}\r", package_name);
-                        packages.push((package_name, zip));
-                    }
-                }
-            }
+    for (package_name, bytes) in BOOTSTRAPPED_PROCESSES.iter() {
+        if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(*bytes)) {
+            // add to list of packages
+            println!("fs: found package: {}\r", package_name);
+            packages.push((package_name.to_string(), zip));
         }
     }
 
