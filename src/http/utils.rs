@@ -21,10 +21,12 @@ pub struct RpcMessage {
 }
 
 /// Ingest an auth token given from client and return the node name or an error.
-pub fn verify_auth_token(auth_token: &str, jwt_secret: &[u8]) -> Result<String, jwt::Error> {
+pub fn _verify_auth_token(auth_token: &str, jwt_secret: &[u8]) -> Result<String, jwt::Error> {
     let Ok(secret) = Hmac::<Sha256>::new_from_slice(jwt_secret) else {
         return Err(jwt::Error::Format);
     };
+
+    println!("hello\r");
 
     let claims: Result<JwtClaims, jwt::Error> = auth_token.verify_with_key(&secret);
 
