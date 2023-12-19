@@ -174,6 +174,9 @@ async fn bootstrap(
 
     let mut vfs_messages = Vec::new();
 
+    // special case: add bootstrapped process vfs caps to app_store
+    let mut app_store_caps = Vec::new();
+
     for (package_name, mut package) in packages {
         // special case tester: only load it in if in simulation mode
         if package_name == "tester" {
@@ -346,7 +349,7 @@ async fn bootstrap(
             }
 
             // give access to package_name vfs
-            requested_caps.insert(Capability {
+            let read_cap = Capability {
                 issuer: Address {
                     node: our_name.into(),
                     process: VFS_PROCESS_ID.clone(),
@@ -356,8 +359,8 @@ async fn bootstrap(
                     "drive": our_drive_name,
                 }))
                 .unwrap(),
-            });
-            requested_caps.insert(Capability {
+            };
+            let write_cap = Capability {
                 issuer: Address {
                     node: our_name.into(),
                     process: VFS_PROCESS_ID.clone(),
@@ -367,7 +370,11 @@ async fn bootstrap(
                     "drive": our_drive_name,
                 }))
                 .unwrap(),
-            });
+            };
+            requested_caps.insert(read_cap.clone());
+            requested_caps.insert(write_cap.clone());
+            app_store_caps.push(read_cap);
+            app_store_caps.push(write_cap);
 
             let public_process = entry.public;
 
@@ -386,6 +393,15 @@ async fn bootstrap(
                 },
             );
         }
+    }
+
+    // special case: add bootstrapped process vfs caps to app_store
+    for cap in app_store_caps {
+        process_map
+            .entry(ProcessId::new(Some("main"), "app_store", "uqbar"))
+            .and_modify(|p| {
+                p.capabilities.insert(cap);
+            });
     }
 
     // save kernel process state. FsAction::SetState(kernel)
