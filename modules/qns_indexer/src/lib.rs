@@ -6,7 +6,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::string::FromUtf8Error;
 use uqbar_process_lib::{
-    await_message, get_typed_state, http, set_state, Address, Message, Payload, Request, Response,
+    await_message, get_typed_state, http, println, receive, set_state, Address, Message, Payload,
+    Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -55,7 +56,7 @@ pub enum NetActions {
     QnsBatchUpdate(Vec<QnsUpdate>),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct QnsUpdate {
     pub name: String, // actual username / domain name
     pub owner: String,
@@ -75,16 +76,18 @@ impl TryInto<Vec<u8>> for NetActions {
 }
 
 sol! {
-    event WsChanged(
-        uint256 indexed node,
-        uint96 indexed protocols,
-        bytes32 publicKey,
-        uint32 ip,
-        uint16 port,
-        bytes32[] routers
-    );
+    // Logged whenever a QNS node is created
+    event NodeRegistered(bytes32 indexed node, bytes name);
 
-    event NodeRegistered(uint256 indexed node, bytes name);
+    event KeyUpdate(bytes32 indexed node, bytes32 key);
+
+    event IpUpdate(bytes32 indexed node, uint128 ip);
+    event WsUpdate(bytes32 indexed node, uint16 port);
+    event WtUpdate(bytes32 indexed node, uint16 port);
+    event TcpUpdate(bytes32 indexed node, uint16 port);
+    event UdpUpdate(bytes32 indexed node, uint16 port);
+
+    event RoutingUpdate(bytes32 indexed node, bytes32[] routers);
 }
 
 fn subscribe_to_qns(from_block: u64) -> Vec<u8> {
@@ -92,13 +95,19 @@ fn subscribe_to_qns(from_block: u64) -> Vec<u8> {
         "SubscribeEvents": {
             "addresses": [
                 // QNSRegistry on sepolia
-                "0x9e5ed0e7873E0d7f10eEb6dE72E87fE087A12776",
+                "0x1C5595336Fd763a81887472D30D6CbD736Acf0E3",
             ],
             "from_block": from_block,
             "to_block": null,
             "events": [
-                "NodeRegistered(uint256,bytes)",
-                "WsChanged(uint256,uint96,bytes32,uint32,uint16,bytes32[])",
+                "NodeRegistered(bytes32,bytes)",
+                "KeyUpdate(bytes32,bytes32)",
+                "IpUpdate(bytes32,uint128)",
+                "WsUpdate(bytes32,uint16)",
+                "WtUpdate(bytes32,uint16)",
+                "TcpUpdate(bytes32,uint16)",
+                "UdpUpdate(bytes32,uint16)",
+                "RoutingUpdate(bytes32,bytes32[])",
             ],
             "topic1": null,
             "topic2": null,
@@ -128,12 +137,10 @@ impl Guest for Component {
             None => {}
         }
 
-        println!("qns_indexer: starting at block {}", state.block);
-
         match main(our, state) {
             Ok(_) => {}
             Err(e) => {
-                println!("qns_indexer: ended with error: {:?}", e);
+                println!("qns_indexer: error: {:?}", e);
             }
         }
     }
@@ -180,13 +187,11 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                                             "Content-Type".to_string(),
                                             "application/json".to_string(),
                                         )]),
-                                    })
-                                    .unwrap(),
+                                    })?,
                                 )
                                 .payload(Payload {
                                     mime: Some("application/json".to_string()),
-                                    bytes: serde_json::to_string(&node)
-                                        .unwrap()
+                                    bytes: serde_json::to_string(&node)?
                                         .as_bytes()
                                         .to_vec(),
                                 })
@@ -204,8 +209,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             "Content-Type".to_string(),
                             "application/json".to_string(),
                         )]),
-                    })
-                    .unwrap(),
+                    })?,
                 )
                 .send()?;
             continue;
@@ -217,79 +221,109 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         };
 
         match msg {
-            // Probably more message types later...maybe not...
             AllActions::EventSubscription(e) => {
-                state.block = hex_to_u64(&e.block_number).unwrap();
-                match decode_hex(&e.topics[0].clone()) {
-                    NodeRegistered::SIGNATURE_HASH => {
-                        // print_to_terminal(0, format!("qns_indexer: got NodeRegistered event: {:?}", e).as_str());
+                state.block = hex_to_u64(&e.block_number)?;
+                let nodeId = &e.topics[1];
 
-                        let node = &e.topics[1];
-                        let decoded =
-                            NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                        let Ok(name) = dnswire_decode(decoded.0.clone()) else {
-                            // print_to_terminal(
-                            //     1,
-                            //     &format!("qns_indexer: failed to decode name: {:?}", decoded.0),
-                            // );
-                            continue;
-                        };
-
-                        state.names.insert(node.to_string(), name);
+                let name = if decode_hex(&e.topics[0]) == NodeRegistered::SIGNATURE_HASH {
+                    let decoded =
+                        NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                    match dnswire_decode(decoded.0.clone()) {
+                        Ok(name) => {
+                            state.names.insert(nodeId.to_string(), name.clone());
+                        }
+                        Err(_) => {
+                            println!("qns_indexer: failed to decode name: {:?}", decoded.0);
+                        }
                     }
-                    WsChanged::SIGNATURE_HASH => {
-                        let node = &e.topics[1];
+                    continue;
+                } else if let Some(name) = state.names.get(nodeId) {
+                    name
+                } else {
+                    println!("qns_indexer: failed to find name: {:?}", nodeId);
+                    continue;
+                };
+
+                let node = state
+                    .nodes
+                    .entry(name.to_string())
+                    .or_insert_with(QnsUpdate::default);
+
+                if node.name == "" {
+                    node.name = name.clone();
+                }
+
+                if node.node == "" {
+                    node.node = nodeId.clone();
+                }
+
+                let mut send = false;
+
+                match decode_hex(&e.topics[0].clone()) {
+                    NodeRegistered::SIGNATURE_HASH => {} // will never hit this
+                    KeyUpdate::SIGNATURE_HASH => {
                         let decoded =
-                            WsChanged::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                        let public_key = hex::encode(decoded.0);
-                        let ip = decoded.1;
-                        let port = decoded.2;
-                        let routers_raw = decoded.3;
-                        let routers: Vec<String> = routers_raw
+                            KeyUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        node.public_key = format!("0x{}", hex::encode(decoded.0));
+                        send = true;
+                    }
+                    IpUpdate::SIGNATURE_HASH => {
+                        let decoded =
+                            IpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        let ip = decoded.0;
+                        node.ip = format!(
+                            "{}.{}.{}.{}",
+                            (ip >> 24) & 0xFF,
+                            (ip >> 16) & 0xFF,
+                            (ip >> 8) & 0xFF,
+                            ip & 0xFF
+                        );
+                        send = true;
+                    }
+                    WsUpdate::SIGNATURE_HASH => {
+                        let decoded =
+                            WsUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        node.port = decoded.0;
+                        send = true;
+                    }
+                    WtUpdate::SIGNATURE_HASH => {
+                        let decoded =
+                            WtUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                    }
+                    TcpUpdate::SIGNATURE_HASH => {
+                        let decoded =
+                            TcpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                    }
+                    UdpUpdate::SIGNATURE_HASH => {
+                        let decoded =
+                            UdpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                    }
+                    RoutingUpdate::SIGNATURE_HASH => {
+                        let decoded =
+                            RoutingUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        let routers_raw = decoded.0;
+                        node.routers = routers_raw
                             .iter()
                             .map(|r| {
-                                let key = hex::encode(r);
+                                let key = format!("0x{}", hex::encode(r));
                                 match state.names.get(&key) {
                                     Some(name) => name.clone(),
-                                    None => format!("0x{}", key), // TODO it should actually just panic here
+                                    None => format!("proposed router did not exist: 0x{}", key),
                                 }
                             })
                             .collect::<Vec<String>>();
-
-                        let Some(name) = state.names.get(node) else {
-                            println!(
-                                "qns_indexer: failed to find name for node during WsChanged: {:?}",
-                                node
-                            );
-                            continue;
-                        };
-
-                        let update = QnsUpdate {
-                            name: name.clone(),
-                            owner: "0x".to_string(), // TODO or get rid of
-                            node: node.clone(),
-                            public_key: format!("0x{}", public_key),
-                            ip: format!(
-                                "{}.{}.{}.{}",
-                                (ip >> 24) & 0xFF,
-                                (ip >> 16) & 0xFF,
-                                (ip >> 8) & 0xFF,
-                                ip & 0xFF
-                            ),
-                            port,
-                            routers,
-                        };
-
-                        state.nodes.insert(name.clone(), update.clone());
-
-                        Request::new()
-                            .target((&our.node, "net", "sys", "uqbar"))
-                            .try_ipc(NetActions::QnsUpdate(update))?
-                            .send()?;
+                        send = true;
                     }
                     event => {
                         println!("qns_indexer: got unknown event: {:?}", event);
                     }
+                }
+
+                if send {
+                    Request::new()
+                        .target((&our.node, "net", "sys", "uqbar"))
+                        .try_ipc(NetActions::QnsUpdate(node.clone()))?
+                        .send()?;
                 }
             }
         }
