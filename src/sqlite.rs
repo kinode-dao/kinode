@@ -2,12 +2,32 @@ use anyhow::Result;
 use dashmap::DashMap;
 use rusqlite::types::{FromSql, FromSqlError, ToSql, ValueRef};
 use rusqlite::Connection;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::sync::Mutex;
 
 use crate::types::*;
+
+lazy_static::lazy_static! {
+    static ref READ_KEYWORDS: HashSet<String> = {
+        let mut set = HashSet::new();
+        let keywords = ["ANALYZE", "ATTACH", "BEGIN", "EXPLAIN", "PRAGMA", "SELECT", "VALUES", "WITH"];
+        for &keyword in &keywords {
+            set.insert(keyword.to_string());
+        }
+        set
+    };
+
+    static ref WRITE_KEYWORDS: HashSet<String> = {
+        let mut set = HashSet::new();
+        let keywords = ["ALTER", "ANALYZE", "COMMIT", "CREATE", "DELETE", "DETACH", "DROP", "END", "INSERT", "REINDEX", "RELEASE", "RENAME", "REPLACE", "ROLLBACK", "SAVEPOINT", "UPDATE", "VACUUM"];
+        for &keyword in &keywords {
+            set.insert(keyword.to_string());
+        }
+        set
+    };
+}
 
 pub async fn sqlite(
     our_node: String,
@@ -57,6 +77,7 @@ pub async fn sqlite(
                 let send_to_terminal = send_to_terminal.clone();
                 let send_to_loop = send_to_loop.clone();
                 let open_dbs = open_dbs.clone();
+
                 let txs = txs.clone();
                 let sqlite_path = sqlite_path.clone();
 
@@ -149,6 +170,14 @@ async fn handle_request(
                 }
             };
             let db = db.lock().await;
+            let first_word = query
+                .split_whitespace()
+                .next()
+                .map(|word| word.to_uppercase())
+                .unwrap_or("".to_string());
+            if !READ_KEYWORDS.contains(&first_word) {
+                return Err(SqliteError::NotAReadKeyword.into());
+            }
 
             let parameters = get_json_params(payload)?;
 
@@ -195,6 +224,16 @@ async fn handle_request(
                 }
             };
             let db = db.lock().await;
+
+            let first_word = statement
+                .split_whitespace()
+                .next()
+                .map(|word| word.to_uppercase())
+                .unwrap_or("".to_string());
+
+            if !WRITE_KEYWORDS.contains(&first_word) {
+                return Err(SqliteError::NotAWriteKeyword.into());
+            }
 
             let parameters = get_json_params(payload)?;
 
@@ -385,12 +424,22 @@ async fn check_caps(
             )
             .await?;
 
-            let db_path = format!("{}{}", sqlite_path, request.db.to_string());
+            if open_dbs.contains_key(&(request.package_id.clone(), request.db.clone())) {
+                return Err(SqliteError::DbAlreadyExists);
+            }
 
+            let db_path = format!(
+                "{}/{}/{}",
+                sqlite_path,
+                request.package_id.to_string(),
+                request.db.to_string()
+            );
             fs::create_dir_all(&db_path).await?;
 
-            let db = Connection::open(&db_path)?;
-            db.execute("PRAGMA journal_mode=WAL;", [])?;
+            let db_file_path = format!("{}/{}.db", db_path, request.db.to_string());
+
+            let db = Connection::open(&db_file_path)?;
+            let _ = db.execute("PRAGMA journal_mode=WAL", []);
 
             open_dbs.insert(
                 (request.package_id.clone(), request.db.clone()),

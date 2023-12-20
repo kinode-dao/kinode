@@ -410,8 +410,16 @@ async fn check_caps(
             )
             .await?;
 
-            let db_path = format!("{}{}", kv_path, request.db.to_string());
+            if open_kvs.contains_key(&(request.package_id.clone(), request.db.clone())) {
+                return Err(KvError::DbAlreadyExists);
+            }
 
+            let db_path = format!(
+                "{}/{}/{}",
+                kv_path,
+                request.package_id.to_string(),
+                request.db.to_string()
+            );
             fs::create_dir_all(&db_path).await?;
 
             let db = OptimisticTransactionDB::open_default(&db_path)?;
