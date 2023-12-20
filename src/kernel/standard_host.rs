@@ -507,22 +507,20 @@ impl StandardHost for process::ProcessWasi {
     }
 
     /// generate a new cap with this process as the issuer and send to caps oracle
-    async fn create_capability(&mut self, to: wit::ProcessId, params: String) -> Result<()> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self
+    async fn create_capability(&mut self, params: String) -> Result<wit::SignedCapability> {
+        let cap = t::Capability {
+            issuer: self.process.metadata.our.clone(),
+            params: params.clone(),
+        };
+        let sig = self
             .process
-            .caps_oracle
-            .send(t::CapMessage::Add {
-                on: t::ProcessId::de_wit(to),
-                cap: t::Capability {
-                    issuer: self.process.metadata.our.clone(),
-                    params,
-                },
-                responder: tx,
-            })
-            .await?;
-        let _ = rx.await?;
-        Ok(())
+            .keypair
+            .sign(&rmp_serde::to_vec(&cap).unwrap_or_default());
+        return Ok(wit::SignedCapability {
+            issuer: cap.issuer.en_wit().to_owned(),
+            params: params,
+            signature: sig.as_ref().to_vec(),
+        });
     }
 
     async fn share_capability(
