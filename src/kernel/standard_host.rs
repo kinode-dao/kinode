@@ -464,7 +464,7 @@ impl StandardHost for process::ProcessWasi {
         Ok(())
     }
 
-    async fn has_capability(&mut self, params: String) -> Result<bool> {
+    async fn has_capability(&mut self, from: wit::ProcessId, params: String) -> Result<bool> {
         if self.process.prompting_message.is_none() {
             return Err(anyhow::anyhow!(
                 "kernel: has_capability() called with no prompting_message"
@@ -482,7 +482,7 @@ impl StandardHost for process::ProcessWasi {
                 .process
                 .caps_oracle
                 .send(t::CapMessage::Has {
-                    on: prompt.source.process.clone(),
+                    on: t::ProcessId::de_wit(from),
                     cap,
                     responder: tx,
                 })
@@ -493,8 +493,12 @@ impl StandardHost for process::ProcessWasi {
             if prompt.signed_capabilities.is_none() {
                 return Ok(false);
             }
+            let addy = t::Address::de_wit(wit::Address {
+                node: self.process.metadata.our.node.clone(),
+                process: from
+            });
             for cap in prompt.signed_capabilities.as_ref().unwrap() {
-                if cap.issuer == self.process.metadata.our && cap.params == params {
+                if cap.issuer == addy && cap.params == params {
                     return Ok(true);
                 }
             }
