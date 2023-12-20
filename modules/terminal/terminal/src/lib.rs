@@ -3,7 +3,7 @@ use uqbar_process_lib::uqbar::process::standard as wit;
 use uqbar_process_lib::{println, Address, Request};
 
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../../../wit",
     world: "process",
     exports: {
         world: Component,
