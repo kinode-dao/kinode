@@ -31,7 +31,6 @@ fn handle_message(
     _messages: &mut Messages,
     node_names: &mut Vec<String>,
 ) -> anyhow::Result<()> {
-    println!("handle_message");
     let Ok(message) = await_message() else {
         return Ok(());
     };
@@ -113,11 +112,20 @@ fn init(our: Address) {
 
     // orchestrate tests using external scripts
     //  -> must give drive cap to rpc
+    let _ = Request::new()
+        .target(make_vfs_address(&our).unwrap())
+        .ipc(serde_json::to_vec(&kt::VfsRequest {
+            path: "/tester:uqbar/tests".into(),
+            action: kt::VfsAction::CreateDrive,
+        }).unwrap())
+        .send_and_await_response(5)
+        .unwrap()
+        .unwrap();
     let drive_cap = get_capability(
         &make_vfs_address(&our).unwrap(),
         &serde_json::to_string(&serde_json::json!({
             "kind": "write",
-            "drive": "/tester:uqbar/pkg",
+            "drive": "/tester:uqbar/tests",
         }))
         .expect("couldn't serialize"),
     )
