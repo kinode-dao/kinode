@@ -986,6 +986,7 @@ pub enum VfsAction {
     RemoveDir,
     RemoveDirAll,
     Rename(String),
+    Metadata,
     AddZip,
     Len,
     SetLen(u64),
@@ -1000,12 +1001,33 @@ pub enum SeekFrom {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub enum FileType {
+    File,
+    Directory,
+    Symlink,
+    Other,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileMetadata {
+    pub file_type: FileType,
+    pub len: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DirEntry {
+    pub path: String,
+    pub file_type: FileType,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum VfsResponse {
     Ok,
     Err(VfsError),
     Read,
-    ReadDir(Vec<String>),
+    ReadDir(Vec<DirEntry>),
     ReadToString(String),
+    Metadata(FileMetadata),
     Len(u64),
     Hash([u8; 32]),
 }

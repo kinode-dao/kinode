@@ -271,7 +271,13 @@ async fn handle_request(
                 let entry_path = entry.path();
                 let relative_path = entry_path.strip_prefix(&vfs_path).unwrap_or(&entry_path);
 
-                entries.push(relative_path.display().to_string());
+                let metadata = entry.metadata().await?;
+                let file_type = get_file_type(&metadata);
+                let dir_entry = DirEntry {
+                    path: relative_path.display().to_string(),
+                    file_type,
+                };
+                entries.push(dir_entry);
             }
             (
                 serde_json::to_vec(&VfsResponse::ReadDir(entries)).unwrap(),
@@ -326,6 +332,22 @@ async fn handle_request(
             // doublecheck permission weirdness, sanitize new path
             fs::rename(path, new_path).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+        }
+        VfsAction::Metadata => {
+            let file = open_file(open_files.clone(), path, false).await?;
+            let file = file.lock().await;
+            let metadata = file.metadata().await?;
+
+            let file_type = get_file_type(&metadata);
+            let meta = FileMetadata {
+                len: metadata.len(),
+                file_type,
+            };
+
+            (
+                serde_json::to_vec(&VfsResponse::Metadata(meta)).unwrap(),
+                None,
+            )
         }
         VfsAction::Len => {
             let file = open_file(open_files.clone(), path, false).await?;
@@ -590,6 +612,7 @@ async fn check_caps(
         | VfsAction::ReadToString
         | VfsAction::Seek(_)
         | VfsAction::Hash
+        | VfsAction::Metadata
         | VfsAction::Len => {
             if src_package_id == package_id {
                 return Ok(());
@@ -690,6 +713,18 @@ async fn add_capability(
         .await?;
     let _ = recv_cap_bool.await?;
     Ok(())
+}
+
+fn get_file_type(metadata: &std::fs::Metadata) -> FileType {
+    if metadata.is_file() {
+        FileType::File
+    } else if metadata.is_dir() {
+        FileType::Directory
+    } else if metadata.file_type().is_symlink() {
+        FileType::Symlink
+    } else {
+        FileType::Other
+    }
 }
 
 fn make_error_message(
