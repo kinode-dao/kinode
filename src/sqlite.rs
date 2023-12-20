@@ -428,12 +428,13 @@ async fn check_caps(
             )
             .await?;
 
-            let db_path = format!("{}{}", sqlite_path, request.db.to_string());
-
+            let db_path = format!("{}/{}/{}", sqlite_path, request.package_id.to_string(), request.db.to_string());
             fs::create_dir_all(&db_path).await?;
 
-            let db = Connection::open(&db_path)?;
-            db.execute("PRAGMA journal_mode=WAL;", [])?;
+            let db_file_path = format!("{}/{}.db", db_path, request.db.to_string());
+
+            let db = Connection::open(&db_file_path)?;
+            let _ = db.execute("PRAGMA journal_mode=WAL", []);
 
             open_dbs.insert(
                 (request.package_id.clone(), request.db.clone()),
