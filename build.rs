@@ -135,6 +135,17 @@ fn main() {
 
     let pwd = std::env::current_dir().unwrap();
 
+    // Pull wit from git repo
+    let wit_dir = pwd.join("wit");
+    fs::create_dir_all(&wit_dir).unwrap();
+    let wit_file = wit_dir.join("uqbar.wit");
+    if !wit_file.exists() {
+        let mut wit_file = std::fs::File::create(&wit_file).unwrap();
+        let uqbar_wit_url = "https://raw.githubusercontent.com/uqbar-dao/uqwit/master/uqbar.wit";
+        let mut response = reqwest::blocking::get(uqbar_wit_url).unwrap();
+        io::copy(&mut response, &mut wit_file).unwrap();
+    }
+
     // Create target.wasm (compiled .wit) & world
     run_command(Command::new("wasm-tools").args([
         "component",
@@ -147,7 +158,14 @@ fn main() {
     .unwrap();
     run_command(Command::new("touch").args([&format!("{}/world", pwd.display())])).unwrap();
 
-    // Build wasm32-wasi apps.
+    // Build wasm32-wasi apps, zip, and add to bootstrapped_processes.rs
+    let mut bootstrapped_processes =
+        fs::File::create(format!("{}/src/bootstrapped_processes.rs", pwd.display(),)).unwrap();
+    writeln!(
+        bootstrapped_processes,
+        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &'static [u8])] = &[",
+    )
+    .unwrap();
     let modules_dir = format!("{}/modules", pwd.display());
     for entry in std::fs::read_dir(modules_dir).unwrap() {
         let entry_path = entry.unwrap().path();
@@ -174,12 +192,9 @@ fn main() {
         }
 
         // After processing all sub-apps, zip the parent's pkg/ directory
-        let writer = std::fs::File::create(format!(
-            "{}/target/{}.zip",
-            pwd.display(),
-            entry_path.file_name().unwrap().to_str().unwrap()
-        ))
-        .unwrap();
+        let zip_filename = format!("{}.zip", entry_path.file_name().unwrap().to_str().unwrap(),);
+        let zip_path = format!("{}/target/{}", pwd.display(), zip_filename,);
+        let writer = std::fs::File::create(&zip_path).unwrap();
         let options = zip::write::FileOptions::default()
             .compression_method(zip::CompressionMethod::Stored)
             .unix_permissions(0o755);
@@ -205,5 +220,14 @@ fn main() {
             }
         }
         zip.finish().unwrap();
+
+        // Add zip bytes to bootstrapped_processes.rs
+        writeln!(
+            bootstrapped_processes,
+            "    (\"{}\", include_bytes!(\"{}\")),",
+            zip_filename, zip_path,
+        )
+        .unwrap();
     }
+    writeln!(bootstrapped_processes, "];").unwrap();
 }

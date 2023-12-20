@@ -7,13 +7,15 @@ use thiserror::Error;
 lazy_static::lazy_static! {
     pub static ref ENCRYPTOR_PROCESS_ID: ProcessId = ProcessId::new(Some("encryptor"), "sys", "uqbar");
     pub static ref ETH_RPC_PROCESS_ID: ProcessId = ProcessId::new(Some("eth_rpc"), "sys", "uqbar");
-    pub static ref FILESYSTEM_PROCESS_ID: ProcessId = ProcessId::new(Some("filesystem"), "sys", "uqbar");
     pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "sys", "uqbar");
     pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "sys", "uqbar");
     pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "sys", "uqbar");
     pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "uqbar");
     pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "sys", "uqbar");
     pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "sys", "uqbar");
+    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "sys", "uqbar");
+    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "sys", "uqbar");
+    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "sys", "uqbar");
 }
 
 //
@@ -66,13 +68,13 @@ pub struct PackageId {
 }
 
 impl PackageId {
-    pub fn _new(package_name: &str, publisher_node: &str) -> Self {
+    pub fn new(package_name: &str, publisher_node: &str) -> Self {
         PackageId {
             package_name: package_name.into(),
             publisher_node: publisher_node.into(),
         }
     }
-    pub fn _from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
         // split string on colons into 2 segments
         let mut segments = input.split(':');
         let package_name = segments
@@ -428,18 +430,54 @@ pub enum SendErrorKind {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum OnPanic {
+pub enum OnExit {
     None,
     Restart,
     Requests(Vec<(Address, Request, Option<Payload>)>),
 }
 
-impl OnPanic {
+impl OnExit {
     pub fn is_restart(&self) -> bool {
         match self {
-            OnPanic::None => false,
-            OnPanic::Restart => true,
-            OnPanic::Requests(_) => false,
+            OnExit::None => false,
+            OnExit::Restart => true,
+            OnExit::Requests(_) => false,
+        }
+    }
+
+    pub fn en_wit(&self) -> wit::OnExit {
+        match self {
+            OnExit::None => wit::OnExit::None,
+            OnExit::Restart => wit::OnExit::Restart,
+            OnExit::Requests(reqs) => wit::OnExit::Requests(
+                reqs.iter()
+                    .map(|(address, request, payload)| {
+                        (
+                            address.en_wit(),
+                            en_wit_request(request.clone()),
+                            en_wit_payload(payload.clone()),
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    pub fn de_wit(wit: wit::OnExit) -> Self {
+        match wit {
+            wit::OnExit::None => OnExit::None,
+            wit::OnExit::Restart => OnExit::Restart,
+            wit::OnExit::Requests(reqs) => OnExit::Requests(
+                reqs.into_iter()
+                    .map(|(address, request, payload)| {
+                        (
+                            Address::de_wit(address),
+                            de_wit_request(request),
+                            de_wit_payload(payload),
+                        )
+                    })
+                    .collect(),
+            ),
         }
     }
 }
@@ -585,23 +623,6 @@ pub fn en_wit_send_error_kind(kind: SendErrorKind) -> wit::SendErrorKind {
     }
 }
 
-pub fn de_wit_on_panic(wit: wit::OnPanic) -> OnPanic {
-    match wit {
-        wit::OnPanic::None => OnPanic::None,
-        wit::OnPanic::Restart => OnPanic::Restart,
-        wit::OnPanic::Requests(reqs) => OnPanic::Requests(
-            reqs.into_iter()
-                .map(|(address, request, payload)| {
-                    (
-                        Address::de_wit(address),
-                        de_wit_request(request),
-                        de_wit_payload(payload),
-                    )
-                })
-                .collect(),
-        ),
-    }
-}
 //
 // END SYNC WITH process_lib
 //
@@ -715,8 +736,8 @@ pub struct IdentityTransaction {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProcessMetadata {
     pub our: Address,
-    pub wasm_bytes_handle: u128,
-    pub on_panic: OnPanic,
+    pub wasm_bytes_handle: String,
+    pub on_exit: OnExit,
     pub public: bool,
 }
 
@@ -756,10 +777,11 @@ pub struct WrappedSendError {
     pub error: SendError,
 }
 
-/// A terminal printout. Verbosity level is from low to high, and for
-/// now, only 0 and 1 are used. Level 0 is always printed, level 1 is
-/// only printed if the terminal is in verbose mode. Numbers greater
-/// than 1 are reserved for future use and will be ignored for now.
+/// A terminal printout. Verbosity level is from low to high.
+/// - `0`: always printed
+/// - `1`: verbose, used for debugging
+/// - `2`: very verbose: shows runtime information
+/// - `3`: very verbose: shows every event in event loop
 pub struct Printout {
     pub verbosity: u8,
     pub content: String,
@@ -790,8 +812,8 @@ pub enum KernelCommand {
     /// for the new process if `public` is false.
     InitializeProcess {
         id: ProcessId,
-        wasm_bytes_handle: u128,
-        on_panic: OnPanic,
+        wasm_bytes_handle: String,
+        on_exit: OnExit,
         initial_capabilities: HashSet<SignedCapability>,
         public: bool,
     },
@@ -845,10 +867,8 @@ pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistedProcess {
-    pub wasm_bytes_handle: u128,
-    // pub drive: String,
-    // pub full_path: String,
-    pub on_panic: OnPanic,
+    pub wasm_bytes_handle: String,
+    pub on_exit: OnExit,
     pub capabilities: HashSet<Capability>,
     pub public: bool, // marks if a process allows messages from any process
 }
@@ -869,6 +889,7 @@ pub struct PackageMetadata {
     pub package: String,
     pub publisher: String,
     pub version: PackageVersion,
+    pub wit_version: Option<(u32, u32, u32)>,
     pub description: Option<String>,
     pub website: Option<String>,
 }
@@ -878,214 +899,266 @@ pub struct PackageMetadata {
 pub struct PackageManifestEntry {
     pub process_name: String,
     pub process_wasm_path: String,
-    pub on_panic: OnPanic,
+    pub on_exit: OnExit,
     pub request_networking: bool,
-    pub request_messaging: Option<Vec<String>>,
-    pub grant_messaging: Option<Vec<String>>,
+    pub request_messaging: Option<Vec<serde_json::Value>>,
+    pub grant_messaging: Option<Vec<serde_json::Value>>,
     pub public: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum FsAction {
-    Write(Option<u128>),
-    WriteOffset((u128, u64)),
-    Append(Option<u128>),
-    Read(u128),
-    ReadChunk(ReadChunkRequest),
-    Delete(u128),
-    Length(u128),
-    SetLength((u128, u64)),
+pub enum StateAction {
     GetState(ProcessId),
     SetState(ProcessId),
     DeleteState(ProcessId),
+    Backup,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct ReadChunkRequest {
-    pub file: u128,
-    pub start: u64,
-    pub length: u64,
-}
-
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub enum FsResponse {
-    Write(u128),
-    Read(u128),
-    ReadChunk(u128), //  TODO: remove?
-    Append(u128),
-    Delete(u128),
-    Length(u64),
+pub enum StateResponse {
     GetState,
     SetState,
-}
-
-#[derive(Debug)]
-pub struct S3Config {
-    pub access_key: String,
-    pub secret_key: String,
-    pub region: String,
-    pub bucket: String,
-    pub endpoint: String,
-}
-
-#[derive(Debug)]
-pub struct FsConfig {
-    pub s3_config: Option<S3Config>,
-    pub mem_buffer_limit: usize,
-    pub read_cache_limit: usize,
-    pub chunk_size: usize,
-    pub flush_to_cold_interval: usize,
-    pub encryption: bool,
-    pub cloud_enabled: bool,
-    // pub flush_to_wal_interval: usize,
+    DeleteState,
+    Backup,
+    Err(StateError),
 }
 
 #[derive(Error, Debug, Serialize, Deserialize)]
-pub enum FsError {
-    #[error("fs: Bytes payload required for {action}.")]
+pub enum StateError {
+    #[error("kernel_state: rocksdb internal error: {error}")]
+    RocksDBError { action: String, error: String },
+    #[error("kernel_state: startup error")]
+    StartupError { action: String },
+    #[error("kernel_state: bytes payload required for {action}")]
     BadBytes { action: String },
-    #[error(
-        "fs: JSON payload could not be parsed to FsAction: {:?}, error: {:?}.",
-        json,
-        error
-    )]
-    BadJson { json: String, error: String },
-    #[error("fs: No JSON payload.")]
-    NoJson,
-    #[error("fs: Read failed to file {file}: {error}.")]
-    ReadFailed { file: u128, error: String },
-    #[error("fs: Write failed to file {file}: {error}.")]
-    WriteFailed { file: u128, error: String },
-    #[error("fs: file not found: {file}")]
-    NotFound { file: u128 },
-    #[error("fs: S3 error: {error}")]
-    S3Error { error: String },
-    #[error("fs: IO error: {error}")]
+    #[error("kernel_state: bad request error: {error}")]
+    BadRequest { error: String },
+    #[error("kernel_state: Bad JSON payload: {error}")]
+    BadJson { error: String },
+    #[error("kernel_state: state not found for ProcessId {process_id}")]
+    NotFound { process_id: ProcessId },
+    #[error("kernel_state: IO error: {error}")]
     IOError { error: String },
-    #[error("fs: Encryption error: {error}")]
-    EncryptionError { error: String },
-    #[error("fs: Limit error: {error}")]
-    LimitError { error: String },
-    #[error("fs: memory buffer error: {error}")]
-    MemoryBufferError { error: String },
-    #[error("fs: length operation error: {error}")]
-    LengthError { error: String },
-    #[error("fs: creating fs dir failed at path: {path}: {error}")]
-    CreateInitialDirError { path: String, error: String },
 }
 
 #[allow(dead_code)]
-impl FsError {
+impl StateError {
     pub fn kind(&self) -> &str {
         match *self {
-            FsError::BadBytes { .. } => "BadBytes",
-            FsError::BadJson { .. } => "BadJson",
-            FsError::NoJson { .. } => "NoJson",
-            FsError::ReadFailed { .. } => "ReadFailed",
-            FsError::WriteFailed { .. } => "WriteFailed",
-            FsError::S3Error { .. } => "S3Error",
-            FsError::IOError { .. } => "IOError",
-            FsError::EncryptionError { .. } => "EncryptionError",
-            FsError::LimitError { .. } => "LimitError",
-            FsError::MemoryBufferError { .. } => "MemoryBufferError",
-            FsError::NotFound { .. } => "NotFound",
-            FsError::LengthError { .. } => "LengthError",
-            FsError::CreateInitialDirError { .. } => "CreateInitialDirError",
+            StateError::RocksDBError { .. } => "RocksDBError",
+            StateError::StartupError { .. } => "StartupError",
+            StateError::BadBytes { .. } => "BadBytes",
+            StateError::BadRequest { .. } => "BadRequest",
+            StateError::BadJson { .. } => "NoJson",
+            StateError::NotFound { .. } => "NotFound",
+            StateError::IOError { .. } => "IOError",
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VfsRequest {
-    pub drive: String,
+    pub path: String,
     pub action: VfsAction,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsAction {
-    New,
-    Add {
-        full_path: String,
-        entry_type: AddEntryType,
-    },
-    Rename {
-        full_path: String,
-        new_full_path: String,
-    },
-    Delete(String),
-    WriteOffset {
-        full_path: String,
-        offset: u64,
-    },
-    Append(String),
-    SetSize {
-        full_path: String,
-        size: u64,
-    },
-    GetPath(u128),
-    GetHash(String),
-    GetEntry(String),
-    GetFileChunk {
-        full_path: String,
-        offset: u64,
-        length: u64,
-    },
-    GetEntryLength(String),
+    CreateDrive,
+    CreateDir,
+    CreateDirAll,
+    CreateFile,
+    OpenFile,
+    CloseFile,
+    WriteAll,
+    Write,
+    ReWrite,
+    WriteAt(u64),
+    Append,
+    SyncAll,
+    Read,
+    ReadDir,
+    ReadToEnd,
+    ReadExact(u64),
+    ReadToString,
+    Seek(SeekFrom),
+    RemoveFile,
+    RemoveDir,
+    RemoveDirAll,
+    Rename(String),
+    AddZip,
+    Len,
+    SetLen(u64),
+    Hash,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum AddEntryType {
-    Dir,
-    NewFile,                     //  add a new file to fs and add name in vfs
-    ExistingFile { hash: u128 }, //  link an existing file in fs to a new name in vfs
-    ZipArchive,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum GetEntryType {
-    Dir,
-    File,
+pub enum SeekFrom {
+    Start(u64),
+    End(i64),
+    Current(i64),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum VfsResponse {
     Ok,
     Err(VfsError),
-    GetPath(Option<String>),
-    GetHash(Option<u128>),
-    GetEntry {
-        // file bytes in payload, if entry was a file
-        is_file: bool,
-        children: Vec<String>,
-    },
-    GetFileChunk, // chunk in payload, if file exists
-    GetEntryLength(Option<u64>),
+    Read,
+    ReadDir(Vec<String>),
+    ReadToString(String),
+    Len(u64),
+    Hash([u8; 32]),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum VfsError {
-    BadJson,
-    BadPayload,
-    BadDriveName,
-    BadDescriptor,
-    NoCap,
-    EntryNotFound,
-    PersistError,
-    InternalError, // String
+    #[error("vfs: No capability for action {action} at path {path}")]
+    NoCap { action: String, path: String },
+    #[error("vfs: Bytes payload required for {action} at path {path}")]
+    BadBytes { action: String, path: String },
+    #[error("vfs: bad request error: {error}")]
+    BadRequest { error: String },
+    #[error("vfs: error parsing path: {path}, error: {error}")]
+    ParseError { error: String, path: String },
+    #[error("vfs: IO error: {error}, at path {path}")]
+    IOError { error: String, path: String },
+    #[error("vfs: kernel capability channel error: {error}")]
+    CapChannelFail { error: String },
+    #[error("vfs: Bad JSON payload: {error}")]
+    BadJson { error: String },
+    #[error("vfs: File not found at path {path}")]
+    NotFound { path: String },
+    #[error("vfs: Creating directory failed at path: {path}: {error}")]
+    CreateDirError { path: String, error: String },
 }
 
 #[allow(dead_code)]
 impl VfsError {
     pub fn kind(&self) -> &str {
         match *self {
-            VfsError::BadJson => "BadJson",
-            VfsError::BadPayload => "BadPayload",
-            VfsError::BadDriveName => "BadDriveName",
-            VfsError::BadDescriptor => "BadDescriptor",
-            VfsError::NoCap => "NoCap",
-            VfsError::EntryNotFound => "EntryNotFound",
-            VfsError::PersistError => "PersistError",
-            VfsError::InternalError => "InternalError",
+            VfsError::NoCap { .. } => "NoCap",
+            VfsError::BadBytes { .. } => "BadBytes",
+            VfsError::BadRequest { .. } => "BadRequest",
+            VfsError::ParseError { .. } => "ParseError",
+            VfsError::IOError { .. } => "IOError",
+            VfsError::CapChannelFail { .. } => "CapChannelFail",
+            VfsError::BadJson { .. } => "NoJson",
+            VfsError::NotFound { .. } => "NotFound",
+            VfsError::CreateDirError { .. } => "CreateDirError",
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KvRequest {
+    pub package_id: PackageId,
+    pub db: String,
+    pub action: KvAction,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum KvAction {
+    New,
+    Set { key: Vec<u8>, tx_id: Option<u64> },
+    Delete { key: Vec<u8>, tx_id: Option<u64> },
+    Get { key: Vec<u8> },
+    BeginTx,
+    Commit { tx_id: u64 },
+    Backup,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KvResponse {
+    Ok,
+    BeginTx { tx_id: u64 },
+    Get { key: Vec<u8> },
+    Err { error: KvError },
+}
+
+#[derive(Debug, Serialize, Deserialize, Error)]
+pub enum KvError {
+    #[error("kv: DbDoesNotExist")]
+    NoDb,
+    #[error("kv: DbAlreadyExists")]
+    DbAlreadyExists,
+    #[error("kv: KeyNotFound")]
+    KeyNotFound,
+    #[error("kv: no Tx found")]
+    NoTx,
+    #[error("kv: No capability: {error}")]
+    NoCap { error: String },
+    #[error("kv: rocksdb internal error: {error}")]
+    RocksDBError { action: String, error: String },
+    #[error("kv: input bytes/json/key error: {error}")]
+    InputError { error: String },
+    #[error("kv: IO error: {error}")]
+    IOError { error: String },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SqliteRequest {
+    pub package_id: PackageId,
+    pub db: String,
+    pub action: SqliteAction,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SqliteAction {
+    New,
+    Write {
+        statement: String,
+        tx_id: Option<u64>,
+    },
+    Read {
+        query: String,
+    },
+    BeginTx,
+    Commit {
+        tx_id: u64,
+    },
+    Backup,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SqliteResponse {
+    Ok,
+    Read,
+    BeginTx { tx_id: u64 },
+    Err { error: SqliteError },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum SqlValue {
+    Integer(i64),
+    Real(f64),
+    Text(String),
+    Blob(Vec<u8>),
+    Boolean(bool),
+    Null,
+}
+
+#[derive(Debug, Serialize, Deserialize, Error)]
+pub enum SqliteError {
+    #[error("sqlite: DbDoesNotExist")]
+    NoDb,
+    #[error("sqlite: DbAlreadyExists")]
+    DbAlreadyExists,
+    #[error("sqlite: NoTx")]
+    NoTx,
+    #[error("sqlite: No capability: {error}")]
+    NoCap { error: String },
+    #[error("sqlite: UnexpectedResponse")]
+    UnexpectedResponse,
+    #[error("sqlite: NotAWriteKeyword")]
+    NotAWriteKeyword,
+    #[error("sqlite: NotAReadKeyword")]
+    NotAReadKeyword,
+    #[error("sqlite: Invalid Parameters")]
+    InvalidParameters,
+    #[error("sqlite: IO error: {error}")]
+    IOError { error: String },
+    #[error("sqlite: rusqlite error: {error}")]
+    RusqliteError { error: String },
+    #[error("sqlite: input bytes/json/key error: {error}")]
+    InputError { error: String },
 }

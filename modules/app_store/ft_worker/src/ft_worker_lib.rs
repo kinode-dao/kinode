@@ -55,7 +55,7 @@ pub fn spawn_transfer(
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
         "/ft_worker.wasm".into(),
-        &OnPanic::None, // can set message-on-panic here
+        &OnExit::None, // can set message-on-panic here
         &Capabilities::All,
         false, // not public
     ) else {
@@ -106,7 +106,7 @@ pub fn spawn_receive_transfer(our: &Address, ipc: &[u8]) {
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
         "/ft_worker.wasm".into(),
-        &OnPanic::None, // can set message-on-panic here
+        &OnExit::None, // can set message-on-panic here
         &Capabilities::All,
         false, // not public
     ) else {

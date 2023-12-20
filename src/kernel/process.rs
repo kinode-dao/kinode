@@ -213,7 +213,7 @@ impl ProcessState {
                 let _ = self
                     .send_to_terminal
                     .send(t::Printout {
-                        verbosity: 1,
+                        verbosity: 2,
                         content: format!("kernel: dropping Response {:?}", response),
                     })
                     .await;
@@ -354,19 +354,13 @@ impl ProcessState {
             println!("need non-None prompting_message to handle Response");
             return None;
         };
-        match &prompting_message.rsvp {
-            None => {
-                let _ = self
-                    .send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 1,
-                        content: "kernel: prompting_message has no rsvp".into(),
-                    })
-                    .await;
-                None
-            }
-            Some(address) => Some((prompting_message.id, address.clone())),
-        }
+        Some((
+            prompting_message.id,
+            match &prompting_message.rsvp {
+                None => prompting_message.source.clone(),
+                Some(address) => address.clone(),
+            },
+        ))
     }
 }
 
@@ -419,7 +413,7 @@ pub async fn make_process_loop(
     }
 
     let component =
-        Component::new(&engine, wasm_bytes).expect("make_process_loop: couldn't read file");
+        Component::new(&engine, wasm_bytes.clone()).expect("make_process_loop: couldn't read file");
 
     let mut linker = Linker::new(&engine);
     Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
@@ -476,7 +470,7 @@ pub async fn make_process_loop(
         Ok(()) => {
             let _ = send_to_terminal
                 .send(t::Printout {
-                    verbosity: 1,
+                    verbosity: 2,
                     content: format!("process {} returned without error", metadata.our.process,),
                 })
                 .await;
@@ -540,11 +534,11 @@ pub async fn make_process_loop(
             .await
             .expect("event loop: fatal: sender died");
 
-        // fulfill the designated OnPanic behavior
-        match metadata.on_panic {
-            t::OnPanic::None => {}
+        // fulfill the designated OnExit behavior
+        match metadata.on_exit {
+            t::OnExit::None => {}
             // if restart, tell ourselves to init the app again, with same capabilities
-            t::OnPanic::Restart => {
+            t::OnExit::Restart => {
                 send_to_loop
                     .send(t::KernelMessage {
                         id: rand::random(),
@@ -557,14 +551,17 @@ pub async fn make_process_loop(
                             ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                                 id: metadata.our.process.clone(),
                                 wasm_bytes_handle: metadata.wasm_bytes_handle,
-                                on_panic: metadata.on_panic,
+                                on_exit: metadata.on_exit,
                                 initial_capabilities,
                                 public: metadata.public,
                             })
                             .unwrap(),
                             metadata: None,
                         }),
-                        payload: None,
+                        payload: Some(t::Payload {
+                            mime: None,
+                            bytes: wasm_bytes,
+                        }),
                         signed_capabilities: None,
                     })
                     .await
@@ -572,7 +569,7 @@ pub async fn make_process_loop(
             }
             // if requests, fire them
             // even in death, a process can only message processes it has capabilities for
-            t::OnPanic::Requests(requests) => {
+            t::OnExit::Requests(requests) => {
                 for (address, mut request, payload) in requests {
                     request.expects_response = None;
                     let (tx, rx) = tokio::sync::oneshot::channel();

@@ -16,6 +16,12 @@ use tokio_tungstenite::{
 mod types;
 mod utils;
 
+// Re-export for testing.
+#[cfg(feature = "simulation-mode")]
+mod mock;
+#[cfg(feature = "simulation-mode")]
+pub use mock::mock_client;
+
 // only used in connection initialization, otherwise, nacks and Responses are only used for "timeouts"
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
@@ -148,7 +154,7 @@ async fn indirect_networking(
                         Ok(()) => continue,
                         Err(e) => {
                             print_tx.send(Printout {
-                                verbosity: 0,
+                                verbosity: 2,
                                 content: format!("net: error handling local message: {e}")
                             }).await?;
                             continue
@@ -316,7 +322,7 @@ async fn direct_networking(
                         Ok(()) => continue,
                         Err(e) => {
                             print_tx.send(Printout {
-                                verbosity: 0,
+                                verbosity: 2,
                                 content: format!("net: error handling local message: {}", e)
                             }).await?;
                             continue;
@@ -399,14 +405,14 @@ async fn direct_networking(
                             Ok(Ok(res)) => res,
                             Ok(Err(e)) => {
                                 print_tx.send(Printout {
-                                    verbosity: 0,
+                                    verbosity: 2,
                                     content: format!("net: recv_connection failed: {e}"),
                                 }).await?;
                                 continue;
                             }
                             Err(_e) => {
                                 print_tx.send(Printout {
-                                    verbosity: 0,
+                                    verbosity: 2,
                                     content: "net: recv_connection timed out".into(),
                                 }).await?;
                                 continue;

@@ -23,7 +23,7 @@ pub fn encode_keyfile(
     password: String,
     username: String,
     routers: Vec<String>,
-    networking_key: Document,
+    networking_key: &[u8],
     jwt: Vec<u8>,
     file_key: Vec<u8>,
 ) -> Vec<u8> {
@@ -49,9 +49,7 @@ pub fn encode_keyfile(
     let jwt_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     let file_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
-    let keyciphertext: Vec<u8> = cipher
-        .encrypt(&network_nonce, networking_key.as_ref())
-        .unwrap();
+    let keyciphertext: Vec<u8> = cipher.encrypt(&network_nonce, networking_key).unwrap();
     let jwtciphertext: Vec<u8> = cipher.encrypt(&jwt_nonce, jwt.as_ref()).unwrap();
     let fileciphertext: Vec<u8> = cipher.encrypt(&file_nonce, file_key.as_ref()).unwrap();
 
@@ -66,9 +64,9 @@ pub fn encode_keyfile(
     .unwrap()
 }
 
-pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'static str> {
+pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'static str> {
     let (username, routers, salt, key_enc, jwt_enc, file_enc) =
-        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(&keyfile)
+        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
             .map_err(|_| "failed to deserialize keyfile")?;
 
     // rederive disk key
@@ -112,9 +110,9 @@ pub fn decode_keyfile(keyfile: Vec<u8>, password: &str) -> Result<Keyfile, &'sta
     })
 }
 
-pub fn get_username_and_routers(keyfile: Vec<u8>) -> Result<(String, Vec<String>), &'static str> {
+pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>), &'static str> {
     let (username, routers, _salt, _key_enc, _jwt_enc, _file_enc) =
-        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(&keyfile)
+        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
             .map_err(|_| "failed to deserialize keyfile")?;
 
     Ok((username, routers))

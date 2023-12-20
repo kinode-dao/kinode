@@ -1,4 +1,6 @@
 target/
+wit/
+uqbar
 .vscode
 .app-signing
 .DS_Store
@@ -11,4 +13,4 @@ modules/**/wit
 target.wasm
 world
 .env
-modules/sqlite/sqlite_worker/.cargo/config.toml
+src/bootstrapped_processes.rs

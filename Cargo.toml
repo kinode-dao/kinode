@@ -1,23 +1,26 @@
 [package]
 name = "uqbar"
-version = "0.3.0"
+authors = ["UqbarDAO"]
+version = "0.4.0"
 edition = "2021"
-description = "a general-purpose sovereign cloud computing platform"
+description = "A general-purpose sovereign cloud computing platform"
 homepage = "https://uqbar.network"
 repository = "https://github.com/uqbar-dao/uqbar"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
+reqwest = { version = "0.11.22", features = ["blocking"] }
 sha2 = "0.10"
 walkdir = "2.4"
 zip = "0.6"
 
+[features]
+simulation-mode = []
 
 [dependencies]
 aes-gcm = "0.10.2"
 anyhow = "1.0.71"
-async-recursion = "1.0.4"
 async-trait = "0.1.71"
 base64 = "0.13"
 bincode = "1.3.3"
@@ -26,10 +29,10 @@ bytes = "1.4.0"
 cap-std = "2.0.0"
 chacha20poly1305 = "0.10.1"
 chrono = "0.4.31"
+clap = { version = "4.4", features = ["derive"] }
 crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"] }
 dashmap = "5.5.3"
 digest = "0.10"
-dotenv = "0.15.0"
 elliptic-curve = { version = "0.13.5", features = ["ecdh"] }
 ethers = "2.0"
 ethers-providers = "2.0.9"
@@ -53,27 +56,20 @@ reqwest = "0.11.18"
 ring = "0.16.20"
 rmp-serde = "1.1.2"
 route-recognizer = "0.3.1"
-rsa = "0.9"
-rusoto_core = "0.48.0"
-rusoto_s3 = "0.48.0"
-rusoto_credential = "0.48.0"
-serde = {version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_urlencoded = "0.7"
 sha2 = "0.10"
 snow = { version = "0.9.3", features = ["ring-resolver"] }
+static_dir = "0.2.0"
 thiserror = "1.0"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 tokio-tungstenite = "0.20.1"
 url = "2.4.1"
-uqbar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "e53c124" }
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"
-wasmtime = "14.0.4"
-wasmtime-wasi = "14.0.4"
+wasmtime = "15.0.1"
+wasmtime-wasi = "15.0.1"
 zip = "0.6"
-lru-mem = "0.3.0"
-clap = "4.4.8"
-
-[features]
-llm = []
+rocksdb = { version = "0.21.0", features = ["multi-threaded-cf"] }
+rusqlite = { version = "0.30.0", features = ["bundled"] }

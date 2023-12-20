@@ -2,71 +2,143 @@
 
 use crate::types::*;
 use anyhow::Result;
-use clap::{arg, Command};
+use clap::{arg, value_parser, Command};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::{fs, time::timeout};
 
+#[cfg(feature = "simulation-mode")]
+use ring::{rand::SystemRandom, signature, signature::KeyPair};
+
 mod eth_rpc;
-mod filesystem;
 mod http;
 mod kernel;
 mod keygen;
+mod kv;
 mod net;
 mod register;
+mod sqlite;
+mod state;
 mod terminal;
 mod timer;
 mod types;
 mod vfs;
 
-// extensions
-#[cfg(feature = "llm")]
-mod llm;
-
 const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
 const TERMINAL_CHANNEL_CAPACITY: usize = 32;
 const WEBSOCKET_SENDER_CHANNEL_CAPACITY: usize = 32;
-const FILESYSTEM_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
-#[cfg(feature = "llm")]
-const LLM_CHANNEL_CAPACITY: usize = 32;
+const KV_CHANNEL_CAPACITY: usize = 1_000;
+const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// This can and should be an environment variable / setting. It configures networking
+/// Tshis can and should be an environment variable / setting. It configures networking
 /// such that indirect nodes always use routers, even when target is a direct node,
 /// such that only their routers can ever see their physical networking details.
 const REVEAL_IP: bool = true;
 
+async fn serve_register_fe(
+    home_directory_path: &str,
+    our_ip: String,
+    http_server_port: u16,
+    rpc_url: String,
+) -> (Identity, Vec<u8>, Keyfile) {
+    // check if we have keys saved on disk, encrypted
+    // if so, prompt user for "password" to decrypt with
+
+    // once password is received, use to decrypt local keys file,
+    // and pass the keys into boot process as is done in registration.
+
+    // NOTE: when we log in, we MUST check the PKI to make sure our
+    // information matches what we think it should be. this includes
+    // username, networking key, and routing info.
+    // if any do not match, we should prompt user to create a "transaction"
+    // that updates their PKI info on-chain.
+    let (kill_tx, kill_rx) = oneshot::channel::<bool>();
+
+    let disk_keyfile: Option<Vec<u8>> = fs::read(format!("{}/.keys", home_directory_path))
+        .await
+        .ok();
+
+    let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
+    let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
+        _ = register::register(tx, kill_rx, our_ip, http_server_port, rpc_url, disk_keyfile) => {
+            panic!("registration failed")
+        }
+        Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
+            (our, decoded_keyfile, encoded_keyfile)
+        }
+    };
+
+    fs::write(
+        format!("{}/.keys", home_directory_path),
+        encoded_keyfile.clone(),
+    )
+    .await
+    .unwrap();
+
+    let _ = kill_tx.send(true);
+
+    (our, encoded_keyfile, decoded_keyfile)
+}
+
 #[tokio::main]
 async fn main() {
-    let matches = Command::new("Uqbar")
-        .version("0.3.0")
-        .author("Uqbar DAO")
+    let app = Command::new("Uqbar")
+        .version(VERSION)
+        .author("Uqbar DAO: https://github.com/uqbar-dao")
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
-        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true))
-        .arg(arg!(--llm <LLM_URL> "LLM endpoint"))
-        .get_matches();
-    let home_directory_path = matches.get_one::<String>("home").unwrap();
-    let rpc_url = matches.get_one::<String>("rpc").unwrap();
-    let llm_url = matches.get_one::<String>("llm");
+        .arg(
+            arg!(--port <PORT> "First port to try binding")
+                .default_value("8080")
+                .value_parser(value_parser!(u16)),
+        );
 
-    // create home directory if it does not already exist
+    #[cfg(not(feature = "simulation-mode"))]
+    let app = app.arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true));
+
+    #[cfg(feature = "simulation-mode")]
+    let app = app
+        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)"))
+        .arg(arg!(--password <PASSWORD> "Networking password"))
+        .arg(arg!(--"fake-node-name" <NAME> "Name of fake node to boot"))
+        .arg(
+            arg!(--"network-router-port" <PORT> "Network router port")
+                .default_value("9001")
+                .value_parser(value_parser!(u16)),
+        );
+
+    let matches = app.get_matches();
+
+    let home_directory_path = matches.get_one::<String>("home").unwrap();
+    let port = matches.get_one::<u16>("port").unwrap().clone();
+
+    #[cfg(not(feature = "simulation-mode"))]
+    let rpc_url = matches.get_one::<String>("rpc").unwrap();
+
+    #[cfg(feature = "simulation-mode")]
+    let (rpc_url, password, network_router_port, fake_node_name) = (
+        matches.get_one::<String>("rpc"),
+        matches.get_one::<String>("password"),
+        matches
+            .get_one::<u16>("network-router-port")
+            .unwrap()
+            .clone(),
+        matches.get_one::<String>("fake-node-name"),
+    );
+
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {:?}", e);
     }
-
-    #[cfg(not(feature = "llm"))]
-    if let Some(llm_url) = llm_url {
-        panic!("You passed in --llm {:?} but you do not have the llm feature enabled. Please re-run with `--features llm`", llm_url);
-    }
+    println!("home at {}\r", home_directory_path);
 
     // kernel receives system messages via this channel, all other modules send messages
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
@@ -83,9 +155,15 @@ async fn main() {
     // websocket sender receives send messages via this channel, kernel send messages
     let (net_message_sender, net_message_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(WEBSOCKET_SENDER_CHANNEL_CAPACITY);
-    // filesystem receives request messages via this channel, kernel sends messages
-    let (fs_message_sender, fs_message_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(FILESYSTEM_CHANNEL_CAPACITY);
+    // kernel_state sender and receiver
+    let (state_sender, state_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(VFS_CHANNEL_CAPACITY);
+    // kv sender and receiver
+    let (kv_sender, kv_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(KV_CHANNEL_CAPACITY);
+    // sqlite sender and receiver
+    let (sqlite_sender, sqlite_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(SQLITE_CHANNEL_CAPACITY);
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
@@ -102,75 +180,6 @@ async fn main() {
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
-    // optional llm extension
-    #[cfg(feature = "llm")]
-    let (llm_sender, llm_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(LLM_CHANNEL_CAPACITY);
-
-    //  fs config in .env file (todo add -- arguments cleanly (with clap?))
-    dotenv::dotenv().ok();
-
-    let mem_buffer_limit = env::var("MEM_BUFFER_LIMIT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1024 * 1024 * 5); // 5mb default
-
-    let read_cache_limit = env::var("READ_CACHE_LIMIT")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1024 * 1024 * 5); // 5mb default
-
-    let chunk_size = env::var("CHUNK_SIZE")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1024 * 256); // 256kb default
-
-    let flush_to_cold_interval = env::var("FLUSH_TO_COLD_INTERVAL")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(60); // 60s default
-
-    let encryption = env::var("ENCRYPTION")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(true); // default true
-
-    let cloud_enabled = env::var("CLOUD_ENABLED")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(false); // default false
-
-    let s3_config = if let (Ok(access_key), Ok(secret_key), Ok(region), Ok(bucket), Ok(endpoint)) = (
-        env::var("S3_ACCESS_KEY"),
-        env::var("S3_SECRET_KEY"),
-        env::var("S3_REGION"),
-        env::var("S3_BUCKET"),
-        env::var("S3_ENDPOINT"),
-    ) {
-        Some(S3Config {
-            access_key,
-            secret_key,
-            region,
-            bucket,
-            endpoint,
-        })
-    } else {
-        None
-    };
-
-    let fs_config = FsConfig {
-        s3_config,
-        mem_buffer_limit,
-        read_cache_limit,
-        chunk_size,
-        flush_to_cold_interval,
-        encryption,
-        cloud_enabled,
-    };
-
-    // shutdown signal send and await to fs
-    let (fs_kill_send, fs_kill_recv) = oneshot::channel::<()>();
-    let (fs_kill_confirm_send, fs_kill_confirm_recv) = oneshot::channel::<()>();
 
     println!("finding public IP address...");
     let our_ip: std::net::Ipv4Addr = {
@@ -185,48 +194,126 @@ async fn main() {
         }
     };
 
-    // check if we have keys saved on disk, encrypted
-    // if so, prompt user for "password" to decrypt with
+    let http_server_port = http::utils::find_open_port(port).await.unwrap();
+    if http_server_port != port {
+        let error_message = format!(
+            "uqbar: couldn't bind {}; first available port found {}. Set an available port with `--port` and try again.",
+            port,
+            http_server_port,
+        );
+        println!("{error_message}");
+        panic!("{error_message}");
+    }
+    println!(
+        "login or register at http://localhost:{}\r",
+        http_server_port
+    );
+    #[cfg(not(feature = "simulation-mode"))]
+    let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
+        &home_directory_path,
+        our_ip.to_string(),
+        http_server_port.clone(),
+        rpc_url.clone(),
+    )
+    .await;
+    #[cfg(feature = "simulation-mode")]
+    let (our, encoded_keyfile, decoded_keyfile) = match fake_node_name {
+        None => {
+            match password {
+                None => match rpc_url {
+                    None => panic!(""),
+                    Some(rpc_url) => {
+                        serve_register_fe(
+                            &home_directory_path,
+                            our_ip.to_string(),
+                            http_server_port.clone(),
+                            rpc_url.clone(),
+                        )
+                        .await
+                    }
+                },
+                Some(password) => {
+                    match fs::read(format!("{}/.keys", home_directory_path)).await {
+                        Err(e) => panic!("could not read keyfile: {}", e),
+                        Ok(keyfile) => {
+                            match keygen::decode_keyfile(&keyfile, &password) {
+                                Err(e) => panic!("could not decode keyfile: {}", e),
+                                Ok(decoded_keyfile) => {
+                                    let our = Identity {
+                                        name: decoded_keyfile.username.clone(),
+                                        networking_key: format!(
+                                            "0x{}",
+                                            hex::encode(
+                                                decoded_keyfile
+                                                    .networking_keypair
+                                                    .public_key()
+                                                    .as_ref()
+                                            )
+                                        ),
+                                        ws_routing: None, //  TODO
+                                        allowed_routers: decoded_keyfile.routers.clone(),
+                                    };
+                                    (our, keyfile, decoded_keyfile)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Some(name) => {
+            let password = match password {
+                None => "123".to_string(),
+                Some(password) => password.to_string(),
+            };
+            let (pubkey, networking_keypair) = keygen::generate_networking_key();
 
-    // once password is received, use to decrypt local keys file,
-    // and pass the keys into boot process as is done in registration.
+            let seed = SystemRandom::new();
+            let mut jwt_secret = [0u8, 32];
+            ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
 
-    // NOTE: when we log in, we MUST check the PKI to make sure our
-    // information matches what we think it should be. this includes
-    // username, networking key, and routing info.
-    // if any do not match, we should prompt user to create a "transaction"
-    // that updates their PKI info on-chain.
-    let http_server_port = http::utils::find_open_port(8080).await.unwrap();
-    println!("login or register at http://localhost:{}", http_server_port);
-    let (kill_tx, kill_rx) = oneshot::channel::<bool>();
+            let our = Identity {
+                name: name.clone(),
+                networking_key: pubkey,
+                ws_routing: None,
+                allowed_routers: vec![],
+            };
 
-    let disk_keyfile = match fs::read(format!("{}/.keys", home_directory_path)).await {
-        Ok(keyfile) => keyfile,
-        Err(_) => Vec::new(),
+            let decoded_keyfile = Keyfile {
+                username: name.clone(),
+                routers: vec![],
+                networking_keypair: signature::Ed25519KeyPair::from_pkcs8(
+                    networking_keypair.as_ref(),
+                )
+                .unwrap(),
+                jwt_secret_bytes: jwt_secret.to_vec(),
+                file_key: keygen::generate_file_key(),
+            };
+
+            let encoded_keyfile = keygen::encode_keyfile(
+                password,
+                name.clone(),
+                decoded_keyfile.routers.clone(),
+                networking_keypair.as_ref(),
+                decoded_keyfile.jwt_secret_bytes.clone(),
+                decoded_keyfile.file_key.clone(),
+            );
+
+            fs::write(
+                format!("{}/.keys", home_directory_path),
+                encoded_keyfile.clone(),
+            )
+            .await
+            .unwrap();
+
+            (our, encoded_keyfile, decoded_keyfile)
+        }
     };
-
-    let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
-    let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-        _ = register::register(tx, kill_rx, our_ip.to_string(), http_server_port, rpc_url.clone(), disk_keyfile)
-            => panic!("registration failed"),
-        (our, decoded_keyfile, encoded_keyfile) = async {
-            rx.recv().await.expect("registration failed")
-        } => (our, decoded_keyfile, encoded_keyfile),
-    };
-
-    fs::write(format!("{}/.keys", home_directory_path), encoded_keyfile)
-        .await
-        .unwrap();
 
     // the boolean flag determines whether the runtime module is *public* or not,
     // where public means that any process can always message it.
     #[allow(unused_mut)]
     let mut runtime_extensions = vec![
-        (
-            ProcessId::new(Some("filesystem"), "sys", "uqbar"),
-            fs_message_sender,
-            false,
-        ),
         (
             ProcessId::new(Some("http_server"), "sys", "uqbar"),
             http_server_sender,
@@ -252,31 +339,33 @@ async fn main() {
             vfs_message_sender,
             true,
         ),
+        (
+            ProcessId::new(Some("state"), "sys", "uqbar"),
+            state_sender,
+            true,
+        ),
+        (ProcessId::new(Some("kv"), "sys", "uqbar"), kv_sender, true),
+        (
+            ProcessId::new(Some("sqlite"), "sys", "uqbar"),
+            sqlite_sender,
+            true,
+        ),
     ];
 
     #[cfg(feature = "llm")]
-    {
-        if llm_url.is_none() {
-            panic!("You did not pass in --llm <LLM_URL> but you have the llm feature enabled. Please re-run with `--llm <LLM_URL>`");
-        }
-        runtime_extensions.push((
-            ProcessId::new(Some("llm"), "sys", "uqbar"), // TODO llm:extensions:uqbar ?
-            llm_sender,
-            true,
-        ));
-    }
+    runtime_extensions.push((
+        ProcessId::new(Some("llm"), "sys", "uqbar"), // TODO llm:extensions:uqbar ?
+        llm_sender,
+        true,
+    ));
 
-    let (kernel_process_map, manifest, vfs_messages) = filesystem::load_fs(
+    let (kernel_process_map, db) = state::load_state(
         our.name.clone(),
         home_directory_path.clone(),
-        decoded_keyfile.file_key,
-        fs_config,
         runtime_extensions.clone(),
     )
     .await
-    .expect("fs load failed!");
-
-    let _ = kill_tx.send(true);
+    .expect("state load failed!");
 
     /*
      *  the kernel module will handle our userspace processes and receives
@@ -301,6 +390,7 @@ async fn main() {
         net_message_sender.clone(),
         runtime_extensions,
     ));
+    #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(net::networking(
         our.clone(),
         our_ip.to_string(),
@@ -312,18 +402,41 @@ async fn main() {
         net_message_receiver,
         REVEAL_IP,
     ));
-    tasks.spawn(filesystem::fs_sender(
+    #[cfg(feature = "simulation-mode")]
+    tasks.spawn(net::mock_client(
+        network_router_port,
         our.name.clone(),
-        manifest,
+        kernel_message_sender.clone(),
+        net_message_receiver,
+    ));
+    tasks.spawn(state::state_sender(
+        our.name.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
-        fs_message_receiver,
-        fs_kill_recv,
-        fs_kill_confirm_send,
+        state_receiver,
+        db,
+        home_directory_path.clone(),
+    ));
+    tasks.spawn(kv::kv(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        print_sender.clone(),
+        kv_receiver,
+        caps_oracle_sender.clone(),
+        home_directory_path.clone(),
+    ));
+    tasks.spawn(sqlite::sqlite(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        print_sender.clone(),
+        sqlite_receiver,
+        caps_oracle_sender.clone(),
+        home_directory_path.clone(),
     ));
     tasks.spawn(http::server::http_server(
         our.name.clone(),
         http_server_port,
+        encoded_keyfile,
         decoded_keyfile.jwt_secret_bytes.clone(),
         http_server_receiver,
         kernel_message_sender.clone(),
@@ -341,6 +454,7 @@ async fn main() {
         timer_service_receiver,
         print_sender.clone(),
     ));
+    #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(eth_rpc::eth_rpc(
         our.name.clone(),
         rpc_url.clone(),
@@ -354,18 +468,8 @@ async fn main() {
         print_sender.clone(),
         vfs_message_receiver,
         caps_oracle_sender.clone(),
-        vfs_messages,
+        home_directory_path.clone(),
     ));
-    #[cfg(feature = "llm")]
-    {
-        tasks.spawn(llm::llm(
-            our.name.clone(),
-            kernel_message_sender.clone(),
-            llm_receiver,
-            llm_url.unwrap().to_string(),
-            print_sender.clone(),
-        ));
-    }
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
     let quit_msg: String = tokio::select! {
@@ -390,10 +494,6 @@ async fn main() {
             }
         }
     };
-
-    // shutdown signal to fs for flush
-    let _ = fs_kill_send.send(());
-    let _ = fs_kill_confirm_recv.await;
 
     // gracefully abort all running processes in kernel
     let _ = kernel_message_sender
