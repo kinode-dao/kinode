@@ -886,6 +886,7 @@ pub async fn kernel(
                     // kernel and filesystem can ALWAYS message any local process
                     if kernel_message.source.process != *KERNEL_PROCESS_ID
                         && kernel_message.source.process != *STATE_PROCESS_ID
+                        && kernel_message.source.process != *VFS_PROCESS_ID
                     {
                         let Some(persisted_source) = process_map.get(&kernel_message.source.process) else {
                             continue

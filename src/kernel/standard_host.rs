@@ -185,18 +185,6 @@ impl StandardHost for process::ProcessWasi {
             node: self.process.metadata.our.node.clone(),
             process: VFS_PROCESS_ID.en_wit(),
         };
-        // TODO: note, drive could just be your basic process maybe.
-        let path = format!(
-            "/{}/{}/{}",
-            self.process.metadata.our.process.to_string(),
-            self.process.metadata.our.process.package(),
-            wasm_path
-        );
-        // let our_drive_name = [
-        //     self.process.metadata.our.process.package(),
-        //     self.process.metadata.our.process.publisher(),
-        // ]
-        // .join(":");
         let Ok(Ok((_, hash_response))) = process::send_and_await_response(
             self,
             None,
@@ -205,7 +193,7 @@ impl StandardHost for process::ProcessWasi {
                 inherit: false,
                 expects_response: Some(5),
                 ipc: serde_json::to_vec(&t::VfsRequest {
-                    path: path.clone(),
+                    path: wasm_path.clone(),
                     action: t::VfsAction::Read,
                 })
                 .unwrap(),
@@ -260,7 +248,7 @@ impl StandardHost for process::ProcessWasi {
                 expects_response: Some(5), // TODO evaluate
                 ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                     id: new_process_id.clone(),
-                    wasm_bytes_handle: path,
+                    wasm_bytes_handle: wasm_path,
                     on_exit: t::OnExit::de_wit(on_exit),
                     initial_capabilities: match capabilities {
                         wit::Capabilities::None => HashSet::new(),
