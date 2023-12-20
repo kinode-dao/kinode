@@ -393,6 +393,10 @@ async fn check_caps(
                 });
             }
 
+            if open_kvs.contains_key(&(request.package_id.clone(), request.db.clone())) {
+                return Err(KvError::DbAlreadyExists);
+            }
+
             add_capability(
                 "read",
                 &request.db.to_string(),
