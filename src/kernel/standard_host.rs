@@ -495,7 +495,7 @@ impl StandardHost for process::ProcessWasi {
             }
             let addy = t::Address::de_wit(wit::Address {
                 node: self.process.metadata.our.node.clone(),
-                process: from
+                process: from,
             });
             for cap in prompt.signed_capabilities.as_ref().unwrap() {
                 if cap.issuer == addy && cap.params == params {
