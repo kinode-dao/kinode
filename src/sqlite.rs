@@ -407,10 +407,6 @@ async fn check_caps(
                 });
             }
 
-            if open_dbs.contains_key(&(request.package_id.clone(), request.db.clone())) {
-                return Err(SqliteError::DbAlreadyExists);
-            }
-
             add_capability(
                 "read",
                 &request.db.to_string(),
@@ -427,6 +423,10 @@ async fn check_caps(
                 &mut send_to_caps_oracle,
             )
             .await?;
+
+            if open_dbs.contains_key(&(request.package_id.clone(), request.db.clone())) {
+                return Err(SqliteError::DbAlreadyExists);
+            }
 
             let db_path = format!(
                 "{}/{}/{}",
