@@ -10,9 +10,9 @@ extern crate base64;
 
 // Lazy way to include our static files in the binary. We'll use these to serve
 // our chess app's frontend.
-const CHESS_HTML: &str = include_str!("../pkg/chess.html");
-const CHESS_JS: &str = include_str!("../pkg/index.js");
-const CHESS_CSS: &str = include_str!("../pkg/index.css");
+const CHESS_HTML: &str = include_str!("../../pkg/chess.html");
+const CHESS_JS: &str = include_str!("../../pkg/index.js");
+const CHESS_CSS: &str = include_str!("../../pkg/index.css");
 
 //
 // Our "chess protocol" request/response format. We'll always serialize these
@@ -102,7 +102,7 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
 
 // Boilerplate: generate the wasm bindings for an Uqbar app
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../../../wit",
     world: "process",
     exports: {
         world: Component,
