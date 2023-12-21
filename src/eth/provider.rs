@@ -83,14 +83,13 @@ pub async fn provider(
     send_to_loop.send(open_ws).await;
 
     while let Some(km) = recv_in_client.recv().await {
-
         match km.message {
             Message::Request(request) => {
                 println!("eth request");
-            },
+            }
             Message::Response(response) => {
                 println!("eth response");
-            },
+            }
             _ => {}
         }
 
