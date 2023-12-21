@@ -127,7 +127,6 @@ pub enum HttpServerAction {
     /// logged in separately to the general domain authentication.
     WebSocketSecureBind { path: String, encrypted: bool },
     /// Processes will RECEIVE this kind of request when a client connects to them.
-
     /// If a process does not want this websocket open, they should issue a *request*
     /// containing a [`type@HttpServerAction::WebSocketClose`] message and this channel ID.
     WebSocketOpen { path: String, channel_id: u32 },

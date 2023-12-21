@@ -95,7 +95,7 @@ fn subscribe_to_qns(from_block: u64) -> Vec<u8> {
         "SubscribeEvents": {
             "addresses": [
                 // QNSRegistry on sepolia
-                "0x1C5595336Fd763a81887472D30D6CbD736Acf0E3",
+                "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1",
             ],
             "from_block": from_block,
             "to_block": null,
