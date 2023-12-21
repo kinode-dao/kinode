@@ -11,6 +11,7 @@ use tokio::{fs, time::timeout};
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
+mod eth;
 mod eth_rpc;
 mod http;
 mod kernel;
@@ -31,6 +32,7 @@ const TERMINAL_CHANNEL_CAPACITY: usize = 32;
 const WEBSOCKET_SENDER_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
+const ETH_PROVIDER_CHANNEL_CAPACITY: usize = 32;
 const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
@@ -169,6 +171,8 @@ async fn main() {
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
     let (timer_service_sender, timer_service_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
+    let (eth_provider_sender, eth_provider_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(ETH_PROVIDER_CHANNEL_CAPACITY);
     let (eth_rpc_sender, eth_rpc_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ETH_RPC_CHANNEL_CAPACITY);
     // http client performs http requests on behalf of processes
@@ -330,6 +334,11 @@ async fn main() {
             true,
         ),
         (
+            ProcessId::new(Some("eth"), "sys", "uqbar"),
+            eth_provider_sender,
+            true,
+        ),
+        (
             ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
             eth_rpc_sender,
             true,
@@ -452,6 +461,14 @@ async fn main() {
         our.name.clone(),
         kernel_message_sender.clone(),
         timer_service_receiver,
+        print_sender.clone(),
+    ));
+    #[cfg(feature = "eth")]
+    tasks.spawn(eth::provider::provider(
+        our.name.clone(),
+        rpc_url.clone(),
+        kernel_message_sender.clone(),
+        eth_provider_receiver,
         print_sender.clone(),
     ));
     #[cfg(not(feature = "simulation-mode"))]

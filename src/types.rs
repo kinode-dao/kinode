@@ -6,6 +6,7 @@ use thiserror::Error;
 
 lazy_static::lazy_static! {
     pub static ref ENCRYPTOR_PROCESS_ID: ProcessId = ProcessId::new(Some("encryptor"), "sys", "uqbar");
+    pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "sys", "uqbar");
     pub static ref ETH_RPC_PROCESS_ID: ProcessId = ProcessId::new(Some("eth_rpc"), "sys", "uqbar");
     pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "sys", "uqbar");
     pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "sys", "uqbar");
