@@ -1,5 +1,5 @@
-use crate::types::*;
 use crate::http::types::HttpServerAction;
+use crate::types::*;
 use anyhow::Result;
 use ethers::core::types::Filter;
 use ethers::prelude::Provider;
@@ -67,7 +67,7 @@ pub async fn provider(
         rsvp: None,
         message: Message::Request(Request {
             inherit: false,
-            ipc: serde_json::to_vec::<>(&HttpServerAction::WebSocketBind {
+            ipc: serde_json::to_vec(&HttpServerAction::WebSocketBind {
                 path: "/".to_string(),
                 authenticated: false,
                 encrypted: false,
