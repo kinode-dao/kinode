@@ -17,6 +17,7 @@ zip = "0.6"
 
 [features]
 simulation-mode = []
+eth = []
 
 [dependencies]
 aes-gcm = "0.10.2"
