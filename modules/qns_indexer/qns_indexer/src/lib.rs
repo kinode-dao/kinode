@@ -180,20 +180,16 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     if let Some(name) = ipc_json["url_params"]["name"].as_str() {
                         if let Some(node) = state.nodes.get(name) {
                             Response::new()
-                                .ipc(
-                                    serde_json::to_vec(&http::HttpResponse {
-                                        status: 200,
-                                        headers: HashMap::from([(
-                                            "Content-Type".to_string(),
-                                            "application/json".to_string(),
-                                        )]),
-                                    })?,
-                                )
+                                .ipc(serde_json::to_vec(&http::HttpResponse {
+                                    status: 200,
+                                    headers: HashMap::from([(
+                                        "Content-Type".to_string(),
+                                        "application/json".to_string(),
+                                    )]),
+                                })?)
                                 .payload(Payload {
                                     mime: Some("application/json".to_string()),
-                                    bytes: serde_json::to_string(&node)?
-                                        .as_bytes()
-                                        .to_vec(),
+                                    bytes: serde_json::to_string(&node)?.as_bytes().to_vec(),
                                 })
                                 .send()?;
                             continue;
@@ -202,15 +198,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
             }
             Response::new()
-                .ipc(
-                    serde_json::to_vec(&http::HttpResponse {
-                        status: 404,
-                        headers: HashMap::from([(
-                            "Content-Type".to_string(),
-                            "application/json".to_string(),
-                        )]),
-                    })?,
-                )
+                .ipc(serde_json::to_vec(&http::HttpResponse {
+                    status: 404,
+                    headers: HashMap::from([(
+                        "Content-Type".to_string(),
+                        "application/json".to_string(),
+                    )]),
+                })?)
                 .send()?;
             continue;
         }
@@ -304,13 +298,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         let routers_raw = decoded.0;
                         node.routers = routers_raw
                             .iter()
-                            .map(|r| {
-                                let key = format!("0x{}", hex::encode(r));
-                                match state.names.get(&key) {
-                                    Some(name) => name.clone(),
-                                    None => format!("proposed router did not exist: 0x{}", key),
-                                }
-                            })
+                            .map(|r| hex::encode(r))
                             .collect::<Vec<String>>();
                         send = true;
                     }
