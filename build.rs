@@ -169,25 +169,20 @@ fn main() {
     let modules_dir = format!("{}/modules", pwd.display());
     for entry in std::fs::read_dir(modules_dir).unwrap() {
         let entry_path = entry.unwrap().path();
-        let package_name = entry_path.file_name().unwrap().to_str().unwrap();
 
-        // If Cargo.toml is present, build the app
+        // Build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());
-        if entry_path.join("Cargo.toml").exists() {
-            build_app(&entry_path.display().to_string(), package_name, None);
-        } else if entry_path.is_dir() {
-            fs::create_dir_all(&parent_pkg_path).unwrap();
+        fs::create_dir_all(&parent_pkg_path).unwrap();
 
-            // Otherwise, consider it a directory containing subdirectories with potential apps
-            for sub_entry in std::fs::read_dir(&entry_path).unwrap() {
-                let sub_entry_path = sub_entry.unwrap().path();
-                if sub_entry_path.join("Cargo.toml").exists() {
-                    build_app(
-                        &sub_entry_path.display().to_string(),
-                        sub_entry_path.file_name().unwrap().to_str().unwrap(),
-                        Some(&parent_pkg_path),
-                    );
-                }
+        // Otherwise, consider it a directory containing subdirectories with potential apps
+        for sub_entry in std::fs::read_dir(&entry_path).unwrap() {
+            let sub_entry_path = sub_entry.unwrap().path();
+            if sub_entry_path.join("Cargo.toml").exists() {
+                build_app(
+                    &sub_entry_path.display().to_string(),
+                    sub_entry_path.file_name().unwrap().to_str().unwrap(),
+                    Some(&parent_pkg_path),
+                );
             }
         }
 

@@ -5,7 +5,7 @@ use uqbar_process_lib::{
 };
 
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../../../wit",
     world: "process",
     exports: {
         world: Component,
