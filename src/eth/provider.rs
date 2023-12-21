@@ -80,7 +80,22 @@ pub async fn provider(
         signed_capabilities: None,
     };
 
-    while let Some(message) = recv_in_client.recv().await {}
+    send_to_loop.send(open_ws).await;
+
+    while let Some(km) = recv_in_client.recv().await {
+
+        match km.message {
+            Message::Request(request) => {
+                println!("eth request");
+            },
+            Message::Response(response) => {
+                println!("eth response");
+            },
+            _ => {}
+        }
+
+        continue;
+    }
 
     Ok(())
 }
