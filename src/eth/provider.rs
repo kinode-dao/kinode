@@ -1,4 +1,3 @@
-
 use crate::types::*;
 use anyhow::Result;
 use ethers::core::types::Filter;
@@ -54,9 +53,7 @@ pub async fn provider(
 ) -> Result<()> {
     println!("eth_rpc: starting");
 
-    while let Some(message) = recv_in_client.recv().await {
-
-    };
+    while let Some(message) = recv_in_client.recv().await {}
 
     Ok(())
 }
@@ -68,7 +65,8 @@ pub async fn eth_provider(
     mut recv_in_client: MessageReceiver,
     print_tx: PrintSender,
 ) -> Result<()> {
-    let mut subscriptions = HashMap::<u64, tokio::task::JoinHandle<Result<(), EthProviderError>>>::new();
+    let mut subscriptions =
+        HashMap::<u64, tokio::task::JoinHandle<Result<(), EthProviderError>>>::new();
 
     while let Some(message) = recv_in_client.recv().await {
         let our = our.clone();
@@ -141,9 +139,9 @@ pub async fn eth_provider(
                         message: Message::Response((
                             Response {
                                 inherit: false,
-                                ipc: serde_json::to_vec::<Result<u64, EthProviderError>>(
-                                    &Ok(message.id),
-                                )
+                                ipc: serde_json::to_vec::<Result<u64, EthProviderError>>(&Ok(
+                                    message.id,
+                                ))
                                 .unwrap(),
                                 metadata: None,
                             },
@@ -293,7 +291,11 @@ pub async fn eth_provider(
 //  helpers
 //
 
-fn make_error_message(our_name: String, km: &KernelMessage, error: EthProviderError) -> KernelMessage {
+fn make_error_message(
+    our_name: String,
+    km: &KernelMessage,
+    error: EthProviderError,
+) -> KernelMessage {
     KernelMessage {
         id: km.id,
         source: Address {
