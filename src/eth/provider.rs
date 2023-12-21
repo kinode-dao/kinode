@@ -1,4 +1,5 @@
 use crate::types::*;
+use crate::http::types::HttpServerAction;
 use anyhow::Result;
 use ethers::core::types::Filter;
 use ethers::prelude::Provider;
@@ -52,6 +53,32 @@ pub async fn provider(
     print_tx: PrintSender,
 ) -> Result<()> {
     println!("eth_rpc: starting");
+
+    let open_ws = KernelMessage {
+        id: rand::random(),
+        source: Address {
+            node: our.clone(),
+            process: ETH_PROCESS_ID.clone(),
+        },
+        target: Address {
+            node: our.clone(),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
+        },
+        rsvp: None,
+        message: Message::Request(Request {
+            inherit: false,
+            ipc: serde_json::to_vec::<>(&HttpServerAction::WebSocketBind {
+                path: "/".to_string(),
+                authenticated: false,
+                encrypted: false,
+            })
+            .unwrap(),
+            metadata: None,
+            expects_response: None,
+        }),
+        payload: None,
+        signed_capabilities: None,
+    };
 
     while let Some(message) = recv_in_client.recv().await {}
 
