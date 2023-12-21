@@ -164,11 +164,20 @@ async fn serve(
         .and(warp::any().map(move || cloned_print_tx.clone()))
         .and_then(ws_handler);
 
+    #[cfg(feature = "simulation-mode")]
+    let fake_node = "true";
+    #[cfg(not(feature = "simulation-mode"))]
+    let fake_node = "false";
+
     // filter to receive and handle login requests
+    let login_html: &'static str = LOGIN_HTML
+        .replace("${node}", &our)
+        .replace("${fake}", fake_node)
+        .leak();
     let cloned_our = our.clone();
     let login = warp::path("login").and(warp::path::end()).and(
         warp::get()
-            .map(|| warp::reply::with_status(warp::reply::html(LOGIN_HTML), StatusCode::OK))
+            .map(move || warp::reply::with_status(warp::reply::html(login_html), StatusCode::OK))
             .or(warp::post()
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
@@ -207,6 +216,11 @@ async fn login_handler(
     our: Arc<String>,
     encoded_keyfile: Arc<Vec<u8>>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
+    #[cfg(feature = "simulation-mode")]
+    let info = LoginInfo {
+        password: "secret".to_string(),
+    };
+
     match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
         Ok(keyfile) => {
             let token = match register::generate_jwt(&keyfile.jwt_secret_bytes, our.as_ref()) {
@@ -222,7 +236,7 @@ async fn login_handler(
 
             let mut response = warp::reply::with_status(
                 warp::reply::json(&base64::encode(encoded_keyfile.to_vec())),
-                StatusCode::FOUND,
+                StatusCode::OK,
             )
             .into_response();
 
@@ -341,8 +355,6 @@ async fn http_handler(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    // TODO this is all so dirty. Figure out what actually matters.
-
     // trim trailing "/"
     let original_path = normalize_path(path.as_str());
     let _ = print_tx
@@ -361,35 +373,29 @@ async fn http_handler(
     let bound_path = route.handler();
 
     if bound_path.authenticated {
-        match serialized_headers.get("cookie") {
-            Some(auth_token) => {
-                // they have an auth token, validate
-                if !auth_cookie_valid(&our, &auth_token, &jwt_secret_bytes) {
-                    return Ok(
-                        warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response()
-                    );
-                }
-            }
-            None => {
-                // redirect to login page so they can get an auth token
-                let _ = print_tx
-                    .send(Printout {
-                        verbosity: 1,
-                        content: format!("redirecting request from {socket_addr:?} to login page"),
-                    })
-                    .await;
-                return Ok(warp::http::Response::builder()
-                    .status(StatusCode::TEMPORARY_REDIRECT)
-                    .header(
-                        "Location",
-                        format!(
-                            "http://{}/login",
-                            host.unwrap_or(Authority::from_static("localhost"))
-                        ),
-                    )
-                    .body(vec![])
-                    .into_response());
-            }
+        if !auth_cookie_valid(
+            &our,
+            serialized_headers.get("cookie").unwrap_or(&"".to_string()),
+            &jwt_secret_bytes,
+        ) {
+            // redirect to login page so they can get an auth token
+            let _ = print_tx
+                .send(Printout {
+                    verbosity: 1,
+                    content: format!("redirecting request from {socket_addr:?} to login page"),
+                })
+                .await;
+            return Ok(warp::http::Response::builder()
+                .status(StatusCode::TEMPORARY_REDIRECT)
+                .header(
+                    "Location",
+                    format!(
+                        "http://{}/login",
+                        host.unwrap_or(Authority::from_static("localhost"))
+                    ),
+                )
+                .body(vec![])
+                .into_response());
         }
     }
 
