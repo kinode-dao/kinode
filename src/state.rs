@@ -282,9 +282,9 @@ async fn bootstrap(
 ) -> Result<()> {
     println!("bootstrapping node...\r");
 
-    let mut runtime_caps: HashSet<Capability> = HashSet::new();
+    let mut runtime_messaging_capabilities: HashSet<Capability> = HashSet::new();
     // kernel is a special case
-    runtime_caps.insert(Capability {
+    runtime_messaging_capabilities.insert(Capability {
         issuer: Address {
             node: our_name.to_string(),
             process: ProcessId::from_str("kernel:sys:uqbar").unwrap(),
@@ -292,15 +292,16 @@ async fn bootstrap(
         params: "\"messaging\"".into(),
     });
     // net is a special case
-    runtime_caps.insert(Capability {
+    runtime_messaging_capabilities.insert(Capability {
         issuer: Address {
             node: our_name.to_string(),
             process: ProcessId::from_str("net:sys:uqbar").unwrap(),
         },
         params: "\"messaging\"".into(),
     });
+    // let all runtime modules message each other
     for runtime_module in runtime_extensions.clone() {
-        runtime_caps.insert(Capability {
+        runtime_messaging_capabilities.insert(Capability {
             issuer: Address {
                 node: our_name.to_string(),
                 process: runtime_module.0,
@@ -309,13 +310,13 @@ async fn bootstrap(
         });
     }
     // give all runtime processes the ability to send messages across the network
-    runtime_caps.insert(Capability {
+    let networking_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
             process: KERNEL_PROCESS_ID.clone(),
         },
         params: "\"network\"".into(),
-    });
+    };
 
     // finally, save runtime modules in state map as well, somewhat fakely
     // special cases for kernel and net
@@ -324,7 +325,9 @@ async fn bootstrap(
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             on_exit: OnExit::Restart,
-            capabilities: runtime_caps.clone(),
+            messaging_capabilities: runtime_messaging_capabilities.clone(),
+            networking_capability: Some(networking_cap.clone()),
+            capabilities: HashSet::new(),
             public: false,
         });
     process_map
@@ -332,7 +335,9 @@ async fn bootstrap(
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             on_exit: OnExit::Restart,
-            capabilities: runtime_caps.clone(),
+            messaging_capabilities: runtime_messaging_capabilities.clone(),
+            networking_capability: Some(networking_cap.clone()),
+            capabilities: HashSet::new(),
             public: false,
         });
     for runtime_module in runtime_extensions {
@@ -341,7 +346,9 @@ async fn bootstrap(
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: "".into(),
                 on_exit: OnExit::Restart,
-                capabilities: runtime_caps.clone(),
+                messaging_capabilities: runtime_messaging_capabilities.clone(),
+                networking_capability: Some(networking_cap.clone()),
+                capabilities: HashSet::new(),
                 public: runtime_module.2,
             });
     }
@@ -445,6 +452,7 @@ async fn bootstrap(
 
             // spawn the requested capabilities
             // remember: out of thin air, because this is the root distro
+            let mut requested_messaging_caps = HashSet::new();
             let mut requested_caps = HashSet::new();
             let our_process_id = format!(
                 "{}:{}:{}",
@@ -456,7 +464,7 @@ async fn bootstrap(
                 for value in request_messaging {
                     match value {
                         serde_json::Value::String(process_name) => {
-                            requested_caps.insert(Capability {
+                            requested_messaging_caps.insert(Capability {
                                 issuer: Address {
                                     node: our_name.to_string(),
                                     process: ProcessId::from_str(process_name).unwrap(),
@@ -491,12 +499,13 @@ async fn bootstrap(
             // grant capabilities to other initially spawned processes, distro
             if let Some(to_grant) = &entry.grant_messaging {
                 for value in to_grant {
+                    let mut messaging_capability = None;
                     let mut capability = None;
                     let mut to_process = None;
                     match value {
                         serde_json::Value::String(process_name) => {
                             if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
-                                capability = Some(Capability {
+                                messaging_capability = Some(Capability {
                                     issuer: Address {
                                         node: our_name.to_string(),
                                         process: ProcessId::from_str(process_name).unwrap(),
@@ -532,22 +541,15 @@ async fn bootstrap(
                         }
                     }
 
-                    if let Some(cap) = capability {
-                        if let Some(process) = process_map.get_mut(&to_process.unwrap()) {
+                    if let Some(process) = process_map.get_mut(&to_process.unwrap()) {
+                        if let Some(cap) = capability {
                             process.capabilities.insert(cap);
+                        }
+                        if let Some(msg_cap) = messaging_capability {
+                            process.messaging_capabilities.insert(msg_cap);
                         }
                     }
                 }
-            }
-
-            if entry.request_networking {
-                requested_caps.insert(Capability {
-                    issuer: Address {
-                        node: our_name.to_string(),
-                        process: KERNEL_PROCESS_ID.clone(),
-                    },
-                    params: "\"network\"".into(),
-                });
             }
 
             // give access to package_name vfs
@@ -583,6 +585,12 @@ async fn bootstrap(
                 PersistedProcess {
                     wasm_bytes_handle,
                     on_exit: entry.on_exit,
+                    messaging_capabilities: requested_messaging_caps,
+                    networking_capability: if entry.request_networking {
+                        Some(networking_cap.clone())
+                    } else {
+                        None
+                    },
                     capabilities: requested_caps,
                     public: public_process,
                 },

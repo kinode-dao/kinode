@@ -869,6 +869,8 @@ pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 pub struct PersistedProcess {
     pub wasm_bytes_handle: String,
     pub on_exit: OnExit,
+    pub messaging_capabilities: HashSet<Capability>,
+    pub networking_capability: Option<Capability>,
     pub capabilities: HashSet<Capability>,
     pub public: bool, // marks if a process allows messages from any process
 }

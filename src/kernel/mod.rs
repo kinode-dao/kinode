@@ -183,6 +183,7 @@ async fn handle_kernel_request(
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
             let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
+            let mut messaging_capabilities: HashSet<t::Capability> = HashSet::new();
             let mut valid_capabilities: HashSet<t::Capability> = HashSet::new();
             for signed_cap in initial_capabilities {
                 let cap = t::Capability {
@@ -199,13 +200,14 @@ async fn handle_kernel_request(
                         continue;
                     }
                 }
+                // TODO can't just insert into valid_capabilities, it may go in networking or messaging or general
                 valid_capabilities.insert(cap);
             }
 
             // give the initializer and itself the messaging cap.
             // NOTE: we do this even if the process is public, because
             // a process might redundantly call grant_messaging.
-            valid_capabilities.insert(t::Capability {
+            messaging_capabilities.insert(t::Capability {
                 issuer: t::Address {
                     node: our_name.clone(),
                     process: id.clone(),
@@ -213,6 +215,7 @@ async fn handle_kernel_request(
                 params: "\"messaging\"".into(),
             });
             caps_oracle
+                // TODO not that to add a messaging or networking capability is now different!!
                 .send(t::CapMessage::Add {
                     on: km.source.process.clone(),
                     cap: t::Capability {
@@ -250,7 +253,9 @@ async fn handle_kernel_request(
                     persisted: t::PersistedProcess {
                         wasm_bytes_handle,
                         on_exit,
-                        capabilities: valid_capabilities,
+                        messaging_capabilities: messaging_capabilities,
+                        networking_capability: None, // TODO
+                        capabilities: valid_capabilities, // TODO
                         public,
                     },
                     reboot: false,
@@ -823,15 +828,7 @@ pub async fn kernel(
                     let Some(proc) = process_map.get(&kernel_message.source.process) else {
                         continue
                     };
-                    if !proc.capabilities.contains(
-                        &t::Capability {
-                            issuer: t::Address {
-                                node: our.name.clone(),
-                                process: KERNEL_PROCESS_ID.clone(),
-                            },
-                            params: "\"network\"".into(),
-                        }
-                    ) {
+                    if proc.networking_capability.is_none() { // TODO do we need to check the value?
                         // capabilities are not correct! skip this message.
                         // TODO: some kind of error thrown back at process?
                         let _ = send_to_terminal.send(
@@ -861,14 +858,7 @@ pub async fn kernel(
                             .await;
                         continue;
                     };
-                    if !persisted.capabilities.contains(
-                            &t::Capability {
-                                issuer: t::Address {
-                                node: our.name.clone(),
-                                process: KERNEL_PROCESS_ID.clone(),
-                            },
-                            params: "\"network\"".into(),
-                    }) {
+                    if persisted.networking_capability.is_none() {
                         // capabilities are not correct! skip this message.
                         let _ = send_to_terminal.send(
                             t::Printout {
@@ -894,7 +884,7 @@ pub async fn kernel(
                         let Some(persisted_target) = process_map.get(&kernel_message.target.process) else {
                             continue
                         };
-                        if !persisted_target.public && !persisted_source.capabilities.contains(&t::Capability {
+                        if !persisted_target.public && !persisted_source.messaging_capabilities.contains(&t::Capability {
                                 issuer: t::Address {
                                     node: our.name.clone(),
                                     process: kernel_message.target.process.clone(),
@@ -1033,6 +1023,9 @@ pub async fn kernel(
                         let _ = responder.send(true);
                     },
                     t::CapMessage::Has { on, cap, responder } => {
+                        // TODO need to check in capabilities, networking, and messaging
+                        //
+                        //
                         // return boolean on responder
                         let _ = responder.send(
                             match process_map.get(&on) {
