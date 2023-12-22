@@ -35,7 +35,7 @@ def main():
     for feature in features:
         build_and_move(feature, tmp_dir)
 
-    print("Build and move process completed.\nFind release in {tmp_dir}.")
+    print(f"Build and move process completed.\nFind release in {tmp_dir}.")
 
 if __name__ == "__main__":
     main()
