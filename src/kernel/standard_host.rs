@@ -386,22 +386,26 @@ impl StandardHost for process::ProcessWasi {
             .collect())
     }
 
-    async fn attach_capabilities(&mut self, capabilities: Vec<wit::SignedCapability>) -> Result<()> {
+    async fn attach_capabilities(
+        &mut self,
+        capabilities: Vec<wit::SignedCapability>,
+    ) -> Result<()> {
         match self.process.next_message_caps {
             None => {
-                self.process.next_message_caps =
-                    Some(capabilities
+                self.process.next_message_caps = Some(
+                    capabilities
                         .iter()
                         .map(|cap| t::de_wit_signed_capability(cap.clone()))
-                        .collect()
-                    );
+                        .collect(),
+                );
                 Ok(())
             }
             Some(ref mut v) => {
-                v.extend(capabilities
-                    .iter()
-                    .map(|cap| t::de_wit_signed_capability(cap.clone()))
-                    .collect::<Vec<t::SignedCapability>>()
+                v.extend(
+                    capabilities
+                        .iter()
+                        .map(|cap| t::de_wit_signed_capability(cap.clone()))
+                        .collect::<Vec<t::SignedCapability>>(),
                 );
                 Ok(())
             }

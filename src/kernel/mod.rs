@@ -254,7 +254,7 @@ async fn handle_kernel_request(
                         wasm_bytes_handle,
                         on_exit,
                         messaging_capabilities: messaging_capabilities,
-                        networking_capability: None, // TODO
+                        networking_capability: None,      // TODO
                         capabilities: valid_capabilities, // TODO
                         public,
                     },
