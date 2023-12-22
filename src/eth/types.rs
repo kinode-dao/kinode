@@ -1,3 +1,7 @@
+use crate::http::types::HttpServerAction;
+use ethers::types::{ValueOrArray, U256, U64};
+use serde::{Deserialize, Serialize};
+
 #[derive(Debug, Serialize, Deserialize)]
 struct EthEventSubscription {
     addresses: Option<Vec<String>>,
@@ -9,14 +13,22 @@ struct EthEventSubscription {
     topic3: Option<U256>,
 }
 
-struct EthAccounts {
-    addresses: Option<Vec<String>>,
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ProviderAction { 
+    HttpServerAction(HttpServerAction),
+    EthRpcAction(EthRpcAction),
 }
 
-struct EthBlockNumber {
-
+#[derive(Debug, Serialize, Deserialize)]
+pub enum EthRpcAction {
+    Eth(EthMethod),
+    Debug(DebugMethod),
+    Net(NetMethod),
+    Trace(TraceMethod),
+    TxPool(TxPoolMethod),
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 enum DebugMethod {
     GetRawBlock,
     GetRawHeader,
@@ -30,6 +42,7 @@ enum DebugMethod {
     TraceTransaction,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 enum EthMethod {
     Accounts,
     BlockNumber,
@@ -75,12 +88,14 @@ enum EthMethod {
     UninstallFilter,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 enum NetMethod {
     Listening,
     PeerCount,
     Version,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 enum TraceMethod {
     Call,
     CallMany,
@@ -91,8 +106,28 @@ enum TraceMethod {
     Transaction,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 enum TxPoolMethod {
     Content,
     Inspect,
     Status,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum EthProviderError {
+    NoRsvp,
+    BadJson,
+    NoJson,
+    EventSubscriptionFailed,
+}
+
+impl EthProviderError {
+    pub fn _kind(&self) -> &str {
+        match *self {
+            EthProviderError::NoRsvp { .. } => "NoRsvp",
+            EthProviderError::BadJson { .. } => "BapJson",
+            EthProviderError::NoJson { .. } => "NoJson",
+            EthProviderError::EventSubscriptionFailed { .. } => "EventSubscriptionFailed",
+        }
+    }
 }
