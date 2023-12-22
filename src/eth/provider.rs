@@ -66,8 +66,7 @@ pub async fn provider(
     Ok(())
 }
 
-fn handle_request (ipc: &Vec<u8>) -> Result<()> {
-
+fn handle_request(ipc: &Vec<u8>) -> Result<()> {
     let Ok(message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
         return Ok(());
     };
@@ -77,8 +76,7 @@ fn handle_request (ipc: &Vec<u8>) -> Result<()> {
     Ok(())
 }
 
-fn handle_response (ipc: &Vec<u8>) -> Result<()> {
-
+fn handle_response(ipc: &Vec<u8>) -> Result<()> {
     let Ok(message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
         return Ok(());
     };
@@ -87,4 +85,3 @@ fn handle_response (ipc: &Vec<u8>) -> Result<()> {
 
     Ok(())
 }
-

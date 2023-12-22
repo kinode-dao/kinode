@@ -14,7 +14,7 @@ struct EthEventSubscription {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum ProviderAction { 
+pub enum ProviderAction {
     HttpServerAction(HttpServerAction),
     EthRpcAction(EthRpcAction),
 }
