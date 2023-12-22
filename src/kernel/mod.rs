@@ -262,7 +262,9 @@ async fn handle_kernel_request(
                                 },
                                 params: "\"network\"".into(),
                             })
-                        } else { None },
+                        } else {
+                            None
+                        },
                         capabilities: valid_capabilities, // TODO
                         public,
                     },
