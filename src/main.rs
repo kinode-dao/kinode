@@ -13,6 +13,7 @@ use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
 mod eth_rpc;
 mod http;
+mod intercept_sigs;
 mod kernel;
 mod keygen;
 mod kv;
@@ -472,6 +473,7 @@ async fn main() {
     ));
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
+    // or a SIG* was intercepted
     let quit_msg: String = tokio::select! {
         Some(Ok(res)) = tasks.join_next() => {
             format!(
@@ -492,6 +494,9 @@ async fn main() {
                 Ok(_) => "graceful exit".into(),
                 Err(e) => e.to_string(),
             }
+        }
+        s = intercept_sigs::intercept_sigs() => {
+            s.into()
         }
     };
 
@@ -521,6 +526,13 @@ async fn main() {
 
     // abort all remaining tasks
     tasks.shutdown().await;
+    let stdout = std::io::stdout();
+    let mut stdout = stdout.lock();
+    let _ = crossterm::execute!(
+        stdout,
+        crossterm::event::DisableBracketedPaste,
+        crossterm::terminal::SetTitle(""),
+    );
     let _ = crossterm::terminal::disable_raw_mode();
     println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
     return;
