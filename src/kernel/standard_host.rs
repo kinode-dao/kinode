@@ -176,6 +176,8 @@ impl StandardHost for process::ProcessWasi {
         name: Option<String>,
         wasm_path: String, // must be located within package's drive
         on_exit: wit::OnExit,
+        can_network: bool,
+        messaging: wit::Capabilities,
         capabilities: wit::Capabilities,
         public: bool,
     ) -> Result<Result<wit::ProcessId, wit::SpawnError>> {
@@ -250,8 +252,30 @@ impl StandardHost for process::ProcessWasi {
                     id: new_process_id.clone(),
                     wasm_bytes_handle: wasm_path,
                     on_exit: t::OnExit::de_wit(on_exit),
-                    request_networking: false,              // TODO WRONG
-                    messaging_capabilities: HashSet::new(), // TODO this is not right...probably need to change signature of spawn()
+                    request_networking: can_network, // TODO need to check if the parent process has networking capabilities
+                    messaging_capabilities: match messaging {
+                        wit::Capabilities::None => HashSet::new(),
+                        wit::Capabilities::All => {
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            let _ = self
+                                .process
+                                .caps_oracle
+                                .send(t::CapMessage::GetAllMessaging {
+                                    on: self.process.metadata.our.process.clone(),
+                                    responder: tx,
+                                })
+                                .await;
+                            rx.await.unwrap()
+                        }
+                        wit::Capabilities::Some(caps) => caps
+                            .into_iter()
+                            .map(|cap| t::Capability {
+                                issuer: t::Address::de_wit(cap.issuer),
+                                params: cap.params,
+                                // signature: cap.signature,
+                            })
+                            .collect(),
+                    }, // TODO need to validate these caps before passing them on
                     initial_capabilities: match capabilities {
                         wit::Capabilities::None => HashSet::new(),
                         wit::Capabilities::All => {
