@@ -887,7 +887,7 @@ pub enum CapMessage {
     GetNetworking {
         on: ProcessId,
         responder: tokio::sync::oneshot::Sender<Option<Capability>>, // TODO maybe SignedCapability
-    }
+    },
 }
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;

@@ -521,7 +521,7 @@ pub async fn make_process_loop(
             })
             .await;
         let messaging_capabilities = rx.await.unwrap().into_iter().collect();
-        
+
         // always send message to tell main kernel loop to remove handler
         send_to_loop
             .send(t::KernelMessage {
