@@ -845,12 +845,14 @@ pub enum CapMessage {
         cap: Capability,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
-    AddNetworking { // TODO this interface might be wrong...
+    AddNetworking {
+        // TODO this interface might be wrong...
         on: ProcessId,
         cap: Capability,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
-    AddMessaging { // TODO this interface might be wrong...
+    AddMessaging {
+        // TODO this interface might be wrong...
         on: ProcessId,
         cap: Capability,
         responder: tokio::sync::oneshot::Sender<bool>,

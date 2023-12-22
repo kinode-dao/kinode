@@ -411,7 +411,11 @@ impl StandardHost for process::ProcessWasi {
         });
     }
 
-    async fn grant_messaging(&mut self, origin: wit::ProcessId, to: wit::ProcessId) -> Result<bool> {
+    async fn grant_messaging(
+        &mut self,
+        origin: wit::ProcessId,
+        to: wit::ProcessId,
+    ) -> Result<bool> {
         unimplemented!()
     }
 
