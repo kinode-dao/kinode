@@ -365,25 +365,7 @@ impl StandardHost for process::ProcessWasi {
     //
     // TODO fix this one
     async fn get_capabilities(&mut self) -> Result<Vec<wit::SignedCapability>> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self
-            .process
-            .caps_oracle
-            .send(t::CapMessage::GetAll {
-                on: self.process.metadata.our.process.clone(),
-                responder: tx,
-            })
-            .await;
-        Ok(rx
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|cap| wit::SignedCapability {
-                issuer: cap.issuer.en_wit(),
-                params: cap.params,
-                signature: cap.signature,
-            })
-            .collect())
+        unimplemented!()
     }
 
     async fn attach_capabilities(
@@ -427,6 +409,14 @@ impl StandardHost for process::ProcessWasi {
             params: params,
             signature: sig.as_ref().to_vec(),
         });
+    }
+
+    async fn grant_messaging(&mut self, origin: wit::ProcessId, to: wit::ProcessId) -> Result<bool> {
+        unimplemented!()
+    }
+
+    async fn grant_networking(&mut self, to: wit::ProcessId) -> Result<bool> {
+        unimplemented!()
     }
 
     //

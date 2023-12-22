@@ -1012,6 +1012,26 @@ pub async fn kernel(
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
                     },
+                    t::CapMessage::AddNetworking { on, cap, responder } => {
+                        let Some(entry) = process_map.get_mut(&on) else {
+                            let _ = responder.send(false);
+                            continue;
+                        };
+                         // TODO verify that `cap` is actually a networking capability, not just some random thing
+                        entry.networking_capability = Some(cap);
+                        let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
+                        let _ = responder.send(true);
+                    },
+                    t::CapMessage::AddMessaging { on, cap, responder } => {
+                        let Some(entry) = process_map.get_mut(&on) else {
+                            let _ = responder.send(false);
+                            continue;
+                        };
+                         // TODO verify that `cap` is actually a messaging capability, not just some random thing
+                        entry.messaging_capabilities.insert(cap);
+                        let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
+                        let _ = responder.send(true);
+                    },
                     t::CapMessage::_Drop { on, cap, responder } => {
                         // remove cap from process map
                         let Some(entry) = process_map.get_mut(&on) else {
