@@ -144,6 +144,7 @@ async fn handle_kernel_request(
             id,
             wasm_bytes_handle,
             on_exit,
+            mut messaging_capabilities,
             initial_capabilities,
             public,
         } => {
@@ -183,7 +184,6 @@ async fn handle_kernel_request(
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
             let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
-            let mut messaging_capabilities: HashSet<t::Capability> = HashSet::new();
             let mut valid_capabilities: HashSet<t::Capability> = HashSet::new();
             for signed_cap in initial_capabilities {
                 let cap = t::Capability {
@@ -1083,6 +1083,21 @@ pub async fn kernel(
                             }
                         );
                     },
+                    t::CapMessage::GetAllMessaging { on, responder } => {
+                        let _ = responder.send(
+                            match process_map.get(&on) {
+                                None => HashSet::new(),
+                                Some(p) => p.messaging_capabilities.clone(),
+                            }
+                        );                    }
+                    t::CapMessage::GetNetworking { on, responder } => {
+                        let _ = responder.send(
+                            match process_map.get(&on) {
+                                None => None,
+                                Some(p) => p.networking_capability.clone(),
+                            }
+                        );
+                    }
                 }
             }
         }

@@ -250,6 +250,7 @@ impl StandardHost for process::ProcessWasi {
                     id: new_process_id.clone(),
                     wasm_bytes_handle: wasm_path,
                     on_exit: t::OnExit::de_wit(on_exit),
+                    messaging_capabilities: HashSet::new(), // TODO this is not right...probably need to change signature of spawn()
                     initial_capabilities: match capabilities {
                         wit::Capabilities::None => HashSet::new(),
                         wit::Capabilities::All => {

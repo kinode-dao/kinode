@@ -814,6 +814,7 @@ pub enum KernelCommand {
         id: ProcessId,
         wasm_bytes_handle: String,
         on_exit: OnExit,
+        messaging_capabilities: HashSet<Capability>, // TODO maybe SignedCapability?
         initial_capabilities: HashSet<SignedCapability>,
         public: bool,
     },
@@ -879,6 +880,14 @@ pub enum CapMessage {
         on: ProcessId,
         responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
     },
+    GetAllMessaging {
+        on: ProcessId,
+        responder: tokio::sync::oneshot::Sender<HashSet<Capability>>, // TODO maybe SignedCapability
+    },
+    GetNetworking {
+        on: ProcessId,
+        responder: tokio::sync::oneshot::Sender<Option<Capability>>, // TODO maybe SignedCapability
+    }
 }
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
