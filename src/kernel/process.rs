@@ -574,12 +574,9 @@ pub async fn make_process_loop(
                     request.expects_response = None;
                     let (tx, rx) = tokio::sync::oneshot::channel();
                     let _ = caps_oracle
-                        .send(t::CapMessage::Has {
-                            on: metadata.our.process.clone(),
-                            cap: t::Capability {
-                                issuer: address.clone(),
-                                params: "\"messaging\"".into(),
-                            },
+                        .send(t::CapMessage::CanMessage {
+                            from: metadata.our.process.clone(),
+                            to: address.clone(),
                             responder: tx,
                         })
                         .await;

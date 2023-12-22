@@ -838,6 +838,7 @@ pub enum KernelResponse {
     KilledProcess(ProcessId),
 }
 
+// TODO maybe add CanNetwork
 #[derive(Debug)]
 pub enum CapMessage {
     Add {
@@ -855,6 +856,11 @@ pub enum CapMessage {
         // TODO this interface might be wrong...
         on: ProcessId,
         cap: Capability,
+        responder: tokio::sync::oneshot::Sender<bool>,
+    },
+    CanMessage {
+        from: ProcessId,
+        to: Address,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
     _Drop {

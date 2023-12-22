@@ -1032,6 +1032,21 @@ pub async fn kernel(
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
                     },
+                    t::CapMessage::CanMessage { from, to, responder } => {
+                        let Some(entry) = process_map.get_mut(&from) else {
+                            let _ = responder.send(false);
+                            continue;
+                        };
+                        let _ = responder.send(
+                            match entry.messaging_capabilities.get(&t::Capability {
+                                issuer: to.clone(),
+                                params: "\"messaging\"".into(),
+                            }) {
+                                None => false,
+                                Some(_) => true,
+                            }
+                        );
+                    }
                     t::CapMessage::_Drop { on, cap, responder } => {
                         // remove cap from process map
                         let Some(entry) = process_map.get_mut(&on) else {
@@ -1043,9 +1058,6 @@ pub async fn kernel(
                         let _ = responder.send(true);
                     },
                     t::CapMessage::Has { on, cap, responder } => {
-                        // TODO need to check in capabilities, networking, and messaging
-                        //
-                        //
                         // return boolean on responder
                         let _ = responder.send(
                             match process_map.get(&on) {
