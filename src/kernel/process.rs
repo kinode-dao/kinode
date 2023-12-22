@@ -521,7 +521,16 @@ pub async fn make_process_loop(
             })
             .await;
         let messaging_capabilities = rx.await.unwrap().into_iter().collect();
-
+        
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = caps_oracle
+            .send(t::CapMessage::GetNetworking {
+                on: metadata.our.process.clone(),
+                responder: tx,
+            })
+            .await;
+        let networking_capability = rx.await.unwrap();
+        
         // always send message to tell main kernel loop to remove handler
         send_to_loop
             .send(t::KernelMessage {
@@ -562,6 +571,7 @@ pub async fn make_process_loop(
                                 id: metadata.our.process.clone(),
                                 wasm_bytes_handle: metadata.wasm_bytes_handle,
                                 on_exit: metadata.on_exit,
+                                request_networking: networking_capability.is_some(),
                                 messaging_capabilities,
                                 initial_capabilities,
                                 public: metadata.public,

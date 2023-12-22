@@ -814,6 +814,7 @@ pub enum KernelCommand {
         id: ProcessId,
         wasm_bytes_handle: String,
         on_exit: OnExit,
+        request_networking: bool,
         messaging_capabilities: HashSet<Capability>, // TODO maybe SignedCapability?
         initial_capabilities: HashSet<SignedCapability>,
         public: bool,

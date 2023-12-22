@@ -144,6 +144,7 @@ async fn handle_kernel_request(
             id,
             wasm_bytes_handle,
             on_exit,
+            request_networking,
             mut messaging_capabilities,
             initial_capabilities,
             public,
@@ -200,7 +201,6 @@ async fn handle_kernel_request(
                         continue;
                     }
                 }
-                // TODO can't just insert into valid_capabilities, it may go in networking or messaging or general
                 valid_capabilities.insert(cap);
             }
 
@@ -254,7 +254,15 @@ async fn handle_kernel_request(
                         wasm_bytes_handle,
                         on_exit,
                         messaging_capabilities: messaging_capabilities,
-                        networking_capability: None,      // TODO
+                        networking_capability: if request_networking {
+                            Some(t::Capability {
+                                issuer: t::Address {
+                                    node: our_name.to_string(),
+                                    process: KERNEL_PROCESS_ID.clone(),
+                                },
+                                params: "\"network\"".into(),
+                            })
+                        } else { None },
                         capabilities: valid_capabilities, // TODO
                         public,
                     },
