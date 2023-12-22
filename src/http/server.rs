@@ -650,6 +650,7 @@ async fn maintain_websocket(
             read = read_stream.next() => {
                 match read {
                     Some(Ok(msg)) => {
+
                         let _ = send_to_loop.send(KernelMessage {
                             id: rand::random(),
                             source: Address {
@@ -675,7 +676,8 @@ async fn maintain_websocket(
                                 bytes: msg.into_bytes(),
                             }),
                             signed_capabilities: None,
-                        });
+                        }).await;
+
                     }
                     _ => {
                         websocket_close(channel_id, app.clone(), &ws_senders, &send_to_loop).await;
