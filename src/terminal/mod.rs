@@ -14,6 +14,7 @@ use crossterm::{
 use futures::{future::FutureExt, StreamExt};
 use std::fs::{read_to_string, OpenOptions};
 use std::io::{stdout, BufWriter, Write};
+use tokio::signal::unix::{signal, SignalKind};
 
 mod utils;
 
@@ -129,6 +130,24 @@ pub async fn terminal(
         .unwrap();
     let mut log_writer = BufWriter::new(log_handle);
 
+    // use to trigger cleanup if receive signal to kill process
+    let mut sigalrm = signal(SignalKind::alarm())
+        .expect("uqbar: failed to set up SIGALRM handler");
+    let mut sighup = signal(SignalKind::hangup())
+        .expect("uqbar: failed to set up SIGHUP handler");
+    let mut sigint = signal(SignalKind::interrupt())
+        .expect("uqbar: failed to set up SIGINT handler");
+    let mut sigpipe = signal(SignalKind::pipe())
+        .expect("uqbar: failed to set up SIGPIPE handler");
+    let mut sigquit = signal(SignalKind::quit())
+        .expect("uqbar: failed to set up SIGQUIT handler");
+    let mut sigterm = signal(SignalKind::terminate())
+        .expect("uqbar: failed to set up SIGTERM handler");
+    let mut sigusr1 = signal(SignalKind::user_defined1())
+        .expect("uqbar: failed to set up SIGUSR1 handler");
+    let mut sigusr2 = signal(SignalKind::user_defined2())
+        .expect("uqbar: failed to set up SIGUSR2 handler");
+
     loop {
         let event = reader.next().fuse();
 
@@ -172,7 +191,7 @@ pub async fn terminal(
                     Print(utils::truncate_in_place(&current_line, prompt_len, win_cols, (line_col, cursor_col))),
                     cursor::MoveTo(cursor_col, win_rows),
                 )?;
-            },
+            }
             Some(Ok(event)) = event => {
                 let mut stdout = stdout.lock();
                 match event {
@@ -599,7 +618,15 @@ pub async fn terminal(
                     },
                     _ => {},
                 }
-                }
+            }
+            _ = sigalrm.recv() => return Err(anyhow::anyhow!("exiting due to SIGALRM")),
+            _ = sighup.recv() =>  return Err(anyhow::anyhow!("exiting due to SIGHUP")),
+            _ = sigint.recv() =>  return Err(anyhow::anyhow!("exiting due to SIGINT")),
+            _ = sigpipe.recv() => return Err(anyhow::anyhow!("exiting due to SIGPIPE")),
+            _ = sigquit.recv() => return Err(anyhow::anyhow!("exiting due to SIGQUIT")),
+            _ = sigterm.recv() => return Err(anyhow::anyhow!("exiting due to SIGTERM")),
+            _ = sigusr1.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR1")),
+            _ = sigusr2.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR2")),
         }
     }
     execute!(stdout.lock(), DisableBracketedPaste, terminal::SetTitle(""))?;

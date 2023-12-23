@@ -13,7 +13,6 @@ use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
 mod eth_rpc;
 mod http;
-mod intercept_sigs;
 mod kernel;
 mod keygen;
 mod kv;
@@ -494,9 +493,6 @@ async fn main() {
                 Ok(_) => "graceful exit".into(),
                 Err(e) => e.to_string(),
             }
-        }
-        s = intercept_sigs::intercept_sigs() => {
-            s.into()
         }
     };
 
