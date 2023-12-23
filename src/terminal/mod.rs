@@ -131,22 +131,18 @@ pub async fn terminal(
     let mut log_writer = BufWriter::new(log_handle);
 
     // use to trigger cleanup if receive signal to kill process
-    let mut sigalrm = signal(SignalKind::alarm())
-        .expect("uqbar: failed to set up SIGALRM handler");
-    let mut sighup = signal(SignalKind::hangup())
-        .expect("uqbar: failed to set up SIGHUP handler");
-    let mut sigint = signal(SignalKind::interrupt())
-        .expect("uqbar: failed to set up SIGINT handler");
-    let mut sigpipe = signal(SignalKind::pipe())
-        .expect("uqbar: failed to set up SIGPIPE handler");
-    let mut sigquit = signal(SignalKind::quit())
-        .expect("uqbar: failed to set up SIGQUIT handler");
-    let mut sigterm = signal(SignalKind::terminate())
-        .expect("uqbar: failed to set up SIGTERM handler");
-    let mut sigusr1 = signal(SignalKind::user_defined1())
-        .expect("uqbar: failed to set up SIGUSR1 handler");
-    let mut sigusr2 = signal(SignalKind::user_defined2())
-        .expect("uqbar: failed to set up SIGUSR2 handler");
+    let mut sigalrm = signal(SignalKind::alarm()).expect("uqbar: failed to set up SIGALRM handler");
+    let mut sighup = signal(SignalKind::hangup()).expect("uqbar: failed to set up SIGHUP handler");
+    let mut sigint =
+        signal(SignalKind::interrupt()).expect("uqbar: failed to set up SIGINT handler");
+    let mut sigpipe = signal(SignalKind::pipe()).expect("uqbar: failed to set up SIGPIPE handler");
+    let mut sigquit = signal(SignalKind::quit()).expect("uqbar: failed to set up SIGQUIT handler");
+    let mut sigterm =
+        signal(SignalKind::terminate()).expect("uqbar: failed to set up SIGTERM handler");
+    let mut sigusr1 =
+        signal(SignalKind::user_defined1()).expect("uqbar: failed to set up SIGUSR1 handler");
+    let mut sigusr2 =
+        signal(SignalKind::user_defined2()).expect("uqbar: failed to set up SIGUSR2 handler");
 
     loop {
         let event = reader.next().fuse();
