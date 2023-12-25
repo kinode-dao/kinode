@@ -1015,8 +1015,10 @@ async fn handle_app_message(
                             } else {
                                 warp::ws::Message::pong(payload.bytes)
                             }
-                        },
-                        WsMessageType::Close => { unreachable!(); }
+                        }
+                        WsMessageType::Close => {
+                            unreachable!();
+                        }
                     };
                     // Send to the websocket if registered
                     if let Some(got) = ws_senders.get(&channel_id) {
