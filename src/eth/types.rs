@@ -29,7 +29,7 @@ pub enum EthRpcAction {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-enum DebugMethod {
+pub enum DebugMethod {
     GetRawBlock,
     GetRawHeader,
     GetRawReceipts,
@@ -43,7 +43,7 @@ enum DebugMethod {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-enum EthMethod {
+pub enum EthMethod {
     Accounts,
     BlockNumber,
     Call,
@@ -89,14 +89,14 @@ enum EthMethod {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-enum NetMethod {
+pub enum NetMethod {
     Listening,
     PeerCount,
     Version,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-enum TraceMethod {
+pub enum TraceMethod {
     Call,
     CallMany,
     Get,
@@ -107,7 +107,7 @@ enum TraceMethod {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-enum TxPoolMethod {
+pub enum TxPoolMethod {
     Content,
     Inspect,
     Status,
