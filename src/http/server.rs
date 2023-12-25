@@ -120,6 +120,7 @@ pub async fn http_server(
             ws_path_bindings.clone(),
             ws_senders.clone(),
             send_to_loop.clone(),
+            print_tx.clone(),
         )
         .await;
     }
@@ -368,6 +369,12 @@ async fn http_handler(
     let path_bindings = path_bindings.read().await;
 
     let Ok(route) = path_bindings.recognize(&original_path) else {
+        let _ = print_tx
+            .send(Printout {
+                verbosity: 1,
+                content: format!("http_server: no route found for {original_path}"),
+            })
+            .await;
         return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
     };
     let bound_path = route.handler();
@@ -749,6 +756,7 @@ async fn handle_app_message(
     ws_path_bindings: WsPathBindings,
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
+    print_tx: PrintSender,
 ) {
     // when we get a Response, try to match it to an outstanding HTTP
     // request and send it there.
@@ -828,6 +836,15 @@ async fn handle_app_message(
                             format!("/{}/{}", km.source.process, path)
                         };
                     }
+                    let _ = print_tx
+                        .send(Printout {
+                            verbosity: 1,
+                            content: format!(
+                                "binding path {path} for {}, authenticated={authenticated}, local={local_only}, cached={cache}",
+                                km.source.process
+                            ),
+                        })
+                        .await;
                     if !cache {
                         // trim trailing "/"
                         path_bindings.add(
