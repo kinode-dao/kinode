@@ -1,5 +1,5 @@
 use crate::eth::types::{ ProviderAction, EthRpcAction };
-use crate::http::types::{ HttpServerAction, HttpServerRequest };
+use crate::http::types::{ HttpServerAction, HttpServerRequest, WsMessageType };
 use crate::types::*;
 use anyhow::Result;
 use ethers::core::types::Filter;
@@ -14,11 +14,13 @@ use std::future::Future;
 use std::pin::Pin;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
+use futures::stream::SplitSink;
 use tokio::net::TcpStream;
 use url::Url;
 
 struct Connections {
-    ws_stream: Option<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    ws_sender: Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>,TungsteniteMessage>>,
     ws_provider: Option<Provider<Ws>>,
     http_provider: Option<Provider<Http>>,
     uq_provider: Option<NodeId>
@@ -62,7 +64,7 @@ pub async fn provider(
     send_to_loop.send(open_ws).await;
 
     let mut connections = Connections {
-        ws_stream: None,
+        ws_sender: None,
         ws_provider: None,
         http_provider: None,
         uq_provider: None
@@ -71,9 +73,30 @@ pub async fn provider(
     match Url::parse(&rpc_url).unwrap().scheme() {
         "http" | "https" => { unreachable!() }
         "ws" | "wss" => {
+
             let (_ws_stream, _) = connect_async(&rpc_url).await.expect("failed to connect");
-            connections.ws_stream = Some(_ws_stream);
+            let (_ws_sender, mut ws_receiver) = _ws_stream.split();
+
+            connections.ws_sender = Some(_ws_sender);
             connections.ws_provider = Some(Provider::<Ws>::connect(rpc_url.clone()).await?);
+
+            tokio::spawn(async move {
+                while let Some(message) = ws_receiver.next().await {
+                    match message {
+                        Ok(msg) => {
+                            if (msg.is_text()) {
+                                println!("Received a text message: {}", msg.into_text().unwrap());
+                            } else {
+                                println!("Received a binary message: {:?}", msg.into_data());
+                            }
+                        },
+                        Err(e) => {
+                            println!("Error receiving a message: {:?}", e);
+                        }
+                    }
+                }
+            });
+
         }
         _ => { unreachable!() }
     }
@@ -82,7 +105,7 @@ pub async fn provider(
         match km.message {
             Message::Request(Request { ref ipc, .. }) => {
                 println!("eth request");
-                handle_request(ipc, km.payload, &connections)?;
+                handle_request(ipc, km.payload, &mut connections).await;
             }
             Message::Response((Response { ref ipc, .. }, ..)) => {
                 println!("eth response");
@@ -98,24 +121,65 @@ pub async fn provider(
     Ok(())
 }
 
-fn handle_request(ipc: &Vec<u8>, payload: Option<Payload>, connections: &Connections) -> Result<()> {
+async fn handle_request(ipc: &Vec<u8>, payload: Option<Payload>, connections: &mut Connections) -> Result<()> {
+
+    println!("request");
 
     if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(ipc) {
         match action {
-            HttpServerRequest::WebSocketOpen{ path, channel_id} => {
-                println!("open");
+            HttpServerRequest::WebSocketOpen{path, channel_id} => {
+                println!("open {:?}, {:?}", path, channel_id);
             }
-            HttpServerRequest::WebSocketPush{ channel_id, message_type} => {
+            HttpServerRequest::WebSocketPush{channel_id, message_type} => { 
+                match message_type {
+                    WsMessageType::Text => {
+                        println!("text");
 
-            }
-            HttpServerRequest::WebSocketClose(channel_id) => {
+                        let bytes = payload.unwrap().bytes;
+                        let text = std::str::from_utf8(&bytes).unwrap();
 
+                        println!("{:?}", text);
+
+                        connections.ws_sender.as_mut().unwrap()
+                            .send(TungsteniteMessage::Text(text.to_string()))
+                            .await;
+
+                    },
+                    WsMessageType::Binary => {
+                        println!("binary");
+                    },
+                    WsMessageType::Ping => {
+                        println!("ping");
+                    },
+                    WsMessageType::Pong => {
+                        println!("pong");
+                    },
+                    WsMessageType::Close => {
+                        println!("close");
+                    },
+                }
             }
+            HttpServerRequest::WebSocketClose(channel_id) => { }
             HttpServerRequest::Http(_) => todo!()
         }
-    } 
+    } else if let Ok(action) = serde_json::from_slice::<EthRpcAction>(ipc) {
+        match action {
+            EthRpcAction::JsonRpcRequest(_) => unreachable!(),
+            EthRpcAction::Eth(method) => { }
+            EthRpcAction::Debug(method) => { }
+            EthRpcAction::Net(method) => { }
+            EthRpcAction::Trace(method) => { }
+            EthRpcAction::TxPool(method) => { }
+        }
+    } else {
+        println!("unknown request");
+    }
 
     Ok(())
+
+}
+
+fn handle_http () {
 
 }
 
