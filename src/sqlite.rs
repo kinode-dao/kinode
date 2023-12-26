@@ -448,10 +448,11 @@ async fn check_caps(
             Ok(())
         }
         SqliteAction::Backup => {
-            if source.process != *STATE_PROCESS_ID {
-                return Err(SqliteError::NoCap {
-                    error: request.action.to_string(),
-                });
+            // flushing WALs for backup
+            // check caps. 
+            for db_ref in open_dbs.iter() {
+                let db = db_ref.value().lock().await;
+                db.execute("pragma wal_checkpoint", [])?;
             }
             Ok(())
         }
