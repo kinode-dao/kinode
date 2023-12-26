@@ -449,7 +449,7 @@ async fn check_caps(
         }
         SqliteAction::Backup => {
             // flushing WALs for backup
-            // check caps. 
+            // check caps.
             for db_ref in open_dbs.iter() {
                 let db = db_ref.value().lock().await;
                 db.execute("pragma wal_checkpoint", [])?;

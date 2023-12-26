@@ -222,15 +222,17 @@ async fn handle_request(
 
             if Path::new(&checkpoint_dir).exists() {
                 fs::remove_dir_all(&checkpoint_dir).await?;
-            }            
+            }
             let checkpoint = Checkpoint::new(&db).map_err(|e| StateError::RocksDBError {
                 action: "BackupCheckpointNew".into(),
                 error: e.to_string(),
             })?;
 
-            checkpoint.create_checkpoint(&checkpoint_dir).map_err(|e| StateError::RocksDBError {
-                action: "BackupCheckpointCreate".into(),
-                error: e.to_string(),
+            checkpoint.create_checkpoint(&checkpoint_dir).map_err(|e| {
+                StateError::RocksDBError {
+                    action: "BackupCheckpointCreate".into(),
+                    error: e.to_string(),
+                }
             })?;
 
             (serde_json::to_vec(&StateResponse::Backup).unwrap(), None)
