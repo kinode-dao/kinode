@@ -54,7 +54,7 @@ pub fn spawn_transfer(
     // spawn a worker and tell it to send the file
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
-        "/ft_worker.wasm".into(),
+        &format!("{}/pkg/ft_worker.wasm", our.package_id().to_string()),
         &OnExit::None, // can set message-on-panic here
         &Capabilities::All,
         false, // not public
@@ -105,7 +105,7 @@ pub fn spawn_receive_transfer(our: &Address, ipc: &[u8]) {
     };
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
-        "/ft_worker.wasm".into(),
+        &format!("{}/pkg/ft_worker.wasm", our.package_id().to_string()),
         &OnExit::None, // can set message-on-panic here
         &Capabilities::All,
         false, // not public
