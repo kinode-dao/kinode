@@ -37,9 +37,9 @@ pub async fn sqlite(
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: String,
 ) -> anyhow::Result<()> {
-    let sqlite_path = format!("{}/sqlite", &home_directory_path);
+    let vfs_path = format!("{}/vfs", &home_directory_path);
 
-    if let Err(e) = fs::create_dir_all(&sqlite_path).await {
+    if let Err(e) = fs::create_dir_all(&vfs_path).await {
         panic!("failed creating sqlite dir! {:?}", e);
     }
 
@@ -79,7 +79,7 @@ pub async fn sqlite(
                 let open_dbs = open_dbs.clone();
 
                 let txs = txs.clone();
-                let sqlite_path = sqlite_path.clone();
+                let vfs_path = vfs_path.clone();
 
                 tokio::spawn(async move {
                     let mut queue_lock = queue.lock().await;
@@ -92,7 +92,7 @@ pub async fn sqlite(
                             send_to_loop.clone(),
                             send_to_terminal.clone(),
                             send_to_caps_oracle.clone(),
-                            sqlite_path.clone(),
+                            vfs_path.clone(),
                         )
                         .await
                         {
@@ -115,7 +115,7 @@ async fn handle_request(
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     send_to_caps_oracle: CapMessageSender,
-    sqlite_path: String,
+    vfs_path: String,
 ) -> Result<(), SqliteError> {
     let KernelMessage {
         id,
@@ -152,7 +152,7 @@ async fn handle_request(
         open_dbs.clone(),
         send_to_caps_oracle.clone(),
         &request,
-        sqlite_path.clone(),
+        vfs_path.clone(),
     )
     .await?;
 
@@ -342,7 +342,7 @@ async fn check_caps(
     open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
     mut send_to_caps_oracle: CapMessageSender,
     request: &SqliteRequest,
-    sqlite_path: String,
+    vfs_path: String,
 ) -> Result<(), SqliteError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
@@ -429,8 +429,8 @@ async fn check_caps(
             }
 
             let db_path = format!(
-                "{}/{}/{}",
-                sqlite_path,
+                "{}/{}/sqlite/{}",
+                vfs_path,
                 request.package_id.to_string(),
                 request.db.to_string()
             );
