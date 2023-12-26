@@ -28,8 +28,6 @@ struct Connections {
 // this should just map responses from the outgoing websocket request
 // to the requests that made them
 
-// Channel IDs to Nonces used to make unique IDs
-type WsRequestNonces = Arc<DashMap<u32, u32>>;
 // Request IDs to Channel IDs
 type WsRequestIds = Arc<DashMap<u32, u32>>;
 
@@ -77,7 +75,6 @@ pub async fn provider(
         uq_provider: None,
     };
 
-    let ws_request_nonces: WsRequestNonces = Arc::new(DashMap::new());
     let ws_request_ids: WsRequestIds = Arc::new(DashMap::new());
 
     match Url::parse(&rpc_url).unwrap().scheme() {
