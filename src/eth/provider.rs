@@ -164,7 +164,6 @@ pub async fn provider(
                     ipc,
                     km.source,
                     km.payload,
-                    ws_request_nonces.clone(),
                     ws_request_ids.clone(),
                     &mut connections,
                 )
@@ -188,7 +187,6 @@ async fn handle_request(
     ipc: &Vec<u8>,
     source: Address,
     payload: Option<Payload>,
-    ws_request_nonces: WsRequestNonces,
     ws_request_ids: WsRequestIds,
     connections: &mut Connections,
 ) -> Result<()> {
@@ -211,11 +209,7 @@ async fn handle_request(
                     let mut json: serde_json::Value = serde_json::from_str(text)?;
                     let mut id = json["id"].as_u64().unwrap();
 
-                    let mut nonce = ws_request_nonces.entry(channel_id).or_insert(0);
-
                     id += channel_id as u64;
-                    id += *nonce as u64;
-                    *nonce += 1;
 
                     ws_request_ids.insert(id as u32, channel_id);
 
