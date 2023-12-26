@@ -21,6 +21,7 @@ pub enum ProviderAction {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthRpcAction {
+    JsonRpcRequest(String),
     Eth(EthMethod),
     Debug(DebugMethod),
     Net(NetMethod),
