@@ -1,5 +1,5 @@
 use crate::eth::types::{ ProviderAction, EthRpcAction };
-use crate::http::types::HttpServerAction;
+use crate::http::types::{ HttpServerAction, HttpServerRequest };
 use crate::types::*;
 use anyhow::Result;
 use ethers::core::types::Filter;
@@ -100,16 +100,23 @@ pub async fn provider(
 
 fn handle_request(ipc: &Vec<u8>, payload: Option<Payload>, connections: &Connections) -> Result<()> {
 
-    match serde_json::from_slice::<ProviderAction>(ipc)? {
-        ProviderAction::HttpServerAction(action) => {
-            println!("http server action {:?}", action);
+    if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(ipc) {
+        match action {
+            HttpServerRequest::WebSocketOpen{ path, channel_id} => {
+                println!("open");
+            }
+            HttpServerRequest::WebSocketPush{ channel_id, message_type} => {
+
+            }
+            HttpServerRequest::WebSocketClose(channel_id) => {
+
+            }
+            HttpServerRequest::Http(_) => todo!()
         }
-        ProviderAction::EthRpcAction(action) => {
-            println!("eth rpc action {:?}", action);
-        }
-    }
+    } 
 
     Ok(())
+
 }
 
 fn handle_response(ipc: &Vec<u8>) -> Result<()> {

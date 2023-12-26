@@ -1,4 +1,4 @@
-use crate::http::types::HttpServerAction;
+use crate::http::types::HttpServerRequest;
 use ethers::types::{ValueOrArray, U256, U64};
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +15,7 @@ struct EthEventSubscription {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ProviderAction {
-    HttpServerAction(HttpServerAction),
+    HttpServerRequest(HttpServerRequest),
     EthRpcAction(EthRpcAction),
 }
 
