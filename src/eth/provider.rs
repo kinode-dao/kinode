@@ -1,19 +1,19 @@
-use crate::http::types::HttpServerAction;
 use crate::eth::types::EthRpcAction;
+use crate::http::types::HttpServerAction;
 use crate::types::*;
 use anyhow::Result;
 use ethers::core::types::Filter;
 use ethers::prelude::Provider;
 use ethers::types::{ValueOrArray, U256, U64};
 use ethers_providers::{Middleware, StreamExt, Ws};
+use futures::SinkExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
-use tokio_tungstenite::WebSocketStream;
-use tokio_tungstenite::connect_async;
-use futures::SinkExt;
 use std::future::Future;
 use std::pin::Pin;
+use tokio_tungstenite::connect_async;
+use tokio_tungstenite::WebSocketStream;
 use url::Url;
 
 pub async fn provider(
@@ -75,20 +75,27 @@ pub async fn provider(
     Ok(())
 }
 
-async fn get_dispatch(rpc_url: String, send_to_loop: MessageSender) -> Box<dyn Fn(EthRpcAction) -> Pin<Box<dyn Future<Output = ()> + Send >>> {
-
+async fn get_dispatch(
+    rpc_url: String,
+    send_to_loop: MessageSender,
+) -> Box<dyn Fn(EthRpcAction) -> Pin<Box<dyn Future<Output = ()> + Send>>> {
     let parsed = Url::parse(&rpc_url).unwrap();
 
     match parsed.scheme() {
-        "http" | "https" => { unreachable!() }
-        "ws" | "wss" => { return ws_dispatch(rpc_url.clone(), send_to_loop).await }
-        _ => { unreachable!() }
+        "http" | "https" => {
+            unreachable!()
+        }
+        "ws" | "wss" => return ws_dispatch(rpc_url.clone(), send_to_loop).await,
+        _ => {
+            unreachable!()
+        }
     }
-
 }
 
-async fn ws_dispatch(rpc_url: String, send_to_loop: MessageSender) -> Box<dyn Fn(EthRpcAction) -> Pin<Box<dyn Future<Output = ()> + Send >>> {
-
+async fn ws_dispatch(
+    rpc_url: String,
+    send_to_loop: MessageSender,
+) -> Box<dyn Fn(EthRpcAction) -> Pin<Box<dyn Future<Output = ()> + Send>>> {
     let provider = Provider::<Ws>::connect(&rpc_url).await;
 
     Box::new(move |action| {
@@ -97,12 +104,14 @@ async fn ws_dispatch(rpc_url: String, send_to_loop: MessageSender) -> Box<dyn Fn
         Box::pin(async move {
             match action {
                 EthRpcAction::JsonRpcRequest(json) => {
-                    let (mut ws_stream, _) = connect_async(&rpc_url).await.expect("failed to connect");
-                    ws_stream.send(tokio_tungstenite::tungstenite::Message::Text(json)).await.unwrap();
+                    let (mut ws_stream, _) =
+                        connect_async(&rpc_url).await.expect("failed to connect");
+                    ws_stream
+                        .send(tokio_tungstenite::tungstenite::Message::Text(json))
+                        .await
+                        .unwrap();
 
-                    while let Some(msg) = ws_stream.next().await {
-
-                    };
+                    while let Some(msg) = ws_stream.next().await {}
                 }
                 EthRpcAction::Eth(method) => {}
                 EthRpcAction::Debug(method) => {}
