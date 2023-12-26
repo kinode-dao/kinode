@@ -21,13 +21,6 @@ struct Connections {
     uq_provider: Option<NodeId>,
 }
 
-// I need a data structure that tracks incoming requests from a particular websocket channel
-// and associates the response from the response to the outgoing websocket message with that
-// channel. It should then return the response to that channel.
-
-// this should just map responses from the outgoing websocket request
-// to the requests that made them
-
 // Request IDs to Channel IDs
 type WsRequestIds = Arc<DashMap<u32, u32>>;
 
