@@ -286,9 +286,13 @@ async fn handle_request(
         SqliteAction::Backup => {
             for db_ref in open_dbs.iter() {
                 let db = db_ref.value().lock().await;
-                let result: rusqlite::Result<()> = db.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(())).map(|_| ());
+                let result: rusqlite::Result<()> = db
+                    .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+                    .map(|_| ());
                 if let Err(e) = result {
-                    return Err(SqliteError::RusqliteError { error: e.to_string() });
+                    return Err(SqliteError::RusqliteError {
+                        error: e.to_string(),
+                    });
                 }
             }
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
