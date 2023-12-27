@@ -6,7 +6,7 @@ mod ft_worker_lib;
 use ft_worker_lib::*;
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "../../../wit",
     world: "process",
     exports: {
         world: Component,
