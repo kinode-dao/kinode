@@ -1058,6 +1058,26 @@ pub async fn kernel(
                             }
                         );
                     },
+                    t::CapMessage::GetSome { on, caps, responder } => {
+                        let _ = responder.send(
+                            match process_map.get(&on) {
+                                None => HashSet::new(),
+                                Some(p) => {
+                                    let caps_set: HashSet<t::Capability> = caps.into_iter().collect();
+                                    let common_caps: HashSet<t::Capability> = p.capabilities.intersection(&caps_set).cloned().collect();
+                                    common_caps.iter().map(|cap| t::SignedCapability {
+                                        issuer: cap.issuer.clone(),
+                                        params: cap.params.clone(),
+                                        signature: keypair
+                                            .sign(&rmp_serde::to_vec(&cap).unwrap())
+                                            .as_ref()
+                                            .to_vec(),
+                                    })
+                                    .collect()
+                                },
+                            }
+                        );
+                    }
                 }
             }
         }

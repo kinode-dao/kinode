@@ -576,8 +576,8 @@ pub fn en_wit_payload(load: Option<Payload>) -> Option<wit::Payload> {
     }
 }
 
-pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> SignedCapability {
-    SignedCapability {
+pub fn de_wit_capability(wit: wit::Capability) -> Capability {
+    Capability {
         issuer: Address {
             node: wit.issuer.node,
             process: ProcessId {
@@ -587,15 +587,13 @@ pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> SignedCapability 
             },
         },
         params: wit.params,
-        signature: wit.signature,
     }
 }
 
-pub fn _en_wit_signed_capability(cap: SignedCapability) -> wit::SignedCapability {
-    wit::SignedCapability {
+pub fn _en_wit_capability(cap: Capability) -> wit::Capability {
+    wit::Capability {
         issuer: cap.issuer.en_wit(),
         params: cap.params,
-        signature: cap.signature,
     }
 }
 
@@ -861,6 +859,11 @@ pub enum CapMessage {
         on: ProcessId,
         responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
     },
+    GetSome {
+        on: ProcessId,
+        caps: Vec<Capability>,
+        responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
+    }
 }
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;

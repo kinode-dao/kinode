@@ -4,6 +4,7 @@ use crate::types as t;
 use crate::types::STATE_PROCESS_ID;
 use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
+use crate::types::de_wit_capability;
 use anyhow::Result;
 use ring::signature::{self, KeyPair};
 use std::collections::HashSet;
@@ -264,14 +265,25 @@ impl StandardHost for process::ProcessWasi {
                                 .await;
                             rx.await.unwrap()
                         }
-                        wit::Capabilities::Some(caps) => caps
-                            .into_iter()
-                            .map(|cap| t::SignedCapability {
-                                issuer: t::Address::de_wit(cap.issuer),
-                                params: cap.params,
-                                signature: cap.signature,
-                            })
-                            .collect(),
+                        wit::Capabilities::Some(caps) => {
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            let _ = self
+                                .process
+                                .caps_oracle
+                                .send(t::CapMessage::GetSome {
+                                    on: self.process.metadata.our.process.clone(),
+                                    caps: caps
+                                        .iter()
+                                        .map(|cap| t::Capability {
+                                            issuer: t::Address::de_wit(cap.issuer.clone()),
+                                            params: cap.params.clone(),
+                                        })
+                                        .collect(),
+                                    responder: tx,
+                                })
+                                .await;
+                            rx.await.unwrap()
+                        }
                     },
                     public,
                 })
@@ -363,193 +375,86 @@ impl StandardHost for process::ProcessWasi {
     //
     // capabilities management
     //
-    async fn get_capabilities(&mut self) -> Result<Vec<wit::SignedCapability>> {
+    async fn get_capabilities(&mut self) -> Result<Vec<wit::Capability>> {
+        unimplemented!()
+        // let (tx, rx) = tokio::sync::oneshot::channel();
+        // let _ = self
+        //     .process
+        //     .caps_oracle
+        //     .send(t::CapMessage::GetAll {
+        //         on: self.process.metadata.our.process.clone(),
+        //         responder: tx,
+        //     })
+        //     .await;
+        // Ok(rx
+        //     .await
+        //     .unwrap()
+        //     .into_iter()
+        //     .map(|cap| wit::Capability {
+        //         issuer: cap.issuer.en_wit(),
+        //         params: cap.params,
+        //     })
+        //     .collect())
+    }
+
+    async fn attach_capabilities(&mut self, capabilities: Vec<wit::Capability>) -> Result<()> {
+        // out of our saved capability store, we need to get those caps
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self
             .process
             .caps_oracle
-            .send(t::CapMessage::GetAll {
+            .send(t::CapMessage::GetSome {
                 on: self.process.metadata.our.process.clone(),
+                caps: capabilities.iter().map(|cap| de_wit_capability(cap.clone())).collect(),
                 responder: tx,
             })
-            .await;
-        Ok(rx
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|cap| wit::SignedCapability {
-                issuer: cap.issuer.en_wit(),
-                params: cap.params,
-                signature: cap.signature,
-            })
-            .collect())
-    }
+            .await?;
+        let signed_caps = rx.await?;
 
-    async fn get_capability(
-        &mut self,
-        issuer: wit::Address,
-        params: String,
-    ) -> Result<Option<wit::SignedCapability>> {
-        let cap = t::Capability {
-            issuer: t::Address::de_wit(issuer),
-            params,
-        };
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self
-            .process
-            .caps_oracle
-            .send(t::CapMessage::Has {
-                on: self.process.metadata.our.process.clone(),
-                cap: cap.clone(),
-                responder: tx,
-            })
-            .await;
-        if rx.await.unwrap() {
-            let sig = self
-                .process
-                .keypair
-                .sign(&rmp_serde::to_vec(&cap).unwrap_or_default());
-            return Ok(Some(wit::SignedCapability {
-                issuer: cap.issuer.en_wit().to_owned(),
-                params: cap.params.clone(),
-                signature: sig.as_ref().to_vec(),
-            }));
-        } else {
-            return Ok(None);
-        }
-    }
 
-    async fn attach_capability(&mut self, capability: wit::SignedCapability) -> Result<()> {
         match self.process.next_message_caps {
             None => {
                 self.process.next_message_caps =
-                    Some(vec![t::de_wit_signed_capability(capability)]);
+                    Some(signed_caps.into_iter().collect());
                 Ok(())
             }
             Some(ref mut v) => {
-                v.push(t::de_wit_signed_capability(capability));
+                v.extend(signed_caps.into_iter().collect::<Vec<t::SignedCapability>>());
                 Ok(())
             }
         }
     }
 
-    async fn save_capabilities(&mut self, capabilities: Vec<wit::SignedCapability>) -> Result<()> {
-        let pk = signature::UnparsedPublicKey::new(
-            &signature::ED25519,
-            self.process.keypair.public_key(),
-        );
-        for signed_cap in capabilities {
-            // validate our signature!
-            let cap = t::Capability {
-                issuer: t::Address::de_wit(signed_cap.issuer),
-                params: signed_cap.params,
-            };
-            pk.verify(
-                &rmp_serde::to_vec(&cap).unwrap_or_default(),
-                &signed_cap.signature,
-            )?;
+    async fn save_capabilities(&mut self, caps: Vec<wit::Capability>) -> Result<()> {
+        unimplemented!()
+        // let pk = signature::UnparsedPublicKey::new(
+        //     &signature::ED25519,
+        //     self.process.keypair.public_key(),
+        // );
+        // for signed_cap in capabilities {
+        //     // validate our signature!
+        //     let cap = t::Capability {
+        //         issuer: t::Address::de_wit(signed_cap.issuer),
+        //         params: signed_cap.params,
+        //     };
+        //     pk.verify(
+        //         &rmp_serde::to_vec(&cap).unwrap_or_default(),
+        //         &signed_cap.signature,
+        //     )?;
 
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = self
-                .process
-                .caps_oracle
-                .send(t::CapMessage::Add {
-                    on: self.process.metadata.our.process.clone(),
-                    cap: cap.clone(),
-                    responder: tx,
-                })
-                .await?;
-            let _ = rx.await?;
-        }
-        Ok(())
-    }
-
-    async fn has_capability(&mut self, params: String) -> Result<bool> {
-        if self.process.prompting_message.is_none() {
-            return Err(anyhow::anyhow!(
-                "kernel: has_capability() called with no prompting_message"
-            ));
-        }
-        let prompt = self.process.prompting_message.as_ref().unwrap();
-        if prompt.source.node == self.process.metadata.our.node {
-            // if local, need to ask them
-            let cap = t::Capability {
-                issuer: self.process.metadata.our.clone(),
-                params,
-            };
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = self
-                .process
-                .caps_oracle
-                .send(t::CapMessage::Has {
-                    on: prompt.source.process.clone(),
-                    cap,
-                    responder: tx,
-                })
-                .await;
-            Ok(rx.await.unwrap_or(false))
-        } else {
-            // if remote, just check prompting_message
-            if prompt.signed_capabilities.is_none() {
-                return Ok(false);
-            }
-            for cap in prompt.signed_capabilities.as_ref().unwrap() {
-                if cap.issuer == self.process.metadata.our && cap.params == params {
-                    return Ok(true);
-                }
-            }
-            return Ok(false);
-        }
-    }
-
-    /// generate a new cap with this process as the issuer and send to caps oracle
-    async fn create_capability(&mut self, to: wit::ProcessId, params: String) -> Result<()> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self
-            .process
-            .caps_oracle
-            .send(t::CapMessage::Add {
-                on: t::ProcessId::de_wit(to),
-                cap: t::Capability {
-                    issuer: self.process.metadata.our.clone(),
-                    params,
-                },
-                responder: tx,
-            })
-            .await?;
-        let _ = rx.await?;
-        Ok(())
-    }
-
-    async fn share_capability(
-        &mut self,
-        to: wit::ProcessId,
-        signed_cap: wit::SignedCapability,
-    ) -> Result<()> {
-        let pk = signature::UnparsedPublicKey::new(
-            &signature::ED25519,
-            self.process.keypair.public_key(),
-        );
-        let cap = t::Capability {
-            issuer: t::Address::de_wit(signed_cap.issuer),
-            params: signed_cap.params,
-        };
-        pk.verify(
-            &rmp_serde::to_vec(&cap).unwrap_or_default(),
-            &signed_cap.signature,
-        )?;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self
-            .process
-            .caps_oracle
-            .send(t::CapMessage::Add {
-                on: t::ProcessId::de_wit(to),
-                cap,
-                responder: tx,
-            })
-            .await?;
-        let _ = rx.await?;
-        Ok(())
+        //     let (tx, rx) = tokio::sync::oneshot::channel();
+        //     let _ = self
+        //         .process
+        //         .caps_oracle
+        //         .send(t::CapMessage::Add {
+        //             on: self.process.metadata.our.process.clone(),
+        //             cap: cap.clone(),
+        //             responder: tx,
+        //         })
+        //         .await?;
+        //     let _ = rx.await?;
+        // }
+        // Ok(())
     }
     //
     // message I/O:
