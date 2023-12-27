@@ -330,7 +330,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         let routers_raw = decoded.0;
                         node.routers = routers_raw
                             .iter()
-                            .map(|r| hex::encode(r))
+                            .map(|r| format!("0x{}", hex::encode(r)))
                             .collect::<Vec<String>>();
                         send = true;
                     }
