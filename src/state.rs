@@ -218,7 +218,7 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            let checkpoint_dir = format!("{}/vfs/kernel_backup", &home_directory_path);
+            let checkpoint_dir = format!("{}/kernel/backup", &home_directory_path);
 
             if Path::new(&checkpoint_dir).exists() {
                 fs::remove_dir_all(&checkpoint_dir).await?;
