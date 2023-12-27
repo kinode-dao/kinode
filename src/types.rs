@@ -840,7 +840,7 @@ pub enum KernelResponse {
 pub enum CapMessage {
     Add {
         on: ProcessId,
-        cap: Capability,
+        caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
     _Drop {

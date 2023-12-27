@@ -476,7 +476,7 @@ async fn add_capability(
     send_to_caps_oracle
         .send(CapMessage::Add {
             on: source.process.clone(),
-            cap,
+            caps: vec![cap],
             responder: send_cap_bool,
         })
         .await?;

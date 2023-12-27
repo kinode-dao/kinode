@@ -215,13 +215,13 @@ async fn handle_kernel_request(
             caps_oracle
                 .send(t::CapMessage::Add {
                     on: km.source.process.clone(),
-                    cap: t::Capability {
+                    caps: vec![t::Capability {
                         issuer: t::Address {
                             node: our_name.clone(),
                             process: id.clone(),
                         },
                         params: "\"messaging\"".into(),
-                    },
+                    }],
                     responder: tokio::sync::oneshot::channel().0,
                 })
                 .await
@@ -1012,13 +1012,13 @@ pub async fn kernel(
             // capabilities oracle: handles all requests to add, drop, and check capabilities
             Some(cap_message) = caps_oracle_receiver.recv() => {
                 match cap_message {
-                    t::CapMessage::Add { on, cap, responder } => {
+                    t::CapMessage::Add { on, caps, responder } => {
                         // insert cap in process map
                         let Some(entry) = process_map.get_mut(&on) else {
                             let _ = responder.send(false);
                             continue;
                         };
-                        entry.capabilities.insert(cap);
+                        entry.capabilities.extend(caps);
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
                     },
@@ -1064,9 +1064,9 @@ pub async fn kernel(
                                 None => HashSet::new(),
                                 Some(p) => {
                                     caps.iter().filter_map(|cap| {
-                                        // if it is in our store, attach the signed versions
+                                        // if it is in our store OR
                                         if p.capabilities.contains(cap) ||
-                                            // if this process is issuing the cap, sign it
+                                            // if this process is issuing the cap, then sign it
                                             (cap.issuer.node == our.name && cap.issuer.process == on) {
                                             Some(t::SignedCapability {
                                                 issuer: cap.issuer.clone(),
