@@ -670,7 +670,7 @@ fn handle_remote_request(
                 return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
             }
             // get the .zip from VFS and attach as payload to response
-            let file_path = format!("/{}/pkg.zip", package);
+            let file_path = format!("/{}/pkg/{}.zip", package, package);
             let Ok(Ok(_)) = Request::new()
                 .target(("our", "vfs", "sys", "uqbar"))
                 .ipc(serde_json::to_vec(&kt::VfsRequest {
