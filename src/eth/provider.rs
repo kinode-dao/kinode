@@ -4,15 +4,17 @@ use crate::types::*;
 use anyhow::Result;
 use dashmap::DashMap;
 use ethers::prelude::Provider;
-use ethers_providers::{Http, StreamExt, Ws};
+use ethers_providers::{Http, Middleware, StreamExt, Ws};
 use futures::stream::SplitSink;
 use futures::SinkExt;
 use std::sync::Arc;
+use serde_json::json;
 use tokio::net::TcpStream;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use url::Url;
+
 
 struct Connections {
     ws_sender: Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, TungsteniteMessage>>,
@@ -81,7 +83,9 @@ pub async fn provider(
             connections.ws_sender = Some(_ws_sender);
             connections.ws_provider = Some(Provider::<Ws>::connect(rpc_url.clone()).await?);
 
+            let send_to_loop = send_to_loop.clone();
             let ws_request_ids = ws_request_ids.clone();
+            let our = our.clone();
 
             tokio::spawn(async move {
                 while let Some(message) = ws_receiver.next().await {
@@ -154,11 +158,13 @@ pub async fn provider(
             Message::Request(Request { ref ipc, .. }) => {
                 println!("eth request");
                 let _ = handle_request(
+                    our.clone(),
                     ipc,
                     km.source,
                     km.payload,
                     ws_request_ids.clone(),
                     &mut connections,
+                    send_to_loop.clone(),
                 )
                 .await;
             }
@@ -177,13 +183,21 @@ pub async fn provider(
 }
 
 async fn handle_request(
+    our: String,
     ipc: &Vec<u8>,
     source: Address,
     payload: Option<Payload>,
     ws_request_ids: WsRequestIds,
-    connections: &mut Connections,
+    connections: &mut Connections , 
+    send_to_loop: MessageSender,
 ) -> Result<()> {
+
     println!("request");
+
+    let target = Address {
+        node: our.clone(),
+        process: source.process.clone(),
+    };
 
     if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(ipc) {
         match action {
@@ -233,14 +247,45 @@ async fn handle_request(
             HttpServerRequest::WebSocketClose(channel_id) => {}
             HttpServerRequest::Http(_) => todo!(),
         }
-    } else if let Ok(action) = serde_json::from_slice::<EthRpcAction>(ipc) {
+    } else if let Ok(action) = serde_json::from_slice::<EthRequest>(ipc) {
         match action {
-            EthRpcAction::JsonRpcRequest(_) => unreachable!(),
-            EthRpcAction::Eth(method) => {}
-            EthRpcAction::Debug(method) => {}
-            EthRpcAction::Net(method) => {}
-            EthRpcAction::Trace(method) => {}
-            EthRpcAction::TxPool(method) => {}
+            EthRequest::SubscribeLogs(request) => {
+                println!("subscribe logs {:?}", request);
+
+                let Ok(mut stream) = connections
+                    .ws_provider.as_mut().unwrap()
+                    .subscribe_logs(&request.filter.clone())
+                    .await 
+                else {
+                    todo!();
+                };
+
+
+                while let Some(event) = stream.next().await {
+                    send_to_loop.send(
+                        KernelMessage {
+                            id: rand::random(),
+                            source: Address { 
+                                node: our.clone(),
+                                process: ETH_PROCESS_ID.clone(),
+                            },
+                            target: target.clone(),
+                            rsvp: None,
+                            message: Message::Request(Request {
+                                inherit: false,
+                                expects_response: None,
+                                ipc: json!({
+                                    "EventSubscription": serde_json::to_value(event.clone()).unwrap()
+                                }).to_string().into_bytes(),
+                                metadata: None,
+                            }),
+                            payload: None,
+                            signed_capabilities: None,
+                        }
+                    ).await.unwrap();
+                }
+
+            }
         }
     } else {
         println!("unknown request");

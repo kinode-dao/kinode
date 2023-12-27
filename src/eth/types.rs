@@ -1,6 +1,16 @@
 use crate::http::types::HttpServerRequest;
-use ethers::types::{ValueOrArray, U256, U64};
+use ethers::types::{Filter, ValueOrArray, U256, U64};
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SubscribeLogs {
+    pub filter: Filter
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum EthRequest {
+    SubscribeLogs(SubscribeLogs),
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct EthEventSubscription {

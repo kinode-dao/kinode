@@ -5,9 +5,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::HashMap;
 use std::string::FromUtf8Error;
+use std::str::FromStr;
 use uqbar_process_lib::{
-    await_message, get_typed_state, http, println, receive, set_state, Address, Message, Payload,
-    Request, Response,
+    await_message, get_typed_state, http, println, set_state, Address, Message, Payload,
+    Request, Response, 
+};
+use uqbar_process_lib::eth::{
+    EthAddress,
+    SubscribeLogsRequest,
+    ValueOrArray
 };
 
 wit_bindgen::generate!({
@@ -34,6 +40,7 @@ struct State {
 #[derive(Debug, Serialize, Deserialize)]
 enum AllActions {
     EventSubscription(EthEvent),
+    Dev(EthEvent),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -147,6 +154,7 @@ impl Guest for Component {
 }
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
+
     // shove all state into net::net
     Request::new()
         .target((&our.node, "net", "sys", "uqbar"))
@@ -155,11 +163,27 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    Request::new()
-        .target((&our.node, "eth_rpc", "sys", "uqbar"))
-        .ipc(subscribe_to_qns(state.block - 1))
-        .expects_response(5)
-        .send()?;
+    // Request::new()
+    //     .target((&our.node, "eth_rpc", "sys", "uqbar"))
+    //     .ipc(subscribe_to_qns(state.block - 1))
+    //     .expects_response(5)
+    //     .send()?;
+
+    let qns_registry_addr = EthAddress::from_str("0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1")?;
+
+    SubscribeLogsRequest::new()
+        .address(qns_registry_addr)
+        .from_block(state.block - 1)
+        .events(vec![
+            "NodeRegistered(bytes32,bytes)",
+            "KeyUpdate(bytes32,bytes32)",
+            "IpUpdate(bytes32,uint128)",
+            "WsUpdate(bytes32,uint16)",
+            "WtUpdate(bytes32,uint16)",
+            "TcpUpdate(bytes32,uint16)",
+            "UdpUpdate(bytes32,uint16)",
+            "RoutingUpdate(bytes32,bytes32[])",
+        ]).send()?;
 
     http::bind_http_path("/node/:name", false, false)?;
 
@@ -215,7 +239,15 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         };
 
         match msg {
+            AllActions::Dev(e) => {
+
+                println!("receiving it {:?}", e);
+
+            }
             AllActions::EventSubscription(e) => {
+
+                println!("receiving event");
+
                 state.block = hex_to_u64(&e.block_number)?;
                 let nodeId = &e.topics[1];
 
@@ -308,6 +340,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
 
                 if send {
+                    println!("Sending update for {:?}", node);
                     Request::new()
                         .target((&our.node, "net", "sys", "uqbar"))
                         .try_ipc(NetActions::QnsUpdate(node.clone()))?
