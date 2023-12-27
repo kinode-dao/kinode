@@ -9,7 +9,6 @@
             "filesystem:sys:uqbar",
             "http_server:sys:uqbar",
             "http_client:sys:uqbar",
-            "encryptor:sys:uqbar",
             "net:sys:uqbar",
             "vfs:sys:uqbar",
             "kernel:sys:uqbar",

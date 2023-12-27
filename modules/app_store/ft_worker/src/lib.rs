@@ -23,8 +23,6 @@ pub enum FTWorkerProtocol {
 call_init!(init);
 
 fn init(our: Address) {
-    println!("{}: start", our.process);
-
     let Ok(Message::Request { source: parent_process, ipc, .. }) = await_message() else {
             panic!("ft_worker: got bad init message");
         };

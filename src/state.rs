@@ -348,7 +348,7 @@ async fn bootstrap(
 
     let packages = get_zipped_packages().await;
 
-    for (package_name, mut package) in packages {
+    for (package_name, mut package) in packages.clone() {
         // special case tester: only load it in if in simulation mode
         if package_name == "tester" {
             #[cfg(not(feature = "simulation-mode"))]
@@ -488,56 +488,6 @@ async fn bootstrap(
                 }
             }
 
-            // grant capabilities to other initially spawned processes, distro
-            if let Some(to_grant) = &entry.grant_messaging {
-                for value in to_grant {
-                    let mut capability = None;
-                    let mut to_process = None;
-                    match value {
-                        serde_json::Value::String(process_name) => {
-                            if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
-                                capability = Some(Capability {
-                                    issuer: Address {
-                                        node: our_name.to_string(),
-                                        process: ProcessId::from_str(&our_process_id).unwrap(),
-                                    },
-                                    params: "\"messaging\"".into(),
-                                });
-                                to_process = Some(parsed_process_id);
-                            }
-                        }
-                        serde_json::Value::Object(map) => {
-                            if let Some(process_name) = map.get("process") {
-                                if let Ok(parsed_process_id) =
-                                    ProcessId::from_str(&process_name.as_str().unwrap())
-                                {
-                                    if let Some(params) = map.get("params") {
-                                        capability = Some(Capability {
-                                            issuer: Address {
-                                                node: our_name.to_string(),
-                                                process: ProcessId::from_str(&our_process_id)
-                                                    .unwrap(),
-                                            },
-                                            params: params.to_string(),
-                                        });
-                                        to_process = Some(parsed_process_id);
-                                    }
-                                }
-                            }
-                        }
-                        _ => {
-                            continue;
-                        }
-                    }
-
-                    if let Some(cap) = capability {
-                        if let Some(process) = process_map.get_mut(&to_process.unwrap()) {
-                            process.capabilities.insert(cap);
-                        }
-                    }
-                }
-            }
-
             if entry.request_networking {
                 requested_caps.insert(Capability {
                     issuer: Address {
@@ -585,6 +535,114 @@ async fn bootstrap(
                     public: public_process,
                 },
             );
+        }
+    }
+    // second loop: go and grant_capabilities to processes
+    // can't do this in first loop because we need to have all processes in the map first
+    for (package_name, mut package) in packages {
+        // special case tester: only load it in if in simulation mode
+        if package_name == "tester" {
+            #[cfg(not(feature = "simulation-mode"))]
+            continue;
+            #[cfg(feature = "simulation-mode")]
+            {}
+        }
+
+        // get and read manifest.json
+        let Ok(mut package_manifest_zip) = package.by_name("manifest.json") else {
+            println!(
+                "fs: missing manifest for package {}, skipping",
+                package_name
+            );
+            continue;
+        };
+        let mut manifest_content = Vec::new();
+        package_manifest_zip
+            .read_to_end(&mut manifest_content)
+            .unwrap();
+        drop(package_manifest_zip);
+        let package_manifest = String::from_utf8(manifest_content)?;
+        let package_manifest = serde_json::from_str::<Vec<PackageManifestEntry>>(&package_manifest)
+            .expect("fs: manifest parse error");
+
+        // get and read metadata.json
+        let Ok(mut package_metadata_zip) = package.by_name("metadata.json") else {
+            println!(
+                "fs: missing metadata for package {}, skipping",
+                package_name
+            );
+            continue;
+        };
+        let mut metadata_content = Vec::new();
+        package_metadata_zip
+            .read_to_end(&mut metadata_content)
+            .unwrap();
+        drop(package_metadata_zip);
+        let package_metadata: serde_json::Value =
+            serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
+
+        println!("fs: found package metadata: {:?}\r", package_metadata);
+
+        let package_name = package_metadata["package"]
+            .as_str()
+            .expect("fs: metadata parse error: bad package name");
+
+        let package_publisher = package_metadata["publisher"]
+            .as_str()
+            .expect("fs: metadata parse error: bad publisher name");
+
+        // for each process-entry in manifest.json:
+        for entry in package_manifest {
+            let our_process_id = format!(
+                "{}:{}:{}",
+                entry.process_name, package_name, package_publisher
+            );
+
+            // grant capabilities to other initially spawned processes, distro
+            if let Some(to_grant) = &entry.grant_messaging {
+                for value in to_grant {
+                    match value {
+                        serde_json::Value::String(process_name) => {
+                            if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
+                                if let Some(process) = process_map.get_mut(&parsed_process_id) {
+                                    process.capabilities.insert(Capability {
+                                        issuer: Address {
+                                            node: our_name.to_string(),
+                                            process: ProcessId::from_str(&our_process_id).unwrap(),
+                                        },
+                                        params: "\"messaging\"".into(),
+                                    });
+                                }
+                            }
+                        }
+                        serde_json::Value::Object(map) => {
+                            if let Some(process_name) = map.get("process") {
+                                if let Ok(parsed_process_id) =
+                                    ProcessId::from_str(&process_name.as_str().unwrap())
+                                {
+                                    if let Some(params) = map.get("params") {
+                                        if let Some(process) =
+                                            process_map.get_mut(&parsed_process_id)
+                                        {
+                                            process.capabilities.insert(Capability {
+                                                issuer: Address {
+                                                    node: our_name.to_string(),
+                                                    process: ProcessId::from_str(&our_process_id)
+                                                        .unwrap(),
+                                                },
+                                                params: params.to_string(),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            continue;
+                        }
+                    }
+                }
+            }
         }
     }
     Ok(())
