@@ -1,14 +1,12 @@
 use serde::{Deserialize, Serialize};
-//use uqbar_process_lib::uqbar::process::standard::*;
-
-use uqbar_process_lib::uqbar::process::standard::{Message as StdMessage, Request as StdRequest, Response as StdResponse, SendErrorKind};
-use uqbar_process_lib::{await_message, get_payload, print_to_terminal, send_and_await_response, send_request, send_response, Address, Message, Payload};
+use uqbar_process_lib::*;
+use uqbar_process_lib::println;
 
 mod ft_worker_lib;
 use ft_worker_lib::*;
 
 wit_bindgen::generate!({
-    path: "../../../wit",
+    path: "wit",
     world: "process",
     exports: {
         world: Component,
@@ -22,204 +20,153 @@ pub enum FTWorkerProtocol {
     Finished,
 }
 
-struct Component;
-impl Guest for Component {
-    fn init(our: String) {
-        let our = Address::from_str(&our).unwrap();
-        print_to_terminal(1, &format!("{}: start", our.process));
+call_init!(init);
 
-        let Ok(Message::Request { source: parent_process, ipc, .. }) = await_message() else {
+fn init(our: Address) {
+    println!("{}: start", our.process);
+
+    let Ok(Message::Request { source: parent_process, ipc, .. }) = await_message() else {
             panic!("ft_worker: got bad init message");
         };
 
-        let command = serde_json::from_slice::<FTWorkerCommand>(&ipc)
-            .expect("ft_worker: got unparseable init message");
+    let command = serde_json::from_slice::<FTWorkerCommand>(&ipc)
+        .expect("ft_worker: got unparseable init message");
 
-        match command {
-            FTWorkerCommand::Send {
-                target,
-                file_name,
-                timeout,
-            } => {
-                let transfer_id: u64 = our.process.process().parse().unwrap();
-                let Some(payload) = get_payload() else {
-                    print_to_terminal(0, "FTWorker wasn't given payload, exiting");
-                    return
-                };
-                let file_bytes = payload.bytes;
-                let mut file_size = file_bytes.len() as u64;
-                let mut offset: u64 = 0;
-                let mut chunk_size: u64 = 1048576; // 1MB
-                let total_chunks = (file_size as f64 / chunk_size as f64).ceil() as u64;
-                // send a file to another worker
-                // start by telling target to expect a file,
-                // then upon reciving affirmative response,
-                // send contents in chunks and wait for
-                // acknowledgement.
-                match send_and_await_response(
-                    &Address::from_str(&target).unwrap(),
-                    &StdRequest {
-                        inherit: false,
-                        expects_response: Some(timeout),
-                        ipc: serde_json::to_vec(&FTWorkerCommand::Receive {
-                            transfer_id,
-                            file_name,
-                            file_size,
-                            total_chunks,
-                            timeout,
-                        })
-                        .unwrap(),
-                        metadata: None,
-                    },
-                    None,
-                ) {
-                    Err(send_error) => {
-                        respond_to_parent(FTWorkerResult::Err(match send_error.kind {
-                            SendErrorKind::Offline => TransferError::TargetOffline,
-                            SendErrorKind::Timeout => TransferError::TargetTimeout,
-                        }))
-                    }
-                    Ok((opp_worker, StdMessage::Response((response, _)))) => {
-                        let Ok(FTWorkerProtocol::Ready) = serde_json::from_slice(&response.ipc) else {
-                            respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected));
-                            return;
-                        };
-                        // send file in chunks
-                        loop {
-                            if file_size < chunk_size {
-                                // this is the last chunk, so we should expect a Finished response
-                                chunk_size = file_size;
-                                let payload = Payload {
-                                    mime: None,
-                                    bytes: file_bytes
-                                        [offset as usize..offset as usize + chunk_size as usize]
-                                        .to_vec(),
-                                };
-                                send_request(
-                                    &opp_worker,
-                                    &StdRequest {
-                                        inherit: false,
-                                        expects_response: Some(timeout),
-                                        ipc: vec![],
-                                        metadata: None,
-                                    },
-                                    None,
-                                    Some(&payload),
-                                );
-                                break;
-                            }
-                            let payload = Payload {
-                                mime: None,
-                                bytes: file_bytes
-                                    [offset as usize..offset as usize + chunk_size as usize]
-                                    .to_vec(),
-                            };
-                            send_request(
-                                &opp_worker,
-                                &StdRequest {
-                                    inherit: false,
-                                    expects_response: None,
-                                    ipc: vec![],
-                                    metadata: None,
-                                },
-                                None,
-                                Some(&payload),
-                            );
-                            file_size -= chunk_size;
-                            offset += chunk_size;
-                        }
-                        // now wait for Finished response
-                        let Ok(Message::Response { ipc, .. }) = await_message() else {
-                            respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected));
-                            return;
-                        };
-                        let Ok(FTWorkerProtocol::Finished) = serde_json::from_slice(&ipc) else {
-                            respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected));
-                            return;
-                        };
-                        // return success to parent
-                        respond_to_parent(FTWorkerResult::SendSuccess);
-                    }
-                    _ => respond_to_parent(FTWorkerResult::Err(TransferError::TargetRejected)),
-                }
-            }
-            FTWorkerCommand::Receive {
-                file_name,
-                total_chunks,
-                timeout,
-                ..
-            } => {
-                // send Ready response to counterparty
-                send_response(
-                    &StdResponse {
-                        inherit: false,
-                        ipc: serde_json::to_vec(&FTWorkerProtocol::Ready).unwrap(),
-                        metadata: None,
-                    },
-                    None,
-                );
-                // receive a file from a worker, then send it to parent
-                // all messages will be chunks of file. when we receive the
-                // last chunk, send a Finished message to sender and Success to parent.
-                let mut file_bytes = Vec::new();
-                let mut chunks_received = 0;
-                let start_time = std::time::Instant::now();
-                loop {
-                    let Ok(Message::Request { .. }) = await_message() else {
-                        respond_to_parent(FTWorkerResult::Err(TransferError::SourceFailed));
-                        return;
-                    };
-                    if start_time.elapsed().as_secs() > timeout {
-                        respond_to_parent(FTWorkerResult::Err(TransferError::SourceFailed));
-                        return;
-                    }
-                    let Some(payload) = get_payload() else {
-                        respond_to_parent(FTWorkerResult::Err(TransferError::SourceFailed));
-                        return;
-                    };
-                    chunks_received += 1;
-                    file_bytes.extend(payload.bytes);
-                    if chunks_received == total_chunks {
-                        break;
-                    }
-                }
-                // send Finished message to sender
-                send_response(
-                    &StdResponse {
-                        inherit: false,
-                        ipc: serde_json::to_vec(&FTWorkerProtocol::Finished).unwrap(),
-                        metadata: None,
-                    },
-                    None,
-                );
-                // send Success message to parent
-                send_request(
-                    &parent_process,
-                    &StdRequest {
-                        inherit: false,
-                        expects_response: None,
-                        ipc: serde_json::to_vec(&FTWorkerResult::ReceiveSuccess(file_name))
-                            .unwrap(),
-                        metadata: None,
-                    },
-                    None,
-                    Some(&Payload {
-                        mime: None,
-                        bytes: file_bytes,
-                    }),
-                );
-            }
-        }
-    }
+    let Some(result) = (match command {
+        FTWorkerCommand::Send {
+            target,
+            file_name,
+            timeout,
+        } => Some(handle_send(&our, &target, &file_name, timeout)),
+        FTWorkerCommand::Receive {
+            file_name,
+            total_chunks,
+            timeout,
+            ..
+        } => handle_receive(parent_process, &file_name, total_chunks, timeout),
+    }) else { return };
+
+    Response::new()
+        .ipc(serde_json::to_vec(&result).unwrap())
+        .send()
+        .unwrap();
+
+    // job is done
 }
 
-fn respond_to_parent(result: FTWorkerResult) {
-    send_response(
-        &StdResponse {
-            inherit: false,
-            ipc: serde_json::to_vec(&result).unwrap(),
-            metadata: None,
-        },
-        None,
-    );
+fn handle_send(our: &Address, target: &Address, file_name: &str, timeout: u64) -> FTWorkerResult {
+    let transfer_id: u64 = our.process().parse().unwrap();
+    let Some(payload) = get_payload() else {
+        println!("ft_worker: wasn't given payload!");
+        return FTWorkerResult::Err(TransferError::SourceFailed)
+    };
+    let file_bytes = payload.bytes;
+    let mut file_size = file_bytes.len() as u64;
+    let mut offset: u64 = 0;
+    let chunk_size: u64 = 1048576; // 1MB, can be changed
+    let total_chunks = (file_size as f64 / chunk_size as f64).ceil() as u64;
+    // send a file to another worker
+    // start by telling target to expect a file,
+    // then upon reciving affirmative response,
+    // send contents in chunks and wait for
+    // acknowledgement.
+    let Ok(Ok(response)) = Request::to(target.clone())
+        .ipc(serde_json::to_vec(&FTWorkerCommand::Receive {
+            transfer_id,
+            file_name: file_name.to_string(),
+            file_size,
+            total_chunks,
+            timeout,
+        }).unwrap())
+        .send_and_await_response(timeout) else {
+            return FTWorkerResult::Err(TransferError::TargetOffline)
+        };
+    let opp_worker = response.source();
+    let Ok(FTWorkerProtocol::Ready) = serde_json::from_slice(&response.ipc()) else {
+        return FTWorkerResult::Err(TransferError::TargetRejected)
+    };
+    // send file in chunks
+    loop {
+        if file_size < chunk_size {
+            // this is the last chunk, so we should expect a Finished response
+            let _ = Request::to(opp_worker.clone())
+                .ipc(vec![])
+                .payload(Payload {
+                    mime: None,
+                    bytes: file_bytes[offset as usize..offset as usize + file_size as usize]
+                        .to_vec(),
+                })
+                .expects_response(timeout)
+                .send();
+            break;
+        }
+        let _ = Request::to(opp_worker.clone())
+            .ipc(vec![])
+            .payload(Payload {
+                mime: None,
+                bytes: file_bytes[offset as usize..offset as usize + chunk_size as usize].to_vec(),
+            })
+            .send();
+        file_size -= chunk_size;
+        offset += chunk_size;
+    }
+    // now wait for Finished response
+    let Ok(Message::Response { ipc, .. }) = await_message() else {
+        return FTWorkerResult::Err(TransferError::TargetRejected)
+    };
+    let Ok(FTWorkerProtocol::Finished) = serde_json::from_slice(&ipc) else {
+        return FTWorkerResult::Err(TransferError::TargetRejected)
+    };
+    // return success to parent
+    return FTWorkerResult::SendSuccess;
+}
+
+fn handle_receive(
+    parent_process: Address,
+    file_name: &str,
+    total_chunks: u64,
+    timeout: u64,
+) -> Option<FTWorkerResult> {
+    // send Ready response to counterparty
+    Response::new()
+        .ipc(serde_json::to_vec(&FTWorkerProtocol::Ready).unwrap())
+        .send()
+        .unwrap();
+    // receive a file from a worker, then send it to parent
+    // all messages will be chunks of file. when we receive the
+    // last chunk, send a Finished message to sender and Success to parent.
+    let mut file_bytes = Vec::new();
+    let mut chunks_received = 0;
+    let start_time = std::time::Instant::now();
+    loop {
+        let Ok(Message::Request { .. }) = await_message() else {
+            return Some(FTWorkerResult::Err(TransferError::SourceFailed))
+        };
+        if start_time.elapsed().as_secs() > timeout {
+            return Some(FTWorkerResult::Err(TransferError::SourceFailed))
+        }
+        let Some(payload) = get_payload() else {
+            return Some(FTWorkerResult::Err(TransferError::SourceFailed))
+        };
+        chunks_received += 1;
+        file_bytes.extend(payload.bytes);
+        if chunks_received == total_chunks {
+            break;
+        }
+    }
+    // send Finished message to sender
+    Response::new()
+        .ipc(serde_json::to_vec(&FTWorkerProtocol::Finished).unwrap())
+        .send()
+        .unwrap();
+    // send Success message to parent
+    Request::to(parent_process)
+        .ipc(serde_json::to_vec(&FTWorkerResult::ReceiveSuccess(file_name.to_string())).unwrap())
+        .payload(Payload {
+            mime: None,
+            bytes: file_bytes,
+        })
+        .send()
+        .unwrap();
+    None
 }
