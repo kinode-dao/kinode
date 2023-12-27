@@ -17,9 +17,9 @@ pub async fn kv(
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: String,
 ) -> anyhow::Result<()> {
-    let vfs_path = format!("{}/vfs", &home_directory_path);
+    let kv_path = format!("{}/kv", &home_directory_path);
 
-    if let Err(e) = fs::create_dir_all(&vfs_path).await {
+    if let Err(e) = fs::create_dir_all(&kv_path).await {
         panic!("failed creating kv dir! {:?}", e);
     }
 
@@ -59,7 +59,7 @@ pub async fn kv(
                 let send_to_loop = send_to_loop.clone();
                 let open_kvs = open_kvs.clone();
                 let txs = txs.clone();
-                let vfs_path = vfs_path.clone();
+                let kv_path = kv_path.clone();
 
                 tokio::spawn(async move {
                     let mut queue_lock = queue.lock().await;
@@ -72,7 +72,7 @@ pub async fn kv(
                             send_to_loop.clone(),
                             send_to_terminal.clone(),
                             send_to_caps_oracle.clone(),
-                            vfs_path.clone(),
+                            kv_path.clone(),
                         )
                         .await
                         {
@@ -95,7 +95,7 @@ async fn handle_request(
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     send_to_caps_oracle: CapMessageSender,
-    vfs_path: String,
+    kv_path: String,
 ) -> Result<(), KvError> {
     let KernelMessage {
         id,
@@ -132,7 +132,7 @@ async fn handle_request(
         open_kvs.clone(),
         send_to_caps_oracle.clone(),
         &request,
-        vfs_path.clone(),
+        kv_path.clone(),
     )
     .await?;
 
@@ -328,7 +328,7 @@ async fn check_caps(
     open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
     mut send_to_caps_oracle: CapMessageSender,
     request: &KvRequest,
-    vfs_path: String,
+    kv_path: String,
 ) -> Result<(), KvError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
@@ -418,8 +418,8 @@ async fn check_caps(
             }
 
             let db_path = format!(
-                "{}/{}/kv/{}",
-                vfs_path,
+                "{}/{}/{}",
+                kv_path,
                 request.package_id.to_string(),
                 request.db.to_string()
             );
@@ -431,11 +431,7 @@ async fn check_caps(
             Ok(())
         }
         KvAction::Backup { .. } => {
-            if source.process != *STATE_PROCESS_ID {
-                return Err(KvError::NoCap {
-                    error: request.action.to_string(),
-                });
-            }
+            // caps
             Ok(())
         }
     }

@@ -37,9 +37,9 @@ pub async fn sqlite(
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: String,
 ) -> anyhow::Result<()> {
-    let vfs_path = format!("{}/vfs", &home_directory_path);
+    let sqlite_path = format!("{}/sqlite", &home_directory_path);
 
-    if let Err(e) = fs::create_dir_all(&vfs_path).await {
+    if let Err(e) = fs::create_dir_all(&sqlite_path).await {
         panic!("failed creating sqlite dir! {:?}", e);
     }
 
@@ -79,7 +79,7 @@ pub async fn sqlite(
                 let open_dbs = open_dbs.clone();
 
                 let txs = txs.clone();
-                let vfs_path = vfs_path.clone();
+                let sqlite_path = sqlite_path.clone();
 
                 tokio::spawn(async move {
                     let mut queue_lock = queue.lock().await;
@@ -92,7 +92,7 @@ pub async fn sqlite(
                             send_to_loop.clone(),
                             send_to_terminal.clone(),
                             send_to_caps_oracle.clone(),
-                            vfs_path.clone(),
+                            sqlite_path.clone(),
                         )
                         .await
                         {
@@ -115,7 +115,7 @@ async fn handle_request(
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     send_to_caps_oracle: CapMessageSender,
-    vfs_path: String,
+    sqlite_path: String,
 ) -> Result<(), SqliteError> {
     let KernelMessage {
         id,
@@ -152,7 +152,7 @@ async fn handle_request(
         open_dbs.clone(),
         send_to_caps_oracle.clone(),
         &request,
-        vfs_path.clone(),
+        sqlite_path.clone(),
     )
     .await?;
 
@@ -284,8 +284,17 @@ async fn handle_request(
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Backup => {
-            // execute WAL flush.
-            //
+            for db_ref in open_dbs.iter() {
+                let db = db_ref.value().lock().await;
+                let result: rusqlite::Result<()> = db
+                    .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+                    .map(|_| ());
+                if let Err(e) = result {
+                    return Err(SqliteError::RusqliteError {
+                        error: e.to_string(),
+                    });
+                }
+            }
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
     };
@@ -342,7 +351,7 @@ async fn check_caps(
     open_dbs: Arc<DashMap<(PackageId, String), Mutex<Connection>>>,
     mut send_to_caps_oracle: CapMessageSender,
     request: &SqliteRequest,
-    vfs_path: String,
+    sqlite_path: String,
 ) -> Result<(), SqliteError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
@@ -429,8 +438,8 @@ async fn check_caps(
             }
 
             let db_path = format!(
-                "{}/{}/sqlite/{}",
-                vfs_path,
+                "{}/{}/{}",
+                sqlite_path,
                 request.package_id.to_string(),
                 request.db.to_string()
             );
@@ -449,11 +458,6 @@ async fn check_caps(
         }
         SqliteAction::Backup => {
             // flushing WALs for backup
-            // check caps.
-            for db_ref in open_dbs.iter() {
-                let db = db_ref.value().lock().await;
-                db.execute("pragma wal_checkpoint", [])?;
-            }
             Ok(())
         }
     }
@@ -532,7 +536,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: SqliteError) 
         id: km.id,
         source: Address {
             node: our_name.clone(),
-            process: KV_PROCESS_ID.clone(),
+            process: SQLITE_PROCESS_ID.clone(),
         },
         target: match &km.rsvp {
             None => km.source.clone(),
