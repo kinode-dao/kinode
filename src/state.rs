@@ -218,15 +218,23 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            // handle Backup action
-            println!("got backup");
-            let checkpoint_dir = format!("{}/kernel/checkpoint", &home_directory_path);
+            let checkpoint_dir = format!("{}/vfs/kernel_backup", &home_directory_path);
 
             if Path::new(&checkpoint_dir).exists() {
-                let _ = fs::remove_dir_all(&checkpoint_dir).await;
+                fs::remove_dir_all(&checkpoint_dir).await?;
             }
-            let checkpoint = Checkpoint::new(&db).unwrap();
-            checkpoint.create_checkpoint(&checkpoint_dir).unwrap();
+            let checkpoint = Checkpoint::new(&db).map_err(|e| StateError::RocksDBError {
+                action: "BackupCheckpointNew".into(),
+                error: e.to_string(),
+            })?;
+
+            checkpoint.create_checkpoint(&checkpoint_dir).map_err(|e| {
+                StateError::RocksDBError {
+                    action: "BackupCheckpointCreate".into(),
+                    error: e.to_string(),
+                }
+            })?;
+
             (serde_json::to_vec(&StateResponse::Backup).unwrap(), None)
         }
     };
@@ -663,6 +671,14 @@ async fn get_zipped_packages() -> Vec<(String, zip::ZipArchive<std::io::Cursor<&
     }
 
     packages
+}
+
+impl From<std::io::Error> for StateError {
+    fn from(err: std::io::Error) -> Self {
+        StateError::IOError {
+            error: err.to_string(),
+        }
+    }
 }
 
 fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -> KernelMessage {
