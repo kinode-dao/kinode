@@ -378,18 +378,17 @@ impl StandardHost for process::ProcessWasi {
     async fn get_capabilities(&mut self) -> Result<Vec<wit::Capability>> {
         // TODO there is no reason to clone this here
         let Some(msg) = self.process.prompting_message.clone() else {
-            return Err(anyhow::anyhow!(
-                "get_capabilities: no prompting message!"
-            ));
+            return Err(anyhow::anyhow!("get_capabilities: no prompting message!"));
         };
-        Ok(msg.signed_capabilities
+        Ok(msg
+            .signed_capabilities
             .unwrap_or(vec![])
             .into_iter()
             .map(|signed_cap| wit::Capability {
                 issuer: signed_cap.issuer.en_wit(),
                 params: signed_cap.params,
-            }).collect()
-        )
+            })
+            .collect())
     }
 
     async fn attach_capabilities(&mut self, capabilities: Vec<wit::Capability>) -> Result<()> {
