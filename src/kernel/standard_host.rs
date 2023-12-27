@@ -1,10 +1,10 @@
 use crate::kernel::process;
 use crate::kernel::process::uqbar::process::standard as wit;
 use crate::types as t;
+use crate::types::de_wit_capability;
 use crate::types::STATE_PROCESS_ID;
 use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
-use crate::types::de_wit_capability;
 use anyhow::Result;
 use ring::signature::{self, KeyPair};
 use std::collections::HashSet;
@@ -405,21 +405,26 @@ impl StandardHost for process::ProcessWasi {
             .caps_oracle
             .send(t::CapMessage::GetSome {
                 on: self.process.metadata.our.process.clone(),
-                caps: capabilities.iter().map(|cap| de_wit_capability(cap.clone())).collect(),
+                caps: capabilities
+                    .iter()
+                    .map(|cap| de_wit_capability(cap.clone()))
+                    .collect(),
                 responder: tx,
             })
             .await?;
         let signed_caps = rx.await?;
 
-
         match self.process.next_message_caps {
             None => {
-                self.process.next_message_caps =
-                    Some(signed_caps.into_iter().collect());
+                self.process.next_message_caps = Some(signed_caps.into_iter().collect());
                 Ok(())
             }
             Some(ref mut v) => {
-                v.extend(signed_caps.into_iter().collect::<Vec<t::SignedCapability>>());
+                v.extend(
+                    signed_caps
+                        .into_iter()
+                        .collect::<Vec<t::SignedCapability>>(),
+                );
                 Ok(())
             }
         }
