@@ -267,8 +267,11 @@ async fn handle_request(
             }
         }
         KvAction::Backup => {
-            // loop through all db directories and backup.
-            //
+            // looping through open dbs and flushing their memtables
+            for db_ref in open_kvs.iter() {
+                let db = db_ref.value();
+                db.flush()?;
+            }
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
     };
@@ -428,11 +431,7 @@ async fn check_caps(
             Ok(())
         }
         KvAction::Backup { .. } => {
-            if source.process != *STATE_PROCESS_ID {
-                return Err(KvError::NoCap {
-                    error: request.action.to_string(),
-                });
-            }
+            // caps
             Ok(())
         }
     }
