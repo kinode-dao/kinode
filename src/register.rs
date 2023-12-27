@@ -134,36 +134,24 @@ pub async fn register(
     let react_app = warp::path::end()
         .and(warp::get())
         .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
-        .or(
-            warp::path("login")
-                .and(warp::get())
-                .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
-        )
-        .or(
-            warp::path("register-name")
-                .and(warp::get())
-                .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
-        )
-        .or(
-            warp::path("claim-invite")
-                .and(warp::get())
-                .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
-        )
-        .or(
-            warp::path("reset")
-                .and(warp::get())
-                .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
-        )
-        .or(
-            warp::path("import-keyfile")
-                .and(warp::get())
-                .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
-        )
-        .or(
-            warp::path("set-password")
-                .and(warp::get())
-                .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
-        );
+        .or(warp::path("login")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("register-name")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("claim-invite")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("reset")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("import-keyfile")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("set-password")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))));
 
     let api = warp::path("info")
         .and(
