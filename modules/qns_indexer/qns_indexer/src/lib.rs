@@ -40,7 +40,6 @@ struct State {
 #[derive(Debug, Serialize, Deserialize)]
 enum AllActions {
     EventSubscription(EthEvent),
-    Dev(EthEvent),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
