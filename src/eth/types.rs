@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubscribeLogs {
-    pub filter: Filter
+    pub filter: Filter,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
