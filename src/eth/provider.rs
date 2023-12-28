@@ -5,8 +5,8 @@ use anyhow::Result;
 use dashmap::DashMap;
 use ethers::prelude::Provider;
 use ethers_providers::{Middleware, StreamExt, Ws};
-use futures::stream::SplitStream;
 use futures::SinkExt;
+use futures::stream::SplitStream;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::net::TcpStream;
@@ -180,6 +180,9 @@ async fn handle_eth_request(
             let ws_provider = connections_guard.ws_provider.as_mut().unwrap();
             let mut stream = ws_provider.subscribe_logs(&request.filter.clone()).await?;
 
+            // TODO: this is the only portion of the request code that spawns
+            // a child process. Consider a future optimization where we move 
+            // tokio::spawn to handle only requests that creat a read stream
             while let Some(event) = stream.next().await {
                 send_to_loop.send(
                     KernelMessage {
