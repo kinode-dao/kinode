@@ -29,11 +29,7 @@
         <div id="password-err" class="login-row row" style="display: none;"> Incorrect Password </div>
         <div class="col" style="width: 100%; line-height: 1.5;">
           <button> Login </button>
-          <div class="login-row col" style="margin-left: 0.4em; font-size: 0.8em; line-height: 1.5;">
-            Registered as ${node_type} node
-          </div>
-          <div class="login-row col" style="margin-left: 0.4em; font-size: 0.8em; line-height: 1.5;">
-            Restart node to change networking info
+          <div class="login-row col" id="fake-or-not" style="margin-left: 0.4em; font-size: 0.8em; line-height: 1.5;">
           </div>
         </div>
       </form>
@@ -45,7 +41,12 @@
   </div>
 
   <script>
-    // TODO replace ${node} and ${node_type} with correct values
+    if ('${fake}') {
+      document.getElementById("fake-or-not").innerHTML = "Fake node -- any password will work!";
+    } else {
+      document.getElementById("fake-or-not").innerHTML = "Restart node to change networking info";
+    }
+
     async function login(password) {
       document.getElementById("signup-form").style.display = "none";
       document.getElementById("loading").style.display = "flex";
@@ -56,7 +57,9 @@
         body: JSON.stringify({ password }),
       });
 
-      if (result.status > 399) {
+      if (result.status == 200) {
+        window.location.href = "/";
+      } else {
         document.getElementById("signup-form").style.display = "flex";
         document.getElementById("loading").style.display = "none";
         document.getElementById("password").value = "";
@@ -64,8 +67,6 @@
         document.getElementById("password").focus();
         return;
       }
-
-      // otherwise should get redirected by the server
     }
 
     document.addEventListener("DOMContentLoaded", () => {

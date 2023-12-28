@@ -284,8 +284,17 @@ async fn handle_request(
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Backup => {
-            // execute WAL flush.
-            //
+            for db_ref in open_dbs.iter() {
+                let db = db_ref.value().lock().await;
+                let result: rusqlite::Result<()> = db
+                    .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+                    .map(|_| ());
+                if let Err(e) = result {
+                    return Err(SqliteError::RusqliteError {
+                        error: e.to_string(),
+                    });
+                }
+            }
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
     };
@@ -448,11 +457,7 @@ async fn check_caps(
             Ok(())
         }
         SqliteAction::Backup => {
-            if source.process != *STATE_PROCESS_ID {
-                return Err(SqliteError::NoCap {
-                    error: request.action.to_string(),
-                });
-            }
+            // flushing WALs for backup
             Ok(())
         }
     }
@@ -531,7 +536,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: SqliteError) 
         id: km.id,
         source: Address {
             node: our_name.clone(),
-            process: KV_PROCESS_ID.clone(),
+            process: SQLITE_PROCESS_ID.clone(),
         },
         target: match &km.rsvp {
             None => km.source.clone(),

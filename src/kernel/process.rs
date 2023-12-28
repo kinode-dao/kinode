@@ -69,7 +69,7 @@ pub async fn send_and_await_response(
     }
     let id = process
         .process
-        .handle_request(source, target, request, None, payload)
+        .send_request(source, target, request, None, payload)
         .await;
     match id {
         Ok(id) => match process.process.get_specific_message_for_process(id).await {
@@ -103,7 +103,7 @@ impl ProcessState {
     /// will only fail if process does not have capability to send to target.
     /// if the request has a timeout (expects response), start a task to track
     /// that timeout and return timeout error if it expires.
-    pub async fn handle_request(
+    pub async fn send_request(
         &mut self,
         fake_source: Option<t::Address>, // only used when kernel steps in to get/set state
         target: wit::Address,

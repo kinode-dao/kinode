@@ -558,6 +558,25 @@ async fn check_caps(
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
 
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
+    // check for root cap (todo make temp buffer so this is more efficient?)
+    send_to_caps_oracle
+        .send(CapMessage::Has {
+            on: source.process.clone(),
+            cap: Capability {
+                issuer: Address {
+                    node: our_node.clone(),
+                    process: VFS_PROCESS_ID.clone(),
+                },
+                params: serde_json::to_string(&serde_json::json!({
+                    "root": true,
+                }))
+                .unwrap(),
+            },
+            responder: send_cap_bool,
+        })
+        .await?;
+    let has_root_cap = recv_cap_bool.await?;
+
     match &request.action {
         VfsAction::CreateDir
         | VfsAction::CreateDirAll
@@ -579,25 +598,7 @@ async fn check_caps(
             if src_package_id == package_id {
                 return Ok(());
             }
-            send_to_caps_oracle
-                .send(CapMessage::Has {
-                    on: source.process.clone(),
-                    cap: Capability {
-                        issuer: Address {
-                            node: our_node.clone(),
-                            process: VFS_PROCESS_ID.clone(),
-                        },
-                        params: serde_json::to_string(&serde_json::json!({
-                            "kind": "write",
-                            "drive": drive,
-                        }))
-                        .unwrap(),
-                    },
-                    responder: send_cap_bool,
-                })
-                .await?;
-            let has_cap = recv_cap_bool.await?;
-            if !has_cap {
+            if !has_root_cap {
                 return Err(VfsError::NoCap {
                     action: request.action.to_string(),
                     path: path.display().to_string(),
@@ -617,6 +618,10 @@ async fn check_caps(
             if src_package_id == package_id {
                 return Ok(());
             }
+            if has_root_cap {
+                return Ok(());
+            }
+            let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
             send_to_caps_oracle
                 .send(CapMessage::Has {
                     on: source.process.clone(),
@@ -645,25 +650,7 @@ async fn check_caps(
         }
         VfsAction::CreateDrive => {
             if src_package_id != package_id {
-                // might have root caps
-                send_to_caps_oracle
-                    .send(CapMessage::Has {
-                        on: source.process.clone(),
-                        cap: Capability {
-                            issuer: Address {
-                                node: our_node.clone(),
-                                process: VFS_PROCESS_ID.clone(),
-                            },
-                            params: serde_json::to_string(&serde_json::json!({
-                                "root": true,
-                            }))
-                            .unwrap(),
-                        },
-                        responder: send_cap_bool,
-                    })
-                    .await?;
-                let has_cap = recv_cap_bool.await?;
-                if !has_cap {
+                if !has_root_cap {
                     return Err(VfsError::NoCap {
                         action: request.action.to_string(),
                         path: path.display().to_string(),

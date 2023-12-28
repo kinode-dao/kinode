@@ -579,7 +579,7 @@ impl StandardHost for process::ProcessWasi {
     ) -> Result<()> {
         let id = self
             .process
-            .handle_request(None, target, request, context, payload)
+            .send_request(None, target, request, context, payload)
             .await;
         match id {
             Ok(_id) => Ok(()),
@@ -599,7 +599,7 @@ impl StandardHost for process::ProcessWasi {
         for request in requests {
             let id = self
                 .process
-                .handle_request(None, request.0, request.1, request.2, request.3)
+                .send_request(None, request.0, request.1, request.2, request.3)
                 .await;
             match id {
                 Ok(_id) => continue,
