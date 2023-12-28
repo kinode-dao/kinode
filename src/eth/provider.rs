@@ -87,88 +87,22 @@ async fn handle_request(
     connections: Arc<Mutex<RpcConnections>>,
     send_to_loop: MessageSender,
 ) -> Result<()> {
-    let target = Address {
-        node: our.clone(),
-        process: source.process.clone(),
-    };
 
     if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(&ipc) {
-        match action {
-            HttpServerRequest::WebSocketOpen { path, channel_id } => {
-                println!("open {:?}, {:?}", path, channel_id);
-            }
-            HttpServerRequest::WebSocketPush {
-                channel_id,
-                message_type,
-            } => match message_type {
-                WsMessageType::Text => {
-                    let bytes = payload.unwrap().bytes;
-                    let text = std::str::from_utf8(&bytes).unwrap();
-                    let mut json: serde_json::Value = serde_json::from_str(text)?;
-                    let mut id = json["id"].as_u64().unwrap();
-
-                    id += channel_id as u64;
-
-                    ws_request_ids.insert(id as u32, channel_id);
-
-                    json["id"] = serde_json::Value::from(id);
-
-                    let _new_text = json.to_string();
-
-                    let mut connections_guard = connections.lock().await;
-
-                    if let Some(ws_sender) = &mut connections_guard.ws_sender {
-                        let _ = ws_sender.send(TungsteniteMessage::Text(_new_text)).await;
-                    }
-                }
-                WsMessageType::Binary => {
-                    todo!();
-                }
-                WsMessageType::Ping => {
-                    todo!();
-                }
-                WsMessageType::Pong => {
-                    todo!();
-                }
-                WsMessageType::Close => {
-                    todo!();
-                }
-            },
-            HttpServerRequest::WebSocketClose(channel_id) => {}
-            HttpServerRequest::Http(_) => todo!(),
-        }
+        let _ = handle_http_server_request(
+            action, 
+            payload, 
+            ws_request_ids, 
+            connections, 
+        );
     } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&ipc) {
-        match action {
-            EthRequest::SubscribeLogs(request) => {
-                let mut connections_guard = connections.lock().await;
-                let ws_provider = connections_guard.ws_provider.as_mut().unwrap();
-                let mut stream = ws_provider.subscribe_logs(&request.filter.clone()).await?;
-
-                while let Some(event) = stream.next().await {
-                    send_to_loop.send(
-                        KernelMessage {
-                            id: rand::random(),
-                            source: Address {
-                                node: our.clone(),
-                                process: ETH_PROCESS_ID.clone(),
-                            },
-                            target: target.clone(),
-                            rsvp: None,
-                            message: Message::Request(Request {
-                                inherit: false,
-                                expects_response: None,
-                                ipc: json!({
-                                    "EventSubscription": serde_json::to_value(event.clone()).unwrap()
-                                }).to_string().into_bytes(),
-                                metadata: None,
-                            }),
-                            payload: None,
-                            signed_capabilities: None,
-                        }
-                    ).await.unwrap();
-                }
-            }
-        }
+        let _ = handle_eth_request(
+            action, 
+            our.clone(), 
+            source,
+            connections, 
+            send_to_loop
+        ).await;
     } else {
         println!("unknown request");
     }
@@ -176,7 +110,107 @@ async fn handle_request(
     Ok(())
 }
 
-fn handle_http() {}
+async fn handle_http_server_request(
+    action: HttpServerRequest,
+    payload: Option<Payload>,
+    ws_request_ids: WsRequestIds,
+    connections: Arc<Mutex<RpcConnections>>,
+) -> Result<(), anyhow::Error> {
+
+    match action {
+        HttpServerRequest::WebSocketOpen { path, channel_id } => {
+            println!("open {:?}, {:?}", path, channel_id);
+        }
+        HttpServerRequest::WebSocketPush {
+            channel_id,
+            message_type,
+        } => match message_type {
+            WsMessageType::Text => {
+                let bytes = payload.unwrap().bytes;
+                let text = std::str::from_utf8(&bytes).unwrap();
+                let mut json: serde_json::Value = serde_json::from_str(text)?;
+                let mut id = json["id"].as_u64().unwrap();
+
+                id += channel_id as u64;
+
+                ws_request_ids.insert(id as u32, channel_id);
+
+                json["id"] = serde_json::Value::from(id);
+
+                let _new_text = json.to_string();
+
+                let mut connections_guard = connections.lock().await;
+
+                if let Some(ws_sender) = &mut connections_guard.ws_sender {
+                    let _ = ws_sender.send(TungsteniteMessage::Text(_new_text)).await;
+                }
+            }
+            WsMessageType::Binary => {
+                todo!();
+            }
+            WsMessageType::Ping => {
+                todo!();
+            }
+            WsMessageType::Pong => {
+                todo!();
+            }
+            WsMessageType::Close => {
+                todo!();
+            }
+        },
+        HttpServerRequest::WebSocketClose(channel_id) => {}
+        HttpServerRequest::Http(_) => todo!(),
+    }
+
+    Ok(())
+
+}
+
+async fn handle_eth_request(
+    action: EthRequest,
+    our: String,
+    source: Address,
+    connections: Arc<Mutex<RpcConnections>>,
+    send_to_loop: MessageSender,
+) -> Result<(), anyhow::Error> {
+
+    match action {
+        EthRequest::SubscribeLogs(request) => {
+            let mut connections_guard = connections.lock().await;
+            let ws_provider = connections_guard.ws_provider.as_mut().unwrap();
+            let mut stream = ws_provider.subscribe_logs(&request.filter.clone()).await?;
+
+            while let Some(event) = stream.next().await {
+                send_to_loop.send(
+                    KernelMessage {
+                        id: rand::random(),
+                        source: Address {
+                            node: our.clone(),
+                            process: ETH_PROCESS_ID.clone(),
+                        },
+                        target: Address {
+                            node: our.clone(),
+                            process: source.process.clone(),
+                        },
+                        rsvp: None,
+                        message: Message::Request(Request {
+                            inherit: false,
+                            expects_response: None,
+                            ipc: json!({
+                                "EventSubscription": serde_json::to_value(event.clone()).unwrap()
+                            }).to_string().into_bytes(),
+                            metadata: None,
+                        }),
+                        payload: None,
+                        signed_capabilities: None,
+                    }
+                ).await.unwrap();
+            }
+        }
+    }
+    Ok(())
+}
+
 
 fn handle_response(ipc: &Vec<u8>) -> Result<()> {
     let Ok(message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
