@@ -12,7 +12,6 @@ use tokio::{fs, time::timeout};
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
 mod eth;
-mod eth_rpc;
 mod http;
 mod kernel;
 mod keygen;
@@ -33,7 +32,6 @@ const WEBSOCKET_SENDER_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
 const ETH_PROVIDER_CHANNEL_CAPACITY: usize = 32;
-const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
@@ -173,8 +171,6 @@ async fn main() {
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
     let (eth_provider_sender, eth_provider_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ETH_PROVIDER_CHANNEL_CAPACITY);
-    let (eth_rpc_sender, eth_rpc_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(ETH_RPC_CHANNEL_CAPACITY);
     // http client performs http requests on behalf of processes
     let (http_client_sender, http_client_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CLIENT_CHANNEL_CAPACITY);
@@ -339,11 +335,6 @@ async fn main() {
             true,
         ),
         (
-            ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
-            eth_rpc_sender,
-            true,
-        ),
-        (
             ProcessId::new(Some("vfs"), "sys", "uqbar"),
             vfs_message_sender,
             true,
@@ -463,20 +454,12 @@ async fn main() {
         timer_service_receiver,
         print_sender.clone(),
     ));
-    #[cfg(feature = "eth")]
+    #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(eth::provider::provider(
         our.name.clone(),
         rpc_url.clone(),
         kernel_message_sender.clone(),
         eth_provider_receiver,
-        print_sender.clone(),
-    ));
-    #[cfg(not(feature = "simulation-mode"))]
-    tasks.spawn(eth_rpc::eth_rpc(
-        our.name.clone(),
-        rpc_url.clone(),
-        kernel_message_sender.clone(),
-        eth_rpc_receiver,
         print_sender.clone(),
     ));
     tasks.spawn(vfs::vfs(

@@ -155,7 +155,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         };
         let Message::Request { source, ipc, .. } = message else {
-            // TODO we should store the subscription ID for eth_rpc
+            // TODO we should store the subscription ID for eth
             // incase we want to cancel/reset it
             continue;
         };

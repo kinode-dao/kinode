@@ -33,7 +33,7 @@ pub async fn provider(
     mut recv_in_client: MessageReceiver,
     print_tx: PrintSender,
 ) -> Result<()> {
-    println!("eth_rpc: starting");
+    println!("eth: starting");
 
     let open_ws = KernelMessage {
         id: rand::random(),
