@@ -9,9 +9,12 @@ use futures::SinkExt;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::net::TcpStream;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use url::Url;
+use futures::stream::SplitStream;
 
 // Request IDs to Channel IDs
 type WsRequestIds = Arc<DashMap<u32, u32>>;
@@ -25,33 +28,7 @@ pub async fn provider(
 ) -> Result<()> {
     println!("eth: starting");
 
-    let _ = send_to_loop.send(
-        KernelMessage {
-            id: rand::random(),
-            source: Address {
-                node: our.clone(),
-                process: ETH_PROCESS_ID.clone(),
-            },
-            target: Address {
-                node: our.clone(),
-                process: HTTP_SERVER_PROCESS_ID.clone(),
-            },
-            rsvp: None,
-            message: Message::Request(Request {
-                inherit: false,
-                ipc: serde_json::to_vec(&HttpServerAction::WebSocketBind {
-                    path: "/".to_string(),
-                    authenticated: false,
-                    encrypted: false,
-                })
-                .unwrap(),
-                metadata: None,
-                expects_response: None,
-            }),
-            payload: None,
-            signed_capabilities: None,
-        }
-    ).await;
+    bind_websockets(&our, &send_to_loop).await;
 
     let ws_request_ids: WsRequestIds = Arc::new(DashMap::new());
 
@@ -64,78 +41,13 @@ pub async fn provider(
             unreachable!()
         }
         "ws" | "wss" => {
-            let (_ws_stream, _) = connect_async(&rpc_url).await.expect("failed to connect");
-            let (_ws_sender, mut ws_receiver) = _ws_stream.split();
-
-            let mut connections_guard = connections.lock().await;
-
-            connections_guard.ws_sender = Some(_ws_sender);
-            connections_guard.ws_provider = Some(Provider::<Ws>::connect(rpc_url.clone()).await?);
-
-            let send_to_loop = send_to_loop.clone();
-            let ws_request_ids = ws_request_ids.clone();
-            let our = our.clone();
-
-            tokio::spawn(async move {
-                while let Some(message) = ws_receiver.next().await {
-                    match message {
-                        Ok(msg) => {
-                            if msg.is_text() {
-                                let Ok(text) = msg.into_text() else {
-                                    todo!();
-                                };
-                                let json_result: Result<serde_json::Value, serde_json::Error> =
-                                    serde_json::from_str(&text);
-                                let Ok(mut _json) = json_result else {
-                                    todo!();
-                                };
-                                let id = _json["id"].as_u64().unwrap() as u32;
-                                let channel_id = ws_request_ids.get(&id).unwrap().clone();
-
-                                _json["id"] = serde_json::Value::from(id - channel_id);
-
-                                let _ = send_to_loop
-                                    .send(KernelMessage {
-                                        id: rand::random(),
-                                        source: Address {
-                                            node: our.clone(),
-                                            process: ETH_PROCESS_ID.clone(),
-                                        },
-                                        target: Address {
-                                            node: our.clone(),
-                                            process: HTTP_SERVER_PROCESS_ID.clone(),
-                                        },
-                                        rsvp: None,
-                                        message: Message::Request(Request {
-                                            inherit: false,
-                                            ipc: serde_json::to_vec(
-                                                &HttpServerAction::WebSocketPush {
-                                                    channel_id: channel_id,
-                                                    message_type: WsMessageType::Text,
-                                                },
-                                            )
-                                            .unwrap(),
-                                            metadata: None,
-                                            expects_response: None,
-                                        }),
-                                        payload: Some(Payload {
-                                            bytes: _json.to_string().as_bytes().to_vec(),
-                                            mime: None,
-                                        }),
-                                        signed_capabilities: None,
-                                    })
-                                    .await;
-                            } else {
-                                println!("Received a binary message: {:?}", msg.into_data());
-                            }
-                        }
-                        Err(e) => {
-                            println!("Error receiving a message: {:?}", e);
-                        }
-                    }
-                }
-                Ok::<(), ()>(())
-            });
+            bootstrap_websocket_connections(
+                our.clone(),
+                rpc_url.clone(),
+                connections.clone(),
+                ws_request_ids.clone(),
+                send_to_loop.clone(),
+            ).await?;
         }
         _ => {
             unreachable!()
@@ -270,4 +182,132 @@ fn handle_response(ipc: &Vec<u8>) -> Result<()> {
     println!("response message {:?}", message);
 
     Ok(())
+}
+
+async fn bind_websockets(our: &String, send_to_loop: &MessageSender) {
+    let _ = send_to_loop.send(
+        KernelMessage {
+            id: rand::random(),
+            source: Address {
+                node: our.clone(),
+                process: ETH_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            rsvp: None,
+            message: Message::Request(Request {
+                inherit: false,
+                ipc: serde_json::to_vec(&HttpServerAction::WebSocketBind {
+                    path: "/".to_string(),
+                    authenticated: false,
+                    encrypted: false,
+                })
+                .unwrap(),
+                metadata: None,
+                expects_response: None,
+            }),
+            payload: None,
+            signed_capabilities: None,
+        }
+    ).await;
+
+}
+
+async fn bootstrap_websocket_connections(
+    our: String,
+    rpc_url: String,
+    connections: Arc<Mutex<RpcConnections>>,
+    ws_request_ids: WsRequestIds,
+    send_to_loop: MessageSender,
+) -> Result<()> {
+
+    let (_ws_stream, _) = connect_async(&rpc_url).await.expect("failed to connect");
+    let (_ws_sender, mut ws_receiver) = _ws_stream.split();
+
+    let mut connections_guard = connections.lock().await;
+    connections_guard.ws_sender = Some(_ws_sender);
+    connections_guard.ws_provider = Some(Provider::<Ws>::connect(rpc_url.clone()).await?);
+
+    let our = our.clone();
+    let ws_request_ids = ws_request_ids.clone();
+    let send_to_loop = send_to_loop.clone();
+
+    tokio::spawn(async move {
+        handle_external_websocket_passthrough(
+            our.clone(),
+            ws_request_ids.clone(),
+            &mut ws_receiver,
+            send_to_loop.clone(),
+        ).await;
+        Ok::<(), ()>(())
+    });
+    Ok(())
+}
+
+async fn handle_external_websocket_passthrough (
+    our: String,
+    ws_request_ids: WsRequestIds,
+    ws_receiver: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    send_to_loop: MessageSender,
+) {
+
+    while let Some(message) = ws_receiver.next().await {
+        match message {
+            Ok(msg) => {
+                if msg.is_text() {
+                    let Ok(text) = msg.into_text() else {
+                        todo!();
+                    };
+                    let json_result: Result<serde_json::Value, serde_json::Error> =
+                        serde_json::from_str(&text);
+                    let Ok(mut _json) = json_result else {
+                        todo!();
+                    };
+                    let id = _json["id"].as_u64().unwrap() as u32;
+                    let channel_id = ws_request_ids.get(&id).unwrap().clone();
+
+                    _json["id"] = serde_json::Value::from(id - channel_id);
+
+                    let _ = send_to_loop
+                        .send(KernelMessage {
+                            id: rand::random(),
+                            source: Address {
+                                node: our.clone(),
+                                process: ETH_PROCESS_ID.clone(),
+                            },
+                            target: Address {
+                                node: our.clone(),
+                                process: HTTP_SERVER_PROCESS_ID.clone(),
+                            },
+                            rsvp: None,
+                            message: Message::Request(Request {
+                                inherit: false,
+                                ipc: serde_json::to_vec(
+                                    &HttpServerAction::WebSocketPush {
+                                        channel_id: channel_id,
+                                        message_type: WsMessageType::Text,
+                                    },
+                                )
+                                .unwrap(),
+                                metadata: None,
+                                expects_response: None,
+                            }),
+                            payload: Some(Payload {
+                                bytes: _json.to_string().as_bytes().to_vec(),
+                                mime: None,
+                            }),
+                            signed_capabilities: None,
+                        })
+                        .await;
+                } else {
+                    println!("Received a binary message: {:?}", msg.into_data());
+                }
+            }
+            Err(e) => {
+                println!("Error receiving a message: {:?}", e);
+            }
+        }
+    }
 }
