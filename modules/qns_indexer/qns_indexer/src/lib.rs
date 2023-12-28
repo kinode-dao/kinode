@@ -201,14 +201,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         };
 
         match msg {
-            AllActions::Dev(e) => {
-
-                println!("receiving it {:?}", e);
-
-            }
             AllActions::EventSubscription(e) => {
-
-                println!("receiving event");
 
                 state.block = hex_to_u64(&e.block_number)?;
                 let nodeId = &e.topics[1];
@@ -302,7 +295,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
 
                 if send {
-                    println!("Sending update for {:?}", node);
                     Request::new()
                         .target((&our.node, "net", "sys", "uqbar"))
                         .try_ipc(NetActions::QnsUpdate(node.clone()))?
