@@ -85,45 +85,13 @@ impl TryInto<Vec<u8>> for NetActions {
 sol! {
     // Logged whenever a QNS node is created
     event NodeRegistered(bytes32 indexed node, bytes name);
-
     event KeyUpdate(bytes32 indexed node, bytes32 key);
-
     event IpUpdate(bytes32 indexed node, uint128 ip);
     event WsUpdate(bytes32 indexed node, uint16 port);
     event WtUpdate(bytes32 indexed node, uint16 port);
     event TcpUpdate(bytes32 indexed node, uint16 port);
     event UdpUpdate(bytes32 indexed node, uint16 port);
-
     event RoutingUpdate(bytes32 indexed node, bytes32[] routers);
-}
-
-fn subscribe_to_qns(from_block: u64) -> Vec<u8> {
-    json!({
-        "SubscribeEvents": {
-            "addresses": [
-                // QNSRegistry on sepolia
-                "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1",
-            ],
-            "from_block": from_block,
-            "to_block": null,
-            "events": [
-                "NodeRegistered(bytes32,bytes)",
-                "KeyUpdate(bytes32,bytes32)",
-                "IpUpdate(bytes32,uint128)",
-                "WsUpdate(bytes32,uint16)",
-                "WtUpdate(bytes32,uint16)",
-                "TcpUpdate(bytes32,uint16)",
-                "UdpUpdate(bytes32,uint16)",
-                "RoutingUpdate(bytes32,bytes32[])",
-            ],
-            "topic1": null,
-            "topic2": null,
-            "topic3": null,
-        }
-    })
-    .to_string()
-    .as_bytes()
-    .to_vec()
 }
 
 impl Guest for Component {
@@ -162,12 +130,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             state.nodes.values().cloned().collect::<Vec<_>>(),
         ))?
         .send()?;
-
-    // Request::new()
-    //     .target((&our.node, "eth_rpc", "sys", "uqbar"))
-    //     .ipc(subscribe_to_qns(state.block - 1))
-    //     .expects_response(5)
-    //     .send()?;
 
     let qns_registry_addr = EthAddress::from_str("0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1")?;
 
