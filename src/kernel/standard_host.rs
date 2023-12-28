@@ -495,7 +495,7 @@ impl StandardHost for process::ProcessWasi {
         let _ = rx.await?;
         Ok(())
     }
-    
+
     async fn our_capabilities(&mut self) -> Result<Vec<wit::Capability>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self
