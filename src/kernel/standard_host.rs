@@ -495,6 +495,26 @@ impl StandardHost for process::ProcessWasi {
         let _ = rx.await?;
         Ok(())
     }
+    
+    async fn our_capabilities(&mut self) -> Result<Vec<wit::Capability>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::GetAll {
+                on: self.process.metadata.our.process.clone(),
+                responder: tx,
+            })
+            .await?;
+        let caps = rx.await?;
+        Ok(caps
+            .into_iter()
+            .map(|cap| wit::Capability {
+                issuer: t::Address::en_wit(&cap.issuer),
+                params: cap.params,
+            })
+            .collect())
+    }
     //
     // message I/O:
     //
