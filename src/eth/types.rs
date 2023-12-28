@@ -1,6 +1,31 @@
 use crate::http::types::HttpServerRequest;
+use crate::types::*;
+use ethers::prelude::Provider;
 use ethers::types::{Filter, ValueOrArray, U256, U64};
+use ethers_providers::{Http, Middleware, StreamExt, Ws};
+use futures::stream::SplitSink;
 use serde::{Deserialize, Serialize};
+use tokio::net::TcpStream;
+use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+
+pub struct RpcConnections {
+    pub ws_sender: Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, TungsteniteMessage>>,
+    pub ws_provider: Option<Provider<Ws>>,
+    pub http_provider: Option<Provider<Http>>,
+    pub uq_provider: Option<NodeId>,
+}
+
+impl Default for RpcConnections {
+    fn default() -> Self {
+        Self {
+            ws_sender: None,
+            ws_provider: None,
+            http_provider: None,
+            uq_provider: None,
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SubscribeLogs {

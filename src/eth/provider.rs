@@ -4,24 +4,14 @@ use crate::types::*;
 use anyhow::Result;
 use dashmap::DashMap;
 use ethers::prelude::Provider;
-use ethers_providers::{Http, Middleware, StreamExt, Ws};
-use futures::stream::SplitSink;
+use ethers_providers::{Middleware, StreamExt, Ws};
 use futures::SinkExt;
 use serde_json::json;
 use std::sync::Arc;
-use tokio::net::TcpStream;
 use tokio::sync::Mutex;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
-use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use url::Url;
-
-struct Connections {
-    ws_sender: Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, TungsteniteMessage>>,
-    ws_provider: Option<Provider<Ws>>,
-    http_provider: Option<Provider<Http>>,
-    uq_provider: Option<NodeId>,
-}
 
 // Request IDs to Channel IDs
 type WsRequestIds = Arc<DashMap<u32, u32>>;
@@ -35,44 +25,39 @@ pub async fn provider(
 ) -> Result<()> {
     println!("eth: starting");
 
-    let open_ws = KernelMessage {
-        id: rand::random(),
-        source: Address {
-            node: our.clone(),
-            process: ETH_PROCESS_ID.clone(),
-        },
-        target: Address {
-            node: our.clone(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        rsvp: None,
-        message: Message::Request(Request {
-            inherit: false,
-            ipc: serde_json::to_vec(&HttpServerAction::WebSocketBind {
-                path: "/".to_string(),
-                authenticated: false,
-                encrypted: false,
-            })
-            .unwrap(),
-            metadata: None,
-            expects_response: None,
-        }),
-        payload: None,
-        signed_capabilities: None,
-    };
-
-    let _ = send_to_loop.send(open_ws).await;
-
-    let connections = Connections {
-        ws_sender: None,
-        ws_provider: None,
-        http_provider: None,
-        uq_provider: None,
-    };
-
-    let connections = Arc::new(Mutex::new(connections));
+    let _ = send_to_loop.send(
+        KernelMessage {
+            id: rand::random(),
+            source: Address {
+                node: our.clone(),
+                process: ETH_PROCESS_ID.clone(),
+            },
+            target: Address {
+                node: our.clone(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
+            },
+            rsvp: None,
+            message: Message::Request(Request {
+                inherit: false,
+                ipc: serde_json::to_vec(&HttpServerAction::WebSocketBind {
+                    path: "/".to_string(),
+                    authenticated: false,
+                    encrypted: false,
+                })
+                .unwrap(),
+                metadata: None,
+                expects_response: None,
+            }),
+            payload: None,
+            signed_capabilities: None,
+        }
+    ).await;
 
     let ws_request_ids: WsRequestIds = Arc::new(DashMap::new());
+
+    let connections = Arc::new(Mutex::new(
+        RpcConnections::default()
+    ));
 
     match Url::parse(&rpc_url).unwrap().scheme() {
         "http" | "https" => {
@@ -160,7 +145,6 @@ pub async fn provider(
     while let Some(km) = recv_in_client.recv().await {
         match km.message {
             Message::Request(Request { ipc, .. }) => {
-                println!("eth request");
                 tokio::spawn(handle_request(
                     our.clone(),
                     ipc,
@@ -172,10 +156,8 @@ pub async fn provider(
                 ));
             }
             Message::Response((Response { ref ipc, .. }, ..)) => {
-                println!("eth response");
                 handle_response(ipc)?;
             }
-            Message::Response(_) => todo!(),
             _ => {}
         }
 
@@ -191,10 +173,9 @@ async fn handle_request(
     source: Address,
     payload: Option<Payload>,
     ws_request_ids: WsRequestIds,
-    connections: Arc<Mutex<Connections>>,
+    connections: Arc<Mutex<RpcConnections>>,
     send_to_loop: MessageSender,
 ) -> Result<()> {
-    println!("request");
 
     let target = Address {
         node: our.clone(),
@@ -211,7 +192,6 @@ async fn handle_request(
                 message_type,
             } => match message_type {
                 WsMessageType::Text => {
-                    println!("text");
 
                     let bytes = payload.unwrap().bytes;
                     let text = std::str::from_utf8(&bytes).unwrap();
@@ -232,18 +212,10 @@ async fn handle_request(
                         let _ = ws_sender.send(TungsteniteMessage::Text(_new_text)).await;
                     }
                 }
-                WsMessageType::Binary => {
-                    println!("binary");
-                }
-                WsMessageType::Ping => {
-                    println!("ping");
-                }
-                WsMessageType::Pong => {
-                    println!("pong");
-                }
-                WsMessageType::Close => {
-                    println!("close");
-                }
+                WsMessageType::Binary => { todo!(); }
+                WsMessageType::Ping => { todo!(); }
+                WsMessageType::Pong => { todo!(); }
+                WsMessageType::Close => { todo!(); }
             },
             HttpServerRequest::WebSocketClose(channel_id) => {}
             HttpServerRequest::Http(_) => todo!(),
@@ -251,7 +223,6 @@ async fn handle_request(
     } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&ipc) {
         match action {
             EthRequest::SubscribeLogs(request) => {
-                println!("subscribe logs {:?}", request);
 
                 let mut connections_guard = connections.lock().await;
                 let ws_provider = connections_guard.ws_provider.as_mut().unwrap();
