@@ -1,8 +1,8 @@
 use crate::http::types::HttpServerRequest;
 use crate::types::*;
 use ethers::prelude::Provider;
-use ethers::types::{Filter, ValueOrArray, U256, U64};
-use ethers_providers::{Http, Middleware, StreamExt, Ws};
+use ethers::types::{Filter, U256};
+use ethers_providers::{Http, Ws};
 use futures::stream::SplitSink;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
