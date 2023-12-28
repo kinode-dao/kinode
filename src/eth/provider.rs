@@ -5,16 +5,16 @@ use anyhow::Result;
 use dashmap::DashMap;
 use ethers::prelude::Provider;
 use ethers_providers::{Middleware, StreamExt, Ws};
+use futures::stream::SplitStream;
 use futures::SinkExt;
 use serde_json::json;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::net::TcpStream;
+use tokio::sync::Mutex;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use url::Url;
-use futures::stream::SplitStream;
 
 // Request IDs to Channel IDs
 type WsRequestIds = Arc<DashMap<u32, u32>>;
@@ -32,9 +32,7 @@ pub async fn provider(
 
     let ws_request_ids: WsRequestIds = Arc::new(DashMap::new());
 
-    let connections = Arc::new(Mutex::new(
-        RpcConnections::default()
-    ));
+    let connections = Arc::new(Mutex::new(RpcConnections::default()));
 
     match Url::parse(&rpc_url).unwrap().scheme() {
         "http" | "https" => {
@@ -47,7 +45,8 @@ pub async fn provider(
                 connections.clone(),
                 ws_request_ids.clone(),
                 send_to_loop.clone(),
-            ).await?;
+            )
+            .await?;
         }
         _ => {
             unreachable!()
@@ -88,7 +87,6 @@ async fn handle_request(
     connections: Arc<Mutex<RpcConnections>>,
     send_to_loop: MessageSender,
 ) -> Result<()> {
-
     let target = Address {
         node: our.clone(),
         process: source.process.clone(),
@@ -104,7 +102,6 @@ async fn handle_request(
                 message_type,
             } => match message_type {
                 WsMessageType::Text => {
-
                     let bytes = payload.unwrap().bytes;
                     let text = std::str::from_utf8(&bytes).unwrap();
                     let mut json: serde_json::Value = serde_json::from_str(text)?;
@@ -124,10 +121,18 @@ async fn handle_request(
                         let _ = ws_sender.send(TungsteniteMessage::Text(_new_text)).await;
                     }
                 }
-                WsMessageType::Binary => { todo!(); }
-                WsMessageType::Ping => { todo!(); }
-                WsMessageType::Pong => { todo!(); }
-                WsMessageType::Close => { todo!(); }
+                WsMessageType::Binary => {
+                    todo!();
+                }
+                WsMessageType::Ping => {
+                    todo!();
+                }
+                WsMessageType::Pong => {
+                    todo!();
+                }
+                WsMessageType::Close => {
+                    todo!();
+                }
             },
             HttpServerRequest::WebSocketClose(channel_id) => {}
             HttpServerRequest::Http(_) => todo!(),
@@ -135,7 +140,6 @@ async fn handle_request(
     } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&ipc) {
         match action {
             EthRequest::SubscribeLogs(request) => {
-
                 let mut connections_guard = connections.lock().await;
                 let ws_provider = connections_guard.ws_provider.as_mut().unwrap();
                 let mut stream = ws_provider.subscribe_logs(&request.filter.clone()).await?;
@@ -185,8 +189,8 @@ fn handle_response(ipc: &Vec<u8>) -> Result<()> {
 }
 
 async fn bind_websockets(our: &String, send_to_loop: &MessageSender) {
-    let _ = send_to_loop.send(
-        KernelMessage {
+    let _ = send_to_loop
+        .send(KernelMessage {
             id: rand::random(),
             source: Address {
                 node: our.clone(),
@@ -210,9 +214,8 @@ async fn bind_websockets(our: &String, send_to_loop: &MessageSender) {
             }),
             payload: None,
             signed_capabilities: None,
-        }
-    ).await;
-
+        })
+        .await;
 }
 
 async fn bootstrap_websocket_connections(
@@ -222,7 +225,6 @@ async fn bootstrap_websocket_connections(
     ws_request_ids: WsRequestIds,
     send_to_loop: MessageSender,
 ) -> Result<()> {
-
     let (_ws_stream, _) = connect_async(&rpc_url).await.expect("failed to connect");
     let (_ws_sender, mut ws_receiver) = _ws_stream.split();
 
@@ -240,19 +242,19 @@ async fn bootstrap_websocket_connections(
             ws_request_ids.clone(),
             &mut ws_receiver,
             send_to_loop.clone(),
-        ).await;
+        )
+        .await;
         Ok::<(), ()>(())
     });
     Ok(())
 }
 
-async fn handle_external_websocket_passthrough (
+async fn handle_external_websocket_passthrough(
     our: String,
     ws_request_ids: WsRequestIds,
     ws_receiver: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     send_to_loop: MessageSender,
 ) {
-
     while let Some(message) = ws_receiver.next().await {
         match message {
             Ok(msg) => {
@@ -284,12 +286,10 @@ async fn handle_external_websocket_passthrough (
                             rsvp: None,
                             message: Message::Request(Request {
                                 inherit: false,
-                                ipc: serde_json::to_vec(
-                                    &HttpServerAction::WebSocketPush {
-                                        channel_id: channel_id,
-                                        message_type: WsMessageType::Text,
-                                    },
-                                )
+                                ipc: serde_json::to_vec(&HttpServerAction::WebSocketPush {
+                                    channel_id: channel_id,
+                                    message_type: WsMessageType::Text,
+                                })
                                 .unwrap(),
                                 metadata: None,
                                 expects_response: None,

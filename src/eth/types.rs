@@ -10,7 +10,8 @@ use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 pub struct RpcConnections {
-    pub ws_sender: Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, TungsteniteMessage>>,
+    pub ws_sender:
+        Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, TungsteniteMessage>>,
     pub ws_provider: Option<Provider<Ws>>,
     pub http_provider: Option<Provider<Http>>,
     pub uq_provider: Option<NodeId>,
