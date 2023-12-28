@@ -5,8 +5,8 @@ use anyhow::Result;
 use dashmap::DashMap;
 use ethers::prelude::Provider;
 use ethers_providers::{Middleware, StreamExt, Ws};
-use futures::SinkExt;
 use futures::stream::SplitStream;
+use futures::SinkExt;
 use serde_json::json;
 use std::sync::Arc;
 use tokio::net::TcpStream;
@@ -87,22 +87,10 @@ async fn handle_request(
     connections: Arc<Mutex<RpcConnections>>,
     send_to_loop: MessageSender,
 ) -> Result<()> {
-
     if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(&ipc) {
-        let _ = handle_http_server_request(
-            action, 
-            payload, 
-            ws_request_ids, 
-            connections, 
-        );
+        let _ = handle_http_server_request(action, payload, ws_request_ids, connections);
     } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&ipc) {
-        let _ = handle_eth_request(
-            action, 
-            our.clone(), 
-            source,
-            connections, 
-            send_to_loop
-        ).await;
+        let _ = handle_eth_request(action, our.clone(), source, connections, send_to_loop).await;
     } else {
         println!("unknown request");
     }
@@ -116,7 +104,6 @@ async fn handle_http_server_request(
     ws_request_ids: WsRequestIds,
     connections: Arc<Mutex<RpcConnections>>,
 ) -> Result<(), anyhow::Error> {
-
     match action {
         HttpServerRequest::WebSocketOpen { path, channel_id } => {
             println!("open {:?}, {:?}", path, channel_id);
@@ -163,7 +150,6 @@ async fn handle_http_server_request(
     }
 
     Ok(())
-
 }
 
 async fn handle_eth_request(
@@ -173,7 +159,6 @@ async fn handle_eth_request(
     connections: Arc<Mutex<RpcConnections>>,
     send_to_loop: MessageSender,
 ) -> Result<(), anyhow::Error> {
-
     match action {
         EthRequest::SubscribeLogs(request) => {
             let mut connections_guard = connections.lock().await;
@@ -181,11 +166,11 @@ async fn handle_eth_request(
             let mut stream = ws_provider.subscribe_logs(&request.filter.clone()).await?;
 
             // TODO: this is the only portion of the request code that spawns
-            // a child process. Consider a future optimization where we move 
+            // a child process. Consider a future optimization where we move
             // tokio::spawn to handle only requests that creat a read stream
             while let Some(event) = stream.next().await {
-                send_to_loop.send(
-                    KernelMessage {
+                send_to_loop
+                    .send(KernelMessage {
                         id: rand::random(),
                         source: Address {
                             node: our.clone(),
@@ -201,19 +186,21 @@ async fn handle_eth_request(
                             expects_response: None,
                             ipc: json!({
                                 "EventSubscription": serde_json::to_value(event.clone()).unwrap()
-                            }).to_string().into_bytes(),
+                            })
+                            .to_string()
+                            .into_bytes(),
                             metadata: None,
                         }),
                         payload: None,
                         signed_capabilities: None,
-                    }
-                ).await.unwrap();
+                    })
+                    .await
+                    .unwrap();
             }
         }
     }
     Ok(())
 }
-
 
 fn handle_response(ipc: &Vec<u8>) -> Result<()> {
     let Ok(message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
