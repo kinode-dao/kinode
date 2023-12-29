@@ -429,7 +429,7 @@ async fn handle_kernel_request(
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
-                        content: format!("kernel process map:\r\n{:?}", process_map),
+                        content: format!("kernel process map:\r\n{:#?}", process_map),
                     })
                     .await;
             }
@@ -446,7 +446,7 @@ async fn handle_kernel_request(
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
-                        content: format!("kernel process info:\r\n{proc:?}",),
+                        content: format!("kernel process info:\r\n{proc:#?}",),
                     })
                     .await;
             }
