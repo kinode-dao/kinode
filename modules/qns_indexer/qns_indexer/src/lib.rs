@@ -130,10 +130,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    let qns_registry_addr = EthAddress::from_str("0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1")?;
-
     SubscribeLogsRequest::new()
-        .address(qns_registry_addr)
+        .address(EthAddress::from_str("0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1")?)
         .from_block(state.block - 1)
         .events(vec![
             "NodeRegistered(bytes32,bytes)",
