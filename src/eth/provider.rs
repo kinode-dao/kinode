@@ -24,7 +24,7 @@ pub async fn provider(
     rpc_url: String,
     send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
-    print_tx: PrintSender,
+    _print_tx: PrintSender,
 ) -> Result<()> {
     println!("eth: starting");
 
@@ -56,7 +56,7 @@ pub async fn provider(
     while let Some(km) = recv_in_client.recv().await {
         match km.message {
             Message::Request(Request { ipc, .. }) => {
-                tokio::spawn(handle_request(
+                let _ = handle_request(
                     our.clone(),
                     ipc,
                     km.source,
@@ -64,12 +64,11 @@ pub async fn provider(
                     ws_request_ids.clone(),
                     connections.clone(),
                     send_to_loop.clone(),
-                ));
+                ).await;
             }
             Message::Response((Response { ref ipc, .. }, ..)) => {
                 handle_response(ipc)?;
             }
-            _ => {}
         }
 
         continue;
@@ -145,7 +144,7 @@ async fn handle_http_server_request(
                 todo!();
             }
         },
-        HttpServerRequest::WebSocketClose(channel_id) => {}
+        HttpServerRequest::WebSocketClose(_channel_id) => {}
         HttpServerRequest::Http(_) => todo!(),
     }
 
@@ -161,42 +160,50 @@ async fn handle_eth_request(
 ) -> Result<(), anyhow::Error> {
     match action {
         EthRequest::SubscribeLogs(request) => {
-            let mut connections_guard = connections.lock().await;
-            let ws_provider = connections_guard.ws_provider.as_mut().unwrap();
-            let mut stream = ws_provider.subscribe_logs(&request.filter.clone()).await?;
 
-            // TODO: this is the only portion of the request code that spawns
-            // a child process. Consider a future optimization where we move
-            // tokio::spawn to handle only requests that creat a read stream
-            while let Some(event) = stream.next().await {
-                send_to_loop
-                    .send(KernelMessage {
-                        id: rand::random(),
-                        source: Address {
-                            node: our.clone(),
-                            process: ETH_PROCESS_ID.clone(),
-                        },
-                        target: Address {
-                            node: our.clone(),
-                            process: source.process.clone(),
-                        },
-                        rsvp: None,
-                        message: Message::Request(Request {
-                            inherit: false,
-                            expects_response: None,
-                            ipc: json!({
-                                "EventSubscription": serde_json::to_value(event.clone()).unwrap()
-                            })
-                            .to_string()
-                            .into_bytes(),
-                            metadata: None,
-                        }),
-                        payload: None,
-                        signed_capabilities: None,
-                    })
-                    .await
-                    .unwrap();
-            }
+            tokio::spawn(async move {
+
+                let mut connections_guard = connections.lock().await;
+                let ws_provider = connections_guard.ws_provider.as_mut().unwrap();
+                let mut stream = match ws_provider.subscribe_logs(&request.filter.clone()).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        println!("error subscribing to logs: {:?}", e);
+                        return;
+                    }
+                };
+
+                while let Some(event) = stream.next().await {
+                    send_to_loop
+                        .send(KernelMessage {
+                            id: rand::random(),
+                            source: Address {
+                                node: our.clone(),
+                                process: ETH_PROCESS_ID.clone(),
+                            },
+                            target: Address {
+                                node: our.clone(),
+                                process: source.process.clone(),
+                            },
+                            rsvp: None,
+                            message: Message::Request(Request {
+                                inherit: false,
+                                expects_response: None,
+                                ipc: json!({
+                                    "EventSubscription": serde_json::to_value(event.clone()).unwrap()
+                                })
+                                .to_string()
+                                .into_bytes(),
+                                metadata: None,
+                            }),
+                            payload: None,
+                            signed_capabilities: None,
+                        })
+                        .await
+                        .unwrap();
+                }
+
+            });
         }
     }
     Ok(())
@@ -325,12 +332,10 @@ async fn handle_external_websocket_passthrough(
                             signed_capabilities: None,
                         })
                         .await;
-                } else {
-                    todo!();
-                }
+                } // TODO: an rpc request may come as binary so may need to handle
             }
             Err(e) => {
-                todo!();
+                panic!("eth: passthrough websocket error {:?}", e);
             }
         }
     }
