@@ -234,6 +234,7 @@ impl StandardHost for process::ProcessWasi {
             self.process.metadata.our.process.package(),
             self.process.metadata.our.process.publisher(),
         );
+        // TODO I think we need to kill this process first in case it already exists
         let Ok(Ok((_, _response))) = process::send_and_await_response(
             self,
             Some(t::Address {
@@ -254,6 +255,7 @@ impl StandardHost for process::ProcessWasi {
                     initial_capabilities: match capabilities {
                         wit::Capabilities::None => HashSet::new(),
                         wit::Capabilities::All => {
+                            // NOTE probably a faster implementation of this...
                             let (tx, rx) = tokio::sync::oneshot::channel();
                             let _ = self
                                 .process
@@ -263,26 +265,24 @@ impl StandardHost for process::ProcessWasi {
                                     responder: tx,
                                 })
                                 .await;
-                            rx.await.unwrap()
+                            rx
+                                .await
+                                .unwrap()
+                                .iter()
+                                .map(|cap| t::Capability {
+                                    issuer: cap.issuer.clone(),
+                                    params: cap.params.clone(),
+                                })
+                                .collect::<HashSet<t::Capability>>()
                         }
                         wit::Capabilities::Some(caps) => {
-                            let (tx, rx) = tokio::sync::oneshot::channel();
-                            let _ = self
-                                .process
-                                .caps_oracle
-                                .send(t::CapMessage::GetSome {
-                                    on: self.process.metadata.our.process.clone(),
-                                    caps: caps
-                                        .iter()
-                                        .map(|cap| t::Capability {
-                                            issuer: t::Address::de_wit(cap.issuer.clone()),
-                                            params: cap.params.clone(),
-                                        })
-                                        .collect(),
-                                    responder: tx,
+                            caps
+                                .iter()
+                                .map(|cap| t::Capability {
+                                    issuer: t::Address::de_wit(cap.clone().issuer),
+                                    params: cap.clone().params,
                                 })
-                                .await;
-                            rx.await.unwrap()
+                                .collect()
                         }
                     },
                     public,

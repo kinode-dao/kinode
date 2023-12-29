@@ -184,22 +184,32 @@ async fn handle_kernel_request(
             // check cap sigs & transform valid to unsigned to be plugged into procs
             let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
             let mut valid_capabilities: HashSet<t::Capability> = HashSet::new();
-            for signed_cap in initial_capabilities {
-                let cap = t::Capability {
-                    issuer: signed_cap.issuer,
-                    params: signed_cap.params,
-                };
-                match pk.verify(
-                    &rmp_serde::to_vec(&cap).unwrap_or_default(),
-                    &signed_cap.signature,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        println!("kernel: StartProcess no cap: {}", e);
-                        continue;
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = caps_oracle
+                .send(t::CapMessage::GetAll {
+                    on: km.source.process.clone(),
+                    responder: tx,
+                })
+                .await
+                .expect("event loop: fatal: sender died");
+            let all_parent_caps: HashSet<t::Capability> = rx
+                .await
+                .expect("event loop: fatal: receiver died")
+                .iter()
+                .map(|cap| t::Capability {
+                    issuer: cap.issuer.clone(),
+                    params: cap.params.clone(),
+                })
+                .collect();
+            
+            for cap in initial_capabilities {
+                match all_parent_caps.get(&cap) {
+                    // if the parent didnt have the cap, discard it (TODO maybe send an error)
+                    None => { continue; }
+                    Some(verified_cap) => {
+                        valid_capabilities.insert(verified_cap.clone());
                     }
                 }
-                valid_capabilities.insert(cap);
             }
 
             // give the initializer and itself the messaging cap.

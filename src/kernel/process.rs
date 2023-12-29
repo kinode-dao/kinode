@@ -510,7 +510,15 @@ pub async fn make_process_loop(
                 responder: tx,
             })
             .await;
-        let initial_capabilities = rx.await.unwrap().into_iter().collect();
+        let initial_capabilities = rx
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|cap| t::Capability {
+                issuer: cap.issuer,
+                params: cap.params,
+            })
+            .collect();
 
         // always send message to tell main kernel loop to remove handler
         send_to_loop

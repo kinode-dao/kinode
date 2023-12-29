@@ -808,11 +808,14 @@ pub enum KernelCommand {
     ///
     /// The process that sends this command will be given messaging capabilities
     /// for the new process if `public` is false.
+    ///
+    /// All capabilities passed into initial_capabilities must be held by the source
+    /// of this message, or the kernel will discard them (silently for now).
     InitializeProcess {
         id: ProcessId,
         wasm_bytes_handle: String,
         on_exit: OnExit,
-        initial_capabilities: HashSet<SignedCapability>,
+        initial_capabilities: HashSet<Capability>,
         public: bool,
     },
     /// Tell the kernel to run a process that has already been installed.
