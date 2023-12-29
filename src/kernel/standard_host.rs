@@ -390,7 +390,14 @@ impl StandardHost for process::ProcessWasi {
             .unwrap_or(vec![])
             .iter()
             .filter_map(|signed_cap| {
-                // only return capabilities that were properly signed
+                if signed_cap.issuer.node != self.process.metadata.our.node {
+                    // accept all remote caps uncritically
+                    return Some(wit::Capability {
+                        issuer: t::Address::en_wit(&signed_cap.issuer),
+                        params: signed_cap.clone().params,
+                    });
+                }
+                // otherwise only return capabilities that were properly signed
                 let cap = t::Capability {
                     issuer: signed_cap.clone().issuer,
                     params: signed_cap.clone().params,
@@ -457,6 +464,14 @@ impl StandardHost for process::ProcessWasi {
             .unwrap_or(vec![])
             .iter()
             .filter_map(|signed_cap| {
+                if signed_cap.issuer.node != self.process.metadata.our.node {
+                    // accept all remote caps uncritically
+                    return Some(t::Capability {
+                        issuer: signed_cap.clone().issuer,
+                        params: signed_cap.clone().params,
+                    });
+                }
+                // otherwise only return capabilities that were properly signed
                 let cap = t::Capability {
                     issuer: signed_cap.clone().issuer,
                     params: signed_cap.clone().params,
