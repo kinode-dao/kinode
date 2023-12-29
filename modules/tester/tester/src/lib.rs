@@ -2,7 +2,7 @@ use indexmap::map::IndexMap;
 
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::{
-    await_message, call_init, get_capability, println, share_capability, spawn, Address,
+    await_message, call_init, get_capability, println, spawn, Address,
     Capabilities, Message, OnExit, ProcessId, Request, Response,
 };
 
@@ -130,10 +130,11 @@ fn init(our: Address) {
         .expect("couldn't serialize"),
     )
     .expect("couldn't get drive cap");
-    share_capability(
-        &ProcessId::from_str("http_server:sys:uqbar").expect("couldn't make pid"),
-        &drive_cap,
-    );
+    // TODO sharing capabilities not allowed in the new paradigm
+    // share_capability(
+    //     &ProcessId::from_str("http_server:sys:uqbar").expect("couldn't make pid"),
+    //     &drive_cap,
+    // );
 
     loop {
         match handle_message(&our, &mut messages, &mut node_names) {

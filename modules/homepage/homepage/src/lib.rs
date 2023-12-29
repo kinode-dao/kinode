@@ -1,6 +1,6 @@
 #![feature(let_chains)]
 use uqbar_process_lib::{
-    await_message, grant_messaging, http::bind_http_static_path, http::HttpServerError, println, Address,
+    await_message, http::bind_http_static_path, http::HttpServerError, println, Address,
     Message, ProcessId,
 };
 
@@ -19,7 +19,8 @@ const HOME_PAGE: &str = include_str!("home.html");
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
-        grant_messaging(&our, vec![ProcessId::new(Some("http_server"), "sys", "uqbar")]);
+        // TODO grant messaging is broken
+        // grant_messaging(&our, vec![ProcessId::new(Some("http_server"), "sys", "uqbar")]);
         match main(our) {
             Ok(_) => {}
             Err(e) => {
