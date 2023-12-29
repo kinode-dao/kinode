@@ -66,6 +66,10 @@ pub async fn timer_service(
                     send_response(&our, km.id, km.rsvp.unwrap_or(km.source), &kernel_message_sender).await;
                     continue
                 }
+                let _ = print_tx.send(Printout {
+                    verbosity: 1,
+                    content: format!("set timer to pop in {}ms", timer_millis),
+                }).await;
                 if !timer_map.contains(pop_time) {
                     timer_tasks.spawn(async move {
                         tokio::time::sleep(std::time::Duration::from_millis(timer_millis - 1)).await;

@@ -276,10 +276,12 @@ async fn ws_handler(
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = normalize_path(path.as_str());
-    let _ = print_tx.send(Printout {
-        verbosity: 1,
-        content: format!("got ws request for {original_path}"),
-    });
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("http_server: got ws request for {original_path}"),
+        })
+        .await;
 
     let serialized_headers = serialize_headers(&headers);
     let ws_path_bindings = ws_path_bindings.read().await;
@@ -294,7 +296,7 @@ async fn ws_handler(
             .send(Printout {
                 verbosity: 1,
                 content: format!(
-                    "got request for path {original_path} bound by subdomain {subdomain}"
+                    "http_server: ws request for {original_path} bound by subdomain {subdomain}"
                 ),
             })
             .await;
@@ -361,7 +363,7 @@ async fn http_handler(
     let _ = print_tx
         .send(Printout {
             verbosity: 1,
-            content: format!("got request for path {original_path}"),
+            content: format!("http_server: got request for path {original_path}"),
         })
         .await;
     let id: u64 = rand::random();
@@ -389,7 +391,9 @@ async fn http_handler(
             let _ = print_tx
                 .send(Printout {
                     verbosity: 1,
-                    content: format!("redirecting request from {socket_addr:?} to login page"),
+                    content: format!(
+                        "http_server: redirecting request from {socket_addr:?} to login page"
+                    ),
                 })
                 .await;
             return Ok(warp::http::Response::builder()
@@ -411,7 +415,7 @@ async fn http_handler(
             .send(Printout {
                 verbosity: 1,
                 content: format!(
-                    "got request for path {original_path} bound by subdomain {subdomain}"
+                    "http_server: request for {original_path} bound by subdomain {subdomain}"
                 ),
             })
             .await;
@@ -454,7 +458,7 @@ async fn http_handler(
     // we extract message from base64 encoded bytes in data
     // and send it to the correct app.
     let message = if bound_path.app == "rpc:sys:uqbar" {
-        match handle_rpc_message(our, id, body).await {
+        match handle_rpc_message(our, id, body, print_tx).await {
             Ok(message) => message,
             Err(e) => {
                 return Ok(warp::reply::with_status(vec![], e).into_response());
@@ -560,6 +564,7 @@ async fn handle_rpc_message(
     our: Arc<String>,
     id: u64,
     body: warp::hyper::body::Bytes,
+    print_tx: PrintSender,
 ) -> Result<KernelMessage, StatusCode> {
     let Ok(rpc_message) = serde_json::from_slice::<RpcMessage>(&body) else {
         return Err(StatusCode::BAD_REQUEST);
@@ -568,6 +573,13 @@ async fn handle_rpc_message(
     let Ok(target_process) = ProcessId::from_str(&rpc_message.process) else {
         return Err(StatusCode::BAD_REQUEST);
     };
+
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 2,
+            content: format!("http_server: passing on RPC message to {target_process}"),
+        })
+        .await;
 
     let payload: Option<Payload> = match rpc_message.data {
         None => None,
@@ -619,16 +631,17 @@ async fn maintain_websocket(
     print_tx: PrintSender,
 ) {
     let (mut write_stream, mut read_stream) = ws.split();
-    let _ = print_tx
-        .send(Printout {
-            verbosity: 1,
-            content: format!("got new client websocket connection"),
-        })
-        .await;
 
     let channel_id: u32 = rand::random();
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
     ws_senders.insert(channel_id, (app.clone(), ws_sender));
+
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("http_server: new websocket connection to {app} with id {channel_id}"),
+        })
+        .await;
 
     let _ = send_to_loop
         .send(KernelMessage {
@@ -654,10 +667,6 @@ async fn maintain_websocket(
         })
         .await;
 
-    let _ = print_tx.send(Printout {
-        verbosity: 1,
-        content: format!("websocket channel {channel_id} opened"),
-    });
     loop {
         tokio::select! {
             read = read_stream.next() => {
@@ -707,6 +716,12 @@ async fn maintain_websocket(
             }
         }
     }
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("http_server: websocket connection {channel_id} closed"),
+        })
+        .await;
     let stream = write_stream.reunite(read_stream).unwrap();
     let _ = stream.close().await;
 }

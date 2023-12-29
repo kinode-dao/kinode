@@ -424,6 +424,48 @@ async fn handle_kernel_request(
                 .await
                 .expect("event loop: fatal: sender died");
         }
+        t::KernelCommand::Debug(kind) => match kind {
+            t::KernelPrint::ProcessMap => {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!("kernel process map:\r\n{:#?}", process_map),
+                    })
+                    .await;
+            }
+            t::KernelPrint::Process(process_id) => {
+                let Some(proc) = process_map.get(&process_id) else {
+                    let _ = send_to_terminal
+                        .send(t::Printout {
+                            verbosity: 0,
+                            content: format!("kernel: no such running process {}", process_id),
+                        })
+                        .await;
+                    return;
+                };
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!("kernel process info:\r\n{proc:#?}",),
+                    })
+                    .await;
+            }
+            t::KernelPrint::HasCap { on, cap } => {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!(
+                            "process {} has cap:\r\n{}",
+                            on,
+                            process_map
+                                .get(&on)
+                                .map(|p| p.capabilities.contains(&cap))
+                                .unwrap_or(false)
+                        ),
+                    })
+                    .await;
+            }
+        },
     }
 }
 

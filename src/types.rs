@@ -825,6 +825,15 @@ pub enum KernelCommand {
     /// RUNTIME ONLY: notify the kernel that the runtime is shutting down and it
     /// should gracefully stop and persist the running processes.
     Shutdown,
+    /// Ask kernel to produce debugging information
+    Debug(KernelPrint),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KernelPrint {
+    ProcessMap,
+    Process(ProcessId),
+    HasCap { on: ProcessId, cap: Capability },
 }
 
 /// IPC format for all KernelCommand responses
