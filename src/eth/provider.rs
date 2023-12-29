@@ -326,11 +326,11 @@ async fn handle_external_websocket_passthrough(
                         })
                         .await;
                 } else {
-                    println!("Received a binary message: {:?}", msg.into_data());
+                    todo!();
                 }
             }
             Err(e) => {
-                println!("Error receiving a message: {:?}", e);
+                todo!();
             }
         }
     }
