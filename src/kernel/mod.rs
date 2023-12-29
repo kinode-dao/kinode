@@ -201,11 +201,13 @@ async fn handle_kernel_request(
                     params: cap.params.clone(),
                 })
                 .collect();
-            
+
             for cap in initial_capabilities {
                 match all_parent_caps.get(&cap) {
                     // if the parent didnt have the cap, discard it (TODO maybe send an error)
-                    None => { continue; }
+                    None => {
+                        continue;
+                    }
                     Some(verified_cap) => {
                         valid_capabilities.insert(verified_cap.clone());
                     }

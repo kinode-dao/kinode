@@ -265,8 +265,7 @@ impl StandardHost for process::ProcessWasi {
                                     responder: tx,
                                 })
                                 .await;
-                            rx
-                                .await
+                            rx.await
                                 .unwrap()
                                 .iter()
                                 .map(|cap| t::Capability {
@@ -275,15 +274,13 @@ impl StandardHost for process::ProcessWasi {
                                 })
                                 .collect::<HashSet<t::Capability>>()
                         }
-                        wit::Capabilities::Some(caps) => {
-                            caps
-                                .iter()
-                                .map(|cap| t::Capability {
-                                    issuer: t::Address::de_wit(cap.clone().issuer),
-                                    params: cap.clone().params,
-                                })
-                                .collect()
-                        }
+                        wit::Capabilities::Some(caps) => caps
+                            .iter()
+                            .map(|cap| t::Capability {
+                                issuer: t::Address::de_wit(cap.clone().issuer),
+                                params: cap.clone().params,
+                            })
+                            .collect(),
                     },
                     public,
                 })
