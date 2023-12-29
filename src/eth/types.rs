@@ -8,22 +8,45 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+use std::collections::HashMap;
 
 pub struct RpcConnections {
     pub ws_sender:
         Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, TungsteniteMessage>>,
     pub ws_provider: Option<Provider<Ws>>,
+    pub ws_provider_subs: HashMap::<u64, tokio::task::JoinHandle<()>>,
     pub http_provider: Option<Provider<Http>>,
     pub uq_provider: Option<NodeId>,
 }
+
 
 impl Default for RpcConnections {
     fn default() -> Self {
         Self {
             ws_sender: None,
             ws_provider: None,
+            ws_provider_subs: 
+                HashMap::<u64, tokio::task::JoinHandle<()>>::new(),
             http_provider: None,
             uq_provider: None,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum EthRpcError {
+    NoRsvp,
+    BadJson,
+    NoJson,
+    EventSubscriptionFailed,
+}
+impl EthRpcError {
+    pub fn _kind(&self) -> &str {
+        match *self {
+            EthRpcError::NoRsvp { .. } => "NoRsvp",
+            EthRpcError::BadJson { .. } => "BapJson",
+            EthRpcError::NoJson { .. } => "NoJson",
+            EthRpcError::EventSubscriptionFailed { .. } => "EventSubscriptionFailed",
         }
     }
 }
