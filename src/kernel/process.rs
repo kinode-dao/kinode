@@ -460,7 +460,7 @@ pub async fn make_process_loop(
         Ok(()) => {
             let _ = send_to_terminal
                 .send(t::Printout {
-                    verbosity: 2,
+                    verbosity: 1,
                     content: format!("process {} returned without error", metadata.our.process,),
                 })
                 .await;

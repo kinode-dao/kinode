@@ -124,7 +124,7 @@ pub async fn maintain_connection(
     let mut conn = conn.write_stream.reunite(conn.read_stream).unwrap();
     let _ = conn.close(None).await;
 
-    print_debug(&print_tx, &format!("net: connection with {peer_name} died")).await;
+    print_debug(&print_tx, &format!("net: connection with {peer_name} closed")).await;
     peers.remove(&peer_name);
 }
 

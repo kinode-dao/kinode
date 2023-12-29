@@ -6,8 +6,8 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::string::FromUtf8Error;
 use uqbar_process_lib::{
-    await_message, get_typed_state, http, println, receive, set_state, Address, Message, Payload,
-    Request, Response,
+    await_message, get_typed_state, http, print_to_terminal, println, receive, set_state, Address,
+    Message, Payload, Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -308,6 +308,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
 
                 if send {
+                    print_to_terminal(1, &format!("qns_indexer: sending ID to net: {:?}", node));
                     Request::new()
                         .target((&our.node, "net", "sys", "uqbar"))
                         .try_ipc(NetActions::QnsUpdate(node.clone()))?
