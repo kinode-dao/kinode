@@ -833,10 +833,7 @@ pub enum KernelCommand {
 pub enum KernelPrint {
     ProcessMap,
     Process(ProcessId),
-    HasCap {
-        on: ProcessId,
-        cap: Capability,
-    },
+    HasCap { on: ProcessId, cap: Capability },
 }
 
 /// IPC format for all KernelCommand responses
