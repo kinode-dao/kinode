@@ -381,7 +381,7 @@ async fn handle_kernel_request(
                 None => {
                     let _ = send_to_terminal
                         .send(t::Printout {
-                            verbosity: 0,
+                            verbosity: 2,
                             content: format!("kernel: no such process {:?} to kill", process_id),
                         })
                         .await;
