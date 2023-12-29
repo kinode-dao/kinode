@@ -54,14 +54,12 @@ pub async fn provider(
     }
 
     while let Some(km) = recv_in_client.recv().await {
-        match km.message {
-            Message::Request(Request { ipc, .. }) => {
+        match &km.message {
+            Message::Request(req) => {
                 let _ = handle_request(
-                    ipc,
                     our.clone(),
-                    km.id,
-                    km.source,
-                    km.payload,
+                    &km,
+                    &req,
                     ws_request_ids.clone(),
                     connections.clone(),
                     send_to_loop.clone(),
@@ -79,19 +77,17 @@ pub async fn provider(
 }
 
 async fn handle_request(
-    ipc: Vec<u8>,
     our: String,
-    km_id: u64,
-    source: Address,
-    payload: Option<Payload>,
+    km: &KernelMessage,
+    req: &Request,
     ws_request_ids: WsRequestIds,
     connections: Arc<Mutex<RpcConnections>>,
     send_to_loop: MessageSender,
 ) -> Result<()> {
-    if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(&ipc) {
-        let _ = handle_http_server_request(action, payload, ws_request_ids, connections);
-    } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&ipc) {
-        let _ = handle_eth_request(action, our.clone(), km_id, source, connections, send_to_loop).await;
+    if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(&req.ipc) {
+        let _ = handle_http_server_request(action, km, ws_request_ids, connections);
+    } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&req.ipc) {
+        let _ = handle_eth_request(action, our.clone(), km, connections, send_to_loop).await;
     } else {
         println!("unknown request");
     }
@@ -101,7 +97,7 @@ async fn handle_request(
 
 async fn handle_http_server_request(
     action: HttpServerRequest,
-    payload: Option<Payload>,
+    km: &KernelMessage,
     ws_request_ids: WsRequestIds,
     connections: Arc<Mutex<RpcConnections>>,
 ) -> Result<(), anyhow::Error> {
@@ -114,7 +110,7 @@ async fn handle_http_server_request(
             message_type,
         } => match message_type {
             WsMessageType::Text => {
-                let bytes = payload.unwrap().bytes;
+                let bytes = &km.payload.as_ref().unwrap().bytes;
                 let text = std::str::from_utf8(&bytes).unwrap();
                 let mut json: serde_json::Value = serde_json::from_str(text)?;
                 let mut id = json["id"].as_u64().unwrap();
@@ -156,8 +152,7 @@ async fn handle_http_server_request(
 async fn handle_eth_request(
     action: EthRequest,
     our: String,
-    km_id: u64,
-    source: Address,
+    km: &KernelMessage,
     connections: Arc<Mutex<RpcConnections>>,
     send_to_loop: MessageSender,
 ) -> Result<(), anyhow::Error> {
@@ -165,6 +160,7 @@ async fn handle_eth_request(
         EthRequest::SubscribeLogs(request) => {
 
             let connections_for_task = connections.clone();
+            let process_for_task = km.source.process.clone();
 
             let handle = tokio::spawn(async move {
 
@@ -188,7 +184,7 @@ async fn handle_eth_request(
                             },
                             target: Address {
                                 node: our.clone(),
-                                process: source.process.clone(),
+                                process: process_for_task.clone(),
                             },
                             rsvp: None,
                             message: Message::Request(Request {
@@ -212,7 +208,7 @@ async fn handle_eth_request(
 
             let mut connections_guard = connections.lock().await;
 
-            connections_guard.ws_provider_subs.insert(km_id, handle);
+            connections_guard.ws_provider_subs.insert(km.id, handle);
 
         }
     }
