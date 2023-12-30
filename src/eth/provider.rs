@@ -176,7 +176,7 @@ async fn handle_eth_request(
     Ok(())
 }
 
-async fn spawn_provider_read_stream<'a> (
+async fn spawn_provider_read_stream (
     our: String,
     req: SubscribeLogs,
     km: KernelMessage,
