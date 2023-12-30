@@ -3,8 +3,8 @@ use sha2::Digest;
 use std::collections::{HashMap, HashSet};
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::{
-    await_message, get_capability, get_payload, get_typed_state, println,
-    set_state, Address, Message, NodeId, PackageId, ProcessId, Request, Response,
+    await_message, get_capability, get_payload, get_typed_state, println, grant_capabilities,
+    set_state, Address, Message, NodeId, PackageId, ProcessId, Request, Response, Capability,
 };
 
 wit_bindgen::generate!({
@@ -160,17 +160,30 @@ pub enum InstallResponse {
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
-        // TODO granting messaging is broken at the moment...
         // begin by granting messaging capabilities to http_server and terminal,
         // so that they can send us requests.
-        // grant_messaging(
-        //     &our,
-        //     vec![
-        //         ProcessId::new(Some("http_server"), "sys", "uqbar"),
-        //         ProcessId::new(Some("terminal"), "terminal", "uqbar"),
-        //         ProcessId::new(Some("vfs"), "sys", "uqbar"),
-        //     ],
-        // );
+        // TODO couldnt you put this in the manifest? or does the manifest not apply to the app_store?
+        grant_capabilities(
+            &ProcessId::new(Some("http_server"), "sys", "uqbar"),
+            &vec![Capability {
+                    issuer: our.clone(),
+                    params: "\"messaging\"".to_string(),
+            }]
+        );
+        grant_capabilities(
+            &ProcessId::new(Some("terminal"), "terminal", "uqbar"),
+            &vec![Capability {
+                    issuer: our.clone(),
+                    params: "\"messaging\"".to_string(),
+            }]
+        );
+        grant_capabilities(
+            &ProcessId::new(Some("vfs"), "sys", "uqbar"),
+            &vec![Capability {
+                    issuer: our.clone(),
+                    params: "\"messaging\"".to_string(),
+            }]
+        );
         println!("{}: start", our.process);
 
         // load in our saved state or initalize a new one if none exists
@@ -568,54 +581,49 @@ fn handle_local_request(
                     package.package(),
                     package.publisher(),
                 );
-                // TODO granting messaging is broken at the moment...
-                // if let Some(to_grant) = &entry.grant_messaging {
-                //     for value in to_grant {
-                //         let mut capability = None;
-                //         let mut to_process = None;
-                //         match value {
-                //             serde_json::Value::String(process_name) => {
-                //                 if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
-                //                     capability = get_capability(
-                //                         &Address {
-                //                             node: our.node.clone(),
-                //                             process: process_id.clone(),
-                //                         },
-                //                         &"\"messaging\"".into(),
-                //                     );
-                //                     to_process = Some(parsed_process_id);
-                //                 }
-                //             }
-                //             serde_json::Value::Object(map) => {
-                //                 if let Some(process_name) = map.get("process") {
-                //                     if let Ok(parsed_process_id) =
-                //                         ProcessId::from_str(&process_name.to_string())
-                //                     {
-                //                         if let Some(params) = map.get("params") {
-                //                             capability = get_capability(
-                //                                 &Address {
-                //                                     node: our.node.clone(),
-                //                                     process: process_id.clone(),
-                //                                 },
-                //                                 &params.to_string(),
-                //                             );
-                //                             to_process = Some(parsed_process_id);
-                //                         }
-                //                     }
-                //                 }
-                //             }
-                //             _ => {
-                //                 continue;
-                //             }
-                //         }
-
-                //         if let Some(cap) = capability {
-                //             share_capability(&to_process.unwrap(), &cap);
-                //         } else {
-                //             println!("app-store: no cap: {}, for {} to grant!", value.to_string(), process_id);
-                //         }
-                //     }
-                // }
+                if let Some(to_grant) = &entry.grant_messaging {
+                    for value in to_grant {
+                        let mut capability = None;
+                        let mut to_process = None;
+                        match value {
+                            serde_json::Value::String(process_name) => {
+                                if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
+                                    capability = Some(Capability {
+                                        issuer: Address {
+                                            node: our.node.clone(),
+                                            process: process_id.clone(),
+                                        },
+                                        params: "\"messaging\"".into(),
+                                    }) ;
+                                    to_process = Some(parsed_process_id);
+                                }
+                            }
+                            serde_json::Value::Object(map) => {
+                                if let Some(process_name) = map.get("process") {
+                                    if let Ok(parsed_process_id) =
+                                        ProcessId::from_str(&process_name.to_string())
+                                    {
+                                        if let Some(params) = map.get("params") {
+                                            capability = Some(Capability {
+                                                issuer: Address {
+                                                    node: our.node.clone(),
+                                                    process: process_id.clone(),
+                                                },
+                                                params: params.to_string(),
+                                            });
+                                            to_process = Some(parsed_process_id);
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {
+                                continue;
+                            }
+                        }
+                        // TODO: how do I give app_store the root capability?
+                        grant_capabilities(&to_process.unwrap(), &vec![capability.unwrap()]);
+                    }
+                }
                 Request::new()
                     .target(Address::from_str("our@kernel:sys:uqbar")?)
                     .ipc(serde_json::to_vec(&kt::KernelCommand::RunProcess(

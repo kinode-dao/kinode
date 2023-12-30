@@ -527,6 +527,46 @@ impl StandardHost for process::ProcessWasi {
             })
             .collect())
     }
+
+    async fn grant_capabilities(&mut self, target: wit::ProcessId, caps: Vec<wit::Capability>) -> Result<()> {
+        // first verify that caller has the root capability to arbirarily add
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Has {
+                on: self.process.metadata.our.process.clone(),
+                cap: t::Capability {
+                    issuer: t::Address {
+                        node: self.process.metadata.our.node.clone(),
+                        process: KERNEL_PROCESS_ID.clone()
+                    },
+                    params: "\"root\"".into(),
+                },
+                responder: tx,
+            })
+            .await;
+        let Ok(true) = rx.await else {
+            return Err(anyhow::anyhow!("grant_capabilities: caller does not have root capability!"));
+        };
+    
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Add {
+                on: t::ProcessId::de_wit(target),
+                caps: caps
+                    .iter()
+                    .map(|cap| de_wit_capability(cap.clone()))
+                    .collect(),
+                responder: tx,
+            })
+            .await?;
+        let _ = rx.await?;
+        Ok(())
+    }
+
     //
     // message I/O:
     //
