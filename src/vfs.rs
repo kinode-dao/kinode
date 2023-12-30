@@ -584,7 +584,7 @@ async fn check_caps(
             }
 
             if has_root_cap {
-               return Ok(());
+                return Ok(());
             }
             let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
             send_to_caps_oracle
@@ -655,8 +655,7 @@ async fn check_caps(
             }
             Ok(())
         }
-        VfsAction::CopyFile { new_path }
-        | VfsAction::Rename { new_path } => {
+        VfsAction::CopyFile { new_path } | VfsAction::Rename { new_path } => {
             // these have 2 paths to validate
             if has_root_cap {
                 return Ok(());
@@ -669,7 +668,7 @@ async fn check_caps(
                 return Ok(());
             }
 
-            // otherwise check write caps. 
+            // otherwise check write caps.
             let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
             send_to_caps_oracle
                 .send(CapMessage::Has {
@@ -698,7 +697,7 @@ async fn check_caps(
 
             // if they're within the same drive, no need for 2 caps checks
             if new_drive == drive {
-                return Ok(())
+                return Ok(());
             }
 
             let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
@@ -840,7 +839,7 @@ impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for VfsError {
 
 impl From<zip::result::ZipError> for VfsError {
     fn from(err: zip::result::ZipError) -> Self {
-        VfsError::IOError  {
+        VfsError::IOError {
             error: err.to_string(),
             path: "".into(),
         }
