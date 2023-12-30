@@ -4,7 +4,8 @@ use crate::types::*;
 use anyhow::Result;
 use dashmap::DashMap;
 use ethers::prelude::Provider;
-use ethers_providers::{Middleware, StreamExt, Ws};
+use ethers::types::Log;
+use ethers_providers::{Middleware, StreamExt, SubscriptionStream, Ws};
 use futures::stream::SplitStream;
 use futures::SinkExt;
 use serde_json::json;
@@ -30,8 +31,6 @@ pub async fn provider(
 
     bind_websockets(&our, &send_to_loop).await;
 
-    let ws_request_ids: WsRequestIds = Arc::new(DashMap::new());
-
     let connections = Arc::new(Mutex::new(RpcConnections::default()));
 
     match Url::parse(&rpc_url).unwrap().scheme() {
@@ -43,7 +42,6 @@ pub async fn provider(
                 our.clone(),
                 rpc_url.clone(),
                 connections.clone(),
-                ws_request_ids.clone(),
                 send_to_loop.clone(),
             )
             .await?;
@@ -60,7 +58,6 @@ pub async fn provider(
                     our.clone(),
                     &km,
                     &req,
-                    ws_request_ids.clone(),
                     connections.clone(),
                     send_to_loop.clone(),
                 ).await;
@@ -80,12 +77,11 @@ async fn handle_request(
     our: String,
     km: &KernelMessage,
     req: &Request,
-    ws_request_ids: WsRequestIds,
     connections: Arc<Mutex<RpcConnections>>,
     send_to_loop: MessageSender,
 ) -> Result<()> {
     if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(&req.ipc) {
-        let _ = handle_http_server_request(action, km, ws_request_ids, connections);
+        let _ = handle_http_server_request(action, km, connections).await;
     } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&req.ipc) {
         let _ = handle_eth_request(action, our.clone(), km, connections, send_to_loop).await;
     } else {
@@ -98,18 +94,16 @@ async fn handle_request(
 async fn handle_http_server_request(
     action: HttpServerRequest,
     km: &KernelMessage,
-    ws_request_ids: WsRequestIds,
     connections: Arc<Mutex<RpcConnections>>,
 ) -> Result<(), anyhow::Error> {
     match action {
-        HttpServerRequest::WebSocketOpen { path, channel_id } => {
-            println!("open {:?}, {:?}", path, channel_id);
-        }
+        HttpServerRequest::WebSocketOpen { path, channel_id } => { }
         HttpServerRequest::WebSocketPush {
             channel_id,
             message_type,
         } => match message_type {
             WsMessageType::Text => {
+
                 let bytes = &km.payload.as_ref().unwrap().bytes;
                 let text = std::str::from_utf8(&bytes).unwrap();
                 let mut json: serde_json::Value = serde_json::from_str(text)?;
@@ -117,30 +111,23 @@ async fn handle_http_server_request(
 
                 id += channel_id as u64;
 
-                ws_request_ids.insert(id as u32, channel_id);
-
                 json["id"] = serde_json::Value::from(id);
 
                 let _new_text = json.to_string();
 
                 let mut connections_guard = connections.lock().await;
 
+                connections_guard.ws_sender_ids.insert(id as u32, channel_id);
+
                 if let Some(ws_sender) = &mut connections_guard.ws_sender {
                     let _ = ws_sender.send(TungsteniteMessage::Text(_new_text)).await;
                 }
+
             }
-            WsMessageType::Binary => {
-                todo!();
-            }
-            WsMessageType::Ping => {
-                todo!();
-            }
-            WsMessageType::Pong => {
-                todo!();
-            }
-            WsMessageType::Close => {
-                todo!();
-            }
+            WsMessageType::Binary => {}
+            WsMessageType::Ping => {}
+            WsMessageType::Pong => {}
+            WsMessageType::Close => {}
         },
         HttpServerRequest::WebSocketClose(_channel_id) => {}
         HttpServerRequest::Http(_) => todo!(),
@@ -157,70 +144,110 @@ async fn handle_eth_request(
     send_to_loop: MessageSender,
 ) -> Result<(), anyhow::Error> {
     match action {
-        EthRequest::SubscribeLogs(request) => {
+        EthRequest::SubscribeLogs(req) => {
 
-            let connections_for_task = connections.clone();
-            let process_for_task = km.source.process.clone();
-
-            let handle = tokio::spawn(async move {
-
-                let mut connections_guard = connections_for_task.lock().await;
-                let ws_provider = connections_guard.ws_provider.as_mut().unwrap();
-                let mut stream = match ws_provider.subscribe_logs(&request.filter.clone()).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        println!("error subscribing to logs: {:?}", e);
-                        return;
-                    }
-                };
-
-                while let Some(event) = stream.next().await {
-                    send_to_loop
-                        .send(KernelMessage {
-                            id: rand::random(),
-                            source: Address {
-                                node: our.clone(),
-                                process: ETH_PROCESS_ID.clone(),
-                            },
-                            target: Address {
-                                node: our.clone(),
-                                process: process_for_task.clone(),
-                            },
-                            rsvp: None,
-                            message: Message::Request(Request {
-                                inherit: false,
-                                expects_response: None,
-                                ipc: json!({
-                                    "EventSubscription": serde_json::to_value(event.clone()).unwrap()
-                                })
-                                .to_string()
-                                .into_bytes(),
-                                metadata: None,
-                            }),
-                            payload: None,
-                            signed_capabilities: None,
-                        })
-                        .await
-                        .unwrap();
-                }
-
-            });
+            let handle = tokio::spawn(spawn_provider_read_stream(
+                    our.clone(),
+                    req,
+                    km.clone(),
+                    connections.clone(),
+                    send_to_loop.clone(),
+            ));
 
             let mut connections_guard = connections.lock().await;
 
-            connections_guard.ws_provider_subs.insert(km.id, handle);
+            let ws_provider_subscription = connections_guard.ws_provider_subscriptions
+                .entry(km.id)
+                .or_insert(WsProviderSubscription::default());
+
+            ws_provider_subscription.handle = Some(handle);
+
+            drop(connections_guard);
+
+        },
+        EthRequest::UnsubscribeLogs(channel_id) => {
+
+            let connections_guard = connections.lock().await;
+            let ws_provider_stream = connections_guard.ws_provider_subscriptions.get(&channel_id).unwrap();
+            ws_provider_stream.kill().await;
 
         }
     }
     Ok(())
 }
 
+async fn spawn_provider_read_stream<'a> (
+    our: String,
+    req: SubscribeLogs,
+    km: KernelMessage,
+    connections: Arc<Mutex<RpcConnections>>,
+    send_to_loop: MessageSender,
+) {
+    let mut connections_guard = connections.lock().await;
+
+    let Some(ref ws_rpc_url) = connections_guard.ws_rpc_url else { todo!() };
+    let ws_provider = match Provider::<Ws>::connect(&ws_rpc_url).await {
+        Ok(provider) => provider,
+        Err(e) => {
+            println!("error connecting to ws provider: {:?}", e);
+            return;
+        }
+    };
+
+    let mut stream = match ws_provider.subscribe_logs(&req.filter.clone()).await {
+        Ok(s) => s,
+        Err(e) => {
+            println!("error subscribing to logs: {:?}", e);
+            return;
+        }
+    };
+
+    let ws_provider_subscription = connections_guard.ws_provider_subscriptions
+        .entry(km.id)
+        .or_insert(WsProviderSubscription::default());
+
+    ws_provider_subscription.provider = Some(ws_provider.clone());
+    ws_provider_subscription.subscription = Some(stream.id.clone());
+
+    drop(connections_guard);
+
+    while let Some(event) = stream.next().await {
+        send_to_loop
+            .send(KernelMessage {
+                id: rand::random(),
+                source: Address {
+                    node: our.clone(),
+                    process: ETH_PROCESS_ID.clone(),
+                },
+                target: Address {
+                    node: our.clone(),
+                    process: km.source.process.clone(),
+                },
+                rsvp: None,
+                message: Message::Request(Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: json!({
+                        "EventSubscription": serde_json::to_value(event.clone()).unwrap()
+                    })
+                    .to_string()
+                    .into_bytes(),
+                    metadata: None,
+                }),
+                payload: None,
+                signed_capabilities: None,
+            })
+            .await
+            .unwrap();
+    }
+
+}
+
+
 fn handle_response(ipc: &Vec<u8>) -> Result<()> {
     let Ok(message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
         return Ok(());
     };
-
-    println!("response message {:?}", message);
 
     Ok(())
 }
@@ -259,24 +286,25 @@ async fn bootstrap_websocket_connections(
     our: String,
     rpc_url: String,
     connections: Arc<Mutex<RpcConnections>>,
-    ws_request_ids: WsRequestIds,
     send_to_loop: MessageSender,
 ) -> Result<()> {
-    let (_ws_stream, _) = connect_async(&rpc_url).await.expect("failed to connect");
+
+    let (_ws_stream, status) = connect_async(&rpc_url).await.expect("failed to connect");
     let (_ws_sender, mut ws_receiver) = _ws_stream.split();
 
     let mut connections_guard = connections.lock().await;
     connections_guard.ws_sender = Some(_ws_sender);
     connections_guard.ws_provider = Some(Provider::<Ws>::connect(rpc_url.clone()).await?);
+    connections_guard.ws_rpc_url = Some(rpc_url.clone());
 
     let our = our.clone();
-    let ws_request_ids = ws_request_ids.clone();
+    let ws_sender_ids = connections_guard.ws_sender_ids.clone();
     let send_to_loop = send_to_loop.clone();
 
     tokio::spawn(async move {
         handle_external_websocket_passthrough(
             our.clone(),
-            ws_request_ids.clone(),
+            ws_sender_ids.clone(),
             &mut ws_receiver,
             send_to_loop.clone(),
         )
@@ -296,6 +324,7 @@ async fn handle_external_websocket_passthrough(
         match message {
             Ok(msg) => {
                 if msg.is_text() {
+
                     let Ok(text) = msg.into_text() else {
                         todo!();
                     };
