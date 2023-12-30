@@ -497,6 +497,7 @@ fn handle_local_request(
                 initial_capabilities.insert(kt::de_wit_capability(read_cap.clone()));
                 initial_capabilities.insert(kt::de_wit_capability(write_cap.clone()));
 
+                // TODO if an app requests root capability, DO NOT give it to them!
                 if let Some(to_request) = &entry.request_messaging {
                     for value in to_request {
                         let mut capability = None;
