@@ -60,7 +60,8 @@ pub async fn provider(
                     &req,
                     connections.clone(),
                     send_to_loop.clone(),
-                ).await;
+                )
+                .await;
             }
             Message::Response((Response { ref ipc, .. }, ..)) => {
                 handle_response(ipc)?;
@@ -97,13 +98,12 @@ async fn handle_http_server_request(
     connections: Arc<Mutex<RpcConnections>>,
 ) -> Result<(), anyhow::Error> {
     match action {
-        HttpServerRequest::WebSocketOpen { path, channel_id } => { }
+        HttpServerRequest::WebSocketOpen { path, channel_id } => {}
         HttpServerRequest::WebSocketPush {
             channel_id,
             message_type,
         } => match message_type {
             WsMessageType::Text => {
-
                 let bytes = &km.payload.as_ref().unwrap().bytes;
                 let text = std::str::from_utf8(&bytes).unwrap();
                 let mut json: serde_json::Value = serde_json::from_str(text)?;
@@ -117,12 +117,13 @@ async fn handle_http_server_request(
 
                 let mut connections_guard = connections.lock().await;
 
-                connections_guard.ws_sender_ids.insert(id as u32, channel_id);
+                connections_guard
+                    .ws_sender_ids
+                    .insert(id as u32, channel_id);
 
                 if let Some(ws_sender) = &mut connections_guard.ws_sender {
                     let _ = ws_sender.send(TungsteniteMessage::Text(_new_text)).await;
                 }
-
             }
             WsMessageType::Binary => {}
             WsMessageType::Ping => {}
@@ -145,38 +146,38 @@ async fn handle_eth_request(
 ) -> Result<(), anyhow::Error> {
     match action {
         EthRequest::SubscribeLogs(req) => {
-
             let handle = tokio::spawn(spawn_provider_read_stream(
-                    our.clone(),
-                    req,
-                    km.clone(),
-                    connections.clone(),
-                    send_to_loop.clone(),
+                our.clone(),
+                req,
+                km.clone(),
+                connections.clone(),
+                send_to_loop.clone(),
             ));
 
             let mut connections_guard = connections.lock().await;
 
-            let ws_provider_subscription = connections_guard.ws_provider_subscriptions
+            let ws_provider_subscription = connections_guard
+                .ws_provider_subscriptions
                 .entry(km.id)
                 .or_insert(WsProviderSubscription::default());
 
             ws_provider_subscription.handle = Some(handle);
 
             drop(connections_guard);
-
-        },
+        }
         EthRequest::UnsubscribeLogs(channel_id) => {
-
             let connections_guard = connections.lock().await;
-            let ws_provider_stream = connections_guard.ws_provider_subscriptions.get(&channel_id).unwrap();
+            let ws_provider_stream = connections_guard
+                .ws_provider_subscriptions
+                .get(&channel_id)
+                .unwrap();
             ws_provider_stream.kill().await;
-
         }
     }
     Ok(())
 }
 
-async fn spawn_provider_read_stream (
+async fn spawn_provider_read_stream(
     our: String,
     req: SubscribeLogs,
     km: KernelMessage,
@@ -185,7 +186,9 @@ async fn spawn_provider_read_stream (
 ) {
     let mut connections_guard = connections.lock().await;
 
-    let Some(ref ws_rpc_url) = connections_guard.ws_rpc_url else { todo!() };
+    let Some(ref ws_rpc_url) = connections_guard.ws_rpc_url else {
+        todo!()
+    };
     let ws_provider = match Provider::<Ws>::connect(&ws_rpc_url).await {
         Ok(provider) => provider,
         Err(e) => {
@@ -202,7 +205,8 @@ async fn spawn_provider_read_stream (
         }
     };
 
-    let ws_provider_subscription = connections_guard.ws_provider_subscriptions
+    let ws_provider_subscription = connections_guard
+        .ws_provider_subscriptions
         .entry(km.id)
         .or_insert(WsProviderSubscription::default());
 
@@ -240,9 +244,7 @@ async fn spawn_provider_read_stream (
             .await
             .unwrap();
     }
-
 }
-
 
 fn handle_response(ipc: &Vec<u8>) -> Result<()> {
     let Ok(message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
@@ -288,7 +290,6 @@ async fn bootstrap_websocket_connections(
     connections: Arc<Mutex<RpcConnections>>,
     send_to_loop: MessageSender,
 ) -> Result<()> {
-
     let (_ws_stream, status) = connect_async(&rpc_url).await.expect("failed to connect");
     let (_ws_sender, mut ws_receiver) = _ws_stream.split();
 
@@ -324,7 +325,6 @@ async fn handle_external_websocket_passthrough(
         match message {
             Ok(msg) => {
                 if msg.is_text() {
-
                     let Ok(text) = msg.into_text() else {
                         todo!();
                     };

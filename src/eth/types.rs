@@ -6,12 +6,12 @@ use ethers::types::{Filter, U256};
 use ethers_providers::{Http, Middleware, Ws};
 use futures::stream::SplitSink;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::task::JoinHandle;
 use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use std::collections::HashMap;
 
 type WsRequestIds = Arc<DashMap<u32, u32>>;
 
@@ -49,13 +49,12 @@ pub struct RpcConnections {
         Option<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, TungsteniteMessage>>,
     pub ws_sender_ids: WsRequestIds,
     pub ws_rpc_url: Option<String>,
-    pub ws_provider_subscriptions: HashMap::<u64, WsProviderSubscription>,
+    pub ws_provider_subscriptions: HashMap<u64, WsProviderSubscription>,
     pub http_rpc_url: Option<String>,
     pub uq_provider: Option<NodeId>,
     pub ws_provider: Option<Provider<Ws>>,
     pub http_provider: Option<Provider<Http>>,
 }
-
 
 impl Default for RpcConnections {
     fn default() -> Self {
@@ -63,8 +62,7 @@ impl Default for RpcConnections {
             ws_sender: None,
             ws_sender_ids: Arc::new(DashMap::new()),
             ws_provider: None,
-            ws_provider_subscriptions: 
-                HashMap::<u64, WsProviderSubscription>::new(),
+            ws_provider_subscriptions: HashMap::<u64, WsProviderSubscription>::new(),
             http_provider: None,
             uq_provider: None,
             http_rpc_url: None,
