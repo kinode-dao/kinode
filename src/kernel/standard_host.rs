@@ -528,7 +528,11 @@ impl StandardHost for process::ProcessWasi {
             .collect())
     }
 
-    async fn grant_capabilities(&mut self, target: wit::ProcessId, caps: Vec<wit::Capability>) -> Result<()> {
+    async fn grant_capabilities(
+        &mut self,
+        target: wit::ProcessId,
+        caps: Vec<wit::Capability>,
+    ) -> Result<()> {
         // first verify that caller has the root capability to arbirarily add
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self
@@ -539,7 +543,7 @@ impl StandardHost for process::ProcessWasi {
                 cap: t::Capability {
                     issuer: t::Address {
                         node: self.process.metadata.our.node.clone(),
-                        process: KERNEL_PROCESS_ID.clone()
+                        process: KERNEL_PROCESS_ID.clone(),
                     },
                     params: "\"root\"".into(),
                 },
@@ -547,9 +551,11 @@ impl StandardHost for process::ProcessWasi {
             })
             .await;
         let Ok(true) = rx.await else {
-            return Err(anyhow::anyhow!("grant_capabilities: caller does not have root capability!"));
+            return Err(anyhow::anyhow!(
+                "grant_capabilities: caller does not have root capability!"
+            ));
         };
-    
+
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self
             .process
