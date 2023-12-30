@@ -318,9 +318,7 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Metadata => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
-            let file = file.lock().await;
-            let metadata = file.metadata().await?;
+            let metadata = fs::metadata(&path).await?;
 
             let file_type = get_file_type(&metadata);
             let meta = FileMetadata {
