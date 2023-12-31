@@ -515,10 +515,8 @@ async fn bootstrap(
                                         capability = Some(Capability {
                                             issuer: Address {
                                                 node: our_name.to_string(),
-                                                process: ProcessId::from_str(
-                                                    &our_process_id,
-                                                )
-                                                .unwrap(),
+                                                process: ProcessId::from_str(&our_process_id)
+                                                    .unwrap(),
                                             },
                                             params: params.to_string(),
                                         });
