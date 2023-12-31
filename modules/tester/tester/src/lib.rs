@@ -121,20 +121,6 @@ fn init(our: Address) {
         .send_and_await_response(5)
         .unwrap()
         .unwrap();
-    let drive_cap = get_capability(
-        &make_vfs_address(&our).unwrap(),
-        &serde_json::to_string(&serde_json::json!({
-            "kind": "write",
-            "drive": "/tester:uqbar/tests",
-        }))
-        .expect("couldn't serialize"),
-    )
-    .expect("couldn't get drive cap");
-    // TODO sharing capabilities not allowed in the new paradigm
-    // share_capability(
-    //     &ProcessId::from_str("http_server:sys:uqbar").expect("couldn't make pid"),
-    //     &drive_cap,
-    // );
 
     loop {
         match handle_message(&our, &mut messages, &mut node_names) {

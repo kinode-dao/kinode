@@ -8,7 +8,14 @@
             "net:sys:uqbar"
         ],
         "grant_messaging": [
-            "vfs:sys:uqbar"
+            "vfs:sys:uqbar",
+            {
+                "process": "http_server:sys:uqbar",
+                "params": {
+                    "kind": "write",
+                    "drive": "/tester:uqbar/tests"
+                }
+            }
         ],
         "public": true
     }
