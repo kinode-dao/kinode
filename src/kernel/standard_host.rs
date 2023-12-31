@@ -1,13 +1,12 @@
 use crate::kernel::process;
 use crate::kernel::process::uqbar::process::standard as wit;
 use crate::types as t;
-use crate::types::de_wit_capability;
 use crate::types::STATE_PROCESS_ID;
 use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
 use anyhow::Result;
 use ring::signature::{self, KeyPair};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::kernel::process::StandardHost;
 
@@ -414,7 +413,6 @@ impl StandardHost for process::ProcessWasi {
     }
 
     async fn attach_capabilities(&mut self, capabilities: Vec<wit::Capability>) -> Result<()> {
-        // out of our saved capability store, we need to get those caps
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self
             .process
@@ -423,7 +421,7 @@ impl StandardHost for process::ProcessWasi {
                 on: self.process.metadata.our.process.clone(),
                 caps: capabilities
                     .iter()
-                    .map(|cap| de_wit_capability(cap.clone()))
+                    .map(|cap| t::de_wit_capability(cap.clone()))
                     .collect(),
                 responder: tx,
             })
@@ -487,11 +485,11 @@ impl StandardHost for process::ProcessWasi {
             .iter()
             .filter(|&cap| {
                 // only add verified caps
-                verified_caps.contains(&de_wit_capability(cap.clone()))
+                verified_caps.contains(&t::de_wit_capability(cap.clone()))
                     // or caps that we issued to ourself
                     || t::Address::de_wit(cap.clone().issuer) == self.process.metadata.our
             })
-            .map(|cap| de_wit_capability(cap.clone()))
+            .map(|cap| t::de_wit_capability(cap.clone()))
             .collect::<Vec<t::Capability>>();
 
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -564,7 +562,7 @@ impl StandardHost for process::ProcessWasi {
                 on: t::ProcessId::de_wit(target),
                 caps: caps
                     .iter()
-                    .map(|cap| de_wit_capability(cap.clone()))
+                    .map(|cap| t::de_wit_capability(cap.clone()))
                     .collect(),
                 responder: tx,
             })
