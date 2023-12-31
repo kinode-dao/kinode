@@ -25,6 +25,11 @@
                 "params": "root"
             }
         ],
+        "grant_messaging": [
+            "http_server:sys:uqbar",
+            "terminal:terminal:uqbar",
+            "vfs:sys:uqbar"
+        ],
         "public": false
     }
 ]

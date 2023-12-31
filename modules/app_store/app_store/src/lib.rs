@@ -160,30 +160,7 @@ pub enum InstallResponse {
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
-        // begin by granting messaging capabilities to http_server and terminal,
-        // so that they can send us requests.
-        // TODO couldnt you put this in the manifest? or does the manifest not apply to the app_store?
-        grant_capabilities(
-            &ProcessId::new(Some("http_server"), "sys", "uqbar"),
-            &vec![Capability {
-                    issuer: our.clone(),
-                    params: "\"messaging\"".to_string(),
-            }]
-        );
-        grant_capabilities(
-            &ProcessId::new(Some("terminal"), "terminal", "uqbar"),
-            &vec![Capability {
-                    issuer: our.clone(),
-                    params: "\"messaging\"".to_string(),
-            }]
-        );
-        grant_capabilities(
-            &ProcessId::new(Some("vfs"), "sys", "uqbar"),
-            &vec![Capability {
-                    issuer: our.clone(),
-                    params: "\"messaging\"".to_string(),
-            }]
-        );
+        
         println!("{}: start", our.process);
 
         // load in our saved state or initalize a new one if none exists
