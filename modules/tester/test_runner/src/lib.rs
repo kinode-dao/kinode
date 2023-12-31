@@ -69,7 +69,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     for child in &children {
                         let child_process_id = match spawn(
                             None,
-                            child,
+                            &child.path, // TODO not sure if this is right
                             OnExit::None, //  TODO: notify us
                             &wit::Capabilities::All,
                             false, // not public
@@ -78,7 +78,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                             Err(e) => {
                                 wit::print_to_terminal(
                                     0,
-                                    &format!("couldn't spawn {}: {}", child, e),
+                                    &format!("couldn't spawn {}: {}", child.path, e),
                                 );
                                 panic!("couldn't spawn"); //  TODO
                             }
@@ -133,10 +133,11 @@ impl Guest for Component {
 
         let our = Address::from_str(&our).unwrap();
 
-        wit::create_capability(
-            &ProcessId::new(Some("vfs"), "sys", "uqbar"),
-            &"\"messaging\"".into(),
-        );
+        // TODO fix
+        // wit::create_capability(
+        //     &ProcessId::new(Some("vfs"), "sys", "uqbar"),
+        //     &"\"messaging\"".into(),
+        // );
 
         loop {
             match handle_message(&our) {
