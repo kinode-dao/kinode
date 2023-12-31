@@ -19,8 +19,7 @@ const HOME_PAGE: &str = include_str!("home.html");
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
-        // TODO grant messaging is broken
-        // grant_messaging(&our, vec![ProcessId::new(Some("http_server"), "sys", "uqbar")]);
+
         match main(our) {
             Ok(_) => {}
             Err(e) => {

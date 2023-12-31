@@ -499,7 +499,7 @@ async fn bootstrap(
                                 capability = Some(Capability {
                                     issuer: Address {
                                         node: our_name.to_string(),
-                                        process: ProcessId::from_str(process_name).unwrap(),
+                                        process: ProcessId::from_str(&our_process_id).unwrap(),
                                     },
                                     params: "\"messaging\"".into(),
                                 });
@@ -516,7 +516,7 @@ async fn bootstrap(
                                             issuer: Address {
                                                 node: our_name.to_string(),
                                                 process: ProcessId::from_str(
-                                                    process_name.as_str().unwrap(),
+                                                    &our_process_id,
                                                 )
                                                 .unwrap(),
                                             },
@@ -532,10 +532,8 @@ async fn bootstrap(
                         }
                     }
 
-                    if let Some(cap) = capability {
-                        if let Some(process) = process_map.get_mut(&to_process.unwrap()) {
-                            process.capabilities.insert(cap);
-                        }
+                    if let Some(process) = process_map.get_mut(&to_process.unwrap()) {
+                        process.capabilities.insert(capability.unwrap());
                     }
                 }
             }

@@ -621,7 +621,6 @@ fn handle_local_request(
                                 continue;
                             }
                         }
-                        // TODO: how do I give app_store the root capability?
                         grant_capabilities(&to_process.unwrap(), &vec![capability.unwrap()]);
                     }
                 }
