@@ -568,7 +568,7 @@ fn handle_local_request(
                         match value {
                             serde_json::Value::String(process_name) => {
                                 if let Ok(parsed_process_id) = ProcessId::from_str(&process_name) {
-                                    grant_capabilities(&parsed_process_id, &vec![kt::Capability {
+                                    grant_capabilities(&parsed_process_id, &[Capability {
                                         issuer: Address {
                                             node: our.node.clone(),
                                             process: process_id.clone(),
@@ -583,7 +583,7 @@ fn handle_local_request(
                                         ProcessId::from_str(&process_name.to_string())
                                     {
                                         if let Some(params) = map.get("params") {
-                                            grant_capabilities(&parsed_process_id, &vec![kt::Capability {
+                                            grant_capabilities(&parsed_process_id, &[Capability {
                                                 issuer: Address {
                                                     node: our.node.clone(),
                                                     process: process_id.clone(),
