@@ -56,7 +56,8 @@ pub fn spawn_transfer(
         Some(&transfer_id.to_string()),
         "/ft_worker.wasm".into(),
         &OnExit::None, // can set message-on-panic here
-        &Capabilities::All,
+        &our_capabilities(),
+        &[],
         false, // not public
     ) else {
         print_to_terminal(0, "file_transfer: failed to spawn worker!");
@@ -107,7 +108,8 @@ pub fn spawn_receive_transfer(our: &Address, ipc: &[u8]) {
         Some(&transfer_id.to_string()),
         "/ft_worker.wasm".into(),
         &OnExit::None, // can set message-on-panic here
-        &Capabilities::All,
+        &our_capabilities(),
+        &[],
         false, // not public
     ) else {
         print_to_terminal(0, "file_transfer: failed to spawn worker!");

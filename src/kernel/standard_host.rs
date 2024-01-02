@@ -176,7 +176,8 @@ impl StandardHost for process::ProcessWasi {
         name: Option<String>,
         wasm_path: String, // must be located within package's drive
         on_exit: wit::OnExit,
-        capabilities: wit::Capabilities,
+        request_capabilities: Vec<wit::Capability>,
+        grant_capabilities: Vec<wit::ProcessId>, // TODO actually insert these
         public: bool,
     ) -> Result<Result<wit::ProcessId, wit::SpawnError>> {
         // save existing payload to restore later
@@ -251,36 +252,13 @@ impl StandardHost for process::ProcessWasi {
                     id: new_process_id.clone(),
                     wasm_bytes_handle: wasm_path,
                     on_exit: t::OnExit::de_wit(on_exit),
-                    initial_capabilities: match capabilities {
-                        wit::Capabilities::None => HashSet::new(),
-                        wit::Capabilities::All => {
-                            // NOTE probably a faster implementation of this...
-                            let (tx, rx) = tokio::sync::oneshot::channel();
-                            let _ = self
-                                .process
-                                .caps_oracle
-                                .send(t::CapMessage::GetAll {
-                                    on: self.process.metadata.our.process.clone(),
-                                    responder: tx,
-                                })
-                                .await;
-                            rx.await
-                                .unwrap()
-                                .iter()
-                                .map(|cap| t::Capability {
-                                    issuer: cap.issuer.clone(),
-                                    params: cap.params.clone(),
-                                })
-                                .collect::<HashSet<t::Capability>>()
-                        }
-                        wit::Capabilities::Some(caps) => caps
-                            .iter()
-                            .map(|cap| t::Capability {
-                                issuer: t::Address::de_wit(cap.clone().issuer),
-                                params: cap.clone().params,
-                            })
-                            .collect(),
-                    },
+                    initial_capabilities: request_capabilities
+                        .iter()
+                        .map(|cap| t::Capability {
+                            issuer: t::Address::de_wit(cap.clone().issuer),
+                            params: cap.clone().params,
+                        })
+                        .collect(),
                     public,
                 })
                 .unwrap(),

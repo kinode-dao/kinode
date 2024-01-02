@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet};
 
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
-use uqbar_process_lib::{spawn, Address, Message, OnExit, ProcessId, Request, Response};
+use uqbar_process_lib::{
+    our_capabilities, spawn, Address, Message, OnExit, ProcessId, Request, Response,
+};
 
 mod tester_types;
 use tester_types as tt;
@@ -51,8 +53,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     let Message::Response { ipc: vfs_ipc, .. } = response else {
                         panic!("")
                     };
-                    let kt::VfsResponse::ReadDir(children) =
-                        serde_json::from_slice(&vfs_ipc)?
+                    let kt::VfsResponse::ReadDir(children) = serde_json::from_slice(&vfs_ipc)?
                     else {
                         wit::print_to_terminal(
                             0,
@@ -69,9 +70,10 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     for child in &children {
                         let child_process_id = match spawn(
                             None,
-                            &child.path, // TODO not sure if this is right
+                            &child.path,  // TODO not sure if this is right
                             OnExit::None, //  TODO: notify us
-                            &wit::Capabilities::All,
+                            our_capabilities(),
+                            vec![],
                             false, // not public
                         ) {
                             Ok(child_process_id) => child_process_id,

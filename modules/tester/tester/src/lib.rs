@@ -2,8 +2,8 @@ use indexmap::map::IndexMap;
 
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::{
-    await_message, call_init, get_capability, println, spawn, Address,
-    Capabilities, Message, OnExit, ProcessId, Request, Response,
+    await_message, call_init, get_capability, our_capabilities, println, spawn, Address, Message,
+    OnExit, ProcessId, Request, Response,
 };
 
 mod tester_types;
@@ -75,7 +75,8 @@ fn handle_message(
                             None,
                             child,
                             OnExit::None, //  TODO: notify us
-                            &Capabilities::All,
+                            our_capabilities(),
+                            vec![],
                             false, // not public
                         ) {
                             Ok(child_process_id) => child_process_id,
@@ -114,10 +115,13 @@ fn init(our: Address) {
     //  -> must give drive cap to rpc
     let _ = Request::new()
         .target(make_vfs_address(&our).unwrap())
-        .ipc(serde_json::to_vec(&kt::VfsRequest {
-            path: "/tester:uqbar/tests".into(),
-            action: kt::VfsAction::CreateDrive,
-        }).unwrap())
+        .ipc(
+            serde_json::to_vec(&kt::VfsRequest {
+                path: "/tester:uqbar/tests".into(),
+                action: kt::VfsAction::CreateDrive,
+            })
+            .unwrap(),
+        )
         .send_and_await_response(5)
         .unwrap()
         .unwrap();
