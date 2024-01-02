@@ -275,6 +275,26 @@ impl StandardHost for process::ProcessWasi {
             self.process.last_payload = old_last_payload;
             return Ok(Err(wit::SpawnError::NameTaken));
         };
+        // insert messaging capabilities into requested processes
+        for process in grant_capabilities {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            self.process
+                .caps_oracle
+                .send(t::CapMessage::Add {
+                    on: t::ProcessId::de_wit(process),
+                    caps: vec![t::Capability {
+                        issuer: t::Address {
+                            node: self.process.metadata.our.node.clone(),
+                            process: new_process_id.clone(),
+                        },
+                        params: "\"messaging\"".into(),
+                    }],
+                    responder: tx,
+                })
+                .await
+                .unwrap();
+            let _ = rx.await.unwrap();
+        }
         // finally, send the command to run the new process
         let Ok(Ok((_, response))) = process::send_and_await_response(
             self,
