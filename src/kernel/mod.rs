@@ -216,7 +216,7 @@ async fn handle_kernel_request(
 
             // give the initializer and itself the messaging cap.
             // NOTE: we do this even if the process is public, because
-            // a process might redundantly call grant_messaging.
+            // a process might redundantly call grant_capabilities.
             valid_capabilities.insert(t::Capability {
                 issuer: t::Address {
                     node: our_name.clone(),

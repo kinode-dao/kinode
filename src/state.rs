@@ -450,10 +450,10 @@ async fn bootstrap(
                 "{}:{}:{}",
                 entry.process_name, package_name, package_publisher
             );
-            entry.request_messaging = Some(entry.request_messaging.unwrap_or_default());
-            if let Some(ref mut request_messaging) = entry.request_messaging {
-                request_messaging.push(serde_json::Value::String(our_process_id.clone()));
-                for value in request_messaging {
+            entry.request_capabilities = Some(entry.request_capabilities.unwrap_or_default());
+            if let Some(ref mut request_capabilities) = entry.request_capabilities {
+                request_capabilities.push(serde_json::Value::String(our_process_id.clone()));
+                for value in request_capabilities {
                     match value {
                         serde_json::Value::String(process_name) => {
                             requested_caps.insert(Capability {
@@ -489,7 +489,7 @@ async fn bootstrap(
             }
 
             // grant capabilities to other initially spawned processes, distro
-            if let Some(to_grant) = &entry.grant_messaging {
+            if let Some(to_grant) = &entry.grant_capabilities {
                 for value in to_grant {
                     let mut capability = None;
                     let mut to_process = None;

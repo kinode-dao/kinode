@@ -474,12 +474,12 @@ fn handle_local_request(
                 initial_capabilities.insert(kt::de_wit_capability(read_cap.clone()));
                 initial_capabilities.insert(kt::de_wit_capability(write_cap.clone()));
 
-                if let Some(to_request) = &entry.request_messaging {
+                if let Some(to_request) = &entry.request_capabilities {
                     for value in to_request {
                         let mut capability = None;
                         match value {
                             serde_json::Value::String(process_name) => {
-                                if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
+                                if let Ok(parsed_process_id) = ProcessId::from_str(&process_name) {
                                     capability = get_capability(
                                         &Address {
                                             node: our.node.clone(),
@@ -563,21 +563,18 @@ fn handle_local_request(
                     package.package(),
                     package.publisher(),
                 );
-                if let Some(to_grant) = &entry.grant_messaging {
+                if let Some(to_grant) = &entry.grant_capabilities {
                     for value in to_grant {
-                        let mut capability = None;
-                        let mut to_process = None;
                         match value {
                             serde_json::Value::String(process_name) => {
-                                if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
-                                    capability = Some(Capability {
+                                if let Ok(parsed_process_id) = ProcessId::from_str(&process_name) {
+                                    grant_capabilities(&parsed_process_id, &vec![kt::Capability {
                                         issuer: Address {
                                             node: our.node.clone(),
                                             process: process_id.clone(),
                                         },
                                         params: "\"messaging\"".into(),
-                                    }) ;
-                                    to_process = Some(parsed_process_id);
+                                    }]);
                                 }
                             }
                             serde_json::Value::Object(map) => {
@@ -586,14 +583,13 @@ fn handle_local_request(
                                         ProcessId::from_str(&process_name.to_string())
                                     {
                                         if let Some(params) = map.get("params") {
-                                            capability = Some(Capability {
+                                            grant_capabilities(&parsed_process_id, &vec![kt::Capability {
                                                 issuer: Address {
                                                     node: our.node.clone(),
                                                     process: process_id.clone(),
                                                 },
                                                 params: params.to_string(),
-                                            });
-                                            to_process = Some(parsed_process_id);
+                                            }]);
                                         }
                                     }
                                 }
@@ -602,7 +598,6 @@ fn handle_local_request(
                                 continue;
                             }
                         }
-                        grant_capabilities(&to_process.unwrap(), &vec![capability.unwrap()]);
                     }
                 }
                 Request::new()

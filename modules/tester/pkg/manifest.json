@@ -4,10 +4,10 @@
         "process_wasm_path": "/tester.wasm",
         "on_exit": "Restart",
         "request_networking": true,
-        "request_messaging": [
+        "request_capabilities": [
             "net:sys:uqbar"
         ],
-        "grant_messaging": [
+        "grant_capabilities": [
             "vfs:sys:uqbar",
             {
                 "process": "http_server:sys:uqbar",

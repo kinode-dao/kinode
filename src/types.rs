@@ -907,8 +907,8 @@ pub struct PackageManifestEntry {
     pub process_wasm_path: String,
     pub on_exit: OnExit,
     pub request_networking: bool,
-    pub request_messaging: Option<Vec<serde_json::Value>>,
-    pub grant_messaging: Option<Vec<serde_json::Value>>,
+    pub request_capabilities: Option<Vec<serde_json::Value>>,
+    pub grant_capabilities: Option<Vec<serde_json::Value>>,
     pub public: bool,
 }
 
