@@ -384,7 +384,7 @@ fn handle_new_package(
         .inherit(true)
         .ipc(serde_json::to_vec(&kt::VfsRequest {
             path: zip_path,
-            action: kt::VfsAction::ReWrite,
+            action: kt::VfsAction::Write,
         })?)
         .payload(payload)
         .send_and_await_response(5)??;
