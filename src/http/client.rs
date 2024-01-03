@@ -1,16 +1,16 @@
 use crate::http::types::*;
 use crate::types::*;
-use std::collections::HashMap;
-use std::sync::Arc;
 use anyhow::Result;
+use ethers_providers::StreamExt;
 use futures::stream::SplitSink;
 use futures::SinkExt;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
+use std::collections::HashMap;
+use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message as TungsteniteMessage};
 use tokio_tungstenite::{connect_async, tungstenite};
-use tokio_tungstenite::tungstenite::{Message as TungsteniteMessage, client::IntoClientRequest};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
-use ethers_providers::StreamExt;
 
 // Test http_client with these commands in the terminal
 // !message our http_client {"method": "GET", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {}}
@@ -19,7 +19,10 @@ use ethers_providers::StreamExt;
 
 // Outgoing WebSocket connections are stored by the source process ID and the channel_id
 type WebSocketId = (ProcessId, u32);
-type WebSocketMap = HashMap<WebSocketId, SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, tungstenite::Message>>;
+type WebSocketMap = HashMap<
+    WebSocketId,
+    SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, tungstenite::Message>,
+>;
 
 pub async fn http_client(
     our_name: String,
@@ -30,8 +33,7 @@ pub async fn http_client(
     let client = reqwest::Client::new();
     let our_name = Arc::new(our_name);
 
-    let ws_streams: Arc<Mutex<WebSocketMap>> =
-        Arc::new(Mutex::new(HashMap::new()));
+    let ws_streams: Arc<Mutex<WebSocketMap>> = Arc::new(Mutex::new(HashMap::new()));
 
     while let Some(KernelMessage {
         id,
@@ -90,7 +92,11 @@ async fn handle_websocket_action(
     print_tx: PrintSender,
 ) {
     match ws_action {
-        WebSocketClientAction::Open { url, headers, channel_id } => {
+        WebSocketClientAction::Open {
+            url,
+            headers,
+            channel_id,
+        } => {
             connect_websocket(
                 our,
                 id,
@@ -102,9 +108,13 @@ async fn handle_websocket_action(
                 ws_streams,
                 send_to_loop,
                 print_tx,
-            ).await;
-        },
-        WebSocketClientAction::Push { channel_id, message_type } => {
+            )
+            .await;
+        }
+        WebSocketClientAction::Push {
+            channel_id,
+            message_type,
+        } => {
             send_ws_push(
                 our,
                 id,
@@ -115,8 +125,9 @@ async fn handle_websocket_action(
                 payload,
                 ws_streams,
                 send_to_loop,
-            ).await;
-        },
+            )
+            .await;
+        }
         WebSocketClientAction::Close { channel_id } => {
             close_ws_connection(
                 our,
@@ -126,12 +137,13 @@ async fn handle_websocket_action(
                 channel_id,
                 ws_streams,
                 send_to_loop,
-            ).await;
+            )
+            .await;
         }
     }
 }
 
-async fn insert_ws (
+async fn insert_ws(
     ws_streams: &Arc<Mutex<WebSocketMap>>,
     sink: SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, tungstenite::Message>,
     source: Address,
@@ -164,7 +176,8 @@ async fn connect_websocket(
                 req: "failed to parse url".into(),
             },
             send_to_loop,
-        ).await;
+        )
+        .await;
         return;
     };
 
@@ -178,7 +191,8 @@ async fn connect_websocket(
                 req: "failed to parse url into client request".into(),
             },
             send_to_loop,
-        ).await;
+        )
+        .await;
         return;
     };
 
@@ -224,11 +238,13 @@ async fn connect_websocket(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc: serde_json::to_vec::<WebSocketClientAction>(&WebSocketClientAction::Open {
-                        url: url.to_string(),
-                        headers,
-                        channel_id,
-                    })
+                    ipc: serde_json::to_vec::<WebSocketClientAction>(
+                        &WebSocketClientAction::Open {
+                            url: url.to_string(),
+                            headers,
+                            channel_id,
+                        },
+                    )
                     .unwrap(),
                     metadata: None,
                 },
@@ -259,8 +275,9 @@ async fn connect_websocket(
                                 bytes: text.into_bytes(),
                             }),
                             send_to_loop.clone(),
-                        ).await;
-                    },
+                        )
+                        .await;
+                    }
                     TungsteniteMessage::Binary(bytes) => {
                         // send a Request to the target with the binary as payload
                         handle_ws_message(
@@ -276,25 +293,25 @@ async fn connect_websocket(
                                 bytes,
                             }),
                             send_to_loop.clone(),
-                        ).await;
-                    },
+                        )
+                        .await;
+                    }
                     TungsteniteMessage::Close(_) => {
                         // send a websocket close Request to the target
                         handle_ws_message(
                             our.clone(),
                             id,
                             target.clone(),
-                            WebSocketClientAction::Close {
-                                channel_id,
-                            },
+                            WebSocketClientAction::Close { channel_id },
                             None,
                             send_to_loop.clone(),
-                        ).await;
+                        )
+                        .await;
 
                         // remove the websocket from the map
                         let mut ws_streams = ws_streams.lock().await;
                         ws_streams.remove(&(target.process.clone(), channel_id));
-                    },
+                    }
                     _ => (), // Handle other message types as needed
                 }
             }
@@ -302,29 +319,35 @@ async fn connect_websocket(
                 println!("WebSocket Client Error ({}): {:?}", channel_id, e);
 
                 // The connection was closed/reset by the remote server, so we'll remove and close it
-                match ws_streams.lock().await.get_mut(&(target.process.clone(), channel_id)) {
+                match ws_streams
+                    .lock()
+                    .await
+                    .get_mut(&(target.process.clone(), channel_id))
+                {
                     Some(ws_sink) => {
                         let _ = ws_sink.close().await;
-                    },
+                    }
                     None => {}
                 }
-                ws_streams.lock().await.remove(&(target.process.clone(), channel_id));
+                ws_streams
+                    .lock()
+                    .await
+                    .remove(&(target.process.clone(), channel_id));
 
                 handle_ws_message(
                     our.clone(),
                     id,
                     target.clone(),
-                    WebSocketClientAction::Close {
-                        channel_id,
-                    },
+                    WebSocketClientAction::Close { channel_id },
                     None,
                     send_to_loop.clone(),
-                ).await;
+                )
+                .await;
 
                 break;
             }
         }
-    };
+    }
 }
 
 async fn handle_http_request(
@@ -584,10 +607,11 @@ async fn send_ws_push(
                     target,
                     expects_response,
                     HttpClientError::BadRequest {
-                        req: "no payload".into()
+                        req: "no payload".into(),
                     },
                     send_to_loop,
-                ).await;
+                )
+                .await;
                 return;
             };
 
@@ -599,15 +623,16 @@ async fn send_ws_push(
                     target,
                     expects_response,
                     HttpClientError::BadRequest {
-                            req: "failed to convert payload to string".into()
+                        req: "failed to convert payload to string".into(),
                     },
                     send_to_loop,
-                ).await;
+                )
+                .await;
                 return;
             };
 
             ws_stream.send(TungsteniteMessage::Text(text)).await
-        },
+        }
         WsMessageType::Binary => {
             let Some(payload) = payload else {
                 // send an error message to the target
@@ -617,27 +642,30 @@ async fn send_ws_push(
                     target,
                     expects_response,
                     HttpClientError::BadRequest {
-                        req: "no payload".into()
+                        req: "no payload".into(),
                     },
                     send_to_loop,
-                ).await;
+                )
+                .await;
                 return;
             };
 
-            ws_stream.send(TungsteniteMessage::Binary(payload.bytes)).await
-        },
+            ws_stream
+                .send(TungsteniteMessage::Binary(payload.bytes))
+                .await
+        }
         WsMessageType::Ping => {
             // send a Request to the target with the ping as payload
             ws_stream.send(TungsteniteMessage::Ping(vec![])).await
-        },
+        }
         WsMessageType::Pong => {
             // send a Request to the target with the pong as payload
             ws_stream.send(TungsteniteMessage::Pong(vec![])).await
-        },
+        }
     };
 
     match result {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(_) => {
             // send an error message to the target
             make_error_message(
@@ -646,10 +674,11 @@ async fn send_ws_push(
                 target,
                 expects_response,
                 HttpClientError::RequestFailed {
-                    error: "failed to send message".into()
+                    error: "failed to send message".into(),
                 },
                 send_to_loop,
-            ).await;
+            )
+            .await;
         }
     }
 }
@@ -672,16 +701,21 @@ async fn close_ws_connection(
             target.clone(),
             expects_response,
             HttpClientError::BadRequest {
-                req: format!("No open WebSocket matching {}, {}", target.process.to_string(), channel_id),
+                req: format!(
+                    "No open WebSocket matching {}, {}",
+                    target.process.to_string(),
+                    channel_id
+                ),
             },
             send_to_loop,
-        ).await;
+        )
+        .await;
         return;
     };
 
     // Close the stream. The stream is closed even on error.
     match ws_sink.close().await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(_) => {}
     }
 
@@ -705,15 +739,12 @@ async fn handle_ws_message(
             },
             target,
             rsvp: None,
-            message: Message::Request(
-                Request {
-                    inherit: false,
-                    ipc: serde_json::to_vec::<WebSocketClientAction>(&action)
-                    .unwrap(),
-                    expects_response: None,
-                    metadata: None,
-                }
-            ),
+            message: Message::Request(Request {
+                inherit: false,
+                ipc: serde_json::to_vec::<WebSocketClientAction>(&action).unwrap(),
+                expects_response: None,
+                metadata: None,
+            }),
             payload,
             signed_capabilities: None,
         })
