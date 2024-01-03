@@ -260,24 +260,6 @@ fn get_name(log: &Log, node_id: &B256) -> String {
 
 }
 
-// helpers
-// TODO these probably exist somewhere in alloy...not sure where though.
-fn decode_hex(s: &str) -> FixedBytes<32> {
-    // If the string starts with "0x", skip the prefix
-    let hex_part = if s.starts_with("0x") { &s[2..] } else { s };
-
-    let mut arr = [0_u8; 32];
-    arr.copy_from_slice(&hex::decode(hex_part).unwrap()[0..32]);
-    FixedBytes(arr)
-}
-
-fn decode_hex_to_vec(s: &str) -> Vec<u8> {
-    // If the string starts with "0x", skip the prefix
-    let hex_part = if s.starts_with("0x") { &s[2..] } else { s };
-
-    hex::decode(hex_part).unwrap()
-}
-
 fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {
     let mut i = 0;
     let mut result = Vec::new();
