@@ -70,7 +70,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     for child in &children {
                         let child_process_id = match spawn(
                             None,
-                            &child.path,  // TODO not sure if this is right
+                            &child.path,
                             OnExit::None, //  TODO: notify us
                             our_capabilities(),
                             vec![],
