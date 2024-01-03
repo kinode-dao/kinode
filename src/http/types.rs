@@ -58,6 +58,24 @@ pub struct HttpResponse {
     // BODY is stored in the payload, as bytes
 }
 
+/// WebSocket Client Request type that can be shared over WASM boundary to apps.
+/// This is the one you send to the `http_client:sys:uqbar` service.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum WebSocketClientAction {
+    Open {
+        url: String,
+        headers: HashMap<String, String>,
+        channel_id: u32,
+    },
+    Push {
+        channel_id: u32,
+        message_type: WsMessageType,
+    },
+    Close {
+        channel_id: u32,
+    },
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcResponseBody {
     pub ipc: Vec<u8>,
