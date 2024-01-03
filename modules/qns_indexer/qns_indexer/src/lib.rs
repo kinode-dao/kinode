@@ -192,7 +192,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
                 let name = match state.names.entry(node_id.clone().to_string()) {
                     Entry::Occupied(o) => o.into_mut(),
-                    Entry::Vacant(v) => v.insert(get_name(&e, &node_id))
+                    Entry::Vacant(v) => v.insert(get_name(&e))
                 };
 
                 let mut node = state.nodes
@@ -239,7 +239,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     }
 }
 
-fn get_name(log: &Log, node_id: &B256) -> String {
+fn get_name(log: &Log) -> String {
 
     let decoded = NodeRegistered::abi_decode_data(&log.data, true).unwrap();
     let name = match dnswire_decode(decoded.0.clone()) {

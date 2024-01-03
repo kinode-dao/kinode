@@ -35,7 +35,7 @@ impl WsProviderSubscription {
     pub async fn kill(&self) -> () {
         if let Some(provider) = &self.provider {
             if let Some(subscription) = &self.subscription {
-                provider.unsubscribe(subscription).await;
+                let _ = provider.unsubscribe(subscription).await;
             }
         }
         if let Some(handle) = &self.handle {

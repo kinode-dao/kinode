@@ -97,7 +97,7 @@ async fn handle_http_server_request(
     connections: Arc<Mutex<RpcConnections>>,
 ) -> Result<(), anyhow::Error> {
     match action {
-        HttpServerRequest::WebSocketOpen { path, channel_id } => {}
+        HttpServerRequest::WebSocketOpen { .. /*path, channel_id*/ } => {}
         HttpServerRequest::WebSocketPush {
             channel_id,
             message_type,
@@ -246,7 +246,7 @@ async fn spawn_provider_read_stream(
 }
 
 fn handle_response(ipc: &Vec<u8>) -> Result<()> {
-    let Ok(message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
+    let Ok(_message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
         return Ok(());
     };
 
