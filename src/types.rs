@@ -736,6 +736,7 @@ pub struct IdentityTransaction {
 pub struct ProcessMetadata {
     pub our: Address,
     pub wasm_bytes_handle: String,
+    pub wit_version: u32,
     pub on_exit: OnExit,
     pub public: bool,
 }
@@ -812,6 +813,7 @@ pub enum KernelCommand {
     InitializeProcess {
         id: ProcessId,
         wasm_bytes_handle: String,
+        wit_version: Option<u32>,
         on_exit: OnExit,
         initial_capabilities: HashSet<SignedCapability>,
         public: bool,
@@ -876,6 +878,7 @@ pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistedProcess {
     pub wasm_bytes_handle: String,
+    pub wit_version: Option<u32>,
     pub on_exit: OnExit,
     pub capabilities: HashSet<Capability>,
     pub public: bool, // marks if a process allows messages from any process

@@ -563,6 +563,7 @@ pub async fn make_process_loop(
                             ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                                 id: metadata.our.process.clone(),
                                 wasm_bytes_handle: metadata.wasm_bytes_handle,
+                                wit_version: Some(metadata.wit_version),
                                 on_exit: metadata.on_exit,
                                 initial_capabilities,
                                 public: metadata.public,
