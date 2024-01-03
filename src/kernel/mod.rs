@@ -181,20 +181,12 @@ async fn handle_kernel_request(
                 return;
             };
 
-            // check cap sigs & transform valid to unsigned to be plugged into procs
-            let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
+            // NOTE we don't have to check the caps signature. If it got into the store, we already verified it
             let mut valid_capabilities: HashSet<t::Capability> = HashSet::new();
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = caps_oracle
-                .send(t::CapMessage::GetAll {
-                    on: km.source.process.clone(),
-                    responder: tx,
-                })
-                .await
-                .expect("event loop: fatal: sender died");
-            let all_parent_caps: HashSet<t::Capability> = rx
-                .await
-                .expect("event loop: fatal: receiver died")
+            let all_parent_caps: HashSet<t::Capability> = process_map
+                .get(&km.source.process)
+                .unwrap()
+                .capabilities
                 .iter()
                 .map(|cap| t::Capability {
                     issuer: cap.issuer.clone(),
@@ -1021,7 +1013,7 @@ pub async fn kernel(
                     }
                 }
             },
-            // capabilities oracle: handles all requests to add, drop, and check capabilities
+            // capabilities oracle: handles all requests to add, drop, and NOTE we don't have to check the caps signature. If it got into the store, we already verified it
             Some(cap_message) = caps_oracle_receiver.recv() => {
                 match cap_message {
                     t::CapMessage::Add { on, caps, responder } => {
