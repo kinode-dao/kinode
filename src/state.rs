@@ -218,15 +218,23 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            // handle Backup action
-            println!("got backup");
-            let checkpoint_dir = format!("{}/kernel/checkpoint", &home_directory_path);
+            let checkpoint_dir = format!("{}/kernel/backup", &home_directory_path);
 
             if Path::new(&checkpoint_dir).exists() {
-                let _ = fs::remove_dir_all(&checkpoint_dir).await;
+                fs::remove_dir_all(&checkpoint_dir).await?;
             }
-            let checkpoint = Checkpoint::new(&db).unwrap();
-            checkpoint.create_checkpoint(&checkpoint_dir).unwrap();
+            let checkpoint = Checkpoint::new(&db).map_err(|e| StateError::RocksDBError {
+                action: "BackupCheckpointNew".into(),
+                error: e.to_string(),
+            })?;
+
+            checkpoint.create_checkpoint(&checkpoint_dir).map_err(|e| {
+                StateError::RocksDBError {
+                    action: "BackupCheckpointCreate".into(),
+                    error: e.to_string(),
+                }
+            })?;
+
             (serde_json::to_vec(&StateResponse::Backup).unwrap(), None)
         }
     };
@@ -323,6 +331,7 @@ async fn bootstrap(
         .entry(ProcessId::from_str("kernel:sys:uqbar").unwrap())
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
+            wit_version: None,
             on_exit: OnExit::Restart,
             capabilities: runtime_caps.clone(),
             public: false,
@@ -331,6 +340,7 @@ async fn bootstrap(
         .entry(ProcessId::from_str("net:sys:uqbar").unwrap())
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
+            wit_version: None,
             on_exit: OnExit::Restart,
             capabilities: runtime_caps.clone(),
             public: false,
@@ -340,6 +350,7 @@ async fn bootstrap(
             .entry(runtime_module.0)
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: "".into(),
+                wit_version: None,
                 on_exit: OnExit::Restart,
                 capabilities: runtime_caps.clone(),
                 public: runtime_module.2,
@@ -348,7 +359,7 @@ async fn bootstrap(
 
     let packages = get_zipped_packages().await;
 
-    for (package_name, mut package) in packages {
+    for (package_name, mut package) in packages.clone() {
         // special case tester: only load it in if in simulation mode
         if package_name == "tester" {
             #[cfg(not(feature = "simulation-mode"))]
@@ -487,7 +498,6 @@ async fn bootstrap(
                     }
                 }
             }
-
             // grant capabilities to other initially spawned processes, distro
             if let Some(to_grant) = &entry.grant_capabilities {
                 for value in to_grant {
@@ -535,7 +545,6 @@ async fn bootstrap(
                     }
                 }
             }
-
             if entry.request_networking {
                 requested_caps.insert(Capability {
                     issuer: Address {
@@ -578,11 +587,120 @@ async fn bootstrap(
                 ProcessId::new(Some(&entry.process_name), package_name, package_publisher),
                 PersistedProcess {
                     wasm_bytes_handle,
+                    wit_version: None,
                     on_exit: entry.on_exit,
                     capabilities: requested_caps,
                     public: public_process,
                 },
             );
+        }
+    }
+    // second loop: go and grant_capabilities to processes
+    // can't do this in first loop because we need to have all processes in the map first
+    for (package_name, mut package) in packages {
+        // special case tester: only load it in if in simulation mode
+        if package_name == "tester" {
+            #[cfg(not(feature = "simulation-mode"))]
+            continue;
+            #[cfg(feature = "simulation-mode")]
+            {}
+        }
+
+        // get and read manifest.json
+        let Ok(mut package_manifest_zip) = package.by_name("manifest.json") else {
+            println!(
+                "fs: missing manifest for package {}, skipping",
+                package_name
+            );
+            continue;
+        };
+        let mut manifest_content = Vec::new();
+        package_manifest_zip
+            .read_to_end(&mut manifest_content)
+            .unwrap();
+        drop(package_manifest_zip);
+        let package_manifest = String::from_utf8(manifest_content)?;
+        let package_manifest = serde_json::from_str::<Vec<PackageManifestEntry>>(&package_manifest)
+            .expect("fs: manifest parse error");
+
+        // get and read metadata.json
+        let Ok(mut package_metadata_zip) = package.by_name("metadata.json") else {
+            println!(
+                "fs: missing metadata for package {}, skipping",
+                package_name
+            );
+            continue;
+        };
+        let mut metadata_content = Vec::new();
+        package_metadata_zip
+            .read_to_end(&mut metadata_content)
+            .unwrap();
+        drop(package_metadata_zip);
+        let package_metadata: serde_json::Value =
+            serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
+
+        println!("fs: found package metadata: {:?}\r", package_metadata);
+
+        let package_name = package_metadata["package"]
+            .as_str()
+            .expect("fs: metadata parse error: bad package name");
+
+        let package_publisher = package_metadata["publisher"]
+            .as_str()
+            .expect("fs: metadata parse error: bad publisher name");
+
+        // for each process-entry in manifest.json:
+        for entry in package_manifest {
+            let our_process_id = format!(
+                "{}:{}:{}",
+                entry.process_name, package_name, package_publisher
+            );
+
+            // grant capabilities to other initially spawned processes, distro
+            if let Some(to_grant) = &entry.grant_messaging {
+                for value in to_grant {
+                    match value {
+                        serde_json::Value::String(process_name) => {
+                            if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
+                                if let Some(process) = process_map.get_mut(&parsed_process_id) {
+                                    process.capabilities.insert(Capability {
+                                        issuer: Address {
+                                            node: our_name.to_string(),
+                                            process: ProcessId::from_str(&our_process_id).unwrap(),
+                                        },
+                                        params: "\"messaging\"".into(),
+                                    });
+                                }
+                            }
+                        }
+                        serde_json::Value::Object(map) => {
+                            if let Some(process_name) = map.get("process") {
+                                if let Ok(parsed_process_id) =
+                                    ProcessId::from_str(&process_name.as_str().unwrap())
+                                {
+                                    if let Some(params) = map.get("params") {
+                                        if let Some(process) =
+                                            process_map.get_mut(&parsed_process_id)
+                                        {
+                                            process.capabilities.insert(Capability {
+                                                issuer: Address {
+                                                    node: our_name.to_string(),
+                                                    process: ProcessId::from_str(&our_process_id)
+                                                        .unwrap(),
+                                                },
+                                                params: params.to_string(),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => {
+                            continue;
+                        }
+                    }
+                }
+            }
         }
     }
     Ok(())
@@ -603,6 +721,14 @@ async fn get_zipped_packages() -> Vec<(String, zip::ZipArchive<std::io::Cursor<&
     }
 
     packages
+}
+
+impl From<std::io::Error> for StateError {
+    fn from(err: std::io::Error) -> Self {
+        StateError::IOError {
+            error: err.to_string(),
+        }
+    }
 }
 
 fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -> KernelMessage {

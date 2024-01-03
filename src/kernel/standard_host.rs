@@ -1,5 +1,6 @@
 use crate::kernel::process;
 use crate::kernel::process::uqbar::process::standard as wit;
+use crate::kernel::process::StandardHost;
 use crate::types as t;
 use crate::types::STATE_PROCESS_ID;
 use crate::KERNEL_PROCESS_ID;
@@ -8,7 +9,15 @@ use anyhow::Result;
 use ring::signature::{self, KeyPair};
 use std::collections::HashSet;
 
-use crate::kernel::process::StandardHost;
+async fn print_debug(proc: &process::ProcessState, content: &str) {
+    let _ = proc
+        .send_to_terminal
+        .send(t::Printout {
+            verbosity: 2,
+            content: format!("{}: {}", proc.metadata.our.process, content),
+        })
+        .await;
+}
 
 ///
 /// create the process API. this is where the functions that a process can use live.
@@ -19,15 +28,11 @@ impl StandardHost for process::ProcessWasi {
     // system utils:
     //
     async fn print_to_terminal(&mut self, verbosity: u8, content: String) -> Result<()> {
-        match self
-            .process
+        self.process
             .send_to_terminal
             .send(t::Printout { verbosity, content })
             .await
-        {
-            Ok(()) => Ok(()),
-            Err(e) => Err(anyhow::anyhow!("fatal: couldn't send to terminal: {:?}", e)),
-        }
+            .map_err(|e| anyhow::anyhow!("fatal: couldn't send to terminal: {e:?}"))
     }
 
     async fn get_eth_block(&mut self) -> Result<u64> {
@@ -39,9 +44,10 @@ impl StandardHost for process::ProcessWasi {
     // process management:
     //
 
-    ///  TODO critical: move to kernel logic to enable persistence of choice made here
+    /// TODO critical: move to kernel logic to enable persistence of choice made here
     async fn set_on_exit(&mut self, on_exit: wit::OnExit) -> Result<()> {
         self.process.metadata.on_exit = t::OnExit::de_wit(on_exit);
+        print_debug(&self.process, "set new on-exit behavior").await;
         Ok(())
     }
 
@@ -126,6 +132,7 @@ impl StandardHost for process::ProcessWasi {
             )),
         };
         self.process.last_payload = old_last_payload;
+        print_debug(&self.process, "persisted state").await;
         return res;
     }
 
@@ -165,6 +172,7 @@ impl StandardHost for process::ProcessWasi {
             )),
         };
         self.process.last_payload = old_last_payload;
+        print_debug(&self.process, "cleared persisted state").await;
         return res;
     }
 
@@ -251,6 +259,7 @@ impl StandardHost for process::ProcessWasi {
                 ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                     id: new_process_id.clone(),
                     wasm_bytes_handle: wasm_path,
+                    wit_version: Some(self.process.metadata.wit_version),
                     on_exit: t::OnExit::de_wit(on_exit),
                     initial_capabilities: request_capabilities
                         .iter()
@@ -363,6 +372,7 @@ impl StandardHost for process::ProcessWasi {
             .await
             .unwrap();
         let _ = rx.await.unwrap();
+        print_debug(&self.process, "spawned a new process").await;
         Ok(Ok(new_process_id.en_wit().to_owned()))
     }
 
@@ -597,7 +607,7 @@ impl StandardHost for process::ProcessWasi {
     ) -> Result<()> {
         let id = self
             .process
-            .handle_request(None, target, request, context, payload)
+            .send_request(None, target, request, context, payload)
             .await;
         match id {
             Ok(_id) => Ok(()),
@@ -617,7 +627,7 @@ impl StandardHost for process::ProcessWasi {
         for request in requests {
             let id = self
                 .process
-                .handle_request(None, request.0, request.1, request.2, request.3)
+                .send_request(None, request.0, request.1, request.2, request.3)
                 .await;
             match id {
                 Ok(_id) => continue,

@@ -14,7 +14,7 @@ pub async fn http_client(
     our_name: String,
     send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
-    _print_tx: PrintSender,
+    print_tx: PrintSender,
 ) -> Result<()> {
     let client = reqwest::Client::new();
     let our_name = Arc::new(our_name);
@@ -42,6 +42,7 @@ pub async fn http_client(
             payload,
             client.clone(),
             send_to_loop.clone(),
+            print_tx.clone(),
         ));
     }
     Err(anyhow::anyhow!("http_client: loop died"))
@@ -56,6 +57,7 @@ async fn handle_message(
     body: Option<Payload>,
     client: reqwest::Client,
     send_to_loop: MessageSender,
+    print_tx: PrintSender,
 ) {
     let req: OutgoingHttpRequest = match serde_json::from_slice(&json) {
         Ok(req) => req,
@@ -87,6 +89,13 @@ async fn handle_message(
         .await;
         return;
     };
+
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("http_client: building {req_method} request to {}", req.url),
+        })
+        .await;
 
     let mut request_builder = client.request(req_method, req.url);
 
@@ -136,6 +145,12 @@ async fn handle_message(
 
     match client.execute(request).await {
         Ok(response) => {
+            let _ = print_tx
+                .send(Printout {
+                    verbosity: 1,
+                    content: format!("http_client: executed request, got response"),
+                })
+                .await;
             let _ = send_to_loop
                 .send(KernelMessage {
                     id,
@@ -168,6 +183,12 @@ async fn handle_message(
                 .await;
         }
         Err(e) => {
+            let _ = print_tx
+                .send(Printout {
+                    verbosity: 1,
+                    content: format!("http_client: executed request but got error"),
+                })
+                .await;
             make_error_message(
                 our,
                 id,

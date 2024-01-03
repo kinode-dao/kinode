@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use uqbar_process_lib::uqbar::process::standard::*;
+use uqbar_process_lib::*;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileTransferContext {
@@ -13,9 +13,9 @@ pub struct FileTransferContext {
 /// in order to prompt them to spawn a worker
 #[derive(Debug, Serialize, Deserialize)]
 pub enum FTWorkerCommand {
+    /// make sure to attach file itself as payload
     Send {
-        // make sure to attach file itself as payload
-        target: String, // annoying, but this is Address
+        target: Address,
         file_name: String,
         timeout: u64,
     },
@@ -32,10 +32,12 @@ pub enum FTWorkerCommand {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum FTWorkerResult {
     SendSuccess,
-    ReceiveSuccess(String), // name of file, bytes in payload
+    /// string is name of file. bytes in payload
+    ReceiveSuccess(String),
     Err(TransferError),
 }
 
+/// the possible errors that can be returned to the parent inside `FTWorkerResult`
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TransferError {
     TargetOffline,
@@ -44,48 +46,49 @@ pub enum TransferError {
     SourceFailed,
 }
 
+/// A helper function to spawn a worker and initialize a file transfer.
+/// The outcome will be sent as an [`FTWorkerResult`] to the caller process.
+///
+/// if `file_bytes` is None, expects to inherit payload!
+#[allow(dead_code)]
 pub fn spawn_transfer(
     our: &Address,
     file_name: &str,
-    file_bytes: Option<Vec<u8>>, // if None, expects to inherit payload!
+    file_bytes: Option<Vec<u8>>,
+    timeout: u64,
     to_addr: &Address,
-) {
+) -> anyhow::Result<()> {
     let transfer_id: u64 = rand::random();
     // spawn a worker and tell it to send the file
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
-        "/ft_worker.wasm".into(),
+        &format!("{}/pkg/ft_worker.wasm", our.package_id()),
         &OnExit::None, // can set message-on-panic here
         &our_capabilities(),
         &[],
         false, // not public
     ) else {
-        print_to_terminal(0, "file_transfer: failed to spawn worker!");
-        return;
+        return Err(anyhow::anyhow!("failed to spawn ft_worker!"));
     };
     // tell the worker what to do
     let payload_or_inherit = match file_bytes {
         Some(bytes) => Some(Payload { mime: None, bytes }),
         None => None,
     };
-    send_request(
-        &Address {
-            node: our.node.clone(),
-            process: worker_process_id,
-        },
-        &Request {
-            inherit: !payload_or_inherit.is_some(),
-            expects_response: Some(61),
-            ipc: serde_json::to_vec(&FTWorkerCommand::Send {
-                target: to_addr.to_string(),
+    let mut req = Request::new()
+        .target((our.node.as_ref(), worker_process_id))
+        .inherit(!payload_or_inherit.is_some())
+        .expects_response(timeout + 1) // don't call with 2^64 lol
+        .ipc(
+            serde_json::to_vec(&FTWorkerCommand::Send {
+                target: to_addr.clone(),
                 file_name: file_name.into(),
-                timeout: 60,
+                timeout,
             })
             .unwrap(),
-            metadata: None,
-        },
-        Some(
-            &serde_json::to_vec(&FileTransferContext {
+        )
+        .context(
+            serde_json::to_vec(&FileTransferContext {
                 file_name: file_name.into(),
                 file_size: match &payload_or_inherit {
                     Some(p) => Some(p.bytes.len() as u64),
@@ -94,40 +97,39 @@ pub fn spawn_transfer(
                 start_time: std::time::SystemTime::now(),
             })
             .unwrap(),
-        ),
-        payload_or_inherit.as_ref(),
-    );
+        );
+
+    if let Some(payload) = payload_or_inherit {
+        req = req.payload(payload);
+    }
+    req.send()
 }
 
-pub fn spawn_receive_transfer(our: &Address, ipc: &[u8]) {
+/// A helper function to allow a process to easily handle an incoming transfer
+/// from an ft_worker. Call this when you get the initial [`FTWorkerCommand::Receive`]
+/// and let it do the rest. The outcome will be sent as an [`FTWorkerResult`] inside
+/// a Response to the caller.
+#[allow(dead_code)]
+pub fn spawn_receive_transfer(our: &Address, ipc: &[u8]) -> anyhow::Result<()> {
     let Ok(FTWorkerCommand::Receive { transfer_id, .. }) = serde_json::from_slice(ipc) else {
-        print_to_terminal(0, "file_transfer: got weird request");
-        return;
+        return Err(anyhow::anyhow!(
+            "spawn_receive_transfer: got malformed request"
+        ));
     };
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
-        "/ft_worker.wasm".into(),
+        &format!("{}/pkg/ft_worker.wasm", our.package_id()),
         &OnExit::None, // can set message-on-panic here
         &our_capabilities(),
         &[],
         false, // not public
     ) else {
-        print_to_terminal(0, "file_transfer: failed to spawn worker!");
-        return;
+        return Err(anyhow::anyhow!("failed to spawn ft_worker!"));
     };
     // forward receive command to worker
-    send_request(
-        &Address {
-            node: our.node.clone(),
-            process: worker_process_id,
-        },
-        &Request {
-            inherit: true,
-            expects_response: None,
-            ipc: ipc.to_vec(),
-            metadata: None,
-        },
-        None,
-        None,
-    );
+    Request::new()
+        .target((our.node.as_ref(), worker_process_id))
+        .inherit(true)
+        .ipc(ipc)
+        .send()
 }

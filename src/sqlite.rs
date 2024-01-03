@@ -157,9 +157,12 @@ async fn handle_request(
     .await?;
 
     let (ipc, bytes) = match request.action {
-        SqliteAction::New => {
+        SqliteAction::Open => {
             // handled in check_caps
-            //
+            (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
+        }
+        SqliteAction::RemoveDb => {
+            // handled in check_caps
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Read { query } => {
@@ -284,8 +287,17 @@ async fn handle_request(
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Backup => {
-            // execute WAL flush.
-            //
+            for db_ref in open_dbs.iter() {
+                let db = db_ref.value().lock().await;
+                let result: rusqlite::Result<()> = db
+                    .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+                    .map(|_| ());
+                if let Err(e) = result {
+                    return Err(SqliteError::RusqliteError {
+                        error: e.to_string(),
+                    });
+                }
+            }
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
     };
@@ -400,7 +412,7 @@ async fn check_caps(
             }
             Ok(())
         }
-        SqliteAction::New => {
+        SqliteAction::Open => {
             if src_package_id != request.package_id {
                 return Err(SqliteError::NoCap {
                     error: request.action.to_string(),
@@ -425,7 +437,7 @@ async fn check_caps(
             .await?;
 
             if open_dbs.contains_key(&(request.package_id.clone(), request.db.clone())) {
-                return Err(SqliteError::DbAlreadyExists);
+                return Ok(());
             }
 
             let db_path = format!(
@@ -447,12 +459,26 @@ async fn check_caps(
             );
             Ok(())
         }
-        SqliteAction::Backup => {
-            if source.process != *STATE_PROCESS_ID {
+        SqliteAction::RemoveDb => {
+            if src_package_id != request.package_id {
                 return Err(SqliteError::NoCap {
                     error: request.action.to_string(),
                 });
             }
+
+            let db_path = format!(
+                "{}/{}/{}",
+                sqlite_path,
+                request.package_id.to_string(),
+                request.db.to_string()
+            );
+            open_dbs.remove(&(request.package_id.clone(), request.db.clone()));
+
+            fs::remove_dir_all(&db_path).await?;
+            Ok(())
+        }
+        SqliteAction::Backup => {
+            // flushing WALs for backup
             Ok(())
         }
     }
@@ -531,7 +557,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: SqliteError) 
         id: km.id,
         source: Address {
             node: our_name.clone(),
-            process: KV_PROCESS_ID.clone(),
+            process: SQLITE_PROCESS_ID.clone(),
         },
         target: match &km.rsvp {
             None => km.source.clone(),

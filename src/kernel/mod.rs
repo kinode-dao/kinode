@@ -17,6 +17,8 @@ mod standard_host;
 
 const PROCESS_CHANNEL_CAPACITY: usize = 100;
 
+const DEFAULT_WIT_VERSION: u32 = 0;
+
 type ProcessMessageSender =
     tokio::sync::mpsc::Sender<Result<t::KernelMessage, t::WrappedSendError>>;
 type ProcessMessageReceiver =
@@ -143,6 +145,7 @@ async fn handle_kernel_request(
         t::KernelCommand::InitializeProcess {
             id,
             wasm_bytes_handle,
+            wit_version,
             on_exit,
             initial_capabilities,
             public,
@@ -253,6 +256,7 @@ async fn handle_kernel_request(
                     process_id: id,
                     persisted: t::PersistedProcess {
                         wasm_bytes_handle,
+                        wit_version,
                         on_exit,
                         capabilities: valid_capabilities,
                         public,
@@ -428,6 +432,48 @@ async fn handle_kernel_request(
                 .await
                 .expect("event loop: fatal: sender died");
         }
+        t::KernelCommand::Debug(kind) => match kind {
+            t::KernelPrint::ProcessMap => {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!("kernel process map:\r\n{:#?}", process_map),
+                    })
+                    .await;
+            }
+            t::KernelPrint::Process(process_id) => {
+                let Some(proc) = process_map.get(&process_id) else {
+                    let _ = send_to_terminal
+                        .send(t::Printout {
+                            verbosity: 0,
+                            content: format!("kernel: no such running process {}", process_id),
+                        })
+                        .await;
+                    return;
+                };
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!("kernel process info:\r\n{proc:#?}",),
+                    })
+                    .await;
+            }
+            t::KernelPrint::HasCap { on, cap } => {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!(
+                            "process {} has cap:\r\n{}",
+                            on,
+                            process_map
+                                .get(&on)
+                                .map(|p| p.capabilities.contains(&cap))
+                                .unwrap_or(false)
+                        ),
+                    })
+                    .await;
+            }
+        },
     }
 }
 
@@ -577,6 +623,10 @@ async fn start_process(
             process: id.clone(),
         },
         wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle.clone(),
+        wit_version: process_metadata
+            .persisted
+            .wit_version
+            .unwrap_or(DEFAULT_WIT_VERSION),
         on_exit: process_metadata.persisted.on_exit.clone(),
         public: process_metadata.persisted.public,
     };
