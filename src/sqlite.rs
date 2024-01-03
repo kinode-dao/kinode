@@ -157,9 +157,12 @@ async fn handle_request(
     .await?;
 
     let (ipc, bytes) = match request.action {
-        SqliteAction::New => {
+        SqliteAction::Open => {
             // handled in check_caps
-            //
+            (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
+        }
+        SqliteAction::RemoveDb => {
+            // handled in check_caps
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Read { query } => {
@@ -409,7 +412,7 @@ async fn check_caps(
             }
             Ok(())
         }
-        SqliteAction::New => {
+        SqliteAction::Open => {
             if src_package_id != request.package_id {
                 return Err(SqliteError::NoCap {
                     error: request.action.to_string(),
@@ -434,7 +437,7 @@ async fn check_caps(
             .await?;
 
             if open_dbs.contains_key(&(request.package_id.clone(), request.db.clone())) {
-                return Err(SqliteError::DbAlreadyExists);
+                return Ok(());
             }
 
             let db_path = format!(
@@ -454,6 +457,24 @@ async fn check_caps(
                 (request.package_id.clone(), request.db.clone()),
                 Mutex::new(db),
             );
+            Ok(())
+        }
+        SqliteAction::RemoveDb => {
+            if src_package_id != request.package_id {
+                return Err(SqliteError::NoCap {
+                    error: request.action.to_string(),
+                });
+            }
+
+            let db_path = format!(
+                "{}/{}/{}",
+                sqlite_path,
+                request.package_id.to_string(),
+                request.db.to_string()
+            );
+            open_dbs.remove(&(request.package_id.clone(), request.db.clone()));
+
+            fs::remove_dir_all(&db_path).await?;
             Ok(())
         }
         SqliteAction::Backup => {
