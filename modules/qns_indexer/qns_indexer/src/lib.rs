@@ -1,20 +1,15 @@
-use alloy_primitives::{B256, FixedBytes};
+use alloy_primitives::B256;
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
-use hex;
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::{Entry, HashMap};
 use std::string::FromUtf8Error;
 use std::str::FromStr;
 use uqbar_process_lib::{
-    await_message, get_typed_state, http, println, set_state, Address, Message, Payload,
-    Request, Response, 
+    await_message, get_typed_state, http, println, set_state, 
+    Address, Message, Payload, Request, Response, 
 };
-
-use uqbar_process_lib::eth::{
-    EthAddress,
-    SubscribeLogsRequest,
-};
+use uqbar_process_lib::eth::{ EthAddress, SubscribeLogsRequest, };
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -23,8 +18,6 @@ wit_bindgen::generate!({
         world: Component,
     },
 });
-
-struct Component;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -38,7 +31,7 @@ struct State {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-enum AllActions {
+enum IndexerActions {
     EventSubscription(Log),
 }
 
@@ -88,7 +81,7 @@ sol! {
     event RoutingUpdate(bytes32 indexed node, bytes32[] routers);
 }
 
-
+struct Component;
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
@@ -185,13 +178,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         }
 
-        let Ok(msg) = serde_json::from_slice::<AllActions>(&ipc) else {
+        let Ok(msg) = serde_json::from_slice::<IndexerActions>(&ipc) else {
             println!("qns_indexer: got invalid message");
             continue;
         };
 
         match msg {
-            AllActions::EventSubscription(e) => {
+            IndexerActions::EventSubscription(e) => {
 
                 state.block = e.clone().block_number.expect("expect").to::<u64>();
 
