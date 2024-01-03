@@ -210,7 +210,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
                 match e.topics[0].clone() {
                     KeyUpdate::SIGNATURE_HASH => {
-                        node.public_key = e.topics[1].clone().to_string();
+                        node.public_key = KeyUpdate::abi_decode_data(&e.data, true)
+                            .unwrap().0.to_string();
                     }
                     IpUpdate::SIGNATURE_HASH => {
                         let ip = IpUpdate::abi_decode_data(&e.data, true).unwrap().0;
