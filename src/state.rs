@@ -657,7 +657,7 @@ async fn bootstrap(
             );
 
             // grant capabilities to other initially spawned processes, distro
-            if let Some(to_grant) = &entry.grant_messaging {
+            if let Some(to_grant) = &entry.grant_capabilities {
                 for value in to_grant {
                     match value {
                         serde_json::Value::String(process_name) => {

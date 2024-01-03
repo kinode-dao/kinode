@@ -347,9 +347,9 @@ fn handle_new_package(
     // create a new drive for this package in VFS
     Request::new()
         .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&kt::VfsRequest {
+        .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: drive.clone(),
-            action: kt::VfsAction::CreateDrive,
+            action: vfs::VfsAction::CreateDrive,
         })?)
         .send_and_await_response(5)??;
 
@@ -362,9 +362,9 @@ fn handle_new_package(
     payload.mime = Some("application/zip".to_string());
     let response = Request::new()
         .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&kt::VfsRequest {
+        .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: drive.clone(),
-            action: kt::VfsAction::AddZip,
+            action: vfs::VfsAction::AddZip,
         })?)
         .payload(payload.clone())
         .send_and_await_response(5)??;
@@ -381,9 +381,9 @@ fn handle_new_package(
     Request::new()
         .target(("our", "vfs", "sys", "uqbar"))
         .inherit(true)
-        .ipc(serde_json::to_vec(&kt::VfsRequest {
+        .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: zip_path,
-            action: kt::VfsAction::Write,
+            action: vfs::VfsAction::Write,
         })?)
         .payload(payload)
         .send_and_await_response(5)??;
@@ -393,9 +393,9 @@ fn handle_new_package(
     // such that we can mirror this package to others.
     Request::new()
         .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&kt::VfsRequest {
+        .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: metadata_path,
-            action: kt::VfsAction::Read,
+            action: vfs::VfsAction::Read,
         })?)
         .send_and_await_response(5)??;
     let Some(payload) = get_payload() else {
@@ -428,9 +428,9 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
     let drive_path = format!("/{}/pkg", package);
     Request::new()
         .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&kt::VfsRequest {
+        .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: format!("{}/manifest.json", drive_path),
-            action: kt::VfsAction::Read,
+            action: vfs::VfsAction::Read,
         })?)
         .send_and_await_response(5)??;
     let Some(payload) = get_payload() else {
@@ -494,21 +494,10 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
 
         let _bytes_response = Request::new()
             .target(("our", "vfs", "sys", "uqbar"))
-            .ipc(serde_json::to_vec(&kt::VfsRequest {
+            .ipc(serde_json::to_vec(&vfs::VfsRequest {
                 path: wasm_path.clone(),
-                action: kt::VfsAction::Read,
+                action: vfs::VfsAction::Read,
             })?)
-            .send_and_await_response(5)??;
-        Request::new()
-            .target(("our", "kernel", "sys", "uqbar"))
-            .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
-                id: parsed_new_process_id,
-                wasm_bytes_handle: wasm_path,
-                on_exit: entry.on_exit.clone(),
-                initial_capabilities,
-                public: entry.public,
-            })?)
-            .inherit(true)
             .send_and_await_response(5)??;
         if let Some(to_request) = &entry.request_capabilities {
             for value in to_request {
@@ -564,6 +553,17 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                 }
             }
         }
+        Request::new()
+            .target(("our", "kernel", "sys", "uqbar"))
+            .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
+                id: parsed_new_process_id.clone(),
+                wasm_bytes_handle: wasm_path,
+                on_exit: entry.on_exit.clone(),
+                initial_capabilities,
+                public: entry.public,
+            })?)
+            .inherit(true)
+            .send_and_await_response(5)??;
         if let Some(to_grant) = &entry.grant_capabilities {
             for value in to_grant {
                 match value {
@@ -574,7 +574,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                                 &[Capability {
                                     issuer: Address {
                                         node: our.node.clone(),
-                                        process: process_id.clone(),
+                                        process: parsed_new_process_id.clone(),
                                     },
                                     params: "\"messaging\"".into(),
                                 }],
@@ -592,7 +592,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                                         &[Capability {
                                             issuer: Address {
                                                 node: our.node.clone(),
-                                                process: process_id.clone(),
+                                                process: parsed_new_process_id.clone(),
                                             },
                                             params: params.to_string(),
                                         }],
@@ -610,7 +610,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
         Request::new()
             .target(("our", "kernel", "sys", "uqbar"))
             .ipc(serde_json::to_vec(&kt::KernelCommand::RunProcess(
-                process_id,
+                parsed_new_process_id,
             ))?)
             .send_and_await_response(5)??;
     }
@@ -621,9 +621,9 @@ fn handle_uninstall(package: &PackageId) -> anyhow::Result<()> {
     let drive_path = format!("/{}/pkg", package);
     Request::new()
         .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&kt::VfsRequest {
+        .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: format!("{}/manifest.json", drive_path),
-            action: kt::VfsAction::Read,
+            action: vfs::VfsAction::Read,
         })?)
         .send_and_await_response(5)??;
     let Some(payload) = get_payload() else {
@@ -647,9 +647,9 @@ fn handle_uninstall(package: &PackageId) -> anyhow::Result<()> {
     // then, delete the drive
     Request::new()
         .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&kt::VfsRequest {
+        .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: drive_path,
-            action: kt::VfsAction::RemoveDirAll,
+            action: vfs::VfsAction::RemoveDirAll,
         })?)
         .send_and_await_response(5)??;
     Ok(())
@@ -674,9 +674,9 @@ fn handle_remote_request(
             let Ok(Ok(_)) = Request::new()
                 .target(("our", "vfs", "sys", "uqbar"))
                 .ipc(
-                    serde_json::to_vec(&kt::VfsRequest {
+                    serde_json::to_vec(&vfs::VfsRequest {
                         path: file_path,
-                        action: kt::VfsAction::Read,
+                        action: vfs::VfsAction::Read,
                     })
                     .unwrap(),
                 )

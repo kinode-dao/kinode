@@ -63,9 +63,9 @@ pub fn spawn_transfer(
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
         &format!("{}/pkg/ft_worker.wasm", our.package_id()),
-        &OnExit::None, // can set message-on-panic here
-        &our_capabilities(),
-        &[],
+        OnExit::None, // can set message-on-panic here
+        our_capabilities(),
+        vec![],
         false, // not public
     ) else {
         return Err(anyhow::anyhow!("failed to spawn ft_worker!"));
@@ -119,9 +119,9 @@ pub fn spawn_receive_transfer(our: &Address, ipc: &[u8]) -> anyhow::Result<()> {
     let Ok(worker_process_id) = spawn(
         Some(&transfer_id.to_string()),
         &format!("{}/pkg/ft_worker.wasm", our.package_id()),
-        &OnExit::None, // can set message-on-panic here
-        &our_capabilities(),
-        &[],
+        OnExit::None, // can set message-on-panic here
+        our_capabilities(),
+        vec![],
         false, // not public
     ) else {
         return Err(anyhow::anyhow!("failed to spawn ft_worker!"));

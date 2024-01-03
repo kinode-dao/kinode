@@ -2,8 +2,8 @@ use indexmap::map::IndexMap;
 
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::{
-    await_message, call_init, get_capability, our_capabilities, println, spawn, Address, Message,
-    OnExit, ProcessId, Request, Response,
+    await_message, call_init, get_capability, our_capabilities, println, spawn, vfs, Address,
+    Message, OnExit, ProcessId, Request, Response,
 };
 
 mod tester_types;
@@ -116,9 +116,9 @@ fn init(our: Address) {
     let _ = Request::new()
         .target(make_vfs_address(&our).unwrap())
         .ipc(
-            serde_json::to_vec(&kt::VfsRequest {
+            serde_json::to_vec(&vfs::VfsRequest {
                 path: "/tester:uqbar/tests".into(),
-                action: kt::VfsAction::CreateDrive,
+                action: vfs::VfsAction::CreateDrive,
             })
             .unwrap(),
         )
