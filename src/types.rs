@@ -1088,7 +1088,8 @@ pub struct KvRequest {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum KvAction {
-    New,
+    Open,
+    RemoveDb,
     Set { key: Vec<u8>, tx_id: Option<u64> },
     Delete { key: Vec<u8>, tx_id: Option<u64> },
     Get { key: Vec<u8> },
@@ -1109,8 +1110,6 @@ pub enum KvResponse {
 pub enum KvError {
     #[error("kv: DbDoesNotExist")]
     NoDb,
-    #[error("kv: DbAlreadyExists")]
-    DbAlreadyExists,
     #[error("kv: KeyNotFound")]
     KeyNotFound,
     #[error("kv: no Tx found")]
@@ -1134,7 +1133,8 @@ pub struct SqliteRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SqliteAction {
-    New,
+    Open,
+    RemoveDb,
     Write {
         statement: String,
         tx_id: Option<u64>,
@@ -1171,8 +1171,6 @@ pub enum SqlValue {
 pub enum SqliteError {
     #[error("sqlite: DbDoesNotExist")]
     NoDb,
-    #[error("sqlite: DbAlreadyExists")]
-    DbAlreadyExists,
     #[error("sqlite: NoTx")]
     NoTx,
     #[error("sqlite: No capability: {error}")]
