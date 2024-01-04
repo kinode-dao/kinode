@@ -901,7 +901,7 @@ pub struct PersistedProcess {
     pub wasm_bytes_handle: String,
     pub wit_version: Option<u32>,
     pub on_exit: OnExit,
-    pub capabilities: HashSet<Capability>,
+    pub capabilities: HashMap<Capability, Vec<u8>>,
     pub public: bool, // marks if a process allows messages from any process
 }
 

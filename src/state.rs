@@ -291,40 +291,41 @@ async fn bootstrap(
 ) -> Result<()> {
     println!("bootstrapping node...\r");
 
-    let mut runtime_caps: HashSet<Capability> = HashSet::new();
-    // kernel is a special case
-    runtime_caps.insert(Capability {
-        issuer: Address {
-            node: our_name.to_string(),
-            process: ProcessId::from_str("kernel:sys:uqbar").unwrap(),
-        },
-        params: "\"messaging\"".into(),
-    });
-    // net is a special case
-    runtime_caps.insert(Capability {
-        issuer: Address {
-            node: our_name.to_string(),
-            process: ProcessId::from_str("net:sys:uqbar").unwrap(),
-        },
-        params: "\"messaging\"".into(),
-    });
-    for runtime_module in runtime_extensions.clone() {
-        runtime_caps.insert(Capability {
-            issuer: Address {
-                node: our_name.to_string(),
-                process: runtime_module.0,
-            },
-            params: "\"messaging\"".into(),
-        });
-    }
-    // give all runtime processes the ability to send messages across the network
-    runtime_caps.insert(Capability {
-        issuer: Address {
-            node: our_name.to_string(),
-            process: KERNEL_PROCESS_ID.clone(),
-        },
-        params: "\"network\"".into(),
-    });
+    let mut runtime_caps: HashMap<Capability, Vec<u8>> = HashMap::new();
+    // TODO fix granting initial caps
+    // // kernel is a special case
+    // runtime_caps.insert(Capability {
+    //     issuer: Address {
+    //         node: our_name.to_string(),
+    //         process: ProcessId::from_str("kernel:sys:uqbar").unwrap(),
+    //     },
+    //     params: "\"messaging\"".into(),
+    // });
+    // // net is a special case
+    // runtime_caps.insert(Capability {
+    //     issuer: Address {
+    //         node: our_name.to_string(),
+    //         process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+    //     },
+    //     params: "\"messaging\"".into(),
+    // });
+    // for runtime_module in runtime_extensions.clone() {
+    //     runtime_caps.insert(Capability {
+    //         issuer: Address {
+    //             node: our_name.to_string(),
+    //             process: runtime_module.0,
+    //         },
+    //         params: "\"messaging\"".into(),
+    //     });
+    // }
+    // // give all runtime processes the ability to send messages across the network
+    // runtime_caps.insert(Capability {
+    //     issuer: Address {
+    //         node: our_name.to_string(),
+    //         process: KERNEL_PROCESS_ID.clone(),
+    //     },
+    //     params: "\"network\"".into(),
+    // });
 
     // finally, save runtime modules in state map as well, somewhat fakely
     // special cases for kernel and net
@@ -457,7 +458,7 @@ async fn bootstrap(
 
             // spawn the requested capabilities
             // remember: out of thin air, because this is the root distro
-            let mut requested_caps = HashSet::new();
+            let mut requested_caps = HashMap::new();
             let our_process_id = format!(
                 "{}:{}:{}",
                 entry.process_name, package_name, package_publisher
@@ -468,27 +469,33 @@ async fn bootstrap(
                 for value in request_capabilities {
                     match value {
                         serde_json::Value::String(process_name) => {
-                            requested_caps.insert(Capability {
-                                issuer: Address {
-                                    node: our_name.to_string(),
-                                    process: ProcessId::from_str(process_name).unwrap(),
+                            requested_caps.insert(
+                                Capability {
+                                    issuer: Address {
+                                        node: our_name.to_string(),
+                                        process: ProcessId::from_str(process_name).unwrap(),
+                                    },
+                                    params: "\"messaging\"".into(),
                                 },
-                                params: "\"messaging\"".into(),
-                            });
+                                vec![],
+                            ); // TODO sign this!!!!!!!!
                         }
                         serde_json::Value::Object(map) => {
                             if let Some(process_name) = map.get("process") {
                                 if let Some(params) = map.get("params") {
-                                    requested_caps.insert(Capability {
-                                        issuer: Address {
-                                            node: our_name.to_string(),
-                                            process: ProcessId::from_str(
-                                                process_name.as_str().unwrap(),
-                                            )
-                                            .unwrap(),
+                                    requested_caps.insert(
+                                        Capability {
+                                            issuer: Address {
+                                                node: our_name.to_string(),
+                                                process: ProcessId::from_str(
+                                                    process_name.as_str().unwrap(),
+                                                )
+                                                .unwrap(),
+                                            },
+                                            params: params.to_string(),
                                         },
-                                        params: params.to_string(),
-                                    });
+                                        vec![],
+                                    ); // TODO sign this!!!!!!!!
                                 }
                             }
                         }
@@ -501,38 +508,47 @@ async fn bootstrap(
             }
 
             if entry.request_networking {
-                requested_caps.insert(Capability {
-                    issuer: Address {
-                        node: our_name.to_string(),
-                        process: KERNEL_PROCESS_ID.clone(),
+                requested_caps.insert(
+                    Capability {
+                        issuer: Address {
+                            node: our_name.to_string(),
+                            process: KERNEL_PROCESS_ID.clone(),
+                        },
+                        params: "\"network\"".into(),
                     },
-                    params: "\"network\"".into(),
-                });
+                    vec![],
+                ); // TODO sign this!!!!!!!!
             }
 
             // give access to package_name vfs
-            requested_caps.insert(Capability {
-                issuer: Address {
-                    node: our_name.into(),
-                    process: VFS_PROCESS_ID.clone(),
+            requested_caps.insert(
+                Capability {
+                    issuer: Address {
+                        node: our_name.into(),
+                        process: VFS_PROCESS_ID.clone(),
+                    },
+                    params: serde_json::to_string(&serde_json::json!({
+                        "kind": "read",
+                        "drive": drive_path,
+                    }))
+                    .unwrap(),
                 },
-                params: serde_json::to_string(&serde_json::json!({
-                    "kind": "read",
-                    "drive": drive_path,
-                }))
-                .unwrap(),
-            });
-            requested_caps.insert(Capability {
-                issuer: Address {
-                    node: our_name.into(),
-                    process: VFS_PROCESS_ID.clone(),
+                vec![],
+            ); // TODO sign this!!!!!!!!
+            requested_caps.insert(
+                Capability {
+                    issuer: Address {
+                        node: our_name.into(),
+                        process: VFS_PROCESS_ID.clone(),
+                    },
+                    params: serde_json::to_string(&serde_json::json!({
+                        "kind": "write",
+                        "drive": drive_path,
+                    }))
+                    .unwrap(),
                 },
-                params: serde_json::to_string(&serde_json::json!({
-                    "kind": "write",
-                    "drive": drive_path,
-                }))
-                .unwrap(),
-            });
+                vec![],
+            ); // TODO sign this!!!!!!!!
 
             let public_process = entry.public;
 
@@ -618,13 +634,17 @@ async fn bootstrap(
                         serde_json::Value::String(process_name) => {
                             if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
                                 if let Some(process) = process_map.get_mut(&parsed_process_id) {
-                                    process.capabilities.insert(Capability {
-                                        issuer: Address {
-                                            node: our_name.to_string(),
-                                            process: ProcessId::from_str(&our_process_id).unwrap(),
+                                    process.capabilities.insert(
+                                        Capability {
+                                            issuer: Address {
+                                                node: our_name.to_string(),
+                                                process: ProcessId::from_str(&our_process_id)
+                                                    .unwrap(),
+                                            },
+                                            params: "\"messaging\"".into(),
                                         },
-                                        params: "\"messaging\"".into(),
-                                    });
+                                        vec![],
+                                    ); // TODO sign this!!!!!!!!
                                 }
                             }
                         }
@@ -637,14 +657,19 @@ async fn bootstrap(
                                         if let Some(process) =
                                             process_map.get_mut(&parsed_process_id)
                                         {
-                                            process.capabilities.insert(Capability {
-                                                issuer: Address {
-                                                    node: our_name.to_string(),
-                                                    process: ProcessId::from_str(&our_process_id)
+                                            process.capabilities.insert(
+                                                Capability {
+                                                    issuer: Address {
+                                                        node: our_name.to_string(),
+                                                        process: ProcessId::from_str(
+                                                            &our_process_id,
+                                                        )
                                                         .unwrap(),
+                                                    },
+                                                    params: params.to_string(),
                                                 },
-                                                params: params.to_string(),
-                                            });
+                                                vec![],
+                                            ); // TODO sign this!!!!!!!!
                                         }
                                     }
                                 }

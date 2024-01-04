@@ -189,8 +189,8 @@ async fn handle_kernel_request(
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
             let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
-            let mut valid_capabilities: HashSet<t::Capability> = HashSet::new();
-            // TODO verify signed caps
+            let mut valid_capabilities: HashMap<t::Capability, Vec<u8>> = HashMap::new();
+            // TODO verify signed caps, have to fetch the sigs from the parent store first...
             // for signed_cap in initial_capabilities {
             //     let cap = t::Capability {
             //         issuer: signed_cap.issuer,
@@ -212,13 +212,13 @@ async fn handle_kernel_request(
             // give the initializer and itself the messaging cap.
             // NOTE: we do this even if the process is public, because
             // a process might redundantly call grant_capabilities.
-            valid_capabilities.insert(t::Capability {
-                issuer: t::Address {
-                    node: our_name.clone(),
-                    process: id.clone(),
-                },
-                params: "\"messaging\"".into(),
-            });
+            // valid_capabilities.insert(t::Capability {
+            //     issuer: t::Address {
+            //         node: our_name.clone(),
+            //         process: id.clone(),
+            //     },
+            //     params: "\"messaging\"".into(),
+            // });
             caps_oracle
                 .send(t::CapMessage::Add {
                     on: km.source.process.clone(),
@@ -472,7 +472,7 @@ async fn handle_kernel_request(
                             on,
                             process_map
                                 .get(&on)
-                                .map(|p| p.capabilities.contains(&cap))
+                                .map(|p| p.capabilities.contains_key(&cap))
                                 .unwrap_or(false)
                         ),
                     })
@@ -769,7 +769,8 @@ pub async fn kernel(
                 // the process that made the request is dead, so never expects response
                 let mut request = request.to_owned();
                 request.expects_response = None;
-                if persisted.capabilities.contains(&t::Capability {
+                // TODO need to verify the signature
+                if persisted.capabilities.contains_key(&t::Capability {
                     issuer: address.clone(),
                     params: "\"messaging\"".into(),
                 }) {
@@ -886,7 +887,7 @@ pub async fn kernel(
                     let Some(proc) = process_map.get(&kernel_message.source.process) else {
                         continue
                     };
-                    if !proc.capabilities.contains(
+                    if !proc.capabilities.contains_key(
                         &t::Capability {
                             issuer: t::Address {
                                 node: our.name.clone(),
@@ -924,7 +925,7 @@ pub async fn kernel(
                             .await;
                         continue;
                     };
-                    if !persisted.capabilities.contains(
+                    if !persisted.capabilities.contains_key(
                             &t::Capability {
                                 issuer: t::Address {
                                 node: our.name.clone(),
@@ -957,7 +958,7 @@ pub async fn kernel(
                         let Some(persisted_target) = process_map.get(&kernel_message.target.process) else {
                             continue
                         };
-                        if !persisted_target.public && !persisted_source.capabilities.contains(&t::Capability {
+                        if !persisted_target.public && !persisted_source.capabilities.contains_key(&t::Capability {
                                 issuer: t::Address {
                                     node: our.name.clone(),
                                     process: kernel_message.target.process.clone(),
@@ -1081,7 +1082,12 @@ pub async fn kernel(
                             let _ = responder.send(false);
                             continue;
                         };
-                        entry.capabilities.extend(caps);
+                        let signed_caps: Vec<(t::Capability, Vec<u8>)> =
+                            caps.iter().map(|cap| (
+                                cap.clone(),
+                                keypair.sign(&rmp_serde::to_vec(&cap).unwrap()).as_ref().to_vec()
+                            )).collect();
+                        entry.capabilities.extend(signed_caps);
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
                     },
@@ -1100,7 +1106,7 @@ pub async fn kernel(
                         let _ = responder.send(
                             match process_map.get(&on) {
                                 None => false,
-                                Some(p) => p.capabilities.contains(&cap),
+                                Some(p) => p.capabilities.contains_key(&cap),
                             }
                         );
                     },
@@ -1109,11 +1115,7 @@ pub async fn kernel(
                         let _ = responder.send(
                             match process_map.get(&on) {
                                 None => HashMap::new(),
-                                Some(p) => p.capabilities.clone().into_iter().map(|cap| {
-                                        let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
-                                        let signature = keypair.sign(&rmp_serde::to_vec(&cap).unwrap()).as_ref().to_vec();
-                                        (cap, signature)
-                                    }).collect(),
+                                Some(p) => p.capabilities.clone(),
                             }
                         );
                     },
@@ -1123,22 +1125,30 @@ pub async fn kernel(
                                 None => HashMap::new(),
                                 Some(p) => {
                                     caps.iter().filter_map(|cap| {
-                                        // if it is in our store OR
-                                        if p.capabilities.contains(cap) ||
-                                            // if this process is issuing the cap, then sign it
-                                            (cap.issuer.node == our.name && cap.issuer.process == on) {
-                                            Some((
-                                                t::Capability {
-                                                    issuer: cap.issuer.clone(),
-                                                    params: cap.params.clone(),
+                                        // if issuer is foreign, retrieve uncritically
+                                        if cap.issuer.node != our.name {
+                                            p.capabilities.get(cap).map(|sig| {
+                                                (
+                                                    cap.clone(),
+                                                    sig.clone()
+                                                )
+                                            })
+                                        // otherwise verify the signature before returning
+                                        } else {
+                                            match p.capabilities.get(&cap) {
+                                                None => None,
+                                                Some(sig) => {
+                                                    let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
+                                                    match pk.verify(
+                                                        &rmp_serde::to_vec(&cap).unwrap_or_default(),
+                                                        sig,
+                                                    ) {
+                                                        Ok(_) => Some((cap.clone(), sig.clone())),
+                                                        Err(_) => None,
+                                                    }
                                                 },
-                                                keypair
-                                                    .sign(&rmp_serde::to_vec(&cap).unwrap())
-                                                    .as_ref()
-                                                    .to_vec()
-                                            ))
-                                        // otherwise this is a bogus capability, discard it
-                                        } else { None }
+                                            }
+                                        }
                                     }).collect()
                                 },
                             }
