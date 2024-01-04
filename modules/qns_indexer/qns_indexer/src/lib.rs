@@ -7,8 +7,8 @@ use std::str::FromStr;
 use std::string::FromUtf8Error;
 use uqbar_process_lib::eth::{EthAddress, SubscribeLogsRequest};
 use uqbar_process_lib::{
-    await_message, get_typed_state, http, println, set_state, Address, Message, Payload, Request,
-    Response,
+    await_message, get_typed_state, http, print_to_terminal, println, set_state, Address, Message,
+    Payload, Request, Response,
 };
 
 wit_bindgen::generate!({
