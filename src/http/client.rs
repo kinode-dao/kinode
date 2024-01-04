@@ -19,7 +19,10 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 // Outgoing WebSocket connections are stored by the source process ID and the channel_id
 type WebSocketId = (ProcessId, u32);
-type WebSocketMap = DashMap<WebSocketId, SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, tungstenite::Message>>;
+type WebSocketMap = DashMap<
+    WebSocketId,
+    SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, tungstenite::Message>,
+>;
 type WebSocketStreams = Arc<WebSocketMap>;
 
 pub async fn http_client(
@@ -61,7 +64,8 @@ pub async fn http_client(
                 ws_streams_clone,
                 send_to_loop.clone(),
                 print_tx.clone(),
-            ).await;
+            )
+            .await;
         } else {
             tokio::spawn(handle_http_request(
                 our_name.clone(),
@@ -95,8 +99,7 @@ async fn handle_websocket_action(
             url,
             headers,
             channel_id,
-        } => {
-            (
+        } => (
             connect_websocket(
                 our.clone(),
                 id,
@@ -110,15 +113,11 @@ async fn handle_websocket_action(
             )
             .await,
             channel_id,
-        )
-
-
-    },
+        ),
         WebSocketClientAction::Push {
             channel_id,
             message_type,
-        } => {
-            (
+        } => (
             send_ws_push(
                 target.clone(),
                 channel_id,
@@ -128,12 +127,11 @@ async fn handle_websocket_action(
             )
             .await,
             channel_id,
-        )},
-        WebSocketClientAction::Close { channel_id } => {
-            (
+        ),
+        WebSocketClientAction::Close { channel_id } => (
             close_ws_connection(target.clone(), channel_id, ws_streams, print_tx).await,
             channel_id,
-        )},
+        ),
         WebSocketClientAction::Response { .. } => (Ok(()), 0), // No-op
     };
 
