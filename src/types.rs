@@ -386,6 +386,7 @@ pub struct Request {
     pub expects_response: Option<u64>, // number of seconds until timeout
     pub ipc: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
+    pub capabilities: Vec<Capability>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -393,6 +394,7 @@ pub struct Response {
     pub inherit: bool,
     pub ipc: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
+    pub capabilities: Vec<Capability>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -539,6 +541,11 @@ pub fn de_wit_request(wit: wit::Request) -> Request {
         expects_response: wit.expects_response,
         ipc: wit.ipc,
         metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .iter()
+            .map(|cap| de_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -548,6 +555,11 @@ pub fn en_wit_request(request: Request) -> wit::Request {
         expects_response: request.expects_response,
         ipc: request.ipc,
         metadata: request.metadata,
+        capabilities: request
+            .capabilities
+            .iter()
+            .map(|cap| en_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -556,6 +568,11 @@ pub fn de_wit_response(wit: wit::Response) -> Response {
         inherit: wit.inherit,
         ipc: wit.ipc,
         metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .iter()
+            .map(|cap| de_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -564,6 +581,11 @@ pub fn en_wit_response(response: Response) -> wit::Response {
         inherit: response.inherit,
         ipc: response.ipc,
         metadata: response.metadata,
+        capabilities: response
+            .capabilities
+            .iter()
+            .map(|cap| en_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -601,7 +623,7 @@ pub fn de_wit_capability(wit: wit::Capability) -> Capability {
     }
 }
 
-pub fn _en_wit_capability(cap: Capability) -> wit::Capability {
+pub fn en_wit_capability(cap: Capability) -> wit::Capability {
     wit::Capability {
         issuer: cap.issuer.en_wit(),
         params: cap.params,

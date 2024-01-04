@@ -68,6 +68,7 @@ async fn persist_state(
                 ipc: serde_json::to_vec(&t::StateAction::SetState(KERNEL_PROCESS_ID.clone()))
                     .unwrap(),
                 metadata: None,
+                capabilities: vec![],
             }),
             payload: Some(t::Payload { mime: None, bytes }),
             signed_capabilities: vec![],
@@ -127,6 +128,7 @@ async fn handle_kernel_request(
                             expects_response: None,
                             ipc: b"run".to_vec(),
                             metadata: None,
+                            capabilities: vec![],
                         }),
                         payload: None,
                         signed_capabilities: vec![],
@@ -173,6 +175,7 @@ async fn handle_kernel_request(
                                 ipc: serde_json::to_vec(&t::KernelResponse::InitializeProcessError)
                                     .unwrap(),
                                 metadata: None,
+                                capabilities: vec![],
                             },
                             None,
                         )),
@@ -285,6 +288,7 @@ async fn handle_kernel_request(
                                     )
                                     .unwrap(),
                                     metadata: None,
+                                    capabilities: vec![],
                                 },
                                 None,
                             )),
@@ -316,6 +320,7 @@ async fn handle_kernel_request(
                             expects_response: None,
                             ipc: b"run".to_vec(),
                             metadata: None,
+                            capabilities: vec![],
                         }),
                         payload: None,
                         signed_capabilities: vec![],
@@ -337,6 +342,7 @@ async fn handle_kernel_request(
                                     ipc: serde_json::to_vec(&t::KernelResponse::StartedProcess)
                                         .unwrap(),
                                     metadata: None,
+                                    capabilities: vec![],
                                 },
                                 None,
                             )),
@@ -369,6 +375,7 @@ async fn handle_kernel_request(
                                 ipc: serde_json::to_vec(&t::KernelResponse::RunProcessError)
                                     .unwrap(),
                                 metadata: None,
+                                capabilities: vec![],
                             },
                             None,
                         )),
@@ -423,6 +430,7 @@ async fn handle_kernel_request(
                             ipc: serde_json::to_vec(&t::KernelResponse::KilledProcess(process_id))
                                 .unwrap(),
                             metadata: None,
+                            capabilities: vec![],
                         },
                         None,
                     )),
@@ -571,6 +579,7 @@ async fn handle_kernel_response(
                         expects_response: None,
                         ipc: b"run".to_vec(),
                         metadata: None,
+                        capabilities: vec![],
                     }),
                     payload: None,
                     signed_capabilities: vec![],
@@ -664,6 +673,7 @@ async fn start_process(
                     inherit: false,
                     ipc: serde_json::to_vec(&t::KernelResponse::InitializedProcess)?,
                     metadata: None,
+                    capabilities: vec![],
                 },
                 None,
             )),
@@ -747,6 +757,7 @@ pub async fn kernel(
                             })
                             .unwrap(),
                         ),
+                        capabilities: vec![],
                     }),
                     payload: None,
                     signed_capabilities: vec![],
@@ -804,6 +815,7 @@ pub async fn kernel(
                 expects_response: None,
                 ipc: serde_json::to_vec(&t::KernelCommand::Booted).unwrap(),
                 metadata: None,
+                capabilities: vec![],
             }),
             payload: None,
             signed_capabilities: vec![],

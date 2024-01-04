@@ -603,6 +603,7 @@ pub async fn terminal(
                                             expects_response: None,
                                             ipc: command.into_bytes(),
                                             metadata: None,
+                                            capabilities: vec![],
                                         }),
                                         payload: None,
                                         signed_capabilities: vec![],

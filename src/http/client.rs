@@ -171,6 +171,7 @@ async fn handle_message(
                             ))
                             .unwrap(),
                             metadata: None,
+                            capabilities: vec![],
                         },
                         None,
                     )),
@@ -268,6 +269,7 @@ async fn make_error_message(
                         ))
                         .unwrap(),
                         metadata: None,
+                        capabilities: vec![],
                     },
                     None,
                 )),

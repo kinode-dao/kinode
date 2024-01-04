@@ -127,6 +127,7 @@ async fn send_response(our_node: &str, id: u64, target: Address, send_to_loop: &
                     inherit: false,
                     ipc: vec![],
                     metadata: None,
+                    capabilities: vec![],
                 },
                 None,
             )),

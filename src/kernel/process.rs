@@ -397,6 +397,7 @@ pub async fn make_process_loop(
                             expects_response: None,
                             ipc: b"run".to_vec(),
                             metadata: None,
+                            capabilities: vec![],
                         }))
                 {
                     break;
@@ -519,6 +520,7 @@ pub async fn make_process_loop(
                     ))
                     .unwrap(),
                     metadata: None,
+                    capabilities: vec![],
                 }),
                 payload: None,
                 signed_capabilities: vec![],
@@ -559,6 +561,7 @@ pub async fn make_process_loop(
                     ))
                     .unwrap(),
                     metadata: None,
+                    capabilities: vec![],
                 }),
                 payload: None,
                 signed_capabilities: vec![],
@@ -590,6 +593,7 @@ pub async fn make_process_loop(
                             })
                             .unwrap(),
                             metadata: None,
+                            capabilities: vec![],
                         }),
                         payload: Some(t::Payload {
                             mime: None,
