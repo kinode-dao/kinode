@@ -384,9 +384,6 @@ impl StandardHost for process::ProcessWasi {
     //
     // capabilities management
     //
-    //
-    // capabilities management
-    //
     // TODO need to move this logic elsewhere
     // async fn get_capabilities(&mut self) -> Result<Vec<wit::Capability>> {
     //     let pk = signature::UnparsedPublicKey::new(
@@ -437,36 +434,23 @@ impl StandardHost for process::ProcessWasi {
         let Some(prompting_message) = self.process.prompting_message.clone() else {
             return Err(anyhow::anyhow!("save_capabilities: no prompting message!"));
         };
-        let verified_caps: HashSet<t::Capability> = prompting_message
-            .signed_capabilities
-            .iter()
-            .filter_map(|(cap, sig)| {
-                if cap.issuer.node != self.process.metadata.our.node {
-                    // accept all remote caps uncritically
-                    return Some(t::Capability {
-                        issuer: cap.clone().issuer,
-                        params: cap.clone().params,
-                    });
-                }
-                // otherwise only return capabilities that were properly signed
-                let cap = t::Capability {
-                    issuer: cap.clone().issuer,
-                    params: cap.clone().params,
-                };
-                match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), &sig) {
-                    Ok(_) => Some(cap),
-                    Err(_) => None,
-                }
-            })
-            .collect();
 
         let caps_to_save = caps
             .iter()
             .filter(|&cap| {
-                // only add verified caps
-                verified_caps.contains(&t::de_wit_capability(cap.clone()))
-                    // or caps that we issued to ourself
-                    || t::Address::de_wit(cap.clone().issuer) == self.process.metadata.our
+                // only caps that we issued to ourself (not sure why you would, but we allow it)
+                t::Address::de_wit(cap.clone().issuer) == self.process.metadata.our
+                // OR caps with valid signatures
+                    ||
+                    match prompting_message.signed_capabilities.get(&t::de_wit_capability(cap.clone())) {
+                        Some(sig) => {
+                            match pk.verify(&rmp_serde::to_vec(&t::de_wit_capability(cap.clone())).unwrap_or_default(), &sig) {
+                                Ok(_) => true,
+                                Err(_) => false,
+                            }
+                        }
+                        None => false,
+                    }
             })
             .map(|cap| t::de_wit_capability(cap.clone()))
             .collect::<Vec<t::Capability>>();
