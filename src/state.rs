@@ -258,6 +258,7 @@ async fn handle_request(
                     inherit: false,
                     ipc,
                     metadata,
+                    capabilities: vec![],
                 },
                 None,
             )),
@@ -265,7 +266,7 @@ async fn handle_request(
                 mime: Some("application/octet-stream".into()),
                 bytes,
             }),
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         };
 
         let _ = send_to_loop.send(response).await;
@@ -461,10 +462,10 @@ async fn bootstrap(
                 "{}:{}:{}",
                 entry.process_name, package_name, package_publisher
             );
-            entry.request_messaging = Some(entry.request_messaging.unwrap_or_default());
-            if let Some(ref mut request_messaging) = entry.request_messaging {
-                request_messaging.push(serde_json::Value::String(our_process_id.clone()));
-                for value in request_messaging {
+            entry.request_capabilities = Some(entry.request_capabilities.unwrap_or_default());
+            if let Some(ref mut request_capabilities) = entry.request_capabilities {
+                request_capabilities.push(serde_json::Value::String(our_process_id.clone()));
+                for value in request_capabilities {
                     match value {
                         serde_json::Value::String(process_name) => {
                             requested_caps.insert(Capability {
@@ -611,7 +612,7 @@ async fn bootstrap(
             );
 
             // grant capabilities to other initially spawned processes, distro
-            if let Some(to_grant) = &entry.grant_messaging {
+            if let Some(to_grant) = &entry.grant_capabilities {
                 for value in to_grant {
                     match value {
                         serde_json::Value::String(process_name) => {
@@ -702,11 +703,12 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -
                 inherit: false,
                 ipc: serde_json::to_vec(&StateResponse::Err(error)).unwrap(),
                 metadata: None,
+                capabilities: vec![],
             },
             None,
         )),
         payload: None,
-        signed_capabilities: None,
+        signed_capabilities: vec![],
     }
 }
 

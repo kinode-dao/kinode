@@ -514,9 +514,10 @@ async fn main() {
                 expects_response: None,
                 ipc: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
                 metadata: None,
+                capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await;
 

@@ -603,9 +603,10 @@ pub async fn terminal(
                                             expects_response: None,
                                             ipc: command.into_bytes(),
                                             metadata: None,
+                                            capabilities: vec![],
                                         }),
                                         payload: None,
-                                        signed_capabilities: None,
+                                        signed_capabilities: vec![],
                                     }
                                 ).await.expect("terminal: couldn't execute command!");
                             },

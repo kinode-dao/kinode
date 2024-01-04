@@ -386,6 +386,7 @@ pub struct Request {
     pub expects_response: Option<u64>, // number of seconds until timeout
     pub ipc: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
+    pub capabilities: Vec<Capability>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -393,6 +394,7 @@ pub struct Response {
     pub inherit: bool,
     pub ipc: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
+    pub capabilities: Vec<Capability>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -527,6 +529,11 @@ pub fn de_wit_request(wit: wit::Request) -> Request {
         expects_response: wit.expects_response,
         ipc: wit.ipc,
         metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .iter()
+            .map(|cap| de_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -536,6 +543,11 @@ pub fn en_wit_request(request: Request) -> wit::Request {
         expects_response: request.expects_response,
         ipc: request.ipc,
         metadata: request.metadata,
+        capabilities: request
+            .capabilities
+            .iter()
+            .map(|cap| en_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -544,6 +556,11 @@ pub fn de_wit_response(wit: wit::Response) -> Response {
         inherit: wit.inherit,
         ipc: wit.ipc,
         metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .iter()
+            .map(|cap| de_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -552,6 +569,11 @@ pub fn en_wit_response(response: Response) -> wit::Response {
         inherit: response.inherit,
         ipc: response.ipc,
         metadata: response.metadata,
+        capabilities: response
+            .capabilities
+            .iter()
+            .map(|cap| en_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -575,8 +597,8 @@ pub fn en_wit_payload(load: Option<Payload>) -> Option<wit::Payload> {
     }
 }
 
-pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> SignedCapability {
-    SignedCapability {
+pub fn de_wit_capability(wit: wit::Capability) -> Capability {
+    Capability {
         issuer: Address {
             node: wit.issuer.node,
             process: ProcessId {
@@ -586,15 +608,13 @@ pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> SignedCapability 
             },
         },
         params: wit.params,
-        signature: wit.signature,
     }
 }
 
-pub fn _en_wit_signed_capability(cap: SignedCapability) -> wit::SignedCapability {
-    wit::SignedCapability {
+pub fn en_wit_capability(cap: Capability) -> wit::Capability {
+    wit::Capability {
         issuer: cap.issuer.en_wit(),
         params: cap.params,
-        signature: cap.signature,
     }
 }
 
@@ -749,7 +769,7 @@ pub struct KernelMessage {
     pub rsvp: Rsvp,
     pub message: Message,
     pub payload: Option<Payload>,
-    pub signed_capabilities: Option<Vec<SignedCapability>>,
+    pub signed_capabilities: Vec<SignedCapability>,
 }
 
 impl std::fmt::Display for KernelMessage {
@@ -810,12 +830,15 @@ pub enum KernelCommand {
     ///
     /// The process that sends this command will be given messaging capabilities
     /// for the new process if `public` is false.
+    ///
+    /// All capabilities passed into initial_capabilities must be held by the source
+    /// of this message, or the kernel will discard them (silently for now).
     InitializeProcess {
         id: ProcessId,
         wasm_bytes_handle: String,
         wit_version: Option<u32>,
         on_exit: OnExit,
-        initial_capabilities: HashSet<SignedCapability>,
+        initial_capabilities: HashSet<Capability>,
         public: bool,
     },
     /// Tell the kernel to run a process that has already been installed.
@@ -852,7 +875,7 @@ pub enum KernelResponse {
 pub enum CapMessage {
     Add {
         on: ProcessId,
-        cap: Capability,
+        caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
     _Drop {
@@ -871,6 +894,11 @@ pub enum CapMessage {
         on: ProcessId,
         responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
     },
+    // GetSome {
+    //     on: ProcessId,
+    //     caps: Vec<Capability>,
+    //     responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
+    // },
 }
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
@@ -912,8 +940,8 @@ pub struct PackageManifestEntry {
     pub process_wasm_path: String,
     pub on_exit: OnExit,
     pub request_networking: bool,
-    pub request_messaging: Option<Vec<serde_json::Value>>,
-    pub grant_messaging: Option<Vec<serde_json::Value>>,
+    pub request_capabilities: Option<Vec<serde_json::Value>>,
+    pub grant_capabilities: Option<Vec<serde_json::Value>>,
     pub public: bool,
 }
 

@@ -321,6 +321,7 @@ async fn handle_request(
                     inherit: false,
                     ipc,
                     metadata,
+                    capabilities: vec![],
                 },
                 None,
             )),
@@ -328,7 +329,7 @@ async fn handle_request(
                 mime: Some("application/octet-stream".into()),
                 bytes,
             }),
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         };
 
         let _ = send_to_loop.send(response).await;
@@ -502,7 +503,7 @@ async fn add_capability(
     send_to_caps_oracle
         .send(CapMessage::Add {
             on: source.process.clone(),
-            cap,
+            caps: vec![cap],
             responder: send_cap_bool,
         })
         .await?;
@@ -569,11 +570,12 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: SqliteError) 
                 inherit: false,
                 ipc: serde_json::to_vec(&SqliteResponse::Err { error: error }).unwrap(),
                 metadata: None,
+                capabilities: vec![],
             },
             None,
         )),
         payload: None,
-        signed_capabilities: None,
+        signed_capabilities: vec![],
     }
 }
 impl ToSql for SqlValue {

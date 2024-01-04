@@ -68,9 +68,10 @@ async fn persist_state(
                 ipc: serde_json::to_vec(&t::StateAction::SetState(KERNEL_PROCESS_ID.clone()))
                     .unwrap(),
                 metadata: None,
+                capabilities: vec![],
             }),
             payload: Some(t::Payload { mime: None, bytes }),
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await?;
     Ok(())
@@ -127,9 +128,10 @@ async fn handle_kernel_request(
                             expects_response: None,
                             ipc: b"run".to_vec(),
                             metadata: None,
+                            capabilities: vec![],
                         }),
                         payload: None,
-                        signed_capabilities: None,
+                        signed_capabilities: vec![],
                     }))
                     .await;
             }
@@ -173,11 +175,12 @@ async fn handle_kernel_request(
                                 ipc: serde_json::to_vec(&t::KernelResponse::InitializeProcessError)
                                     .unwrap(),
                                 metadata: None,
+                                capabilities: vec![],
                             },
                             None,
                         )),
                         payload: None,
-                        signed_capabilities: None,
+                        signed_capabilities: vec![],
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -187,27 +190,28 @@ async fn handle_kernel_request(
             // check cap sigs & transform valid to unsigned to be plugged into procs
             let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
             let mut valid_capabilities: HashSet<t::Capability> = HashSet::new();
-            for signed_cap in initial_capabilities {
-                let cap = t::Capability {
-                    issuer: signed_cap.issuer,
-                    params: signed_cap.params,
-                };
-                match pk.verify(
-                    &rmp_serde::to_vec(&cap).unwrap_or_default(),
-                    &signed_cap.signature,
-                ) {
-                    Ok(_) => {}
-                    Err(e) => {
-                        println!("kernel: StartProcess no cap: {}", e);
-                        continue;
-                    }
-                }
-                valid_capabilities.insert(cap);
-            }
+            // TODO verify signed caps
+            // for signed_cap in initial_capabilities {
+            //     let cap = t::Capability {
+            //         issuer: signed_cap.issuer,
+            //         params: signed_cap.params,
+            //     };
+            //     match pk.verify(
+            //         &rmp_serde::to_vec(&cap).unwrap_or_default(),
+            //         &signed_cap.signature,
+            //     ) {
+            //         Ok(_) => {}
+            //         Err(e) => {
+            //             println!("kernel: StartProcess no cap: {}", e);
+            //             continue;
+            //         }
+            //     }
+            //     valid_capabilities.insert(cap);
+            // }
 
             // give the initializer and itself the messaging cap.
             // NOTE: we do this even if the process is public, because
-            // a process might redundantly call grant_messaging.
+            // a process might redundantly call grant_capabilities.
             valid_capabilities.insert(t::Capability {
                 issuer: t::Address {
                     node: our_name.clone(),
@@ -218,13 +222,13 @@ async fn handle_kernel_request(
             caps_oracle
                 .send(t::CapMessage::Add {
                     on: km.source.process.clone(),
-                    cap: t::Capability {
+                    caps: vec![t::Capability {
                         issuer: t::Address {
                             node: our_name.clone(),
                             process: id.clone(),
                         },
                         params: "\"messaging\"".into(),
-                    },
+                    }],
                     responder: tokio::sync::oneshot::channel().0,
                 })
                 .await
@@ -281,11 +285,12 @@ async fn handle_kernel_request(
                                     )
                                     .unwrap(),
                                     metadata: None,
+                                    capabilities: vec![],
                                 },
                                 None,
                             )),
                             payload: None,
-                            signed_capabilities: None,
+                            signed_capabilities: vec![],
                         })
                         .await
                         .expect("event loop: fatal: sender died");
@@ -312,9 +317,10 @@ async fn handle_kernel_request(
                             expects_response: None,
                             ipc: b"run".to_vec(),
                             metadata: None,
+                            capabilities: vec![],
                         }),
                         payload: None,
-                        signed_capabilities: None,
+                        signed_capabilities: vec![],
                     }))
                     .await
                 {
@@ -333,11 +339,12 @@ async fn handle_kernel_request(
                                     ipc: serde_json::to_vec(&t::KernelResponse::StartedProcess)
                                         .unwrap(),
                                     metadata: None,
+                                    capabilities: vec![],
                                 },
                                 None,
                             )),
                             payload: None,
-                            signed_capabilities: None,
+                            signed_capabilities: vec![],
                         })
                         .await
                         .expect("event loop: fatal: sender died");
@@ -365,11 +372,12 @@ async fn handle_kernel_request(
                                 ipc: serde_json::to_vec(&t::KernelResponse::RunProcessError)
                                     .unwrap(),
                                 metadata: None,
+                                capabilities: vec![],
                             },
                             None,
                         )),
                         payload: None,
-                        signed_capabilities: None,
+                        signed_capabilities: vec![],
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -419,11 +427,12 @@ async fn handle_kernel_request(
                             ipc: serde_json::to_vec(&t::KernelResponse::KilledProcess(process_id))
                                 .unwrap(),
                             metadata: None,
+                            capabilities: vec![],
                         },
                         None,
                     )),
                     payload: None,
-                    signed_capabilities: None,
+                    signed_capabilities: vec![],
                 })
                 .await
                 .expect("event loop: fatal: sender died");
@@ -567,9 +576,10 @@ async fn handle_kernel_response(
                         expects_response: None,
                         ipc: b"run".to_vec(),
                         metadata: None,
+                        capabilities: vec![],
                     }),
                     payload: None,
-                    signed_capabilities: None,
+                    signed_capabilities: vec![],
                 }))
                 .await;
             return;
@@ -660,11 +670,12 @@ async fn start_process(
                     inherit: false,
                     ipc: serde_json::to_vec(&t::KernelResponse::InitializedProcess)?,
                     metadata: None,
+                    capabilities: vec![],
                 },
                 None,
             )),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await?;
     Ok(())
@@ -743,9 +754,10 @@ pub async fn kernel(
                             })
                             .unwrap(),
                         ),
+                        capabilities: vec![],
                     }),
                     payload: None,
-                    signed_capabilities: None,
+                    signed_capabilities: vec![],
                 })
                 .await
                 .expect("event loop: fatal: sender died");
@@ -772,7 +784,7 @@ pub async fn kernel(
                             rsvp: None,
                             message: t::Message::Request(request),
                             payload: payload.clone(),
-                            signed_capabilities: None,
+                            signed_capabilities: vec![],
                         })
                         .await
                         .expect("fatal: kernel event loop died");
@@ -800,9 +812,10 @@ pub async fn kernel(
                 expects_response: None,
                 ipc: serde_json::to_vec(&t::KernelCommand::Booted).unwrap(),
                 metadata: None,
+                capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await
         .expect("fatal: kernel event loop died");
@@ -1062,13 +1075,13 @@ pub async fn kernel(
             // capabilities oracle: handles all requests to add, drop, and check capabilities
             Some(cap_message) = caps_oracle_receiver.recv() => {
                 match cap_message {
-                    t::CapMessage::Add { on, cap, responder } => {
+                    t::CapMessage::Add { on, caps, responder } => {
                         // insert cap in process map
                         let Some(entry) = process_map.get_mut(&on) else {
                             let _ = responder.send(false);
                             continue;
                         };
-                        entry.capabilities.insert(cap);
+                        entry.capabilities.extend(caps);
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
                     },

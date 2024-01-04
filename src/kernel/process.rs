@@ -3,7 +3,7 @@ use crate::types as t;
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
 use ring::signature;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 pub use uqbar::process::standard as wit;
@@ -169,7 +169,7 @@ impl ProcessState {
             },
             message: t::Message::Request(t::de_wit_request(request.clone())),
             payload: payload.clone(),
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         };
 
         // modify the process' context map as needed.
@@ -250,7 +250,7 @@ impl ProcessState {
                     None,
                 )),
                 payload,
-                signed_capabilities: None,
+                signed_capabilities: vec![],
             })
             .await
             .expect("fatal: kernel couldn't send response");
@@ -386,6 +386,7 @@ pub async fn make_process_loop(
                             expects_response: None,
                             ipc: b"run".to_vec(),
                             metadata: None,
+                            capabilities: vec![],
                         }))
                 {
                     break;
@@ -507,9 +508,10 @@ pub async fn make_process_loop(
                     ))
                     .unwrap(),
                     metadata: None,
+                    capabilities: vec![],
                 }),
                 payload: None,
-                signed_capabilities: None,
+                signed_capabilities: vec![],
             })
             .await
             .expect("event loop: fatal: sender died");
@@ -522,7 +524,8 @@ pub async fn make_process_loop(
                 responder: tx,
             })
             .await;
-        let initial_capabilities = rx.await.unwrap().into_iter().collect();
+        // TOD fix this...
+        // let initial_capabilities = rx.await.unwrap().into_iter().collect();
 
         // send message to tell main kernel loop to remove handler
         send_to_loop
@@ -539,9 +542,10 @@ pub async fn make_process_loop(
                     ))
                     .unwrap(),
                     metadata: None,
+                    capabilities: vec![],
                 }),
                 payload: None,
-                signed_capabilities: None,
+                signed_capabilities: vec![],
             })
             .await
             .expect("event loop: fatal: sender died");
@@ -565,17 +569,18 @@ pub async fn make_process_loop(
                                 wasm_bytes_handle: metadata.wasm_bytes_handle,
                                 wit_version: Some(metadata.wit_version),
                                 on_exit: metadata.on_exit,
-                                initial_capabilities,
+                                initial_capabilities: HashSet::new(), // TODO initial_capabilities,
                                 public: metadata.public,
                             })
                             .unwrap(),
                             metadata: None,
+                            capabilities: vec![],
                         }),
                         payload: Some(t::Payload {
                             mime: None,
                             bytes: wasm_bytes,
                         }),
-                        signed_capabilities: None,
+                        signed_capabilities: vec![],
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -605,7 +610,7 @@ pub async fn make_process_loop(
                                 rsvp: None,
                                 message: t::Message::Request(request),
                                 payload,
-                                signed_capabilities: None,
+                                signed_capabilities: vec![],
                             })
                             .await
                             .expect("event loop: fatal: sender died");

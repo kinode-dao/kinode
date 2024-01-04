@@ -933,11 +933,12 @@ async fn handle_local_message(
                                         &res.unwrap_or(NetResponses::Rejected(from)),
                                     )?,
                                     metadata: None,
+                                    capabilities: vec![],
                                 },
                                 None,
                             )),
                             payload: None,
-                            signed_capabilities: None,
+                            signed_capabilities: vec![],
                         })
                         .await?;
                 }
