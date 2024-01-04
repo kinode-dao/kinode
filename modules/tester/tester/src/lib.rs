@@ -2,8 +2,8 @@ use indexmap::map::IndexMap;
 
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::{
-    await_message, call_init, get_capability, println, share_capability, spawn, Address,
-    Capabilities, Message, OnExit, ProcessId, Request, Response,
+    await_message, call_init, get_capability, grant_capabilities, our_capabilities, println, spawn,
+    vfs, Address, Capability, Message, OnExit, ProcessId, Request, Response,
 };
 
 mod tester_types;
@@ -75,7 +75,8 @@ fn handle_message(
                             None,
                             child,
                             OnExit::None, //  TODO: notify us
-                            &Capabilities::All,
+                            our_capabilities(),
+                            vec![ProcessId::from_str("vfs:sys:uqbar").unwrap()],
                             false, // not public
                         ) {
                             Ok(child_process_id) => child_process_id,
@@ -109,31 +110,47 @@ fn init(our: Address) {
 
     let mut messages: Messages = IndexMap::new();
     let mut node_names: Vec<String> = Vec::new();
+    let _ = Request::new()
+        .target(make_vfs_address(&our).unwrap())
+        .ipc(
+            serde_json::to_vec(&vfs::VfsRequest {
+                path: "/tester:uqbar/tests".into(),
+                action: vfs::VfsAction::CreateDrive,
+            })
+            .unwrap(),
+        )
+        .send_and_await_response(5)
+        .unwrap()
+        .unwrap();
+    grant_capabilities(
+        &ProcessId::from_str("http_server:sys:uqbar").expect("couldn't make pid"),
+        &vec![Capability {
+            issuer: Address::new(
+                our.node.clone(),
+                ProcessId::from_str("vfs:sys:uqbar").unwrap(),
+            ),
+            params: serde_json::json!({
+                "kind": "write",
+                "drive": "/tester:uqbar/tests",
+            })
+            .to_string(),
+        }],
+    );
 
     // orchestrate tests using external scripts
     //  -> must give drive cap to rpc
     let _ = Request::new()
         .target(make_vfs_address(&our).unwrap())
-        .ipc(serde_json::to_vec(&kt::VfsRequest {
-            path: "/tester:uqbar/tests".into(),
-            action: kt::VfsAction::CreateDrive,
-        }).unwrap())
+        .ipc(
+            serde_json::to_vec(&vfs::VfsRequest {
+                path: "/tester:uqbar/tests".into(),
+                action: vfs::VfsAction::CreateDrive,
+            })
+            .unwrap(),
+        )
         .send_and_await_response(5)
         .unwrap()
         .unwrap();
-    let drive_cap = get_capability(
-        &make_vfs_address(&our).unwrap(),
-        &serde_json::to_string(&serde_json::json!({
-            "kind": "write",
-            "drive": "/tester:uqbar/tests",
-        }))
-        .expect("couldn't serialize"),
-    )
-    .expect("couldn't get drive cap");
-    share_capability(
-        &ProcessId::from_str("http_server:sys:uqbar").expect("couldn't make pid"),
-        &drive_cap,
-    );
 
     loop {
         match handle_message(&our, &mut messages, &mut node_names) {

@@ -4,7 +4,7 @@
         "process_wasm_path": "/homepage.wasm",
         "on_exit": "Restart",
         "request_networking": false,
-        "request_messaging": [
+        "request_capabilities": [
             "http_bindings:http_bindings:uqbar",
             "http_server:sys:uqbar"
         ],

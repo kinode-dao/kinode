@@ -4,7 +4,7 @@
         "process_wasm_path": "/app_store.wasm",
         "on_exit": "Restart",
         "request_networking": true,
-        "request_messaging": [
+        "request_capabilities": [
             "terminal:terminal:uqbar",
             "filesystem:sys:uqbar",
             "http_server:sys:uqbar",

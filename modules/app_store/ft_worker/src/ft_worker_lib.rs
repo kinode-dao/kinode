@@ -61,10 +61,11 @@ pub fn spawn_transfer(
     let transfer_id: u64 = rand::random();
     // spawn a worker and tell it to send the file
     let Ok(worker_process_id) = spawn(
-        Some(transfer_id.to_string().as_str()),
+        Some(&transfer_id.to_string()),
         &format!("{}/pkg/ft_worker.wasm", our.package_id()),
         OnExit::None, // can set message-on-panic here
-        &Capabilities::All,
+        our_capabilities(),
+        vec![],
         false, // not public
     ) else {
         return Err(anyhow::anyhow!("failed to spawn ft_worker!"));
@@ -111,13 +112,16 @@ pub fn spawn_transfer(
 #[allow(dead_code)]
 pub fn spawn_receive_transfer(our: &Address, ipc: &[u8]) -> anyhow::Result<()> {
     let Ok(FTWorkerCommand::Receive { transfer_id, .. }) = serde_json::from_slice(ipc) else {
-        return Err(anyhow::anyhow!("spawn_receive_transfer: got malformed request"));
+        return Err(anyhow::anyhow!(
+            "spawn_receive_transfer: got malformed request"
+        ));
     };
     let Ok(worker_process_id) = spawn(
-        Some(transfer_id.to_string().as_str()),
+        Some(&transfer_id.to_string()),
         &format!("{}/pkg/ft_worker.wasm", our.package_id()),
         OnExit::None, // can set message-on-panic here
-        &Capabilities::All,
+        our_capabilities(),
+        vec![],
         false, // not public
     ) else {
         return Err(anyhow::anyhow!("failed to spawn ft_worker!"));
