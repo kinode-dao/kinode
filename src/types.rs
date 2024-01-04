@@ -736,6 +736,7 @@ pub struct IdentityTransaction {
 pub struct ProcessMetadata {
     pub our: Address,
     pub wasm_bytes_handle: String,
+    pub wit_version: u32,
     pub on_exit: OnExit,
     pub public: bool,
 }
@@ -812,6 +813,7 @@ pub enum KernelCommand {
     InitializeProcess {
         id: ProcessId,
         wasm_bytes_handle: String,
+        wit_version: Option<u32>,
         on_exit: OnExit,
         initial_capabilities: HashSet<SignedCapability>,
         public: bool,
@@ -876,6 +878,7 @@ pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistedProcess {
     pub wasm_bytes_handle: String,
+    pub wit_version: Option<u32>,
     pub on_exit: OnExit,
     pub capabilities: HashSet<Capability>,
     pub public: bool, // marks if a process allows messages from any process
@@ -976,12 +979,10 @@ pub enum VfsAction {
     CreateDir,
     CreateDirAll,
     CreateFile,
-    OpenFile,
+    OpenFile { create: bool },
     CloseFile,
-    WriteAll,
     Write,
-    ReWrite,
-    WriteAt(u64),
+    WriteAt,
     Append,
     SyncAll,
     Read,
@@ -989,13 +990,14 @@ pub enum VfsAction {
     ReadToEnd,
     ReadExact(u64),
     ReadToString,
-    Seek(SeekFrom),
+    Seek { seek_from: SeekFrom },
     RemoveFile,
     RemoveDir,
     RemoveDirAll,
-    Rename(String),
+    Rename { new_path: String },
     Metadata,
     AddZip,
+    CopyFile { new_path: String },
     Len,
     SetLen(u64),
     Hash,
@@ -1033,6 +1035,7 @@ pub enum VfsResponse {
     Ok,
     Err(VfsError),
     Read,
+    SeekFrom(u64),
     ReadDir(Vec<DirEntry>),
     ReadToString(String),
     Metadata(FileMetadata),
@@ -1088,7 +1091,8 @@ pub struct KvRequest {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum KvAction {
-    New,
+    Open,
+    RemoveDb,
     Set { key: Vec<u8>, tx_id: Option<u64> },
     Delete { key: Vec<u8>, tx_id: Option<u64> },
     Get { key: Vec<u8> },
@@ -1109,8 +1113,6 @@ pub enum KvResponse {
 pub enum KvError {
     #[error("kv: DbDoesNotExist")]
     NoDb,
-    #[error("kv: DbAlreadyExists")]
-    DbAlreadyExists,
     #[error("kv: KeyNotFound")]
     KeyNotFound,
     #[error("kv: no Tx found")]
@@ -1134,7 +1136,8 @@ pub struct SqliteRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SqliteAction {
-    New,
+    Open,
+    RemoveDb,
     Write {
         statement: String,
         tx_id: Option<u64>,
@@ -1171,8 +1174,6 @@ pub enum SqlValue {
 pub enum SqliteError {
     #[error("sqlite: DbDoesNotExist")]
     NoDb,
-    #[error("sqlite: DbAlreadyExists")]
-    DbAlreadyExists,
     #[error("sqlite: NoTx")]
     NoTx,
     #[error("sqlite: No capability: {error}")]

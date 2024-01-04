@@ -257,6 +257,7 @@ impl StandardHost for process::ProcessWasi {
                 ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                     id: new_process_id.clone(),
                     wasm_bytes_handle: wasm_path,
+                    wit_version: Some(self.process.metadata.wit_version),
                     on_exit: t::OnExit::de_wit(on_exit),
                     initial_capabilities: match capabilities {
                         wit::Capabilities::None => HashSet::new(),
