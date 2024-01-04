@@ -439,19 +439,21 @@ async fn http_handler(
         return Ok(warp::reply::with_status(vec![], StatusCode::FORBIDDEN).into_response());
     }
 
-    // if path has static content, serve it
-    if let Some(static_content) = &bound_path.static_content {
-        return Ok(warp::http::Response::builder()
-            .status(StatusCode::OK)
-            .header(
-                "Content-Type",
-                static_content
-                    .mime
-                    .as_ref()
-                    .unwrap_or(&"text/plain".to_string()),
-            )
-            .body(static_content.bytes.clone())
-            .into_response());
+    // if path has static content and this is a GET request, serve it
+    if method == warp::http::Method::GET {
+        if let Some(static_content) = &bound_path.static_content {
+            return Ok(warp::http::Response::builder()
+                .status(StatusCode::OK)
+                .header(
+                    "Content-Type",
+                    static_content
+                        .mime
+                        .as_ref()
+                        .unwrap_or(&"text/plain".to_string()),
+                )
+                .body(static_content.bytes.clone())
+                .into_response());
+        }
     }
 
     // RPC functionality: if path is /rpc:sys:uqbar/message,
