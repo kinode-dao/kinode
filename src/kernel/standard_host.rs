@@ -446,7 +446,7 @@ impl StandardHost for process::ProcessWasi {
     //     self.process.next_message_caps.extend(
     //         signed_caps
     //             .into_iter()
-    //             .collect::<Vec<t::SignedCapability>>(),
+    //             .collect::<Vec<t::Capability>>(),
     //     );
 
     //     Ok(())
@@ -461,7 +461,7 @@ impl StandardHost for process::ProcessWasi {
         let Some(prompting_message) = self.process.prompting_message.clone() else {
             return Err(anyhow::anyhow!("save_capabilities: no prompting message!"));
         };
-        // TODO need to rethink all of this logic
+        // TODO need to rethink all of
         // let verified_caps: HashSet<t::Capability> = prompting_message
         //     .signed_capabilities
         //     .iter()
@@ -527,8 +527,8 @@ impl StandardHost for process::ProcessWasi {
         Ok(caps
             .into_iter()
             .map(|cap| wit::Capability {
-                issuer: t::Address::en_wit(&cap.issuer),
-                params: cap.params,
+                issuer: t::Address::en_wit(&cap.0.issuer),
+                params: cap.0.params,
             })
             .collect())
     }

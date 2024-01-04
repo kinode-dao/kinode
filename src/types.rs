@@ -409,13 +409,6 @@ pub struct Capability {
     pub params: String, // JSON-string
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-pub struct SignedCapability {
-    pub issuer: Address,
-    pub params: String,     // JSON-string
-    pub signature: Vec<u8>, // signed by the kernel, so we can verify that the kernel issued it
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SendError {
     pub kind: SendErrorKind,
@@ -769,7 +762,7 @@ pub struct KernelMessage {
     pub rsvp: Rsvp,
     pub message: Message,
     pub payload: Option<Payload>,
-    pub signed_capabilities: Vec<SignedCapability>,
+    pub signed_capabilities: HashMap<Capability, Vec<u8>>,
 }
 
 impl std::fmt::Display for KernelMessage {
@@ -892,12 +885,12 @@ pub enum CapMessage {
     },
     GetAll {
         on: ProcessId,
-        responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
+        responder: tokio::sync::oneshot::Sender<HashMap<Capability, Vec<u8>>>,
     },
     // GetSome {
     //     on: ProcessId,
     //     caps: Vec<Capability>,
-    //     responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
+    //     responder: tokio::sync::oneshot::Sender<HashMap<Capability, Vec<u8>>>,
     // },
 }
 

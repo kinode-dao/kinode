@@ -30,7 +30,7 @@ pub struct ProcessState {
     pub contexts: HashMap<u64, (t::ProcessContext, JoinHandle<()>)>,
     pub message_queue: VecDeque<Result<t::KernelMessage, t::WrappedSendError>>,
     pub caps_oracle: t::CapMessageSender,
-    pub next_message_caps: Option<Vec<t::SignedCapability>>,
+    pub next_message_caps: Option<Vec<t::Capability>>, // TODO might need to be a HashMap with sigs...
 }
 
 pub struct ProcessWasi {
@@ -169,7 +169,7 @@ impl ProcessState {
             },
             message: t::Message::Request(t::de_wit_request(request.clone())),
             payload: payload.clone(),
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         };
 
         // modify the process' context map as needed.
@@ -250,7 +250,7 @@ impl ProcessState {
                     None,
                 )),
                 payload,
-                signed_capabilities: vec![],
+                signed_capabilities: HashMap::new(),
             })
             .await
             .expect("fatal: kernel couldn't send response");
@@ -511,7 +511,7 @@ pub async fn make_process_loop(
                     capabilities: vec![],
                 }),
                 payload: None,
-                signed_capabilities: vec![],
+                signed_capabilities: HashMap::new(),
             })
             .await
             .expect("event loop: fatal: sender died");
@@ -529,8 +529,8 @@ pub async fn make_process_loop(
             .unwrap()
             .iter()
             .map(|c| t::Capability {
-                issuer: c.issuer.clone(),
-                params: c.params.clone(),
+                issuer: c.0.issuer.clone(),
+                params: c.0.params.clone(),
             })
             .collect();
 
@@ -552,7 +552,7 @@ pub async fn make_process_loop(
                     capabilities: vec![],
                 }),
                 payload: None,
-                signed_capabilities: vec![],
+                signed_capabilities: HashMap::new(),
             })
             .await
             .expect("event loop: fatal: sender died");
@@ -587,7 +587,7 @@ pub async fn make_process_loop(
                             mime: None,
                             bytes: wasm_bytes,
                         }),
-                        signed_capabilities: vec![],
+                        signed_capabilities: HashMap::new(),
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -617,7 +617,7 @@ pub async fn make_process_loop(
                                 rsvp: None,
                                 message: t::Message::Request(request),
                                 payload,
-                                signed_capabilities: vec![],
+                                signed_capabilities: HashMap::new(),
                             })
                             .await
                             .expect("event loop: fatal: sender died");

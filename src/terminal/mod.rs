@@ -12,6 +12,7 @@ use crossterm::{
     terminal::{self, disable_raw_mode, enable_raw_mode, ClearType},
 };
 use futures::{future::FutureExt, StreamExt};
+use std::collections::HashMap;
 use std::fs::{read_to_string, OpenOptions};
 use std::io::{stdout, BufWriter, Write};
 use tokio::signal::unix::{signal, SignalKind};
@@ -606,7 +607,7 @@ pub async fn terminal(
                                             capabilities: vec![],
                                         }),
                                         payload: None,
-                                        signed_capabilities: vec![],
+                                        signed_capabilities: HashMap::new()
                                     }
                                 ).await.expect("terminal: couldn't execute command!");
                             },

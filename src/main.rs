@@ -3,6 +3,7 @@
 use crate::types::*;
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
+use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -517,7 +518,7 @@ async fn main() {
                 capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await;
 

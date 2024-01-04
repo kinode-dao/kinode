@@ -5,6 +5,7 @@ use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use ring::signature::{self, Ed25519KeyPair};
 use snow::params::NoiseParams;
+use std::collections::HashMap;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use tokio::time::timeout;
@@ -230,7 +231,7 @@ pub async fn create_passthrough(
                 capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })?;
 
         return Ok((
@@ -500,7 +501,7 @@ pub async fn parse_hello_message(
                 None,
             )),
             payload: None,
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await?;
     Ok(())

@@ -71,7 +71,7 @@ async fn persist_state(
                 capabilities: vec![],
             }),
             payload: Some(t::Payload { mime: None, bytes }),
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await?;
     Ok(())
@@ -131,7 +131,7 @@ async fn handle_kernel_request(
                             capabilities: vec![],
                         }),
                         payload: None,
-                        signed_capabilities: vec![],
+                        signed_capabilities: HashMap::new(),
                     }))
                     .await;
             }
@@ -180,7 +180,7 @@ async fn handle_kernel_request(
                             None,
                         )),
                         payload: None,
-                        signed_capabilities: vec![],
+                        signed_capabilities: HashMap::new(),
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -290,7 +290,7 @@ async fn handle_kernel_request(
                                 None,
                             )),
                             payload: None,
-                            signed_capabilities: vec![],
+                            signed_capabilities: HashMap::new(),
                         })
                         .await
                         .expect("event loop: fatal: sender died");
@@ -320,7 +320,7 @@ async fn handle_kernel_request(
                             capabilities: vec![],
                         }),
                         payload: None,
-                        signed_capabilities: vec![],
+                        signed_capabilities: HashMap::new(),
                     }))
                     .await
                 {
@@ -344,7 +344,7 @@ async fn handle_kernel_request(
                                 None,
                             )),
                             payload: None,
-                            signed_capabilities: vec![],
+                            signed_capabilities: HashMap::new(),
                         })
                         .await
                         .expect("event loop: fatal: sender died");
@@ -377,7 +377,7 @@ async fn handle_kernel_request(
                             None,
                         )),
                         payload: None,
-                        signed_capabilities: vec![],
+                        signed_capabilities: HashMap::new(),
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -432,7 +432,7 @@ async fn handle_kernel_request(
                         None,
                     )),
                     payload: None,
-                    signed_capabilities: vec![],
+                    signed_capabilities: HashMap::new(),
                 })
                 .await
                 .expect("event loop: fatal: sender died");
@@ -579,7 +579,7 @@ async fn handle_kernel_response(
                         capabilities: vec![],
                     }),
                     payload: None,
-                    signed_capabilities: vec![],
+                    signed_capabilities: HashMap::new(),
                 }))
                 .await;
             return;
@@ -675,7 +675,7 @@ async fn start_process(
                 None,
             )),
             payload: None,
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await?;
     Ok(())
@@ -757,7 +757,7 @@ pub async fn kernel(
                         capabilities: vec![],
                     }),
                     payload: None,
-                    signed_capabilities: vec![],
+                    signed_capabilities: HashMap::new(),
                 })
                 .await
                 .expect("event loop: fatal: sender died");
@@ -784,7 +784,7 @@ pub async fn kernel(
                             rsvp: None,
                             message: t::Message::Request(request),
                             payload: payload.clone(),
-                            signed_capabilities: vec![],
+                            signed_capabilities: HashMap::new(),
                         })
                         .await
                         .expect("fatal: kernel event loop died");
@@ -815,7 +815,7 @@ pub async fn kernel(
                 capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await
         .expect("fatal: kernel event loop died");
@@ -1108,16 +1108,12 @@ pub async fn kernel(
                         // return all caps, signed, on responder
                         let _ = responder.send(
                             match process_map.get(&on) {
-                                None => HashSet::new(),
-                                Some(p) => p.capabilities.clone().iter().map(|cap| t::SignedCapability {
-                                    issuer: cap.issuer.clone(),
-                                    params: cap.params.clone(),
-                                    signature: keypair
-                                        .sign(&rmp_serde::to_vec(&cap).unwrap())
-                                        .as_ref()
-                                        .to_vec(),
-                                })
-                                .collect(),
+                                None => HashMap::new(),
+                                Some(p) => p.capabilities.clone().into_iter().map(|cap| {
+                                        let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
+                                        let signature = keypair.sign(&rmp_serde::to_vec(&cap).unwrap()).as_ref().to_vec();
+                                        (cap, signature)
+                                    }).collect(),
                             }
                         );
                     },

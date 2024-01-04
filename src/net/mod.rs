@@ -938,7 +938,7 @@ async fn handle_local_message(
                                 None,
                             )),
                             payload: None,
-                            signed_capabilities: vec![],
+                            signed_capabilities: HashMap::new(),
                         })
                         .await?;
                 }

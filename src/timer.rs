@@ -4,6 +4,7 @@ use crate::types::{
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// A runtime module that allows processes to set timers. Interacting with the
 /// timer is done with a simple Request/Response pattern, and the timer module
@@ -132,7 +133,7 @@ async fn send_response(our_node: &str, id: u64, target: Address, send_to_loop: &
                 None,
             )),
             payload: None,
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await;
 }

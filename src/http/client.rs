@@ -227,7 +227,7 @@ async fn connect_websocket(
                 None,
             )),
             payload: None,
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await;
 
@@ -473,7 +473,7 @@ async fn handle_http_request(
                         mime: None,
                         bytes: response.bytes().await.unwrap_or_default().to_vec(),
                     }),
-                    signed_capabilities: vec![],
+                    signed_capabilities: HashMap::new(),
                 })
                 .await;
         }
@@ -568,7 +568,7 @@ async fn http_error_message(
                     None,
                 )),
                 payload: None,
-                signed_capabilities: vec![],
+                signed_capabilities: HashMap::new(),
             })
             .await;
     }
@@ -609,7 +609,7 @@ async fn websocket_error_message(
                     None,
                 )),
                 payload: None,
-                signed_capabilities: vec![],
+                signed_capabilities: HashMap::new(),
             })
             .await;
     }
@@ -712,7 +712,7 @@ async fn handle_ws_message(
                 capabilities: vec![],
             }),
             payload,
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await;
 }

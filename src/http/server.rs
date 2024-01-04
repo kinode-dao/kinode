@@ -502,7 +502,7 @@ async fn http_handler(
                 mime: None,
                 bytes: body.to_vec(),
             }),
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         }
     };
 
@@ -620,7 +620,7 @@ async fn handle_rpc_message(
             capabilities: vec![],
         }),
         payload,
-        signed_capabilities: vec![],
+        signed_capabilities: HashMap::new(),
     })
 }
 
@@ -668,7 +668,7 @@ async fn maintain_websocket(
                 capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await;
 
@@ -702,7 +702,7 @@ async fn maintain_websocket(
                                 mime: None,
                                 bytes: msg.into_bytes(),
                             }),
-                            signed_capabilities: vec![],
+                            signed_capabilities: HashMap::new()
                         });
                     }
                     _ => {
@@ -766,7 +766,7 @@ async fn websocket_close(
                 })
                 .unwrap(),
             }),
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await;
 }
@@ -1143,7 +1143,7 @@ pub async fn send_action_response(
                 None,
             )),
             payload: None,
-            signed_capabilities: vec![],
+            signed_capabilities: HashMap::new(),
         })
         .await;
 }
