@@ -3,13 +3,13 @@ use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::{Entry, HashMap};
-use std::string::FromUtf8Error;
 use std::str::FromStr;
+use std::string::FromUtf8Error;
+use uqbar_process_lib::eth::{EthAddress, SubscribeLogsRequest};
 use uqbar_process_lib::{
-    await_message, get_typed_state, http, println, set_state, 
-    Address, Message, Payload, Request, Response, 
+    await_message, get_typed_state, http, println, set_state, Address, Message, Payload, Request,
+    Response,
 };
-use uqbar_process_lib::eth::{ EthAddress, SubscribeLogsRequest, };
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -66,7 +66,7 @@ impl QnsUpdate {
             node: node.clone(),
             ..Default::default()
         }
-    } 
+    }
 }
 
 sol! {
@@ -110,7 +110,6 @@ impl Guest for Component {
 }
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
-
     // shove all state into net::net
     Request::new()
         .target((&our.node, "net", "sys", "uqbar"))
@@ -120,7 +119,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         .send()?;
 
     SubscribeLogsRequest::new()
-        .address(EthAddress::from_str("0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1")?)
+        .address(EthAddress::from_str(
+            "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1",
+        )?)
         .from_block(state.block - 1)
         .events(vec![
             "NodeRegistered(bytes32,bytes)",
@@ -128,7 +129,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             "IpUpdate(bytes32,uint128)",
             "WsUpdate(bytes32,uint16)",
             "RoutingUpdate(bytes32,bytes32[])",
-        ]).send()?;
+        ])
+        .send()?;
 
     http::bind_http_path("/node/:name", false, false)?;
 
@@ -185,17 +187,17 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
         match msg {
             IndexerActions::EventSubscription(e) => {
-
                 state.block = e.clone().block_number.expect("expect").to::<u64>();
 
                 let node_id: alloy_primitives::FixedBytes<32> = e.topics[1];
 
                 let name = match state.names.entry(node_id.clone().to_string()) {
                     Entry::Occupied(o) => o.into_mut(),
-                    Entry::Vacant(v) => v.insert(get_name(&e))
+                    Entry::Vacant(v) => v.insert(get_name(&e)),
                 };
 
-                let mut node = state.nodes
+                let mut node = state
+                    .nodes
                     .entry(name.to_string())
                     .or_insert_with(|| QnsUpdate::new(name, &node_id.to_string()));
 
@@ -204,11 +206,14 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 match e.topics[0].clone() {
                     KeyUpdate::SIGNATURE_HASH => {
                         node.public_key = KeyUpdate::abi_decode_data(&e.data, true)
-                            .unwrap().0.to_string();
+                            .unwrap()
+                            .0
+                            .to_string();
                     }
                     IpUpdate::SIGNATURE_HASH => {
                         let ip = IpUpdate::abi_decode_data(&e.data, true).unwrap().0;
-                        node.ip = format!("{}.{}.{}.{}",
+                        node.ip = format!(
+                            "{}.{}.{}.{}",
                             (ip >> 24) & 0xFF,
                             (ip >> 16) & 0xFF,
                             (ip >> 8) & 0xFF,
@@ -219,15 +224,20 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         node.port = WsUpdate::abi_decode_data(&e.data, true).unwrap().0;
                     }
                     RoutingUpdate::SIGNATURE_HASH => {
-                        node.routers = RoutingUpdate::abi_decode_data(&e.data, true).unwrap().0
+                        node.routers = RoutingUpdate::abi_decode_data(&e.data, true)
+                            .unwrap()
+                            .0
                             .iter()
                             .map(|r| r.to_string())
                             .collect::<Vec<String>>();
                     }
-                    _ => { send = false; }
+                    _ => {
+                        send = false;
+                    }
                 }
 
                 if send {
+                    print_to_terminal(1, &format!("qns_indexer: sending ID to net: {:?}", node));
                     Request::new()
                         .target((&our.node, "net", "sys", "uqbar"))
                         .try_ipc(NetActions::QnsUpdate(node.clone()))?
@@ -240,17 +250,15 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 }
 
 fn get_name(log: &Log) -> String {
-
     let decoded = NodeRegistered::abi_decode_data(&log.data, true).unwrap();
     let name = match dnswire_decode(decoded.0.clone()) {
-        Ok(n) => { n }
+        Ok(n) => n,
         Err(_) => {
             println!("qns_indexer: failed to decode name: {:?}", decoded.0);
             panic!("")
         }
     };
     name
-
 }
 
 fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {
@@ -280,4 +288,3 @@ fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {
         Ok(name)
     }
 }
-

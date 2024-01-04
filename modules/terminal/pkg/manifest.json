@@ -6,7 +6,8 @@
         "request_networking": true,
         "request_messaging": [
             "net:sys:uqbar",
-            "http_client:sys:uqbar"
+            "http_client:sys:uqbar",
+            "kernel:sys:uqbar"
         ],
         "public": true
     }

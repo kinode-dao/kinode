@@ -137,7 +137,11 @@ async fn handle_request(
     .await?;
 
     let (ipc, bytes) = match &request.action {
-        KvAction::New => {
+        KvAction::Open => {
+            // handled in check_caps.
+            (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
+        }
+        KvAction::RemoveDb => {
             // handled in check_caps.
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
         }
@@ -389,7 +393,7 @@ async fn check_caps(
             }
             Ok(())
         }
-        KvAction::New { .. } => {
+        KvAction::Open { .. } => {
             if src_package_id != request.package_id {
                 return Err(KvError::NoCap {
                     error: request.action.to_string(),
@@ -414,7 +418,7 @@ async fn check_caps(
             .await?;
 
             if open_kvs.contains_key(&(request.package_id.clone(), request.db.clone())) {
-                return Err(KvError::DbAlreadyExists);
+                return Ok(());
             }
 
             let db_path = format!(
@@ -430,10 +434,25 @@ async fn check_caps(
             open_kvs.insert((request.package_id.clone(), request.db.clone()), db);
             Ok(())
         }
-        KvAction::Backup { .. } => {
-            // caps
+        KvAction::RemoveDb { .. } => {
+            if src_package_id != request.package_id {
+                return Err(KvError::NoCap {
+                    error: request.action.to_string(),
+                });
+            }
+
+            let db_path = format!(
+                "{}/{}/{}",
+                kv_path,
+                request.package_id.to_string(),
+                request.db.to_string()
+            );
+            open_kvs.remove(&(request.package_id.clone(), request.db.clone()));
+
+            fs::remove_dir_all(&db_path).await?;
             Ok(())
         }
+        KvAction::Backup { .. } => Ok(()),
     }
 }
 

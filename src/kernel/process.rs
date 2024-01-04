@@ -193,8 +193,20 @@ impl ProcessState {
                     }))
                     .await;
             });
-            self.save_context(kernel_message.id, new_context, timeout_handle)
-                .await;
+            self.contexts.insert(
+                request_id,
+                (
+                    t::ProcessContext {
+                        prompting_message: if self.prompting_message.is_some() {
+                            self.prompting_message.clone()
+                        } else {
+                            None
+                        },
+                        context: new_context,
+                    },
+                    timeout_handle,
+                ),
+            );
         }
 
         self.send_to_loop
@@ -244,29 +256,6 @@ impl ProcessState {
             .expect("fatal: kernel couldn't send response");
     }
 
-    /// save a context for a given request.
-    async fn save_context(
-        &mut self,
-        request_id: u64,
-        context: Option<t::Context>,
-        jh: tokio::task::JoinHandle<()>,
-    ) {
-        self.contexts.insert(
-            request_id,
-            (
-                t::ProcessContext {
-                    prompting_message: if self.prompting_message.is_some() {
-                        self.prompting_message.clone()
-                    } else {
-                        None
-                    },
-                    context,
-                },
-                jh,
-            ),
-        );
-    }
-
     /// instead of ingesting latest, wait for a specific ID and queue all others
     async fn get_specific_message_for_process(
         &mut self,
@@ -305,21 +294,24 @@ impl ProcessState {
         res: Result<t::KernelMessage, t::WrappedSendError>,
     ) -> Result<(wit::Address, wit::Message), (wit::SendError, Option<wit::Context>)> {
         let (context, km) = match res {
-            Ok(km) => match self.contexts.remove(&km.id) {
-                None => {
-                    // TODO if this a response, ignore it if we don't have outstanding context
+            Ok(km) => match &km.message {
+                t::Message::Request(_) => {
                     self.last_payload = km.payload.clone();
                     self.prompting_message = Some(km.clone());
                     (None, km)
                 }
-                Some((context, timeout_handle)) => {
-                    timeout_handle.abort();
-                    self.last_payload = km.payload.clone();
-                    self.prompting_message = match context.prompting_message {
-                        None => Some(km.clone()),
-                        Some(prompting_message) => Some(prompting_message),
-                    };
-                    (context.context, km)
+                t::Message::Response(_) => {
+                    if let Some((context, timeout_handle)) = self.contexts.remove(&km.id) {
+                        timeout_handle.abort();
+                        self.last_payload = km.payload.clone();
+                        self.prompting_message = match context.prompting_message {
+                            None => Some(km.clone()),
+                            Some(prompting_message) => Some(prompting_message),
+                        };
+                        (context.context, km)
+                    } else {
+                        (None, km)
+                    }
                 }
             },
             Err(e) => match self.contexts.remove(&e.id) {
@@ -332,13 +324,11 @@ impl ProcessState {
             },
         };
 
-        // note: the context in the KernelMessage is not actually the one we want:
-        // (in fact it should be None, possibly always)
-        // we need to get *our* context for this message id
         Ok((
-            km.source.en_wit().to_owned(),
+            km.source.en_wit(),
             match km.message {
                 t::Message::Request(request) => wit::Message::Request(t::en_wit_request(request)),
+                // NOTE: we throw away whatever context came from the sender, that's not ours
                 t::Message::Response((response, _context)) => {
                     wit::Message::Response((t::en_wit_response(response), context))
                 }
@@ -470,7 +460,7 @@ pub async fn make_process_loop(
         Ok(()) => {
             let _ = send_to_terminal
                 .send(t::Printout {
-                    verbosity: 2,
+                    verbosity: 1,
                     content: format!("process {} returned without error", metadata.our.process,),
                 })
                 .await;
@@ -501,7 +491,29 @@ pub async fn make_process_loop(
         process: KERNEL_PROCESS_ID.clone(),
     };
 
-    if is_error {
+    if !is_error {
+        // just remove handler
+        send_to_loop
+            .send(t::KernelMessage {
+                id: rand::random(),
+                source: our_kernel.clone(),
+                target: our_kernel.clone(),
+                rsvp: None,
+                message: t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                        metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                    metadata: None,
+                }),
+                payload: None,
+                signed_capabilities: None,
+            })
+            .await
+            .expect("event loop: fatal: sender died");
+    } else {
         // get caps before killing
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = caps_oracle
@@ -512,7 +524,7 @@ pub async fn make_process_loop(
             .await;
         let initial_capabilities = rx.await.unwrap().into_iter().collect();
 
-        // always send message to tell main kernel loop to remove handler
+        // send message to tell main kernel loop to remove handler
         send_to_loop
             .send(t::KernelMessage {
                 id: rand::random(),
@@ -551,6 +563,7 @@ pub async fn make_process_loop(
                             ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                                 id: metadata.our.process.clone(),
                                 wasm_bytes_handle: metadata.wasm_bytes_handle,
+                                wit_version: Some(metadata.wit_version),
                                 on_exit: metadata.on_exit,
                                 initial_capabilities,
                                 public: metadata.public,
