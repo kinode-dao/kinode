@@ -384,46 +384,6 @@ impl StandardHost for process::ProcessWasi {
     //
     // capabilities management
     //
-    // TODO need to move this logic elsewhere
-    // async fn get_capabilities(&mut self) -> Result<Vec<wit::Capability>> {
-    //     let pk = signature::UnparsedPublicKey::new(
-    //         &signature::ED25519,
-    //         self.process.keypair.public_key(),
-    //     );
-
-    //     let Some(prompting_message) = self.process.prompting_message.clone() else {
-    //         return Err(anyhow::anyhow!("get_capabilities: no prompting message!"));
-    //     };
-
-    //     Ok(prompting_message
-    //         .signed_capabilities
-    //         .iter()
-    //         .filter_map(|signed_cap| {
-    //             if signed_cap.issuer.node != self.process.metadata.our.node {
-    //                 // accept all remote caps uncritically
-    //                 return Some(wit::Capability {
-    //                     issuer: t::Address::en_wit(&signed_cap.issuer),
-    //                     params: signed_cap.clone().params,
-    //                 });
-    //             }
-    //             // otherwise only return capabilities that were properly signed
-    //             let cap = t::Capability {
-    //                 issuer: signed_cap.clone().issuer,
-    //                 params: signed_cap.clone().params,
-    //             };
-    //             match pk.verify(
-    //                 &rmp_serde::to_vec(&cap).unwrap_or_default(),
-    //                 &signed_cap.signature,
-    //             ) {
-    //                 Ok(_) => Some(wit::Capability {
-    //                     issuer: t::Address::en_wit(&signed_cap.issuer),
-    //                     params: signed_cap.clone().params,
-    //                 }),
-    //                 Err(_) => None,
-    //             }
-    //         })
-    //         .collect())
-    // }
 
     async fn save_capabilities(&mut self, caps: Vec<wit::Capability>) -> Result<()> {
         let pk = signature::UnparsedPublicKey::new(

@@ -2,7 +2,7 @@ use crate::kernel::{ProcessMessageReceiver, ProcessMessageSender};
 use crate::types as t;
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
-use ring::signature;
+use ring::signature::{self, KeyPair};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -354,12 +354,57 @@ impl ProcessState {
             },
         };
 
+        let pk = signature::UnparsedPublicKey::new(
+            &signature::ED25519,
+            self.keypair.as_ref().public_key(),
+        );
+
         Ok((
             km.source.en_wit(),
             match km.message {
-                t::Message::Request(request) => wit::Message::Request(t::en_wit_request(request)),
+                t::Message::Request(mut request) => {
+                    // prune any invalid caps before sending
+                    request.capabilities = request
+                        .capabilities
+                        .iter()
+                        .filter_map(|cap| {
+                            if cap.issuer.node != self.metadata.our.node {
+                                // accept all remote caps uncritically
+                                return Some(cap.clone());
+                            }
+                            // otherwise only return capabilities that were properly signed
+                            match pk.verify(
+                                &rmp_serde::to_vec(&cap).unwrap_or_default(),
+                                &km.signed_capabilities.get(&cap).unwrap_or(&vec![]),
+                            ) {
+                                Ok(_) => Some(cap.clone()),
+                                Err(_) => None,
+                            }
+                        })
+                        .collect::<Vec<t::Capability>>();
+                    wit::Message::Request(t::en_wit_request(request))
+                }
                 // NOTE: we throw away whatever context came from the sender, that's not ours
-                t::Message::Response((response, _context)) => {
+                t::Message::Response((mut response, _context)) => {
+                    // prune any invalid caps before sending
+                    response.capabilities = response
+                        .capabilities
+                        .iter()
+                        .filter_map(|cap| {
+                            if cap.issuer.node != self.metadata.our.node {
+                                // accept all remote caps uncritically
+                                return Some(cap.clone());
+                            }
+                            // otherwise only return capabilities that were properly signed
+                            match pk.verify(
+                                &rmp_serde::to_vec(&cap).unwrap_or_default(),
+                                &km.signed_capabilities.get(&cap).unwrap_or(&vec![]),
+                            ) {
+                                Ok(_) => Some(cap.clone()),
+                                Err(_) => None,
+                            }
+                        })
+                        .collect::<Vec<t::Capability>>();
                     wit::Message::Response((t::en_wit_response(response), context))
                 }
             },
