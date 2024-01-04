@@ -3,7 +3,7 @@ use crate::types as t;
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
 use ring::signature;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 pub use uqbar::process::standard as wit;
@@ -142,6 +142,21 @@ impl ProcessState {
             },
         };
 
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .caps_oracle
+            .send(t::CapMessage::GetSome {
+                on: self.metadata.our.process.clone(),
+                caps: request
+                    .capabilities
+                    .iter()
+                    .map(|cap| t::de_wit_capability(cap.clone()))
+                    .collect(),
+                responder: tx,
+            })
+            .await?;
+        let signed_capabilities = rx.await?;
+
         // rsvp is set if there was a Request expecting Response
         // followed by inheriting Request(s) not expecting Response;
         // this is done such that the ultimate request handler knows that,
@@ -169,7 +184,7 @@ impl ProcessState {
             },
             message: t::Message::Request(t::de_wit_request(request.clone())),
             payload: payload.clone(),
-            signed_capabilities: HashMap::new(),
+            signed_capabilities,
         };
 
         // modify the process' context map as needed.
@@ -238,6 +253,21 @@ impl ProcessState {
             false => t::de_wit_payload(payload),
         };
 
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .caps_oracle
+            .send(t::CapMessage::GetSome {
+                on: self.metadata.our.process.clone(),
+                caps: response
+                    .capabilities
+                    .iter()
+                    .map(|cap| t::de_wit_capability(cap.clone()))
+                    .collect(),
+                responder: tx,
+            })
+            .await;
+        let signed_capabilities = rx.await.expect("fatal: process couldn't get caps");
+
         self.send_to_loop
             .send(t::KernelMessage {
                 id,
@@ -250,7 +280,7 @@ impl ProcessState {
                     None,
                 )),
                 payload,
-                signed_capabilities: HashMap::new(),
+                signed_capabilities,
             })
             .await
             .expect("fatal: kernel couldn't send response");

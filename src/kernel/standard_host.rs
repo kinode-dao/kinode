@@ -428,30 +428,6 @@ impl StandardHost for process::ProcessWasi {
     //         .collect())
     // }
 
-    // async fn attach_capabilities(&mut self, capabilities: Vec<wit::Capability>) -> Result<()> {
-    //     let (tx, rx) = tokio::sync::oneshot::channel();
-    //     let _ = self
-    //         .process
-    //         .caps_oracle
-    //         .send(t::CapMessage::GetSome {
-    //             on: self.process.metadata.our.process.clone(),
-    //             caps: capabilities
-    //                 .iter()
-    //                 .map(|cap| t::de_wit_capability(cap.clone()))
-    //                 .collect(),
-    //             responder: tx,
-    //         })
-    //         .await?;
-    //     let signed_caps = rx.await?;
-    //     self.process.next_message_caps.extend(
-    //         signed_caps
-    //             .into_iter()
-    //             .collect::<Vec<t::Capability>>(),
-    //     );
-
-    //     Ok(())
-    // }
-
     async fn save_capabilities(&mut self, caps: Vec<wit::Capability>) -> Result<()> {
         let pk = signature::UnparsedPublicKey::new(
             &signature::ED25519,
@@ -599,6 +575,7 @@ impl StandardHost for process::ProcessWasi {
         context: Option<wit::Context>,
         payload: Option<wit::Payload>,
     ) -> Result<()> {
+        // TODO verify sigs here
         let id = self
             .process
             .send_request(None, target, request, context, payload)

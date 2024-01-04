@@ -1117,6 +1117,33 @@ pub async fn kernel(
                             }
                         );
                     },
+                    t::CapMessage::GetSome { on, caps, responder } => {
+                        let _ = responder.send(
+                            match process_map.get(&on) {
+                                None => HashMap::new(),
+                                Some(p) => {
+                                    caps.iter().filter_map(|cap| {
+                                        // if it is in our store OR
+                                        if p.capabilities.contains(cap) ||
+                                            // if this process is issuing the cap, then sign it
+                                            (cap.issuer.node == our.name && cap.issuer.process == on) {
+                                            Some((
+                                                t::Capability {
+                                                    issuer: cap.issuer.clone(),
+                                                    params: cap.params.clone(),
+                                                },
+                                                keypair
+                                                    .sign(&rmp_serde::to_vec(&cap).unwrap())
+                                                    .as_ref()
+                                                    .to_vec()
+                                            ))
+                                        // otherwise this is a bogus capability, discard it
+                                        } else { None }
+                                    }).collect()
+                                },
+                            }
+                        );
+                    },
                 }
             }
         }

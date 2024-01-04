@@ -887,11 +887,11 @@ pub enum CapMessage {
         on: ProcessId,
         responder: tokio::sync::oneshot::Sender<HashMap<Capability, Vec<u8>>>,
     },
-    // GetSome {
-    //     on: ProcessId,
-    //     caps: Vec<Capability>,
-    //     responder: tokio::sync::oneshot::Sender<HashMap<Capability, Vec<u8>>>,
-    // },
+    GetSome {
+        on: ProcessId,
+        caps: Vec<Capability>,
+        responder: tokio::sync::oneshot::Sender<HashMap<Capability, Vec<u8>>>,
+    },
 }
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
