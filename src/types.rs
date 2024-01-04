@@ -414,6 +414,18 @@ pub struct SignedCapability {
     pub signature: Vec<u8>, // signed by the kernel, so we can verify that the kernel issued it
 }
 
+impl std::fmt::Display for SignedCapability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "(\n            issuer: {},\n            params: {},\n            signature: {}\n        )",
+            self.issuer,
+            self.params,
+            hex::encode(&self.signature)
+        )
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SendError {
     pub kind: SendErrorKind,
@@ -752,6 +764,13 @@ pub struct KernelMessage {
 
 impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let signed_capabilities_str = self
+            .signed_capabilities
+            .iter()
+            .map(|cap| format!("\n        {}", cap))
+            .collect::<Vec<String>>()
+            .join(",");
+
         write!(
             f,
             "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n    signed_capabilities: {}\n}}",
@@ -764,7 +783,11 @@ impl std::fmt::Display for KernelMessage {
             },
             self.message,
             self.payload.is_some(),
-            serde_json::to_string(&self.signed_capabilities).unwrap_or("None".to_string()),
+            if signed_capabilities_str.len() == 0 {
+                "[]".to_string()
+            } else {
+                format!("[{}\n    ]", signed_capabilities_str)
+            }
         )
     }
 }
