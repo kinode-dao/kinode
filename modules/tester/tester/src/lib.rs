@@ -113,9 +113,9 @@ fn init(our: Address) {
     let _ = Request::new()
         .target(make_vfs_address(&our).unwrap())
         .ipc(
-            serde_json::to_vec(&kt::VfsRequest {
+            serde_json::to_vec(&vfs::VfsRequest {
                 path: "/tester:uqbar/tests".into(),
-                action: kt::VfsAction::CreateDrive,
+                action: vfs::VfsAction::CreateDrive,
             })
             .unwrap(),
         )
@@ -125,7 +125,10 @@ fn init(our: Address) {
     grant_capabilities(
         &ProcessId::from_str("http_server:sys:uqbar").expect("couldn't make pid"),
         &vec![Capability {
-            issuer: our.clone(),
+            issuer: Address::new(
+                our.node.clone(),
+                ProcessId::from_str("vfs:sys:uqbar").unwrap(),
+            ),
             params: serde_json::json!({
                 "kind": "write",
                 "drive": "/tester:uqbar/tests",
