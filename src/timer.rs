@@ -131,7 +131,7 @@ async fn send_response(our_node: &str, id: u64, target: Address, send_to_loop: &
                 None,
             )),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await;
 }

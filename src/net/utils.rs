@@ -229,7 +229,7 @@ pub async fn create_passthrough(
                 metadata: None,
             }),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })?;
 
         return Ok((
@@ -498,7 +498,7 @@ pub async fn parse_hello_message(
                 None,
             )),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await?;
     Ok(())

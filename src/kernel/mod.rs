@@ -70,7 +70,7 @@ async fn persist_state(
                 metadata: None,
             }),
             payload: Some(t::Payload { mime: None, bytes }),
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await?;
     Ok(())
@@ -129,7 +129,7 @@ async fn handle_kernel_request(
                             metadata: None,
                         }),
                         payload: None,
-                        signed_capabilities: None,
+                        signed_capabilities: vec![],
                     }))
                     .await;
             }
@@ -177,7 +177,7 @@ async fn handle_kernel_request(
                             None,
                         )),
                         payload: None,
-                        signed_capabilities: None,
+                        signed_capabilities: vec![],
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -289,7 +289,7 @@ async fn handle_kernel_request(
                                 None,
                             )),
                             payload: None,
-                            signed_capabilities: None,
+                            signed_capabilities: vec![],
                         })
                         .await
                         .expect("event loop: fatal: sender died");
@@ -318,7 +318,7 @@ async fn handle_kernel_request(
                             metadata: None,
                         }),
                         payload: None,
-                        signed_capabilities: None,
+                        signed_capabilities: vec![],
                     }))
                     .await
                 {
@@ -341,7 +341,7 @@ async fn handle_kernel_request(
                                 None,
                             )),
                             payload: None,
-                            signed_capabilities: None,
+                            signed_capabilities: vec![],
                         })
                         .await
                         .expect("event loop: fatal: sender died");
@@ -373,7 +373,7 @@ async fn handle_kernel_request(
                             None,
                         )),
                         payload: None,
-                        signed_capabilities: None,
+                        signed_capabilities: vec![],
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -427,7 +427,7 @@ async fn handle_kernel_request(
                         None,
                     )),
                     payload: None,
-                    signed_capabilities: None,
+                    signed_capabilities: vec![],
                 })
                 .await
                 .expect("event loop: fatal: sender died");
@@ -573,7 +573,7 @@ async fn handle_kernel_response(
                         metadata: None,
                     }),
                     payload: None,
-                    signed_capabilities: None,
+                    signed_capabilities: vec![],
                 }))
                 .await;
             return;
@@ -668,7 +668,7 @@ async fn start_process(
                 None,
             )),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await?;
     Ok(())
@@ -749,7 +749,7 @@ pub async fn kernel(
                         ),
                     }),
                     payload: None,
-                    signed_capabilities: None,
+                    signed_capabilities: vec![],
                 })
                 .await
                 .expect("event loop: fatal: sender died");
@@ -776,7 +776,7 @@ pub async fn kernel(
                             rsvp: None,
                             message: t::Message::Request(request),
                             payload: payload.clone(),
-                            signed_capabilities: None,
+                            signed_capabilities: vec![],
                         })
                         .await
                         .expect("fatal: kernel event loop died");
@@ -806,7 +806,7 @@ pub async fn kernel(
                 metadata: None,
             }),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await
         .expect("fatal: kernel event loop died");

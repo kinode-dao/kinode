@@ -747,14 +747,14 @@ pub struct KernelMessage {
     pub rsvp: Rsvp,
     pub message: Message,
     pub payload: Option<Payload>,
-    pub signed_capabilities: Option<Vec<SignedCapability>>,
+    pub signed_capabilities: Vec<SignedCapability>,
 }
 
 impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n}}",
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n    signed_capabilities: {}\n}}",
             self.id,
             self.source,
             self.target,
@@ -764,6 +764,7 @@ impl std::fmt::Display for KernelMessage {
             },
             self.message,
             self.payload.is_some(),
+            serde_json::to_string(&self.signed_capabilities).unwrap_or("None".to_string()),
         )
     }
 }

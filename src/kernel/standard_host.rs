@@ -391,7 +391,6 @@ impl StandardHost for process::ProcessWasi {
 
         Ok(prompting_message
             .signed_capabilities
-            .unwrap_or(vec![])
             .iter()
             .filter_map(|signed_cap| {
                 if signed_cap.issuer.node != self.process.metadata.our.node {
@@ -435,21 +434,13 @@ impl StandardHost for process::ProcessWasi {
             })
             .await?;
         let signed_caps = rx.await?;
+        self.process.next_message_caps.extend(
+            signed_caps
+                .into_iter()
+                .collect::<Vec<t::SignedCapability>>(),
+        );
 
-        match self.process.next_message_caps {
-            None => {
-                self.process.next_message_caps = Some(signed_caps.into_iter().collect());
-                Ok(())
-            }
-            Some(ref mut v) => {
-                v.extend(
-                    signed_caps
-                        .into_iter()
-                        .collect::<Vec<t::SignedCapability>>(),
-                );
-                Ok(())
-            }
-        }
+        Ok(())
     }
 
     async fn save_capabilities(&mut self, caps: Vec<wit::Capability>) -> Result<()> {
@@ -464,7 +455,6 @@ impl StandardHost for process::ProcessWasi {
 
         let verified_caps: HashSet<t::Capability> = prompting_message
             .signed_capabilities
-            .unwrap_or(vec![])
             .iter()
             .filter_map(|signed_cap| {
                 if signed_cap.issuer.node != self.process.metadata.our.node {

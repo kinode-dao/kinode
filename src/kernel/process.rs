@@ -30,7 +30,8 @@ pub struct ProcessState {
     pub contexts: HashMap<u64, (t::ProcessContext, JoinHandle<()>)>,
     pub message_queue: VecDeque<Result<t::KernelMessage, t::WrappedSendError>>,
     pub caps_oracle: t::CapMessageSender,
-    pub next_message_caps: Option<Vec<t::SignedCapability>>,
+    pub next_message_caps: Vec<t::SignedCapability>,
+    pub last_capabilities: Vec<t::SignedCapability>,
 }
 
 pub struct ProcessWasi {
@@ -142,6 +143,15 @@ impl ProcessState {
             },
         };
 
+        let signed_caps = if request.inherit {
+            match self.prompting_message {
+                Some(ref prompting_message) => self.last_capabilities.clone(),
+                None => vec![],
+            }
+        } else {
+            self.next_message_caps.clone()
+        };
+
         // rsvp is set if there was a Request expecting Response
         // followed by inheriting Request(s) not expecting Response;
         // this is done such that the ultimate request handler knows that,
@@ -169,7 +179,7 @@ impl ProcessState {
             },
             message: t::Message::Request(t::de_wit_request(request.clone())),
             payload: payload.clone(),
-            signed_capabilities: None,
+            signed_capabilities: signed_caps,
         };
 
         // modify the process' context map as needed.
@@ -250,7 +260,7 @@ impl ProcessState {
                     None,
                 )),
                 payload,
-                signed_capabilities: None,
+                signed_capabilities: self.next_message_caps.clone(),
             })
             .await
             .expect("fatal: kernel couldn't send response");
@@ -304,6 +314,7 @@ impl ProcessState {
                     if let Some((context, timeout_handle)) = self.contexts.remove(&km.id) {
                         timeout_handle.abort();
                         self.last_payload = km.payload.clone();
+                        self.last_capabilities = km.signed_capabilities.clone();
                         self.prompting_message = match context.prompting_message {
                             None => Some(km.clone()),
                             Some(prompting_message) => Some(prompting_message),
@@ -428,7 +439,8 @@ pub async fn make_process_loop(
                 contexts: HashMap::new(),
                 message_queue: VecDeque::new(),
                 caps_oracle: caps_oracle.clone(),
-                next_message_caps: None,
+                next_message_caps: vec![],
+                last_capabilities: vec![],
             },
             table,
             wasi,
@@ -509,7 +521,7 @@ pub async fn make_process_loop(
                     metadata: None,
                 }),
                 payload: None,
-                signed_capabilities: None,
+                signed_capabilities: vec![],
             })
             .await
             .expect("event loop: fatal: sender died");
@@ -549,7 +561,7 @@ pub async fn make_process_loop(
                     metadata: None,
                 }),
                 payload: None,
-                signed_capabilities: None,
+                signed_capabilities: vec![],
             })
             .await
             .expect("event loop: fatal: sender died");
@@ -583,7 +595,7 @@ pub async fn make_process_loop(
                             mime: None,
                             bytes: wasm_bytes,
                         }),
-                        signed_capabilities: None,
+                        signed_capabilities: vec![],
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -613,7 +625,7 @@ pub async fn make_process_loop(
                                 rsvp: None,
                                 message: t::Message::Request(request),
                                 payload,
-                                signed_capabilities: None,
+                                signed_capabilities: vec![],
                             })
                             .await
                             .expect("event loop: fatal: sender died");

@@ -605,7 +605,7 @@ pub async fn terminal(
                                             metadata: None,
                                         }),
                                         payload: None,
-                                        signed_capabilities: None,
+                                        signed_capabilities: vec![],
                                     }
                                 ).await.expect("terminal: couldn't execute command!");
                             },

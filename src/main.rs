@@ -516,7 +516,7 @@ async fn main() {
                 metadata: None,
             }),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await;
 

@@ -178,7 +178,7 @@ async fn handle_message(
                         mime: None,
                         bytes: response.bytes().await.unwrap_or_default().to_vec(),
                     }),
-                    signed_capabilities: None,
+                    signed_capabilities: vec![],
                 })
                 .await;
         }
@@ -272,7 +272,7 @@ async fn make_error_message(
                     None,
                 )),
                 payload: None,
-                signed_capabilities: None,
+                signed_capabilities: vec![],
             })
             .await;
     }

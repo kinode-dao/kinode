@@ -499,7 +499,7 @@ async fn http_handler(
                 mime: None,
                 bytes: body.to_vec(),
             }),
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         }
     };
 
@@ -616,7 +616,7 @@ async fn handle_rpc_message(
             metadata: rpc_message.metadata,
         }),
         payload,
-        signed_capabilities: None,
+        signed_capabilities: vec![],
     })
 }
 
@@ -663,7 +663,7 @@ async fn maintain_websocket(
                 metadata: Some("ws".into()),
             }),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await;
 
@@ -696,7 +696,7 @@ async fn maintain_websocket(
                                 mime: None,
                                 bytes: msg.into_bytes(),
                             }),
-                            signed_capabilities: None,
+                            signed_capabilities: vec![],
                         });
                     }
                     _ => {
@@ -759,7 +759,7 @@ async fn websocket_close(
                 })
                 .unwrap(),
             }),
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await;
 }
@@ -1135,7 +1135,7 @@ pub async fn send_action_response(
                 None,
             )),
             payload: None,
-            signed_capabilities: None,
+            signed_capabilities: vec![],
         })
         .await;
 }
