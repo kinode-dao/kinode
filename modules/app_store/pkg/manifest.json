@@ -20,7 +20,7 @@
                 }
             }
         ],
-        "grant_messaging": [
+        "grant_capabilities": [
             "http_server:sys:uqbar",
             "terminal:terminal:uqbar",
             "vfs:sys:uqbar"
