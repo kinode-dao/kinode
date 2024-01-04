@@ -1,13 +1,13 @@
 use crate::http::types::*;
 use crate::types::*;
 use anyhow::Result;
+use dashmap::DashMap;
 use ethers_providers::StreamExt;
-use futures::stream::SplitSink;
+use futures::stream::{SplitSink, SplitStream};
 use futures::SinkExt;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message as TungsteniteMessage};
 use tokio_tungstenite::{connect_async, tungstenite};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
@@ -19,10 +19,8 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 // Outgoing WebSocket connections are stored by the source process ID and the channel_id
 type WebSocketId = (ProcessId, u32);
-type WebSocketMap = HashMap<
-    WebSocketId,
-    SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, tungstenite::Message>,
->;
+type WebSocketMap = DashMap<WebSocketId, SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, tungstenite::Message>>;
+type WebSocketStreams = Arc<WebSocketMap>;
 
 pub async fn http_client(
     our_name: String,
@@ -33,7 +31,7 @@ pub async fn http_client(
     let client = reqwest::Client::new();
     let our_name = Arc::new(our_name);
 
-    let ws_streams: Arc<Mutex<WebSocketMap>> = Arc::new(Mutex::new(HashMap::new()));
+    let ws_streams: WebSocketStreams = Arc::new(DashMap::new());
 
     while let Some(KernelMessage {
         id,
@@ -52,7 +50,8 @@ pub async fn http_client(
         // First check if a WebSocketClientAction, otherwise assume it's an OutgoingHttpRequest
         if let Ok(ws_action) = serde_json::from_slice::<WebSocketClientAction>(&ipc) {
             let ws_streams_clone = Arc::clone(&ws_streams);
-            tokio::spawn(handle_websocket_action(
+
+            let _ = handle_websocket_action(
                 our_name.clone(),
                 id,
                 rsvp.unwrap_or(source),
@@ -62,7 +61,7 @@ pub async fn http_client(
                 ws_streams_clone,
                 send_to_loop.clone(),
                 print_tx.clone(),
-            ));
+            ).await;
         } else {
             tokio::spawn(handle_http_request(
                 our_name.clone(),
@@ -87,55 +86,67 @@ async fn handle_websocket_action(
     expects_response: Option<u64>,
     ws_action: WebSocketClientAction,
     payload: Option<Payload>,
-    ws_streams: Arc<Mutex<WebSocketMap>>,
+    ws_streams: WebSocketStreams,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) {
-    match ws_action {
+    let (result, channel_id) = match ws_action {
         WebSocketClientAction::Open {
             url,
             headers,
             channel_id,
         } => {
+            (
             connect_websocket(
-                our,
+                our.clone(),
                 id,
                 target.clone(),
-                expects_response,
                 &url,
                 headers,
                 channel_id,
                 ws_streams,
-                send_to_loop,
+                send_to_loop.clone(),
                 print_tx,
             )
-            .await;
-        }
+            .await,
+            channel_id,
+        )
+
+
+    },
         WebSocketClientAction::Push {
             channel_id,
             message_type,
         } => {
+            (
             send_ws_push(
-                our,
-                id,
-                target,
-                expects_response,
+                target.clone(),
                 channel_id,
                 message_type,
                 payload,
                 ws_streams,
-                send_to_loop,
             )
-            .await;
-        }
+            .await,
+            channel_id,
+        )},
         WebSocketClientAction::Close { channel_id } => {
-            close_ws_connection(
-                our,
+            (
+            close_ws_connection(target.clone(), channel_id, ws_streams, print_tx).await,
+            channel_id,
+        )},
+        WebSocketClientAction::Response { .. } => (Ok(()), 0), // No-op
+    };
+
+    match result {
+        Ok(_) => {}
+        Err(e) => {
+            websocket_error_message(
+                our.clone(),
                 id,
                 target,
                 expects_response,
                 channel_id,
-                ws_streams,
+                e,
                 send_to_loop,
             )
             .await;
@@ -143,57 +154,29 @@ async fn handle_websocket_action(
     }
 }
 
-async fn insert_ws(
-    ws_streams: &Arc<Mutex<WebSocketMap>>,
-    sink: SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, tungstenite::Message>,
-    source: Address,
-    channel_id: u32,
-) {
-    let mut ws_streams = ws_streams.lock().await;
-
-    ws_streams.insert((source.process, channel_id), sink);
-}
-
 async fn connect_websocket(
     our: Arc<String>,
     id: u64,
     target: Address,
-    expects_response: Option<u64>,
     url: &str,
     headers: HashMap<String, String>,
     channel_id: u32,
-    ws_streams: Arc<Mutex<WebSocketMap>>,
+    ws_streams: WebSocketStreams,
     send_to_loop: MessageSender,
-    _print_tx: PrintSender,
-) {
+    print_tx: PrintSender,
+) -> Result<(), WebSocketClientError> {
+    let print_tx_clone = print_tx.clone();
+
     let Ok(url) = url::Url::parse(url) else {
-        make_error_message(
-            our,
-            id,
-            target,
-            expects_response,
-            HttpClientError::BadRequest {
-                req: "failed to parse url".into(),
-            },
-            send_to_loop,
-        )
-        .await;
-        return;
+        return Err(WebSocketClientError::BadUrl {
+            url: url.to_string(),
+        });
     };
 
     let Ok(mut req) = url.clone().into_client_request() else {
-        make_error_message(
-            our,
-            id,
-            target,
-            expects_response,
-            HttpClientError::BadRequest {
-                req: "failed to parse url into client request".into(),
-            },
-            send_to_loop,
-        )
-        .await;
-        return;
+        return Err(WebSocketClientError::BadRequest {
+            req: "failed to parse url into client request".into(),
+        });
     };
 
     let req_headers = req.headers_mut();
@@ -207,24 +190,19 @@ async fn connect_websocket(
     let ws_stream = match connect_async(req).await {
         Ok((ws_stream, _)) => ws_stream,
         Err(_) => {
-            make_error_message(
-                our,
-                id,
-                target,
-                expects_response,
-                HttpClientError::RequestFailed {
-                    error: "failed to connect to websocket".into(),
-                },
-                send_to_loop,
-            )
-            .await;
-            return;
+            return Err(WebSocketClientError::OpenFailed {
+                url: url.to_string(),
+            });
         }
     };
 
-    let (sink, mut stream) = ws_stream.split();
+    let (sink, stream) = ws_stream.split();
 
-    insert_ws(&ws_streams, sink, target.clone(), channel_id).await;
+    if let Some(mut sink) = ws_streams.get_mut(&(target.process.clone(), channel_id)) {
+        let _ = sink.close().await;
+    }
+
+    ws_streams.insert((target.process.clone(), channel_id), sink);
 
     let _ = send_to_loop
         .send(KernelMessage {
@@ -239,10 +217,9 @@ async fn connect_websocket(
                 Response {
                     inherit: false,
                     ipc: serde_json::to_vec::<WebSocketClientAction>(
-                        &WebSocketClientAction::Open {
-                            url: url.to_string(),
-                            headers,
+                        &WebSocketClientAction::Response {
                             channel_id,
+                            result: Ok(()),
                         },
                     )
                     .unwrap(),
@@ -255,6 +232,30 @@ async fn connect_websocket(
         })
         .await;
 
+    tokio::spawn(listen_to_stream(
+        our.clone(),
+        id,
+        target.clone(),
+        channel_id,
+        stream,
+        ws_streams,
+        send_to_loop.clone(),
+        print_tx_clone,
+    ));
+
+    Ok(())
+}
+
+async fn listen_to_stream(
+    our: Arc<String>,
+    id: u64,
+    target: Address,
+    channel_id: u32,
+    mut stream: SplitStream<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>>,
+    ws_streams: WebSocketStreams,
+    send_to_loop: MessageSender,
+    _print_tx: PrintSender,
+) {
     while let Some(message) = stream.next().await {
         match message {
             Ok(msg) => {
@@ -309,8 +310,8 @@ async fn connect_websocket(
                         .await;
 
                         // remove the websocket from the map
-                        let mut ws_streams = ws_streams.lock().await;
                         ws_streams.remove(&(target.process.clone(), channel_id));
+                        break;
                     }
                     _ => (), // Handle other message types as needed
                 }
@@ -319,20 +320,12 @@ async fn connect_websocket(
                 println!("WebSocket Client Error ({}): {:?}", channel_id, e);
 
                 // The connection was closed/reset by the remote server, so we'll remove and close it
-                match ws_streams
-                    .lock()
-                    .await
-                    .get_mut(&(target.process.clone(), channel_id))
+                if let Some(mut ws_sink) = ws_streams.get_mut(&(target.process.clone(), channel_id))
                 {
-                    Some(ws_sink) => {
-                        let _ = ws_sink.close().await;
-                    }
-                    None => {}
+                    // Close the stream. The stream is closed even on error.
+                    let _ = ws_sink.close().await;
                 }
-                ws_streams
-                    .lock()
-                    .await
-                    .remove(&(target.process.clone(), channel_id));
+                ws_streams.remove(&(target.process.clone(), channel_id));
 
                 handle_ws_message(
                     our.clone(),
@@ -364,7 +357,7 @@ async fn handle_http_request(
     let req: OutgoingHttpRequest = match serde_json::from_slice(&json) {
         Ok(req) => req,
         Err(_e) => {
-            make_error_message(
+            http_error_message(
                 our,
                 id,
                 target,
@@ -380,7 +373,7 @@ async fn handle_http_request(
     };
 
     let Ok(req_method) = http::Method::from_bytes(req.method.as_bytes()) else {
-        make_error_message(
+        http_error_message(
             our,
             id,
             target,
@@ -409,7 +402,7 @@ async fn handle_http_request(
             "HTTP/2.0" => request_builder.version(http::Version::HTTP_2),
             "HTTP/3.0" => request_builder.version(http::Version::HTTP_3),
             _ => {
-                make_error_message(
+                http_error_message(
                     our,
                     id,
                     target,
@@ -431,7 +424,7 @@ async fn handle_http_request(
         .headers(deserialize_headers(req.headers))
         .build()
     else {
-        make_error_message(
+        http_error_message(
             our,
             id,
             target,
@@ -491,7 +484,7 @@ async fn handle_http_request(
                     content: format!("http_client: executed request but got error"),
                 })
                 .await;
-            make_error_message(
+            http_error_message(
                 our,
                 id,
                 target,
@@ -544,7 +537,7 @@ fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
     header_map
 }
 
-async fn make_error_message(
+async fn http_error_message(
     our: Arc<String>,
     id: u64,
     target: Address,
@@ -580,74 +573,80 @@ async fn make_error_message(
     }
 }
 
-async fn send_ws_push(
+async fn websocket_error_message(
     our: Arc<String>,
     id: u64,
     target: Address,
     expects_response: Option<u64>,
     channel_id: u32,
-    message_type: WsMessageType,
-    payload: Option<Payload>,
-    ws_streams: Arc<Mutex<WebSocketMap>>,
+    error: WebSocketClientError,
     send_to_loop: MessageSender,
 ) {
-    let mut streams = ws_streams.lock().await;
-    let Some(ws_stream) = streams.get_mut(&(target.process.clone(), channel_id)) else {
-        // send an error message to the target
-        return;
+    if expects_response.is_some() {
+        let _ = send_to_loop
+            .send(KernelMessage {
+                id,
+                source: Address {
+                    node: our.to_string(),
+                    process: ProcessId::new(Some("http_client"), "sys", "uqbar"),
+                },
+                target,
+                rsvp: None,
+                message: Message::Response((
+                    Response {
+                        inherit: false,
+                        ipc: serde_json::to_vec::<WebSocketClientAction>(
+                            &WebSocketClientAction::Response {
+                                channel_id,
+                                result: Err(error),
+                            },
+                        )
+                        .unwrap(),
+                        metadata: None,
+                    },
+                    None,
+                )),
+                payload: None,
+                signed_capabilities: None,
+            })
+            .await;
+    }
+}
+
+async fn send_ws_push(
+    target: Address,
+    channel_id: u32,
+    message_type: WsMessageType,
+    payload: Option<Payload>,
+    ws_streams: WebSocketStreams,
+) -> Result<(), WebSocketClientError> {
+    let Some(mut ws_stream) = ws_streams.get_mut(&(target.process.clone(), channel_id)) else {
+        return Err(WebSocketClientError::BadRequest {
+            req: format!("channel_id {} not found", channel_id),
+        });
     };
 
     let result = match message_type {
         WsMessageType::Text => {
             let Some(payload) = payload else {
-                // send an error message to the target
-                make_error_message(
-                    our,
-                    id,
-                    target,
-                    expects_response,
-                    HttpClientError::BadRequest {
-                        req: "no payload".into(),
-                    },
-                    send_to_loop,
-                )
-                .await;
-                return;
+                return Err(WebSocketClientError::BadRequest {
+                    req: "no payload".into(),
+                });
             };
 
             let Ok(text) = String::from_utf8(payload.bytes) else {
-                // send an error message to the target
-                make_error_message(
-                    our,
-                    id,
-                    target,
-                    expects_response,
-                    HttpClientError::BadRequest {
-                        req: "failed to convert payload to string".into(),
-                    },
-                    send_to_loop,
-                )
-                .await;
-                return;
+                return Err(WebSocketClientError::BadRequest {
+                    req: "failed to convert payload to string".into(),
+                });
             };
 
             ws_stream.send(TungsteniteMessage::Text(text)).await
         }
         WsMessageType::Binary => {
             let Some(payload) = payload else {
-                // send an error message to the target
-                make_error_message(
-                    our,
-                    id,
-                    target,
-                    expects_response,
-                    HttpClientError::BadRequest {
-                        req: "no payload".into(),
-                    },
-                    send_to_loop,
-                )
-                .await;
-                return;
+                return Err(WebSocketClientError::BadRequest {
+                    req: "no payload".into(),
+                });
             };
 
             ws_stream
@@ -665,61 +664,25 @@ async fn send_ws_push(
     };
 
     match result {
-        Ok(_) => {}
-        Err(_) => {
-            // send an error message to the target
-            make_error_message(
-                our,
-                id,
-                target,
-                expects_response,
-                HttpClientError::RequestFailed {
-                    error: "failed to send message".into(),
-                },
-                send_to_loop,
-            )
-            .await;
-        }
+        Ok(_) => Ok(()),
+        Err(_) => Err(WebSocketClientError::PushFailed { channel_id }),
     }
 }
 
 async fn close_ws_connection(
-    our: Arc<String>,
-    id: u64,
     target: Address,
-    expects_response: Option<u64>,
     channel_id: u32,
-    ws_streams: Arc<Mutex<WebSocketMap>>,
-    send_to_loop: MessageSender,
-) {
-    let mut streams = ws_streams.lock().await;
-    let Some(ws_sink) = streams.get_mut(&(target.process.clone(), channel_id)) else {
-        // send an error message to the target
-        make_error_message(
-            our,
-            id,
-            target.clone(),
-            expects_response,
-            HttpClientError::BadRequest {
-                req: format!(
-                    "No open WebSocket matching {}, {}",
-                    target.process.to_string(),
-                    channel_id
-                ),
-            },
-            send_to_loop,
-        )
-        .await;
-        return;
+    ws_streams: WebSocketStreams,
+    _print_tx: PrintSender,
+) -> Result<(), WebSocketClientError> {
+    let Some(mut ws_sink) = ws_streams.get_mut(&(target.process.clone(), channel_id)) else {
+        return Err(WebSocketClientError::CloseFailed { channel_id });
     };
 
     // Close the stream. The stream is closed even on error.
-    match ws_sink.close().await {
-        Ok(_) => {}
-        Err(_) => {}
-    }
+    let _ = ws_sink.close().await;
 
-    streams.remove(&(target.process, channel_id));
+    Ok(())
 }
 
 async fn handle_ws_message(

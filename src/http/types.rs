@@ -74,6 +74,10 @@ pub enum WebSocketClientAction {
     Close {
         channel_id: u32,
     },
+    Response {
+        channel_id: u32,
+        result: Result<(), WebSocketClientError>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -94,6 +98,20 @@ pub enum HttpClientError {
     BadVersion { version: String },
     #[error("http_client: failed to execute request {}", error)]
     RequestFailed { error: String },
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum WebSocketClientError {
+    #[error("websocket_client: request format incorrect: {}.", req)]
+    BadRequest { req: String },
+    #[error("websocket_client: url could not be parsed: {}", url)]
+    BadUrl { url: String },
+    #[error("websocket_client: failed to open connection {}", url)]
+    OpenFailed { url: String },
+    #[error("websocket_client: failed to send message {}", channel_id)]
+    PushFailed { channel_id: u32 },
+    #[error("websocket_client: failed to close connection {}", channel_id)]
+    CloseFailed { channel_id: u32 },
 }
 
 /// Request type sent to `http_server:sys:uqbar` in order to configure it.
