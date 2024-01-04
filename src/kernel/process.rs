@@ -524,8 +524,15 @@ pub async fn make_process_loop(
                 responder: tx,
             })
             .await;
-        // TOD fix this...
-        // let initial_capabilities = rx.await.unwrap().into_iter().collect();
+        let initial_capabilities = rx
+            .await
+            .unwrap()
+            .iter()
+            .map(|c| t::Capability {
+                issuer: c.issuer.clone(),
+                params: c.params.clone(),
+            })
+            .collect();
 
         // send message to tell main kernel loop to remove handler
         send_to_loop
@@ -569,7 +576,7 @@ pub async fn make_process_loop(
                                 wasm_bytes_handle: metadata.wasm_bytes_handle,
                                 wit_version: Some(metadata.wit_version),
                                 on_exit: metadata.on_exit,
-                                initial_capabilities: HashSet::new(), // TODO initial_capabilities,
+                                initial_capabilities,
                                 public: metadata.public,
                             })
                             .unwrap(),
