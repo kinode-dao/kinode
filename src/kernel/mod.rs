@@ -189,36 +189,47 @@ async fn handle_kernel_request(
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
             let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
+            let parent_caps: &HashMap<t::Capability, Vec<u8>> =
+                &process_map.get(&km.source.process).unwrap().capabilities;
             let mut valid_capabilities: HashMap<t::Capability, Vec<u8>> = HashMap::new();
-            // TODO verify signed caps, have to fetch the sigs from the parent store first...
-            // for signed_cap in initial_capabilities {
-            //     let cap = t::Capability {
-            //         issuer: signed_cap.issuer,
-            //         params: signed_cap.params,
-            //     };
-            //     match pk.verify(
-            //         &rmp_serde::to_vec(&cap).unwrap_or_default(),
-            //         &signed_cap.signature,
-            //     ) {
-            //         Ok(_) => {}
-            //         Err(e) => {
-            //             println!("kernel: StartProcess no cap: {}", e);
-            //             continue;
-            //         }
-            //     }
-            //     valid_capabilities.insert(cap);
-            // }
+            for cap in initial_capabilities {
+                match parent_caps.get(&cap) {
+                    // TODO I don't think we *have* to verify the sigs here but it doesn't hurt...
+                    Some(sig) => {
+                        match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), &sig) {
+                            Ok(_) => {
+                                valid_capabilities.insert(cap, sig.to_vec());
+                            }
+                            Err(e) => {
+                                println!("kernel: InitializeProcess bad cap sig: {}", e);
+                                continue;
+                            }
+                        }
+                    }
+                    None => {
+                        println!("kernel: InitializeProcess spawner doesn't have capability");
+                        continue;
+                    }
+                }
+            }
 
             // give the initializer and itself the messaging cap.
             // NOTE: we do this even if the process is public, because
             // a process might redundantly call grant_capabilities.
-            // valid_capabilities.insert(t::Capability {
-            //     issuer: t::Address {
-            //         node: our_name.clone(),
-            //         process: id.clone(),
-            //     },
-            //     params: "\"messaging\"".into(),
-            // });
+            let msg_cap = t::Capability {
+                issuer: t::Address {
+                    node: our_name.clone(),
+                    process: id.clone(),
+                },
+                params: "\"messaging\"".into(),
+            };
+            valid_capabilities.insert(
+                msg_cap.clone(),
+                keypair
+                    .sign(&rmp_serde::to_vec(&msg_cap).unwrap())
+                    .as_ref()
+                    .to_vec(),
+            );
             caps_oracle
                 .send(t::CapMessage::Add {
                     on: km.source.process.clone(),
@@ -769,7 +780,7 @@ pub async fn kernel(
                 // the process that made the request is dead, so never expects response
                 let mut request = request.to_owned();
                 request.expects_response = None;
-                // TODO need to verify the signature
+                // TODO not sure if we need to verify the signature
                 if persisted.capabilities.contains_key(&t::Capability {
                     issuer: address.clone(),
                     params: "\"messaging\"".into(),
