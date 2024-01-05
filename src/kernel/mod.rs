@@ -493,117 +493,7 @@ async fn handle_kernel_request(
     }
 }
 
-/// currently, the kernel only receives 2 classes of responses, file-read and set-state
-/// responses from the filesystem module. it uses these to get wasm bytes of a process and
-/// start that process.
-///
-/// TODO: boot relies on this -- if we can do that differently, can skip handling
-/// responses entirely.
-async fn handle_kernel_response(
-    our_name: String,
-    keypair: Arc<signature::Ed25519KeyPair>,
-    km: t::KernelMessage,
-    send_to_loop: t::MessageSender,
-    send_to_terminal: t::PrintSender,
-    senders: &mut Senders,
-    process_handles: &mut ProcessHandles,
-    process_map: &mut t::ProcessMap,
-    caps_oracle: t::CapMessageSender,
-    engine: &Engine,
-) {
-    let t::Message::Response((ref response, _)) = km.message else {
-        let _ = send_to_terminal
-            .send(t::Printout {
-                verbosity: 0,
-                content: "kernel: got weird Response".into(),
-            })
-            .await;
-        return;
-    };
-    // ignore responses that aren't filesystem or state responses
-    if km.source.process != *STATE_PROCESS_ID && km.source.process != *VFS_PROCESS_ID {
-        return;
-    }
-    let Some(ref metadata) = response.metadata else {
-        //  set-state response currently return here
-        //  we might want to match on metadata type from both, and only update
-        //  process map upon receiving confirmation that it's been persisted
-        return;
-    };
-    let Ok(meta) = serde_json::from_str::<StartProcessMetadata>(metadata) else {
-        let _ = send_to_terminal
-            .send(t::Printout {
-                verbosity: 0,
-                content: "kernel: got weird metadata from filesystem".into(),
-            })
-            .await;
-        return;
-    };
-    let Some(payload) = km.payload else {
-        let _ = send_to_terminal
-            .send(t::Printout {
-                verbosity: 0,
-                content: format!(
-                    "kernel: process {} seemingly could not be read from filesystem. km: {}",
-                    meta.process_id, km
-                ),
-            })
-            .await;
-        return;
-    };
-
-    if let Ok(()) = start_process(
-        our_name.clone(),
-        keypair,
-        km.id,
-        payload.bytes,
-        send_to_loop,
-        send_to_terminal.clone(),
-        senders,
-        process_handles,
-        process_map,
-        engine,
-        caps_oracle,
-        &meta,
-    )
-    .await
-    {
-        // immediately run a rebooted process
-        if let Some(ProcessSender::Userspace(sender)) = senders.get(&meta.process_id) {
-            let _ = sender
-                .send(Ok(t::KernelMessage {
-                    id: rand::random(),
-                    source: t::Address {
-                        node: our_name.clone(),
-                        process: KERNEL_PROCESS_ID.clone(),
-                    },
-                    target: t::Address {
-                        node: our_name.clone(),
-                        process: meta.process_id.clone(),
-                    },
-                    rsvp: None,
-                    message: t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        ipc: b"run".to_vec(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }),
-                    payload: None,
-                    signed_capabilities: HashMap::new(),
-                }))
-                .await;
-            return;
-        }
-    };
-    let _ = send_to_terminal
-        .send(t::Printout {
-            verbosity: 0,
-            content: "kernel: process start fail".into(),
-        })
-        .await;
-}
-
+// double check immediate run
 async fn start_process(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
@@ -706,6 +596,7 @@ pub async fn kernel(
     mut network_error_recv: t::NetworkErrorReceiver,
     mut recv_debug_in_loop: t::DebugReceiver,
     send_to_net: t::MessageSender,
+    home_directory_path: String,
     runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
 ) -> Result<()> {
     let mut config = Config::new();
@@ -714,6 +605,11 @@ pub async fn kernel(
     config.wasm_component_model(true);
     config.async_support(true);
     let engine = Engine::new(&config).unwrap();
+
+    let vfs_path = format!("{}/vfs", home_directory_path);
+    tokio::fs::create_dir_all(&vfs_path)
+        .await
+        .expect("kernel startup fatal: couldn't create vfs dir");
 
     let mut senders: Senders = HashMap::new();
     senders.insert(
@@ -728,50 +624,47 @@ pub async fn kernel(
     let mut process_handles: ProcessHandles = HashMap::new();
 
     let mut is_debug: bool = false;
+    let mut reboot_processes: Vec<(t::ProcessId, StartProcessMetadata, Vec<u8>)> = vec![];
 
     for (process_id, persisted) in &process_map {
-        // runtime extensions will have a bytes_handle of 0, because they have no
+        // runtime extensions will have a bytes_handle of "", because they have no
         // WASM code saved in filesystem.
         if persisted.on_exit.is_restart() && persisted.wasm_bytes_handle != "" {
-            send_to_loop
-                .send(t::KernelMessage {
-                    id: rand::random(),
+            // read wasm bytes directly from vfs
+            // start process.
+            let wasm_bytes = match tokio::fs::read(format!(
+                "{}/{}",
+                vfs_path, persisted.wasm_bytes_handle
+            ))
+            .await
+            {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    let _ = send_to_terminal
+                        .send(t::Printout {
+                            verbosity: 0,
+                            content: format!(
+                                "kernel: couldn't read wasm bytes for process: {:?} with error: {}",
+                                process_id, e
+                            ),
+                        })
+                        .await;
+                    continue;
+                }
+            };
+            reboot_processes.push((
+                process_id.clone(),
+                StartProcessMetadata {
                     source: t::Address {
                         node: our.name.clone(),
                         process: KERNEL_PROCESS_ID.clone(),
                     },
-                    target: t::Address {
-                        node: our.name.clone(),
-                        process: VFS_PROCESS_ID.clone(),
-                    },
-                    rsvp: None,
-                    message: t::Message::Request(t::Request {
-                        inherit: true,
-                        expects_response: Some(5), // TODO evaluate
-                        ipc: serde_json::to_vec(&t::VfsRequest {
-                            path: persisted.wasm_bytes_handle.clone(),
-                            action: t::VfsAction::Read,
-                        })
-                        .unwrap(),
-                        metadata: Some(
-                            serde_json::to_string(&StartProcessMetadata {
-                                source: t::Address {
-                                    node: our.name.clone(),
-                                    process: KERNEL_PROCESS_ID.clone(),
-                                },
-                                process_id: process_id.clone(),
-                                persisted: persisted.clone(),
-                                reboot: true,
-                            })
-                            .unwrap(),
-                        ),
-                        capabilities: vec![],
-                    }),
-                    payload: None,
-                    signed_capabilities: HashMap::new(),
-                })
-                .await
-                .expect("event loop: fatal: sender died");
+                    process_id: process_id.clone(),
+                    persisted: persisted.clone(),
+                    reboot: true,
+                },
+                wasm_bytes,
+            ));
         }
         if let t::OnExit::Requests(requests) = &persisted.on_exit {
             // if a persisted process had on-death-requests, we should perform them now
@@ -805,6 +698,37 @@ pub async fn kernel(
         }
     }
 
+    for (process_id, metadata, wasm_bytes) in reboot_processes {
+        match start_process(
+            our.name.clone(),
+            keypair.clone(),
+            rand::random(),
+            wasm_bytes,
+            send_to_loop.clone(),
+            send_to_terminal.clone(),
+            &mut senders,
+            &mut process_handles,
+            &mut process_map,
+            &engine,
+            caps_oracle_sender.clone(),
+            &metadata,
+        )
+        .await
+        {
+            Ok(()) => (),
+            Err(e) => {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!(
+                            "kernel: couldn't reboot process {:?} with error: {}",
+                            process_id, e
+                        ),
+                    })
+                    .await;
+            }
+        }
+    }
     // after all bootstrapping messages are handled, send a Booted kernelcommand
     // to turn it on
     send_to_loop
@@ -1003,7 +927,7 @@ pub async fn kernel(
                 // display every single event when verbose
                 let _ = send_to_terminal.send(
                         t::Printout {
-                            verbosity: 3,
+                            verbosity: 0,
                             content: format!("event loop: got message: {}", kernel_message)
                         }
                     ).await;
@@ -1030,20 +954,7 @@ pub async fn kernel(
                                 &engine,
                             ).await;
                         }
-                        t::Message::Response(_) => {
-                            handle_kernel_response(
-                                our.name.clone(),
-                                keypair.clone(),
-                                kernel_message,
-                                send_to_loop.clone(),
-                                send_to_terminal.clone(),
-                                &mut senders,
-                                &mut process_handles,
-                                &mut process_map,
-                                caps_oracle_sender.clone(),
-                                &engine,
-                            ).await;
-                        }
+                        _ => {}
                     }
                 } else {
                     // pass message to appropriate runtime module or process
