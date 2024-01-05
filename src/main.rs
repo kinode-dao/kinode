@@ -383,6 +383,7 @@ async fn main() {
         network_error_receiver,
         kernel_debug_message_receiver,
         net_message_sender.clone(),
+        home_directory_path.clone(),
         runtime_extensions,
     ));
     #[cfg(not(feature = "simulation-mode"))]
