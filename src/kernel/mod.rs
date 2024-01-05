@@ -927,7 +927,7 @@ pub async fn kernel(
                 // display every single event when verbose
                 let _ = send_to_terminal.send(
                         t::Printout {
-                            verbosity: 0,
+                            verbosity: 3,
                             content: format!("event loop: got message: {}", kernel_message)
                         }
                     ).await;
