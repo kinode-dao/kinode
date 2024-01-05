@@ -18,6 +18,10 @@
                 "params": {
                     "root": true
                 }
+            },
+            {
+                "process": "kernel:sys:uqbar",
+                "params": "root"
             }
         ],
         "grant_capabilities": [
