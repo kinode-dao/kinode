@@ -4,7 +4,7 @@ use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
 use ring::signature::{self, KeyPair};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;

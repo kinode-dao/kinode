@@ -7,7 +7,6 @@ use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
 use anyhow::Result;
 use ring::signature::{self, KeyPair};
-use std::collections::HashSet;
 
 async fn print_debug(proc: &process::ProcessState, content: &str) {
     let _ = proc

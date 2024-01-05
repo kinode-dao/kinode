@@ -1,13 +1,13 @@
 use anyhow::Result;
-use ring::signature::{self, KeyPair};
+use ring::signature;
 use rocksdb::checkpoint::Checkpoint;
 use rocksdb::{Options, DB};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
+use tokio::fs;
 use tokio::sync::Mutex;
-use tokio::{fs, runtime};
 
 use crate::types::*;
 
@@ -66,7 +66,6 @@ pub async fn load_state(
 
 pub async fn state_sender(
     our_name: String,
-    keypair: Arc<signature::Ed25519KeyPair>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     mut recv_state: MessageReceiver,
@@ -99,7 +98,6 @@ pub async fn state_sender(
                     queue_lock.push_back(km.clone());
                 }
 
-                let keypair_clone = keypair.clone();
                 let db_clone = db.clone();
                 let send_to_loop = send_to_loop.clone();
                 let send_to_terminal = send_to_terminal.clone();
@@ -111,7 +109,6 @@ pub async fn state_sender(
                     if let Some(km) = queue_lock.pop_front() {
                         if let Err(e) = handle_request(
                                 our_name.clone(),
-                                keypair_clone.clone(),
                                 km.clone(),
                                 db_clone,
                                 send_to_loop.clone(),
@@ -133,7 +130,6 @@ pub async fn state_sender(
 
 async fn handle_request(
     our_name: String,
-    keypair: Arc<signature::Ed25519KeyPair>,
     kernel_message: KernelMessage,
     db: Arc<DB>,
     send_to_loop: MessageSender,

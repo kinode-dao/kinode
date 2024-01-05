@@ -406,7 +406,6 @@ async fn main() {
     ));
     tasks.spawn(state::state_sender(
         our.name.clone(),
-        networking_keypair_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         state_receiver,
