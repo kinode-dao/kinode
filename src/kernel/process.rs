@@ -30,7 +30,7 @@ pub struct ProcessState {
     pub contexts: HashMap<u64, (t::ProcessContext, JoinHandle<()>)>,
     pub message_queue: VecDeque<Result<t::KernelMessage, t::WrappedSendError>>,
     pub caps_oracle: t::CapMessageSender,
-    pub next_message_caps: Option<Vec<t::Capability>>, // TODO might need to be a HashMap with sigs...
+    pub next_message_caps: Option<Vec<t::Capability>>,
 }
 
 pub struct ProcessWasi {
