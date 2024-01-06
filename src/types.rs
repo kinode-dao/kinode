@@ -769,7 +769,7 @@ impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n}}",
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {},\n    signed_capabilities: {}\n}}",
             self.id,
             self.source,
             self.target,
@@ -779,6 +779,12 @@ impl std::fmt::Display for KernelMessage {
             },
             self.message,
             self.payload.is_some(),
+            // TODO this is ugly
+            serde_json::to_string(
+                &self.signed_capabilities.iter().map(
+                    |(cap, sig)| (cap, hex::encode(sig))
+                ).collect::<Vec<(&Capability, String)>>()
+            ).unwrap_or("error serializing signed caps".to_string()),
         )
     }
 }
