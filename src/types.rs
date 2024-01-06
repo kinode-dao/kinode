@@ -409,6 +409,16 @@ pub struct Capability {
     pub params: String, // JSON-string
 }
 
+impl std::fmt::Display for Capability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{\n                issuer: {},\n                params: {},\n            }}",
+            self.issuer, self.params
+        )
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SendError {
     pub kind: SendErrorKind,
@@ -481,7 +491,7 @@ impl std::fmt::Display for Message {
         match self {
             Message::Request(request) => write!(
                 f,
-                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n    )",
+                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n        capabilities: {}\n    )",
                 request.inherit,
                 request.expects_response,
                 match serde_json::from_slice::<serde_json::Value>(&request.ipc) {
@@ -489,10 +499,22 @@ impl std::fmt::Display for Message {
                     Err(_) => format!("{:?}", request.ipc),
                 },
                 &request.metadata.as_ref().unwrap_or(&"None".into()),
+                {
+                    let mut caps_string = "Capabilities(".to_string();
+                    if request.capabilities.len() > 0 {
+                        caps_string.push_str("\n            ");
+                        for cap in request.capabilities.iter() {
+                            caps_string.push_str(&format!("{},\n            ", cap));
+                        }
+                        caps_string.truncate(caps_string.len() - 4);
+                    }
+                    caps_string.push_str(")");
+                    caps_string
+                },
             ),
             Message::Response((response, context)) => write!(
                 f,
-                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
+                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {},\n        capabilities: {}\n    )",
                 response.inherit,
                 match serde_json::from_slice::<serde_json::Value>(&response.ipc) {
                     Ok(json) => format!("{}", json),
@@ -506,6 +528,18 @@ impl std::fmt::Display for Message {
                         Ok(json) => format!("{}", json),
                         Err(_) => format!("{:?}", context.as_ref().unwrap()),
                     }
+                },
+                {
+                    let mut caps_string = "Capabilities(".to_string();
+                    if response.capabilities.len() > 0 {
+                        caps_string.push_str("\n            ");
+                        for cap in response.capabilities.iter() {
+                            caps_string.push_str(&format!("{},\n            ", cap));
+                        }
+                        caps_string.truncate(caps_string.len() - 4);
+                    }
+                    caps_string.push_str(")");
+                    caps_string
                 },
             ),
         }
