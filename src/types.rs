@@ -500,7 +500,7 @@ impl std::fmt::Display for Message {
                 },
                 &request.metadata.as_ref().unwrap_or(&"None".into()),
                 {
-                    let mut caps_string = "Capabilities(".to_string();
+                    let mut caps_string = "[".to_string();
                     if request.capabilities.len() > 0 {
                         caps_string.push_str("\n            ");
                         for cap in request.capabilities.iter() {
@@ -508,7 +508,7 @@ impl std::fmt::Display for Message {
                         }
                         caps_string.truncate(caps_string.len() - 4);
                     }
-                    caps_string.push_str(")");
+                    caps_string.push_str("]");
                     caps_string
                 },
             ),
@@ -530,7 +530,7 @@ impl std::fmt::Display for Message {
                     }
                 },
                 {
-                    let mut caps_string = "Capabilities(".to_string();
+                    let mut caps_string = "[".to_string();
                     if response.capabilities.len() > 0 {
                         caps_string.push_str("\n            ");
                         for cap in response.capabilities.iter() {
@@ -538,7 +538,7 @@ impl std::fmt::Display for Message {
                         }
                         caps_string.truncate(caps_string.len() - 4);
                     }
-                    caps_string.push_str(")");
+                    caps_string.push_str("]");
                     caps_string
                 },
             ),
@@ -813,12 +813,25 @@ impl std::fmt::Display for KernelMessage {
             },
             self.message,
             self.payload.is_some(),
-            // TODO this is ugly
-            serde_json::to_string(
-                &self.signed_capabilities.iter().map(
-                    |(cap, sig)| (cap, hex::encode(sig))
-                ).collect::<Vec<(&Capability, String)>>()
-            ).unwrap_or("error serializing signed caps".to_string()),
+            {
+                let mut caps_string = "[".to_string();
+                if self.signed_capabilities.len() > 0 {
+                    caps_string.push_str("\n        ");
+                    for (cap, sig) in self.signed_capabilities.iter() {
+                        caps_string.push_str(
+                            &format!(
+                                "{{\n            issuer: {},\n            params: {},\n            signature: 0x{},\n        }},\n        ",
+                                cap.issuer,
+                                cap.params,
+                                hex::encode(sig)
+                            )
+                        );
+                    }
+                    caps_string.truncate(caps_string.len() - 4);
+                }
+                caps_string.push_str("]");
+                caps_string
+            },
         )
     }
 }
