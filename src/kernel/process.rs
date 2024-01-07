@@ -30,7 +30,7 @@ pub struct ProcessState {
     pub contexts: HashMap<u64, (t::ProcessContext, JoinHandle<()>)>,
     pub message_queue: VecDeque<Result<t::KernelMessage, t::WrappedSendError>>,
     pub caps_oracle: t::CapMessageSender,
-    pub next_message_caps: Option<Vec<t::Capability>>,
+    pub last_signed_caps: HashMap<t::Capability, Vec<u8>>,
 }
 
 pub struct ProcessWasi {
@@ -142,20 +142,28 @@ impl ProcessState {
             },
         };
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self
-            .caps_oracle
-            .send(t::CapMessage::GetSome {
-                on: self.metadata.our.process.clone(),
-                caps: request
-                    .capabilities
-                    .iter()
-                    .map(|cap| t::de_wit_capability(cap.clone()))
-                    .collect(),
-                responder: tx,
-            })
-            .await?;
-        let signed_capabilities = rx.await?;
+        let signed_capabilities = match request.capabilities.len() {
+            0 => match request.inherit {
+                true => self.last_signed_caps.clone(),
+                false => HashMap::new(),
+            },
+            _ => {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                let _ = self
+                    .caps_oracle
+                    .send(t::CapMessage::GetSome {
+                        on: self.metadata.our.process.clone(),
+                        caps: request
+                            .capabilities
+                            .iter()
+                            .map(|cap| t::de_wit_capability(cap.clone()))
+                            .collect(),
+                        responder: tx,
+                    })
+                    .await?;
+                rx.await?
+            }
+        };
 
         // rsvp is set if there was a Request expecting Response
         // followed by inheriting Request(s) not expecting Response;
@@ -253,20 +261,25 @@ impl ProcessState {
             false => t::de_wit_payload(payload),
         };
 
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self
-            .caps_oracle
-            .send(t::CapMessage::GetSome {
-                on: self.metadata.our.process.clone(),
-                caps: response
-                    .capabilities
-                    .iter()
-                    .map(|cap| t::de_wit_capability(cap.clone()))
-                    .collect(),
-                responder: tx,
-            })
-            .await;
-        let signed_capabilities = rx.await.expect("fatal: process couldn't get caps");
+        let signed_capabilities = match response.inherit {
+            true => self.last_signed_caps.clone(),
+            false => {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                let _ = self
+                    .caps_oracle
+                    .send(t::CapMessage::GetSome {
+                        on: self.metadata.our.process.clone(),
+                        caps: response
+                            .capabilities
+                            .iter()
+                            .map(|cap| t::de_wit_capability(cap.clone()))
+                            .collect(),
+                        responder: tx,
+                    })
+                    .await;
+                rx.await.expect("fatal: process couldn't get caps")
+            }
+        };
 
         self.send_to_loop
             .send(t::KernelMessage {
@@ -328,6 +341,7 @@ impl ProcessState {
                 t::Message::Request(_) => {
                     self.last_payload = km.payload.clone();
                     self.prompting_message = Some(km.clone());
+                    self.last_signed_caps = km.signed_capabilities.clone();
                     (None, km)
                 }
                 t::Message::Response(_) => {
@@ -338,6 +352,7 @@ impl ProcessState {
                             None => Some(km.clone()),
                             Some(prompting_message) => Some(prompting_message),
                         };
+                        self.last_signed_caps = km.signed_capabilities.clone();
                         (context.context, km)
                     } else {
                         (None, km)
@@ -504,7 +519,7 @@ pub async fn make_process_loop(
                 contexts: HashMap::new(),
                 message_queue: VecDeque::new(),
                 caps_oracle: caps_oracle.clone(),
-                next_message_caps: None,
+                last_signed_caps: HashMap::new(),
             },
             table,
             wasi,
