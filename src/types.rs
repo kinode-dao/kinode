@@ -870,6 +870,11 @@ pub enum KernelCommand {
         initial_capabilities: HashSet<Capability>,
         public: bool,
     },
+    /// Create an arbitrary capability and grant it to a process.
+    GrantCapabilities {
+        target: ProcessId,
+        capabilities: Vec<Capability>,
+    },
     /// Tell the kernel to run a process that has already been installed.
     /// TODO: in the future, this command could be extended to allow for
     /// resource provision.

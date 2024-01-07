@@ -2,8 +2,8 @@ use indexmap::map::IndexMap;
 
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::{
-    await_message, call_init, get_capability, grant_capabilities, our_capabilities, println, spawn,
-    vfs, Address, Capability, Message, OnExit, ProcessId, Request, Response,
+    await_message, call_init, get_capability, our_capabilities, println, spawn, vfs, Address,
+    Capability, Message, OnExit, ProcessId, Request, Response,
 };
 
 mod tester_types;
@@ -122,20 +122,24 @@ fn init(our: Address) {
         .send_and_await_response(5)
         .unwrap()
         .unwrap();
-    grant_capabilities(
-        &ProcessId::from_str("http_server:sys:uqbar").expect("couldn't make pid"),
-        &vec![Capability {
-            issuer: Address::new(
-                our.node.clone(),
-                ProcessId::from_str("vfs:sys:uqbar").unwrap(),
-            ),
-            params: serde_json::json!({
-                "kind": "write",
-                "drive": "/tester:uqbar/tests",
+    let _ = Request::new()
+        .target(("our", "kernel", "sys", "uqbar"))
+        .ipc(
+            serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                target: ProcessId::new("http_server", "sys", "uqbar"),
+                capabilities: vec![Capability {
+                    issuer: Address::new(our.node.clone(), ProcessId::new("vfs", "sys", "uqbar")),
+                    params: serde_json::json!({
+                        "kind": "write",
+                        "drive": "/tester:uqbar/tests",
+                    })
+                    .to_string(),
+                }],
             })
-            .to_string(),
-        }],
-    );
+            .unwrap(),
+        )
+        .send()
+        .unwrap();
 
     // orchestrate tests using external scripts
     //  -> must give drive cap to rpc

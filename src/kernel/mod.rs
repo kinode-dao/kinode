@@ -304,6 +304,26 @@ async fn handle_kernel_request(
                 }
             }
         }
+        t::KernelCommand::GrantCapabilities {
+            target,
+            capabilities,
+        } => {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = self
+                .process
+                .caps_oracle
+                .send(t::CapMessage::Add {
+                    on: t::ProcessId::de_wit(target),
+                    caps: caps
+                        .iter()
+                        .map(|cap| t::de_wit_capability(cap.clone()).0)
+                        .collect(),
+                    responder: tx,
+                })
+                .await?;
+            let _ = rx.await?;
+            Ok(())
+        }
         // send 'run' message to a process that's already been initialized
         t::KernelCommand::RunProcess(process_id) => {
             if let Some(ProcessSender::Userspace(process_sender)) = senders.get(&process_id) {

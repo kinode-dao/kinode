@@ -558,6 +558,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
             .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                 id: parsed_new_process_id.clone(),
                 wasm_bytes_handle: wasm_path,
+                wit_version: entry.wit_version,
                 on_exit: entry.on_exit.clone(),
                 initial_capabilities,
                 public: entry.public,
@@ -569,16 +570,22 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                 match value {
                     serde_json::Value::String(process_name) => {
                         if let Ok(parsed_process_id) = ProcessId::from_str(&process_name) {
-                            grant_capabilities(
-                                &parsed_process_id,
-                                &[Capability {
-                                    issuer: Address {
-                                        node: our.node.clone(),
-                                        process: parsed_new_process_id.clone(),
-                                    },
-                                    params: "\"messaging\"".into(),
-                                }],
-                            );
+                            let _ = Request::new()
+                                .target(("our", "kernel", "sys", "uqbar"))
+                                .ipc(
+                                    serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                                        target: parsed_process_id,
+                                        capabilities: vec![Capability {
+                                            issuer: Address {
+                                                node: our.node.clone(),
+                                                process: parsed_new_process_id.clone(),
+                                            },
+                                            params: "\"messaging\"".into(),
+                                        }],
+                                    })
+                                    .unwrap(),
+                                )
+                                .send()?;
                         }
                     }
                     serde_json::Value::Object(map) => {
@@ -587,16 +594,24 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                                 ProcessId::from_str(&process_name.to_string())
                             {
                                 if let Some(params) = map.get("params") {
-                                    grant_capabilities(
-                                        &parsed_process_id,
-                                        &[Capability {
-                                            issuer: Address {
-                                                node: our.node.clone(),
-                                                process: parsed_new_process_id.clone(),
-                                            },
-                                            params: params.to_string(),
-                                        }],
-                                    );
+                                    let _ = Request::new()
+                                        .target(("our", "kernel", "sys", "uqbar"))
+                                        .ipc(
+                                            serde_json::to_vec(
+                                                &kt::KernelCommand::GrantCapabilities {
+                                                    target: parsed_process_id,
+                                                    capabilities: vec![Capability {
+                                                        issuer: Address {
+                                                            node: our.node.clone(),
+                                                            process: parsed_new_process_id.clone(),
+                                                        },
+                                                        params: params.to_string(),
+                                                    }],
+                                                },
+                                            )
+                                            .unwrap(),
+                                        )
+                                        .send()?;
                                 }
                             }
                         }
