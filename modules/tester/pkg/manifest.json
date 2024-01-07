@@ -12,18 +12,5 @@
             "vfs:sys:uqbar"
         ],
         "public": true
-    },
-    {
-        "process_name": "test_runner",
-        "process_wasm_path": "/test_runner.wasm",
-        "on_exit": "Restart",
-        "request_networking": false,
-        "request_capabilities": [
-            "vfs:sys:uqbar"
-        ],
-        "grant_capabilities": [
-            "vfs:sys:uqbar"
-        ],
-        "public": true
     }
 ]
