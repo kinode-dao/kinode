@@ -309,20 +309,15 @@ async fn handle_kernel_request(
             capabilities,
         } => {
             let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = self
-                .process
-                .caps_oracle
+            let _ = caps_oracle
                 .send(t::CapMessage::Add {
-                    on: t::ProcessId::de_wit(target),
-                    caps: caps
-                        .iter()
-                        .map(|cap| t::de_wit_capability(cap.clone()).0)
-                        .collect(),
+                    on: target,
+                    caps: capabilities,
                     responder: tx,
                 })
-                .await?;
-            let _ = rx.await?;
-            Ok(())
+                .await
+                .expect("kernel: fatal: capabilities oracle died");
+            let _ = rx.await.expect("kernel: fatal: capabilities oracle died");
         }
         // send 'run' message to a process that's already been initialized
         t::KernelCommand::RunProcess(process_id) => {

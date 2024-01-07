@@ -2,8 +2,8 @@ use indexmap::map::IndexMap;
 
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::{
-    await_message, call_init, get_capability, our_capabilities, println, spawn, vfs, Address,
-    Capability, Message, OnExit, ProcessId, Request, Response,
+    await_message, call_init, our_capabilities, println, spawn, vfs, Address, Capability, Message,
+    OnExit, ProcessId, Request, Response,
 };
 
 mod tester_types;
@@ -126,9 +126,12 @@ fn init(our: Address) {
         .target(("our", "kernel", "sys", "uqbar"))
         .ipc(
             serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                target: ProcessId::new("http_server", "sys", "uqbar"),
-                capabilities: vec![Capability {
-                    issuer: Address::new(our.node.clone(), ProcessId::new("vfs", "sys", "uqbar")),
+                target: ProcessId::new(Some("http_server"), "sys", "uqbar"),
+                capabilities: vec![kt::Capability {
+                    issuer: Address::new(
+                        our.node.clone(),
+                        ProcessId::new(Some("vfs"), "sys", "uqbar"),
+                    ),
                     params: serde_json::json!({
                         "kind": "write",
                         "drive": "/tester:uqbar/tests",

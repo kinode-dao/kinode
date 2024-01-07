@@ -558,7 +558,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
             .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                 id: parsed_new_process_id.clone(),
                 wasm_bytes_handle: wasm_path,
-                wit_version: entry.wit_version,
+                wit_version: None,
                 on_exit: entry.on_exit.clone(),
                 initial_capabilities,
                 public: entry.public,
@@ -575,7 +575,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                                 .ipc(
                                     serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
                                         target: parsed_process_id,
-                                        capabilities: vec![Capability {
+                                        capabilities: vec![kt::Capability {
                                             issuer: Address {
                                                 node: our.node.clone(),
                                                 process: parsed_new_process_id.clone(),
@@ -600,7 +600,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                                             serde_json::to_vec(
                                                 &kt::KernelCommand::GrantCapabilities {
                                                     target: parsed_process_id,
-                                                    capabilities: vec![Capability {
+                                                    capabilities: vec![kt::Capability {
                                                         issuer: Address {
                                                             node: our.node.clone(),
                                                             process: parsed_new_process_id.clone(),

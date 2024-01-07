@@ -6,10 +6,7 @@
         "request_networking": true,
         "request_capabilities": [
             "net:sys:uqbar",
-            {
-                "process": "kernel:sys:uqbar",
-                "params": "root"
-            }
+            "kernel:sys:uqbar"
         ],
         "grant_capabilities": [
             "vfs:sys:uqbar"
