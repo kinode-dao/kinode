@@ -2,7 +2,6 @@ use crate::eth::types::*;
 use crate::http::types::{HttpServerAction, HttpServerRequest, WsMessageType};
 use crate::types::*;
 use anyhow::Result;
-use dashmap::DashMap;
 use ethers::prelude::Provider;
 use ethers_providers::{Middleware, StreamExt, Ws};
 use futures::stream::SplitStream;
@@ -16,137 +15,120 @@ use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use url::Url;
 
-// Request IDs to Channel IDs
-type WsRequestIds = Arc<DashMap<u32, u32>>;
-
 pub async fn provider(
     our: String,
     rpc_url: String,
-    send_to_loop: MessageSender,
+    mut send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
-    _print_tx: PrintSender,
+    print_tx: PrintSender,
 ) -> Result<()> {
-    println!("eth: starting");
-
     bind_websockets(&our, &send_to_loop).await;
-
-    let connections = Arc::new(Mutex::new(RpcConnections::default()));
+    let mut connections = RpcConnections::default();
 
     match Url::parse(&rpc_url).unwrap().scheme() {
         "http" | "https" => {
-            unreachable!()
+            return Err(anyhow::anyhow!("eth: http provider not supported yet!"));
         }
         "ws" | "wss" => {
-            bootstrap_websocket_connections(
-                our.clone(),
-                rpc_url.clone(),
-                connections.clone(),
-                send_to_loop.clone(),
-            )
-            .await?;
+            bootstrap_websocket_connections(&our, &rpc_url, &mut connections, &mut send_to_loop)
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!(
+                        "eth: error bootstrapping websocket connections to {}: {:?}",
+                        rpc_url,
+                        e
+                    )
+                })?;
         }
         _ => {
-            unreachable!()
+            return Err(anyhow::anyhow!("eth: provider must use http or ws!"));
         }
     }
+
+    let connections = Arc::new(Mutex::new(connections));
 
     while let Some(km) = recv_in_client.recv().await {
         match &km.message {
             Message::Request(req) => {
-                let _ = handle_request(
-                    our.clone(),
-                    &km,
-                    &req,
-                    connections.clone(),
-                    send_to_loop.clone(),
-                )
-                .await;
+                match handle_request(&our, &km, &req, &connections, &send_to_loop).await {
+                    Ok(()) => {}
+                    Err(e) => {
+                        let _ = print_tx
+                            .send(Printout {
+                                verbosity: 1,
+                                content: format!("eth: error handling request: {:?}", e),
+                            })
+                            .await;
+                    }
+                }
             }
-            Message::Response((Response { ref ipc, .. }, ..)) => {
-                handle_response(ipc)?;
-            }
+            _ => {}
         }
-
-        continue;
     }
-
-    Ok(())
+    return Err(anyhow::anyhow!("eth: fatal: message receiver closed!"));
 }
 
 async fn handle_request(
-    our: String,
+    our: &str,
     km: &KernelMessage,
     req: &Request,
-    connections: Arc<Mutex<RpcConnections>>,
-    send_to_loop: MessageSender,
+    connections: &Arc<Mutex<RpcConnections>>,
+    send_to_loop: &MessageSender,
 ) -> Result<()> {
     if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(&req.ipc) {
-        let _ = handle_http_server_request(action, km, connections).await;
+        return handle_http_server_request(action, km, connections).await;
     } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&req.ipc) {
-        let _ = handle_eth_request(action, our.clone(), km, connections, send_to_loop).await;
+        return handle_eth_request(action, our, km, connections, send_to_loop).await;
     } else {
-        println!("unknown request");
+        return Err(anyhow::anyhow!("malformed request"));
     }
-
-    Ok(())
 }
 
 async fn handle_http_server_request(
     action: HttpServerRequest,
     km: &KernelMessage,
-    connections: Arc<Mutex<RpcConnections>>,
+    connections: &Arc<Mutex<RpcConnections>>,
 ) -> Result<(), anyhow::Error> {
-    match action {
-        HttpServerRequest::WebSocketOpen { .. /*path, channel_id*/ } => {}
-        HttpServerRequest::WebSocketPush {
-            channel_id,
-            message_type,
-        } => match message_type {
-            WsMessageType::Text => {
-                let bytes = &km.payload.as_ref().unwrap().bytes;
-                let text = std::str::from_utf8(&bytes).unwrap();
-                let mut json: serde_json::Value = serde_json::from_str(text)?;
-                let mut id = json["id"].as_u64().unwrap();
+    if let HttpServerRequest::WebSocketPush {
+        channel_id,
+        message_type,
+    } = action
+    {
+        if message_type == WsMessageType::Text {
+            let bytes = &km.payload.as_ref().unwrap().bytes;
+            let text = std::str::from_utf8(&bytes).unwrap();
+            let mut json: serde_json::Value = serde_json::from_str(text)?;
+            let mut id = json["id"].as_u64().unwrap();
 
-                id += channel_id as u64;
+            id += channel_id as u64;
 
-                json["id"] = serde_json::Value::from(id);
+            json["id"] = serde_json::Value::from(id);
 
-                let _new_text = json.to_string();
+            let new_text = json.to_string();
 
-                let mut connections_guard = connections.lock().await;
-
-                connections_guard
-                    .ws_sender_ids
-                    .insert(id as u32, channel_id);
-
-                if let Some(ws_sender) = &mut connections_guard.ws_sender {
-                    let _ = ws_sender.send(TungsteniteMessage::Text(_new_text)).await;
-                }
+            let mut connections_guard = connections.lock().await;
+            connections_guard
+                .ws_sender_ids
+                .insert(id as u32, channel_id);
+            if let Some(ws_sender) = &mut connections_guard.ws_sender {
+                let _ = ws_sender.send(TungsteniteMessage::Text(new_text)).await;
             }
-            WsMessageType::Binary => {}
-            WsMessageType::Ping => {}
-            WsMessageType::Pong => {}
-            WsMessageType::Close => {}
-        },
-        HttpServerRequest::WebSocketClose(_channel_id) => {}
-        HttpServerRequest::Http(_) => todo!(),
+        }
     }
-
     Ok(())
 }
 
 async fn handle_eth_request(
     action: EthRequest,
-    our: String,
+    our: &str,
     km: &KernelMessage,
-    connections: Arc<Mutex<RpcConnections>>,
-    send_to_loop: MessageSender,
+    connections: &Arc<Mutex<RpcConnections>>,
+    send_to_loop: &MessageSender,
 ) -> Result<(), anyhow::Error> {
     match action {
         EthRequest::SubscribeLogs(req) => {
             let handle = tokio::spawn(spawn_provider_read_stream(
-                our.clone(),
+                our.to_string(),
                 req,
                 km.clone(),
                 connections.clone(),
@@ -154,23 +136,22 @@ async fn handle_eth_request(
             ));
 
             let mut connections_guard = connections.lock().await;
-
             let ws_provider_subscription = connections_guard
                 .ws_provider_subscriptions
                 .entry(km.id)
                 .or_insert(WsProviderSubscription::default());
 
             ws_provider_subscription.handle = Some(handle);
-
             drop(connections_guard);
         }
         EthRequest::UnsubscribeLogs(channel_id) => {
-            let connections_guard = connections.lock().await;
-            let ws_provider_stream = connections_guard
+            let mut connections_guard = connections.lock().await;
+            if let Some(ws_provider_subscription) = connections_guard
                 .ws_provider_subscriptions
-                .get(&channel_id)
-                .unwrap();
-            ws_provider_stream.kill().await;
+                .remove(&channel_id)
+            {
+                ws_provider_subscription.kill().await;
+            }
         }
     }
     Ok(())
@@ -245,24 +226,16 @@ async fn spawn_provider_read_stream(
     }
 }
 
-fn handle_response(ipc: &Vec<u8>) -> Result<()> {
-    let Ok(_message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
-        return Ok(());
-    };
-
-    Ok(())
-}
-
-async fn bind_websockets(our: &String, send_to_loop: &MessageSender) {
+async fn bind_websockets(our: &str, send_to_loop: &MessageSender) {
     let _ = send_to_loop
         .send(KernelMessage {
             id: rand::random(),
             source: Address {
-                node: our.clone(),
+                node: our.to_string(),
                 process: ETH_PROCESS_ID.clone(),
             },
             target: Address {
-                node: our.clone(),
+                node: our.to_string(),
                 process: HTTP_SERVER_PROCESS_ID.clone(),
             },
             rsvp: None,
@@ -284,58 +257,50 @@ async fn bind_websockets(our: &String, send_to_loop: &MessageSender) {
 }
 
 async fn bootstrap_websocket_connections(
-    our: String,
-    rpc_url: String,
-    connections: Arc<Mutex<RpcConnections>>,
-    send_to_loop: MessageSender,
+    our: &str,
+    rpc_url: &str,
+    connections: &mut RpcConnections,
+    send_to_loop: &mut MessageSender,
 ) -> Result<()> {
-    let (_ws_stream, status) = connect_async(&rpc_url).await.expect("failed to connect");
-    let (_ws_sender, mut ws_receiver) = _ws_stream.split();
-
-    let mut connections_guard = connections.lock().await;
-    connections_guard.ws_sender = Some(_ws_sender);
-    connections_guard.ws_provider = Some(Provider::<Ws>::connect(rpc_url.clone()).await?);
-    connections_guard.ws_rpc_url = Some(rpc_url.clone());
-
-    let our = our.clone();
-    let ws_sender_ids = connections_guard.ws_sender_ids.clone();
-    let send_to_loop = send_to_loop.clone();
-
-    tokio::spawn(async move {
-        handle_external_websocket_passthrough(
-            our.clone(),
-            ws_sender_ids.clone(),
-            &mut ws_receiver,
-            send_to_loop.clone(),
+    let (ws_stream, _response) = connect_async(rpc_url).await.map_err(|e| {
+        anyhow::anyhow!(
+            "eth: error connecting to websocket provider at {}: {:?}",
+            rpc_url,
+            e
         )
-        .await;
-        Ok::<(), ()>(())
-    });
+    })?;
+    let (ws_sender, ws_receiver) = ws_stream.split();
+
+    connections.ws_sender = Some(ws_sender);
+    connections.ws_rpc_url = Some(rpc_url.to_string());
+    connections.ws_provider = Some(Provider::<Ws>::connect(rpc_url).await?);
+
+    tokio::spawn(handle_external_websocket_passthrough(
+        our.to_string(),
+        connections.ws_sender_ids.clone(),
+        ws_receiver,
+        send_to_loop.clone(),
+    ));
     Ok(())
 }
 
 async fn handle_external_websocket_passthrough(
     our: String,
     ws_request_ids: WsRequestIds,
-    ws_receiver: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
+    mut ws_receiver: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     send_to_loop: MessageSender,
 ) {
     while let Some(message) = ws_receiver.next().await {
         match message {
             Ok(msg) => {
-                if msg.is_text() {
-                    let Ok(text) = msg.into_text() else {
-                        todo!();
+                if let Ok(text) = msg.into_text() {
+                    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&text) else {
+                        continue;
                     };
-                    let json_result: Result<serde_json::Value, serde_json::Error> =
-                        serde_json::from_str(&text);
-                    let Ok(mut _json) = json_result else {
-                        todo!();
-                    };
-                    let id = _json["id"].as_u64().unwrap() as u32;
+                    let id = json["id"].as_u64().unwrap() as u32;
                     let channel_id = ws_request_ids.get(&id).unwrap().clone();
 
-                    _json["id"] = serde_json::Value::from(id - channel_id);
+                    json["id"] = serde_json::Value::from(id - channel_id);
 
                     let _ = send_to_loop
                         .send(KernelMessage {
@@ -352,7 +317,7 @@ async fn handle_external_websocket_passthrough(
                             message: Message::Request(Request {
                                 inherit: false,
                                 ipc: serde_json::to_vec(&HttpServerAction::WebSocketPush {
-                                    channel_id: channel_id,
+                                    channel_id,
                                     message_type: WsMessageType::Text,
                                 })
                                 .unwrap(),
@@ -360,17 +325,15 @@ async fn handle_external_websocket_passthrough(
                                 expects_response: None,
                             }),
                             payload: Some(Payload {
-                                bytes: _json.to_string().as_bytes().to_vec(),
+                                bytes: json.to_string().as_bytes().to_vec(),
                                 mime: None,
                             }),
                             signed_capabilities: None,
                         })
                         .await;
-                } // TODO: an rpc request may come as binary so may need to handle
+                }
             }
-            Err(e) => {
-                panic!("eth: passthrough websocket error {:?}", e);
-            }
+            Err(_) => break,
         }
     }
 }
