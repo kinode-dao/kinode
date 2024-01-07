@@ -386,7 +386,7 @@ pub struct Request {
     pub expects_response: Option<u64>, // number of seconds until timeout
     pub ipc: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
-    pub capabilities: Vec<Capability>,
+    pub capabilities: Vec<(Capability, Vec<u8>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -394,7 +394,7 @@ pub struct Response {
     pub inherit: bool,
     pub ipc: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
-    pub capabilities: Vec<Capability>,
+    pub capabilities: Vec<(Capability, Vec<u8>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -504,7 +504,7 @@ impl std::fmt::Display for Message {
                     if request.capabilities.len() > 0 {
                         caps_string.push_str("\n            ");
                         for cap in request.capabilities.iter() {
-                            caps_string.push_str(&format!("{},\n            ", cap));
+                            caps_string.push_str(&format!("{},\n            ", cap.0));
                         }
                         caps_string.truncate(caps_string.len() - 4);
                     }
@@ -534,7 +534,7 @@ impl std::fmt::Display for Message {
                     if response.capabilities.len() > 0 {
                         caps_string.push_str("\n            ");
                         for cap in response.capabilities.iter() {
-                            caps_string.push_str(&format!("{},\n            ", cap));
+                            caps_string.push_str(&format!("{},\n            ", cap.0));
                         }
                         caps_string.truncate(caps_string.len() - 4);
                     }
@@ -624,24 +624,27 @@ pub fn en_wit_payload(load: Option<Payload>) -> Option<wit::Payload> {
     }
 }
 
-pub fn de_wit_capability(wit: wit::Capability) -> Capability {
-    Capability {
-        issuer: Address {
-            node: wit.issuer.node,
-            process: ProcessId {
-                process_name: wit.issuer.process.process_name,
-                package_name: wit.issuer.process.package_name,
-                publisher_node: wit.issuer.process.publisher_node,
+pub fn de_wit_capability(wit: wit::Capability) -> (Capability, Vec<u8>) {
+    (
+        Capability {
+            issuer: Address {
+                node: wit.issuer.node,
+                process: ProcessId {
+                    process_name: wit.issuer.process.process_name,
+                    package_name: wit.issuer.process.package_name,
+                    publisher_node: wit.issuer.process.publisher_node,
+                },
             },
+            params: wit.params,
         },
-        params: wit.params,
-    }
+        vec![],
+    )
 }
 
-pub fn en_wit_capability(cap: Capability) -> wit::Capability {
+pub fn en_wit_capability(cap: (Capability, Vec<u8>)) -> wit::Capability {
     wit::Capability {
-        issuer: cap.issuer.en_wit(),
-        params: cap.params,
+        issuer: cap.0.issuer.en_wit(),
+        params: cap.0.params,
     }
 }
 
@@ -796,14 +799,13 @@ pub struct KernelMessage {
     pub rsvp: Rsvp,
     pub message: Message,
     pub payload: Option<Payload>,
-    pub signed_capabilities: HashMap<Capability, Vec<u8>>,
 }
 
 impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {},\n    signed_capabilities: {}\n}}",
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {},\n}}",
             self.id,
             self.source,
             self.target,
@@ -813,25 +815,6 @@ impl std::fmt::Display for KernelMessage {
             },
             self.message,
             self.payload.is_some(),
-            {
-                let mut caps_string = "[".to_string();
-                if self.signed_capabilities.len() > 0 {
-                    caps_string.push_str("\n        ");
-                    for (cap, sig) in self.signed_capabilities.iter() {
-                        caps_string.push_str(
-                            &format!(
-                                "{{\n            issuer: {},\n            params: {},\n            signature: 0x{},\n        }},\n        ",
-                                cap.issuer,
-                                cap.params,
-                                hex::encode(sig)
-                            )
-                        );
-                    }
-                    caps_string.truncate(caps_string.len() - 4);
-                }
-                caps_string.push_str("]");
-                caps_string
-            },
         )
     }
 }
@@ -938,12 +921,12 @@ pub enum CapMessage {
     },
     GetAll {
         on: ProcessId,
-        responder: tokio::sync::oneshot::Sender<HashMap<Capability, Vec<u8>>>,
+        responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
     GetSome {
         on: ProcessId,
         caps: Vec<Capability>,
-        responder: tokio::sync::oneshot::Sender<HashMap<Capability, Vec<u8>>>,
+        responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
 }
 

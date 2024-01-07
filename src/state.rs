@@ -269,7 +269,6 @@ async fn handle_request(
                 mime: Some("application/octet-stream".into()),
                 bytes,
             }),
-            signed_capabilities: HashMap::new(),
         };
 
         let _ = send_to_loop.send(response).await;
@@ -739,7 +738,6 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -
             None,
         )),
         payload: None,
-        signed_capabilities: HashMap::new(),
     }
 }
 

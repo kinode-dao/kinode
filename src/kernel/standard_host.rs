@@ -6,7 +6,6 @@ use crate::types::STATE_PROCESS_ID;
 use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
 use anyhow::Result;
-use ring::signature::{self, KeyPair};
 
 async fn print_debug(proc: &process::ProcessState, content: &str) {
     let _ = proc
@@ -385,42 +384,16 @@ impl StandardHost for process::ProcessWasi {
     //
 
     async fn save_capabilities(&mut self, caps: Vec<wit::Capability>) -> Result<()> {
-        let pk = signature::UnparsedPublicKey::new(
-            &signature::ED25519,
-            self.process.keypair.public_key(),
-        );
-
-        let Some(prompting_message) = self.process.prompting_message.clone() else {
-            return Err(anyhow::anyhow!("save_capabilities: no prompting message!"));
-        };
-
-        let caps_to_save = caps
-            .iter()
-            .filter(|&cap| {
-                // only caps that we issued to ourself (not sure why you would, but we allow it)
-                t::Address::de_wit(cap.clone().issuer) == self.process.metadata.our
-                // OR caps with valid signatures
-                    ||
-                    match prompting_message.signed_capabilities.get(&t::de_wit_capability(cap.clone())) {
-                        Some(sig) => {
-                            match pk.verify(&rmp_serde::to_vec(&t::de_wit_capability(cap.clone())).unwrap_or_default(), &sig) {
-                                Ok(_) => true,
-                                Err(_) => false,
-                            }
-                        }
-                        None => false,
-                    }
-            })
-            .map(|cap| t::de_wit_capability(cap.clone()))
-            .collect::<Vec<t::Capability>>();
-
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self
             .process
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: self.process.metadata.our.process.clone(),
-                caps: caps_to_save,
+                caps: caps
+                    .iter()
+                    .map(|cap| t::de_wit_capability(cap.clone()).0)
+                    .collect(),
                 responder: tx,
             })
             .await?;
@@ -453,7 +426,7 @@ impl StandardHost for process::ProcessWasi {
         target: wit::ProcessId,
         caps: Vec<wit::Capability>,
     ) -> Result<()> {
-        // first verify that caller has the root capability to arbirarily add
+        // first verify that caller has the root capability to arbitrarily add
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self
             .process
@@ -484,7 +457,7 @@ impl StandardHost for process::ProcessWasi {
                 on: t::ProcessId::de_wit(target),
                 caps: caps
                     .iter()
-                    .map(|cap| t::de_wit_capability(cap.clone()))
+                    .map(|cap| t::de_wit_capability(cap.clone()).0)
                     .collect(),
                 responder: tx,
             })

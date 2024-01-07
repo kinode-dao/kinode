@@ -71,7 +71,6 @@ async fn persist_state(
                 capabilities: vec![],
             }),
             payload: Some(t::Payload { mime: None, bytes }),
-            signed_capabilities: HashMap::new(),
         })
         .await?;
     Ok(())
@@ -131,7 +130,6 @@ async fn handle_kernel_request(
                             capabilities: vec![],
                         }),
                         payload: None,
-                        signed_capabilities: HashMap::new(),
                     }))
                     .await;
             }
@@ -180,7 +178,6 @@ async fn handle_kernel_request(
                             None,
                         )),
                         payload: None,
-                        signed_capabilities: HashMap::new(),
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -301,7 +298,6 @@ async fn handle_kernel_request(
                                 None,
                             )),
                             payload: None,
-                            signed_capabilities: HashMap::new(),
                         })
                         .await
                         .expect("event loop: fatal: sender died");
@@ -331,7 +327,6 @@ async fn handle_kernel_request(
                             capabilities: vec![],
                         }),
                         payload: None,
-                        signed_capabilities: HashMap::new(),
                     }))
                     .await
                 {
@@ -355,7 +350,6 @@ async fn handle_kernel_request(
                                 None,
                             )),
                             payload: None,
-                            signed_capabilities: HashMap::new(),
                         })
                         .await
                         .expect("event loop: fatal: sender died");
@@ -388,7 +382,6 @@ async fn handle_kernel_request(
                             None,
                         )),
                         payload: None,
-                        signed_capabilities: HashMap::new(),
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -443,7 +436,6 @@ async fn handle_kernel_request(
                         None,
                     )),
                     payload: None,
-                    signed_capabilities: HashMap::new(),
                 })
                 .await
                 .expect("event loop: fatal: sender died");
@@ -576,7 +568,6 @@ async fn start_process(
                 None,
             )),
             payload: None,
-            signed_capabilities: HashMap::new(),
         })
         .await?;
     Ok(())
@@ -689,7 +680,6 @@ pub async fn kernel(
                             rsvp: None,
                             message: t::Message::Request(request),
                             payload: payload.clone(),
-                            signed_capabilities: HashMap::new(),
                         })
                         .await
                         .expect("fatal: kernel event loop died");
@@ -751,7 +741,6 @@ pub async fn kernel(
                 capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: HashMap::new(),
         })
         .await
         .expect("fatal: kernel event loop died");
@@ -1036,15 +1025,15 @@ pub async fn kernel(
                         // return all caps, signed, on responder
                         let _ = responder.send(
                             match process_map.get(&on) {
-                                None => HashMap::new(),
-                                Some(p) => p.capabilities.clone(),
+                                None => vec![],
+                                Some(p) => p.capabilities.clone().into_iter().collect(),
                             }
                         );
                     },
                     t::CapMessage::GetSome { on, caps, responder } => {
                         let _ = responder.send(
                             match process_map.get(&on) {
-                                None => HashMap::new(),
+                                None => vec![],
                                 Some(p) => {
                                     caps.iter().filter_map(|cap| {
                                         // if issuer is foreign, retrieve uncritically
