@@ -386,6 +386,7 @@ pub struct Request {
     pub expects_response: Option<u64>, // number of seconds until timeout
     pub ipc: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
+    pub capabilities: Vec<(Capability, Vec<u8>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -393,6 +394,7 @@ pub struct Response {
     pub inherit: bool,
     pub ipc: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
+    pub capabilities: Vec<(Capability, Vec<u8>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -407,11 +409,14 @@ pub struct Capability {
     pub params: String, // JSON-string
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-pub struct SignedCapability {
-    pub issuer: Address,
-    pub params: String,     // JSON-string
-    pub signature: Vec<u8>, // signed by the kernel, so we can verify that the kernel issued it
+impl std::fmt::Display for Capability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{\n                issuer: {},\n                params: {},\n            }}",
+            self.issuer, self.params
+        )
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -486,7 +491,7 @@ impl std::fmt::Display for Message {
         match self {
             Message::Request(request) => write!(
                 f,
-                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n    )",
+                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n        capabilities: {}\n    )",
                 request.inherit,
                 request.expects_response,
                 match serde_json::from_slice::<serde_json::Value>(&request.ipc) {
@@ -494,10 +499,22 @@ impl std::fmt::Display for Message {
                     Err(_) => format!("{:?}", request.ipc),
                 },
                 &request.metadata.as_ref().unwrap_or(&"None".into()),
+                {
+                    let mut caps_string = "[".to_string();
+                    if request.capabilities.len() > 0 {
+                        caps_string.push_str("\n            ");
+                        for cap in request.capabilities.iter() {
+                            caps_string.push_str(&format!("{},\n            ", cap.0));
+                        }
+                        caps_string.truncate(caps_string.len() - 4);
+                    }
+                    caps_string.push_str("]");
+                    caps_string
+                },
             ),
             Message::Response((response, context)) => write!(
                 f,
-                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
+                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {},\n        capabilities: {}\n    )",
                 response.inherit,
                 match serde_json::from_slice::<serde_json::Value>(&response.ipc) {
                     Ok(json) => format!("{}", json),
@@ -511,6 +528,18 @@ impl std::fmt::Display for Message {
                         Ok(json) => format!("{}", json),
                         Err(_) => format!("{:?}", context.as_ref().unwrap()),
                     }
+                },
+                {
+                    let mut caps_string = "[".to_string();
+                    if response.capabilities.len() > 0 {
+                        caps_string.push_str("\n            ");
+                        for cap in response.capabilities.iter() {
+                            caps_string.push_str(&format!("{},\n            ", cap.0));
+                        }
+                        caps_string.truncate(caps_string.len() - 4);
+                    }
+                    caps_string.push_str("]");
+                    caps_string
                 },
             ),
         }
@@ -527,6 +556,11 @@ pub fn de_wit_request(wit: wit::Request) -> Request {
         expects_response: wit.expects_response,
         ipc: wit.ipc,
         metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .iter()
+            .map(|cap| de_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -536,6 +570,11 @@ pub fn en_wit_request(request: Request) -> wit::Request {
         expects_response: request.expects_response,
         ipc: request.ipc,
         metadata: request.metadata,
+        capabilities: request
+            .capabilities
+            .iter()
+            .map(|cap| en_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -544,6 +583,11 @@ pub fn de_wit_response(wit: wit::Response) -> Response {
         inherit: wit.inherit,
         ipc: wit.ipc,
         metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .iter()
+            .map(|cap| de_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -552,6 +596,11 @@ pub fn en_wit_response(response: Response) -> wit::Response {
         inherit: response.inherit,
         ipc: response.ipc,
         metadata: response.metadata,
+        capabilities: response
+            .capabilities
+            .iter()
+            .map(|cap| en_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -575,26 +624,27 @@ pub fn en_wit_payload(load: Option<Payload>) -> Option<wit::Payload> {
     }
 }
 
-pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> SignedCapability {
-    SignedCapability {
-        issuer: Address {
-            node: wit.issuer.node,
-            process: ProcessId {
-                process_name: wit.issuer.process.process_name,
-                package_name: wit.issuer.process.package_name,
-                publisher_node: wit.issuer.process.publisher_node,
+pub fn de_wit_capability(wit: wit::Capability) -> (Capability, Vec<u8>) {
+    (
+        Capability {
+            issuer: Address {
+                node: wit.issuer.node,
+                process: ProcessId {
+                    process_name: wit.issuer.process.process_name,
+                    package_name: wit.issuer.process.package_name,
+                    publisher_node: wit.issuer.process.publisher_node,
+                },
             },
+            params: wit.params,
         },
-        params: wit.params,
-        signature: wit.signature,
-    }
+        vec![],
+    )
 }
 
-pub fn _en_wit_signed_capability(cap: SignedCapability) -> wit::SignedCapability {
-    wit::SignedCapability {
-        issuer: cap.issuer.en_wit(),
-        params: cap.params,
-        signature: cap.signature,
+pub fn en_wit_capability(cap: (Capability, Vec<u8>)) -> wit::Capability {
+    wit::Capability {
+        issuer: cap.0.issuer.en_wit(),
+        params: cap.0.params,
     }
 }
 
@@ -749,14 +799,13 @@ pub struct KernelMessage {
     pub rsvp: Rsvp,
     pub message: Message,
     pub payload: Option<Payload>,
-    pub signed_capabilities: Option<Vec<SignedCapability>>,
 }
 
 impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n}}",
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {},\n}}",
             self.id,
             self.source,
             self.target,
@@ -810,13 +859,21 @@ pub enum KernelCommand {
     ///
     /// The process that sends this command will be given messaging capabilities
     /// for the new process if `public` is false.
+    ///
+    /// All capabilities passed into initial_capabilities must be held by the source
+    /// of this message, or the kernel will discard them (silently for now).
     InitializeProcess {
         id: ProcessId,
         wasm_bytes_handle: String,
         wit_version: Option<u32>,
         on_exit: OnExit,
-        initial_capabilities: HashSet<SignedCapability>,
+        initial_capabilities: HashSet<Capability>,
         public: bool,
+    },
+    /// Create an arbitrary capability and grant it to a process.
+    GrantCapabilities {
+        target: ProcessId,
+        capabilities: Vec<Capability>,
     },
     /// Tell the kernel to run a process that has already been installed.
     /// TODO: in the future, this command could be extended to allow for
@@ -852,7 +909,7 @@ pub enum KernelResponse {
 pub enum CapMessage {
     Add {
         on: ProcessId,
-        cap: Capability,
+        caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
     _Drop {
@@ -869,7 +926,12 @@ pub enum CapMessage {
     },
     GetAll {
         on: ProcessId,
-        responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
+        responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
+    },
+    GetSome {
+        on: ProcessId,
+        caps: Vec<Capability>,
+        responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
 }
 
@@ -880,7 +942,7 @@ pub struct PersistedProcess {
     pub wasm_bytes_handle: String,
     pub wit_version: Option<u32>,
     pub on_exit: OnExit,
-    pub capabilities: HashSet<Capability>,
+    pub capabilities: HashMap<Capability, Vec<u8>>,
     pub public: bool, // marks if a process allows messages from any process
 }
 
@@ -912,8 +974,8 @@ pub struct PackageManifestEntry {
     pub process_wasm_path: String,
     pub on_exit: OnExit,
     pub request_networking: bool,
-    pub request_messaging: Option<Vec<serde_json::Value>>,
-    pub grant_messaging: Option<Vec<serde_json::Value>>,
+    pub request_capabilities: Option<Vec<serde_json::Value>>,
+    pub grant_capabilities: Option<Vec<serde_json::Value>>,
     pub public: bool,
 }
 

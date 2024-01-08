@@ -222,11 +222,11 @@ async fn connect_websocket(
                     )
                     .unwrap(),
                     metadata: None,
+                    capabilities: vec![],
                 },
                 None,
             )),
             payload: None,
-            signed_capabilities: None,
         })
         .await;
 
@@ -464,6 +464,7 @@ async fn handle_http_request(
                             ))
                             .unwrap(),
                             metadata: None,
+                            capabilities: vec![],
                         },
                         None,
                     )),
@@ -471,7 +472,6 @@ async fn handle_http_request(
                         mime: None,
                         bytes: response.bytes().await.unwrap_or_default().to_vec(),
                     }),
-                    signed_capabilities: None,
                 })
                 .await;
         }
@@ -561,11 +561,11 @@ async fn http_error_message(
                         ))
                         .unwrap(),
                         metadata: None,
+                        capabilities: vec![],
                     },
                     None,
                 )),
                 payload: None,
-                signed_capabilities: None,
             })
             .await;
     }
@@ -601,11 +601,11 @@ async fn websocket_error_message(
                         )
                         .unwrap(),
                         metadata: None,
+                        capabilities: vec![],
                     },
                     None,
                 )),
                 payload: None,
-                signed_capabilities: None,
             })
             .await;
     }
@@ -700,9 +700,9 @@ async fn handle_ws_message(
                 ipc: serde_json::to_vec::<WebSocketClientAction>(&action).unwrap(),
                 expects_response: None,
                 metadata: None,
+                capabilities: vec![],
             }),
             payload,
-            signed_capabilities: None,
         })
         .await;
 }

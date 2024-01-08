@@ -2,7 +2,7 @@ use crate::kernel::{ProcessMessageReceiver, ProcessMessageSender};
 use crate::types as t;
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
-use ring::signature;
+use ring::signature::{self, KeyPair};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
@@ -30,7 +30,6 @@ pub struct ProcessState {
     pub contexts: HashMap<u64, (t::ProcessContext, JoinHandle<()>)>,
     pub message_queue: VecDeque<Result<t::KernelMessage, t::WrappedSendError>>,
     pub caps_oracle: t::CapMessageSender,
-    pub next_message_caps: Option<Vec<t::SignedCapability>>,
 }
 
 pub struct ProcessWasi {
@@ -142,6 +141,25 @@ impl ProcessState {
             },
         };
 
+        let mut inner_request = t::de_wit_request(request.clone());
+
+        inner_request.capabilities = {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = self
+                .caps_oracle
+                .send(t::CapMessage::GetSome {
+                    on: self.metadata.our.process.clone(),
+                    caps: request
+                        .capabilities
+                        .iter()
+                        .map(|cap| t::de_wit_capability(cap.clone()).0)
+                        .collect(),
+                    responder: tx,
+                })
+                .await?;
+            rx.await?
+        };
+
         // rsvp is set if there was a Request expecting Response
         // followed by inheriting Request(s) not expecting Response;
         // this is done such that the ultimate request handler knows that,
@@ -167,9 +185,8 @@ impl ProcessState {
                 // no rsvp because neither prompting message nor this request wants a response
                 (_, None, None) => None,
             },
-            message: t::Message::Request(t::de_wit_request(request.clone())),
+            message: t::Message::Request(inner_request),
             payload: payload.clone(),
-            signed_capabilities: None,
         };
 
         // modify the process' context map as needed.
@@ -238,6 +255,25 @@ impl ProcessState {
             false => t::de_wit_payload(payload),
         };
 
+        let mut inner_response = t::de_wit_response(response.clone());
+
+        inner_response.capabilities = {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = self
+                .caps_oracle
+                .send(t::CapMessage::GetSome {
+                    on: self.metadata.our.process.clone(),
+                    caps: response
+                        .capabilities
+                        .iter()
+                        .map(|cap| t::de_wit_capability(cap.clone()).0)
+                        .collect(),
+                    responder: tx,
+                })
+                .await;
+            rx.await.expect("fatal: process couldn't get caps")
+        };
+
         self.send_to_loop
             .send(t::KernelMessage {
                 id,
@@ -245,12 +281,11 @@ impl ProcessState {
                 target,
                 rsvp: None,
                 message: t::Message::Response((
-                    t::de_wit_response(response),
+                    inner_response,
                     // the context will be set by the process receiving this Response.
                     None,
                 )),
                 payload,
-                signed_capabilities: None,
             })
             .await
             .expect("fatal: kernel couldn't send response");
@@ -324,12 +359,51 @@ impl ProcessState {
             },
         };
 
+        let pk = signature::UnparsedPublicKey::new(
+            &signature::ED25519,
+            self.keypair.as_ref().public_key(),
+        );
+
         Ok((
             km.source.en_wit(),
             match km.message {
-                t::Message::Request(request) => wit::Message::Request(t::en_wit_request(request)),
+                t::Message::Request(mut request) => {
+                    // prune any invalid caps before sending
+                    request.capabilities = request
+                        .capabilities
+                        .iter()
+                        .filter_map(|(cap, sig)| {
+                            if cap.issuer.node != self.metadata.our.node {
+                                // accept all remote caps uncritically
+                                return Some((cap.clone(), sig.clone()));
+                            }
+                            // otherwise only return capabilities that were properly signed
+                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), &sig) {
+                                Ok(_) => Some((cap.clone(), sig.clone())),
+                                Err(_) => None,
+                            }
+                        })
+                        .collect::<Vec<(t::Capability, Vec<u8>)>>();
+                    wit::Message::Request(t::en_wit_request(request))
+                }
                 // NOTE: we throw away whatever context came from the sender, that's not ours
-                t::Message::Response((response, _context)) => {
+                t::Message::Response((mut response, _context)) => {
+                    // prune any invalid caps before sending
+                    response.capabilities = response
+                        .capabilities
+                        .iter()
+                        .filter_map(|(cap, sig)| {
+                            if cap.issuer.node != self.metadata.our.node {
+                                // accept all remote caps uncritically
+                                return Some((cap.clone(), sig.clone()));
+                            }
+                            // otherwise only return capabilities that were properly signed
+                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), &sig) {
+                                Ok(_) => Some((cap.clone(), sig.clone())),
+                                Err(_) => None,
+                            }
+                        })
+                        .collect::<Vec<(t::Capability, Vec<u8>)>>();
                     wit::Message::Response((t::en_wit_response(response), context))
                 }
             },
@@ -386,6 +460,7 @@ pub async fn make_process_loop(
                             expects_response: None,
                             ipc: b"run".to_vec(),
                             metadata: None,
+                            capabilities: vec![],
                         }))
                 {
                     break;
@@ -428,7 +503,6 @@ pub async fn make_process_loop(
                 contexts: HashMap::new(),
                 message_queue: VecDeque::new(),
                 caps_oracle: caps_oracle.clone(),
-                next_message_caps: None,
             },
             table,
             wasi,
@@ -507,9 +581,9 @@ pub async fn make_process_loop(
                     ))
                     .unwrap(),
                     metadata: None,
+                    capabilities: vec![],
                 }),
                 payload: None,
-                signed_capabilities: None,
             })
             .await
             .expect("event loop: fatal: sender died");
@@ -522,7 +596,15 @@ pub async fn make_process_loop(
                 responder: tx,
             })
             .await;
-        let initial_capabilities = rx.await.unwrap().into_iter().collect();
+        let initial_capabilities = rx
+            .await
+            .unwrap()
+            .iter()
+            .map(|c| t::Capability {
+                issuer: c.0.issuer.clone(),
+                params: c.0.params.clone(),
+            })
+            .collect();
 
         // send message to tell main kernel loop to remove handler
         send_to_loop
@@ -539,9 +621,9 @@ pub async fn make_process_loop(
                     ))
                     .unwrap(),
                     metadata: None,
+                    capabilities: vec![],
                 }),
                 payload: None,
-                signed_capabilities: None,
             })
             .await
             .expect("event loop: fatal: sender died");
@@ -570,12 +652,12 @@ pub async fn make_process_loop(
                             })
                             .unwrap(),
                             metadata: None,
+                            capabilities: vec![],
                         }),
                         payload: Some(t::Payload {
                             mime: None,
                             bytes: wasm_bytes,
                         }),
-                        signed_capabilities: None,
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -605,7 +687,6 @@ pub async fn make_process_loop(
                                 rsvp: None,
                                 message: t::Message::Request(request),
                                 payload,
-                                signed_capabilities: None,
                             })
                             .await
                             .expect("event loop: fatal: sender died");

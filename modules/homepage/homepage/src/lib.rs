@@ -1,7 +1,7 @@
 #![feature(let_chains)]
 use uqbar_process_lib::{
-    await_message, grant_messaging, http::bind_http_static_path, http::HttpServerError, println, Address,
-    Message, ProcessId,
+    await_message, http::bind_http_static_path, http::HttpServerError, println,
+    Address, Message, ProcessId,
 };
 
 wit_bindgen::generate!({
@@ -19,7 +19,6 @@ const HOME_PAGE: &str = include_str!("home.html");
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
-        grant_messaging(&our, vec![ProcessId::new(Some("http_server"), "sys", "uqbar")]);
         match main(our) {
             Ok(_) => {}
             Err(e) => {
@@ -56,7 +55,9 @@ fn main(our: Address) -> anyhow::Result<()> {
         false,
         false,
         Some("application/javascript".to_string()),
-        format!("window.our = {{}}; window.our.node = '{}';", &our.node).as_bytes().to_vec(),
+        format!("window.our = {{}}; window.our.node = '{}';", &our.node)
+            .as_bytes()
+            .to_vec(),
     )?;
 
     loop {
@@ -64,7 +65,7 @@ fn main(our: Address) -> anyhow::Result<()> {
             println!("homepage: got network error??");
             continue;
         };
-        if let Message::Response { source, ipc, ..} = message
+        if let Message::Response { source, ipc, .. } = message
             && source.process == "http_server:sys:uqbar"
         {
             match serde_json::from_slice::<Result<(), HttpServerError>>(&ipc) {

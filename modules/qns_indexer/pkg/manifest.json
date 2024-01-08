@@ -4,7 +4,7 @@
         "process_wasm_path": "/qns_indexer.wasm",
         "on_exit": "Restart",
         "request_networking": true,
-        "request_messaging": [
+        "request_capabilities": [
             "net:sys:uqbar",
             "http_server:sys:uqbar",
             "eth:sys:uqbar"

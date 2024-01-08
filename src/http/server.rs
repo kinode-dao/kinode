@@ -496,12 +496,12 @@ async fn http_handler(
                 }))
                 .unwrap(),
                 metadata: Some("http".into()),
+                capabilities: vec![],
             }),
             payload: Some(Payload {
                 mime: None,
                 bytes: body.to_vec(),
             }),
-            signed_capabilities: None,
         }
     };
 
@@ -616,9 +616,9 @@ async fn handle_rpc_message(
                 None => Vec::new(),
             },
             metadata: rpc_message.metadata,
+            capabilities: vec![],
         }),
         payload,
-        signed_capabilities: None,
     })
 }
 
@@ -663,9 +663,9 @@ async fn maintain_websocket(
                 ipc: serde_json::to_vec(&HttpServerRequest::WebSocketOpen { path, channel_id })
                     .unwrap(),
                 metadata: Some("ws".into()),
+                capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: None,
         })
         .await;
 
@@ -706,14 +706,13 @@ async fn maintain_websocket(
                                     message_type: ws_msg_type,
                                 }).unwrap(),
                                 metadata: Some("ws".into()),
+                                capabilities: vec![],
                             }),
                             payload: Some(Payload {
                                 mime: None,
                                 bytes: msg.into_bytes(),
                             }),
-                            signed_capabilities: None,
                         }).await;
-
                     }
                     _ => {
                         websocket_close(channel_id, app.clone(), &ws_senders, &send_to_loop).await;
@@ -766,6 +765,7 @@ async fn websocket_close(
                 expects_response: None,
                 ipc: serde_json::to_vec(&HttpServerRequest::WebSocketClose(channel_id)).unwrap(),
                 metadata: Some("ws".into()),
+                capabilities: vec![],
             }),
             payload: Some(Payload {
                 mime: None,
@@ -775,7 +775,6 @@ async fn websocket_close(
                 })
                 .unwrap(),
             }),
-            signed_capabilities: None,
         })
         .await;
 }
@@ -1150,11 +1149,11 @@ pub async fn send_action_response(
                     inherit: false,
                     ipc: serde_json::to_vec(&result).unwrap(),
                     metadata: None,
+                    capabilities: vec![],
                 },
                 None,
             )),
             payload: None,
-            signed_capabilities: None,
         })
         .await;
 }
