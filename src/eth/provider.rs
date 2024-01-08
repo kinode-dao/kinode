@@ -217,9 +217,9 @@ async fn spawn_provider_read_stream(
                     .to_string()
                     .into_bytes(),
                     metadata: None,
+                    capabilities: vec![],
                 }),
                 payload: None,
-                signed_capabilities: None,
             })
             .await
             .unwrap();
@@ -249,9 +249,9 @@ async fn bind_websockets(our: &str, send_to_loop: &MessageSender) {
                 .unwrap(),
                 metadata: None,
                 expects_response: None,
+                capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: None,
         })
         .await;
 }
@@ -323,12 +323,12 @@ async fn handle_external_websocket_passthrough(
                                 .unwrap(),
                                 metadata: None,
                                 expects_response: None,
+                                capabilities: vec![],
                             }),
                             payload: Some(Payload {
                                 bytes: json.to_string().as_bytes().to_vec(),
                                 mime: None,
                             }),
-                            signed_capabilities: None,
                         })
                         .await;
                 }
