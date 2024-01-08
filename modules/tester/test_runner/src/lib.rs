@@ -3,7 +3,9 @@ use std::collections::{HashMap, HashSet};
 
 use uqbar_process_lib::kernel_types as kt;
 use uqbar_process_lib::uqbar::process::standard as wit;
-use uqbar_process_lib::{spawn, Address, Message, OnExit, ProcessId, Request, Response};
+use uqbar_process_lib::{
+    our_capabilities, spawn, vfs, Address, Message, OnExit, ProcessId, Request, Response,
+};
 
 mod tester_types;
 use tester_types as tt;
@@ -41,9 +43,9 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
 
                     let response = Request::new()
                         .target(make_vfs_address(&our)?)
-                        .ipc(serde_json::to_vec(&kt::VfsRequest {
+                        .ipc(serde_json::to_vec(&vfs::VfsRequest {
                             path: "/tester:uqbar/tests".into(),
-                            action: kt::VfsAction::ReadDir,
+                            action: vfs::VfsAction::ReadDir,
                         })?)
                         .send_and_await_response(test_timeout)?
                         .unwrap();
@@ -51,8 +53,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     let Message::Response { ipc: vfs_ipc, .. } = response else {
                         panic!("")
                     };
-                    let kt::VfsResponse::ReadDir(children) =
-                        serde_json::from_slice(&vfs_ipc)?
+                    let vfs::VfsResponse::ReadDir(children) = serde_json::from_slice(&vfs_ipc)?
                     else {
                         wit::print_to_terminal(
                             0,
@@ -69,16 +70,17 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     for child in &children {
                         let child_process_id = match spawn(
                             None,
-                            child,
+                            &child.path,
                             OnExit::None, //  TODO: notify us
-                            &wit::Capabilities::All,
+                            our_capabilities(),
+                            vec![],
                             false, // not public
                         ) {
                             Ok(child_process_id) => child_process_id,
                             Err(e) => {
                                 wit::print_to_terminal(
                                     0,
-                                    &format!("couldn't spawn {}: {}", child, e),
+                                    &format!("couldn't spawn {}: {}", child.path, e),
                                 );
                                 panic!("couldn't spawn"); //  TODO
                             }
@@ -132,11 +134,6 @@ impl Guest for Component {
         wit::print_to_terminal(0, "test_runner: begin");
 
         let our = Address::from_str(&our).unwrap();
-
-        wit::create_capability(
-            &ProcessId::new(Some("vfs"), "sys", "uqbar"),
-            &"\"messaging\"".into(),
-        );
 
         loop {
             match handle_message(&our) {

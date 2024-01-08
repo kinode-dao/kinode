@@ -128,11 +128,11 @@ pub async fn eth_rpc(
                                 )
                                 .unwrap(),
                                 metadata: None,
+                                capabilities: vec![],
                             },
                             None,
                         )),
                         payload: None,
-                        signed_capabilities: None,
                     })
                     .await
                     .unwrap();
@@ -225,9 +225,10 @@ pub async fn eth_rpc(
                                                     "EventSubscription": serde_json::to_value(event.clone()).unwrap()
                                                 }).to_string().into_bytes(),
                                                 metadata: None,
+                                                capabilities: vec![],
                                             }),
                                             payload: None,
-                                            signed_capabilities: None,
+
                                         }
                                     ).await.unwrap();
                                     from_block = event.block_number.unwrap_or(from_block);
@@ -292,10 +293,10 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: EthRpcError) 
                 inherit: false,
                 ipc: serde_json::to_vec::<Result<u64, EthRpcError>>(&Err(error)).unwrap(),
                 metadata: None,
+                capabilities: vec![],
             },
             None,
         )),
         payload: None,
-        signed_capabilities: None,
     }
 }

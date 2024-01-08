@@ -227,9 +227,9 @@ pub async fn create_passthrough(
                 expects_response: Some(5),
                 ipc: rmp_serde::to_vec(&NetActions::ConnectionRequest(from_id.name.clone()))?,
                 metadata: None,
+                capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: None,
         })?;
 
         return Ok((
@@ -494,11 +494,11 @@ pub async fn parse_hello_message(
                     inherit: false,
                     ipc: "delivered".as_bytes().to_vec(),
                     metadata: None,
+                    capabilities: vec![],
                 },
                 None,
             )),
             payload: None,
-            signed_capabilities: None,
         })
         .await?;
     Ok(())

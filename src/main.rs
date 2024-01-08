@@ -352,21 +352,6 @@ async fn main() {
         ),
     ];
 
-    #[cfg(feature = "llm")]
-    runtime_extensions.push((
-        ProcessId::new(Some("llm"), "sys", "uqbar"), // TODO llm:extensions:uqbar ?
-        llm_sender,
-        true,
-    ));
-
-    let (kernel_process_map, db) = state::load_state(
-        our.name.clone(),
-        home_directory_path.clone(),
-        runtime_extensions.clone(),
-    )
-    .await
-    .expect("state load failed!");
-
     /*
      *  the kernel module will handle our userspace processes and receives
      *  all "messages", the basic message format for uqbar.
@@ -374,6 +359,15 @@ async fn main() {
      *  if any of these modules fail, the program exits with an error.
      */
     let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
+
+    let (kernel_process_map, db) = state::load_state(
+        our.name.clone(),
+        networking_keypair_arc.clone(),
+        home_directory_path.clone(),
+        runtime_extensions.clone(),
+    )
+    .await
+    .expect("state load failed!");
 
     let mut tasks = tokio::task::JoinSet::<Result<()>>::new();
     tasks.spawn(kernel::kernel(
@@ -388,6 +382,7 @@ async fn main() {
         network_error_receiver,
         kernel_debug_message_receiver,
         net_message_sender.clone(),
+        home_directory_path.clone(),
         runtime_extensions,
     ));
     #[cfg(not(feature = "simulation-mode"))]
@@ -514,9 +509,9 @@ async fn main() {
                 expects_response: None,
                 ipc: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
                 metadata: None,
+                capabilities: vec![],
             }),
             payload: None,
-            signed_capabilities: None,
         })
         .await;
 
