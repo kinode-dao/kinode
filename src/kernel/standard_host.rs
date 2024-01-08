@@ -447,7 +447,6 @@ impl StandardHost for process::ProcessWasi {
         context: Option<wit::Context>,
         payload: Option<wit::Payload>,
     ) -> Result<()> {
-        // TODO verify sigs here
         let id = self
             .process
             .send_request(None, target, request, context, payload)
