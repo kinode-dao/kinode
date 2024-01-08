@@ -308,16 +308,32 @@ async fn handle_kernel_request(
             target,
             capabilities,
         } => {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = caps_oracle
-                .send(t::CapMessage::Add {
-                    on: target,
-                    caps: capabilities,
-                    responder: tx,
+            let Some(entry) = process_map.get_mut(&target) else {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!(
+                            "kernel: no such process {:?} to GrantCapabilities",
+                            target
+                        ),
+                    })
+                    .await;
+                return;
+            };
+            let signed_caps: Vec<(t::Capability, Vec<u8>)> = capabilities
+                .iter()
+                .map(|cap| {
+                    (
+                        cap.clone(),
+                        keypair
+                            .sign(&rmp_serde::to_vec(&cap).unwrap())
+                            .as_ref()
+                            .to_vec(),
+                    )
                 })
-                .await
-                .expect("kernel: fatal: capabilities oracle died");
-            let _ = rx.await.expect("kernel: fatal: capabilities oracle died");
+                .collect();
+            entry.capabilities.extend(signed_caps);
+            let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
         }
         // send 'run' message to a process that's already been initialized
         t::KernelCommand::RunProcess(process_id) => {
