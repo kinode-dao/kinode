@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light dark;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #242424;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+  width: 100%;
+
+  --uq-vlightpurple: #d9dcfc;
+  --uq-lightpurple: #c7cafa;
+  --uq-purple: #727bf2;
+  --uq-darkpurple: #5761ef;
+  --midnightpurp: #0a1170;
+  --forgottenpurp: #45475e;
+  --uq-lightpink: #f3ced2;
+  --uq-pink: #dd7c8a;
+  --uq-darkpink: #cd3c52;
+  --blush: #d55d6f;
+  --celeste: #adebe5;
+  --lturq: #6bdbd0;
+  --turq: #3acfc0;
+  --celadon: #21897e;
+  --deep-jungle: #14524c;
+  --old-mint: #659792;
+  --washed-gray: rgba(0, 0, 0, 0.03);
+  --light-gray: rgba(0, 0, 0, 0.1);
+  --medium-gray: rgba(0, 0, 0, 0.2);
+  --dark-gray: rgba(0, 0, 0, 0.5);
+  --charcoal: #333;
+}
+
+a {
+  font-weight: 500;
+  color: #646cff;
+  text-decoration: inherit;
+}
+a:hover {
+  color: #535bf2;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  /* place-items: center; */
+  min-width: 320px;
+  min-height: 100vh;
+  color: white;
+  background-color: var(--midnightpurp);
+}
+
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: #1a1a1a;
+  cursor: pointer;
+  transition: border-color 0.25s;
+}
+button:hover {
+  border-color: #646cff;
+}
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color: #213547;
+    background-color: #ffffff;
+  }
+  a:hover {
+    color: #747bff;
+  }
+  button {
+    background-color: #f9f9f9;
+  }
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 3em;
+}
+
+h2 {
+  font-size: 2em;
+}
+
+h3 {
+  font-size: 1.5em;
+}
+
+h4 {
+  font-size: 1.25em;
+}
+
+h5 {
+  font-size: 1em;
+}
+
+@keyframes colorChange {
+  0%, 100% {
+    background-color: var(--uq-purple); /* Start and end color */
+  }
+  50% {
+    background-color: var(--uq-pink); /* 2nd rhythmic change */
+  }
+}
+
+.game-entry {
+  width: calc(100% - 1em);
+  cursor: pointer;
+  color: white;
+  background-color: var(--uq-purple);
+  padding: 0.5em;
+  border-radius: 0.25em;
+}
+
+.game-entry.is-turn {
+  animation: colorChange 3s infinite;
+}
+
+.game-entry.selected {
+  background-color: var(--uq-darkpink);
+}
+
+.game-entry.is-ended {
+  background-color: lightgray;
+  color: gray;
+}
+
+.game-entry:hover {
+  background-color: var(--uq-pink);
+}
