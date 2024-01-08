@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use uqbar_process_lib::kernel_types as kt;
-use uqbar_process_lib::{Address, Response};
-// use uqbar_process_lib::uqbar::process::standard as wit;
+use nectar_process_lib::kernel_types as kt;
+use nectar_process_lib::{Address, Response};
+// use nectar_process_lib::nectar::process::standard as wit;
 
 type Rsvp = Option<Address>;
 

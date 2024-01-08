@@ -1,10 +1,10 @@
+use nectar_process_lib::kernel_types as kt;
+use nectar_process_lib::println;
+use nectar_process_lib::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::Digest;
 use std::collections::{HashMap, HashSet};
-use uqbar_process_lib::kernel_types as kt;
-use uqbar_process_lib::println;
-use uqbar_process_lib::*;
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -19,7 +19,7 @@ use ft_worker_lib::{
     spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
 };
 
-/// Uqbar App Store:
+/// Nectar App Store:
 /// acts as both a local package manager and a protocol to share packages across the network.
 /// packages are apps; apps are packages. we use an onchain app listing contract to determine
 /// what apps are available to download and what node(s) to download them from.
@@ -346,7 +346,7 @@ fn handle_new_package(
 
     // create a new drive for this package in VFS
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
+        .target(("our", "vfs", "sys", "nectar"))
         .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: drive.clone(),
             action: vfs::VfsAction::CreateDrive,
@@ -361,7 +361,7 @@ fn handle_new_package(
     // add zip bytes
     payload.mime = Some("application/zip".to_string());
     let response = Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
+        .target(("our", "vfs", "sys", "nectar"))
         .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: drive.clone(),
             action: vfs::VfsAction::AddZip,
@@ -379,7 +379,7 @@ fn handle_new_package(
     // call it <package>.zip
     let zip_path = format!("{}/{}.zip", drive.clone(), package);
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
+        .target(("our", "vfs", "sys", "nectar"))
         .inherit(true)
         .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: zip_path,
@@ -392,7 +392,7 @@ fn handle_new_package(
     // now, read the pkg contents to create our own listing and state,
     // such that we can mirror this package to others.
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
+        .target(("our", "vfs", "sys", "nectar"))
         .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: metadata_path,
             action: vfs::VfsAction::Read,
@@ -427,7 +427,7 @@ fn handle_new_package(
 fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
     let drive_path = format!("/{}/pkg", package);
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
+        .target(("our", "vfs", "sys", "nectar"))
         .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: format!("{}/manifest.json", drive_path),
             action: vfs::VfsAction::Read,
@@ -440,7 +440,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
     let manifest = serde_json::from_str::<Vec<kt::PackageManifestEntry>>(&manifest)?;
     // always grant read/write to their drive, which we created for them
     let Some(read_cap) = get_capability(
-        &Address::new(&our.node, ("vfs", "sys", "uqbar")),
+        &Address::new(&our.node, ("vfs", "sys", "nectar")),
         &serde_json::to_string(&serde_json::json!({
             "kind": "read",
             "drive": drive_path,
@@ -449,7 +449,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("app store: no read cap"));
     };
     let Some(write_cap) = get_capability(
-        &Address::new(&our.node, ("vfs", "sys", "uqbar")),
+        &Address::new(&our.node, ("vfs", "sys", "nectar")),
         &serde_json::to_string(&serde_json::json!({
             "kind": "write",
             "drive": drive_path,
@@ -458,7 +458,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("app store: no write cap"));
     };
     let Some(networking_cap) = get_capability(
-        &Address::new(&our.node, ("kernel", "sys", "uqbar")),
+        &Address::new(&our.node, ("kernel", "sys", "nectar")),
         &"\"network\"".to_string(),
     ) else {
         return Err(anyhow::anyhow!("app store: no net cap"));
@@ -486,14 +486,14 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
         };
         // kill process if it already exists
         Request::new()
-            .target(("our", "kernel", "sys", "uqbar"))
+            .target(("our", "kernel", "sys", "nectar"))
             .ipc(serde_json::to_vec(&kt::KernelCommand::KillProcess(
                 parsed_new_process_id.clone(),
             ))?)
             .send()?;
 
         let _bytes_response = Request::new()
-            .target(("our", "vfs", "sys", "uqbar"))
+            .target(("our", "vfs", "sys", "nectar"))
             .ipc(serde_json::to_vec(&vfs::VfsRequest {
                 path: wasm_path.clone(),
                 action: vfs::VfsAction::Read,
@@ -554,7 +554,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
             }
         }
         Request::new()
-            .target(("our", "kernel", "sys", "uqbar"))
+            .target(("our", "kernel", "sys", "nectar"))
             .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                 id: parsed_new_process_id.clone(),
                 wasm_bytes_handle: wasm_path,
@@ -571,7 +571,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                     serde_json::Value::String(process_name) => {
                         if let Ok(parsed_process_id) = ProcessId::from_str(&process_name) {
                             let _ = Request::new()
-                                .target(("our", "kernel", "sys", "uqbar"))
+                                .target(("our", "kernel", "sys", "nectar"))
                                 .ipc(
                                     serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
                                         target: parsed_process_id,
@@ -595,7 +595,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                             {
                                 if let Some(params) = map.get("params") {
                                     let _ = Request::new()
-                                        .target(("our", "kernel", "sys", "uqbar"))
+                                        .target(("our", "kernel", "sys", "nectar"))
                                         .ipc(
                                             serde_json::to_vec(
                                                 &kt::KernelCommand::GrantCapabilities {
@@ -623,7 +623,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
             }
         }
         Request::new()
-            .target(("our", "kernel", "sys", "uqbar"))
+            .target(("our", "kernel", "sys", "nectar"))
             .ipc(serde_json::to_vec(&kt::KernelCommand::RunProcess(
                 parsed_new_process_id,
             ))?)
@@ -635,7 +635,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
 fn handle_uninstall(package: &PackageId) -> anyhow::Result<()> {
     let drive_path = format!("/{}/pkg", package);
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
+        .target(("our", "vfs", "sys", "nectar"))
         .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: format!("{}/manifest.json", drive_path),
             action: vfs::VfsAction::Read,
@@ -653,7 +653,7 @@ fn handle_uninstall(package: &PackageId) -> anyhow::Result<()> {
             continue;
         };
         Request::new()
-            .target(("our", "kernel", "sys", "uqbar"))
+            .target(("our", "kernel", "sys", "nectar"))
             .ipc(serde_json::to_vec(&kt::KernelCommand::KillProcess(
                 parsed_new_process_id,
             ))?)
@@ -661,7 +661,7 @@ fn handle_uninstall(package: &PackageId) -> anyhow::Result<()> {
     }
     // then, delete the drive
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
+        .target(("our", "vfs", "sys", "nectar"))
         .ipc(serde_json::to_vec(&vfs::VfsRequest {
             path: drive_path,
             action: vfs::VfsAction::RemoveDirAll,
@@ -687,7 +687,7 @@ fn handle_remote_request(
             // get the .zip from VFS and attach as payload to response
             let file_path = format!("/{}/pkg/{}.zip", package, package);
             let Ok(Ok(_)) = Request::new()
-                .target(("our", "vfs", "sys", "uqbar"))
+                .target(("our", "vfs", "sys", "nectar"))
                 .ipc(
                     serde_json::to_vec(&vfs::VfsRequest {
                         path: file_path,

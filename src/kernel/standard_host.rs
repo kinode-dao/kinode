@@ -1,5 +1,5 @@
 use crate::kernel::process;
-use crate::kernel::process::uqbar::process::standard as wit;
+use crate::kernel::process::nectar::process::standard as wit;
 use crate::kernel::process::StandardHost;
 use crate::types as t;
 use crate::types::STATE_PROCESS_ID;

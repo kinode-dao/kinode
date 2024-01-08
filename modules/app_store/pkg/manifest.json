@@ -5,25 +5,25 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "terminal:terminal:uqbar",
-            "filesystem:sys:uqbar",
-            "http_server:sys:uqbar",
-            "http_client:sys:uqbar",
-            "net:sys:uqbar",
-            "vfs:sys:uqbar",
-            "kernel:sys:uqbar",
-            "eth:sys:uqbar",
+            "terminal:terminal:nectar",
+            "filesystem:sys:nectar",
+            "http_server:sys:nectar",
+            "http_client:sys:nectar",
+            "net:sys:nectar",
+            "vfs:sys:nectar",
+            "kernel:sys:nectar",
+            "eth:sys:nectar",
             {
-                "process": "vfs:sys:uqbar",
+                "process": "vfs:sys:nectar",
                 "params": {
                     "root": true
                 }
             }
         ],
         "grant_capabilities": [
-            "http_server:sys:uqbar",
-            "terminal:terminal:uqbar",
-            "vfs:sys:uqbar"
+            "http_server:sys:nectar",
+            "terminal:terminal:nectar",
+            "vfs:sys:nectar"
         ],
         "public": false
     }

@@ -1,15 +1,15 @@
 use alloy_primitives::B256;
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
+use nectar_process_lib::eth::{EthAddress, SubscribeLogsRequest};
+use nectar_process_lib::{
+    await_message, get_typed_state, http, print_to_terminal, println, set_state, Address, Message,
+    Payload, Request, Response,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
 use std::string::FromUtf8Error;
-use uqbar_process_lib::eth::{EthAddress, SubscribeLogsRequest};
-use uqbar_process_lib::{
-    await_message, get_typed_state, http, print_to_terminal, println, set_state, Address, Message,
-    Payload, Request, Response,
-};
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -112,7 +112,7 @@ impl Guest for Component {
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // shove all state into net::net
     Request::new()
-        .target((&our.node, "net", "sys", "uqbar"))
+        .target((&our.node, "net", "sys", "nectar"))
         .try_ipc(NetActions::QnsBatchUpdate(
             state.nodes.values().cloned().collect::<Vec<_>>(),
         ))?
@@ -145,7 +145,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         };
 
-        if source.process == "http_server:sys:uqbar" {
+        if source.process == "http_server:sys:nectar" {
             if let Ok(ipc_json) = serde_json::from_slice::<serde_json::Value>(&ipc) {
                 if ipc_json["path"].as_str().unwrap_or_default() == "/node/:name" {
                     if let Some(name) = ipc_json["url_params"]["name"].as_str() {
@@ -239,7 +239,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 if send {
                     print_to_terminal(1, &format!("qns_indexer: sending ID to net: {:?}", node));
                     Request::new()
-                        .target((&our.node, "net", "sys", "uqbar"))
+                        .target((&our.node, "net", "sys", "nectar"))
                         .try_ipc(NetActions::QnsUpdate(node.clone()))?
                         .send()?;
                 }

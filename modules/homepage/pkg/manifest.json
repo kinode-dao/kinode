@@ -5,10 +5,10 @@
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [
-            "http_server:sys:uqbar"
+            "http_server:sys:nectar"
         ],
         "grant_capabilities": [
-            "http_server:sys:uqbar"
+            "http_server:sys:nectar"
         ],
         "public": false
     }

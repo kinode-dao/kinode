@@ -12,7 +12,7 @@ use wasmtime::{Config, Engine, WasmBacktraceDetails};
 
 /// Manipulate a single process.
 pub mod process;
-/// Implement the functions served to processes by `uqbar.wit`.
+/// Implement the functions served to processes by `nectar.wit`.
 mod standard_host;
 
 const PROCESS_CHANNEL_CAPACITY: usize = 100;
@@ -604,7 +604,7 @@ async fn start_process(
     Ok(())
 }
 
-/// the uqbar kernel. contains event loop which handles all message-passing between
+/// the nectar kernel. contains event loop which handles all message-passing between
 /// all processes (WASM apps) and also runtime tasks.
 pub async fn kernel(
     our: t::Identity,
@@ -635,7 +635,7 @@ pub async fn kernel(
 
     let mut senders: Senders = HashMap::new();
     senders.insert(
-        t::ProcessId::new(Some("net"), "sys", "uqbar"),
+        t::ProcessId::new(Some("net"), "sys", "nectar"),
         ProcessSender::Runtime(send_to_net.clone()),
     );
     for (process_id, sender, _) in runtime_extensions {
@@ -777,7 +777,7 @@ pub async fn kernel(
         .expect("fatal: kernel event loop died");
 
     #[cfg(feature = "simulation-mode")]
-    let tester_process_id = t::ProcessId::new(Some("tester"), "tester", "uqbar");
+    let tester_process_id = t::ProcessId::new(Some("tester"), "tester", "nectar");
 
     // main event loop
     loop {

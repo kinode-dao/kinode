@@ -86,13 +86,13 @@ pub async fn http_server(
     // add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
-        app: ProcessId::from_str("rpc:sys:uqbar").unwrap(),
+        app: ProcessId::from_str("rpc:sys:nectar").unwrap(),
         secure_subdomain: None, // TODO maybe RPC should have subdomain?
         authenticated: false,
         local_only: true,
         static_content: None,
     };
-    bindings_map.add("/rpc:sys:uqbar/message", rpc_bound_path);
+    bindings_map.add("/rpc:sys:nectar/message", rpc_bound_path);
     let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
     // ws path bindings
@@ -241,7 +241,7 @@ async fn login_handler(
             )
             .into_response();
 
-            match HeaderValue::from_str(&format!("uqbar-auth_{}={};", our.as_ref(), &token)) {
+            match HeaderValue::from_str(&format!("nectar-auth_{}={};", our.as_ref(), &token)) {
                 Ok(v) => {
                     response.headers_mut().append(http::header::SET_COOKIE, v);
                     Ok(response)
@@ -456,10 +456,10 @@ async fn http_handler(
         }
     }
 
-    // RPC functionality: if path is /rpc:sys:uqbar/message,
+    // RPC functionality: if path is /rpc:sys:nectar/message,
     // we extract message from base64 encoded bytes in data
     // and send it to the correct app.
-    let message = if bound_path.app == "rpc:sys:uqbar" {
+    let message = if bound_path.app == "rpc:sys:nectar" {
         match handle_rpc_message(our, id, body, print_tx).await {
             Ok(message) => message,
             Err(e) => {
@@ -797,7 +797,7 @@ async fn handle_app_message(
                 return;
             };
             // if path is /rpc/message, return accordingly with base64 encoded payload
-            if path == "/rpc:sys:uqbar/message" {
+            if path == "/rpc:sys:nectar/message" {
                 let payload = km.payload.map(|p| Payload {
                     mime: p.mime,
                     bytes: base64::encode(p.bytes).into_bytes(),
@@ -859,7 +859,7 @@ async fn handle_app_message(
                     cache,
                 } => {
                     let mut path_bindings = path_bindings.write().await;
-                    if km.source.process != "homepage:homepage:uqbar" {
+                    if km.source.process != "homepage:homepage:nectar" {
                         path = if path.starts_with('/') {
                             format!("/{}{}", km.source.process, path)
                         } else {

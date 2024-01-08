@@ -638,7 +638,7 @@ async fn recv_connection(
     noise.read_message(first_message, &mut buf)?;
 
     // -> e, ee, s, es
-    send_uqbar_handshake(
+    send_nectar_handshake(
         our,
         keypair,
         &our_static_key,
@@ -651,7 +651,7 @@ async fn recv_connection(
 
     // <- s, se
     let their_handshake =
-        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     let their_id = pki
@@ -717,7 +717,7 @@ async fn recv_connection_via_router(
     )?;
 
     // -> e, ee, s, es
-    send_uqbar_handshake(
+    send_nectar_handshake(
         our,
         keypair,
         &our_static_key,
@@ -730,7 +730,7 @@ async fn recv_connection_via_router(
 
     // <- s, se
     let their_handshake =
-        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     let their_id = pki
@@ -809,7 +809,7 @@ async fn init_connection(
 
     // <- e, ee, s, es
     let their_handshake =
-        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     validate_handshake(
@@ -821,7 +821,7 @@ async fn init_connection(
     )?;
 
     // -> s, se
-    send_uqbar_handshake(
+    send_nectar_handshake(
         our,
         keypair,
         &our_static_key,
@@ -922,7 +922,7 @@ async fn handle_local_message(
                             id: km.id,
                             source: Address {
                                 node: our.name.clone(),
-                                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+                                process: ProcessId::from_str("net:sys:nectar").unwrap(),
                             },
                             target: km.rsvp.unwrap_or(km.source),
                             rsvp: None,

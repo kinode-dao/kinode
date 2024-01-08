@@ -207,7 +207,7 @@ async fn connect_websocket(
             id,
             source: Address {
                 node: our.to_string(),
-                process: ProcessId::new(Some("http_client"), "sys", "uqbar"),
+                process: ProcessId::new(Some("http_client"), "sys", "nectar"),
             },
             target: target.clone(),
             rsvp: None,
@@ -449,7 +449,7 @@ async fn handle_http_request(
                     id,
                     source: Address {
                         node: our.to_string(),
-                        process: ProcessId::new(Some("http_client"), "sys", "uqbar"),
+                        process: ProcessId::new(Some("http_client"), "sys", "nectar"),
                     },
                     target,
                     rsvp: None,
@@ -549,7 +549,7 @@ async fn http_error_message(
                 id,
                 source: Address {
                     node: our.to_string(),
-                    process: ProcessId::new(Some("http_client"), "sys", "uqbar"),
+                    process: ProcessId::new(Some("http_client"), "sys", "nectar"),
                 },
                 target,
                 rsvp: None,
@@ -586,7 +586,7 @@ async fn websocket_error_message(
                 id,
                 source: Address {
                     node: our.to_string(),
-                    process: ProcessId::new(Some("http_client"), "sys", "uqbar"),
+                    process: ProcessId::new(Some("http_client"), "sys", "nectar"),
                 },
                 target,
                 rsvp: None,
@@ -691,7 +691,7 @@ async fn handle_ws_message(
             id,
             source: Address {
                 node: our.to_string(),
-                process: ProcessId::new(Some("http_client"), "sys", "uqbar"),
+                process: ProcessId::new(Some("http_client"), "sys", "nectar"),
             },
             target,
             rsvp: None,

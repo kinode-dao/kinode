@@ -1,5 +1,9 @@
 {
     "package": "chess",
-    "publisher": "uqbar",
-    "version": [0, 2, 0]
+    "publisher": "nectar",
+    "version": [
+        0,
+        2,
+        0
+    ]
 }

@@ -1,5 +1,9 @@
 {
     "package": "homepage",
-    "publisher": "uqbar",
-    "version": [0, 1, 0]
+    "publisher": "nectar",
+    "version": [
+        0,
+        1,
+        0
+    ]
 }

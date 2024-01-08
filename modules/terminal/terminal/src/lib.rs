@@ -1,6 +1,6 @@
 use anyhow::anyhow;
-use uqbar_process_lib::uqbar::process::standard as wit;
-use uqbar_process_lib::{println, Address, Request};
+use nectar_process_lib::nectar::process::standard as wit;
+use nectar_process_lib::{println, Address, Request};
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -29,9 +29,13 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                 Some((s, t)) => (s, t),
                 None => return Err(anyhow!("invalid command: \"{line}\"")),
             };
-            let node_id = if node_id == "our" { &state.our.node } else { node_id };
+            let node_id = if node_id == "our" {
+                &state.our.node
+            } else {
+                node_id
+            };
             Request::new()
-                .target((node_id, "net", "sys", "uqbar"))
+                .target((node_id, "net", "sys", "nectar"))
                 .ipc(message)
                 .expects_response(5)
                 .send()?;
@@ -56,10 +60,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
         // otherwise use the current_target
         "/m" | "/message" => {
             if let Some(target) = &state.current_target {
-                Request::new()
-                    .target(target.clone())
-                    .ipc(tail)
-                    .send()
+                Request::new().target(target.clone()).ipc(tail).send()
             } else {
                 let (target, ipc) = match tail.split_once(" ") {
                     Some((a, p)) => (a, p),
@@ -68,10 +69,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                 let Ok(target) = Address::from_str(target) else {
                     return Err(anyhow!("invalid address: \"{target}\""));
                 };
-                Request::new()
-                    .target(target)
-                    .ipc(ipc)
-                    .send()
+                Request::new().target(target).ipc(ipc).send()
             }
         }
         _ => return Err(anyhow!("invalid command: \"{line}\"")),
@@ -94,10 +92,7 @@ impl Guest for Component {
                 }
             };
             match message {
-                wit::Message::Request(wit::Request {
-                    ipc,
-                    ..
-                }) => {
+                wit::Message::Request(wit::Request { ipc, .. }) => {
                     if state.our.node != source.node || state.our.process != source.process {
                         continue;
                     }

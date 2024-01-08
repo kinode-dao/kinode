@@ -1,11 +1,11 @@
 #![feature(let_chains)]
-use pleco::Board;
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use uqbar_process_lib::{
+use nectar_process_lib::{
     await_message, call_init, get_payload, get_typed_state, http, println, set_state, Address,
     Message, NodeId, Payload, Request, Response,
 };
+use pleco::Board;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 extern crate base64;
 
 //
@@ -73,7 +73,7 @@ fn load_chess_state() -> ChessState {
 fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> anyhow::Result<()> {
     for channel in open_channels {
         Request::new()
-            .target((&our.node, "http_server", "sys", "uqbar"))
+            .target((&our.node, "http_server", "sys", "nectar"))
             .ipc(serde_json::to_vec(
                 &http::HttpServerAction::WebSocketPush {
                     channel_id: *channel,
@@ -94,7 +94,7 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
     Ok(())
 }
 
-// Boilerplate: generate the wasm bindings for an Uqbar app
+// Boilerplate: generate the wasm bindings for a Nectar app
 wit_bindgen::generate!({
     path: "../../../wit",
     world: "process",
@@ -168,14 +168,14 @@ fn handle_request(our: &Address, message: &Message, state: &mut ChessState) -> a
     // Note that since this is a local request, we *can* trust the ProcessId.
     // Here, we'll accept messages from the local terminal so as to make this a "CLI" app.
     } else if message.source().node == our.node
-        && message.source().process == "terminal:terminal:uqbar"
+        && message.source().process == "terminal:terminal:nectar"
     {
         let Ok(chess_request) = serde_json::from_slice::<ChessRequest>(message.ipc()) else {
             return Err(anyhow::anyhow!("invalid chess request"));
         };
         handle_local_request(our, state, &chess_request)
     } else if message.source().node == our.node
-        && message.source().process == "http_server:sys:uqbar"
+        && message.source().process == "http_server:sys:nectar"
     {
         // receive HTTP requests and websocket connection messages from our server
         match serde_json::from_slice::<http::HttpServerRequest>(message.ipc())? {

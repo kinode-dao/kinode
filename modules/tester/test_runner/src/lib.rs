@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-use uqbar_process_lib::kernel_types as kt;
-use uqbar_process_lib::uqbar::process::standard as wit;
-use uqbar_process_lib::{
+use nectar_process_lib::kernel_types as kt;
+use nectar_process_lib::nectar::process::standard as wit;
+use nectar_process_lib::{
     our_capabilities, spawn, vfs, Address, Message, OnExit, ProcessId, Request, Response,
 };
 
@@ -21,7 +21,7 @@ wit_bindgen::generate!({
 fn make_vfs_address(our: &wit::Address) -> anyhow::Result<Address> {
     Ok(wit::Address {
         node: our.node.clone(),
-        process: ProcessId::from_str("vfs:sys:uqbar")?,
+        process: ProcessId::from_str("vfs:sys:nectar")?,
     })
 }
 
@@ -44,7 +44,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     let response = Request::new()
                         .target(make_vfs_address(&our)?)
                         .ipc(serde_json::to_vec(&vfs::VfsRequest {
-                            path: "/tester:uqbar/tests".into(),
+                            path: "/tester:nectar/tests".into(),
                             action: vfs::VfsAction::ReadDir,
                         })?)
                         .send_and_await_response(test_timeout)?

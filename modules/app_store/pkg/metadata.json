@@ -1,6 +1,10 @@
 {
     "package": "app_store",
-    "publisher": "uqbar",
-    "version": [0, 2, 0],
+    "publisher": "nectar",
+    "version": [
+        0,
+        2,
+        0
+    ],
     "description": "A package manager + app store."
 }

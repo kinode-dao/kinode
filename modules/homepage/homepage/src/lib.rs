@@ -1,7 +1,7 @@
 #![feature(let_chains)]
-use uqbar_process_lib::{
-    await_message, http::bind_http_static_path, http::HttpServerError, println,
-    Address, Message, ProcessId,
+use nectar_process_lib::{
+    await_message, http::bind_http_static_path, http::HttpServerError, println, Address, Message,
+    ProcessId,
 };
 
 wit_bindgen::generate!({
@@ -66,7 +66,7 @@ fn main(our: Address) -> anyhow::Result<()> {
             continue;
         };
         if let Message::Response { source, ipc, .. } = message
-            && source.process == "http_server:sys:uqbar"
+            && source.process == "http_server:sys:nectar"
         {
             match serde_json::from_slice::<Result<(), HttpServerError>>(&ipc) {
                 Ok(Ok(())) => continue,
