@@ -141,7 +141,8 @@ fn main() {
     let wit_file = wit_dir.join("uqbar.wit");
     if !wit_file.exists() {
         let mut wit_file = std::fs::File::create(&wit_file).unwrap();
-        let uqbar_wit_url = "https://raw.githubusercontent.com/uqbar-dao/uqwit/master/uqbar.wit";
+        let uqbar_wit_url =
+            "https://raw.githubusercontent.com/uqbar-dao/nectar-wit/master/nectar.wit";
         let mut response = reqwest::blocking::get(uqbar_wit_url).unwrap();
         io::copy(&mut response, &mut wit_file).unwrap();
     }
