@@ -281,7 +281,7 @@ impl ProcessState {
                 target,
                 rsvp: None,
                 message: t::Message::Response((
-                    t::de_wit_response(response),
+                    inner_response,
                     // the context will be set by the process receiving this Response.
                     None,
                 )),
