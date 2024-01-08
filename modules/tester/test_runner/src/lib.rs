@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
-use uqbar_process_lib::kernel_types as kt;
-use uqbar_process_lib::uqbar::process::standard as wit;
-use uqbar_process_lib::{
+use nectar_process_lib::kernel_types as kt;
+use nectar_process_lib::nectar::process::standard as wit;
+use nectar_process_lib::{
     our_capabilities, spawn, vfs, Address, Message, OnExit, ProcessId, Request, Response,
 };
 
@@ -21,7 +21,7 @@ wit_bindgen::generate!({
 fn make_vfs_address(our: &wit::Address) -> anyhow::Result<Address> {
     Ok(wit::Address {
         node: our.node.clone(),
-        process: ProcessId::from_str("vfs:sys:uqbar")?,
+        process: "vfs:sys:nectar".parse()?,
     })
 }
 
@@ -36,30 +36,30 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
         wit::Message::Response(_) => {
             return Err(tt::TesterError::UnexpectedResponse.into());
         }
-        wit::Message::Request(wit::Request { ref ipc, .. }) => {
-            match serde_json::from_slice(ipc)? {
+        wit::Message::Request(wit::Request { ref body, .. }) => {
+            match serde_json::from_slice(body)? {
                 tt::TesterRequest::Run { test_timeout, .. } => {
                     wit::print_to_terminal(0, "test_runner: got Run");
 
                     let response = Request::new()
                         .target(make_vfs_address(&our)?)
-                        .ipc(serde_json::to_vec(&vfs::VfsRequest {
-                            path: "/tester:uqbar/tests".into(),
+                        .body(serde_json::to_vec(&vfs::VfsRequest {
+                            path: "/tester:nectar/tests".into(),
                             action: vfs::VfsAction::ReadDir,
                         })?)
                         .send_and_await_response(test_timeout)?
                         .unwrap();
 
-                    let Message::Response { ipc: vfs_ipc, .. } = response else {
+                    let Message::Response { body: vfs_body, .. } = response else {
                         panic!("")
                     };
-                    let vfs::VfsResponse::ReadDir(children) = serde_json::from_slice(&vfs_ipc)?
+                    let vfs::VfsResponse::ReadDir(children) = serde_json::from_slice(&vfs_body)?
                     else {
                         wit::print_to_terminal(
                             0,
                             &format!(
                                 "{:?}",
-                                serde_json::from_slice::<serde_json::Value>(&vfs_ipc)?,
+                                serde_json::from_slice::<serde_json::Value>(&vfs_body)?,
                             ),
                         );
                         panic!("")
@@ -91,14 +91,14 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                                 node: our.node.clone(),
                                 process: child_process_id,
                             })
-                            .ipc(ipc.clone())
+                            .body(body.clone())
                             .send_and_await_response(test_timeout)?
                             .unwrap();
 
-                        let Message::Response { ipc, .. } = response else {
+                        let Message::Response { body, .. } = response else {
                             panic!("")
                         };
-                        match serde_json::from_slice(&ipc)? {
+                        match serde_json::from_slice(&body)? {
                             tt::TesterResponse::Pass => {}
                             tt::TesterResponse::GetFullMessage(_) => {}
                             tt::TesterResponse::Fail {
@@ -115,7 +115,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     wit::print_to_terminal(0, &format!("test_runner: done running {:?}", children));
 
                     Response::new()
-                        .ipc(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
+                        .body(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
                         .send()
                         .unwrap();
                 }
@@ -133,7 +133,7 @@ impl Guest for Component {
     fn init(our: String) {
         wit::print_to_terminal(0, "test_runner: begin");
 
-        let our = Address::from_str(&our).unwrap();
+        let our: Address = our.parse().unwrap();
 
         loop {
             match handle_message(&our) {

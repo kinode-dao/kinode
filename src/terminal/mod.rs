@@ -34,7 +34,7 @@ pub async fn terminal(
     execute!(
         stdout,
         EnableBracketedPaste,
-        terminal::SetTitle(format!("{}@{}", our.name, "uqbar"))
+        terminal::SetTitle(format!("{}@{}", our.name, "nectar"))
     )?;
 
     let (mut win_cols, mut win_rows) = terminal::size().unwrap();
@@ -131,18 +131,19 @@ pub async fn terminal(
     let mut log_writer = BufWriter::new(log_handle);
 
     // use to trigger cleanup if receive signal to kill process
-    let mut sigalrm = signal(SignalKind::alarm()).expect("uqbar: failed to set up SIGALRM handler");
-    let mut sighup = signal(SignalKind::hangup()).expect("uqbar: failed to set up SIGHUP handler");
+    let mut sigalrm =
+        signal(SignalKind::alarm()).expect("nectar: failed to set up SIGALRM handler");
+    let mut sighup = signal(SignalKind::hangup()).expect("nectar: failed to set up SIGHUP handler");
     let mut sigint =
-        signal(SignalKind::interrupt()).expect("uqbar: failed to set up SIGINT handler");
-    let mut sigpipe = signal(SignalKind::pipe()).expect("uqbar: failed to set up SIGPIPE handler");
-    let mut sigquit = signal(SignalKind::quit()).expect("uqbar: failed to set up SIGQUIT handler");
+        signal(SignalKind::interrupt()).expect("nectar: failed to set up SIGINT handler");
+    let mut sigpipe = signal(SignalKind::pipe()).expect("nectar: failed to set up SIGPIPE handler");
+    let mut sigquit = signal(SignalKind::quit()).expect("nectar: failed to set up SIGQUIT handler");
     let mut sigterm =
-        signal(SignalKind::terminate()).expect("uqbar: failed to set up SIGTERM handler");
+        signal(SignalKind::terminate()).expect("nectar: failed to set up SIGTERM handler");
     let mut sigusr1 =
-        signal(SignalKind::user_defined1()).expect("uqbar: failed to set up SIGUSR1 handler");
+        signal(SignalKind::user_defined1()).expect("nectar: failed to set up SIGUSR1 handler");
     let mut sigusr2 =
-        signal(SignalKind::user_defined2()).expect("uqbar: failed to set up SIGUSR2 handler");
+        signal(SignalKind::user_defined2()).expect("nectar: failed to set up SIGUSR2 handler");
 
     loop {
         let event = reader.next().fuse();
@@ -601,11 +602,11 @@ pub async fn terminal(
                                         message: Message::Request(Request {
                                             inherit: false,
                                             expects_response: None,
-                                            ipc: command.into_bytes(),
+                                            body: command.into_bytes(),
                                             metadata: None,
                                             capabilities: vec![],
                                         }),
-                                        payload: None,
+                                        lazy_load_blob: None,
                                     }
                                 ).await.expect("terminal: couldn't execute command!");
                             },

@@ -141,12 +141,12 @@ async fn handle_request(
         source,
         rsvp,
         message,
-        payload,
+        lazy_load_blob: blob,
         ..
     } = kernel_message;
     let Message::Request(Request {
         expects_response,
-        ipc,
+        body,
         metadata, // for kernel
         ..
     }) = message
@@ -156,7 +156,7 @@ async fn handle_request(
         });
     };
 
-    let action: StateAction = match serde_json::from_slice(&ipc) {
+    let action: StateAction = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
             return Err(StateError::BadJson {
@@ -165,17 +165,17 @@ async fn handle_request(
         }
     };
 
-    let (ipc, bytes) = match action {
+    let (body, bytes) = match action {
         StateAction::SetState(process_id) => {
             let key = process_to_vec(process_id);
 
-            let Some(ref payload) = payload else {
+            let Some(ref blob) = blob else {
                 return Err(StateError::BadBytes {
                     action: "SetState".into(),
                 });
             };
 
-            db.put(key, &payload.bytes)
+            db.put(key, &blob.bytes)
                 .map_err(|e| StateError::RocksDBError {
                     action: "SetState".into(),
                     error: e.to_string(),
@@ -259,13 +259,13 @@ async fn handle_request(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc,
+                    body,
                     metadata,
                     capabilities: vec![],
                 },
                 None,
             )),
-            payload: bytes.map(|bytes| Payload {
+            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
             }),
@@ -299,7 +299,7 @@ async fn bootstrap(
     let k_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::from_str("kernel:sys:uqbar").unwrap(),
+            process: ProcessId::new(Some("kernel"), "sys", "nectar"),
         },
         params: "\"messaging\"".into(),
     };
@@ -308,7 +308,7 @@ async fn bootstrap(
     let n_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+            process: ProcessId::new(Some("net"), "sys", "nectar"),
         },
         params: "\"messaging\"".into(),
     };
@@ -336,7 +336,7 @@ async fn bootstrap(
     // finally, save runtime modules in state map as well, somewhat fakely
     // special cases for kernel and net
     process_map
-        .entry(ProcessId::from_str("kernel:sys:uqbar").unwrap())
+        .entry(ProcessId::new(Some("kernel"), "sys", "nectar"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             wit_version: None,
@@ -345,7 +345,7 @@ async fn bootstrap(
             public: false,
         });
     process_map
-        .entry(ProcessId::from_str("net:sys:uqbar").unwrap())
+        .entry(ProcessId::new(Some("net"), "sys", "nectar"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             wit_version: None,
@@ -505,7 +505,7 @@ async fn bootstrap(
                         serde_json::Value::String(process_name) => Capability {
                             issuer: Address {
                                 node: our_name.to_string(),
-                                process: ProcessId::from_str(process_name).unwrap(),
+                                process: process_name.parse().unwrap(),
                             },
                             params: "\"messaging\"".into(),
                         },
@@ -515,10 +515,11 @@ async fn bootstrap(
                                     Capability {
                                         issuer: Address {
                                             node: our_name.to_string(),
-                                            process: ProcessId::from_str(
-                                                process_name.as_str().unwrap(),
-                                            )
-                                            .unwrap(),
+                                            process: process_name
+                                                .as_str()
+                                                .unwrap()
+                                                .parse()
+                                                .unwrap(),
                                         },
                                         params: params.to_string(),
                                     }
@@ -660,12 +661,12 @@ async fn bootstrap(
                 for value in to_grant {
                     match value {
                         serde_json::Value::String(process_name) => {
-                            if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
+                            if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
                                 if let Some(process) = process_map.get_mut(&parsed_process_id) {
                                     let cap = Capability {
                                         issuer: Address {
                                             node: our_name.to_string(),
-                                            process: ProcessId::from_str(&our_process_id).unwrap(),
+                                            process: our_process_id.parse().unwrap(),
                                         },
                                         params: "\"messaging\"".into(),
                                     };
@@ -678,7 +679,7 @@ async fn bootstrap(
                         serde_json::Value::Object(map) => {
                             if let Some(process_name) = map.get("process") {
                                 if let Ok(parsed_process_id) =
-                                    ProcessId::from_str(&process_name.as_str().unwrap())
+                                    process_name.as_str().unwrap().parse::<ProcessId>()
                                 {
                                     if let Some(params) = map.get("params") {
                                         if let Some(process) =
@@ -687,8 +688,7 @@ async fn bootstrap(
                                             let cap = Capability {
                                                 issuer: Address {
                                                     node: our_name.to_string(),
-                                                    process: ProcessId::from_str(&our_process_id)
-                                                        .unwrap(),
+                                                    process: our_process_id.parse().unwrap(),
                                                 },
                                                 params: params.to_string(),
                                             };
@@ -759,13 +759,13 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: serde_json::to_vec(&StateResponse::Err(error)).unwrap(),
+                body: serde_json::to_vec(&StateResponse::Err(error)).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             },
             None,
         )),
-        payload: None,
+        lazy_load_blob: None,
     }
 }
 

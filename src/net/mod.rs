@@ -638,7 +638,7 @@ async fn recv_connection(
     noise.read_message(first_message, &mut buf)?;
 
     // -> e, ee, s, es
-    send_uqbar_handshake(
+    send_nectar_handshake(
         our,
         keypair,
         &our_static_key,
@@ -651,7 +651,7 @@ async fn recv_connection(
 
     // <- s, se
     let their_handshake =
-        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     let their_id = pki
@@ -717,7 +717,7 @@ async fn recv_connection_via_router(
     )?;
 
     // -> e, ee, s, es
-    send_uqbar_handshake(
+    send_nectar_handshake(
         our,
         keypair,
         &our_static_key,
@@ -730,7 +730,7 @@ async fn recv_connection_via_router(
 
     // <- s, se
     let their_handshake =
-        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     let their_id = pki
@@ -809,7 +809,7 @@ async fn init_connection(
 
     // <- e, ee, s, es
     let their_handshake =
-        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the QNS PKI
     validate_handshake(
@@ -821,7 +821,7 @@ async fn init_connection(
     )?;
 
     // -> s, se
-    send_uqbar_handshake(
+    send_nectar_handshake(
         our,
         keypair,
         &our_static_key,
@@ -855,12 +855,12 @@ async fn handle_local_message(
     print_tx: &PrintSender,
 ) -> Result<()> {
     print_debug(print_tx, "net: handling local message").await;
-    let ipc = match km.message {
-        Message::Request(ref request) => &request.ipc,
+    let body = match km.message {
+        Message::Request(ref request) => &request.body,
         Message::Response((response, _context)) => {
             // these are received as a router, when we send ConnectionRequests
             // to a node we do routing for.
-            match rmp_serde::from_slice::<NetResponses>(&response.ipc) {
+            match rmp_serde::from_slice::<NetResponses>(&response.body) {
                 Ok(NetResponses::Accepted(_)) => {
                     // TODO anything here?
                 }
@@ -880,7 +880,7 @@ async fn handle_local_message(
     };
 
     if km.source.node != our.name {
-        if let Ok(act) = rmp_serde::from_slice::<NetActions>(ipc) {
+        if let Ok(act) = rmp_serde::from_slice::<NetActions>(body) {
             match act {
                 NetActions::QnsBatchUpdate(_) | NetActions::QnsUpdate(_) => {
                     // for now, we don't get these from remote.
@@ -922,14 +922,14 @@ async fn handle_local_message(
                             id: km.id,
                             source: Address {
                                 node: our.name.clone(),
-                                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+                                process: ProcessId::new(Some("net"), "sys", "nectar"),
                             },
                             target: km.rsvp.unwrap_or(km.source),
                             rsvp: None,
                             message: Message::Response((
                                 Response {
                                     inherit: false,
-                                    ipc: rmp_serde::to_vec(
+                                    body: rmp_serde::to_vec(
                                         &res.unwrap_or(NetResponses::Rejected(from)),
                                     )?,
                                     metadata: None,
@@ -937,7 +937,7 @@ async fn handle_local_message(
                                 },
                                 None,
                             )),
-                            payload: None,
+                            lazy_load_blob: None,
                         })
                         .await?;
                 }
@@ -946,13 +946,13 @@ async fn handle_local_message(
         };
         // if we can't parse this to a netaction, treat it as a hello and print it
         // respond to a text message with a simple "delivered" response
-        parse_hello_message(our, &km, ipc, kernel_message_tx, print_tx).await?;
+        parse_hello_message(our, &km, body, kernel_message_tx, print_tx).await?;
         Ok(())
     } else {
         // available commands: "peers", "pki", "names", "diagnostics"
         // first parse as raw string, then deserialize to NetActions object
         let mut printout = String::new();
-        match std::str::from_utf8(ipc) {
+        match std::str::from_utf8(body) {
             Ok("peers") => {
                 printout.push_str(&format!(
                     "{:#?}",
@@ -992,7 +992,7 @@ async fn handle_local_message(
                 }
             }
             _ => {
-                match rmp_serde::from_slice::<NetActions>(ipc) {
+                match rmp_serde::from_slice::<NetActions>(body) {
                     Ok(NetActions::ConnectionRequest(_)) => {
                         // we shouldn't receive these from ourselves.
                     }
@@ -1036,7 +1036,7 @@ async fn handle_local_message(
                         }
                     }
                     _ => {
-                        parse_hello_message(our, &km, ipc, kernel_message_tx, print_tx).await?;
+                        parse_hello_message(our, &km, body, kernel_message_tx, print_tx).await?;
                         return Ok(());
                     }
                 }

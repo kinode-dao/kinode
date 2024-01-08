@@ -1,15 +1,14 @@
-use alloy_primitives::B256;
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
+use nectar_process_lib::eth::{EthAddress, SubscribeLogsRequest};
+use nectar_process_lib::{
+    await_message, get_typed_state, http, print_to_terminal, println, set_state, Address,
+    LazyLoadBlob, Message, Request, Response,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
 use std::string::FromUtf8Error;
-use uqbar_process_lib::eth::{EthAddress, SubscribeLogsRequest};
-use uqbar_process_lib::{
-    await_message, get_typed_state, http, print_to_terminal, println, set_state, Address, Message,
-    Payload, Request, Response,
-};
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -84,7 +83,7 @@ sol! {
 struct Component;
 impl Guest for Component {
     fn init(our: String) {
-        let our = Address::from_str(&our).unwrap();
+        let our: Address = our.parse().unwrap();
 
         let mut state: State = State {
             names: HashMap::new(),
@@ -112,8 +111,8 @@ impl Guest for Component {
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // shove all state into net::net
     Request::new()
-        .target((&our.node, "net", "sys", "uqbar"))
-        .try_ipc(NetActions::QnsBatchUpdate(
+        .target((&our.node, "net", "sys", "nectar"))
+        .try_body(NetActions::QnsBatchUpdate(
             state.nodes.values().cloned().collect::<Vec<_>>(),
         ))?
         .send()?;
@@ -139,26 +138,26 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             println!("qns_indexer: got network error");
             continue;
         };
-        let Message::Request { source, ipc, .. } = message else {
+        let Message::Request { source, body, .. } = message else {
             // TODO we should store the subscription ID for eth
             // incase we want to cancel/reset it
             continue;
         };
 
-        if source.process == "http_server:sys:uqbar" {
-            if let Ok(ipc_json) = serde_json::from_slice::<serde_json::Value>(&ipc) {
-                if ipc_json["path"].as_str().unwrap_or_default() == "/node/:name" {
-                    if let Some(name) = ipc_json["url_params"]["name"].as_str() {
+        if source.process == "http_server:sys:nectar" {
+            if let Ok(body_json) = serde_json::from_slice::<serde_json::Value>(&body) {
+                if body_json["path"].as_str().unwrap_or_default() == "/node/:name" {
+                    if let Some(name) = body_json["url_params"]["name"].as_str() {
                         if let Some(node) = state.nodes.get(name) {
                             Response::new()
-                                .ipc(serde_json::to_vec(&http::HttpResponse {
+                                .body(serde_json::to_vec(&http::HttpResponse {
                                     status: 200,
                                     headers: HashMap::from([(
                                         "Content-Type".to_string(),
                                         "application/json".to_string(),
                                     )]),
                                 })?)
-                                .payload(Payload {
+                                .blob(LazyLoadBlob {
                                     mime: Some("application/json".to_string()),
                                     bytes: serde_json::to_string(&node)?.as_bytes().to_vec(),
                                 })
@@ -169,7 +168,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
             }
             Response::new()
-                .ipc(serde_json::to_vec(&http::HttpResponse {
+                .body(serde_json::to_vec(&http::HttpResponse {
                     status: 404,
                     headers: HashMap::from([(
                         "Content-Type".to_string(),
@@ -180,7 +179,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         }
 
-        let Ok(msg) = serde_json::from_slice::<IndexerActions>(&ipc) else {
+        let Ok(msg) = serde_json::from_slice::<IndexerActions>(&body) else {
             println!("qns_indexer: got invalid message");
             continue;
         };
@@ -196,7 +195,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     Entry::Vacant(v) => v.insert(get_name(&e)),
                 };
 
-                let mut node = state
+                let node = state
                     .nodes
                     .entry(name.to_string())
                     .or_insert_with(|| QnsUpdate::new(name, &node_id.to_string()));
@@ -239,8 +238,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 if send {
                     print_to_terminal(1, &format!("qns_indexer: sending ID to net: {:?}", node));
                     Request::new()
-                        .target((&our.node, "net", "sys", "uqbar"))
-                        .try_ipc(NetActions::QnsUpdate(node.clone()))?
+                        .target((&our.node, "net", "sys", "nectar"))
+                        .try_body(NetActions::QnsUpdate(node.clone()))?
                         .send()?;
                 }
             }

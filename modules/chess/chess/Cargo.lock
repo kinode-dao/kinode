@@ -69,10 +69,10 @@ dependencies = [
  "anyhow",
  "base64",
  "bincode",
+ "nectar_process_lib",
  "pleco",
  "serde",
  "serde_json",
- "uqbar_process_lib",
  "url",
  "wit-bindgen",
 ]
@@ -282,6 +282,23 @@ name = "mucow"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c55d0c9dc43dedfd2414deb74ade67687749ef88b1d3482024d4c81d901a7a83"
+
+[[package]]
+name = "nectar_process_lib"
+version = "0.5.0"
+source = "git+ssh://git@github.com/uqbar-dao/process_lib.git?tag=v0.5.0-alpha#dee786a3bdfbf2a02a1f3fc3ffac0918b0313f6a"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "http",
+ "mime_guess",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
+]
 
 [[package]]
 name = "num_cpus"
@@ -653,23 +670,6 @@ name = "unicode-xid"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f962df74c8c05a667b5ee8bcf162993134c104e96440b663c8daa176dc772d8c"
-
-[[package]]
-name = "uqbar_process_lib"
-version = "0.4.0"
-source = "git+ssh://git@github.com/uqbar-dao/process_lib.git?rev=e72a791#e72a791d6374cfd985e5cdfa7e1a668492fdb88c"
-dependencies = [
- "anyhow",
- "bincode",
- "http",
- "mime_guess",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "thiserror",
- "url",
- "wit-bindgen",
-]
 
 [[package]]
 name = "url"

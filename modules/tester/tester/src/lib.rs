@@ -1,7 +1,7 @@
 use indexmap::map::IndexMap;
 
-use uqbar_process_lib::kernel_types as kt;
-use uqbar_process_lib::{
+use nectar_process_lib::kernel_types as kt;
+use nectar_process_lib::{
     await_message, call_init, our_capabilities, println, spawn, vfs, Address, Capability, Message,
     OnExit, ProcessId, Request, Response,
 };
@@ -22,7 +22,7 @@ type Messages = IndexMap<kt::Message, tt::KernelMessage>;
 fn make_vfs_address(our: &Address) -> anyhow::Result<Address> {
     Ok(Address {
         node: our.node.clone(),
-        process: ProcessId::from_str("vfs:sys:uqbar")?,
+        process: "vfs:sys:nectar".parse()?,
     })
 }
 
@@ -36,15 +36,15 @@ fn handle_message(
     };
 
     match message {
-        Message::Response { source, ipc, .. } => {
-            match serde_json::from_slice(&ipc)? {
+        Message::Response { source, body, .. } => {
+            match serde_json::from_slice(&body)? {
                 tt::TesterResponse::Pass | tt::TesterResponse::Fail { .. } => {
                     if (source.process.package_name != "tester")
-                        | (source.process.publisher_node != "uqbar")
+                        | (source.process.publisher_node != "nectar")
                     {
                         return Err(tt::TesterError::UnexpectedResponse.into());
                     }
-                    Response::new().ipc(ipc).send().unwrap();
+                    Response::new().body(body).send().unwrap();
                 }
                 tt::TesterResponse::GetFullMessage(_) => {
                     unimplemented!()
@@ -52,8 +52,8 @@ fn handle_message(
             }
             Ok(())
         }
-        Message::Request { source, ipc, .. } => {
-            match serde_json::from_slice(&ipc)? {
+        Message::Request { source, body, .. } => {
+            match serde_json::from_slice(&body)? {
                 tt::TesterRequest::Run {
                     input_node_names,
                     test_timeout,
@@ -65,18 +65,18 @@ fn handle_message(
 
                     if our.node != node_names[0] {
                         Response::new()
-                            .ipc(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
+                            .body(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
                             .send()
                             .unwrap();
                     } else {
                         // we are master node
-                        let child = "/tester:uqbar/pkg/test_runner.wasm";
+                        let child = "/tester:nectar/pkg/test_runner.wasm";
                         let child_process_id = match spawn(
                             None,
                             child,
                             OnExit::None, //  TODO: notify us
                             our_capabilities(),
-                            vec![ProcessId::from_str("vfs:sys:uqbar").unwrap()],
+                            vec!["vfs:sys:nectar".parse::<ProcessId>().unwrap()],
                             false, // not public
                         ) {
                             Ok(child_process_id) => child_process_id,
@@ -90,7 +90,7 @@ fn handle_message(
                                 node: our.node.clone(),
                                 process: child_process_id,
                             })
-                            .ipc(ipc)
+                            .body(body)
                             .expects_response(test_timeout)
                             .send()?;
                     }
@@ -112,9 +112,9 @@ fn init(our: Address) {
     let mut node_names: Vec<String> = Vec::new();
     let _ = Request::new()
         .target(make_vfs_address(&our).unwrap())
-        .ipc(
+        .body(
             serde_json::to_vec(&vfs::VfsRequest {
-                path: "/tester:uqbar/tests".into(),
+                path: "/tester:nectar/tests".into(),
                 action: vfs::VfsAction::CreateDrive,
             })
             .unwrap(),
@@ -123,18 +123,18 @@ fn init(our: Address) {
         .unwrap()
         .unwrap();
     let _ = Request::new()
-        .target(("our", "kernel", "sys", "uqbar"))
-        .ipc(
+        .target(("our", "kernel", "sys", "nectar"))
+        .body(
             serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                target: ProcessId::new(Some("http_server"), "sys", "uqbar"),
+                target: ProcessId::new(Some("http_server"), "sys", "nectar"),
                 capabilities: vec![kt::Capability {
                     issuer: Address::new(
                         our.node.clone(),
-                        ProcessId::new(Some("vfs"), "sys", "uqbar"),
+                        ProcessId::new(Some("vfs"), "sys", "nectar"),
                     ),
                     params: serde_json::json!({
                         "kind": "write",
-                        "drive": "/tester:uqbar/tests",
+                        "drive": "/tester:nectar/tests",
                     })
                     .to_string(),
                 }],
@@ -148,9 +148,9 @@ fn init(our: Address) {
     //  -> must give drive cap to rpc
     let _ = Request::new()
         .target(make_vfs_address(&our).unwrap())
-        .ipc(
+        .body(
             serde_json::to_vec(&vfs::VfsRequest {
-                path: "/tester:uqbar/tests".into(),
+                path: "/tester:nectar/tests".into(),
                 action: vfs::VfsAction::CreateDrive,
             })
             .unwrap(),

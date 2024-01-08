@@ -12,7 +12,7 @@ use wasmtime::{Config, Engine, WasmBacktraceDetails};
 
 /// Manipulate a single process.
 pub mod process;
-/// Implement the functions served to processes by `uqbar.wit`.
+/// Implement the functions served to processes by `nectar.wit`.
 mod standard_host;
 
 const PROCESS_CHANNEL_CAPACITY: usize = 100;
@@ -65,12 +65,12 @@ async fn persist_state(
             message: t::Message::Request(t::Request {
                 inherit: true,
                 expects_response: None,
-                ipc: serde_json::to_vec(&t::StateAction::SetState(KERNEL_PROCESS_ID.clone()))
+                body: serde_json::to_vec(&t::StateAction::SetState(KERNEL_PROCESS_ID.clone()))
                     .unwrap(),
                 metadata: None,
                 capabilities: vec![],
             }),
-            payload: Some(t::Payload { mime: None, bytes }),
+            lazy_load_blob: Some(t::LazyLoadBlob { mime: None, bytes }),
         })
         .await?;
     Ok(())
@@ -92,7 +92,7 @@ async fn handle_kernel_request(
     let t::Message::Request(request) = km.message else {
         return;
     };
-    let command: t::KernelCommand = match serde_json::from_slice(&request.ipc) {
+    let command: t::KernelCommand = match serde_json::from_slice(&request.body) {
         Err(e) => {
             let _ = send_to_terminal
                 .send(t::Printout {
@@ -125,11 +125,11 @@ async fn handle_kernel_request(
                         message: t::Message::Request(t::Request {
                             inherit: false,
                             expects_response: None,
-                            ipc: b"run".to_vec(),
+                            body: b"run".to_vec(),
                             metadata: None,
                             capabilities: vec![],
                         }),
-                        payload: None,
+                        lazy_load_blob: None,
                     }))
                     .await;
             }
@@ -150,7 +150,7 @@ async fn handle_kernel_request(
             initial_capabilities,
             public,
         } => {
-            let Some(payload) = km.payload else {
+            let Some(blob) = km.lazy_load_blob else {
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
@@ -170,14 +170,16 @@ async fn handle_kernel_request(
                         message: t::Message::Response((
                             t::Response {
                                 inherit: false,
-                                ipc: serde_json::to_vec(&t::KernelResponse::InitializeProcessError)
-                                    .unwrap(),
+                                body: serde_json::to_vec(
+                                    &t::KernelResponse::InitializeProcessError,
+                                )
+                                .unwrap(),
                                 metadata: None,
                                 capabilities: vec![],
                             },
                             None,
                         )),
-                        payload: None,
+                        lazy_load_blob: None,
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -247,7 +249,7 @@ async fn handle_kernel_request(
                 our_name.clone(),
                 keypair.clone(),
                 km.id,
-                payload.bytes,
+                blob.bytes,
                 send_to_loop.clone(),
                 send_to_terminal,
                 senders,
@@ -288,7 +290,7 @@ async fn handle_kernel_request(
                             message: t::Message::Response((
                                 t::Response {
                                     inherit: false,
-                                    ipc: serde_json::to_vec(
+                                    body: serde_json::to_vec(
                                         &t::KernelResponse::InitializeProcessError,
                                     )
                                     .unwrap(),
@@ -297,7 +299,7 @@ async fn handle_kernel_request(
                                 },
                                 None,
                             )),
-                            payload: None,
+                            lazy_load_blob: None,
                         })
                         .await
                         .expect("event loop: fatal: sender died");
@@ -353,11 +355,11 @@ async fn handle_kernel_request(
                         message: t::Message::Request(t::Request {
                             inherit: false,
                             expects_response: None,
-                            ipc: b"run".to_vec(),
+                            body: b"run".to_vec(),
                             metadata: None,
                             capabilities: vec![],
                         }),
-                        payload: None,
+                        lazy_load_blob: None,
                     }))
                     .await
                 {
@@ -373,14 +375,14 @@ async fn handle_kernel_request(
                             message: t::Message::Response((
                                 t::Response {
                                     inherit: false,
-                                    ipc: serde_json::to_vec(&t::KernelResponse::StartedProcess)
+                                    body: serde_json::to_vec(&t::KernelResponse::StartedProcess)
                                         .unwrap(),
                                     metadata: None,
                                     capabilities: vec![],
                                 },
                                 None,
                             )),
-                            payload: None,
+                            lazy_load_blob: None,
                         })
                         .await
                         .expect("event loop: fatal: sender died");
@@ -405,14 +407,14 @@ async fn handle_kernel_request(
                         message: t::Message::Response((
                             t::Response {
                                 inherit: false,
-                                ipc: serde_json::to_vec(&t::KernelResponse::RunProcessError)
+                                body: serde_json::to_vec(&t::KernelResponse::RunProcessError)
                                     .unwrap(),
                                 metadata: None,
                                 capabilities: vec![],
                             },
                             None,
                         )),
-                        payload: None,
+                        lazy_load_blob: None,
                     })
                     .await
                     .expect("event loop: fatal: sender died");
@@ -459,14 +461,14 @@ async fn handle_kernel_request(
                     message: t::Message::Response((
                         t::Response {
                             inherit: false,
-                            ipc: serde_json::to_vec(&t::KernelResponse::KilledProcess(process_id))
+                            body: serde_json::to_vec(&t::KernelResponse::KilledProcess(process_id))
                                 .unwrap(),
                             metadata: None,
                             capabilities: vec![],
                         },
                         None,
                     )),
-                    payload: None,
+                    lazy_load_blob: None,
                 })
                 .await
                 .expect("event loop: fatal: sender died");
@@ -521,7 +523,7 @@ async fn start_process(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
     km_id: u64,
-    km_payload_bytes: Vec<u8>,
+    km_blob_bytes: Vec<u8>,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
     senders: &mut Senders,
@@ -569,7 +571,7 @@ async fn start_process(
             send_to_terminal.clone(),
             recv_in_process,
             send_to_process,
-            km_payload_bytes,
+            km_blob_bytes,
             caps_oracle,
             engine.clone(),
         )),
@@ -592,19 +594,19 @@ async fn start_process(
             message: t::Message::Response((
                 t::Response {
                     inherit: false,
-                    ipc: serde_json::to_vec(&t::KernelResponse::InitializedProcess)?,
+                    body: serde_json::to_vec(&t::KernelResponse::InitializedProcess)?,
                     metadata: None,
                     capabilities: vec![],
                 },
                 None,
             )),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await?;
     Ok(())
 }
 
-/// the uqbar kernel. contains event loop which handles all message-passing between
+/// the nectar kernel. contains event loop which handles all message-passing between
 /// all processes (WASM apps) and also runtime tasks.
 pub async fn kernel(
     our: t::Identity,
@@ -635,7 +637,7 @@ pub async fn kernel(
 
     let mut senders: Senders = HashMap::new();
     senders.insert(
-        t::ProcessId::new(Some("net"), "sys", "uqbar"),
+        t::ProcessId::new(Some("net"), "sys", "nectar"),
         ProcessSender::Runtime(send_to_net.clone()),
     );
     for (process_id, sender, _) in runtime_extensions {
@@ -691,7 +693,7 @@ pub async fn kernel(
         if let t::OnExit::Requests(requests) = &persisted.on_exit {
             // if a persisted process had on-death-requests, we should perform them now
             // even in death, a process can only message processes it has capabilities for
-            for (address, request, payload) in requests {
+            for (address, request, blob) in requests {
                 // the process that made the request is dead, so never expects response
                 let mut request = request.to_owned();
                 request.expects_response = None;
@@ -710,7 +712,7 @@ pub async fn kernel(
                             target: address.clone(),
                             rsvp: None,
                             message: t::Message::Request(request),
-                            payload: payload.clone(),
+                            lazy_load_blob: blob.clone(),
                         })
                         .await
                         .expect("fatal: kernel event loop died");
@@ -767,17 +769,17 @@ pub async fn kernel(
             message: t::Message::Request(t::Request {
                 inherit: true,
                 expects_response: None,
-                ipc: serde_json::to_vec(&t::KernelCommand::Booted).unwrap(),
+                body: serde_json::to_vec(&t::KernelCommand::Booted).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             }),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await
         .expect("fatal: kernel event loop died");
 
     #[cfg(feature = "simulation-mode")]
-    let tester_process_id = t::ProcessId::new(Some("tester"), "tester", "uqbar");
+    let tester_process_id = t::ProcessId::new(Some("tester"), "tester", "nectar");
 
     // main event loop
     loop {

@@ -1,5 +1,5 @@
 use crate::kernel::process;
-use crate::kernel::process::uqbar::process::standard as wit;
+use crate::kernel::process::nectar::process::standard as wit;
 use crate::kernel::process::StandardHost;
 use crate::types as t;
 use crate::types::STATE_PROCESS_ID;
@@ -33,11 +33,6 @@ impl StandardHost for process::ProcessWasi {
             .map_err(|e| anyhow::anyhow!("fatal: couldn't send to terminal: {e:?}"))
     }
 
-    async fn get_eth_block(&mut self) -> Result<u64> {
-        // TODO connect to eth RPC
-        unimplemented!()
-    }
-
     //
     // process management:
     //
@@ -56,7 +51,7 @@ impl StandardHost for process::ProcessWasi {
     /// create a message from the *kernel* to the filesystem,
     /// asking it to fetch the current state saved under this process
     async fn get_state(&mut self) -> Result<Option<Vec<u8>>> {
-        let old_last_payload = self.process.last_payload.clone();
+        let old_last_blob = self.process.last_blob.clone();
         let res = match process::send_and_await_response(
             self,
             Some(t::Address {
@@ -70,7 +65,7 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::StateAction::GetState(
+                body: serde_json::to_vec(&t::StateAction::GetState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
@@ -83,14 +78,14 @@ impl StandardHost for process::ProcessWasi {
         {
             Ok(Ok(_resp)) => {
                 // basically assuming filesystem responding properly here
-                match &self.process.last_payload {
+                match &self.process.last_blob {
                     None => Ok(None),
-                    Some(payload) => Ok(Some(payload.bytes.clone())),
+                    Some(blob) => Ok(Some(blob.bytes.clone())),
                 }
             }
             _ => Ok(None),
         };
-        self.process.last_payload = old_last_payload;
+        self.process.last_blob = old_last_blob;
         return res;
     }
 
@@ -98,7 +93,7 @@ impl StandardHost for process::ProcessWasi {
     /// asking it to replace the current state saved under
     /// this process with these bytes
     async fn set_state(&mut self, bytes: Vec<u8>) -> Result<()> {
-        let old_last_payload = self.process.last_payload.clone();
+        let old_last_blob = self.process.last_blob.clone();
         let res = match process::send_and_await_response(
             self,
             Some(t::Address {
@@ -112,14 +107,14 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::StateAction::SetState(
+                body: serde_json::to_vec(&t::StateAction::SetState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
                 metadata: Some(self.process.metadata.our.process.to_string()),
                 capabilities: vec![],
             },
-            Some(wit::Payload { mime: None, bytes }),
+            Some(wit::LazyLoadBlob { mime: None, bytes }),
         )
         .await
         {
@@ -131,7 +126,7 @@ impl StandardHost for process::ProcessWasi {
                 "filesystem did not respond properly to SetState!!"
             )),
         };
-        self.process.last_payload = old_last_payload;
+        self.process.last_blob = old_last_blob;
         print_debug(&self.process, "persisted state").await;
         return res;
     }
@@ -139,7 +134,7 @@ impl StandardHost for process::ProcessWasi {
     /// create a message from the *kernel* to the filesystem,
     /// asking it to delete the current state saved under this process
     async fn clear_state(&mut self) -> Result<()> {
-        let old_last_payload = self.process.last_payload.clone();
+        let old_last_blob = self.process.last_blob.clone();
         let res = match process::send_and_await_response(
             self,
             Some(t::Address {
@@ -153,7 +148,7 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::StateAction::DeleteState(
+                body: serde_json::to_vec(&t::StateAction::DeleteState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
@@ -172,7 +167,7 @@ impl StandardHost for process::ProcessWasi {
                 "filesystem did not respond properly to ClearState!!"
             )),
         };
-        self.process.last_payload = old_last_payload;
+        self.process.last_blob = old_last_blob;
         print_debug(&self.process, "cleared persisted state").await;
         return res;
     }
@@ -189,8 +184,8 @@ impl StandardHost for process::ProcessWasi {
         grant_capabilities: Vec<wit::ProcessId>,
         public: bool,
     ) -> Result<Result<wit::ProcessId, wit::SpawnError>> {
-        // save existing payload to restore later
-        let old_last_payload = self.process.last_payload.clone();
+        // save existing blob to restore later
+        let old_last_blob = self.process.last_blob.clone();
         let vfs_address = wit::Address {
             node: self.process.metadata.our.node.clone(),
             process: VFS_PROCESS_ID.en_wit(),
@@ -202,7 +197,7 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::VfsRequest {
+                body: serde_json::to_vec(&t::VfsRequest {
                     path: wasm_path.clone(),
                     action: t::VfsAction::Read,
                 })
@@ -215,23 +210,23 @@ impl StandardHost for process::ProcessWasi {
         .await
         else {
             println!("spawn: GetHash fail");
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let wit::Message::Response((wit::Response { ipc, .. }, _)) = hash_response else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+        let wit::Message::Response((wit::Response { body, .. }, _)) = hash_response else {
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let t::VfsResponse::Read = serde_json::from_slice(&ipc).unwrap() else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+        let t::VfsResponse::Read = serde_json::from_slice(&body).unwrap() else {
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+        let Some(t::LazyLoadBlob { mime: _, ref bytes }) = self.process.last_blob else {
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
@@ -258,7 +253,7 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5), // TODO evaluate
-                ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
+                body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                     id: new_process_id.clone(),
                     wasm_bytes_handle: wasm_path,
                     wit_version: Some(self.process.metadata.wit_version),
@@ -276,15 +271,15 @@ impl StandardHost for process::ProcessWasi {
                 metadata: None,
                 capabilities: vec![],
             },
-            Some(wit::Payload {
+            Some(wit::LazyLoadBlob {
                 mime: None,
                 bytes: bytes.to_vec(),
             }),
         )
         .await
         else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NameTaken));
         };
         // insert messaging capabilities into requested processes
@@ -321,7 +316,7 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5), // TODO evaluate
-                ipc: serde_json::to_vec(&t::KernelCommand::RunProcess(new_process_id.clone()))
+                body: serde_json::to_vec(&t::KernelCommand::RunProcess(new_process_id.clone()))
                     .unwrap(),
                 metadata: None,
                 capabilities: vec![],
@@ -330,16 +325,16 @@ impl StandardHost for process::ProcessWasi {
         )
         .await
         else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NameTaken));
         };
-        // reset payload to what it was
-        self.process.last_payload = old_last_payload;
-        let wit::Message::Response((wit::Response { ipc, .. }, _)) = response else {
+        // reset blob to what it was
+        self.process.last_blob = old_last_blob;
+        let wit::Message::Response((wit::Response { body, .. }, _)) = response else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let t::KernelResponse::StartedProcess = serde_json::from_slice(&ipc).unwrap() else {
+        let t::KernelResponse::StartedProcess = serde_json::from_slice(&body).unwrap() else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         // child processes are always able to Message parent
@@ -433,11 +428,11 @@ impl StandardHost for process::ProcessWasi {
         Ok(self.process.get_next_message_for_process().await)
     }
 
-    /// from a process: grab the payload part of the current prompting message.
-    /// if the prompting message did not have a payload, will return None.
+    /// from a process: grab the blob part of the current prompting message.
+    /// if the prompting message did not have a blob, will return None.
     /// will also return None if there is no prompting message.
-    async fn get_payload(&mut self) -> Result<Option<wit::Payload>> {
-        Ok(t::en_wit_payload(self.process.last_payload.clone()))
+    async fn get_blob(&mut self) -> Result<Option<wit::LazyLoadBlob>> {
+        Ok(t::en_wit_blob(self.process.last_blob.clone()))
     }
 
     async fn send_request(
@@ -445,11 +440,11 @@ impl StandardHost for process::ProcessWasi {
         target: wit::Address,
         request: wit::Request,
         context: Option<wit::Context>,
-        payload: Option<wit::Payload>,
+        blob: Option<wit::LazyLoadBlob>,
     ) -> Result<()> {
         let id = self
             .process
-            .send_request(None, target, request, context, payload)
+            .send_request(None, target, request, context, blob)
             .await;
         match id {
             Ok(_id) => Ok(()),
@@ -463,7 +458,7 @@ impl StandardHost for process::ProcessWasi {
             wit::Address,
             wit::Request,
             Option<wit::Context>,
-            Option<wit::Payload>,
+            Option<wit::LazyLoadBlob>,
         )>,
     ) -> Result<()> {
         for request in requests {
@@ -482,9 +477,9 @@ impl StandardHost for process::ProcessWasi {
     async fn send_response(
         &mut self,
         response: wit::Response,
-        payload: Option<wit::Payload>,
+        blob: Option<wit::LazyLoadBlob>,
     ) -> Result<()> {
-        self.process.send_response(response, payload).await;
+        self.process.send_response(response, blob).await;
         Ok(())
     }
 
@@ -492,8 +487,8 @@ impl StandardHost for process::ProcessWasi {
         &mut self,
         target: wit::Address,
         request: wit::Request,
-        payload: Option<wit::Payload>,
+        blob: Option<wit::LazyLoadBlob>,
     ) -> Result<Result<(wit::Address, wit::Message), wit::SendError>> {
-        process::send_and_await_response(self, None, target, request, payload).await
+        process::send_and_await_response(self, None, target, request, blob).await
     }
 }

@@ -1,10 +1,10 @@
+use nectar_process_lib::kernel_types as kt;
+use nectar_process_lib::*;
+use nectar_process_lib::{call_init, println};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::Digest;
 use std::collections::{HashMap, HashSet};
-use uqbar_process_lib::kernel_types as kt;
-use uqbar_process_lib::println;
-use uqbar_process_lib::*;
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -19,7 +19,7 @@ use ft_worker_lib::{
     spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
 };
 
-/// Uqbar App Store:
+/// Nectar App Store:
 /// acts as both a local package manager and a protocol to share packages across the network.
 /// packages are apps; apps are packages. we use an onchain app listing contract to determine
 /// what apps are available to download and what node(s) to download them from.
@@ -73,7 +73,7 @@ struct PackageListing {
 /// on different nodes, take this form. Will add more to enum in the future
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RemoteRequest {
-    /// no payload; request a package from a node
+    /// no blob; request a package from a node
     /// remote node must return RemoteResponse::DownloadApproved,
     /// at which point requester can expect a FTWorkerRequest::Receive
     Download(PackageId),
@@ -88,22 +88,22 @@ pub enum RemoteResponse {
 /// Local requests take this form.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum LocalRequest {
-    /// expects a zipped package as payload: create a new package from it
+    /// expects a zipped package as blob: create a new package from it
     /// if requested, will return a NewPackageResponse indicating success/failure
     NewPackage {
         package: PackageId,
         mirror: bool, // sets whether we will mirror this package
     },
-    /// no payload; try to download a package from a specified node
+    /// no blob; try to download a package from a specified node
     /// if requested, will return a DownloadResponse indicating success/failure
     Download {
         package: PackageId,
         install_from: NodeId,
     },
-    /// no payload; select a downloaded package and install it
+    /// no blob; select a downloaded package and install it
     /// if requested, will return an InstallResponse indicating success/failure
     Install(PackageId),
-    /// Takes no payload; Select an installed package and uninstall it.
+    /// Takes no blob; Select an installed package and uninstall it.
     /// This will kill the processes in the **manifest** of the package,
     /// but not the processes that were spawned by those processes! Take
     /// care to kill those processes yourself. This will also delete the drive
@@ -205,30 +205,30 @@ fn handle_message(our: &Address, mut state: &mut State, message: &Message) -> an
         Message::Request {
             source,
             expects_response,
-            ipc,
+            body,
             ..
         } => {
-            match &serde_json::from_slice::<Req>(&ipc)? {
+            match &serde_json::from_slice::<Req>(&body)? {
                 Req::LocalRequest(local_request) => {
                     if our.node != source.node {
                         return Err(anyhow::anyhow!("local request from non-local node"));
                     }
                     let resp = handle_local_request(&our, local_request, &mut state);
                     if expects_response.is_some() {
-                        Response::new().ipc(serde_json::to_vec(&resp)?).send()?;
+                        Response::new().body(serde_json::to_vec(&resp)?).send()?;
                     }
                 }
                 Req::RemoteRequest(remote_request) => {
                     let resp = handle_remote_request(&our, &source, remote_request, &mut state);
                     if expects_response.is_some() {
-                        Response::new().ipc(serde_json::to_vec(&resp)?).send()?;
+                        Response::new().body(serde_json::to_vec(&resp)?).send()?;
                     }
                 }
                 Req::FTWorkerResult(FTWorkerResult::ReceiveSuccess(name)) => {
                     // do with file what you'd like here
                     println!("app store: successfully received {:?}", name);
                     // remove leading / and .zip from file name to get package ID
-                    let package_id = match PackageId::from_str(name[1..].trim_end_matches(".zip")) {
+                    let package_id = match name[1..].trim_end_matches(".zip").parse::<PackageId>() {
                         Ok(package_id) => package_id,
                         Err(e) => {
                             println!("app store: bad package filename: {}", name);
@@ -237,11 +237,11 @@ fn handle_message(our: &Address, mut state: &mut State, message: &Message) -> an
                     };
                     // only install the app if we actually requested it
                     if state.requested_packages.remove(&package_id) {
-                        // auto-take zip from payload and request ourself with New
+                        // auto-take zip from blob and request ourself with New
                         Request::new()
                             .target(our.clone())
                             .inherit(true)
-                            .ipc(serde_json::to_vec(&Req::LocalRequest(
+                            .body(serde_json::to_vec(&Req::LocalRequest(
                                 LocalRequest::NewPackage {
                                     package: package_id,
                                     mirror: true, // can turn off auto-mirroring
@@ -255,11 +255,11 @@ fn handle_message(our: &Address, mut state: &mut State, message: &Message) -> an
                     println!("app store: got ft_worker result: {r:?}");
                 }
                 Req::FTWorkerCommand(_) => {
-                    spawn_receive_transfer(&our, &ipc)?;
+                    spawn_receive_transfer(&our, &body)?;
                 }
             }
         }
-        Message::Response { ipc, context, .. } => match &serde_json::from_slice::<Resp>(&ipc)? {
+        Message::Response { body, context, .. } => match &serde_json::from_slice::<Resp>(&body)? {
             Resp::RemoteResponse(remote_response) => match remote_response {
                 RemoteResponse::DownloadApproved => {
                     println!("app store: download approved");
@@ -306,11 +306,11 @@ fn handle_local_request(our: &Address, request: &LocalRequest, state: &mut State
             match Request::new()
                 .target((install_from.as_str(), our.process.clone()))
                 .inherit(true)
-                .ipc(serde_json::to_vec(&RemoteRequest::Download(package.clone())).unwrap())
+                .body(serde_json::to_vec(&RemoteRequest::Download(package.clone())).unwrap())
                 .send_and_await_response(5)
             {
-                Ok(Ok(Message::Response { ipc, .. })) => {
-                    match serde_json::from_slice::<Resp>(&ipc) {
+                Ok(Ok(Message::Response { body, .. })) => {
+                    match serde_json::from_slice::<Resp>(&body) {
                         Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) => {
                             state.requested_packages.insert(package.clone());
                             crate::set_state(&bincode::serialize(&state).unwrap());
@@ -339,15 +339,15 @@ fn handle_new_package(
     mirror: bool,
     state: &mut State,
 ) -> anyhow::Result<()> {
-    let Some(mut payload) = get_payload() else {
-        return Err(anyhow::anyhow!("no payload"));
+    let Some(mut blob) = get_blob() else {
+        return Err(anyhow::anyhow!("no blob"));
     };
     let drive = format!("/{}/pkg", package);
 
     // create a new drive for this package in VFS
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&vfs::VfsRequest {
+        .target(("our", "vfs", "sys", "nectar"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
             path: drive.clone(),
             action: vfs::VfsAction::CreateDrive,
         })?)
@@ -355,21 +355,21 @@ fn handle_new_package(
 
     // produce the version hash for this new package
     let mut hasher = sha2::Sha256::new();
-    hasher.update(&payload.bytes);
+    hasher.update(&blob.bytes);
     let version_hash = format!("{:x}", hasher.finalize());
 
     // add zip bytes
-    payload.mime = Some("application/zip".to_string());
+    blob.mime = Some("application/zip".to_string());
     let response = Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&vfs::VfsRequest {
+        .target(("our", "vfs", "sys", "nectar"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
             path: drive.clone(),
             action: vfs::VfsAction::AddZip,
         })?)
-        .payload(payload.clone())
+        .blob(blob.clone())
         .send_and_await_response(5)??;
-    let vfs_ipc = serde_json::from_slice::<serde_json::Value>(response.ipc())?;
-    if vfs_ipc == serde_json::json!({"Err": "NoCap"}) {
+    let vfs_body = serde_json::from_slice::<serde_json::Value>(response.body())?;
+    if vfs_body == serde_json::json!({"Err": "NoCap"}) {
         return Err(anyhow::anyhow!(
             "cannot add NewPackage: do not have capability to access vfs"
         ));
@@ -379,30 +379,30 @@ fn handle_new_package(
     // call it <package>.zip
     let zip_path = format!("{}/{}.zip", drive.clone(), package);
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
+        .target(("our", "vfs", "sys", "nectar"))
         .inherit(true)
-        .ipc(serde_json::to_vec(&vfs::VfsRequest {
+        .body(serde_json::to_vec(&vfs::VfsRequest {
             path: zip_path,
             action: vfs::VfsAction::Write,
         })?)
-        .payload(payload)
+        .blob(blob)
         .send_and_await_response(5)??;
     let metadata_path = format!("{}/metadata.json", drive.clone());
 
     // now, read the pkg contents to create our own listing and state,
     // such that we can mirror this package to others.
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&vfs::VfsRequest {
+        .target(("our", "vfs", "sys", "nectar"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
             path: metadata_path,
             action: vfs::VfsAction::Read,
         })?)
         .send_and_await_response(5)??;
-    let Some(payload) = get_payload() else {
+    let Some(blob) = get_blob() else {
         return Err(anyhow::anyhow!("no metadata found!"));
     };
 
-    let metadata = String::from_utf8(payload.bytes)?;
+    let metadata = String::from_utf8(blob.bytes)?;
     let metadata = serde_json::from_str::<kt::PackageMetadata>(&metadata)?;
 
     let listing_data = PackageListing {
@@ -427,20 +427,20 @@ fn handle_new_package(
 fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
     let drive_path = format!("/{}/pkg", package);
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&vfs::VfsRequest {
+        .target(("our", "vfs", "sys", "nectar"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
             path: format!("{}/manifest.json", drive_path),
             action: vfs::VfsAction::Read,
         })?)
         .send_and_await_response(5)??;
-    let Some(payload) = get_payload() else {
-        return Err(anyhow::anyhow!("no payload"));
+    let Some(blob) = get_blob() else {
+        return Err(anyhow::anyhow!("no blob"));
     };
-    let manifest = String::from_utf8(payload.bytes)?;
+    let manifest = String::from_utf8(blob.bytes)?;
     let manifest = serde_json::from_str::<Vec<kt::PackageManifestEntry>>(&manifest)?;
     // always grant read/write to their drive, which we created for them
     let Some(read_cap) = get_capability(
-        &Address::new(&our.node, ("vfs", "sys", "uqbar")),
+        &Address::new(&our.node, ("vfs", "sys", "nectar")),
         &serde_json::to_string(&serde_json::json!({
             "kind": "read",
             "drive": drive_path,
@@ -449,7 +449,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("app store: no read cap"));
     };
     let Some(write_cap) = get_capability(
-        &Address::new(&our.node, ("vfs", "sys", "uqbar")),
+        &Address::new(&our.node, ("vfs", "sys", "nectar")),
         &serde_json::to_string(&serde_json::json!({
             "kind": "write",
             "drive": drive_path,
@@ -458,7 +458,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("app store: no write cap"));
     };
     let Some(networking_cap) = get_capability(
-        &Address::new(&our.node, ("kernel", "sys", "uqbar")),
+        &Address::new(&our.node, ("kernel", "sys", "nectar")),
         &"\"network\"".to_string(),
     ) else {
         return Err(anyhow::anyhow!("app store: no net cap"));
@@ -481,20 +481,20 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
         initial_capabilities.insert(kt::de_wit_capability(read_cap.clone()));
         initial_capabilities.insert(kt::de_wit_capability(write_cap.clone()));
         let process_id = format!("{}:{}", entry.process_name, package);
-        let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {
+        let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
             return Err(anyhow::anyhow!("app store: invalid process id!"));
         };
         // kill process if it already exists
         Request::new()
-            .target(("our", "kernel", "sys", "uqbar"))
-            .ipc(serde_json::to_vec(&kt::KernelCommand::KillProcess(
+            .target(("our", "kernel", "sys", "nectar"))
+            .body(serde_json::to_vec(&kt::KernelCommand::KillProcess(
                 parsed_new_process_id.clone(),
             ))?)
             .send()?;
 
         let _bytes_response = Request::new()
-            .target(("our", "vfs", "sys", "uqbar"))
-            .ipc(serde_json::to_vec(&vfs::VfsRequest {
+            .target(("our", "vfs", "sys", "nectar"))
+            .body(serde_json::to_vec(&vfs::VfsRequest {
                 path: wasm_path.clone(),
                 action: vfs::VfsAction::Read,
             })?)
@@ -504,7 +504,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                 let mut capability = None;
                 match value {
                     serde_json::Value::String(process_name) => {
-                        if let Ok(parsed_process_id) = ProcessId::from_str(&process_name) {
+                        if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
                             capability = get_capability(
                                 &Address {
                                     node: our.node.clone(),
@@ -516,8 +516,10 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                     }
                     serde_json::Value::Object(map) => {
                         if let Some(process_name) = map.get("process") {
-                            if let Ok(parsed_process_id) =
-                                ProcessId::from_str(&process_name.to_string())
+                            if let Ok(parsed_process_id) = process_name
+                                .as_str()
+                                .unwrap_or_default()
+                                .parse::<ProcessId>()
                             {
                                 if let Some(params) = map.get("params") {
                                     if params.to_string() == "\"root\"" {
@@ -554,8 +556,8 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
             }
         }
         Request::new()
-            .target(("our", "kernel", "sys", "uqbar"))
-            .ipc(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
+            .target(("our", "kernel", "sys", "nectar"))
+            .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                 id: parsed_new_process_id.clone(),
                 wasm_bytes_handle: wasm_path,
                 wit_version: None,
@@ -569,10 +571,10 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
             for value in to_grant {
                 match value {
                     serde_json::Value::String(process_name) => {
-                        if let Ok(parsed_process_id) = ProcessId::from_str(&process_name) {
+                        if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
                             let _ = Request::new()
-                                .target(("our", "kernel", "sys", "uqbar"))
-                                .ipc(
+                                .target(("our", "kernel", "sys", "nectar"))
+                                .body(
                                     serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
                                         target: parsed_process_id,
                                         capabilities: vec![kt::Capability {
@@ -590,13 +592,15 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                     }
                     serde_json::Value::Object(map) => {
                         if let Some(process_name) = map.get("process") {
-                            if let Ok(parsed_process_id) =
-                                ProcessId::from_str(&process_name.to_string())
+                            if let Ok(parsed_process_id) = process_name
+                                .as_str()
+                                .unwrap_or_default()
+                                .parse::<ProcessId>()
                             {
                                 if let Some(params) = map.get("params") {
                                     let _ = Request::new()
-                                        .target(("our", "kernel", "sys", "uqbar"))
-                                        .ipc(
+                                        .target(("our", "kernel", "sys", "nectar"))
+                                        .body(
                                             serde_json::to_vec(
                                                 &kt::KernelCommand::GrantCapabilities {
                                                     target: parsed_process_id,
@@ -623,8 +627,8 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
             }
         }
         Request::new()
-            .target(("our", "kernel", "sys", "uqbar"))
-            .ipc(serde_json::to_vec(&kt::KernelCommand::RunProcess(
+            .target(("our", "kernel", "sys", "nectar"))
+            .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
                 parsed_new_process_id,
             ))?)
             .send_and_await_response(5)??;
@@ -635,34 +639,34 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
 fn handle_uninstall(package: &PackageId) -> anyhow::Result<()> {
     let drive_path = format!("/{}/pkg", package);
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&vfs::VfsRequest {
+        .target(("our", "vfs", "sys", "nectar"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
             path: format!("{}/manifest.json", drive_path),
             action: vfs::VfsAction::Read,
         })?)
         .send_and_await_response(5)??;
-    let Some(payload) = get_payload() else {
-        return Err(anyhow::anyhow!("no payload"));
+    let Some(blob) = get_blob() else {
+        return Err(anyhow::anyhow!("no blob"));
     };
-    let manifest = String::from_utf8(payload.bytes)?;
+    let manifest = String::from_utf8(blob.bytes)?;
     let manifest = serde_json::from_str::<Vec<kt::PackageManifestEntry>>(&manifest)?;
     // reading from the package manifest, kill every process
     for entry in &manifest {
         let process_id = format!("{}:{}", entry.process_name, package);
-        let Ok(parsed_new_process_id) = ProcessId::from_str(&process_id) else {
+        let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
             continue;
         };
         Request::new()
-            .target(("our", "kernel", "sys", "uqbar"))
-            .ipc(serde_json::to_vec(&kt::KernelCommand::KillProcess(
+            .target(("our", "kernel", "sys", "nectar"))
+            .body(serde_json::to_vec(&kt::KernelCommand::KillProcess(
                 parsed_new_process_id,
             ))?)
             .send()?;
     }
     // then, delete the drive
     Request::new()
-        .target(("our", "vfs", "sys", "uqbar"))
-        .ipc(serde_json::to_vec(&vfs::VfsRequest {
+        .target(("our", "vfs", "sys", "nectar"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
             path: drive_path,
             action: vfs::VfsAction::RemoveDirAll,
         })?)
@@ -684,11 +688,11 @@ fn handle_remote_request(
             if !package_state.mirroring {
                 return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
             }
-            // get the .zip from VFS and attach as payload to response
+            // get the .zip from VFS and attach as blob to response
             let file_path = format!("/{}/pkg/{}.zip", package, package);
             let Ok(Ok(_)) = Request::new()
-                .target(("our", "vfs", "sys", "uqbar"))
-                .ipc(
+                .target(("our", "vfs", "sys", "nectar"))
+                .body(
                     serde_json::to_vec(&vfs::VfsRequest {
                         path: file_path,
                         action: vfs::VfsAction::Read,
@@ -699,7 +703,7 @@ fn handle_remote_request(
             else {
                 return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
             };
-            // transfer will *inherit* the payload bytes we receive from VFS
+            // transfer will *inherit* the blob bytes we receive from VFS
             let file_name = format!("/{}.zip", package);
             match spawn_transfer(&our, &file_name, None, 60, &source) {
                 Ok(()) => Resp::RemoteResponse(RemoteResponse::DownloadApproved),

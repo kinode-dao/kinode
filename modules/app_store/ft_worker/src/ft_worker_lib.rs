@@ -1,5 +1,5 @@
+use nectar_process_lib::*;
 use serde::{Deserialize, Serialize};
-use uqbar_process_lib::*;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FileTransferContext {
@@ -13,7 +13,7 @@ pub struct FileTransferContext {
 /// in order to prompt them to spawn a worker
 #[derive(Debug, Serialize, Deserialize)]
 pub enum FTWorkerCommand {
-    /// make sure to attach file itself as payload
+    /// make sure to attach file itself as blob
     Send {
         target: Address,
         file_name: String,
@@ -32,7 +32,7 @@ pub enum FTWorkerCommand {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum FTWorkerResult {
     SendSuccess,
-    /// string is name of file. bytes in payload
+    /// string is name of file. bytes in blob
     ReceiveSuccess(String),
     Err(TransferError),
 }
@@ -49,7 +49,7 @@ pub enum TransferError {
 /// A helper function to spawn a worker and initialize a file transfer.
 /// The outcome will be sent as an [`FTWorkerResult`] to the caller process.
 ///
-/// if `file_bytes` is None, expects to inherit payload!
+/// if `file_bytes` is None, expects to inherit blob!
 #[allow(dead_code)]
 pub fn spawn_transfer(
     our: &Address,
@@ -71,15 +71,15 @@ pub fn spawn_transfer(
         return Err(anyhow::anyhow!("failed to spawn ft_worker!"));
     };
     // tell the worker what to do
-    let payload_or_inherit = match file_bytes {
-        Some(bytes) => Some(Payload { mime: None, bytes }),
+    let blob_or_inherit = match file_bytes {
+        Some(bytes) => Some(LazyLoadBlob { mime: None, bytes }),
         None => None,
     };
     let mut req = Request::new()
         .target((our.node.as_ref(), worker_process_id))
-        .inherit(!payload_or_inherit.is_some())
+        .inherit(!blob_or_inherit.is_some())
         .expects_response(timeout + 1) // don't call with 2^64 lol
-        .ipc(
+        .body(
             serde_json::to_vec(&FTWorkerCommand::Send {
                 target: to_addr.clone(),
                 file_name: file_name.into(),
@@ -90,7 +90,7 @@ pub fn spawn_transfer(
         .context(
             serde_json::to_vec(&FileTransferContext {
                 file_name: file_name.into(),
-                file_size: match &payload_or_inherit {
+                file_size: match &blob_or_inherit {
                     Some(p) => Some(p.bytes.len() as u64),
                     None => None, // TODO
                 },
@@ -99,8 +99,8 @@ pub fn spawn_transfer(
             .unwrap(),
         );
 
-    if let Some(payload) = payload_or_inherit {
-        req = req.payload(payload);
+    if let Some(blob) = blob_or_inherit {
+        req = req.blob(blob);
     }
     req.send()
 }
@@ -110,8 +110,8 @@ pub fn spawn_transfer(
 /// and let it do the rest. The outcome will be sent as an [`FTWorkerResult`] inside
 /// a Response to the caller.
 #[allow(dead_code)]
-pub fn spawn_receive_transfer(our: &Address, ipc: &[u8]) -> anyhow::Result<()> {
-    let Ok(FTWorkerCommand::Receive { transfer_id, .. }) = serde_json::from_slice(ipc) else {
+pub fn spawn_receive_transfer(our: &Address, body: &[u8]) -> anyhow::Result<()> {
+    let Ok(FTWorkerCommand::Receive { transfer_id, .. }) = serde_json::from_slice(body) else {
         return Err(anyhow::anyhow!(
             "spawn_receive_transfer: got malformed request"
         ));
@@ -130,6 +130,6 @@ pub fn spawn_receive_transfer(our: &Address, ipc: &[u8]) -> anyhow::Result<()> {
     Request::new()
         .target((our.node.as_ref(), worker_process_id))
         .inherit(true)
-        .ipc(ipc)
+        .body(body)
         .send()
 }

@@ -91,7 +91,7 @@ async fn serve_register_fe(
 
 #[tokio::main]
 async fn main() {
-    let app = Command::new("Uqbar")
+    let app = Command::new("nectar")
         .version(VERSION)
         .author("Uqbar DAO: https://github.com/uqbar-dao")
         .about("A General Purpose Sovereign Cloud Computing Platform")
@@ -197,7 +197,7 @@ async fn main() {
     let http_server_port = http::utils::find_open_port(port).await.unwrap();
     if http_server_port != port {
         let error_message = format!(
-            "uqbar: couldn't bind {}; first available port found {}. Set an available port with `--port` and try again.",
+            "error: couldn't bind {}; first available port found {}. Set an available port with `--port` and try again.",
             port,
             http_server_port,
         );
@@ -315,38 +315,38 @@ async fn main() {
     #[allow(unused_mut)]
     let mut runtime_extensions = vec![
         (
-            ProcessId::new(Some("http_server"), "sys", "uqbar"),
+            ProcessId::new(Some("http_server"), "sys", "nectar"),
             http_server_sender,
             true,
         ),
         (
-            ProcessId::new(Some("http_client"), "sys", "uqbar"),
+            ProcessId::new(Some("http_client"), "sys", "nectar"),
             http_client_sender,
             false,
         ),
         (
-            ProcessId::new(Some("timer"), "sys", "uqbar"),
+            ProcessId::new(Some("timer"), "sys", "nectar"),
             timer_service_sender,
             true,
         ),
         (
-            ProcessId::new(Some("eth"), "sys", "uqbar"),
+            ProcessId::new(Some("eth"), "sys", "nectar"),
             eth_provider_sender,
             true,
         ),
         (
-            ProcessId::new(Some("vfs"), "sys", "uqbar"),
+            ProcessId::new(Some("vfs"), "sys", "nectar"),
             vfs_message_sender,
             true,
         ),
         (
-            ProcessId::new(Some("state"), "sys", "uqbar"),
+            ProcessId::new(Some("state"), "sys", "nectar"),
             state_sender,
             true,
         ),
-        (ProcessId::new(Some("kv"), "sys", "uqbar"), kv_sender, true),
+        (ProcessId::new(Some("kv"), "sys", "nectar"), kv_sender, true),
         (
-            ProcessId::new(Some("sqlite"), "sys", "uqbar"),
+            ProcessId::new(Some("sqlite"), "sys", "nectar"),
             sqlite_sender,
             true,
         ),
@@ -354,7 +354,7 @@ async fn main() {
 
     /*
      *  the kernel module will handle our userspace processes and receives
-     *  all "messages", the basic message format for uqbar.
+     *  all "messages", the basic message format for nectar.
      *
      *  if any of these modules fail, the program exits with an error.
      */
@@ -507,11 +507,11 @@ async fn main() {
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
+                body: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             }),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await;
 

@@ -117,9 +117,9 @@ pub async fn register(
         ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
             "nectar-next-router.uq".into(),
-            // "uqbar-router-1.uq".into(),
-            // "uqbar-router-2.uq".into(),
-            // "uqbar-router-3.uq".into(),
+            // "nectar-router-1.uq".into(),
+            // "nectar-router-2.uq".into(),
+            // "nectar-router-3.uq".into(),
         ],
     });
 
@@ -535,7 +535,7 @@ async fn success_response(
 
     let headers = response.headers_mut();
 
-    match HeaderValue::from_str(&format!("uqbar-auth_{}={};", &our.name, &token)) {
+    match HeaderValue::from_str(&format!("nectar-auth_{}={};", &our.name, &token)) {
         Ok(v) => {
             headers.append(SET_COOKIE, v);
         }

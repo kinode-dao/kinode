@@ -5,15 +5,15 @@
 ```bash
 # Clone the repo.
 
-git clone git@github.com:uqbar-dao/uqbar.git
+git clone git@github.com:uqbar-dao/nectar.git
 
 # Configure dependency retrieval from GitHub
 mkdir .cargo
 echo "net.git-fetch-with-cli = true" > .cargo/config
 
-# Get some stuff so we can build wasm.
+# Get some stuff so we can build Wasm.
 
-cd uqbar
+cd nectar
 cargo install wasm-tools
 rustup install nightly
 rustup target add wasm32-wasi
@@ -55,14 +55,14 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
 - `/message <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>.
-    - Example: `/message our@net:sys:uqbar diagnostics`
+    - Example: `/message our@net:sys:nectar diagnostics`
     - `our` will always be interpolated by the system as your node's name
-    - Can also use `/m` for same command: `/m our@net:sys:uqbar diagnostics`
+    - Can also use `/m` for same command: `/m our@net:sys:nectar diagnostics`
 - `/app <address>`: set the terminal to a mode where all messages go to a specific app. To clear this selection, use `/app clear` or simply `/app`. This is useful for apps that have a command line interface.
-    - Example: `/app our@net:sys:uqbar`, then `/m diagnostics`
-    - Can also use `/a` for same command: `/a our@net:sys:uqbar`
+    - Example: `/app our@net:sys:nectar`, then `/m diagnostics`
+    - Can also use `/a` for same command: `/a our@net:sys:nectar`
     - Example of sending many messages:
-        - `/a ben.uq@net:sys:uqbar`
+        - `/a ben.uq@net:sys:nectar`
         - `/m hey there`
         - `/m how are you?`
         - `/a` (to exit app mode)
@@ -73,6 +73,6 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH
 
 Download and install an app:
 ```
-/m our@main:app_store:uqbar {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
-/m our@main:app_store:uqbar {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
+/m our@main:app_store:nectar {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
+/m our@main:app_store:nectar {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
 ```

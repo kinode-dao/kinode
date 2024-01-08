@@ -59,7 +59,7 @@ pub async fn maintain_connection(
     let mut last_message = std::time::Instant::now();
     loop {
         tokio::select! {
-            recv_result = recv_uqbar_message(&mut conn) => {
+            recv_result = recv_nectar_message(&mut conn) => {
                 match recv_result {
                     Ok(km) => {
                         if km.source.node != peer_name {
@@ -81,7 +81,7 @@ pub async fn maintain_connection(
             maybe_recv = peer_rx.recv() => {
                 match maybe_recv {
                     Some(km) => {
-                        match send_uqbar_message(&km, &mut conn).await {
+                        match send_nectar_message(&km, &mut conn).await {
                             Ok(()) => {
                                 last_message = std::time::Instant::now();
                                 continue
@@ -209,27 +209,27 @@ pub async fn create_passthrough(
         if !target_peer.routing_for {
             return Err(anyhow!("we don't route for that indirect node"));
         }
-        // send their net:sys:uqbar process a message, notifying it to create a *matching*
+        // send their net:sys:nectar process a message, notifying it to create a *matching*
         // passthrough request, which we can pair with this pending one.
         target_peer.sender.send(KernelMessage {
             id: rand::random(),
             source: Address {
                 node: our.name.clone(),
-                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+                process: ProcessId::new(Some("net"), "sys", "nectar"),
             },
             target: Address {
                 node: to_name.clone(),
-                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+                process: ProcessId::new(Some("net"), "sys", "nectar"),
             },
             rsvp: None,
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: rmp_serde::to_vec(&NetActions::ConnectionRequest(from_id.name.clone()))?,
+                body: rmp_serde::to_vec(&NetActions::ConnectionRequest(from_id.name.clone()))?,
                 metadata: None,
                 capabilities: vec![],
             }),
-            payload: None,
+            lazy_load_blob: None,
         })?;
 
         return Ok((
@@ -299,7 +299,7 @@ pub fn validate_handshake(
     Ok(())
 }
 
-pub async fn send_uqbar_message(km: &KernelMessage, conn: &mut PeerConnection) -> Result<()> {
+pub async fn send_nectar_message(km: &KernelMessage, conn: &mut PeerConnection) -> Result<()> {
     let serialized = rmp_serde::to_vec(km)?;
     if serialized.len() > MESSAGE_MAX_SIZE as usize {
         return Err(anyhow!("message too large"));
@@ -320,13 +320,13 @@ pub async fn send_uqbar_message(km: &KernelMessage, conn: &mut PeerConnection) -
 }
 
 /// any error in receiving a message will result in the connection being closed.
-pub async fn recv_uqbar_message(conn: &mut PeerConnection) -> Result<KernelMessage> {
+pub async fn recv_nectar_message(conn: &mut PeerConnection) -> Result<KernelMessage> {
     let outer_len = conn.noise.read_message(
         &ws_recv(&mut conn.read_stream, &mut conn.write_stream).await?,
         &mut conn.buf,
     )?;
     if outer_len < 4 {
-        return Err(anyhow!("uqbar message too small!"));
+        return Err(anyhow!("nectar message too small!"));
     }
 
     let length_bytes = [conn.buf[0], conn.buf[1], conn.buf[2], conn.buf[3]];
@@ -349,7 +349,7 @@ pub async fn recv_uqbar_message(conn: &mut PeerConnection) -> Result<KernelMessa
     Ok(rmp_serde::from_slice(&msg)?)
 }
 
-pub async fn send_uqbar_handshake(
+pub async fn send_nectar_handshake(
     our: &Identity,
     keypair: &Ed25519KeyPair,
     noise_static_key: &[u8],
@@ -373,7 +373,7 @@ pub async fn send_uqbar_handshake(
     Ok(())
 }
 
-pub async fn recv_uqbar_handshake(
+pub async fn recv_nectar_handshake(
     noise: &mut snow::HandshakeState,
     buf: &mut [u8],
     read_stream: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
@@ -449,7 +449,7 @@ pub async fn error_offline(km: KernelMessage, network_error_tx: &NetworkErrorSen
                 kind: SendErrorKind::Offline,
                 target: km.target,
                 message: km.message,
-                payload: km.payload,
+                lazy_load_blob: km.lazy_load_blob,
             },
         })
         .await?;
@@ -466,7 +466,7 @@ fn strip_0x(s: &str) -> String {
 pub async fn parse_hello_message(
     our: &Identity,
     km: &KernelMessage,
-    ipc: &[u8],
+    body: &[u8],
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
 ) -> Result<()> {
@@ -476,7 +476,7 @@ pub async fn parse_hello_message(
             content: format!(
                 "\x1b[3;32m{}: {}\x1b[0m",
                 km.source.node,
-                std::str::from_utf8(ipc).unwrap_or("!!message parse error!!")
+                std::str::from_utf8(body).unwrap_or("!!message parse error!!")
             ),
         })
         .await?;
@@ -485,20 +485,20 @@ pub async fn parse_hello_message(
             id: km.id,
             source: Address {
                 node: our.name.clone(),
-                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+                process: ProcessId::new(Some("net"), "sys", "nectar"),
             },
             target: km.rsvp.as_ref().unwrap_or(&km.source).clone(),
             rsvp: None,
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc: "delivered".as_bytes().to_vec(),
+                    body: "delivered".as_bytes().to_vec(),
                     metadata: None,
                     capabilities: vec![],
                 },
                 None,
             )),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await?;
     Ok(())

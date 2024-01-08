@@ -5,11 +5,11 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "net:sys:uqbar",
-            "kernel:sys:uqbar"
+            "net:sys:nectar",
+            "kernel:sys:nectar"
         ],
         "grant_capabilities": [
-            "vfs:sys:uqbar"
+            "vfs:sys:nectar"
         ],
         "public": true
     }

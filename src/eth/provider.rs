@@ -75,9 +75,9 @@ async fn handle_request(
     connections: &Arc<Mutex<RpcConnections>>,
     send_to_loop: &MessageSender,
 ) -> Result<()> {
-    if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(&req.ipc) {
+    if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(&req.body) {
         return handle_http_server_request(action, km, connections).await;
-    } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&req.ipc) {
+    } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&req.body) {
         return handle_eth_request(action, our, km, connections, send_to_loop).await;
     } else {
         return Err(anyhow::anyhow!("malformed request"));
@@ -95,7 +95,7 @@ async fn handle_http_server_request(
     } = action
     {
         if message_type == WsMessageType::Text {
-            let bytes = &km.payload.as_ref().unwrap().bytes;
+            let bytes = &km.lazy_load_blob.as_ref().unwrap().bytes;
             let text = std::str::from_utf8(&bytes).unwrap();
             let mut json: serde_json::Value = serde_json::from_str(text)?;
             let mut id = json["id"].as_u64().unwrap();
@@ -211,7 +211,7 @@ async fn spawn_provider_read_stream(
                 message: Message::Request(Request {
                     inherit: false,
                     expects_response: None,
-                    ipc: json!({
+                    body: json!({
                         "EventSubscription": serde_json::to_value(event.clone()).unwrap()
                     })
                     .to_string()
@@ -219,7 +219,7 @@ async fn spawn_provider_read_stream(
                     metadata: None,
                     capabilities: vec![],
                 }),
-                payload: None,
+                lazy_load_blob: None,
             })
             .await
             .unwrap();
@@ -241,7 +241,7 @@ async fn bind_websockets(our: &str, send_to_loop: &MessageSender) {
             rsvp: None,
             message: Message::Request(Request {
                 inherit: false,
-                ipc: serde_json::to_vec(&HttpServerAction::WebSocketBind {
+                body: serde_json::to_vec(&HttpServerAction::WebSocketBind {
                     path: "/".to_string(),
                     authenticated: false,
                     encrypted: false,
@@ -251,7 +251,7 @@ async fn bind_websockets(our: &str, send_to_loop: &MessageSender) {
                 expects_response: None,
                 capabilities: vec![],
             }),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await;
 }
@@ -316,7 +316,7 @@ async fn handle_external_websocket_passthrough(
                             rsvp: None,
                             message: Message::Request(Request {
                                 inherit: false,
-                                ipc: serde_json::to_vec(&HttpServerAction::WebSocketPush {
+                                body: serde_json::to_vec(&HttpServerAction::WebSocketPush {
                                     channel_id,
                                     message_type: WsMessageType::Text,
                                 })
@@ -325,7 +325,7 @@ async fn handle_external_websocket_passthrough(
                                 expects_response: None,
                                 capabilities: vec![],
                             }),
-                            payload: Some(Payload {
+                            lazy_load_blob: Some(LazyLoadBlob {
                                 bytes: json.to_string().as_bytes().to_vec(),
                                 mime: None,
                             }),

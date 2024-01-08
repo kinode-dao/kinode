@@ -101,11 +101,11 @@ async fn handle_request(
         id,
         source,
         message,
-        payload,
+        lazy_load_blob: blob,
         ..
     } = km.clone();
     let Message::Request(Request {
-        ipc,
+        body,
         expects_response,
         metadata,
         ..
@@ -116,7 +116,7 @@ async fn handle_request(
         });
     };
 
-    let request: KvRequest = match serde_json::from_slice(&ipc) {
+    let request: KvRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
             println!("kv: got invalid Request: {}", e);
@@ -136,7 +136,7 @@ async fn handle_request(
     )
     .await?;
 
-    let (ipc, bytes) = match &request.action {
+    let (body, bytes) = match &request.action {
         KvAction::Open => {
             // handled in check_caps.
             (serde_json::to_vec(&KvResponse::Ok).unwrap(), None)
@@ -184,15 +184,15 @@ async fn handle_request(
                 }
                 Some(db) => db,
             };
-            let Some(payload) = payload else {
+            let Some(blob) = blob else {
                 return Err(KvError::InputError {
-                    error: "no payload".into(),
+                    error: "no blob".into(),
                 });
             };
 
             match tx_id {
                 None => {
-                    db.put(key, payload.bytes)?;
+                    db.put(key, blob.bytes)?;
                 }
                 Some(tx_id) => {
                     let mut tx = match txs.get_mut(&tx_id) {
@@ -201,7 +201,7 @@ async fn handle_request(
                         }
                         Some(tx) => tx,
                     };
-                    tx.push((request.action.clone(), Some(payload.bytes)));
+                    tx.push((request.action.clone(), Some(blob.bytes)));
                 }
             }
 
@@ -246,11 +246,11 @@ async fn handle_request(
             };
             let tx = db.transaction();
 
-            for (action, payload) in txs {
+            for (action, blob) in txs {
                 match action {
                     KvAction::Set { key, .. } => {
-                        if let Some(payload) = payload {
-                            tx.put(&key, &payload)?;
+                        if let Some(blob) = blob {
+                            tx.put(&key, &blob)?;
                         }
                     }
                     KvAction::Delete { key, .. } => {
@@ -297,13 +297,13 @@ async fn handle_request(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc,
+                    body,
                     metadata,
                     capabilities: vec![],
                 },
                 None,
             )),
-            payload: bytes.map(|bytes| Payload {
+            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
             }),
@@ -316,7 +316,7 @@ async fn handle_request(
                 verbosity: 2,
                 content: format!(
                     "kv: not sending response: {:?}",
-                    serde_json::from_slice::<KvResponse>(&ipc)
+                    serde_json::from_slice::<KvResponse>(&body)
                 ),
             })
             .await
@@ -497,13 +497,13 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: KvError) -> K
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: serde_json::to_vec(&KvResponse::Err { error: error }).unwrap(),
+                body: serde_json::to_vec(&KvResponse::Err { error: error }).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             },
             None,
         )),
-        payload: None,
+        lazy_load_blob: None,
     }
 }
 

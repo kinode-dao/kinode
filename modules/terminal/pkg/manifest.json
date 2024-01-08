@@ -5,9 +5,9 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "net:sys:uqbar",
-            "http_client:sys:uqbar",
-            "kernel:sys:uqbar"
+            "net:sys:nectar",
+            "http_client:sys:nectar",
+            "kernel:sys:nectar"
         ],
         "public": true
     }
