@@ -412,23 +412,51 @@ async fn bootstrap(
 
         let drive_path = format!("/{}/pkg", &our_drive_name);
 
-        // for each file in package.zip, recursively through all dirs, send a newfile KM to VFS
+        // for each file in package.zip, write to vfs folder
         for i in 0..package.len() {
-            let mut file = package.by_index(i).unwrap();
-            if file.is_file() {
-                let file_path = file
-                    .enclosed_name()
-                    .expect("fs: name error reading package.zip")
-                    .to_owned();
-                let mut file_path = file_path.to_string_lossy().to_string();
-                if !file_path.starts_with('/') {
-                    file_path = format!("/{}", file_path);
+            let mut file = match package.by_index(i) {
+                Ok(f) => f,
+                Err(e) => {
+                    println!("Error accessing file by index: {}", e);
+                    continue;
                 }
-                println!("fs: found file {}...\r", file_path);
+            };
+
+            let file_path = match file.enclosed_name() {
+                Some(path) => path.to_owned(),
+                None => {
+                    println!("Error getting the file name from the package");
+                    continue;
+                }
+            };
+
+            let file_path_str = file_path.to_string_lossy().to_string();
+            let full_path = Path::new(&pkg_path).join(&file_path_str);
+
+            if file.is_dir() {
+                // It's a directory, create it
+                if let Err(e) = fs::create_dir_all(&full_path).await {
+                    println!("Failed to create directory {}: {}", full_path.display(), e);
+                }
+            } else if file.is_file() {
+                // It's a file, ensure the parent directory exists and write the file
+                if let Some(parent) = full_path.parent() {
+                    if let Err(e) = fs::create_dir_all(parent).await {
+                        println!("Failed to create parent directory: {}", e);
+                        continue;
+                    }
+                }
+
                 let mut file_content = Vec::new();
-                file.read_to_end(&mut file_content).unwrap();
-                let path = format!("{}/{}", &pkg_path, file_path);
-                fs::write(&path, file_content).await.unwrap();
+                if let Err(e) = file.read_to_end(&mut file_content) {
+                    println!("Error reading file contents: {}", e);
+                    continue;
+                }
+
+                // Write the file content
+                if let Err(e) = fs::write(&full_path, file_content).await {
+                    println!("Failed to write file {}: {}", full_path.display(), e);
+                }
             }
         }
 
