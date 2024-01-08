@@ -116,9 +116,10 @@ pub async fn register(
         name: "".to_string(),
         ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
-            "uqbar-router-1.uq".into(),
-            "uqbar-router-2.uq".into(),
-            "uqbar-router-3.uq".into(),
+            "nectar-next-router.uq".into(),
+            // "uqbar-router-1.uq".into(),
+            // "uqbar-router-2.uq".into(),
+            // "uqbar-router-3.uq".into(),
         ],
     });
 
