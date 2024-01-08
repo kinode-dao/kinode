@@ -185,6 +185,7 @@ pub enum WsMessageType {
     Binary,
     Ping,
     Pong,
+    Close,
 }
 
 /// Part of the Response type issued by http_server

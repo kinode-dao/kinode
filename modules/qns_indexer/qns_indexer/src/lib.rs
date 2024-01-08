@@ -1,13 +1,14 @@
-use alloy_primitives::FixedBytes;
+use alloy_primitives::B256;
+use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
-use hex;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use std::collections::HashMap;
+use std::collections::hash_map::{Entry, HashMap};
+use std::str::FromStr;
 use std::string::FromUtf8Error;
+use uqbar_process_lib::eth::{EthAddress, SubscribeLogsRequest};
 use uqbar_process_lib::{
-    await_message, get_typed_state, http, print_to_terminal, println, receive, set_state, Address,
-    Message, Payload, Request, Response,
+    await_message, get_typed_state, http, print_to_terminal, println, set_state, Address, Message,
+    Payload, Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -17,8 +18,6 @@ wit_bindgen::generate!({
         world: Component,
     },
 });
-
-struct Component;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -32,28 +31,21 @@ struct State {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-enum AllActions {
-    EventSubscription(EthEvent),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct EthEvent {
-    address: String,
-    block_hash: String,
-    block_number: String,
-    data: String,
-    log_index: String,
-    removed: bool,
-    topics: Vec<String>,
-    transaction_hash: String,
-    transaction_index: String,
+enum IndexerActions {
+    EventSubscription(Log),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NetActions {
     QnsUpdate(QnsUpdate),
     QnsBatchUpdate(Vec<QnsUpdate>),
+}
+
+impl TryInto<Vec<u8>> for NetActions {
+    type Error = anyhow::Error;
+    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
+        Ok(rmp_serde::to_vec(&self)?)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -67,58 +59,29 @@ pub struct QnsUpdate {
     pub routers: Vec<String>,
 }
 
-impl TryInto<Vec<u8>> for NetActions {
-    type Error = anyhow::Error;
-
-    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        Ok(rmp_serde::to_vec(&self)?)
+impl QnsUpdate {
+    pub fn new(name: &String, node: &String) -> Self {
+        Self {
+            name: name.clone(),
+            node: node.clone(),
+            ..Default::default()
+        }
     }
 }
 
 sol! {
     // Logged whenever a QNS node is created
     event NodeRegistered(bytes32 indexed node, bytes name);
-
     event KeyUpdate(bytes32 indexed node, bytes32 key);
-
     event IpUpdate(bytes32 indexed node, uint128 ip);
     event WsUpdate(bytes32 indexed node, uint16 port);
     event WtUpdate(bytes32 indexed node, uint16 port);
     event TcpUpdate(bytes32 indexed node, uint16 port);
     event UdpUpdate(bytes32 indexed node, uint16 port);
-
     event RoutingUpdate(bytes32 indexed node, bytes32[] routers);
 }
 
-fn subscribe_to_qns(from_block: u64) -> Vec<u8> {
-    json!({
-        "SubscribeEvents": {
-            "addresses": [
-                // QNSRegistry on sepolia
-                "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1",
-            ],
-            "from_block": from_block,
-            "to_block": null,
-            "events": [
-                "NodeRegistered(bytes32,bytes)",
-                "KeyUpdate(bytes32,bytes32)",
-                "IpUpdate(bytes32,uint128)",
-                "WsUpdate(bytes32,uint16)",
-                "WtUpdate(bytes32,uint16)",
-                "TcpUpdate(bytes32,uint16)",
-                "UdpUpdate(bytes32,uint16)",
-                "RoutingUpdate(bytes32,bytes32[])",
-            ],
-            "topic1": null,
-            "topic2": null,
-            "topic3": null,
-        }
-    })
-    .to_string()
-    .as_bytes()
-    .to_vec()
-}
-
+struct Component;
 impl Guest for Component {
     fn init(our: String) {
         let our = Address::from_str(&our).unwrap();
@@ -155,10 +118,18 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    Request::new()
-        .target((&our.node, "eth_rpc", "sys", "uqbar"))
-        .ipc(subscribe_to_qns(state.block - 1))
-        .expects_response(5)
+    SubscribeLogsRequest::new()
+        .address(EthAddress::from_str(
+            "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1",
+        )?)
+        .from_block(state.block - 1)
+        .events(vec![
+            "NodeRegistered(bytes32,bytes)",
+            "KeyUpdate(bytes32,bytes32)",
+            "IpUpdate(bytes32,uint128)",
+            "WsUpdate(bytes32,uint16)",
+            "RoutingUpdate(bytes32,bytes32[])",
+        ])
         .send()?;
 
     http::bind_http_path("/node/:name", false, false)?;
@@ -169,7 +140,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         };
         let Message::Request { source, ipc, .. } = message else {
-            // TODO we should store the subscription ID for eth_rpc
+            // TODO we should store the subscription ID for eth
             // incase we want to cancel/reset it
             continue;
         };
@@ -209,62 +180,38 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         }
 
-        let Ok(msg) = serde_json::from_slice::<AllActions>(&ipc) else {
+        let Ok(msg) = serde_json::from_slice::<IndexerActions>(&ipc) else {
             println!("qns_indexer: got invalid message");
             continue;
         };
 
         match msg {
-            AllActions::EventSubscription(e) => {
-                state.block = hex_to_u64(&e.block_number)?;
-                let nodeId = &e.topics[1];
+            IndexerActions::EventSubscription(e) => {
+                state.block = e.clone().block_number.expect("expect").to::<u64>();
 
-                let name = if decode_hex(&e.topics[0]) == NodeRegistered::SIGNATURE_HASH {
-                    let decoded =
-                        NodeRegistered::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                    match dnswire_decode(decoded.0.clone()) {
-                        Ok(name) => {
-                            state.names.insert(nodeId.to_string(), name.clone());
-                        }
-                        Err(_) => {
-                            println!("qns_indexer: failed to decode name: {:?}", decoded.0);
-                        }
-                    }
-                    continue;
-                } else if let Some(name) = state.names.get(nodeId) {
-                    name
-                } else {
-                    println!("qns_indexer: failed to find name: {:?}", nodeId);
-                    continue;
+                let node_id: alloy_primitives::FixedBytes<32> = e.topics[1];
+
+                let name = match state.names.entry(node_id.clone().to_string()) {
+                    Entry::Occupied(o) => o.into_mut(),
+                    Entry::Vacant(v) => v.insert(get_name(&e)),
                 };
 
-                let node = state
+                let mut node = state
                     .nodes
                     .entry(name.to_string())
-                    .or_insert_with(QnsUpdate::default);
+                    .or_insert_with(|| QnsUpdate::new(name, &node_id.to_string()));
 
-                if node.name == "" {
-                    node.name = name.clone();
-                }
+                let mut send = true;
 
-                if node.node == "" {
-                    node.node = nodeId.clone();
-                }
-
-                let mut send = false;
-
-                match decode_hex(&e.topics[0].clone()) {
-                    NodeRegistered::SIGNATURE_HASH => {} // will never hit this
+                match e.topics[0].clone() {
                     KeyUpdate::SIGNATURE_HASH => {
-                        let decoded =
-                            KeyUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                        node.public_key = format!("0x{}", hex::encode(decoded.0));
-                        send = true;
+                        node.public_key = KeyUpdate::abi_decode_data(&e.data, true)
+                            .unwrap()
+                            .0
+                            .to_string();
                     }
                     IpUpdate::SIGNATURE_HASH => {
-                        let decoded =
-                            IpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                        let ip = decoded.0;
+                        let ip = IpUpdate::abi_decode_data(&e.data, true).unwrap().0;
                         node.ip = format!(
                             "{}.{}.{}.{}",
                             (ip >> 24) & 0xFF,
@@ -272,38 +219,20 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             (ip >> 8) & 0xFF,
                             ip & 0xFF
                         );
-                        send = true;
                     }
                     WsUpdate::SIGNATURE_HASH => {
-                        let decoded =
-                            WsUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                        node.port = decoded.0;
-                        send = true;
-                    }
-                    WtUpdate::SIGNATURE_HASH => {
-                        let decoded =
-                            WtUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                    }
-                    TcpUpdate::SIGNATURE_HASH => {
-                        let decoded =
-                            TcpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                    }
-                    UdpUpdate::SIGNATURE_HASH => {
-                        let decoded =
-                            UdpUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
+                        node.port = WsUpdate::abi_decode_data(&e.data, true).unwrap().0;
                     }
                     RoutingUpdate::SIGNATURE_HASH => {
-                        let decoded =
-                            RoutingUpdate::decode_data(&decode_hex_to_vec(&e.data), true).unwrap();
-                        let routers_raw = decoded.0;
-                        node.routers = routers_raw
+                        node.routers = RoutingUpdate::abi_decode_data(&e.data, true)
+                            .unwrap()
+                            .0
                             .iter()
-                            .map(|r| format!("0x{}", hex::encode(r)))
+                            .map(|r| r.to_string())
                             .collect::<Vec<String>>();
-                        send = true;
                     }
-                    event => {
-                        println!("qns_indexer: got unknown event: {:?}", event);
+                    _ => {
+                        send = false;
                     }
                 }
 
@@ -319,31 +248,17 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         set_state(&bincode::serialize(&state)?);
     }
 }
-// helpers
-// TODO these probably exist somewhere in alloy...not sure where though.
-fn decode_hex(s: &str) -> FixedBytes<32> {
-    // If the string starts with "0x", skip the prefix
-    let hex_part = if s.starts_with("0x") { &s[2..] } else { s };
 
-    let mut arr = [0_u8; 32];
-    arr.copy_from_slice(&hex::decode(hex_part).unwrap()[0..32]);
-    FixedBytes(arr)
-}
-
-fn decode_hex_to_vec(s: &str) -> Vec<u8> {
-    // If the string starts with "0x", skip the prefix
-    let hex_part = if s.starts_with("0x") { &s[2..] } else { s };
-
-    hex::decode(hex_part).unwrap()
-}
-
-fn hex_to_u64(hex: &str) -> Result<u64, std::num::ParseIntError> {
-    let without_prefix = if hex.starts_with("0x") {
-        &hex[2..]
-    } else {
-        hex
+fn get_name(log: &Log) -> String {
+    let decoded = NodeRegistered::abi_decode_data(&log.data, true).unwrap();
+    let name = match dnswire_decode(decoded.0.clone()) {
+        Ok(n) => n,
+        Err(_) => {
+            println!("qns_indexer: failed to decode name: {:?}", decoded.0);
+            panic!("")
+        }
     };
-    u64::from_str_radix(without_prefix, 16)
+    name
 }
 
 fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {

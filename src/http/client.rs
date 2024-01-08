@@ -651,14 +651,9 @@ async fn send_ws_push(
                 .send(TungsteniteMessage::Binary(payload.bytes))
                 .await
         }
-        WsMessageType::Ping => {
-            // send a Request to the target with the ping as payload
-            ws_stream.send(TungsteniteMessage::Ping(vec![])).await
-        }
-        WsMessageType::Pong => {
-            // send a Request to the target with the pong as payload
-            ws_stream.send(TungsteniteMessage::Pong(vec![])).await
-        }
+        WsMessageType::Ping => ws_stream.send(TungsteniteMessage::Ping(vec![])).await,
+        WsMessageType::Pong => ws_stream.send(TungsteniteMessage::Pong(vec![])).await,
+        WsMessageType::Close => ws_stream.send(TungsteniteMessage::Close(None)).await,
     };
 
     match result {

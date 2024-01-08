@@ -674,6 +674,19 @@ async fn maintain_websocket(
             read = read_stream.next() => {
                 match read {
                     Some(Ok(msg)) => {
+
+                        let ws_msg_type = if msg.is_text() {
+                            WsMessageType::Text
+                        } else if msg.is_binary() {
+                            WsMessageType::Binary
+                        } else if msg.is_ping() {
+                            WsMessageType::Ping
+                        } else if msg.is_pong() {
+                            WsMessageType::Pong
+                        } else {
+                            WsMessageType::Close
+                        };
+
                         let _ = send_to_loop.send(KernelMessage {
                             id: rand::random(),
                             source: Address {
@@ -690,7 +703,7 @@ async fn maintain_websocket(
                                 expects_response: None,
                                 ipc: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
                                     channel_id,
-                                    message_type: WsMessageType::Binary,
+                                    message_type: ws_msg_type,
                                 }).unwrap(),
                                 metadata: Some("ws".into()),
                                 capabilities: vec![],
@@ -699,8 +712,7 @@ async fn maintain_websocket(
                                 mime: None,
                                 bytes: msg.into_bytes(),
                             }),
-
-                        });
+                        }).await;
                     }
                     _ => {
                         websocket_close(channel_id, app.clone(), &ws_senders, &send_to_loop).await;
@@ -1042,6 +1054,9 @@ async fn handle_app_message(
                             } else {
                                 warp::ws::Message::pong(payload.bytes)
                             }
+                        }
+                        WsMessageType::Close => {
+                            unreachable!();
                         }
                     };
                     // Send to the websocket if registered
