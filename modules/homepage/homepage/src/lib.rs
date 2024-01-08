@@ -1,7 +1,6 @@
 #![feature(let_chains)]
 use nectar_process_lib::{
     await_message, http::bind_http_static_path, http::HttpServerError, println, Address, Message,
-    ProcessId,
 };
 
 wit_bindgen::generate!({
@@ -18,7 +17,7 @@ const HOME_PAGE: &str = include_str!("home.html");
 
 impl Guest for Component {
     fn init(our: String) {
-        let our = Address::from_str(&our).unwrap();
+        let our: Address = our.parse().unwrap();
         match main(our) {
             Ok(_) => {}
             Err(e) => {
@@ -65,10 +64,10 @@ fn main(our: Address) -> anyhow::Result<()> {
             println!("homepage: got network error??");
             continue;
         };
-        if let Message::Response { source, ipc, .. } = message
+        if let Message::Response { source, body, .. } = message
             && source.process == "http_server:sys:nectar"
         {
-            match serde_json::from_slice::<Result<(), HttpServerError>>(&ipc) {
+            match serde_json::from_slice::<Result<(), HttpServerError>>(&body) {
                 Ok(Ok(())) => continue,
                 Ok(Err(e)) => println!("homepage: got error from http_server: {e}"),
                 Err(_e) => println!("homepage: got malformed message from http_server!"),

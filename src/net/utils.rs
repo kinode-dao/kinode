@@ -215,21 +215,21 @@ pub async fn create_passthrough(
             id: rand::random(),
             source: Address {
                 node: our.name.clone(),
-                process: ProcessId::from_str("net:sys:nectar").unwrap(),
+                process: ProcessId::new(Some("net"), "sys", "nectar"),
             },
             target: Address {
                 node: to_name.clone(),
-                process: ProcessId::from_str("net:sys:nectar").unwrap(),
+                process: ProcessId::new(Some("net"), "sys", "nectar"),
             },
             rsvp: None,
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: rmp_serde::to_vec(&NetActions::ConnectionRequest(from_id.name.clone()))?,
+                body: rmp_serde::to_vec(&NetActions::ConnectionRequest(from_id.name.clone()))?,
                 metadata: None,
                 capabilities: vec![],
             }),
-            payload: None,
+            lazy_load_blob: None,
         })?;
 
         return Ok((
@@ -449,7 +449,7 @@ pub async fn error_offline(km: KernelMessage, network_error_tx: &NetworkErrorSen
                 kind: SendErrorKind::Offline,
                 target: km.target,
                 message: km.message,
-                payload: km.payload,
+                lazy_load_blob: km.lazy_load_blob,
             },
         })
         .await?;
@@ -466,7 +466,7 @@ fn strip_0x(s: &str) -> String {
 pub async fn parse_hello_message(
     our: &Identity,
     km: &KernelMessage,
-    ipc: &[u8],
+    body: &[u8],
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
 ) -> Result<()> {
@@ -476,7 +476,7 @@ pub async fn parse_hello_message(
             content: format!(
                 "\x1b[3;32m{}: {}\x1b[0m",
                 km.source.node,
-                std::str::from_utf8(ipc).unwrap_or("!!message parse error!!")
+                std::str::from_utf8(body).unwrap_or("!!message parse error!!")
             ),
         })
         .await?;
@@ -485,20 +485,20 @@ pub async fn parse_hello_message(
             id: km.id,
             source: Address {
                 node: our.name.clone(),
-                process: ProcessId::from_str("net:sys:nectar").unwrap(),
+                process: ProcessId::new(Some("net"), "sys", "nectar"),
             },
             target: km.rsvp.as_ref().unwrap_or(&km.source).clone(),
             rsvp: None,
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc: "delivered".as_bytes().to_vec(),
+                    body: "delivered".as_bytes().to_vec(),
                     metadata: None,
                     capabilities: vec![],
                 },
                 None,
             )),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await?;
     Ok(())

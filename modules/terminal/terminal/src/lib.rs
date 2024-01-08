@@ -36,7 +36,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
             };
             Request::new()
                 .target((node_id, "net", "sys", "nectar"))
-                .ipc(message)
+                .body(message)
                 .expects_response(5)
                 .send()?;
             Ok(())
@@ -48,7 +48,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                 println!("current target cleared");
                 return Ok(());
             }
-            let Ok(target) = Address::from_str(tail) else {
+            let Ok(target) = tail.parse::<Address>() else {
                 return Err(anyhow!("invalid address: \"{tail}\""));
             };
             println!("current target set to {target}");
@@ -60,16 +60,16 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
         // otherwise use the current_target
         "/m" | "/message" => {
             if let Some(target) = &state.current_target {
-                Request::new().target(target.clone()).ipc(tail).send()
+                Request::new().target(target.clone()).body(tail).send()
             } else {
-                let (target, ipc) = match tail.split_once(" ") {
+                let (target, body) = match tail.split_once(" ") {
                     Some((a, p)) => (a, p),
                     None => return Err(anyhow!("invalid command: \"{line}\"")),
                 };
-                let Ok(target) = Address::from_str(target) else {
+                let Ok(target) = target.parse::<Address>() else {
                     return Err(anyhow!("invalid address: \"{target}\""));
                 };
-                Request::new().target(target).ipc(ipc).send()
+                Request::new().target(target).body(body).send()
             }
         }
         _ => return Err(anyhow!("invalid command: \"{line}\"")),
@@ -80,7 +80,7 @@ struct Component;
 impl Guest for Component {
     fn init(our: String) {
         let mut state = TerminalState {
-            our: Address::from_str(&our).unwrap(),
+            our: our.parse::<Address>().unwrap(),
             current_target: None,
         };
         loop {
@@ -92,20 +92,21 @@ impl Guest for Component {
                 }
             };
             match message {
-                wit::Message::Request(wit::Request { ipc, .. }) => {
+                wit::Message::Request(wit::Request { body, .. }) => {
                     if state.our.node != source.node || state.our.process != source.process {
                         continue;
                     }
-                    match parse_command(&mut state, std::str::from_utf8(&ipc).unwrap_or_default()) {
+                    match parse_command(&mut state, std::str::from_utf8(&body).unwrap_or_default())
+                    {
                         Ok(()) => continue,
                         Err(e) => println!("terminal: {e}"),
                     }
                 }
-                wit::Message::Response((wit::Response { ipc, .. }, _)) => {
-                    if let Ok(txt) = std::str::from_utf8(&ipc) {
+                wit::Message::Response((wit::Response { body, .. }, _)) => {
+                    if let Ok(txt) = std::str::from_utf8(&body) {
                         println!("response from {source}: {txt}");
                     } else {
-                        println!("response from {source}: {ipc:?}");
+                        println!("response from {source}: {body:?}");
                     }
                 }
             }

@@ -121,11 +121,11 @@ async fn handle_request(
         id,
         source,
         message,
-        payload,
+        lazy_load_blob: blob,
         ..
     } = km.clone();
     let Message::Request(Request {
-        ipc,
+        body,
         expects_response,
         metadata,
         ..
@@ -136,7 +136,7 @@ async fn handle_request(
         });
     };
 
-    let request: SqliteRequest = match serde_json::from_slice(&ipc) {
+    let request: SqliteRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
             println!("sqlite: got invalid Request: {}", e);
@@ -156,7 +156,7 @@ async fn handle_request(
     )
     .await?;
 
-    let (ipc, bytes) = match request.action {
+    let (body, bytes) = match request.action {
         SqliteAction::Open => {
             // handled in check_caps
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
@@ -182,7 +182,7 @@ async fn handle_request(
                 return Err(SqliteError::NotAReadKeyword.into());
             }
 
-            let parameters = get_json_params(payload)?;
+            let parameters = get_json_params(blob)?;
 
             let mut statement = db.prepare(&query)?;
             let column_names: Vec<String> = statement
@@ -238,7 +238,7 @@ async fn handle_request(
                 return Err(SqliteError::NotAWriteKeyword.into());
             }
 
-            let parameters = get_json_params(payload)?;
+            let parameters = get_json_params(blob)?;
 
             match tx_id {
                 Some(tx_id) => {
@@ -319,13 +319,13 @@ async fn handle_request(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc,
+                    body,
                     metadata,
                     capabilities: vec![],
                 },
                 None,
             )),
-            payload: bytes.map(|bytes| Payload {
+            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
             }),
@@ -338,7 +338,7 @@ async fn handle_request(
                 verbosity: 2,
                 content: format!(
                     "sqlite: not sending response: {:?}",
-                    serde_json::from_slice::<SqliteResponse>(&ipc)
+                    serde_json::from_slice::<SqliteResponse>(&body)
                 ),
             })
             .await
@@ -539,10 +539,10 @@ fn json_to_sqlite(value: &serde_json::Value) -> Result<SqlValue, SqliteError> {
     }
 }
 
-fn get_json_params(payload: Option<Payload>) -> Result<Vec<SqlValue>, SqliteError> {
-    match payload {
+fn get_json_params(blob: Option<LazyLoadBlob>) -> Result<Vec<SqlValue>, SqliteError> {
+    match blob {
         None => Ok(vec![]),
-        Some(payload) => match serde_json::from_slice::<serde_json::Value>(&payload.bytes) {
+        Some(blob) => match serde_json::from_slice::<serde_json::Value>(&blob.bytes) {
             Ok(serde_json::Value::Array(vec)) => vec
                 .iter()
                 .map(|value| json_to_sqlite(value))
@@ -567,13 +567,13 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: SqliteError) 
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: serde_json::to_vec(&SqliteResponse::Err { error: error }).unwrap(),
+                body: serde_json::to_vec(&SqliteResponse::Err { error: error }).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             },
             None,
         )),
-        payload: None,
+        lazy_load_blob: None,
     }
 }
 impl ToSql for SqlValue {

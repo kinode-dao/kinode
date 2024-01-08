@@ -43,15 +43,15 @@ pub async fn http_client(
         message:
             Message::Request(Request {
                 expects_response,
-                ipc,
+                body,
                 ..
             }),
-        payload,
+        lazy_load_blob: blob,
         ..
     }) = recv_in_client.recv().await
     {
         // First check if a WebSocketClientAction, otherwise assume it's an OutgoingHttpRequest
-        if let Ok(ws_action) = serde_json::from_slice::<WebSocketClientAction>(&ipc) {
+        if let Ok(ws_action) = serde_json::from_slice::<WebSocketClientAction>(&body) {
             let ws_streams_clone = Arc::clone(&ws_streams);
 
             let _ = handle_websocket_action(
@@ -60,7 +60,7 @@ pub async fn http_client(
                 rsvp.unwrap_or(source),
                 expects_response,
                 ws_action,
-                payload,
+                blob,
                 ws_streams_clone,
                 send_to_loop.clone(),
                 print_tx.clone(),
@@ -72,8 +72,8 @@ pub async fn http_client(
                 id,
                 rsvp.unwrap_or(source),
                 expects_response,
-                ipc,
-                payload,
+                body,
+                blob,
                 client.clone(),
                 send_to_loop.clone(),
                 print_tx.clone(),
@@ -89,7 +89,7 @@ async fn handle_websocket_action(
     target: Address,
     expects_response: Option<u64>,
     ws_action: WebSocketClientAction,
-    payload: Option<Payload>,
+    blob: Option<LazyLoadBlob>,
     ws_streams: WebSocketStreams,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
@@ -118,14 +118,7 @@ async fn handle_websocket_action(
             channel_id,
             message_type,
         } => (
-            send_ws_push(
-                target.clone(),
-                channel_id,
-                message_type,
-                payload,
-                ws_streams,
-            )
-            .await,
+            send_ws_push(target.clone(), channel_id, message_type, blob, ws_streams).await,
             channel_id,
         ),
         WebSocketClientAction::Close { channel_id } => (
@@ -214,7 +207,7 @@ async fn connect_websocket(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc: serde_json::to_vec::<WebSocketClientAction>(
+                    body: serde_json::to_vec::<WebSocketClientAction>(
                         &WebSocketClientAction::Response {
                             channel_id,
                             result: Ok(()),
@@ -226,7 +219,7 @@ async fn connect_websocket(
                 },
                 None,
             )),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await;
 
@@ -260,7 +253,7 @@ async fn listen_to_stream(
                 // Handle different types of messages here
                 match msg {
                     TungsteniteMessage::Text(text) => {
-                        // send a Request to the target with the text as payload
+                        // send a Request to the target with the text as blob
                         handle_ws_message(
                             our.clone(),
                             id,
@@ -269,7 +262,7 @@ async fn listen_to_stream(
                                 channel_id,
                                 message_type: WsMessageType::Text,
                             },
-                            Some(Payload {
+                            Some(LazyLoadBlob {
                                 mime: Some("text/plain".into()),
                                 bytes: text.into_bytes(),
                             }),
@@ -278,7 +271,7 @@ async fn listen_to_stream(
                         .await;
                     }
                     TungsteniteMessage::Binary(bytes) => {
-                        // send a Request to the target with the binary as payload
+                        // send a Request to the target with the binary as blob
                         handle_ws_message(
                             our.clone(),
                             id,
@@ -287,7 +280,7 @@ async fn listen_to_stream(
                                 channel_id,
                                 message_type: WsMessageType::Binary,
                             },
-                            Some(Payload {
+                            Some(LazyLoadBlob {
                                 mime: Some("application/octet-stream".into()),
                                 bytes,
                             }),
@@ -347,7 +340,7 @@ async fn handle_http_request(
     target: Address,
     expects_response: Option<u64>,
     json: Vec<u8>,
-    body: Option<Payload>,
+    body: Option<LazyLoadBlob>,
     client: reqwest::Client,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
@@ -414,8 +407,8 @@ async fn handle_http_request(
         }
     }
 
-    if let Some(payload) = body {
-        request_builder = request_builder.body(payload.bytes);
+    if let Some(blob) = body {
+        request_builder = request_builder.body(blob.bytes);
     }
 
     let Ok(request) = request_builder
@@ -456,7 +449,7 @@ async fn handle_http_request(
                     message: Message::Response((
                         Response {
                             inherit: false,
-                            ipc: serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(&Ok(
+                            body: serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(&Ok(
                                 HttpResponse {
                                     status: response.status().as_u16(),
                                     headers: serialize_headers(response.headers()),
@@ -468,7 +461,7 @@ async fn handle_http_request(
                         },
                         None,
                     )),
-                    payload: Some(Payload {
+                    lazy_load_blob: Some(LazyLoadBlob {
                         mime: None,
                         bytes: response.bytes().await.unwrap_or_default().to_vec(),
                     }),
@@ -556,7 +549,7 @@ async fn http_error_message(
                 message: Message::Response((
                     Response {
                         inherit: false,
-                        ipc: serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(&Err(
+                        body: serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(&Err(
                             error,
                         ))
                         .unwrap(),
@@ -565,7 +558,7 @@ async fn http_error_message(
                     },
                     None,
                 )),
-                payload: None,
+                lazy_load_blob: None,
             })
             .await;
     }
@@ -593,7 +586,7 @@ async fn websocket_error_message(
                 message: Message::Response((
                     Response {
                         inherit: false,
-                        ipc: serde_json::to_vec::<WebSocketClientAction>(
+                        body: serde_json::to_vec::<WebSocketClientAction>(
                             &WebSocketClientAction::Response {
                                 channel_id,
                                 result: Err(error),
@@ -605,7 +598,7 @@ async fn websocket_error_message(
                     },
                     None,
                 )),
-                payload: None,
+                lazy_load_blob: None,
             })
             .await;
     }
@@ -615,7 +608,7 @@ async fn send_ws_push(
     target: Address,
     channel_id: u32,
     message_type: WsMessageType,
-    payload: Option<Payload>,
+    blob: Option<LazyLoadBlob>,
     ws_streams: WebSocketStreams,
 ) -> Result<(), WebSocketClientError> {
     let Some(mut ws_stream) = ws_streams.get_mut(&(target.process.clone(), channel_id)) else {
@@ -626,30 +619,28 @@ async fn send_ws_push(
 
     let result = match message_type {
         WsMessageType::Text => {
-            let Some(payload) = payload else {
+            let Some(blob) = blob else {
                 return Err(WebSocketClientError::BadRequest {
-                    req: "no payload".into(),
+                    req: "no blob".into(),
                 });
             };
 
-            let Ok(text) = String::from_utf8(payload.bytes) else {
+            let Ok(text) = String::from_utf8(blob.bytes) else {
                 return Err(WebSocketClientError::BadRequest {
-                    req: "failed to convert payload to string".into(),
+                    req: "failed to convert blob to string".into(),
                 });
             };
 
             ws_stream.send(TungsteniteMessage::Text(text)).await
         }
         WsMessageType::Binary => {
-            let Some(payload) = payload else {
+            let Some(blob) = blob else {
                 return Err(WebSocketClientError::BadRequest {
-                    req: "no payload".into(),
+                    req: "no blob".into(),
                 });
             };
 
-            ws_stream
-                .send(TungsteniteMessage::Binary(payload.bytes))
-                .await
+            ws_stream.send(TungsteniteMessage::Binary(blob.bytes)).await
         }
         WsMessageType::Ping => ws_stream.send(TungsteniteMessage::Ping(vec![])).await,
         WsMessageType::Pong => ws_stream.send(TungsteniteMessage::Pong(vec![])).await,
@@ -683,7 +674,7 @@ async fn handle_ws_message(
     id: u64,
     target: Address,
     action: WebSocketClientAction,
-    payload: Option<Payload>,
+    blob: Option<LazyLoadBlob>,
     send_to_loop: MessageSender,
 ) {
     let _ = send_to_loop
@@ -697,12 +688,12 @@ async fn handle_ws_message(
             rsvp: None,
             message: Message::Request(Request {
                 inherit: false,
-                ipc: serde_json::to_vec::<WebSocketClientAction>(&action).unwrap(),
+                body: serde_json::to_vec::<WebSocketClientAction>(&action).unwrap(),
                 expects_response: None,
                 metadata: None,
                 capabilities: vec![],
             }),
-            payload,
+            lazy_load_blob: blob,
         })
         .await;
 }

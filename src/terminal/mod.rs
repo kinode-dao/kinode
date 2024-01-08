@@ -602,11 +602,11 @@ pub async fn terminal(
                                         message: Message::Request(Request {
                                             inherit: false,
                                             expects_response: None,
-                                            ipc: command.into_bytes(),
+                                            body: command.into_bytes(),
                                             metadata: None,
                                             capabilities: vec![],
                                         }),
-                                        payload: None,
+                                        lazy_load_blob: None,
                                     }
                                 ).await.expect("terminal: couldn't execute command!");
                             },

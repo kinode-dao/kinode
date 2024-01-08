@@ -43,7 +43,7 @@ struct BoundPath {
     pub secure_subdomain: Option<String>,
     pub authenticated: bool,
     pub local_only: bool,
-    pub static_content: Option<Payload>, // TODO store in filesystem and cache
+    pub static_content: Option<LazyLoadBlob>, // TODO store in filesystem and cache
 }
 
 struct BoundWsPath {
@@ -86,7 +86,7 @@ pub async fn http_server(
     // add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
-        app: ProcessId::from_str("rpc:sys:nectar").unwrap(),
+        app: ProcessId::new(Some("rpc"), "sys", "nectar"),
         secure_subdomain: None, // TODO maybe RPC should have subdomain?
         authenticated: false,
         local_only: true,
@@ -482,7 +482,7 @@ async fn http_handler(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: Some(HTTP_SELF_IMPOSED_TIMEOUT),
-                ipc: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
+                body: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
                     source_socket_addr: socket_addr.map(|addr| addr.to_string()),
                     method: method.to_string(),
                     raw_path: format!(
@@ -498,7 +498,7 @@ async fn http_handler(
                 metadata: Some("http".into()),
                 capabilities: vec![],
             }),
-            payload: Some(Payload {
+            lazy_load_blob: Some(LazyLoadBlob {
                 mime: None,
                 bytes: body.to_vec(),
             }),
@@ -572,7 +572,7 @@ async fn handle_rpc_message(
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    let Ok(target_process) = ProcessId::from_str(&rpc_message.process) else {
+    let Ok(target_process) = rpc_message.process.parse::<ProcessId>() else {
         return Err(StatusCode::BAD_REQUEST);
     };
 
@@ -583,10 +583,10 @@ async fn handle_rpc_message(
         })
         .await;
 
-    let payload: Option<Payload> = match rpc_message.data {
+    let blob: Option<LazyLoadBlob> = match rpc_message.data {
         None => None,
         Some(b64_bytes) => match base64::decode(b64_bytes) {
-            Ok(bytes) => Some(Payload {
+            Ok(bytes) => Some(LazyLoadBlob {
                 mime: rpc_message.mime,
                 bytes,
             }),
@@ -611,14 +611,14 @@ async fn handle_rpc_message(
         message: Message::Request(Request {
             inherit: false,
             expects_response: Some(15), // NB: no effect on runtime
-            ipc: match rpc_message.ipc {
-                Some(ipc_string) => ipc_string.into_bytes(),
+            body: match rpc_message.body {
+                Some(body_string) => body_string.into_bytes(),
                 None => Vec::new(),
             },
             metadata: rpc_message.metadata,
             capabilities: vec![],
         }),
-        payload,
+        lazy_load_blob: blob,
     })
 }
 
@@ -660,12 +660,12 @@ async fn maintain_websocket(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketOpen { path, channel_id })
+                body: serde_json::to_vec(&HttpServerRequest::WebSocketOpen { path, channel_id })
                     .unwrap(),
                 metadata: Some("ws".into()),
                 capabilities: vec![],
             }),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await;
 
@@ -701,14 +701,14 @@ async fn maintain_websocket(
                             message: Message::Request(Request {
                                 inherit: false,
                                 expects_response: None,
-                                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
+                                body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
                                     channel_id,
                                     message_type: ws_msg_type,
                                 }).unwrap(),
                                 metadata: Some("ws".into()),
                                 capabilities: vec![],
                             }),
-                            payload: Some(Payload {
+                            lazy_load_blob: Some(LazyLoadBlob {
                                 mime: None,
                                 bytes: msg.into_bytes(),
                             }),
@@ -763,15 +763,15 @@ async fn websocket_close(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketClose(channel_id)).unwrap(),
+                body: serde_json::to_vec(&HttpServerRequest::WebSocketClose(channel_id)).unwrap(),
                 metadata: Some("ws".into()),
                 capabilities: vec![],
             }),
-            payload: Some(Payload {
+            lazy_load_blob: Some(LazyLoadBlob {
                 mime: None,
                 bytes: serde_json::to_vec(&RpcResponseBody {
-                    ipc: Vec::new(),
-                    payload: None,
+                    body: Vec::new(),
+                    lazy_load_blob: None,
                 })
                 .unwrap(),
             }),
@@ -796,9 +796,9 @@ async fn handle_app_message(
             let Some((_id, (path, sender))) = http_response_senders.remove(&km.id) else {
                 return;
             };
-            // if path is /rpc/message, return accordingly with base64 encoded payload
+            // if path is /rpc/message, return accordingly with base64 encoded blob
             if path == "/rpc:sys:nectar/message" {
-                let payload = km.payload.map(|p| Payload {
+                let blob = km.lazy_load_blob.map(|p| LazyLoadBlob {
                     mime: p.mime,
                     bytes: base64::encode(p.bytes).into_bytes(),
                 });
@@ -812,13 +812,13 @@ async fn handle_app_message(
                         headers: default_headers,
                     },
                     serde_json::to_vec(&RpcResponseBody {
-                        ipc: response.ipc,
-                        payload,
+                        body: response.body,
+                        lazy_load_blob: blob,
                     })
                     .unwrap(),
                 ));
             } else {
-                let Ok(response) = serde_json::from_slice::<HttpResponse>(&response.ipc) else {
+                let Ok(response) = serde_json::from_slice::<HttpResponse>(&response.body) else {
                     // the receiver will automatically trigger a 503 when sender is dropped.
                     return;
                 };
@@ -827,25 +827,25 @@ async fn handle_app_message(
                         status: response.status,
                         headers: response.headers,
                     },
-                    match km.payload {
+                    match km.lazy_load_blob {
                         None => vec![],
                         Some(p) => p.bytes,
                     },
                 ));
             }
         }
-        Message::Request(Request { ref ipc, .. }) => {
-            let Ok(message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
+        Message::Request(Request { ref body, .. }) => {
+            let Ok(message) = serde_json::from_slice::<HttpServerAction>(body) else {
                 println!(
                     "http_server: got malformed request from {}: {:?}\r",
-                    km.source, ipc
+                    km.source, body
                 );
                 send_action_response(
                     km.id,
                     km.source,
                     &send_to_loop,
                     Err(HttpServerError::BadRequest {
-                        req: String::from_utf8_lossy(ipc).to_string(),
+                        req: String::from_utf8_lossy(body).to_string(),
                     }),
                 )
                 .await;
@@ -888,12 +888,12 @@ async fn handle_app_message(
                             },
                         );
                     } else {
-                        let Some(payload) = km.payload else {
+                        let Some(blob) = km.lazy_load_blob else {
                             send_action_response(
                                 km.id,
                                 km.source,
                                 &send_to_loop,
-                                Err(HttpServerError::NoPayload),
+                                Err(HttpServerError::NoBlob),
                             )
                             .await;
                             return;
@@ -906,7 +906,7 @@ async fn handle_app_message(
                                 secure_subdomain: None,
                                 authenticated,
                                 local_only,
-                                static_content: Some(payload),
+                                static_content: Some(blob),
                             },
                         );
                     }
@@ -934,12 +934,12 @@ async fn handle_app_message(
                             },
                         );
                     } else {
-                        let Some(payload) = km.payload else {
+                        let Some(blob) = km.lazy_load_blob else {
                             send_action_response(
                                 km.id,
                                 km.source,
                                 &send_to_loop,
-                                Err(HttpServerError::NoPayload),
+                                Err(HttpServerError::NoBlob),
                             )
                             .await;
                             return;
@@ -952,7 +952,7 @@ async fn handle_app_message(
                                 secure_subdomain: Some(subdomain),
                                 authenticated: true,
                                 local_only: false,
-                                static_content: Some(payload),
+                                static_content: Some(blob),
                             },
                         );
                     }
@@ -1020,23 +1020,23 @@ async fn handle_app_message(
                     channel_id,
                     message_type,
                 } => {
-                    let Some(payload) = km.payload else {
+                    let Some(blob) = km.lazy_load_blob else {
                         send_action_response(
                             km.id,
                             km.source,
                             &send_to_loop,
-                            Err(HttpServerError::NoPayload),
+                            Err(HttpServerError::NoBlob),
                         )
                         .await;
                         return;
                     };
                     let ws_message = match message_type {
                         WsMessageType::Text => warp::ws::Message::text(
-                            String::from_utf8_lossy(&payload.bytes).to_string(),
+                            String::from_utf8_lossy(&blob.bytes).to_string(),
                         ),
-                        WsMessageType::Binary => warp::ws::Message::binary(payload.bytes),
+                        WsMessageType::Binary => warp::ws::Message::binary(blob.bytes),
                         WsMessageType::Ping | WsMessageType::Pong => {
-                            if payload.bytes.len() > 125 {
+                            if blob.bytes.len() > 125 {
                                 send_action_response(
                                     km.id,
                                     km.source,
@@ -1050,9 +1050,9 @@ async fn handle_app_message(
                                 return;
                             }
                             if message_type == WsMessageType::Ping {
-                                warp::ws::Message::ping(payload.bytes)
+                                warp::ws::Message::ping(blob.bytes)
                             } else {
-                                warp::ws::Message::pong(payload.bytes)
+                                warp::ws::Message::pong(blob.bytes)
                             }
                         }
                         WsMessageType::Close => {
@@ -1147,13 +1147,13 @@ pub async fn send_action_response(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc: serde_json::to_vec(&result).unwrap(),
+                    body: serde_json::to_vec(&result).unwrap(),
                     metadata: None,
                     capabilities: vec![],
                 },
                 None,
             )),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await;
 }

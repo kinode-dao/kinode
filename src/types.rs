@@ -54,7 +54,7 @@ impl<'a> Deserialize<'a> for ProcessId {
         D: serde::de::Deserializer<'a>,
     {
         let s = String::deserialize(deserializer)?;
-        ProcessId::from_str(&s).map_err(serde::de::Error::custom)
+        s.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -73,7 +73,24 @@ impl PackageId {
             publisher_node: publisher_node.into(),
         }
     }
-    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+    pub fn _package(&self) -> &str {
+        &self.package_name
+    }
+    pub fn _publisher(&self) -> &str {
+        &self.publisher_node
+    }
+}
+
+impl std::str::FromStr for PackageId {
+    type Err = ProcessIdParseError;
+    /// Attempt to parse a `PackageId` from a string. The string must
+    /// contain exactly two segments, where segments are strings separated
+    /// by a colon `:`. The segments cannot themselves contain colons.
+    /// Please note that while any string without colons will parse successfully
+    /// to create a `PackageId`, not all strings without colons are actually
+    /// valid usernames, which the `publisher_node` field of a `PackageId` will
+    /// always in practice be.
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
         // split string on colons into 2 segments
         let mut segments = input.split(':');
         let package_name = segments
@@ -91,12 +108,6 @@ impl PackageId {
             package_name,
             publisher_node,
         })
-    }
-    pub fn _package(&self) -> &str {
-        &self.package_name
-    }
-    pub fn _publisher(&self) -> &str {
-        &self.publisher_node
     }
 }
 
@@ -118,30 +129,6 @@ impl ProcessId {
             package_name: package_name.into(),
             publisher_node: publisher_node.into(),
         }
-    }
-    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
-        // split string on colons into 3 segments
-        let mut segments = input.split(':');
-        let process_name = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        let package_name = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        let publisher_node = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        if segments.next().is_some() {
-            return Err(ProcessIdParseError::TooManyColons);
-        }
-        Ok(ProcessId {
-            process_name,
-            package_name,
-            publisher_node,
-        })
     }
     pub fn process(&self) -> &str {
         &self.process_name
@@ -165,6 +152,40 @@ impl ProcessId {
             package_name: wit.package_name,
             publisher_node: wit.publisher_node,
         }
+    }
+}
+
+impl std::str::FromStr for ProcessId {
+    type Err = ProcessIdParseError;
+    /// Attempts to parse a `ProcessId` from a string. To succeed, the string must contain
+    /// exactly 3 segments, separated by colons `:`. The segments must not contain colons.
+    /// Please note that while any string without colons will parse successfully
+    /// to create a `ProcessId`, not all strings without colons are actually
+    /// valid usernames, which the `publisher_node` field of a `ProcessId` will
+    /// always in practice be.
+    fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+        // split string on colons into 3 segments
+        let mut segments = input.split(':');
+        let process_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let package_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let publisher_node = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        if segments.next().is_some() {
+            return Err(ProcessIdParseError::TooManyColons);
+        }
+        Ok(ProcessId {
+            process_name,
+            package_name,
+            publisher_node,
+        })
     }
 }
 
@@ -248,7 +269,33 @@ impl Address {
             process: process.into(),
         }
     }
-    pub fn from_str(input: &str) -> Result<Self, AddressParseError> {
+    pub fn en_wit(&self) -> wit::Address {
+        wit::Address {
+            node: self.node.clone(),
+            process: self.process.en_wit(),
+        }
+    }
+    pub fn de_wit(wit: wit::Address) -> Address {
+        Address {
+            node: wit.node,
+            process: ProcessId {
+                process_name: wit.process.process_name,
+                package_name: wit.process.package_name,
+                publisher_node: wit.process.publisher_node,
+            },
+        }
+    }
+}
+
+impl std::str::FromStr for Address {
+    type Err = AddressParseError;
+    /// Attempt to parse an `Address` from a string. The formatting structure for
+    /// an Address is `node@process_name:package_name:publisher_node`.
+    ///
+    /// TODO: clarify if `@` can be present in process name / package name / publisher name
+    ///
+    /// TODO: ensure `:` cannot sneak into first segment
+    fn from_str(input: &str) -> Result<Self, AddressParseError> {
         // split string on colons into 4 segments,
         // first one with @, next 3 with :
         let mut name_rest = input.split('@');
@@ -284,22 +331,6 @@ impl Address {
             },
         })
     }
-    pub fn en_wit(&self) -> wit::Address {
-        wit::Address {
-            node: self.node.clone(),
-            process: self.process.en_wit(),
-        }
-    }
-    pub fn de_wit(wit: wit::Address) -> Address {
-        Address {
-            node: wit.node,
-            process: ProcessId {
-                process_name: wit.process.process_name,
-                package_name: wit.process.package_name,
-                publisher_node: wit.process.publisher_node,
-            },
-        }
-    }
 }
 
 impl Serialize for Address {
@@ -317,7 +348,7 @@ impl<'a> Deserialize<'a> for Address {
         D: serde::de::Deserializer<'a>,
     {
         let s = String::deserialize(deserializer)?;
-        Address::from_str(&s).map_err(serde::de::Error::custom)
+        s.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -375,7 +406,7 @@ impl std::error::Error for AddressParseError {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Payload {
+pub struct LazyLoadBlob {
     pub mime: Option<String>, // MIME type
     pub bytes: Vec<u8>,
 }
@@ -384,7 +415,7 @@ pub struct Payload {
 pub struct Request {
     pub inherit: bool,
     pub expects_response: Option<u64>, // number of seconds until timeout
-    pub ipc: Vec<u8>,
+    pub body: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
     pub capabilities: Vec<(Capability, Vec<u8>)>,
 }
@@ -392,7 +423,7 @@ pub struct Request {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Response {
     pub inherit: bool,
-    pub ipc: Vec<u8>,
+    pub body: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
     pub capabilities: Vec<(Capability, Vec<u8>)>,
 }
@@ -424,7 +455,7 @@ pub struct SendError {
     pub kind: SendErrorKind,
     pub target: Address,
     pub message: Message,
-    pub payload: Option<Payload>,
+    pub lazy_load_blob: Option<LazyLoadBlob>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -437,7 +468,7 @@ pub enum SendErrorKind {
 pub enum OnExit {
     None,
     Restart,
-    Requests(Vec<(Address, Request, Option<Payload>)>),
+    Requests(Vec<(Address, Request, Option<LazyLoadBlob>)>),
 }
 
 impl OnExit {
@@ -455,11 +486,11 @@ impl OnExit {
             OnExit::Restart => wit::OnExit::Restart,
             OnExit::Requests(reqs) => wit::OnExit::Requests(
                 reqs.iter()
-                    .map(|(address, request, payload)| {
+                    .map(|(address, request, blob)| {
                         (
                             address.en_wit(),
                             en_wit_request(request.clone()),
-                            en_wit_payload(payload.clone()),
+                            en_wit_blob(blob.clone()),
                         )
                     })
                     .collect(),
@@ -473,11 +504,11 @@ impl OnExit {
             wit::OnExit::Restart => OnExit::Restart,
             wit::OnExit::Requests(reqs) => OnExit::Requests(
                 reqs.into_iter()
-                    .map(|(address, request, payload)| {
+                    .map(|(address, request, blob)| {
                         (
                             Address::de_wit(address),
                             de_wit_request(request),
-                            de_wit_payload(payload),
+                            de_wit_blob(blob),
                         )
                     })
                     .collect(),
@@ -491,12 +522,12 @@ impl std::fmt::Display for Message {
         match self {
             Message::Request(request) => write!(
                 f,
-                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n        capabilities: {}\n    )",
+                "Request(\n        inherit: {},\n        expects_response: {:?},\n        body: {},\n        metadata: {}\n        capabilities: {}\n    )",
                 request.inherit,
                 request.expects_response,
-                match serde_json::from_slice::<serde_json::Value>(&request.ipc) {
+                match serde_json::from_slice::<serde_json::Value>(&request.body) {
                     Ok(json) => format!("{}", json),
-                    Err(_) => format!("{:?}", request.ipc),
+                    Err(_) => format!("{:?}", request.body),
                 },
                 &request.metadata.as_ref().unwrap_or(&"None".into()),
                 {
@@ -514,11 +545,11 @@ impl std::fmt::Display for Message {
             ),
             Message::Response((response, context)) => write!(
                 f,
-                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {},\n        capabilities: {}\n    )",
+                "Response(\n        inherit: {},\n        body: {},\n        metadata: {},\n        context: {},\n        capabilities: {}\n    )",
                 response.inherit,
-                match serde_json::from_slice::<serde_json::Value>(&response.ipc) {
+                match serde_json::from_slice::<serde_json::Value>(&response.body) {
                     Ok(json) => format!("{}", json),
-                    Err(_) => format!("{:?}", response.ipc),
+                    Err(_) => format!("{:?}", response.body),
                 },
                 &response.metadata.as_ref().unwrap_or(&"None".into()),
                 if context.is_none() {
@@ -554,7 +585,7 @@ pub fn de_wit_request(wit: wit::Request) -> Request {
     Request {
         inherit: wit.inherit,
         expects_response: wit.expects_response,
-        ipc: wit.ipc,
+        body: wit.body,
         metadata: wit.metadata,
         capabilities: wit
             .capabilities
@@ -568,7 +599,7 @@ pub fn en_wit_request(request: Request) -> wit::Request {
     wit::Request {
         inherit: request.inherit,
         expects_response: request.expects_response,
-        ipc: request.ipc,
+        body: request.body,
         metadata: request.metadata,
         capabilities: request
             .capabilities
@@ -581,7 +612,7 @@ pub fn en_wit_request(request: Request) -> wit::Request {
 pub fn de_wit_response(wit: wit::Response) -> Response {
     Response {
         inherit: wit.inherit,
-        ipc: wit.ipc,
+        body: wit.body,
         metadata: wit.metadata,
         capabilities: wit
             .capabilities
@@ -594,7 +625,7 @@ pub fn de_wit_response(wit: wit::Response) -> Response {
 pub fn en_wit_response(response: Response) -> wit::Response {
     wit::Response {
         inherit: response.inherit,
-        ipc: response.ipc,
+        body: response.body,
         metadata: response.metadata,
         capabilities: response
             .capabilities
@@ -604,20 +635,20 @@ pub fn en_wit_response(response: Response) -> wit::Response {
     }
 }
 
-pub fn de_wit_payload(wit: Option<wit::Payload>) -> Option<Payload> {
+pub fn de_wit_blob(wit: Option<wit::LazyLoadBlob>) -> Option<LazyLoadBlob> {
     match wit {
         None => None,
-        Some(wit) => Some(Payload {
+        Some(wit) => Some(LazyLoadBlob {
             mime: wit.mime,
             bytes: wit.bytes,
         }),
     }
 }
 
-pub fn en_wit_payload(load: Option<Payload>) -> Option<wit::Payload> {
+pub fn en_wit_blob(load: Option<LazyLoadBlob>) -> Option<wit::LazyLoadBlob> {
     match load {
         None => None,
-        Some(load) => Some(wit::Payload {
+        Some(load) => Some(wit::LazyLoadBlob {
             mime: load.mime,
             bytes: load.bytes,
         }),
@@ -661,7 +692,7 @@ pub fn en_wit_send_error(error: SendError) -> wit::SendError {
     wit::SendError {
         kind: en_wit_send_error_kind(error.kind),
         message: en_wit_message(error.message),
-        payload: en_wit_payload(error.payload),
+        lazy_load_blob: en_wit_blob(error.lazy_load_blob),
     }
 }
 
@@ -798,14 +829,14 @@ pub struct KernelMessage {
     pub target: Address,
     pub rsvp: Rsvp,
     pub message: Message,
-    pub payload: Option<Payload>,
+    pub lazy_load_blob: Option<LazyLoadBlob>,
 }
 
 impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {},\n}}",
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    blob: {},\n}}",
             self.id,
             self.source,
             self.target,
@@ -814,7 +845,7 @@ impl std::fmt::Display for KernelMessage {
                 None => "None".to_string()
             },
             self.message,
-            self.payload.is_some(),
+            self.lazy_load_blob.is_some(),
         )
     }
 }
@@ -1002,11 +1033,11 @@ pub enum StateError {
     RocksDBError { action: String, error: String },
     #[error("kernel_state: startup error")]
     StartupError { action: String },
-    #[error("kernel_state: bytes payload required for {action}")]
+    #[error("kernel_state: bytes blob required for {action}")]
     BadBytes { action: String },
     #[error("kernel_state: bad request error: {error}")]
     BadRequest { error: String },
-    #[error("kernel_state: Bad JSON payload: {error}")]
+    #[error("kernel_state: Bad JSON blob: {error}")]
     BadJson { error: String },
     #[error("kernel_state: state not found for ProcessId {process_id}")]
     NotFound { process_id: ProcessId },
@@ -1109,7 +1140,7 @@ pub enum VfsResponse {
 pub enum VfsError {
     #[error("vfs: No capability for action {action} at path {path}")]
     NoCap { action: String, path: String },
-    #[error("vfs: Bytes payload required for {action} at path {path}")]
+    #[error("vfs: Bytes blob required for {action} at path {path}")]
     BadBytes { action: String, path: String },
     #[error("vfs: bad request error: {error}")]
     BadRequest { error: String },
@@ -1119,7 +1150,7 @@ pub enum VfsError {
     IOError { error: String, path: String },
     #[error("vfs: kernel capability channel error: {error}")]
     CapChannelFail { error: String },
-    #[error("vfs: Bad JSON payload: {error}")]
+    #[error("vfs: Bad JSON blob: {error}")]
     BadJson { error: String },
     #[error("vfs: File not found at path {path}")]
     NotFound { path: String },

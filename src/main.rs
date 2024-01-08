@@ -507,11 +507,11 @@ async fn main() {
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
+                body: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             }),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await;
 

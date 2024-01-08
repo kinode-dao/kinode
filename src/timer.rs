@@ -39,7 +39,7 @@ pub async fn timer_service(
                 // we only handle Requests which contain a little-endian u64 as IPC,
                 // except for a special "debug" message, which prints the current state
                 let Message::Request(req) = km.message else { continue };
-                if req.ipc == "debug".as_bytes() {
+                if req.body == "debug".as_bytes() {
                     let _ = print_tx.send(Printout {
                         verbosity: 0,
                         content: format!("timer service active timers ({}):", timer_map.timers.len()),
@@ -52,7 +52,7 @@ pub async fn timer_service(
                     }
                     continue
                 }
-                let Ok(bytes): Result<[u8; 8], _> = req.ipc.try_into() else { continue };
+                let Ok(bytes): Result<[u8; 8], _> = req.body.try_into() else { continue };
                 let timer_millis = u64::from_le_bytes(bytes);
                 // if the timer is set to pop in 0 millis, we immediately respond
                 // otherwise, store in our persisted map, and spawn a task that
@@ -125,13 +125,13 @@ async fn send_response(our_node: &str, id: u64, target: Address, send_to_loop: &
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc: vec![],
+                    body: vec![],
                     metadata: None,
                     capabilities: vec![],
                 },
                 None,
             )),
-            payload: None,
+            lazy_load_blob: None,
         })
         .await;
 }

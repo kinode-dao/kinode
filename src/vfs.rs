@@ -97,11 +97,11 @@ async fn handle_request(
         id,
         source,
         message,
-        payload,
+        lazy_load_blob: blob,
         ..
     } = km.clone();
     let Message::Request(Request {
-        ipc,
+        body,
         expects_response,
         metadata,
         ..
@@ -112,7 +112,7 @@ async fn handle_request(
         });
     };
 
-    let request: VfsRequest = match serde_json::from_slice(&ipc) {
+    let request: VfsRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
             println!("vfs: got invalid Request: {}", e);
@@ -142,7 +142,7 @@ async fn handle_request(
     }
     // real safe path that the vfs will use
     let path = PathBuf::from(format!("{}{}/{}", vfs_path, drive, rest));
-    let (ipc, bytes) = match request.action {
+    let (body, bytes) = match request.action {
         VfsAction::CreateDrive => {
             // handled in check_caps.
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
@@ -177,38 +177,38 @@ async fn handle_request(
         }
         VfsAction::WriteAt => {
             // doesn't create a file, writes at exact cursor.
-            let Some(payload) = payload else {
+            let Some(blob) = blob else {
                 return Err(VfsError::BadRequest {
-                    error: "payload needs to exist for WriteAll".into(),
+                    error: "blob needs to exist for WriteAll".into(),
                 });
             };
             let file = open_file(open_files.clone(), path, false, false).await?;
             let mut file = file.lock().await;
-            file.write_all(&payload.bytes).await?;
+            file.write_all(&blob.bytes).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Write => {
-            let Some(payload) = payload else {
+            let Some(blob) = blob else {
                 return Err(VfsError::BadRequest {
-                    error: "payload needs to exist for Write".into(),
+                    error: "blob needs to exist for Write".into(),
                 });
             };
             open_files.remove(&path);
             let file = open_file(open_files.clone(), path, true, true).await?;
             let mut file = file.lock().await;
-            file.write_all(&payload.bytes).await?;
+            file.write_all(&blob.bytes).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Append => {
-            let Some(payload) = payload else {
+            let Some(blob) = blob else {
                 return Err(VfsError::BadRequest {
-                    error: "payload needs to exist for Append".into(),
+                    error: "blob needs to exist for Append".into(),
                 });
             };
             let file = open_file(open_files.clone(), path, false, false).await?;
             let mut file = file.lock().await;
             file.seek(SeekFrom::End(0)).await?;
-            file.write_all(&payload.bytes).await?;
+            file.write_all(&blob.bytes).await?;
 
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
@@ -360,22 +360,22 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Hash(hash)).unwrap(), None)
         }
         VfsAction::AddZip => {
-            let Some(payload) = payload else {
+            let Some(blob) = blob else {
                 return Err(VfsError::BadRequest {
-                    error: "payload needs to exist for AddZip".into(),
+                    error: "blob needs to exist for AddZip".into(),
                 });
             };
-            let Some(mime) = payload.mime else {
+            let Some(mime) = blob.mime else {
                 return Err(VfsError::BadRequest {
-                    error: "payload mime type needs to exist for AddZip".into(),
+                    error: "blob mime type needs to exist for AddZip".into(),
                 });
             };
             if "application/zip" != mime {
                 return Err(VfsError::BadRequest {
-                    error: "payload mime type needs to be application/zip for AddZip".into(),
+                    error: "blob mime type needs to be application/zip for AddZip".into(),
                 });
             }
-            let file = std::io::Cursor::new(&payload.bytes);
+            let file = std::io::Cursor::new(&blob.bytes);
             let mut zip = match zip::ZipArchive::new(file) {
                 Ok(f) => f,
                 Err(e) => {
@@ -442,13 +442,13 @@ async fn handle_request(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc,
+                    body,
                     metadata,
                     capabilities: vec![],
                 },
                 None,
             )),
-            payload: bytes.map(|bytes| Payload {
+            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
             }),
@@ -462,7 +462,7 @@ async fn handle_request(
                 verbosity: 2,
                 content: format!(
                     "vfs: not sending response: {:?}",
-                    serde_json::from_slice::<VfsResponse>(&ipc)
+                    serde_json::from_slice::<VfsResponse>(&body)
                 ),
             })
             .await
@@ -485,7 +485,7 @@ async fn parse_package_and_drive(path: &str) -> Result<(PackageId, String, Strin
         });
     }
 
-    let package_id = match PackageId::from_str(parts[0]) {
+    let package_id = match parts[0].parse::<PackageId>() {
         Ok(id) => id,
         Err(e) => {
             return Err(VfsError::ParseError {
@@ -809,13 +809,13 @@ fn make_error_message(
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: serde_json::to_vec(&VfsResponse::Err(error)).unwrap(),
+                body: serde_json::to_vec(&VfsResponse::Err(error)).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             },
             None,
         )),
-        payload: None,
+        lazy_load_blob: None,
     }
 }
 

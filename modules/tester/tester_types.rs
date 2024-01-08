@@ -14,7 +14,7 @@ pub struct KernelMessage {
     pub target: Address,
     pub rsvp: Rsvp,
     pub message: kt::Message,
-    pub payload: Option<kt::Payload>,
+    pub lazy_load_blob: Option<kt::LazyLoadBlob>,
     pub signed_capabilities: HashMap<kt::Capability, Vec<u8>>,
 }
 
@@ -62,7 +62,7 @@ pub enum TesterError {
 macro_rules! fail {
     ($test:expr) => {
         Response::new()
-            .ipc(
+            .body(
                 serde_json::to_vec(&tt::TesterResponse::Fail {
                     test: $test.into(),
                     file: file!().into(),
@@ -77,7 +77,7 @@ macro_rules! fail {
     };
     ($test:expr, $file:expr, $line:expr, $column:expr) => {
         Response::new()
-            .ipc(
+            .body(
                 serde_json::to_vec(&tt::TesterResponse::Fail {
                     test: $test.into(),
                     file: $file.into(),
