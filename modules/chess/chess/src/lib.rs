@@ -8,12 +8,6 @@ use uqbar_process_lib::{
 };
 extern crate base64;
 
-// Lazy way to include our static files in the binary. We'll use these to serve
-// our chess app's frontend.
-const CHESS_HTML: &str = include_str!("../../pkg/chess.html");
-const CHESS_JS: &str = include_str!("../../pkg/index.js");
-const CHESS_CSS: &str = include_str!("../../pkg/index.css");
-
 //
 // Our "chess protocol" request/response format. We'll always serialize these
 // to a byte vector and send them over IPC.
@@ -116,37 +110,12 @@ fn initialize(our: Address) {
     // A little printout to show in terminal that the process has started.
     println!("{} by {}: start", our.process(), our.publisher());
 
-    // serve static page at /index.html, /index.js, /index.css
-    // dynamically handle requests to /games
-    http::bind_http_static_path(
-        "/",
-        true,  // only serve for ourselves
-        false, // can access remotely
-        Some("text/html".to_string()),
-        CHESS_HTML
-            .replace("${node}", &our.node)
-            .replace("${process}", &our.process.to_string())
-            .as_bytes()
-            .to_vec(),
-    )
-    .unwrap();
-    http::bind_http_static_path(
-        "/index.js",
-        true,
-        false,
-        Some("text/javascript".to_string()),
-        CHESS_JS.as_bytes().to_vec(),
-    )
-    .unwrap();
-    http::bind_http_static_path(
-        "/index.css",
-        true,
-        false,
-        Some("text/css".to_string()),
-        CHESS_CSS.as_bytes().to_vec(),
-    )
-    .unwrap();
+    // Serve the index.html and other UI files found in pkg/ui at the root path.
+    http::serve_ui(&our, "ui").unwrap();
+
+    // Allow HTTP requests to be made to /games; they will be handled dynamically.
     http::bind_http_path("/games", true, false).unwrap();
+
     // Allow websockets to be opened at / (our process ID will be prepended).
     http::bind_ws_path("/", true, false).unwrap();
 
