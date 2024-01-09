@@ -191,27 +191,36 @@ async fn handle_kernel_request(
             let parent_caps: &HashMap<t::Capability, Vec<u8>> =
                 &process_map.get(&km.source.process).unwrap().capabilities;
             let mut valid_capabilities: HashMap<t::Capability, Vec<u8>> = HashMap::new();
-            for cap in initial_capabilities {
-                match parent_caps.get(&cap) {
-                    // TODO I don't think we *have* to verify the sigs here but it doesn't hurt...
-                    Some(sig) => {
-                        match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), &sig) {
-                            Ok(_) => {
-                                valid_capabilities.insert(cap, sig.to_vec());
-                            }
-                            Err(e) => {
-                                println!("kernel: InitializeProcess bad cap sig: {}", e);
-                                continue;
+            if km.source.process == "kernel:sys:nectar" {
+                for cap in initial_capabilities {
+                    let sig = keypair.sign(&rmp_serde::to_vec(&cap).unwrap());
+                    valid_capabilities.insert(cap, sig.as_ref().to_vec());
+                }
+            } else {
+                for cap in initial_capabilities {
+                    match parent_caps.get(&cap) {
+                        // TODO I don't think we *have* to verify the sigs here but it doesn't hurt...
+                        Some(sig) => {
+                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), &sig) {
+                                Ok(_) => {
+                                    valid_capabilities.insert(cap, sig.to_vec());
+                                }
+                                Err(e) => {
+                                    println!("kernel: InitializeProcess bad cap sig: {}\r", e);
+                                    continue;
+                                }
                             }
                         }
-                    }
-                    None => {
-                        println!("kernel: InitializeProcess spawner doesn't have capability");
-                        continue;
+                        None => {
+                            println!(
+                                "kernel: InitializeProcess caller {} doesn't have capability\r",
+                                km.source.process
+                            );
+                            continue;
+                        }
                     }
                 }
             }
-
             // give the initializer and itself the messaging cap.
             // NOTE: we do this even if the process is public, because
             // a process might redundantly call grant_capabilities.

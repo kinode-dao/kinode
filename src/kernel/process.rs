@@ -475,10 +475,7 @@ pub async fn make_process_loop(
     }
     // now that we've received the run message, we can send the pre-boot queue
     for message in pre_boot_queue {
-        send_to_process
-            .send(message)
-            .await
-            .expect("make_process_loop: couldn't send message to process");
+        send_to_process.send(message).await?;
     }
 
     let component =
@@ -530,7 +527,7 @@ pub async fn make_process_loop(
             }
         };
 
-    // the process will run until it returns from init()
+    // the process will run until it returns from init() or crashes
     let is_error = match bindings
         .call_init(&mut store, &metadata.our.to_string())
         .await
@@ -539,7 +536,7 @@ pub async fn make_process_loop(
             let _ = send_to_terminal
                 .send(t::Printout {
                     verbosity: 1,
-                    content: format!("process {} returned without error", metadata.our.process,),
+                    content: format!("process {} returned without error", metadata.our.process),
                 })
                 .await;
             false
@@ -548,95 +545,96 @@ pub async fn make_process_loop(
             let _ = send_to_terminal
                 .send(t::Printout {
                     verbosity: 0,
-                    content: format!("process {:?} ended with error:", metadata.our.process,),
+                    content: format!(
+                        "\x1b[38;5;196mprocess {} ended with error: {}\x1b[0m",
+                        metadata.our.process,
+                        format!("{:?}", e).lines().last().unwrap(),
+                    ),
                 })
                 .await;
-            for line in format!("{:?}", e).lines() {
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: line.into(),
-                    })
-                    .await;
-            }
             true
         }
     };
 
-    // the process has completed, perform cleanup
+    //
+    // the process has completed, time to perform cleanup
+    //
+
     let our_kernel = t::Address {
         node: metadata.our.node.clone(),
         process: KERNEL_PROCESS_ID.clone(),
     };
 
-    if !is_error {
-        // just remove handler
-        send_to_loop
-            .send(t::KernelMessage {
-                id: rand::random(),
-                source: our_kernel.clone(),
-                target: our_kernel.clone(),
-                rsvp: None,
-                message: t::Message::Request(t::Request {
-                    inherit: false,
-                    expects_response: None,
-                    body: serde_json::to_vec(&t::KernelCommand::KillProcess(
-                        metadata.our.process.clone(),
-                    ))
-                    .unwrap(),
-                    metadata: None,
-                    capabilities: vec![],
-                }),
-                lazy_load_blob: None,
-            })
-            .await
-            .expect("event loop: fatal: sender died");
-    } else {
-        // get caps before killing
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = caps_oracle
-            .send(t::CapMessage::GetAll {
-                on: metadata.our.process.clone(),
-                responder: tx,
-            })
-            .await;
-        let initial_capabilities = rx
-            .await
-            .unwrap()
-            .iter()
-            .map(|c| t::Capability {
-                issuer: c.0.issuer.clone(),
-                params: c.0.params.clone(),
-            })
-            .collect();
+    // get caps before killing
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let _ = caps_oracle
+        .send(t::CapMessage::GetAll {
+            on: metadata.our.process.clone(),
+            responder: tx,
+        })
+        .await;
+    let initial_capabilities = rx
+        .await?
+        .iter()
+        .map(|c| t::Capability {
+            issuer: c.0.issuer.clone(),
+            params: c.0.params.clone(),
+        })
+        .collect();
 
-        // send message to tell main kernel loop to remove handler
-        send_to_loop
-            .send(t::KernelMessage {
-                id: rand::random(),
-                source: our_kernel.clone(),
-                target: our_kernel.clone(),
-                rsvp: None,
-                message: t::Message::Request(t::Request {
-                    inherit: false,
-                    expects_response: None,
-                    body: serde_json::to_vec(&t::KernelCommand::KillProcess(
-                        metadata.our.process.clone(),
-                    ))
-                    .unwrap(),
-                    metadata: None,
-                    capabilities: vec![],
-                }),
-                lazy_load_blob: None,
-            })
-            .await
-            .expect("event loop: fatal: sender died");
+    // send message to tell main kernel loop to remove handler
+    send_to_loop
+        .send(t::KernelMessage {
+            id: rand::random(),
+            source: our_kernel.clone(),
+            target: our_kernel.clone(),
+            rsvp: None,
+            message: t::Message::Request(t::Request {
+                inherit: false,
+                expects_response: None,
+                body: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                    metadata.our.process.clone(),
+                ))
+                .unwrap(),
+                metadata: None,
+                capabilities: vec![],
+            }),
+            lazy_load_blob: None,
+        })
+        .await?;
 
-        // fulfill the designated OnExit behavior
-        match metadata.on_exit {
-            t::OnExit::None => {}
-            // if restart, tell ourselves to init the app again, with same capabilities
-            t::OnExit::Restart => {
+    // fulfill the designated OnExit behavior
+    match metadata.on_exit {
+        t::OnExit::None => {
+            let _ = send_to_terminal
+                .send(t::Printout {
+                    verbosity: 1,
+                    content: format!("process {} had no OnExit behavior", metadata.our.process),
+                })
+                .await;
+        }
+        // if restart, tell ourselves to init the app again, with same capabilities
+        t::OnExit::Restart => {
+            if is_error {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!(
+                            "skipping OnExit::Restart for process {} due to crash",
+                            metadata.our.process
+                        ),
+                    })
+                    .await;
+            } else {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 1,
+                        content: format!(
+                            "firing OnExit::Restart for process {}",
+                            metadata.our.process
+                        ),
+                    })
+                    .await;
                 send_to_loop
                     .send(t::KernelMessage {
                         id: rand::random(),
@@ -663,38 +661,64 @@ pub async fn make_process_loop(
                             bytes: wasm_bytes,
                         }),
                     })
-                    .await
-                    .expect("event loop: fatal: sender died");
+                    .await?;
+                send_to_loop
+                    .send(t::KernelMessage {
+                        id: rand::random(),
+                        source: our_kernel.clone(),
+                        target: our_kernel.clone(),
+                        rsvp: None,
+                        message: t::Message::Request(t::Request {
+                            inherit: false,
+                            expects_response: None,
+                            body: serde_json::to_vec(&t::KernelCommand::RunProcess(
+                                metadata.our.process.clone(),
+                            ))
+                            .unwrap(),
+                            metadata: None,
+                            capabilities: vec![],
+                        }),
+                        lazy_load_blob: None,
+                    })
+                    .await?;
             }
-            // if requests, fire them
-            // even in death, a process can only message processes it has capabilities for
-            t::OnExit::Requests(requests) => {
-                for (address, mut request, blob) in requests {
-                    request.expects_response = None;
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    let _ = caps_oracle
-                        .send(t::CapMessage::Has {
-                            on: metadata.our.process.clone(),
-                            cap: t::Capability {
-                                issuer: address.clone(),
-                                params: "\"messaging\"".into(),
-                            },
-                            responder: tx,
+        }
+        // if requests, fire them
+        // even in death, a process can only message processes it has capabilities for
+        t::OnExit::Requests(requests) => {
+            send_to_terminal
+                .send(t::Printout {
+                    verbosity: 1,
+                    content: format!(
+                        "firing OnExit::Requests for process {}",
+                        metadata.our.process
+                    ),
+                })
+                .await?;
+            for (address, mut request, blob) in requests {
+                request.expects_response = None;
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                caps_oracle
+                    .send(t::CapMessage::Has {
+                        on: metadata.our.process.clone(),
+                        cap: t::Capability {
+                            issuer: address.clone(),
+                            params: "\"messaging\"".into(),
+                        },
+                        responder: tx,
+                    })
+                    .await?;
+                if let Ok(true) = rx.await {
+                    send_to_loop
+                        .send(t::KernelMessage {
+                            id: rand::random(),
+                            source: metadata.our.clone(),
+                            target: address,
+                            rsvp: None,
+                            message: t::Message::Request(request),
+                            lazy_load_blob: blob,
                         })
-                        .await;
-                    if let Ok(true) = rx.await {
-                        send_to_loop
-                            .send(t::KernelMessage {
-                                id: rand::random(),
-                                source: metadata.our.clone(),
-                                target: address,
-                                rsvp: None,
-                                message: t::Message::Request(request),
-                                lazy_load_blob: blob,
-                            })
-                            .await
-                            .expect("event loop: fatal: sender died");
-                    }
+                        .await?;
                 }
             }
         }
