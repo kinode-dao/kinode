@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+use chess::{Board as AiBoard, ChessMove};
 use nectar_process_lib::{
     await_message, call_init, get_blob, get_typed_state, http, println, set_state, Address,
     LazyLoadBlob, Message, NodeId, ProcessId, Request, Response,
@@ -135,20 +136,25 @@ fn request_ai_move(our: &Address, game: &mut Game) -> anyhow::Result<()> {
             ));
         };
         let response = serde_json::from_slice::<llm_types::ChatResponse>(&body)?;
-        let ai_move = response.content;
-        println!("Got AI move: {ai_move}");
-        let mut board = Board::from_fen(&game.board).unwrap();
-        if !board.apply_uci_move(&ai_move) {
-            // Reject invalid moves!
-            println!("chess: ai gave us an illegal move! {}", ai_move);
-            prompt = format!(
-                "{} {} is an illegal move. Make a different move.",
-                prompt, ai_move
-            );
-            continue;
+        let mut board = AiBoard::from_fen(game.board.clone()).unwrap();
+        match ChessMove::from_san(&board, &response.content) {
+            Ok(valid_move) => {
+                println!("Got AI move: {valid_move}");
+                board.make_move_new(valid_move);
+                game.board = board.to_string();
+                return Ok(());
+            }
+            Err(e) => {
+                // Reject invalid moves!
+                // TODO reprompt could be a lot better
+                println!("chess: ai gave us an illegal move! {}", response.content);
+                prompt = format!(
+                    "{} {} is an illegal move. Make a different move.",
+                    prompt, response.content
+                );
+                continue;
+            }
         }
-        game.board = board.fen();
-        return Ok(());
     }
 }
 
