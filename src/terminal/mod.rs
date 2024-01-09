@@ -39,33 +39,27 @@ pub async fn terminal(
 
     let (mut win_cols, mut win_rows) = terminal::size().unwrap();
     // print initial splash screen, large if there's room, small otherwise
-    if win_cols >= 93 {
+    if win_cols >= 90 {
         println!(
             "\x1b[38;5;128m{}\x1b[0m",
             format_args!(
                 r#"
-                ,,   UU
-            s#  lUL  UU       !p
-           !UU  lUL  UU       !UUlb
-       #U  !UU  lUL  UU       !UUUUU#
-       UU  !UU  lUL  UU       !UUUUUUUb
-       UU  !UU  %"     ;-     !UUUUUUUU#
-   $   UU  !UU         @UU#p  !UUUUUUUUU#
-  ]U   UU  !#          @UUUUS !UUUUUUUUUUb
-  @U   UU  !           @UUUUUUlUUUUUUUUUUU                         888
-  UU   UU  !           @UUUUUUUUUUUUUUUUUU                         888
-  @U   UU  !           @UUUUUU!UUUUUUUUUUU                         888
-  'U   UU  !#          @UUUU# !UUUUUUUUUU~       888  888  .d88888 88888b.   8888b.  888d888
-   \   UU  !UU         @UU#^  !UUUUUUUUU#        888  888 d88" 888 888 "88b     "88b 888P"
-       UU  !UU  @Np  ,,"      !UUUUUUUU#         888  888 888  888 888  888 .d888888 888
-       UU  !UU  lUL  UU       !UUUUUUU^          Y88b 888 Y88b 888 888 d88P 888  888 888
-       "U  !UU  lUL  UU       !UUUUUf             "Y88888  "Y88888 88888P"  "Y888888 888
-           !UU  lUL  UU       !UUl^                            888
-            `"  lUL  UU       '^                               888    {}
-                     ""                                        888    version {}
-                                                 a general purpose sovereign cloud computer
-
-  networking public key: {}
+       ⡀
+      ⢠⣧
+      ⢸⣿⣧
+ ⢲⣄⡀  ⢸⣿⣿⣷⡀    ⣠⣶⣾⣷⣶⡄                                         888
+  ⠻⣿⣷⣶⡀⢻⣿⣿⣿⣶⣄⣀⣼⣿⣿⣷⣤⣿⣿⡀                                       888
+   ⠈⠻⣿⣷⣄⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠛⣁⡀        88888bo   od88bo   od8888b 8888888   8888bo  888d888
+      ⠉⠙⠓⢀⣿⣿⣿⣿⣿⣿⣿⣿⠁  ⠈⠙⢦⡀      888 "88b d8P  Y8b d88P"      888        "88b 888P"
+        ⢠⣿⣿⣿⣿⣿⣿⣿⣿⡏      ⠙⡄     888  888 88888888 888        888    .d888888 888
+       ⢀⣾⣿⣿⣿⣿⣿⣿⡿⠋        ⠈⠂    888  888 Y8b.     Y88b.      Y88b.  888  888 888
+       ⣼⣿⣿⣿⠿⠟⠛⠉                888  888  "Y8888   "Y8888P    "Y888 "Y888888 888
+      ⢰⣿⣿⠋
+      ⢸⣿⠃                      {}
+      ⢾⡏                       version {}
+      ⢸⠁                       a general purpose sovereign cloud computer
+      ⠈
+ networking public key: {}
                 "#,
                 our.name, version, our.networking_key,
             )
@@ -75,20 +69,18 @@ pub async fn terminal(
             "\x1b[38;5;128m{}\x1b[0m",
             format_args!(
                 r#"
-                   888
-                   888
-                   888
- 888  888  .d88888 88888b.   8888b.  888d888
- 888  888 d88" 888 888 "88b     "88b 888P"
- 888  888 888  888 888  888 .d888888 888
- Y88b 888 Y88b 888 888 d88P 888  888 888
-  "Y88888  "Y88888 88888P"  "Y888888 888
-               888
-               888    {}
-               888    version {}
- a general purpose sovereign cloud computer
+                                888
+                               888
+ 88888bo   od88bo   od8888b 8888888   8888bo  888d888
+ 888 "88b d8P  Y8b d88P"      888        "88b 888P"
+ 888  888 88888888 888        888    .d888888 888
+ 888  888 Y8b.     Y88b.      Y88b.  888  888 888
+ 888  888  "Y8888   "Y8888P    "Y888 "Y888888 888
 
- networking pubkey: {}
+ {}
+ version {}
+ a general purpose sovereign cloud computer
+ net pubkey: {}
                 "#,
                 our.name, version, our.networking_key,
             )
