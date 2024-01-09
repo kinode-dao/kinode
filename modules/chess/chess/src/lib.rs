@@ -1,11 +1,14 @@
 #![feature(let_chains)]
 use nectar_process_lib::{
     await_message, call_init, get_blob, get_typed_state, http, println, set_state, Address,
-    LazyLoadBlob, Message, NodeId, Request, Response,
+    LazyLoadBlob, Message, NodeId, ProcessId, Request, Response,
 };
 use pleco::Board;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::{HashMap, HashSet};
+
+mod llm_types;
 extern crate base64;
 
 //
@@ -15,8 +18,16 @@ extern crate base64;
 
 #[derive(Debug, Serialize, Deserialize)]
 enum ChessRequest {
-    NewGame { white: String, black: String },
-    Move { game_id: String, move_str: String },
+    NewGame {
+        white: String,
+        black: String,
+    },
+    /// Name of the model you want to play with. Must exist within your LLM manager app!
+    NewGameAI(String),
+    Move {
+        game_id: String,
+        move_str: String,
+    },
     Resign(String),
 }
 
@@ -34,7 +45,8 @@ enum ChessResponse {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Game {
-    pub id: String, // the node with whom we are playing
+    pub id: String,              // the node with whom we are playing
+    pub ai_game: Option<String>, // None = not AI, String is move history for the prompt
     pub turns: u64,
     pub board: String,
     pub white: String,
@@ -94,7 +106,53 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
     Ok(())
 }
 
-// Boilerplate: generate the wasm bindings for a Nectar app
+/// Fire a request to the given AI model in the LLM manager app, asking it to make a move.
+/// Await its response and apply it to the game.
+fn request_ai_move(our: &Address, game: &mut Game) -> anyhow::Result<()> {
+    println!("Requesting AI move...");
+    let mut prompt = format!(
+        "here is a chess board in FEN notation: \"{}\" you are {}. Make a legal chess move. Do not put out any additional text, simply respond with the move encoded as a UCI move.",
+        game.board,
+        if game.white == game.id { "white" } else { "black" }
+    );
+    loop {
+        let Ok(Message::Response { body, .. }) = Request::new()
+            .target((
+                our.node.as_str(),
+                format!("{}:llm:nectar", game.id)
+                    .parse::<ProcessId>()
+                    .unwrap(),
+            ))
+            .body(
+                json!({"Chat": {"prompt": prompt, "params": {}}})
+                    .to_string()
+                    .into_bytes(),
+            )
+            .send_and_await_response(10)?
+        else {
+            return Err(anyhow::anyhow!(
+                "AI did not respond properly to chat request!"
+            ));
+        };
+        let response = serde_json::from_slice::<llm_types::ChatResponse>(&body)?;
+        let ai_move = response.content;
+        println!("Got AI move: {ai_move}");
+        let mut board = Board::from_fen(&game.board).unwrap();
+        if !board.apply_uci_move(&ai_move) {
+            // Reject invalid moves!
+            println!("chess: ai gave us an illegal move! {}", ai_move);
+            prompt = format!(
+                "{} {} is an illegal move. Make a different move.",
+                prompt, ai_move
+            );
+            continue;
+        }
+        game.board = board.fen();
+        return Ok(());
+    }
+}
+
+// Boilerplate: generate the wasm bindings for an Uqbar app
 wit_bindgen::generate!({
     path: "../../../wit",
     world: "process",
@@ -192,7 +250,10 @@ fn handle_request(our: &Address, message: &Message, state: &mut ChessState) -> a
                     }
                 }
             }
-            http::HttpServerRequest::WebSocketOpen { path, channel_id } => {
+            http::HttpServerRequest::WebSocketOpen {
+                path: _,
+                channel_id,
+            } => {
                 // We know this is authenticated and unencrypted because we only
                 // bound one path, the root path. So we know that client
                 // frontend opened a websocket and can send updates
@@ -242,6 +303,7 @@ fn handle_chess_request(
             }
             let game = Game {
                 id: game_id.to_string(),
+                ai_game: None,
                 turns: 0,
                 board: Board::start_pos().fen(),
                 white: white.to_string(),
@@ -260,6 +322,11 @@ fn handle_chess_request(
             Response::new()
                 .body(serde_json::to_vec(&ChessResponse::NewGameAccepted)?)
                 .send()
+        }
+        ChessRequest::NewGameAI(_) => {
+            // Ignore requests for an AI game from other nodes, that's not how the
+            // protocol works.
+            return Err(anyhow::anyhow!("AI is a local-only feature!"));
         }
         ChessRequest::Move { ref move_str, .. } => {
             // Get the associated game, and respond with an error if
@@ -345,6 +412,7 @@ fn handle_local_request(
             // New game with default board.
             let game = Game {
                 id: game_id.to_string(),
+                ai_game: None,
                 turns: 0,
                 board: Board::start_pos().fen(),
                 white: white.to_string(),
@@ -355,10 +423,46 @@ fn handle_local_request(
             save_chess_state(&state);
             Ok(())
         }
+        ChessRequest::NewGameAI(model_name) => {
+            // Create a new game with the AI.
+            // First we need the capability from the LLM manager app.
+            Request::new()
+                .target((&our.node, "main", "llm", "nectar"))
+                .body(
+                    json!({"RequestAccess": {"model": model_name, "process": our.process.to_string()}})
+                        .to_string()
+                        .into_bytes(),
+                )
+                .send()?;
+            // Then, make a new game, picking randomly between AI and player as white.
+            let (white, black) = if rand::random() {
+                (model_name.as_str(), our.node.as_str())
+            } else {
+                (our.node.as_str(), model_name.as_str())
+            };
+            let mut game = Game {
+                id: model_name.to_string(),
+                ai_game: Some(String::new()),
+                turns: 0,
+                board: Board::start_pos().fen(),
+                white: white.to_string(),
+                black: black.to_string(),
+                ended: false,
+            };
+            // Lastly, if it's the AI's turn, send a request that gives it the current board
+            // and asks it to make a move!
+            if white == model_name {
+                request_ai_move(our, &mut game)?;
+                game.turns += 1;
+            }
+            state.games.insert(model_name.to_string(), game);
+            save_chess_state(&state);
+            Ok(())
+        }
         ChessRequest::Move { game_id, move_str } => {
             // Make a move. We'll enforce that it's our turn. The game_id is the
             // person we're playing with.
-            let Some(game) = state.games.get_mut(game_id) else {
+            let Some(mut game) = state.games.get_mut(game_id) else {
                 return Err(anyhow::anyhow!("no game with {game_id}"));
             };
             if (game.turns % 2 == 0 && game.white != our.node)
@@ -372,26 +476,37 @@ fn handle_local_request(
             if !board.apply_uci_move(move_str) {
                 return Err(anyhow::anyhow!("illegal move!"));
             }
-            // Send the move to the other player, then check if the game is over.
-            // The request is exactly the same as what we got from terminal.
-            // We'll give them 5 seconds to respond...
-            let Ok(Message::Response { ref body, .. }) = Request::new()
-                .target((game_id.as_ref(), our.process.clone()))
-                .body(serde_json::to_vec(&action)?)
-                .send_and_await_response(5)?
-            else {
-                return Err(anyhow::anyhow!(
-                    "other player did not respond properly to our move"
-                ));
-            };
-            if serde_json::from_slice::<ChessResponse>(body)? != ChessResponse::MoveAccepted {
-                return Err(anyhow::anyhow!("other player rejected our move"));
-            }
+            game.board = board.fen();
             game.turns += 1;
             if board.checkmate() || board.stalemate() {
                 game.ended = true;
             }
-            game.board = board.fen();
+            // If this is an AI game, we'll send a request to the AI to make a move.
+            // Otherwise, we'll send a request to the other player to make a move.
+            if game.ai_game.is_some() && !game.ended {
+                request_ai_move(our, &mut game)?;
+                // update the game
+                game.turns += 1;
+                if board.checkmate() || board.stalemate() {
+                    game.ended = true;
+                }
+            } else {
+                // Send the move to the other player, then check if the game is over.
+                // The request is exactly the same as what we got from terminal.
+                // We'll give them 5 seconds to respond...
+                let Ok(Message::Response { ref body, .. }) = Request::new()
+                    .target((game_id.as_ref(), our.process.clone()))
+                    .body(serde_json::to_vec(&action)?)
+                    .send_and_await_response(5)?
+                else {
+                    return Err(anyhow::anyhow!(
+                        "other player did not respond properly to our move"
+                    ));
+                };
+                if serde_json::from_slice::<ChessResponse>(body)? != ChessResponse::MoveAccepted {
+                    return Err(anyhow::anyhow!("other player rejected our move"));
+                }
+            }
             save_chess_state(&state);
             Ok(())
         }
@@ -479,6 +594,7 @@ fn handle_http_request(
             // create a new game
             let game = Game {
                 id: game_id.to_string(),
+                ai_game: None,
                 turns: 0,
                 board: Board::start_pos().fen(),
                 white: player_white,
@@ -506,7 +622,7 @@ fn handle_http_request(
             let Some(game_id) = blob_json["id"].as_str() else {
                 return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
             };
-            let Some(game) = state.games.get_mut(game_id) else {
+            let Some(mut game) = state.games.get_mut(game_id) else {
                 return http::send_response(http::StatusCode::NOT_FOUND, None, vec![]);
             };
             if (game.turns % 2 == 0 && game.white != our.node)
@@ -524,30 +640,41 @@ fn handle_http_request(
                 // TODO surface illegal move to player or something here
                 return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
             }
-            // send the move to the other player
-            // check if the game is over
-            // if so, update the records
-            let Ok(msg) = Request::new()
-                .target((game_id, our.process.clone()))
-                .body(serde_json::to_vec(&ChessRequest::Move {
-                    game_id: game_id.to_string(),
-                    move_str: move_str.to_string(),
-                })?)
-                .send_and_await_response(5)?
-            else {
-                return Err(anyhow::anyhow!(
-                    "other player did not respond properly to our move"
-                ));
-            };
-            if serde_json::from_slice::<ChessResponse>(msg.body())? != ChessResponse::MoveAccepted {
-                return Err(anyhow::anyhow!("other player rejected our move"));
-            }
-            // update the game
+            game.board = board.fen();
             game.turns += 1;
             if board.checkmate() || board.stalemate() {
                 game.ended = true;
             }
-            game.board = board.fen();
+            // If this is an AI game, we'll send a request to the AI to make a move.
+            // Otherwise, we'll send a request to the other player to make a move.
+            if game.ai_game.is_some() && !game.ended {
+                request_ai_move(our, &mut game)?;
+                // update the game
+                game.turns += 1;
+                if board.checkmate() || board.stalemate() {
+                    game.ended = true;
+                }
+            } else {
+                // Send the move to the other player.
+                let Ok(msg) = Request::new()
+                    .target((game_id, our.process.clone()))
+                    .body(serde_json::to_vec(&ChessRequest::Move {
+                        game_id: game_id.to_string(),
+                        move_str: move_str.to_string(),
+                    })?)
+                    .send_and_await_response(5)?
+                else {
+                    return Err(anyhow::anyhow!(
+                        "other player did not respond properly to our move"
+                    ));
+                };
+                if serde_json::from_slice::<ChessResponse>(msg.body())?
+                    != ChessResponse::MoveAccepted
+                {
+                    return Err(anyhow::anyhow!("other player rejected our move"));
+                }
+            }
+            send_ws_update(&our, &game, &state.clients)?;
             // update state and return to FE
             let body = serde_json::to_vec(&game)?;
             save_chess_state(&state);
