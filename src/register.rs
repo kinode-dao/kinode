@@ -31,7 +31,7 @@ abigen!(
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
-pub const NDNS_SEPOLIA_ADDRESS: &str = "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1";
+pub const NDNS_SEPOLIA_ADDRESS: &str = "0x6e22E7b9f5a99D5921c14A88Aaf954502aC17B90";
 pub const NDNS_OPTIMISM_ADDRESS: &str = "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1"; // TODO
 
 pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
@@ -117,10 +117,10 @@ pub async fn register(
         name: "".to_string(),
         ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
-            "nectar-next-router.uq".into(),
-            // "nectar-router-1.uq".into(),
-            // "nectar-router-2.uq".into(),
-            // "nectar-router-3.uq".into(),
+            "nectar-next-router.nec".into(),
+            // "nectar-router-1.nec".into(),
+            // "nectar-router-2.nec".into(),
+            // "nectar-router-3.nec".into(),
         ],
     });
 
