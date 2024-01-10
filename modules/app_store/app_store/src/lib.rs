@@ -173,8 +173,8 @@ struct ManifestCap {
     params: Value,
 }
 
-// /m our@main:app_store:ben.uq {"Download": {"package": {"package_name": "sdapi", "publisher_node": "benjammin.uq"}, "install_from": "testnode107.uq"}}
-// /m our@main:app_store:ben.uq {"Install": {"package_name": "sdapi", "publisher_node": "benjammin.uq"}}
+// /m our@main:app_store:ben.nec {"Download": {"package": {"package_name": "sdapi", "publisher_node": "benjammin.nec"}, "install_from": "testnode107.nec"}}
+// /m our@main:app_store:ben.nec {"Install": {"package_name": "sdapi", "publisher_node": "benjammin.nec"}}
 
 call_init!(init);
 fn init(our: Address) {
