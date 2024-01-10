@@ -49,6 +49,7 @@ async fn serve_register_fe(
     our_ip: String,
     http_server_port: u16,
     rpc_url: String,
+    testnet: bool,
 ) -> (Identity, Vec<u8>, Keyfile) {
     // check if we have keys saved on disk, encrypted
     // if so, prompt user for "password" to decrypt with
@@ -69,7 +70,7 @@ async fn serve_register_fe(
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-        _ = register::register(tx, kill_rx, our_ip, http_server_port, rpc_url, disk_keyfile) => {
+        _ = register::register(tx, kill_rx, our_ip, http_server_port, rpc_url, disk_keyfile, testnet) => {
             panic!("registration failed")
         }
         Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
@@ -224,6 +225,7 @@ async fn main() {
         our_ip.to_string(),
         http_server_port,
         rpc_url.clone(),
+        *matches.get_one::<bool>("testnet").unwrap(), // true if testnet mode
     )
     .await;
     #[cfg(feature = "simulation-mode")]
@@ -238,6 +240,7 @@ async fn main() {
                             our_ip.to_string(),
                             http_server_port.clone(),
                             rpc_url.clone(),
+                            *matches.get_one::<bool>("testnet").unwrap(), // true if testnet mode
                         )
                         .await
                     }
