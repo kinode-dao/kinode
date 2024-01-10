@@ -100,6 +100,11 @@ async fn main() {
             arg!(--port <PORT> "First port to try binding")
                 .default_value("8080")
                 .value_parser(value_parser!(u16)),
+        )
+        .arg(
+            arg!(--testnet "Use Sepolia testnet")
+                .default_value("false")
+                .value_parser(value_parser!(bool)),
         );
 
     #[cfg(not(feature = "simulation-mode"))]
@@ -120,6 +125,11 @@ async fn main() {
 
     let home_directory_path = matches.get_one::<String>("home").unwrap();
     let port = *matches.get_one::<u16>("port").unwrap();
+    let contract_address = if *matches.get_one::<bool>("testnet").unwrap() {
+        register::NDNS_SEPOLIA_ADDRESS
+    } else {
+        register::NDNS_OPTIMISM_ADDRESS
+    };
 
     #[cfg(not(feature = "simulation-mode"))]
     let rpc_url = matches.get_one::<String>("rpc").unwrap();
@@ -317,7 +327,7 @@ async fn main() {
         (
             ProcessId::new(Some("http_server"), "sys", "nectar"),
             http_server_sender,
-            true,
+            false,
         ),
         (
             ProcessId::new(Some("http_client"), "sys", "nectar"),
@@ -332,7 +342,7 @@ async fn main() {
         (
             ProcessId::new(Some("eth"), "sys", "nectar"),
             eth_provider_sender,
-            true,
+            false,
         ),
         (
             ProcessId::new(Some("vfs"), "sys", "nectar"),
@@ -387,6 +397,7 @@ async fn main() {
         kernel_debug_message_receiver,
         net_message_sender.clone(),
         home_directory_path.clone(),
+        contract_address.to_string(),
         runtime_extensions,
     ));
     #[cfg(not(feature = "simulation-mode"))]
