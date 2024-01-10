@@ -49,19 +49,10 @@ pub struct OutgoingHttpRequest {
     // TIMEOUT is stored in the message expect_response
 }
 
-/// HTTP Response type that can be shared over WASM boundary to apps.
-/// Respond to [`IncomingHttpRequest`] with this type.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HttpResponse {
-    pub status: u16,
-    pub headers: HashMap<String, String>,
-    // BODY is stored in the lazy_load_blob, as bytes
-}
-
 /// WebSocket Client Request type that can be shared over WASM boundary to apps.
 /// This is the one you send to the `http_client:sys:nectar` service.
 #[derive(Debug, Serialize, Deserialize)]
-pub enum WebSocketClientAction {
+pub enum OutgoingWebSocketClientRequest {
     Open {
         url: String,
         headers: HashMap<String, String>,
@@ -74,9 +65,44 @@ pub enum WebSocketClientAction {
     Close {
         channel_id: u32,
     },
-    Response {
+}
+
+/// HTTP Request type that can be shared over WASM boundary to apps.
+/// This is the one you send to the `http_client:sys:nectar` service.
+/// Includes both HTTP and WebSocket
+#[derive(Debug, Serialize, Deserialize)]
+pub enum HttpClientRequest {
+    Http(OutgoingHttpRequest),
+    WebSocket(OutgoingWebSocketClientRequest),
+}
+
+/// HTTP Response type that can be shared over WASM boundary to apps.
+/// Respond to [`IncomingHttpRequest`] with this type.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub headers: HashMap<String, String>,
+    // BODY is stored in the lazy_load_blob, as bytes
+}
+
+/// HTTP Client Response type that can be shared over WASM boundary to apps.
+/// This is the one you receive from the `http_client:sys:nectar` service.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum HttpClientResponse {
+    Http(HttpResponse),
+    WebSocketAck,
+}
+
+/// WebSocket Client Request type that can be shared over WASM boundary to apps.
+/// This comes from an open websocket client connection in the `http_client:sys:nectar` service.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum IncomingWebSocketClientRequest {
+    Push {
         channel_id: u32,
-        result: Result<(), WebSocketClientError>,
+        message_type: WsMessageType,
+    },
+    Close {
+        channel_id: u32,
     },
 }
 
@@ -88,7 +114,8 @@ pub struct RpcResponseBody {
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum HttpClientError {
-    #[error("http_client: request could not be parsed to HttpRequest: {}.", req)]
+    // HTTP errors, may also be applicable to OutgoingWebSocketClientRequest::Open
+    #[error("http_client: request is not valid HttpClientRequest: {}.", req)]
     BadRequest { req: String },
     #[error("http_client: http method not supported: {}", method)]
     BadMethod { method: String },
@@ -98,20 +125,14 @@ pub enum HttpClientError {
     BadVersion { version: String },
     #[error("http_client: failed to execute request {}", error)]
     RequestFailed { error: String },
-}
 
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum WebSocketClientError {
-    #[error("websocket_client: request format incorrect: {}.", req)]
-    BadRequest { req: String },
-    #[error("websocket_client: url could not be parsed: {}", url)]
-    BadUrl { url: String },
+    // WebSocket errors
     #[error("websocket_client: failed to open connection {}", url)]
-    OpenFailed { url: String },
-    #[error("websocket_client: failed to send message {}", channel_id)]
-    PushFailed { channel_id: u32 },
+    WsOpenFailed { url: String },
+    #[error("websocket_client: failed to send message {}", req)]
+    WsPushFailed { req: String },
     #[error("websocket_client: failed to close connection {}", channel_id)]
-    CloseFailed { channel_id: u32 },
+    WsCloseFailed { channel_id: u32 },
 }
 
 /// Request type sent to `http_server:sys:nectar` in order to configure it.
