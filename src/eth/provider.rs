@@ -1,5 +1,5 @@
 use crate::eth::types::*;
-use crate::http::types::{HttpServerAction, HttpServerRequest, WsMessageType};
+use crate::http::server_types::{HttpServerAction, HttpServerRequest, WsMessageType};
 use crate::types::*;
 use anyhow::Result;
 use ethers::prelude::Provider;

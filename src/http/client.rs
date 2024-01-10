@@ -1,4 +1,5 @@
-use crate::http::types::*;
+use crate::http::server_types::*;
+use crate::http::client_types::*;
 use crate::types::*;
 use anyhow::Result;
 use dashmap::DashMap;
@@ -50,7 +51,7 @@ pub async fn http_client(
         ..
     }) = recv_in_client.recv().await
     {
-        let Ok(request) = serde_json::from_slice::<HttpClientRequest>(&body) else {
+        let Ok(request) = serde_json::from_slice::<HttpClientAction>(&body) else {
             // Send a "BadRequest" error
             http_error_message(
                 our_name.clone(),
@@ -66,12 +67,15 @@ pub async fn http_client(
             continue;
         };
 
-        match request {
-            HttpClientRequest::Http(req) => {
+        let our = our_name.clone();
+        let target = rsvp.unwrap_or(source);
+
+        let (is_ws, result) = match request {
+            HttpClientAction::Http(req) => {
                 tokio::spawn(handle_http_request(
-                    our_name.clone(),
+                    our,
                     id,
-                    rsvp.unwrap_or(source),
+                    target.clone(),
                     expects_response,
                     req,
                     blob,
@@ -79,74 +83,69 @@ pub async fn http_client(
                     send_to_loop.clone(),
                     print_tx.clone(),
                 ));
+                (false, Ok(HttpClientResponse::Http(HttpResponse {
+                    status: 200,
+                    headers: HashMap::new(),
+                })))
             }
-            HttpClientRequest::WebSocket(req) => {
-                let ws_streams_clone = Arc::clone(&ws_streams);
-
-                let _ = handle_websocket_action(
-                    our_name.clone(),
+            HttpClientAction::WebSocketOpen {
+                url,
+                headers,
+                channel_id,
+            } => {
+                (true, connect_websocket(
+                    our,
                     id,
-                    rsvp.unwrap_or(source),
-                    expects_response,
-                    req,
-                    blob,
-                    ws_streams_clone,
+                    target.clone(),
+                    &url,
+                    headers,
+                    channel_id,
+                    ws_streams.clone(),
                     send_to_loop.clone(),
                     print_tx.clone(),
                 )
-                .await;
+                .await)
             }
+            HttpClientAction::WebSocketPush {
+                channel_id,
+                message_type,
+            } => {
+                (true, send_ws_push(target.clone(), channel_id, message_type, blob, ws_streams.clone()).await)
+            },
+            HttpClientAction::WebSocketClose { channel_id } => {
+                (true, close_ws_connection(target.clone(), channel_id, ws_streams.clone(), print_tx.clone()).await)
+            }
+        };
+
+        if is_ws {
+            let _ = send_to_loop
+                .send(KernelMessage {
+                    id,
+                    source: Address {
+                        node: our_name.to_string(),
+                        process: ProcessId::new(Some("http_client"), "sys", "nectar"),
+                    },
+                    target: target.clone(),
+                    rsvp: None,
+                    message: Message::Response((
+                        Response {
+                            inherit: false,
+                            body: serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(
+                                &result
+                            )
+                            .unwrap(),
+                            metadata: None,
+                            capabilities: vec![],
+                        },
+                        None,
+                    )),
+                    lazy_load_blob: None,
+                })
+                .await;
         }
+
     }
     Err(anyhow::anyhow!("http_client: loop died"))
-}
-
-async fn handle_websocket_action(
-    our: Arc<String>,
-    id: u64,
-    target: Address,
-    expects_response: Option<u64>,
-    ws_action: OutgoingWebSocketClientRequest,
-    blob: Option<LazyLoadBlob>,
-    ws_streams: WebSocketStreams,
-    send_to_loop: MessageSender,
-    print_tx: PrintSender,
-) {
-    let result = match ws_action {
-        OutgoingWebSocketClientRequest::Open {
-            url,
-            headers,
-            channel_id,
-        } => {
-            connect_websocket(
-                our.clone(),
-                id,
-                target.clone(),
-                &url,
-                headers,
-                channel_id,
-                ws_streams,
-                send_to_loop.clone(),
-                print_tx,
-            )
-            .await
-        }
-        OutgoingWebSocketClientRequest::Push {
-            channel_id,
-            message_type,
-        } => send_ws_push(target.clone(), channel_id, message_type, blob, ws_streams).await,
-        OutgoingWebSocketClientRequest::Close { channel_id } => {
-            close_ws_connection(target.clone(), channel_id, ws_streams, print_tx).await
-        }
-    };
-
-    match result {
-        Ok(_) => {}
-        Err(e) => {
-            websocket_error_message(our.clone(), id, target, expects_response, e, send_to_loop)
-                .await;
-        }
-    }
 }
 
 async fn connect_websocket(
@@ -159,7 +158,7 @@ async fn connect_websocket(
     ws_streams: WebSocketStreams,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
-) -> Result<(), HttpClientError> {
+) -> Result<HttpClientResponse, HttpClientError> {
     let print_tx_clone = print_tx.clone();
 
     let Ok(url) = url::Url::parse(url) else {
@@ -199,31 +198,6 @@ async fn connect_websocket(
 
     ws_streams.insert((target.process.clone(), channel_id), sink);
 
-    let _ = send_to_loop
-        .send(KernelMessage {
-            id,
-            source: Address {
-                node: our.to_string(),
-                process: ProcessId::new(Some("http_client"), "sys", "nectar"),
-            },
-            target: target.clone(),
-            rsvp: None,
-            message: Message::Response((
-                Response {
-                    inherit: false,
-                    body: serde_json::to_vec::<HttpClientResponse>(
-                        &HttpClientResponse::WebSocketAck,
-                    )
-                    .unwrap(),
-                    metadata: None,
-                    capabilities: vec![],
-                },
-                None,
-            )),
-            lazy_load_blob: None,
-        })
-        .await;
-
     tokio::spawn(listen_to_stream(
         our.clone(),
         id,
@@ -235,7 +209,7 @@ async fn connect_websocket(
         print_tx_clone,
     ));
 
-    Ok(())
+    Ok(HttpClientResponse::WebSocketAck)
 }
 
 async fn listen_to_stream(
@@ -254,7 +228,7 @@ async fn listen_to_stream(
                 // Handle different types of messages here
                 let (body, blob) = match msg {
                     TungsteniteMessage::Text(text) => (
-                        IncomingWebSocketClientRequest::Push {
+                        HttpClientRequest::WebSocketPush {
                             channel_id,
                             message_type: WsMessageType::Text,
                         },
@@ -264,7 +238,7 @@ async fn listen_to_stream(
                         }),
                     ),
                     TungsteniteMessage::Binary(bytes) => (
-                        IncomingWebSocketClientRequest::Push {
+                        HttpClientRequest::WebSocketPush {
                             channel_id,
                             message_type: WsMessageType::Binary,
                         },
@@ -277,17 +251,17 @@ async fn listen_to_stream(
                         // remove the websocket from the map
                         ws_streams.remove(&(target.process.clone(), channel_id));
 
-                        (IncomingWebSocketClientRequest::Close { channel_id }, None)
+                        (HttpClientRequest::WebSocketClose { channel_id }, None)
                     }
                     TungsteniteMessage::Ping(_) => (
-                        IncomingWebSocketClientRequest::Push {
+                        HttpClientRequest::WebSocketPush {
                             channel_id,
                             message_type: WsMessageType::Ping,
                         },
                         None,
                     ),
                     TungsteniteMessage::Pong(_) => (
-                        IncomingWebSocketClientRequest::Push {
+                        HttpClientRequest::WebSocketPush {
                             channel_id,
                             message_type: WsMessageType::Pong,
                         },
@@ -324,7 +298,7 @@ async fn listen_to_stream(
                     our.clone(),
                     id,
                     target.clone(),
-                    IncomingWebSocketClientRequest::Close { channel_id },
+                    HttpClientRequest::WebSocketClose { channel_id },
                     None,
                     send_to_loop.clone(),
                 )
@@ -549,46 +523,13 @@ async fn http_error_message(
     }
 }
 
-async fn websocket_error_message(
-    our: Arc<String>,
-    id: u64,
-    target: Address,
-    expects_response: Option<u64>,
-    error: HttpClientError,
-    send_to_loop: MessageSender,
-) {
-    if expects_response.is_some() {
-        let _ = send_to_loop
-            .send(KernelMessage {
-                id,
-                source: Address {
-                    node: our.to_string(),
-                    process: ProcessId::new(Some("http_client"), "sys", "nectar"),
-                },
-                target,
-                rsvp: None,
-                message: Message::Response((
-                    Response {
-                        inherit: false,
-                        body: serde_json::to_vec::<HttpClientError>(&error).unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    },
-                    None,
-                )),
-                lazy_load_blob: None,
-            })
-            .await;
-    }
-}
-
 async fn send_ws_push(
     target: Address,
     channel_id: u32,
     message_type: WsMessageType,
     blob: Option<LazyLoadBlob>,
     ws_streams: WebSocketStreams,
-) -> Result<(), HttpClientError> {
+) -> Result<HttpClientResponse, HttpClientError> {
     let Some(mut ws_stream) = ws_streams.get_mut(&(target.process.clone(), channel_id)) else {
         return Err(HttpClientError::WsPushFailed {
             req: format!("channel_id {} not found", channel_id),
@@ -625,7 +566,7 @@ async fn send_ws_push(
         WsMessageType::Close => ws_stream.send(TungsteniteMessage::Close(None)).await,
     };
 
-    Ok(())
+    Ok(HttpClientResponse::WebSocketAck)
 }
 
 async fn close_ws_connection(
@@ -633,7 +574,7 @@ async fn close_ws_connection(
     channel_id: u32,
     ws_streams: WebSocketStreams,
     _print_tx: PrintSender,
-) -> Result<(), HttpClientError> {
+) -> Result<HttpClientResponse, HttpClientError> {
     let Some(mut ws_sink) = ws_streams.get_mut(&(target.process.clone(), channel_id)) else {
         return Err(HttpClientError::WsCloseFailed { channel_id });
     };
@@ -641,14 +582,14 @@ async fn close_ws_connection(
     // Close the stream. The stream is closed even on error.
     let _ = ws_sink.close().await;
 
-    Ok(())
+    Ok(HttpClientResponse::WebSocketAck)
 }
 
 async fn handle_ws_message(
     our: Arc<String>,
     id: u64,
     target: Address,
-    body: IncomingWebSocketClientRequest,
+    body: HttpClientRequest,
     blob: Option<LazyLoadBlob>,
     send_to_loop: MessageSender,
 ) {
@@ -663,7 +604,7 @@ async fn handle_ws_message(
             rsvp: None,
             message: Message::Request(Request {
                 inherit: false,
-                body: serde_json::to_vec::<IncomingWebSocketClientRequest>(&body).unwrap(),
+                body: serde_json::to_vec::<HttpClientRequest>(&body).unwrap(),
                 expects_response: None,
                 metadata: None,
                 capabilities: vec![],
