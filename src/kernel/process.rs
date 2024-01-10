@@ -145,8 +145,7 @@ impl ProcessState {
 
         inner_request.capabilities = {
             let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = self
-                .caps_oracle
+            self.caps_oracle
                 .send(t::CapMessage::GetSome {
                     on: self.metadata.our.process.clone(),
                     caps: request
@@ -382,7 +381,7 @@ impl ProcessState {
                                 return Some((cap.clone(), sig.clone()));
                             }
                             // otherwise only return capabilities that were properly signed
-                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), &sig) {
+                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
                                 Ok(_) => Some((cap.clone(), sig.clone())),
                                 Err(_) => None,
                             }
@@ -402,7 +401,7 @@ impl ProcessState {
                                 return Some((cap.clone(), sig.clone()));
                             }
                             // otherwise only return capabilities that were properly signed
-                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), &sig) {
+                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
                                 Ok(_) => Some((cap.clone(), sig.clone())),
                                 Err(_) => None,
                             }

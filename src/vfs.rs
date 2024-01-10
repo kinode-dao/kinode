@@ -648,7 +648,7 @@ async fn check_caps(
                 return Ok(());
             }
 
-            let (new_package_id, new_drive, _rest) = parse_package_and_drive(&new_path).await?;
+            let (new_package_id, new_drive, _rest) = parse_package_and_drive(new_path).await?;
             let new_drive = format!("/{}/{}", new_package_id, new_drive);
             // if both new and old path are within the package_id path, ok
             if (src_package_id == package_id) && (src_package_id == new_package_id) {
@@ -716,13 +716,11 @@ async fn check_caps(
             Ok(())
         }
         VfsAction::CreateDrive => {
-            if src_package_id != package_id {
-                if !has_root_cap {
-                    return Err(VfsError::NoCap {
-                        action: request.action.to_string(),
-                        path: path.display().to_string(),
-                    });
-                }
+            if src_package_id != package_id && !has_root_cap {
+                return Err(VfsError::NoCap {
+                    action: request.action.to_string(),
+                    path: path.display().to_string(),
+                });
             }
 
             add_capability("read", &drive, &our_node, &source, &mut send_to_caps_oracle).await?;

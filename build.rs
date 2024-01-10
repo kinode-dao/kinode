@@ -165,7 +165,7 @@ fn main() {
         fs::File::create(format!("{}/src/bootstrapped_processes.rs", pwd.display(),)).unwrap();
     writeln!(
         bootstrapped_processes,
-        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &'static [u8])] = &[",
+        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &[u8])] = &[",
     )
     .unwrap();
     let modules_dir = format!("{}/modules", pwd.display());
