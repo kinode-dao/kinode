@@ -1,8 +1,8 @@
 #![feature(let_chains)]
 use chess::{Board as AiBoard, ChessMove};
 use nectar_process_lib::{
-    await_message, call_init, get_blob, get_typed_state, http, println, set_state, Address,
-    LazyLoadBlob, Message, NodeId, ProcessId, Request, Response,
+    await_message, call_init, get_blob, get_typed_state, http, println, save_capabilities,
+    set_state, Address, Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response,
 };
 use pleco::Board;
 use serde::{Deserialize, Serialize};
@@ -112,10 +112,31 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
 fn request_ai_move(our: &Address, game: &mut Game) -> anyhow::Result<()> {
     println!("Requesting AI move...");
     let mut prompt = format!(
-        "here is a chess board in FEN notation: \"{}\" you are {}. Make a legal chess move. Do not put out any additional text, simply respond with the move encoded as a UCI move.",
+        // r#"[Event "FIDE World Championship Match 2024"]
+        // [Site "Los Angeles, USA"]
+        // [Date "2024.12.01"]
+        // [Round "5"]
+        // [White "Carlsen, Magnus"]
+        // [Black "Nepomniachtchi, Ian"]
+        // [Result "1-0"]
+        // [WhiteElo "2885"]
+        // [WhiteTitle "GM"]
+        // [WhiteFideId "1503014"]
+        // [BlackElo "2812"]
+        // [BlackTitle "GM"]
+        // [BlackFideId "4168119"]
+        // [TimeControl "40/7200:20/3600:900+30"]
+        // [UTCDate "2024.11.27"]
+        // [UTCTime "09:01:25"]
+        // [Variant "Standard"]
+        
+        // 1.{}"#,
+        // game.ai_game.as_ref().unwrap(),
+        "here is a chess board in FEN notation: \"{}\" you are {}. Make a legal chess move. Do not put out any additional text, simply respond with the move encoded as a SAN move.",
         game.board,
         if game.white == game.id { "white" } else { "black" }
     );
+    // println!("prompt: {}", prompt);
     loop {
         let Ok(Message::Response { body, .. }) = Request::new()
             .target((
@@ -125,9 +146,15 @@ fn request_ai_move(our: &Address, game: &mut Game) -> anyhow::Result<()> {
                     .unwrap(),
             ))
             .body(
-                json!({"Chat": {"prompt": prompt, "params": {}}})
-                    .to_string()
-                    .into_bytes(),
+                json!({"Chat": {
+                    "prompt": prompt,
+                    "params": {
+                        "max_tokens": 4,
+                        "temperature": 1,// TODO should be 0
+                    }}
+                })
+                .to_string()
+                .into_bytes(),
             )
             .send_and_await_response(10)?
         else {
@@ -137,7 +164,8 @@ fn request_ai_move(our: &Address, game: &mut Game) -> anyhow::Result<()> {
         };
         let response = serde_json::from_slice::<llm_types::ChatResponse>(&body)?;
         let mut board = AiBoard::from_fen(game.board.clone()).unwrap();
-        match ChessMove::from_san(&board, &response.content) {
+        println!("raw response: {}", response.content.replace(" ", ""));
+        match ChessMove::from_san(&board, &response.content.replace(" ", "")) {
             Ok(valid_move) => {
                 println!("Got AI move: {valid_move}");
                 board.make_move_new(valid_move);
@@ -147,10 +175,9 @@ fn request_ai_move(our: &Address, game: &mut Game) -> anyhow::Result<()> {
             Err(e) => {
                 // Reject invalid moves!
                 // TODO reprompt could be a lot better
-                println!("chess: ai gave us an illegal move! {}", response.content);
-                prompt = format!(
-                    "{} {} is an illegal move. Make a different move.",
-                    prompt, response.content
+                println!(
+                    "chess: ai gave us an illegal move! {}",
+                    response.content.replace(" ", "")
                 );
                 continue;
             }
@@ -432,14 +459,20 @@ fn handle_local_request(
         ChessRequest::NewGameAI(model_name) => {
             // Create a new game with the AI.
             // First we need the capability from the LLM manager app.
-            Request::new()
-                .target((&our.node, "main", "llm", "nectar"))
+            let model_address: Address = model_name.parse().unwrap();
+            let model_name: String = model_address.process.process_name.clone();
+            let res = Request::new()
+                .target((&model_address.node, "main", "llm", "nectar"))
                 .body(
-                    json!({"RequestAccess": {"model": model_name, "process": our.process.to_string()}})
-                        .to_string()
-                        .into_bytes(),
+                    json!({ "RequestAccess": { "model": model_address.process.process_name.clone(), "quantity": 5 } })
+                    .to_string()
+                    .into_bytes(),
                 )
-                .send()?;
+                .send_and_await_response(5)?;
+            save_capabilities(&[Capability {
+                issuer: model_address,
+                params: "\"messaging\"".to_string(),
+            }]);
             // Then, make a new game, picking randomly between AI and player as white.
             let (white, black) = if rand::random() {
                 (model_name.as_str(), our.node.as_str())

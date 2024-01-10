@@ -65,7 +65,7 @@ pub struct ChatResponse {
 /// A request for getting the capability to message an LLM process
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RequestAccess {
-    /// process name i.e. _this_:llm:nectar
+    /// Address i.e. someone.nec@model:llm:nectar
     pub model: String,
     /// of requests
     pub quantity: u32,
