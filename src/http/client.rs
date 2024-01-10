@@ -1,5 +1,5 @@
-use crate::http::server_types::*;
 use crate::http::client_types::*;
+use crate::http::server_types::*;
 use crate::types::*;
 use anyhow::Result;
 use dashmap::DashMap;
@@ -83,17 +83,21 @@ pub async fn http_client(
                     send_to_loop.clone(),
                     print_tx.clone(),
                 ));
-                (false, Ok(HttpClientResponse::Http(HttpResponse {
-                    status: 200,
-                    headers: HashMap::new(),
-                })))
+                (
+                    false,
+                    Ok(HttpClientResponse::Http(HttpResponse {
+                        status: 200,
+                        headers: HashMap::new(),
+                    })),
+                )
             }
             HttpClientAction::WebSocketOpen {
                 url,
                 headers,
                 channel_id,
-            } => {
-                (true, connect_websocket(
+            } => (
+                true,
+                connect_websocket(
                     our,
                     id,
                     target.clone(),
@@ -104,17 +108,32 @@ pub async fn http_client(
                     send_to_loop.clone(),
                     print_tx.clone(),
                 )
-                .await)
-            }
+                .await,
+            ),
             HttpClientAction::WebSocketPush {
                 channel_id,
                 message_type,
-            } => {
-                (true, send_ws_push(target.clone(), channel_id, message_type, blob, ws_streams.clone()).await)
-            },
-            HttpClientAction::WebSocketClose { channel_id } => {
-                (true, close_ws_connection(target.clone(), channel_id, ws_streams.clone(), print_tx.clone()).await)
-            }
+            } => (
+                true,
+                send_ws_push(
+                    target.clone(),
+                    channel_id,
+                    message_type,
+                    blob,
+                    ws_streams.clone(),
+                )
+                .await,
+            ),
+            HttpClientAction::WebSocketClose { channel_id } => (
+                true,
+                close_ws_connection(
+                    target.clone(),
+                    channel_id,
+                    ws_streams.clone(),
+                    print_tx.clone(),
+                )
+                .await,
+            ),
         };
 
         if is_ws {
@@ -130,10 +149,11 @@ pub async fn http_client(
                     message: Message::Response((
                         Response {
                             inherit: false,
-                            body: serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(
-                                &result
-                            )
-                            .unwrap(),
+                            body:
+                                serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(
+                                    &result,
+                                )
+                                .unwrap(),
                             metadata: None,
                             capabilities: vec![],
                         },
@@ -143,7 +163,6 @@ pub async fn http_client(
                 })
                 .await;
         }
-
     }
     Err(anyhow::anyhow!("http_client: loop died"))
 }
