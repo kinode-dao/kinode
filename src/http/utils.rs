@@ -1,4 +1,4 @@
-use crate::http::types::*;
+use crate::http::server_types::*;
 use hmac::{Hmac, Mac};
 use jwt::VerifyWithKey;
 use serde::{Deserialize, Serialize};
