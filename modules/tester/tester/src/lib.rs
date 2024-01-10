@@ -2,7 +2,7 @@ use indexmap::map::IndexMap;
 
 use nectar_process_lib::kernel_types as kt;
 use nectar_process_lib::{
-    await_message, call_init, our_capabilities, println, spawn, vfs, Address, Capability, Message,
+    await_message, call_init, our_capabilities, println, spawn, vfs, Address, Message,
     OnExit, ProcessId, Request, Response,
 };
 
@@ -52,7 +52,7 @@ fn handle_message(
             }
             Ok(())
         }
-        Message::Request { source, body, .. } => {
+        Message::Request { body, .. } => {
             match serde_json::from_slice(&body)? {
                 tt::TesterRequest::Run {
                     input_node_names,
@@ -122,6 +122,9 @@ fn init(our: Address) {
         .send_and_await_response(5)
         .unwrap()
         .unwrap();
+
+    // orchestrate tests using external scripts
+    //  -> must give drive cap to rpc
     let _ = Request::new()
         .target(("our", "kernel", "sys", "nectar"))
         .body(
@@ -142,21 +145,6 @@ fn init(our: Address) {
             .unwrap(),
         )
         .send()
-        .unwrap();
-
-    // orchestrate tests using external scripts
-    //  -> must give drive cap to rpc
-    let _ = Request::new()
-        .target(make_vfs_address(&our).unwrap())
-        .body(
-            serde_json::to_vec(&vfs::VfsRequest {
-                path: "/tester:nectar/tests".into(),
-                action: vfs::VfsAction::CreateDrive,
-            })
-            .unwrap(),
-        )
-        .send_and_await_response(5)
-        .unwrap()
         .unwrap();
 
     loop {
