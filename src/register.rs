@@ -31,8 +31,8 @@ abigen!(
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
-pub const NDNS_SEPOLIA_ADDRESS: &str = "0x6e22E7b9f5a99D5921c14A88Aaf954502aC17B90";
-pub const NDNS_OPTIMISM_ADDRESS: &str = "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1"; // TODO
+pub const NDNS_SEPOLIA_ADDRESS: &str = "0xa11e3794e701565aD37f84DD364d581f5e9518c9";
+pub const NDNS_OPTIMISM_ADDRESS: &str = "0x942A69Cc3dd5d9a87c35f13ebA444adc00934B0F";
 
 pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
     let octets: Vec<&str> = ip.split('.').collect();
@@ -102,6 +102,7 @@ pub async fn register(
     port: u16,
     rpc_url: String,
     keyfile: Option<Vec<u8>>,
+    testnet: bool,
 ) {
     // Networking info is generated and passed to the UI, but not used until confirmed
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
@@ -153,7 +154,14 @@ pub async fn register(
             .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
         .or(warp::path("set-password")
             .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))));
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("current-chain").and(warp::get()).map(move || {
+            if testnet {
+                warp::reply::json(&"0xAA36A7")
+            } else {
+                warp::reply::json(&"0xA")
+            }
+        }));
 
     let api = warp::path("info")
         .and(
