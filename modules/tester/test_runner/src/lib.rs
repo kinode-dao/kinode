@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use nectar_process_lib::{
-    await_message, our_capabilities, println!, spawn, vfs, Address, Message, OnExit, ProcessId, Request, Response,
+    await_message, our_capabilities, println, spawn, vfs, Address, Message, OnExit, ProcessId, Request, Response,
 };
 
 mod tester_types;
