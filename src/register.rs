@@ -83,7 +83,7 @@ pub fn generate_jwt(jwt_secret_bytes: &[u8], username: &str) -> Option<String> {
         Err(_) => return None,
     };
 
-    let claims = crate::http::types::JwtClaims {
+    let claims = crate::http::server_types::JwtClaims {
         username: username.to_string(),
         expiration: 0,
     };

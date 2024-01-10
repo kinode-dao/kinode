@@ -37,18 +37,6 @@ pub struct IncomingHttpRequest {
     // BODY is stored in the lazy_load_blob, as bytes
 }
 
-/// HTTP Request type that can be shared over WASM boundary to apps.
-/// This is the one you send to the `http_client:sys:nectar` service.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct OutgoingHttpRequest {
-    pub method: String,          // must parse to http::Method
-    pub version: Option<String>, // must parse to http::Version
-    pub url: String,             // must parse to url::Url
-    pub headers: HashMap<String, String>,
-    // BODY is stored in the lazy_load_blob, as bytes
-    // TIMEOUT is stored in the message expect_response
-}
-
 /// HTTP Response type that can be shared over WASM boundary to apps.
 /// Respond to [`IncomingHttpRequest`] with this type.
 #[derive(Debug, Serialize, Deserialize)]
@@ -58,60 +46,10 @@ pub struct HttpResponse {
     // BODY is stored in the lazy_load_blob, as bytes
 }
 
-/// WebSocket Client Request type that can be shared over WASM boundary to apps.
-/// This is the one you send to the `http_client:sys:nectar` service.
-#[derive(Debug, Serialize, Deserialize)]
-pub enum WebSocketClientAction {
-    Open {
-        url: String,
-        headers: HashMap<String, String>,
-        channel_id: u32,
-    },
-    Push {
-        channel_id: u32,
-        message_type: WsMessageType,
-    },
-    Close {
-        channel_id: u32,
-    },
-    Response {
-        channel_id: u32,
-        result: Result<(), WebSocketClientError>,
-    },
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcResponseBody {
     pub body: Vec<u8>,
     pub lazy_load_blob: Option<LazyLoadBlob>,
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum HttpClientError {
-    #[error("http_client: request could not be parsed to HttpRequest: {}.", req)]
-    BadRequest { req: String },
-    #[error("http_client: http method not supported: {}", method)]
-    BadMethod { method: String },
-    #[error("http_client: url could not be parsed: {}", url)]
-    BadUrl { url: String },
-    #[error("http_client: http version not supported: {}", version)]
-    BadVersion { version: String },
-    #[error("http_client: failed to execute request {}", error)]
-    RequestFailed { error: String },
-}
-
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum WebSocketClientError {
-    #[error("websocket_client: request format incorrect: {}.", req)]
-    BadRequest { req: String },
-    #[error("websocket_client: url could not be parsed: {}", url)]
-    BadUrl { url: String },
-    #[error("websocket_client: failed to open connection {}", url)]
-    OpenFailed { url: String },
-    #[error("websocket_client: failed to send message {}", channel_id)]
-    PushFailed { channel_id: u32 },
-    #[error("websocket_client: failed to close connection {}", channel_id)]
-    CloseFailed { channel_id: u32 },
 }
 
 /// Request type sent to `http_server:sys:nectar` in order to configure it.

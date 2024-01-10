@@ -1,4 +1,4 @@
-use crate::http::types::*;
+use crate::http::server_types::*;
 use crate::http::utils::*;
 use crate::types::*;
 use crate::{keygen, register};
