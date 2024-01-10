@@ -1,10 +1,7 @@
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
-use nectar_process_lib::kernel_types as kt;
-use nectar_process_lib::nectar::process::standard as wit;
 use nectar_process_lib::{
-    our_capabilities, spawn, vfs, Address, Message, OnExit, ProcessId, Request, Response,
+    await_message, our_capabilities, println!, spawn, vfs, Address, Message, OnExit, ProcessId, Request, Response,
 };
 
 mod tester_types;
@@ -18,28 +15,24 @@ wit_bindgen::generate!({
     },
 });
 
-fn make_vfs_address(our: &wit::Address) -> anyhow::Result<Address> {
-    Ok(wit::Address {
-        node: our.node.clone(),
-        process: "vfs:sys:nectar".parse()?,
-    })
+fn make_vfs_address(our: &Address) -> anyhow::Result<Address> {
+    Ok(Address::new(
+        our.node.clone(),
+        ProcessId::from_str("vfs:sys:nectar")?,
+    ))
 }
 
 fn handle_message(our: &Address) -> anyhow::Result<()> {
-    let (source, message) = wit::receive().unwrap();
-
-    if our.node != source.node {
-        return Err(tt::TesterError::RejectForeign.into());
-    }
+    let message = await_message().unwrap();
 
     match message {
-        wit::Message::Response(_) => {
+        Message::Response { .. } => {
             return Err(tt::TesterError::UnexpectedResponse.into());
         }
-        wit::Message::Request(wit::Request { ref body, .. }) => {
+        Message::Request { ref body, .. } => {
             match serde_json::from_slice(body)? {
                 tt::TesterRequest::Run { test_timeout, .. } => {
-                    wit::print_to_terminal(0, "test_runner: got Run");
+                    println!("test_runner: got Run");
 
                     let response = Request::new()
                         .target(make_vfs_address(&our)?)
@@ -53,35 +46,51 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     let Message::Response { body: vfs_body, .. } = response else {
                         panic!("")
                     };
-                    let vfs::VfsResponse::ReadDir(children) = serde_json::from_slice(&vfs_body)?
+                    let vfs::VfsResponse::ReadDir(mut children) = serde_json::from_slice(&vfs_body)?
                     else {
-                        wit::print_to_terminal(
-                            0,
-                            &format!(
-                                "{:?}",
-                                serde_json::from_slice::<serde_json::Value>(&vfs_body)?,
-                            ),
+                        println!(
+                            "{:?}",
+                            serde_json::from_slice::<serde_json::Value>(&vfs_body)?
                         );
                         panic!("")
                     };
 
-                    wit::print_to_terminal(0, &format!("test_runner: running {:?}...", children));
+                    let caps_file_path = "tester:nectar/tests/grant_capabilities.json";
+                    let caps_index = children.iter().position(|i| *i.path == *caps_file_path);
+                    let caps_by_child: std::collections::HashMap<String, Vec<String>> = match caps_index {
+                        None => std::collections::HashMap::new(),
+                        Some(caps_index) => {
+                            children.remove(caps_index);
+                            let file = vfs::file::open_file(caps_file_path, false)?;
+                            let file_contents = file.read()?;
+                            serde_json::from_slice(&file_contents)?
+                        }
+                    };
+
+                    println!("test_runner: running {:?}...", children);
 
                     for child in &children {
+                        let grant_caps = child.path
+                            .split("/")
+                            .last()
+                            .and_then(|child_file_name| child_file_name.strip_suffix(".wasm"))
+                            .and_then(|child_file_name| {
+                                caps_by_child
+                                    .get(child_file_name)
+                                    .and_then(|caps| Some(caps.iter().map(|cap| ProcessId::from_str(cap).unwrap()).collect()))
+                            })
+                            .unwrap_or(vec![]);
                         let child_process_id = match spawn(
                             None,
                             &child.path,
                             OnExit::None, //  TODO: notify us
                             our_capabilities(),
-                            vec![],
+                            grant_caps,
                             false, // not public
                         ) {
                             Ok(child_process_id) => child_process_id,
                             Err(e) => {
-                                wit::print_to_terminal(
-                                    0,
-                                    &format!("couldn't spawn {}: {}", child.path, e),
-                                );
+                                println!("couldn't spawn {}: {}", child.path, e);
                                 panic!("couldn't spawn"); //  TODO
                             }
                         };
@@ -112,7 +121,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                         }
                     }
 
-                    wit::print_to_terminal(0, &format!("test_runner: done running {:?}", children));
+                    println!("test_runner: done running {:?}", children);
 
                     Response::new()
                         .body(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
@@ -131,7 +140,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
 struct Component;
 impl Guest for Component {
     fn init(our: String) {
-        wit::print_to_terminal(0, "test_runner: begin");
+        println!("{:?}@test_runner: begin", our);
 
         let our: Address = our.parse().unwrap();
 
@@ -139,7 +148,7 @@ impl Guest for Component {
             match handle_message(&our) {
                 Ok(()) => {}
                 Err(e) => {
-                    wit::print_to_terminal(0, format!("test_runner: error: {:?}", e,).as_str());
+                    println!("test_runner: error: {:?}", e);
                     fail!("test_runner");
                 }
             };
