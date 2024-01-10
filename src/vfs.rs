@@ -256,6 +256,7 @@ async fn handle_request(
                 let dir_entry = DirEntry {
                     path: relative_path.display().to_string(),
                     file_type,
+                    length: metadata.len(),
                 };
                 entries.push(dir_entry);
             }
