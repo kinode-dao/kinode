@@ -23,7 +23,7 @@ use crate::types::*;
 
 // Human readable ABI
 abigen!(
-    QNSRegistry,
+    NDNSRegistry,
     r"[
     function ws(uint256 node) external view returns (bytes32,uint32,uint16,bytes32[])
 ]"
@@ -31,7 +31,8 @@ abigen!(
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
-pub const _QNS_SEPOLIA_ADDRESS: &str = "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1";
+pub const NDNS_SEPOLIA_ADDRESS: &str = "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1";
+pub const NDNS_OPTIMISM_ADDRESS: &str = "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1"; // TODO
 
 pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
     let octets: Vec<&str> = ip.split('.').collect();
@@ -557,10 +558,10 @@ async fn _networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: 
     let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
         return false;
     };
-    let Ok(qns_address): Result<EthAddress, _> = _QNS_SEPOLIA_ADDRESS.parse() else {
+    let Ok(ndns_address): Result<EthAddress, _> = NDNS_SEPOLIA_ADDRESS.parse() else {
         return false;
     };
-    let contract = QNSRegistry::new(qns_address, ws_rpc.into());
+    let contract = NDNSRegistry::new(ndns_address, ws_rpc.into());
     let node_id: U256 = namehash(&our.name).as_bytes().into();
     let Ok((chain_pubkey, chain_ip, chain_port, chain_routers)) = contract.ws(node_id).call().await
     else {

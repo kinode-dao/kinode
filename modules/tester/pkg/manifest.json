@@ -6,7 +6,8 @@
         "request_networking": true,
         "request_capabilities": [
             "net:sys:nectar",
-            "kernel:sys:nectar"
+            "kernel:sys:nectar",
+            "vfs:sys:nectar"
         ],
         "grant_capabilities": [
             "vfs:sys:nectar"

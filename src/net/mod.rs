@@ -68,7 +68,7 @@ pub async fn networking(
             // direct node: run the direct networking strategy
             if &our_ip != ip {
                 return Err(anyhow!(
-                    "net: fatal error: IP address mismatch: {} != {}, update your QNS identity",
+                    "net: fatal error: IP address mismatch: {} != {}, update your NDNS identity",
                     our_ip,
                     ip
                 ));
@@ -77,7 +77,7 @@ pub async fn networking(
                 Ok(tcp) => tcp,
                 Err(_e) => {
                     return Err(anyhow!(
-                        "net: fatal error: can't listen on port {}, update your QNS identity or free up that port",
+                        "net: fatal error: can't listen on port {}, update your NDNS identity or free up that port",
                         port,
                     ));
                 }
@@ -118,13 +118,13 @@ async fn indirect_networking(
     print_debug(&print_tx, "net: starting as indirect").await;
     let pki: OnchainPKI = Arc::new(DashMap::new());
     let peers: Peers = Arc::new(DashMap::new());
-    // mapping from QNS namehash to username
+    // mapping from NDNS namehash to username
     let names: PKINames = Arc::new(DashMap::new());
     // track peers that we're already in the midst of establishing a connection with
     let mut pending_connections = JoinSet::<(NodeId, Result<()>)>::new();
     let mut peer_message_queues = HashMap::<NodeId, Vec<KernelMessage>>::new();
 
-    // some initial delay as we wait for QNS data to be piped in from qns_indexer
+    // some initial delay as we wait for NDNS data to be piped in from ndns_indexer
     let mut router_reconnect_delay = std::time::Duration::from_secs(2);
 
     loop {
@@ -287,7 +287,7 @@ async fn direct_networking(
     print_debug(&print_tx, "net: starting as direct").await;
     let pki: OnchainPKI = Arc::new(DashMap::new());
     let peers: Peers = Arc::new(DashMap::new());
-    // mapping from QNS namehash to username
+    // mapping from NDNS namehash to username
     let names: PKINames = Arc::new(DashMap::new());
     // direct-specific structures
     let mut forwarding_connections = JoinSet::<()>::new();
@@ -653,10 +653,10 @@ async fn recv_connection(
     let their_handshake =
         recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
-    // now validate this handshake payload against the QNS PKI
+    // now validate this handshake payload against the NDNS PKI
     let their_id = pki
         .get(&their_handshake.name)
-        .ok_or(anyhow!("unknown QNS name"))?;
+        .ok_or(anyhow!("unknown NDNS name"))?;
     validate_handshake(
         &their_handshake,
         noise
@@ -732,10 +732,10 @@ async fn recv_connection_via_router(
     let their_handshake =
         recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
-    // now validate this handshake payload against the QNS PKI
+    // now validate this handshake payload against the NDNS PKI
     let their_id = pki
         .get(&their_handshake.name)
-        .ok_or(anyhow!("unknown QNS name"))?;
+        .ok_or(anyhow!("unknown NDNS name"))?;
     validate_handshake(
         &their_handshake,
         noise
@@ -811,7 +811,7 @@ async fn init_connection(
     let their_handshake =
         recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
-    // now validate this handshake payload against the QNS PKI
+    // now validate this handshake payload against the NDNS PKI
     validate_handshake(
         &their_handshake,
         noise
@@ -882,7 +882,7 @@ async fn handle_local_message(
     if km.source.node != our.name {
         if let Ok(act) = rmp_serde::from_slice::<NetActions>(body) {
             match act {
-                NetActions::QnsBatchUpdate(_) | NetActions::QnsUpdate(_) => {
+                NetActions::NdnsBatchUpdate(_) | NetActions::NdnsUpdate(_) => {
                     // for now, we don't get these from remote.
                 }
                 NetActions::ConnectionRequest(from) => {
@@ -996,8 +996,8 @@ async fn handle_local_message(
                     Ok(NetActions::ConnectionRequest(_)) => {
                         // we shouldn't receive these from ourselves.
                     }
-                    Ok(NetActions::QnsUpdate(log)) => {
-                        // printout.push_str(&format!("net: got QNS update for {}", log.name));
+                    Ok(NetActions::NdnsUpdate(log)) => {
+                        // printout.push_str(&format!("net: got NDNS update for {}", log.name));
                         pki.insert(
                             log.name.clone(),
                             Identity {
@@ -1013,9 +1013,9 @@ async fn handle_local_message(
                         );
                         names.insert(log.node, log.name);
                     }
-                    Ok(NetActions::QnsBatchUpdate(log_list)) => {
+                    Ok(NetActions::NdnsBatchUpdate(log_list)) => {
                         // printout.push_str(&format!(
-                        //     "net: got QNS update with {} peers",
+                        //     "net: got NDNS update with {} peers",
                         //     log_list.len()
                         // ));
                         for log in log_list {
