@@ -15,7 +15,6 @@ pub struct KernelMessage {
     pub rsvp: Rsvp,
     pub message: kt::Message,
     pub lazy_load_blob: Option<kt::LazyLoadBlob>,
-    pub signed_capabilities: HashMap<kt::Capability, Vec<u8>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
