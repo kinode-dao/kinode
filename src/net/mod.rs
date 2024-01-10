@@ -952,95 +952,98 @@ async fn handle_local_message(
         // available commands: "peers", "pki", "names", "diagnostics"
         // first parse as raw string, then deserialize to NetActions object
         let mut printout = String::new();
-        match std::str::from_utf8(body) {
-            Ok("peers") => {
-                printout.push_str(&format!(
-                    "{:#?}",
-                    peers
-                        .iter()
-                        .map(|p| p.identity.name.clone())
-                        .collect::<Vec<_>>()
-                ));
+        match rmp_serde::from_slice::<NetActions>(body) {
+            Ok(NetActions::ConnectionRequest(_)) => {
+                // we shouldn't receive these from ourselves.
             }
-            Ok("pki") => {
-                printout.push_str(&format!("{:#?}", pki));
+            Ok(NetActions::NdnsUpdate(log)) => {
+                pki.insert(
+                    log.name.clone(),
+                    Identity {
+                        name: log.name.clone(),
+                        networking_key: log.public_key,
+                        ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
+                            None
+                        } else {
+                            Some((log.ip, log.port))
+                        },
+                        allowed_routers: log.routers,
+                    },
+                );
+                names.insert(log.node, log.name);
             }
-            Ok("names") => {
-                printout.push_str(&format!("{:#?}", names));
-            }
-            Ok("diagnostics") => {
-                printout.push_str(&format!("our Identity: {:#?}\r\n", our));
-                printout.push_str("we have connections with peers:\r\n");
-                for peer in peers.iter() {
-                    printout.push_str(&format!(
-                        "    {}, routing_for={}\r\n",
-                        peer.identity.name, peer.routing_for,
-                    ));
-                }
-                printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
-                if pending_passthroughs.is_some() {
-                    printout.push_str(&format!(
-                        "we have {} pending passthrough connections\r\n",
-                        pending_passthroughs.unwrap().len()
-                    ));
-                }
-                if forwarding_connections.is_some() {
-                    printout.push_str(&format!(
-                        "we have {} open passthrough connections\r\n",
-                        forwarding_connections.unwrap().len()
-                    ));
-                }
-            }
-            _ => {
-                match rmp_serde::from_slice::<NetActions>(body) {
-                    Ok(NetActions::ConnectionRequest(_)) => {
-                        // we shouldn't receive these from ourselves.
-                    }
-                    Ok(NetActions::NdnsUpdate(log)) => {
-                        // printout.push_str(&format!("net: got NDNS update for {}", log.name));
-                        pki.insert(
-                            log.name.clone(),
-                            Identity {
-                                name: log.name.clone(),
-                                networking_key: log.public_key,
-                                ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
-                                    None
-                                } else {
-                                    Some((log.ip, log.port))
-                                },
-                                allowed_routers: log.routers,
+            Ok(NetActions::NdnsBatchUpdate(log_list)) => {
+                for log in log_list {
+                    pki.insert(
+                        log.name.clone(),
+                        Identity {
+                            name: log.name.clone(),
+                            networking_key: log.public_key,
+                            ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
+                                None
+                            } else {
+                                Some((log.ip, log.port))
                             },
-                        );
-                        names.insert(log.node, log.name);
+                            allowed_routers: log.routers,
+                        },
+                    );
+                    names.insert(log.node, log.name);
+                }
+            }
+            _ => match std::str::from_utf8(body) {
+                Ok("peers") => {
+                    printout.push_str(&format!(
+                        "{:#?}",
+                        peers
+                            .iter()
+                            .map(|p| p.identity.name.clone())
+                            .collect::<Vec<_>>()
+                    ));
+                }
+                Ok("pki") => {
+                    printout.push_str(&format!("{:#?}", pki));
+                }
+                Ok("names") => {
+                    printout.push_str(&format!("{:#?}", names));
+                }
+                Ok("diagnostics") => {
+                    printout.push_str(&format!("our Identity: {:#?}\r\n", our));
+                    printout.push_str("we have connections with peers:\r\n");
+                    for peer in peers.iter() {
+                        printout.push_str(&format!(
+                            "    {}, routing_for={}\r\n",
+                            peer.identity.name, peer.routing_for,
+                        ));
                     }
-                    Ok(NetActions::NdnsBatchUpdate(log_list)) => {
-                        // printout.push_str(&format!(
-                        //     "net: got NDNS update with {} peers",
-                        //     log_list.len()
-                        // ));
-                        for log in log_list {
-                            pki.insert(
-                                log.name.clone(),
-                                Identity {
-                                    name: log.name.clone(),
-                                    networking_key: log.public_key,
-                                    ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
-                                        None
-                                    } else {
-                                        Some((log.ip, log.port))
-                                    },
-                                    allowed_routers: log.routers,
-                                },
-                            );
-                            names.insert(log.node, log.name);
+                    printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
+                    if pending_passthroughs.is_some() {
+                        printout.push_str(&format!(
+                            "we have {} pending passthrough connections\r\n",
+                            pending_passthroughs.unwrap().len()
+                        ));
+                    }
+                    if forwarding_connections.is_some() {
+                        printout.push_str(&format!(
+                            "we have {} open passthrough connections\r\n",
+                            forwarding_connections.unwrap().len()
+                        ));
+                    }
+                }
+                Ok(other) => {
+                    // parse non-commands as a request to fetch networking data
+                    // about a specific node name
+                    printout.push_str(&format!("net: printing known identity for {}\r\n", other));
+                    match pki.get(other) {
+                        Some(id) => {
+                            printout.push_str(&format!("{:#?}", *id));
+                        }
+                        None => {
+                            printout.push_str("no such identity known!");
                         }
                     }
-                    _ => {
-                        parse_hello_message(our, &km, body, kernel_message_tx, print_tx).await?;
-                        return Ok(());
-                    }
                 }
-            }
+                _ => {}
+            },
         }
         if !printout.is_empty() {
             print_tx
