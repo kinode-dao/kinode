@@ -434,7 +434,7 @@ async fn handle_http_request(
             let _ = print_tx
                 .send(Printout {
                     verbosity: 1,
-                    content: format!("http_client: executed request, got response"),
+                    content: "http_client: executed request, got response".to_string(),
                 })
                 .await;
             let _ = send_to_loop
@@ -472,7 +472,7 @@ async fn handle_http_request(
             let _ = print_tx
                 .send(Printout {
                     verbosity: 1,
-                    content: format!("http_client: executed request but got error"),
+                    content: "http_client: executed request but got error".to_string(),
                 })
                 .await;
             http_error_message(

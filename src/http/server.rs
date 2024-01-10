@@ -246,13 +246,11 @@ async fn login_handler(
                     response.headers_mut().append(http::header::SET_COOKIE, v);
                     Ok(response)
                 }
-                Err(_) => {
-                    return Ok(warp::reply::with_status(
-                        warp::reply::json(&"Failed to generate Auth JWT"),
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                    )
-                    .into_response())
-                }
+                Err(_) => Ok(warp::reply::with_status(
+                    warp::reply::json(&"Failed to generate Auth JWT"),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+                .into_response()),
             }
         }
         Err(_) => Ok(warp::reply::with_status(
@@ -316,7 +314,7 @@ async fn ws_handler(
         let Some(auth_token) = serialized_headers.get("cookie") else {
             return Err(warp::reject::not_found());
         };
-        if !auth_cookie_valid(&our, &auth_token, &jwt_secret_bytes) {
+        if !auth_cookie_valid(&our, auth_token, &jwt_secret_bytes) {
             return Err(warp::reject::not_found());
         }
     }
@@ -381,33 +379,33 @@ async fn http_handler(
     };
     let bound_path = route.handler();
 
-    if bound_path.authenticated {
-        if !auth_cookie_valid(
+    if bound_path.authenticated
+        && !auth_cookie_valid(
             &our,
             serialized_headers.get("cookie").unwrap_or(&"".to_string()),
             &jwt_secret_bytes,
-        ) {
-            // redirect to login page so they can get an auth token
-            let _ = print_tx
-                .send(Printout {
-                    verbosity: 1,
-                    content: format!(
-                        "http_server: redirecting request from {socket_addr:?} to login page"
-                    ),
-                })
-                .await;
-            return Ok(warp::http::Response::builder()
-                .status(StatusCode::TEMPORARY_REDIRECT)
-                .header(
-                    "Location",
-                    format!(
-                        "http://{}/login",
-                        host.unwrap_or(Authority::from_static("localhost"))
-                    ),
-                )
-                .body(vec![])
-                .into_response());
-        }
+        )
+    {
+        // redirect to login page so they can get an auth token
+        let _ = print_tx
+            .send(Printout {
+                verbosity: 1,
+                content: format!(
+                    "http_server: redirecting request from {socket_addr:?} to login page"
+                ),
+            })
+            .await;
+        return Ok(warp::http::Response::builder()
+            .status(StatusCode::TEMPORARY_REDIRECT)
+            .header(
+                "Location",
+                format!(
+                    "http://{}/login",
+                    host.unwrap_or(Authority::from_static("localhost"))
+                ),
+            )
+            .body(vec![])
+            .into_response());
     }
 
     if let Some(ref subdomain) = bound_path.secure_subdomain {
@@ -487,8 +485,7 @@ async fn http_handler(
                     method: method.to_string(),
                     raw_path: format!(
                         "http://{}{}",
-                        host.unwrap_or(Authority::from_static("localhost"))
-                            .to_string(),
+                        host.unwrap_or(Authority::from_static("localhost")),
                         original_path
                     ),
                     headers: serialized_headers,

@@ -179,7 +179,7 @@ async fn handle_request(
                 .map(|word| word.to_uppercase())
                 .unwrap_or("".to_string());
             if !READ_KEYWORDS.contains(&first_word) {
-                return Err(SqliteError::NotAReadKeyword.into());
+                return Err(SqliteError::NotAReadKeyword);
             }
 
             let parameters = get_json_params(blob)?;
@@ -235,7 +235,7 @@ async fn handle_request(
                 .unwrap_or("".to_string());
 
             if !WRITE_KEYWORDS.contains(&first_word) {
-                return Err(SqliteError::NotAWriteKeyword.into());
+                return Err(SqliteError::NotAWriteKeyword);
             }
 
             let parameters = get_json_params(blob)?;
@@ -243,7 +243,7 @@ async fn handle_request(
             match tx_id {
                 Some(tx_id) => {
                     txs.entry(tx_id)
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push((statement.clone(), parameters));
                 }
                 None => {
@@ -440,17 +440,12 @@ async fn check_caps(
                 return Ok(());
             }
 
-            let db_path = format!(
-                "{}/{}/{}",
-                sqlite_path,
-                request.package_id.to_string(),
-                request.db.to_string()
-            );
+            let db_path = format!("{}/{}/{}", sqlite_path, request.package_id, request.db);
             fs::create_dir_all(&db_path).await?;
 
-            let db_file_path = format!("{}/{}.db", db_path, request.db.to_string());
+            let db_file_path = format!("{}/{}.db", db_path, request.db);
 
-            let db = Connection::open(&db_file_path)?;
+            let db = Connection::open(db_file_path)?;
             let _ = db.execute("PRAGMA journal_mode=WAL", []);
 
             open_dbs.insert(
@@ -466,12 +461,7 @@ async fn check_caps(
                 });
             }
 
-            let db_path = format!(
-                "{}/{}/{}",
-                sqlite_path,
-                request.package_id.to_string(),
-                request.db.to_string()
-            );
+            let db_path = format!("{}/{}/{}", sqlite_path, request.package_id, request.db);
             open_dbs.remove(&(request.package_id.clone(), request.db.clone()));
 
             fs::remove_dir_all(&db_path).await?;
@@ -522,7 +512,7 @@ fn json_to_sqlite(value: &serde_json::Value) -> Result<SqlValue, SqliteError> {
             }
         }
         serde_json::Value::String(s) => {
-            match base64::decode(&s) {
+            match base64::decode(s) {
                 Ok(decoded_bytes) => {
                     // convert to SQLite Blob if it's a valid base64 string
                     Ok(SqlValue::Blob(decoded_bytes))
@@ -545,7 +535,7 @@ fn get_json_params(blob: Option<LazyLoadBlob>) -> Result<Vec<SqlValue>, SqliteEr
         Some(blob) => match serde_json::from_slice::<serde_json::Value>(&blob.bytes) {
             Ok(serde_json::Value::Array(vec)) => vec
                 .iter()
-                .map(|value| json_to_sqlite(value))
+                .map(json_to_sqlite)
                 .collect::<Result<Vec<_>, _>>(),
             _ => Err(SqliteError::InvalidParameters),
         },
@@ -567,7 +557,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: SqliteError) 
         message: Message::Response((
             Response {
                 inherit: false,
-                body: serde_json::to_vec(&SqliteResponse::Err { error: error }).unwrap(),
+                body: serde_json::to_vec(&SqliteResponse::Err { error }).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             },

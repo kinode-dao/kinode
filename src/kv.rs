@@ -153,7 +153,7 @@ async fn handle_request(
                 Some(db) => db,
             };
 
-            match db.get(&key) {
+            match db.get(key) {
                 Ok(Some(value)) => (
                     serde_json::to_vec(&KvResponse::Get { key: key.to_vec() }).unwrap(),
                     Some(value),
@@ -195,7 +195,7 @@ async fn handle_request(
                     db.put(key, blob.bytes)?;
                 }
                 Some(tx_id) => {
-                    let mut tx = match txs.get_mut(&tx_id) {
+                    let mut tx = match txs.get_mut(tx_id) {
                         None => {
                             return Err(KvError::NoTx);
                         }
@@ -219,7 +219,7 @@ async fn handle_request(
                     db.delete(key)?;
                 }
                 Some(tx_id) => {
-                    let mut tx = match txs.get_mut(&tx_id) {
+                    let mut tx = match txs.get_mut(tx_id) {
                         None => {
                             return Err(KvError::NoTx);
                         }
@@ -238,7 +238,7 @@ async fn handle_request(
                 Some(db) => db,
             };
 
-            let txs = match txs.remove(&tx_id).map(|(_, tx)| tx) {
+            let txs = match txs.remove(tx_id).map(|(_, tx)| tx) {
                 None => {
                     return Err(KvError::NoTx);
                 }
@@ -421,12 +421,7 @@ async fn check_caps(
                 return Ok(());
             }
 
-            let db_path = format!(
-                "{}/{}/{}",
-                kv_path,
-                request.package_id.to_string(),
-                request.db.to_string()
-            );
+            let db_path = format!("{}/{}/{}", kv_path, request.package_id, request.db);
             fs::create_dir_all(&db_path).await?;
 
             let db = OptimisticTransactionDB::open_default(&db_path)?;
@@ -441,12 +436,7 @@ async fn check_caps(
                 });
             }
 
-            let db_path = format!(
-                "{}/{}/{}",
-                kv_path,
-                request.package_id.to_string(),
-                request.db.to_string()
-            );
+            let db_path = format!("{}/{}/{}", kv_path, request.package_id, request.db);
             open_kvs.remove(&(request.package_id.clone(), request.db.clone()));
 
             fs::remove_dir_all(&db_path).await?;
@@ -497,7 +487,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: KvError) -> K
         message: Message::Response((
             Response {
                 inherit: false,
-                body: serde_json::to_vec(&KvResponse::Err { error: error }).unwrap(),
+                body: serde_json::to_vec(&KvResponse::Err { error }).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             },

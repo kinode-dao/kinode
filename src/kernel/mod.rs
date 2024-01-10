@@ -201,7 +201,7 @@ async fn handle_kernel_request(
                     match parent_caps.get(&cap) {
                         // TODO I don't think we *have* to verify the sigs here but it doesn't hurt...
                         Some(sig) => {
-                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), &sig) {
+                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
                                 Ok(_) => {
                                     valid_capabilities.insert(cap, sig.to_vec());
                                 }
@@ -344,7 +344,7 @@ async fn handle_kernel_request(
                 })
                 .collect();
             entry.capabilities.extend(signed_caps);
-            let _ = persist_state(&our_name, &send_to_loop, &process_map).await;
+            let _ = persist_state(&our_name, &send_to_loop, process_map).await;
         }
         // send 'run' message to a process that's already been initialized
         t::KernelCommand::RunProcess(process_id) => {
@@ -545,7 +545,7 @@ async fn start_process(
     let (send_to_process, recv_in_process) =
         mpsc::channel::<Result<t::KernelMessage, t::WrappedSendError>>(PROCESS_CHANNEL_CAPACITY);
     let id = &process_metadata.process_id;
-    if senders.contains_key(&id) {
+    if senders.contains_key(id) {
         let _ = send_to_terminal
             .send(t::Printout {
                 verbosity: 0,
@@ -662,7 +662,7 @@ pub async fn kernel(
     for (process_id, persisted) in &process_map {
         // runtime extensions will have a bytes_handle of "", because they have no
         // WASM code saved in filesystem.
-        if persisted.on_exit.is_restart() && persisted.wasm_bytes_handle != "" {
+        if persisted.on_exit.is_restart() && !persisted.wasm_bytes_handle.is_empty() {
             // read wasm bytes directly from vfs
             // start process.
             let wasm_bytes = match tokio::fs::read(format!(
@@ -970,23 +970,18 @@ pub async fn kernel(
                     if our.name != kernel_message.source.node {
                         continue;
                     }
-                    match kernel_message.message {
-                        t::Message::Request(_) => {
-                            handle_kernel_request(
-                                our.name.clone(),
-                                keypair.clone(),
-                                kernel_message,
-                                send_to_loop.clone(),
-                                send_to_terminal.clone(),
-                                &mut senders,
-                                &mut process_handles,
-                                &mut process_map,
-                                caps_oracle_sender.clone(),
-                                &engine,
-                            ).await;
-                        }
-                        _ => {}
-                    }
+                    handle_kernel_request(
+                        our.name.clone(),
+                        keypair.clone(),
+                        kernel_message,
+                        send_to_loop.clone(),
+                        send_to_terminal.clone(),
+                        &mut senders,
+                        &mut process_handles,
+                        &mut process_map,
+                        caps_oracle_sender.clone(),
+                        &engine,
+                    ).await;
                 } else {
                     // pass message to appropriate runtime module or process
                     match senders.get(&kernel_message.target.process) {
@@ -1088,12 +1083,12 @@ pub async fn kernel(
                                             })
                                         // otherwise verify the signature before returning
                                         } else {
-                                            match p.capabilities.get(&cap) {
+                                            match p.capabilities.get(cap) {
                                                 None => None,
                                                 Some(sig) => {
                                                     let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
                                                     match pk.verify(
-                                                        &rmp_serde::to_vec(&cap).unwrap_or_default(),
+                                                        &rmp_serde::to_vec(cap).unwrap_or_default(),
                                                         sig,
                                                     ) {
                                                         Ok(_) => Some((cap.clone(), sig.clone())),

@@ -48,24 +48,21 @@ pub async fn provider(
     let connections = Arc::new(Mutex::new(connections));
 
     while let Some(km) = recv_in_client.recv().await {
-        match &km.message {
-            Message::Request(req) => {
-                match handle_request(&our, &km, &req, &connections, &send_to_loop).await {
-                    Ok(()) => {}
-                    Err(e) => {
-                        let _ = print_tx
-                            .send(Printout {
-                                verbosity: 1,
-                                content: format!("eth: error handling request: {:?}", e),
-                            })
-                            .await;
-                    }
+        if let Message::Request(req) = &km.message {
+            match handle_request(&our, &km, req, &connections, &send_to_loop).await {
+                Ok(()) => {}
+                Err(e) => {
+                    let _ = print_tx
+                        .send(Printout {
+                            verbosity: 1,
+                            content: format!("eth: error handling request: {:?}", e),
+                        })
+                        .await;
                 }
             }
-            _ => {}
         }
     }
-    return Err(anyhow::anyhow!("eth: fatal: message receiver closed!"));
+    Err(anyhow::anyhow!("eth: fatal: message receiver closed!"))
 }
 
 async fn handle_request(
@@ -76,11 +73,11 @@ async fn handle_request(
     send_to_loop: &MessageSender,
 ) -> Result<()> {
     if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(&req.body) {
-        return handle_http_server_request(action, km, connections).await;
+        handle_http_server_request(action, km, connections).await
     } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&req.body) {
-        return handle_eth_request(action, our, km, connections, send_to_loop).await;
+        handle_eth_request(action, our, km, connections, send_to_loop).await
     } else {
-        return Err(anyhow::anyhow!("malformed request"));
+        Err(anyhow::anyhow!("malformed request"))
     }
 }
 
@@ -96,7 +93,7 @@ async fn handle_http_server_request(
     {
         if message_type == WsMessageType::Text {
             let bytes = &km.lazy_load_blob.as_ref().unwrap().bytes;
-            let text = std::str::from_utf8(&bytes).unwrap();
+            let text = std::str::from_utf8(bytes).unwrap();
             let mut json: serde_json::Value = serde_json::from_str(text)?;
             let mut id = json["id"].as_u64().unwrap();
 
@@ -191,7 +188,7 @@ async fn spawn_provider_read_stream(
         .or_insert(WsProviderSubscription::default());
 
     ws_provider_subscription.provider = Some(ws_provider.clone());
-    ws_provider_subscription.subscription = Some(stream.id.clone());
+    ws_provider_subscription.subscription = Some(stream.id);
 
     drop(connections_guard);
 
@@ -298,7 +295,7 @@ async fn handle_external_websocket_passthrough(
                         continue;
                     };
                     let id = json["id"].as_u64().unwrap() as u32;
-                    let channel_id = ws_request_ids.get(&id).unwrap().clone();
+                    let channel_id: u32 = *ws_request_ids.get(&id).unwrap();
 
                     json["id"] = serde_json::Value::from(id - channel_id);
 
