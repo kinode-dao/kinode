@@ -532,14 +532,14 @@ impl std::fmt::Display for Message {
                 &request.metadata.as_ref().unwrap_or(&"None".into()),
                 {
                     let mut caps_string = "[".to_string();
-                    if request.capabilities.len() > 0 {
+                    if !request.capabilities.is_empty() {
                         caps_string.push_str("\n            ");
                         for cap in request.capabilities.iter() {
                             caps_string.push_str(&format!("{},\n            ", cap.0));
                         }
                         caps_string.truncate(caps_string.len() - 4);
                     }
-                    caps_string.push_str("]");
+                    caps_string.push(']');
                     caps_string
                 },
             ),
@@ -562,14 +562,14 @@ impl std::fmt::Display for Message {
                 },
                 {
                     let mut caps_string = "[".to_string();
-                    if response.capabilities.len() > 0 {
+                    if !response.capabilities.is_empty() {
                         caps_string.push_str("\n            ");
                         for cap in response.capabilities.iter() {
                             caps_string.push_str(&format!("{},\n            ", cap.0));
                         }
                         caps_string.truncate(caps_string.len() - 4);
                     }
-                    caps_string.push_str("]");
+                    caps_string.push(']');
                     caps_string
                 },
             ),

@@ -119,7 +119,7 @@ async fn main() {
     let matches = app.get_matches();
 
     let home_directory_path = matches.get_one::<String>("home").unwrap();
-    let port = matches.get_one::<u16>("port").unwrap().clone();
+    let port = *matches.get_one::<u16>("port").unwrap();
 
     #[cfg(not(feature = "simulation-mode"))]
     let rpc_url = matches.get_one::<String>("rpc").unwrap();
@@ -210,9 +210,9 @@ async fn main() {
     );
     #[cfg(not(feature = "simulation-mode"))]
     let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
-        &home_directory_path,
+        home_directory_path,
         our_ip.to_string(),
-        http_server_port.clone(),
+        http_server_port,
         rpc_url.clone(),
     )
     .await;

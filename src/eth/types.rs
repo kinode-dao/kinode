@@ -14,24 +14,15 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 pub type WsRequestIds = Arc<DashMap<u32, u32>>;
 
+#[derive(Default)]
 pub struct WsProviderSubscription {
     pub handle: Option<JoinHandle<()>>,
     pub provider: Option<Provider<Ws>>,
     pub subscription: Option<U256>,
 }
 
-impl Default for WsProviderSubscription {
-    fn default() -> Self {
-        Self {
-            handle: None,
-            provider: None,
-            subscription: None,
-        }
-    }
-}
-
 impl WsProviderSubscription {
-    pub async fn kill(&self) -> () {
+    pub async fn kill(&self) {
         if let Some(provider) = &self.provider {
             if let Some(subscription) = &self.subscription {
                 let _ = provider.unsubscribe(subscription).await;
