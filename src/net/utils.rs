@@ -197,7 +197,7 @@ pub async fn create_passthrough(
             }),
         ));
     }
-    let to_id = pki.get(&to_name).ok_or(anyhow!("unknown QNS name"))?;
+    let to_id = pki.get(&to_name).ok_or(anyhow!("unknown NDNS name"))?;
     let Some((ref ip, ref port)) = to_id.ws_routing else {
         // create passthrough to indirect node that we do routing for
         //
@@ -267,7 +267,7 @@ pub fn validate_routing_request(
     let routing_request: RoutingRequest = rmp_serde::from_slice(buf)?;
     let their_id = pki
         .get(&routing_request.source)
-        .ok_or(anyhow!("unknown QNS name"))?;
+        .ok_or(anyhow!("unknown NDNS name"))?;
     let their_networking_key = signature::UnparsedPublicKey::new(
         &signature::ED25519,
         hex::decode(strip_0x(&their_id.networking_key))?,

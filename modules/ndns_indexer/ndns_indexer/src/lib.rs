@@ -20,11 +20,13 @@ wit_bindgen::generate!({
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
+    // what contract this state pertains to
+    contract_address: Option<String>,
     // namehash to human readable name
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
     // NOTE: not every namehash will have a node registered
-    nodes: HashMap<String, QnsUpdate>,
+    nodes: HashMap<String, NdnsUpdate>,
     // last block we read from
     block: u64,
 }
@@ -36,8 +38,8 @@ enum IndexerActions {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NetActions {
-    QnsUpdate(QnsUpdate),
-    QnsBatchUpdate(Vec<QnsUpdate>),
+    NdnsUpdate(NdnsUpdate),
+    NdnsBatchUpdate(Vec<NdnsUpdate>),
 }
 
 impl TryInto<Vec<u8>> for NetActions {
@@ -48,7 +50,7 @@ impl TryInto<Vec<u8>> for NetActions {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct QnsUpdate {
+pub struct NdnsUpdate {
     pub name: String, // actual username / domain name
     pub owner: String,
     pub node: String, // hex namehash of node
@@ -58,7 +60,7 @@ pub struct QnsUpdate {
     pub routers: Vec<String>,
 }
 
-impl QnsUpdate {
+impl NdnsUpdate {
     pub fn new(name: &String, node: &String) -> Self {
         Self {
             name: name.clone(),
@@ -69,7 +71,7 @@ impl QnsUpdate {
 }
 
 sol! {
-    // Logged whenever a QNS node is created
+    // Logged whenever a NDNS node is created
     event NodeRegistered(bytes32 indexed node, bytes name);
     event KeyUpdate(bytes32 indexed node, bytes32 key);
     event IpUpdate(bytes32 indexed node, uint128 ip);
@@ -86,6 +88,7 @@ impl Guest for Component {
         let our: Address = our.parse().unwrap();
 
         let mut state: State = State {
+            contract_address: None,
             names: HashMap::new(),
             nodes: HashMap::new(),
             block: 1,
@@ -102,25 +105,45 @@ impl Guest for Component {
         match main(our, state) {
             Ok(_) => {}
             Err(e) => {
-                println!("qns_indexer: error: {:?}", e);
+                println!("ndns_indexer: error: {:?}", e);
             }
         }
     }
 }
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
+    // first, await a message from the kernel which will contain the
+    // contract address for the NDNS version we want to track.
+    let mut contract_address: Option<String> = None;
+    loop {
+        let Ok(Message::Request { source, body, .. }) = await_message() else {
+            continue;
+        };
+        if source.process != "kernel:sys:nectar" {
+            continue;
+        }
+        contract_address = Some(std::str::from_utf8(&body).unwrap().to_string());
+        break;
+    }
+    // if contract address changed from a previous run, reset state
+    if state.contract_address != contract_address {
+        state = State {
+            contract_address: contract_address.clone(),
+            names: HashMap::new(),
+            nodes: HashMap::new(),
+            block: 1,
+        };
+    }
     // shove all state into net::net
     Request::new()
         .target((&our.node, "net", "sys", "nectar"))
-        .try_body(NetActions::QnsBatchUpdate(
+        .try_body(NetActions::NdnsBatchUpdate(
             state.nodes.values().cloned().collect::<Vec<_>>(),
         ))?
         .send()?;
 
     SubscribeLogsRequest::new()
-        .address(EthAddress::from_str(
-            "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1",
-        )?)
+        .address(EthAddress::from_str(contract_address.unwrap().as_str())?)
         .from_block(state.block - 1)
         .events(vec![
             "NodeRegistered(bytes32,bytes)",
@@ -135,7 +158,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     loop {
         let Ok(message) = await_message() else {
-            println!("qns_indexer: got network error");
+            println!("ndns_indexer: got network error");
             continue;
         };
         let Message::Request { source, body, .. } = message else {
@@ -180,7 +203,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         }
 
         let Ok(msg) = serde_json::from_slice::<IndexerActions>(&body) else {
-            println!("qns_indexer: got invalid message");
+            println!("ndns_indexer: got invalid message");
             continue;
         };
 
@@ -198,7 +221,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 let node = state
                     .nodes
                     .entry(name.to_string())
-                    .or_insert_with(|| QnsUpdate::new(name, &node_id.to_string()));
+                    .or_insert_with(|| NdnsUpdate::new(name, &node_id.to_string()));
 
                 let mut send = true;
 
@@ -236,10 +259,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
 
                 if send {
-                    print_to_terminal(1, &format!("qns_indexer: sending ID to net: {:?}", node));
+                    print_to_terminal(1, &format!("ndns_indexer: sending ID to net: {:?}", node));
                     Request::new()
                         .target((&our.node, "net", "sys", "nectar"))
-                        .try_body(NetActions::QnsUpdate(node.clone()))?
+                        .try_body(NetActions::NdnsUpdate(node.clone()))?
                         .send()?;
                 }
             }
@@ -253,7 +276,7 @@ fn get_name(log: &Log) -> String {
     let name = match dnswire_decode(decoded.0.clone()) {
         Ok(n) => n,
         Err(_) => {
-            println!("qns_indexer: failed to decode name: {:?}", decoded.0);
+            println!("ndns_indexer: failed to decode name: {:?}", decoded.0);
             panic!("")
         }
     };
