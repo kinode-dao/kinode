@@ -5,7 +5,8 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "net:sys:nectar"
+            "net:sys:nectar",
+            "vfs:sys:nectar"
         ],
         "grant_capabilities": [
             "http_server:sys:nectar"

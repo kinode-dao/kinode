@@ -337,18 +337,22 @@ async fn main() {
         (
             ProcessId::new(Some("vfs"), "sys", "nectar"),
             vfs_message_sender,
-            true,
+            false,
         ),
         (
             ProcessId::new(Some("state"), "sys", "nectar"),
             state_sender,
-            true,
+            false,
         ),
-        (ProcessId::new(Some("kv"), "sys", "nectar"), kv_sender, true),
+        (
+            ProcessId::new(Some("kv"), "sys", "nectar"),
+            kv_sender,
+            false,
+        ),
         (
             ProcessId::new(Some("sqlite"), "sys", "nectar"),
             sqlite_sender,
-            true,
+            false,
         ),
     ];
 
