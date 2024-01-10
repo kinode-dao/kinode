@@ -193,10 +193,7 @@ async fn handle_request(
                     error: "blob needs to exist for Write".into(),
                 });
             };
-            open_files.remove(&path);
-            let file = open_file(open_files.clone(), path, true, true).await?;
-            let mut file = file.lock().await;
-            file.write_all(&blob.bytes).await?;
+            fs::write(path, &blob.bytes).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Append => {
@@ -219,12 +216,7 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Read => {
-            let file = open_file(open_files.clone(), path.clone(), false, false).await?;
-            let mut file = file.lock().await;
-            let mut contents = Vec::new();
-            file.seek(SeekFrom::Start(0)).await?;
-            file.read_to_end(&mut contents).await?;
-
+            let contents = fs::read(&path).await?;
             (
                 serde_json::to_vec(&VfsResponse::Read).unwrap(),
                 Some(contents),
@@ -403,15 +395,8 @@ async fn handle_request(
                     (is_file, is_dir, local_path, file_contents)
                 };
                 if is_file {
-                    open_files.remove(&local_path);
-                    let file = open_file(open_files.clone(), local_path, true, true).await?;
-                    let mut file = file.lock().await;
-
-                    file.seek(SeekFrom::Start(0)).await?;
-                    file.write_all(&file_contents).await?;
-                    file.set_len(file_contents.len() as u64).await?;
+                    fs::write(&local_path, &file_contents).await?;
                 } else if is_dir {
-                    // If it's a directory, create it
                     fs::create_dir_all(local_path).await?;
                 } else {
                     println!("vfs: zip with non-file non-dir");
@@ -509,7 +494,11 @@ async fn open_file<P: AsRef<Path>>(
 ) -> Result<Arc<Mutex<fs::File>>, VfsError> {
     let path = path.as_ref().to_path_buf();
     Ok(match open_files.get(&path) {
-        Some(file) => Arc::clone(file.value()),
+        Some(file) => {
+            let mut file_lock = file.lock().await;
+            file_lock.seek(SeekFrom::Start(0)).await?;
+            Arc::clone(file.value())
+        }
         None => {
             let file = Arc::new(Mutex::new(
                 OpenOptions::new()
