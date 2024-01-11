@@ -172,8 +172,14 @@ fn main() {
     for entry in std::fs::read_dir(modules_dir).unwrap() {
         let entry_path = entry.unwrap().path();
 
+        if entry_path.file_name().unwrap().to_str().unwrap().starts_with(".") {
+            continue;
+        }
+
         // Build the app
         let parent_pkg_path = format!("{}/pkg", entry_path.display());
+
+        println!("Parent pkg path: {}", parent_pkg_path);
         fs::create_dir_all(&parent_pkg_path).unwrap();
 
         // Otherwise, consider it a directory containing subdirectories with potential apps
