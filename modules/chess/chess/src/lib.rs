@@ -2,7 +2,7 @@
 use chess::{Board as AiBoard, ChessMove};
 use nectar_process_lib::{
     await_message, call_init, get_blob, get_typed_state, http, println, save_capabilities,
-    set_state, Address, Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response,
+    set_state, our_capabilities, Address, Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response,
 };
 use pleco::Board;
 use serde::{Deserialize, Serialize};
@@ -156,6 +156,7 @@ fn request_ai_move(our: &Address, game: &mut Game) -> anyhow::Result<()> {
                 .to_string()
                 .into_bytes(),
             )
+            .capabilities(our_capabilities()) // TODO too many
             .send_and_await_response(10)?
         else {
             return Err(anyhow::anyhow!(
@@ -468,9 +469,9 @@ fn handle_local_request(
                     .to_string()
                     .into_bytes(),
                 )
-                .send_and_await_response(5)?;
+                .send_and_await_response(5)??;
             // This includes both the messaging capability and the model capability.
-            save_capabilities(res?.capabilities());
+            save_capabilities(res.capabilities());
             // Then, make a new game, picking randomly between AI and player as white.
             let (white, black) = if rand::random() {
                 (model_name.as_str(), our.node.as_str())
