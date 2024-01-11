@@ -469,10 +469,8 @@ fn handle_local_request(
                     .into_bytes(),
                 )
                 .send_and_await_response(5)?;
-            save_capabilities(&[Capability {
-                issuer: model_address,
-                params: "\"messaging\"".to_string(),
-            }]);
+            // This includes both the messaging capability and the model capability.
+            save_capabilities(res?.capabilities());
             // Then, make a new game, picking randomly between AI and player as white.
             let (white, black) = if rand::random() {
                 (model_name.as_str(), our.node.as_str())
