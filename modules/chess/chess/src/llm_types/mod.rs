@@ -22,15 +22,16 @@ pub enum MainAction {
 /// Actions that can be taken by the an LLM process
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum LlmAction {
+    Config(LlmConfig),
     Chat(Chat),
     Embedding(Vec<String>),
-    RequestAccess((String, u32)),
 }
 
 /// Create a new model
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct NewModel {
     pub name: String,
+    pub public: bool,
     pub config: LlmConfig,
 }
 
@@ -70,15 +71,6 @@ pub struct RequestAccess {
     pub quantity: u32,
 }
 
-/// A request for getting the capability to message an LLM process
-#[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
-pub struct AccessCapability {
-    /// of requests
-    pub quantity: u32,
-    /// source used to salt the capability
-    pub who: String,
-}
-
 /// Configuration parameters for an OpenAI LLM process
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OpenAiConfig {
@@ -94,7 +86,6 @@ pub struct OpenAiConfig {
     /// | "gpt-4-1106-preview"
     pub chat_model: String,
     pub embedding_model: String,
-    pub public: bool,
 }
 
 /// Configuration parameters for a LlamaCpp LLM process
@@ -102,7 +93,6 @@ pub struct OpenAiConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LlamaCppConfig {
     pub url: String,
-    pub public: bool,
 }
 
 /// The kinds of models we currently support
@@ -111,15 +101,6 @@ pub enum LlmConfig {
     // TODO/NOTE there will probably be a *lot* more config options added here later
     OpenAi(OpenAiConfig),
     LlamaCpp(LlamaCppConfig),
-}
-
-impl LlmConfig {
-    pub fn public(&self) -> bool {
-        match self {
-            LlmConfig::OpenAi(config) => config.public,
-            LlmConfig::LlamaCpp(config) => config.public,
-        }
-    }
 }
 
 /// capabilities for limiting messaging to models
