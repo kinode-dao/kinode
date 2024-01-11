@@ -166,7 +166,10 @@ async fn handle_request(
         }
         VfsAction::OpenFile { create } => {
             // open file opens an existing file, or creates a new one if create is true
-            let _file = open_file(open_files.clone(), path, create, false).await?;
+            let file = open_file(open_files.clone(), path, create, false).await?;
+            let mut file = file.lock().await;
+            // extra in the case file was just created, todo refactor out.
+            file.seek(SeekFrom::Start(0)).await?;
 
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
@@ -494,11 +497,7 @@ async fn open_file<P: AsRef<Path>>(
 ) -> Result<Arc<Mutex<fs::File>>, VfsError> {
     let path = path.as_ref().to_path_buf();
     Ok(match open_files.get(&path) {
-        Some(file) => {
-            let mut file_lock = file.lock().await;
-            file_lock.seek(SeekFrom::Start(0)).await?;
-            Arc::clone(file.value())
-        }
+        Some(file) => Arc::clone(file.value()),
         None => {
             let file = Arc::new(Mutex::new(
                 OpenOptions::new()
