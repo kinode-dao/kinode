@@ -348,6 +348,8 @@ impl ProcessState {
                         };
                         (context.context, km)
                     } else {
+                        self.last_blob = km.lazy_load_blob.clone();
+                        self.prompting_message = Some(km.clone());
                         (None, km)
                     }
                 }
