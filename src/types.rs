@@ -442,11 +442,7 @@ pub struct Capability {
 
 impl std::fmt::Display for Capability {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{{\n                issuer: {},\n                params: {},\n            }}",
-            self.issuer, self.params
-        )
+        write!(f, "{}^{}", self.issuer, self.params)
     }
 }
 
@@ -522,7 +518,7 @@ impl std::fmt::Display for Message {
         match self {
             Message::Request(request) => write!(
                 f,
-                "Request(\n        inherit: {},\n        expects_response: {:?},\n        body: {},\n        metadata: {}\n        capabilities: {}\n    )",
+                "Request(\n    inherit: {},\n    expects_response: {:?},\n    body: {},\n    metadata: {}\n    capabilities:\n{}\n)",
                 request.inherit,
                 request.expects_response,
                 match serde_json::from_slice::<serde_json::Value>(&request.body) {
@@ -532,20 +528,15 @@ impl std::fmt::Display for Message {
                 &request.metadata.as_ref().unwrap_or(&"None".into()),
                 {
                     let mut caps_string = "[".to_string();
-                    if !request.capabilities.is_empty() {
-                        caps_string.push_str("\n            ");
-                        for cap in request.capabilities.iter() {
-                            caps_string.push_str(&format!("{},\n            ", cap.0));
-                        }
-                        caps_string.truncate(caps_string.len() - 4);
+                    for cap in request.capabilities.iter() {
+                        caps_string += &format!("\n        {}", cap.0.to_string());
                     }
-                    caps_string.push(']');
-                    caps_string
+                    caps_string + "\n    ]"
                 },
             ),
             Message::Response((response, context)) => write!(
                 f,
-                "Response(\n        inherit: {},\n        body: {},\n        metadata: {},\n        context: {},\n        capabilities: {}\n    )",
+                "Response(\n    inherit: {},\n    body: {},\n    metadata: {},\n    context: {},\n    capabilities:\n{}\n)",
                 response.inherit,
                 match serde_json::from_slice::<serde_json::Value>(&response.body) {
                     Ok(json) => format!("{}", json),
@@ -562,15 +553,10 @@ impl std::fmt::Display for Message {
                 },
                 {
                     let mut caps_string = "[".to_string();
-                    if !response.capabilities.is_empty() {
-                        caps_string.push_str("\n            ");
-                        for cap in response.capabilities.iter() {
-                            caps_string.push_str(&format!("{},\n            ", cap.0));
-                        }
-                        caps_string.truncate(caps_string.len() - 4);
+                    for cap in response.capabilities.iter() {
+                        caps_string += &format!("\n        {}", cap.0.to_string());
                     }
-                    caps_string.push(']');
-                    caps_string
+                    caps_string + "\n    ]"
                 },
             ),
         }
@@ -975,6 +961,32 @@ pub struct PersistedProcess {
     pub on_exit: OnExit,
     pub capabilities: HashMap<Capability, Vec<u8>>,
     pub public: bool, // marks if a process allows messages from any process
+}
+
+impl std::fmt::Display for PersistedProcess {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "Process {{\n    wasm_bytes_handle: {},\n    wit_version: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
+            {
+                if &self.wasm_bytes_handle == "" {
+                    "(none, this is a runtime process)"
+                } else {
+                    &self.wasm_bytes_handle
+                }
+            },
+            self.wit_version.unwrap_or_default(),
+            self.on_exit,
+            self.public,
+            {
+                let mut caps_string = "[".to_string();
+                for cap in self.capabilities.keys() {
+                    caps_string += &format!("\n        {}", cap.to_string());
+                }
+                caps_string + "\n    ]"
+            },
+        )
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

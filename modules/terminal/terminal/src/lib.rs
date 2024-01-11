@@ -1,6 +1,7 @@
 use anyhow::anyhow;
+use nectar_process_lib::kernel_types::{KernelCommand, KernelPrint};
 use nectar_process_lib::nectar::process::standard as wit;
-use nectar_process_lib::{println, Address, Request};
+use nectar_process_lib::{println, Address, ProcessId, Request};
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -72,6 +73,24 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                 Request::new().target(target).body(body).send()
             }
         }
+        // send a message to kernel asking it to print debugging information
+        "/top" | "/kernel_debug" => {
+            let kernel_addr = Address::new("our", ("kernel", "sys", "nectar"));
+            match tail {
+                "" => Request::new()
+                    .target(kernel_addr)
+                    .body(serde_json::to_vec(&KernelCommand::Debug(
+                        KernelPrint::ProcessMap,
+                    ))?)
+                    .send(),
+                proc_id => Request::new()
+                    .target(kernel_addr)
+                    .body(serde_json::to_vec(&KernelCommand::Debug(
+                        KernelPrint::Process(proc_id.parse()?),
+                    ))?)
+                    .send(),
+            }
+        }
         _ => return Err(anyhow!("invalid command: \"{line}\"")),
     }
 }
@@ -93,7 +112,7 @@ impl Guest for Component {
             };
             match message {
                 wit::Message::Request(wit::Request { body, .. }) => {
-                    if state.our.node != source.node || state.our.process != source.process {
+                    if state.our != source {
                         continue;
                     }
                     match parse_command(&mut state, std::str::from_utf8(&body).unwrap_or_default())
