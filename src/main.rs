@@ -138,10 +138,7 @@ async fn main() {
     };
 
     #[cfg(not(feature = "simulation-mode"))]
-    let (rpc_url, is_detached) = (
-        matches.get_one::<String>("rpc").unwrap(),
-        false,
-    );
+    let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").unwrap(), false);
 
     #[cfg(feature = "simulation-mode")]
     let (rpc_url, password, network_router_port, fake_node_name, is_detached) = (
