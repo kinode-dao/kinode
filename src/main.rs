@@ -123,7 +123,7 @@ async fn main() {
         )
         .arg(
             arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
-                .action(clap::ArgAction::SetTrue)
+                .action(clap::ArgAction::SetTrue),
         );
 
     let matches = app.get_matches();

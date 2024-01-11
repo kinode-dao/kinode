@@ -111,12 +111,11 @@ pub async fn terminal(
         );
     }
 
-    let _raw_mode =
-        if is_detached {
-            None
-        } else {
-            Some(RawMode::new()?)
-        };
+    let _raw_mode = if is_detached {
+        None
+    } else {
+        Some(RawMode::new()?)
+    };
 
     let mut reader = EventStream::new();
     let mut current_line = format!("{} > ", our.name);
