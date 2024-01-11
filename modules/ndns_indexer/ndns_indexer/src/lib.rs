@@ -125,6 +125,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         contract_address = Some(std::str::from_utf8(&body).unwrap().to_string());
         break;
     }
+    println!(
+        "ndns_indexer: indexing on contract address {}",
+        contract_address.as_ref().unwrap()
+    );
     // if contract address changed from a previous run, reset state
     if state.contract_address != contract_address {
         state = State {
