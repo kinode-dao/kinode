@@ -126,7 +126,8 @@ async fn main() {
 
     let home_directory_path = matches.get_one::<String>("home").unwrap();
     let port = *matches.get_one::<u16>("port").unwrap();
-    let contract_address = if *matches.get_one::<bool>("testnet").unwrap() {
+    let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
+    let contract_address = if on_testnet {
         register::NDNS_SEPOLIA_ADDRESS
     } else {
         register::NDNS_OPTIMISM_ADDRESS
@@ -225,7 +226,7 @@ async fn main() {
         our_ip.to_string(),
         http_server_port,
         rpc_url.clone(),
-        *matches.get_one::<bool>("testnet").unwrap(), // true if testnet mode
+        on_testnet, // true if testnet mode
     )
     .await;
     #[cfg(feature = "simulation-mode")]
@@ -240,7 +241,7 @@ async fn main() {
                             our_ip.to_string(),
                             http_server_port.clone(),
                             rpc_url.clone(),
-                            *matches.get_one::<bool>("testnet").unwrap(), // true if testnet mode
+                            on_testnet, // true if testnet mode
                         )
                         .await
                     }
@@ -413,6 +414,7 @@ async fn main() {
         print_sender.clone(),
         net_message_sender,
         net_message_receiver,
+        contract_address.to_string(),
         REVEAL_IP,
     ));
     #[cfg(feature = "simulation-mode")]
