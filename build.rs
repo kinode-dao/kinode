@@ -172,7 +172,13 @@ fn main() {
     for entry in std::fs::read_dir(modules_dir).unwrap() {
         let entry_path = entry.unwrap().path();
 
-        if entry_path.file_name().unwrap().to_str().unwrap().starts_with(".") {
+        if entry_path
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with(".")
+        {
             continue;
         }
 
