@@ -272,7 +272,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     && send
                 {
                     print_to_terminal(
-                        0,
+                        1,
                         &format!(
                             "ndns_indexer: sending ID to net: {node:?} (blocknum {})",
                             state.block
