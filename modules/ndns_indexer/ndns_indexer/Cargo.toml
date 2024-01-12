@@ -20,7 +20,7 @@ hex = "0.4.3"
 rmp-serde = "1.1.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-nectar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", tag = "v0.5.0-alpha", features = ["eth"] }
+nectar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "d19ff3d", features = ["eth"] }
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "efcc759" }
 
 [lib]
