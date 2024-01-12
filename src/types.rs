@@ -442,7 +442,13 @@ pub struct Capability {
 
 impl std::fmt::Display for Capability {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}^{}", self.issuer, self.params)
+        write!(
+            f,
+            "{}({})",
+            self.issuer,
+            serde_json::from_str::<serde_json::Value>(&self.params)
+                .unwrap_or(serde_json::json!("invalid JSON in capability"))
+        )
     }
 }
 
