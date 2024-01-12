@@ -484,10 +484,14 @@ async fn handle_kernel_request(
         }
         t::KernelCommand::Debug(kind) => match kind {
             t::KernelPrint::ProcessMap => {
+                let mut process_map_string = "".to_string();
+                for (id, process) in &mut *process_map {
+                    process_map_string.push_str(&format!("{}: {}\r\n", id, process));
+                }
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
-                        content: format!("kernel process map:\r\n{:#?}", process_map),
+                        content: format!("kernel process map:\r\n{process_map_string}\r\nfound {} running processes", process_map.len()),
                     })
                     .await;
             }
@@ -504,7 +508,7 @@ async fn handle_kernel_request(
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 0,
-                        content: format!("kernel process info:\r\n{proc:#?}",),
+                        content: format!("process info for {process_id}:\r\n{proc}",),
                     })
                     .await;
             }
