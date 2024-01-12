@@ -178,7 +178,7 @@ async fn handle_request(
             open_files.remove(&path);
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
-        VfsAction::WriteAt => {
+        VfsAction::WriteAll => {
             // doesn't create a file, writes at exact cursor.
             let Some(blob) = blob else {
                 return Err(VfsError::BadRequest {
@@ -557,7 +557,7 @@ async fn check_caps(
         | VfsAction::OpenFile { .. }
         | VfsAction::CloseFile
         | VfsAction::Write
-        | VfsAction::WriteAt
+        | VfsAction::WriteAll
         | VfsAction::Append
         | VfsAction::SyncAll
         | VfsAction::RemoveFile
