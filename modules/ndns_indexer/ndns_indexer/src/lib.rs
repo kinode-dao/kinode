@@ -240,9 +240,15 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             (ip >> 8) & 0xFF,
                             ip & 0xFF
                         );
+                        // when we get ip data, we should delete any router data,
+                        // since the assignment of ip indicates an direct node
+                        node.routers = vec![];
                     }
                     WsUpdate::SIGNATURE_HASH => {
                         node.port = WsUpdate::abi_decode_data(&log.data, true).unwrap().0;
+                        // when we get port data, we should delete any router data,
+                        // since the assignment of port indicates an direct node
+                        node.routers = vec![];
                     }
                     RoutingUpdate::SIGNATURE_HASH => {
                         node.routers = RoutingUpdate::abi_decode_data(&log.data, true)
@@ -251,14 +257,27 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             .iter()
                             .map(|r| r.to_string())
                             .collect::<Vec<String>>();
+                        // when we get routing data, we should delete any ws/ip data,
+                        // since the assignment of routers indicates an indirect node
+                        node.ip = "".to_string();
+                        node.port = 0;
                     }
                     _ => {
                         send = false;
                     }
                 }
 
-                if send {
-                    print_to_terminal(1, &format!("ndns_indexer: sending ID to net: {:?}", node));
+                if node.public_key != ""
+                    && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
+                    && send
+                {
+                    print_to_terminal(
+                        0,
+                        &format!(
+                            "ndns_indexer: sending ID to net: {node:?} (blocknum {})",
+                            state.block
+                        ),
+                    );
                     Request::new()
                         .target((&our.node, "net", "sys", "nectar"))
                         .try_body(NetActions::NdnsUpdate(node.clone()))?
