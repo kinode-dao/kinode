@@ -1,8 +1,9 @@
 #![feature(let_chains)]
 use chess::{Board as AiBoard, ChessMove};
 use nectar_process_lib::{
-    await_message, call_init, get_blob, get_typed_state, http, println, save_capabilities,
-    set_state, our_capabilities, Address, Capability, LazyLoadBlob, Message, NodeId, ProcessId, Request, Response,
+    await_message, call_init, get_blob, get_typed_state, http, our_capabilities, println,
+    save_capabilities, set_state, Address, Capability, LazyLoadBlob, Message, NodeId, ProcessId,
+    Request, Response,
 };
 use pleco::Board;
 use serde::{Deserialize, Serialize};
@@ -112,31 +113,30 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
 fn request_ai_move(our: &Address, game: &mut Game) -> anyhow::Result<()> {
     println!("Requesting AI move...");
     let mut prompt = format!(
-        // r#"[Event "FIDE World Championship Match 2024"]
-        // [Site "Los Angeles, USA"]
-        // [Date "2024.12.01"]
-        // [Round "5"]
-        // [White "Carlsen, Magnus"]
-        // [Black "Nepomniachtchi, Ian"]
-        // [Result "1-0"]
-        // [WhiteElo "2885"]
-        // [WhiteTitle "GM"]
-        // [WhiteFideId "1503014"]
-        // [BlackElo "2812"]
-        // [BlackTitle "GM"]
-        // [BlackFideId "4168119"]
-        // [TimeControl "40/7200:20/3600:900+30"]
-        // [UTCDate "2024.11.27"]
-        // [UTCTime "09:01:25"]
-        // [Variant "Standard"]
-        
-        // 1.{}"#,
-        // game.ai_game.as_ref().unwrap(),
-        "here is a chess board in FEN notation: \"{}\" you are {}. Make a legal chess move. Do not put out any additional text, simply respond with the move encoded as a SAN move.",
-        game.board,
-        if game.white == game.id { "white" } else { "black" }
+        // You are a chess playing champion, here is one of the recoreds for your game. Respond in SAN e.g. e5, Nf3, etc. Respond only with a move, do not include any othe text. Please complete the next move in the sequence for you game.
+        r#"
+        [Event "FIDE World Championship Match 2024"]
+        [Site "Los Angeles, USA"]
+        [Date "2024.12.01"]
+        [Round "5"]
+        [White "Carlsen, Magnus"]
+        [Black "Nepomniachtchi, Ian"]
+        [Result "1-0"]
+        [WhiteElo "2885"]
+        [WhiteTitle "GM"]
+        [WhiteFideId "1503014"]
+        [BlackElo "2812"]
+        [BlackTitle "GM"]
+        [BlackFideId "4168119"]
+        [TimeControl "40/7200:20/3600:900+30"]
+        [UTCDate "2024.11.27"]
+        [UTCTime "09:01:25"]
+        [Variant "Standard"]
+        Resond with a valid move in standard algebraic notation, e.g. e5. Do not resopnd with an invalid move, e.g. e4e5
+        1.{}"#,
+        game.ai_game.as_ref().unwrap(),
     );
-    // println!("prompt: {}", prompt);
+    println!("prompt: {}", game.ai_game.as_ref().unwrap());
     loop {
         let Ok(Message::Response { body, .. }) = Request::new()
             .target((
@@ -150,7 +150,7 @@ fn request_ai_move(our: &Address, game: &mut Game) -> anyhow::Result<()> {
                     "prompt": prompt,
                     "params": {
                         "max_tokens": 4,
-                        "temperature": 1,// TODO should be 0
+                        "temperature": 0,
                     }}
                 })
                 .to_string()
@@ -164,13 +164,27 @@ fn request_ai_move(our: &Address, game: &mut Game) -> anyhow::Result<()> {
             ));
         };
         let response = serde_json::from_slice::<llm_types::ChatResponse>(&body)?;
-        let mut board = AiBoard::from_fen(game.board.clone()).unwrap();
+        let mut result = AiBoard::from_fen(game.board.clone()).unwrap();
         println!("raw response: {}", response.content.replace(" ", ""));
-        match ChessMove::from_san(&board, &response.content.replace(" ", "")) {
+        match ChessMove::from_san(&result, &response.content.replace(" ", "")) {
             Ok(valid_move) => {
                 println!("Got AI move: {valid_move}");
-                board.make_move_new(valid_move);
-                game.board = board.to_string();
+
+                let mut board = Board::from_fen(&game.board).unwrap();
+                if !board.apply_uci_move(&valid_move.to_string()) {
+                    println!(
+                        "chess: uci <> san error on move {} {}",
+                        valid_move.to_string(),
+                        response.content
+                    );
+                    continue;
+                }
+                game.board = board.fen();
+                game.ai_game = Some(format!(
+                    "{} {}",
+                    game.ai_game.as_ref().unwrap(),
+                    response.content
+                ));
                 return Ok(());
             }
             Err(e) => {
@@ -465,7 +479,7 @@ fn handle_local_request(
             let res = Request::new()
                 .target((&model_address.node, "main", "llm", "nectar"))
                 .body(
-                    json!({ "RequestAccess": { "model": model_address.process.process_name.clone(), "quantity": 5 } })
+                    json!({ "RequestAccess": { "model": model_address.process.process_name.clone(), "quantity": 5000 } })
                     .to_string()
                     .into_bytes(),
                 )
@@ -480,7 +494,7 @@ fn handle_local_request(
             };
             let mut game = Game {
                 id: model_name.to_string(),
-                ai_game: Some(String::new()),
+                ai_game: Some("1.".to_string()),
                 turns: 0,
                 board: Board::start_pos().fen(),
                 white: white.to_string(),
@@ -522,11 +536,27 @@ fn handle_local_request(
             // If this is an AI game, we'll send a request to the AI to make a move.
             // Otherwise, we'll send a request to the other player to make a move.
             if game.ai_game.is_some() && !game.ended {
+                // TODO the last issue with the AI is translating move_str from uci to san. Then it would play very well.
+                game.ai_game = Some(format!("{} {}", game.ai_game.as_ref().unwrap(), move_str));
+                if game.white == *game_id {
+                    game.ai_game = Some(format!(
+                        "{}\n{}.",
+                        game.ai_game.as_ref().unwrap(),
+                        (game.turns / 2) + 1,
+                    ));
+                }
                 request_ai_move(our, &mut game)?;
                 // update the game
                 game.turns += 1;
                 if board.checkmate() || board.stalemate() {
                     game.ended = true;
+                }
+                if game.black == *game_id {
+                    game.ai_game = Some(format!(
+                        "{}\n{}",
+                        game.ai_game.as_ref().unwrap(),
+                        (game.turns / 2) + 1,
+                    ));
                 }
             } else {
                 // Send the move to the other player, then check if the game is over.
@@ -686,11 +716,27 @@ fn handle_http_request(
             // If this is an AI game, we'll send a request to the AI to make a move.
             // Otherwise, we'll send a request to the other player to make a move.
             if game.ai_game.is_some() && !game.ended {
+                // TODO the last issue with the AI is translating move_str from uci to san. Then it would play very well.
+                game.ai_game = Some(format!("{} {}", game.ai_game.as_ref().unwrap(), move_str));
+                if game.white == *game_id {
+                    game.ai_game = Some(format!(
+                        "{}\n{}.",
+                        game.ai_game.as_ref().unwrap(),
+                        (game.turns / 2) + 1,
+                    ));
+                }
                 request_ai_move(our, &mut game)?;
                 // update the game
                 game.turns += 1;
                 if board.checkmate() || board.stalemate() {
                     game.ended = true;
+                }
+                if game.black == *game_id {
+                    game.ai_game = Some(format!(
+                        "{}\n{}.",
+                        game.ai_game.as_ref().unwrap(),
+                        (game.turns / 2) + 1,
+                    ));
                 }
             } else {
                 // Send the move to the other player.
