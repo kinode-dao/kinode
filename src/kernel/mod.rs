@@ -1108,6 +1108,15 @@ pub async fn kernel(
                                                     sig.clone()
                                                 )
                                             })
+                                        // if issuer is self, retrieve uncritically
+                                        } else if cap.issuer.process == on {
+                                            Some((
+                                                cap.clone(),
+                                                keypair
+                                                    .sign(&rmp_serde::to_vec(&cap).unwrap())
+                                                    .as_ref()
+                                                    .to_vec()
+                                            ))
                                         // otherwise verify the signature before returning
                                         } else {
                                             match p.capabilities.get(cap) {
