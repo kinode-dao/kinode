@@ -1,6 +1,6 @@
 use ethers::prelude::Provider;
-use ethers::types::{Filter, Log, U256};
-use ethers_providers::{Middleware, Ws};
+use ethers::types::{Filter, Log};
+use ethers_providers::Ws;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::task::JoinHandle;
@@ -15,6 +15,21 @@ pub enum EthAction {
     SubscribeLogs { sub_id: u64, filter: Filter },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
     UnsubscribeLogs(u64),
+}
+
+/// The Response type which a process will get from requesting with an [`EthAction`] will be
+/// of the form `Result<(), EthError>`, serialized and deserialized using `serde_json::to_vec`
+/// and `serde_json::from_slice`.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum EthError {
+    /// The subscription ID already existed
+    SubscriptionIdCollision,
+    /// The ethers provider threw an error when trying to subscribe
+    /// (contains ProviderError serialized to debug string)
+    ProviderError(String),
+    SubscriptionClosed,
+    /// The subscription ID was not found, so we couldn't unsubscribe.
+    SubscriptionNotFound,
 }
 
 /// The Request type which a process will get from using SubscribeLogs to subscribe
@@ -32,19 +47,6 @@ pub enum EthSubEvent {
 
 /// Primary state object of the `eth` module
 pub struct RpcConnections {
-    pub ws_rpc_url: String,
-    pub ws_provider_subscriptions: HashMap<u64, WsProviderSubscription>,
-}
-
-pub struct WsProviderSubscription {
-    pub handle: JoinHandle<()>,
     pub provider: Provider<Ws>,
-    pub subscription: U256,
-}
-
-impl WsProviderSubscription {
-    pub async fn kill(&self) {
-        let _ = self.provider.unsubscribe(self.subscription).await;
-        self.handle.abort();
-    }
+    pub ws_provider_subscriptions: HashMap<u64, JoinHandle<Result<(), EthError>>>,
 }
