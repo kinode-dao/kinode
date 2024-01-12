@@ -15,50 +15,46 @@ use tokio_tungstenite::tungstenite::Message as TungsteniteMessage;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 use url::Url;
 
+/// The ETH provider runtime process is responsible for connecting to one or more ETH RPC providers
+/// and using them to service indexing requests from other apps. This could also be done by a wasm
+/// app, but in the future, this process will hopefully expand in scope to perform more complex
+/// indexing and ETH node responsibilities.
 pub async fn provider(
     our: String,
     rpc_url: String,
-    mut send_to_loop: MessageSender,
+    send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
     print_tx: PrintSender,
 ) -> Result<()> {
-    bind_websockets(&our, &send_to_loop).await;
-    let mut connections = RpcConnections::default();
-    connections.ws_rpc_url = Some(rpc_url.to_string());
-    let connections = Arc::new(Mutex::new(connections));
-
-    match Url::parse(&rpc_url).unwrap().scheme() {
+    // for now, we can only handle WebSocket RPC URLs. In the future, we should
+    // be able to handle HTTP too, at least.
+    match Url::parse(&rpc_url)?.scheme() {
         "http" | "https" => {
             return Err(anyhow::anyhow!("eth: http provider not supported yet!"));
         }
-        "ws" | "wss" => {
-            bootstrap_websocket_connections(&our, &rpc_url, connections.clone(), &mut send_to_loop)
-                .await
-                .map_err(|e| {
-                    anyhow::anyhow!(
-                        "eth: error bootstrapping websocket connections to {}: {:?}",
-                        rpc_url,
-                        e
-                    )
-                })?;
-        }
+        "ws" | "wss" => {}
         _ => {
             return Err(anyhow::anyhow!("eth: provider must use http or ws!"));
         }
     }
 
     while let Some(km) = recv_in_client.recv().await {
-        if let Message::Request(req) = &km.message {
-            match handle_request(&our, &km, req, &connections, &send_to_loop).await {
-                Ok(()) => {}
-                Err(e) => {
-                    let _ = print_tx
-                        .send(Printout {
-                            verbosity: 1,
-                            content: format!("eth: error handling request: {:?}", e),
-                        })
-                        .await;
-                }
+        // this module only handles requests, ignores all responses
+        let Message::Request(req) = &km.message else {
+            continue;
+        };
+        let Ok(action) = serde_json::from_slice::<EthAction>(&req.body) else {
+            continue;
+        };
+        match handle_request(&our, action, &send_to_loop).await {
+            Ok(()) => {}
+            Err(e) => {
+                let _ = print_tx
+                    .send(Printout {
+                        verbosity: 0,
+                        content: format!("eth: error handling request: {:?}", e),
+                    })
+                    .await;
             }
         }
     }
@@ -67,88 +63,15 @@ pub async fn provider(
 
 async fn handle_request(
     our: &str,
-    km: &KernelMessage,
-    req: &Request,
-    connections: &Arc<Mutex<RpcConnections>>,
-    send_to_loop: &MessageSender,
-) -> Result<()> {
-    if let Ok(action) = serde_json::from_slice::<HttpServerRequest>(&req.body) {
-        handle_http_server_request(action, km, connections).await
-    } else if let Ok(action) = serde_json::from_slice::<EthRequest>(&req.body) {
-        handle_eth_request(action, our, km, connections, send_to_loop).await
-    } else {
-        Err(anyhow::anyhow!("malformed request"))
-    }
-}
-
-async fn handle_http_server_request(
-    action: HttpServerRequest,
-    km: &KernelMessage,
-    connections: &Arc<Mutex<RpcConnections>>,
-) -> Result<(), anyhow::Error> {
-    if let HttpServerRequest::WebSocketPush {
-        channel_id,
-        message_type,
-    } = action
-    {
-        if message_type == WsMessageType::Text {
-            let bytes = &km.lazy_load_blob.as_ref().unwrap().bytes;
-            let text = std::str::from_utf8(bytes).unwrap();
-            let mut json: serde_json::Value = serde_json::from_str(text)?;
-            let mut id = json["id"].as_u64().unwrap();
-
-            id += channel_id as u64;
-
-            json["id"] = serde_json::Value::from(id);
-
-            let new_text = json.to_string();
-
-            let mut connections_guard = connections.lock().await;
-            connections_guard
-                .ws_sender_ids
-                .insert(id as u32, channel_id);
-            if let Some(ws_sender) = &mut connections_guard.ws_sender {
-                let _ = ws_sender.send(TungsteniteMessage::Text(new_text)).await;
-            }
-        }
-    }
-    Ok(())
-}
-
-async fn handle_eth_request(
-    action: EthRequest,
-    our: &str,
-    km: &KernelMessage,
-    connections: &Arc<Mutex<RpcConnections>>,
+    action: EthAction,
     send_to_loop: &MessageSender,
 ) -> Result<(), anyhow::Error> {
     match action {
-        EthRequest::SubscribeLogs(req) => {
-            let handle = tokio::spawn(spawn_provider_read_stream(
-                our.to_string(),
-                req,
-                km.clone(),
-                connections.clone(),
-                send_to_loop.clone(),
-            ));
-
-            let mut connections_guard = connections.lock().await;
-            let ws_provider_subscription = connections_guard
-                .ws_provider_subscriptions
-                .entry(km.id)
-                .or_insert(WsProviderSubscription::default());
-
-            ws_provider_subscription.handle = Some(handle);
-            drop(connections_guard);
+        EthAction::SubscribeLogs(req) => {
+            todo!()
         }
-        EthRequest::UnsubscribeLogs(channel_id) => {
-            let mut connections_guard = connections.lock().await;
-            if let Some(ws_provider_subscription) = connections_guard
-                .ws_provider_subscriptions
-                .remove(&channel_id)
-            {
-                ws_provider_subscription.kill().await;
-            }
+        EthAction::UnsubscribeLogs(channel_id) => {
+            todo!()
         }
     }
     Ok(())
