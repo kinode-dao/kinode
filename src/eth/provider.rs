@@ -44,7 +44,6 @@ pub async fn provider(
             ));
         }
     };
-    println!("eth: provider made\r");
 
     let mut connections = RpcConnections {
         provider,
@@ -59,7 +58,6 @@ pub async fn provider(
         let Ok(action) = serde_json::from_slice::<EthAction>(&req.body) else {
             continue;
         };
-        println!("eth: action received\r");
         match handle_request(
             our.clone(),
             &km.rsvp.unwrap_or(km.source.clone()),
@@ -154,7 +152,6 @@ async fn handle_subscription_stream(
     target: Address,
     send_to_loop: MessageSender,
 ) -> Result<(), EthError> {
-    println!("eth: handling subscription stream\r");
     let mut stream = match provider.subscribe_logs(&filter).await {
         Ok(s) => s,
         Err(e) => {
