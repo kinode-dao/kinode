@@ -1093,7 +1093,7 @@ pub enum VfsAction {
     OpenFile { create: bool },
     CloseFile,
     Write,
-    WriteAt,
+    WriteAll,
     Append,
     SyncAll,
     Read,
