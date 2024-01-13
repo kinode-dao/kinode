@@ -720,7 +720,7 @@ pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
 pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
 
 //
-// types used for Nectar's identity system
+// types used for onchain identity system
 //
 
 #[derive(Debug, Serialize, Deserialize)]

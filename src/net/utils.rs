@@ -59,7 +59,7 @@ pub async fn maintain_connection(
     let mut last_message = std::time::Instant::now();
     loop {
         tokio::select! {
-            recv_result = recv_nectar_message(&mut conn) => {
+            recv_result = recv_protocol_message(&mut conn) => {
                 match recv_result {
                     Ok(km) => {
                         if km.source.node != peer_name {
@@ -81,7 +81,7 @@ pub async fn maintain_connection(
             maybe_recv = peer_rx.recv() => {
                 match maybe_recv {
                     Some(km) => {
-                        match send_nectar_message(&km, &mut conn).await {
+                        match send_protocol_message(&km, &mut conn).await {
                             Ok(()) => {
                                 last_message = std::time::Instant::now();
                                 continue
@@ -299,7 +299,7 @@ pub fn validate_handshake(
     Ok(())
 }
 
-pub async fn send_nectar_message(km: &KernelMessage, conn: &mut PeerConnection) -> Result<()> {
+pub async fn send_protocol_message(km: &KernelMessage, conn: &mut PeerConnection) -> Result<()> {
     let serialized = rmp_serde::to_vec(km)?;
     if serialized.len() > MESSAGE_MAX_SIZE as usize {
         return Err(anyhow!("message too large"));
@@ -320,7 +320,7 @@ pub async fn send_nectar_message(km: &KernelMessage, conn: &mut PeerConnection) 
 }
 
 /// any error in receiving a message will result in the connection being closed.
-pub async fn recv_nectar_message(conn: &mut PeerConnection) -> Result<KernelMessage> {
+pub async fn recv_protocol_message(conn: &mut PeerConnection) -> Result<KernelMessage> {
     let outer_len = conn.noise.read_message(
         &ws_recv(&mut conn.read_stream, &mut conn.write_stream).await?,
         &mut conn.buf,
@@ -349,7 +349,7 @@ pub async fn recv_nectar_message(conn: &mut PeerConnection) -> Result<KernelMess
     Ok(rmp_serde::from_slice(&msg)?)
 }
 
-pub async fn send_nectar_handshake(
+pub async fn send_protocol_handshake(
     our: &Identity,
     keypair: &Ed25519KeyPair,
     noise_static_key: &[u8],
@@ -373,7 +373,7 @@ pub async fn send_nectar_handshake(
     Ok(())
 }
 
-pub async fn recv_nectar_handshake(
+pub async fn recv_protocol_handshake(
     noise: &mut snow::HandshakeState,
     buf: &mut [u8],
     read_stream: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,

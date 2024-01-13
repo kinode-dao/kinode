@@ -94,7 +94,7 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
     Ok(())
 }
 
-// Boilerplate: generate the wasm bindings for a Nectar app
+// Boilerplate: generate the wasm bindings for a process
 wit_bindgen::generate!({
     path: "../../../wit",
     world: "process",

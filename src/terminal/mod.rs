@@ -34,7 +34,7 @@ pub async fn terminal(
     execute!(
         stdout,
         EnableBracketedPaste,
-        terminal::SetTitle(format!("{}@{}", our.name, "nectar"))
+        terminal::SetTitle(format!("{}", our.name))
     )?;
 
     let (mut win_cols, mut win_rows) = terminal::size().unwrap();
@@ -126,18 +126,21 @@ pub async fn terminal(
 
     // use to trigger cleanup if receive signal to kill process
     let mut sigalrm =
-        signal(SignalKind::alarm()).expect("nectar: failed to set up SIGALRM handler");
-    let mut sighup = signal(SignalKind::hangup()).expect("nectar: failed to set up SIGHUP handler");
+        signal(SignalKind::alarm()).expect("terminal: failed to set up SIGALRM handler");
+    let mut sighup =
+        signal(SignalKind::hangup()).expect("terminal: failed to set up SIGHUP handler");
     let mut sigint =
-        signal(SignalKind::interrupt()).expect("nectar: failed to set up SIGINT handler");
-    let mut sigpipe = signal(SignalKind::pipe()).expect("nectar: failed to set up SIGPIPE handler");
-    let mut sigquit = signal(SignalKind::quit()).expect("nectar: failed to set up SIGQUIT handler");
+        signal(SignalKind::interrupt()).expect("terminal: failed to set up SIGINT handler");
+    let mut sigpipe =
+        signal(SignalKind::pipe()).expect("terminal: failed to set up SIGPIPE handler");
+    let mut sigquit =
+        signal(SignalKind::quit()).expect("terminal: failed to set up SIGQUIT handler");
     let mut sigterm =
-        signal(SignalKind::terminate()).expect("nectar: failed to set up SIGTERM handler");
+        signal(SignalKind::terminate()).expect("terminal: failed to set up SIGTERM handler");
     let mut sigusr1 =
-        signal(SignalKind::user_defined1()).expect("nectar: failed to set up SIGUSR1 handler");
+        signal(SignalKind::user_defined1()).expect("terminal: failed to set up SIGUSR1 handler");
     let mut sigusr2 =
-        signal(SignalKind::user_defined2()).expect("nectar: failed to set up SIGUSR2 handler");
+        signal(SignalKind::user_defined2()).expect("terminal: failed to set up SIGUSR2 handler");
 
     loop {
         let event = reader.next().fuse();

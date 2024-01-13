@@ -19,7 +19,7 @@ use ft_worker_lib::{
     spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
 };
 
-/// Nectar App Store:
+/// App Store:
 /// acts as both a local package manager and a protocol to share packages across the network.
 /// packages are apps; apps are packages. we use an onchain app listing contract to determine
 /// what apps are available to download and what node(s) to download them from.
@@ -173,8 +173,8 @@ struct ManifestCap {
     params: Value,
 }
 
-// /m our@main:app_store:ben.nec {"Download": {"package": {"package_name": "sdapi", "publisher_node": "benjammin.nec"}, "install_from": "testnode107.nec"}}
-// /m our@main:app_store:ben.nec {"Install": {"package_name": "sdapi", "publisher_node": "benjammin.nec"}}
+// /m our@main:app_store:ben.os {"Download": {"package": {"package_name": "sdapi", "publisher_node": "benjammin.os"}, "install_from": "testnode107.os"}}
+// /m our@main:app_store:ben.os {"Install": {"package_name": "sdapi", "publisher_node": "benjammin.os"}}
 
 call_init!(init);
 fn init(our: Address) {

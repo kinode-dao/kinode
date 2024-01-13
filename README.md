@@ -62,12 +62,12 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH
     - Example: `/app our@net:sys:nectar`, then `/m diagnostics`
     - Can also use `/a` for same command: `/a our@net:sys:nectar`
     - Example of sending many messages:
-        - `/a ben.nec@net:sys:nectar`
+        - `/a ben.os@net:sys:nectar`
         - `/m hey there`
         - `/m how are you?`
         - `/a` (to exit app mode)
 - `/hi <name> <string>`: send a text message to another node's command line.
-    - Example: `/hi ben.nec hello world`
+    - Example: `/hi ben.os hello world`
 - `/top <process_id>`: display kernel debugging info about a process. Leave the process ID blank to display info about all processes and get the total number of running processes.
     - Example: `/top net:sys:nectar`
     - Example: `/top`
