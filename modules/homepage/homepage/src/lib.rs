@@ -65,7 +65,7 @@ fn main(our: Address) -> anyhow::Result<()> {
             continue;
         };
         if let Message::Response { source, body, .. } = message
-            && source.process == "http_server:sys:nectar"
+            && source.process == "http_server:distro:sys"
         {
             match serde_json::from_slice::<Result<(), HttpServerError>>(&body) {
                 Ok(Ok(())) => continue,

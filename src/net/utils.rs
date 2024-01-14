@@ -209,17 +209,17 @@ pub async fn create_passthrough(
         if !target_peer.routing_for {
             return Err(anyhow!("we don't route for that indirect node"));
         }
-        // send their net:sys:nectar process a message, notifying it to create a *matching*
+        // send their net:distro:sys process a message, notifying it to create a *matching*
         // passthrough request, which we can pair with this pending one.
         target_peer.sender.send(KernelMessage {
             id: rand::random(),
             source: Address {
                 node: our.name.clone(),
-                process: ProcessId::new(Some("net"), "sys", "nectar"),
+                process: ProcessId::new(Some("net"), "distro", "sys"),
             },
             target: Address {
                 node: to_name.clone(),
-                process: ProcessId::new(Some("net"), "sys", "nectar"),
+                process: ProcessId::new(Some("net"), "distro", "sys"),
             },
             rsvp: None,
             message: Message::Request(Request {
@@ -326,7 +326,7 @@ pub async fn recv_protocol_message(conn: &mut PeerConnection) -> Result<KernelMe
         &mut conn.buf,
     )?;
     if outer_len < 4 {
-        return Err(anyhow!("nectar message too small!"));
+        return Err(anyhow!("protocol message too small!"));
     }
 
     let length_bytes = [conn.buf[0], conn.buf[1], conn.buf[2], conn.buf[3]];
@@ -485,7 +485,7 @@ pub async fn parse_hello_message(
             id: km.id,
             source: Address {
                 node: our.name.clone(),
-                process: ProcessId::new(Some("net"), "sys", "nectar"),
+                process: ProcessId::new(Some("net"), "distro", "sys"),
             },
             target: km.rsvp.as_ref().unwrap_or(&km.source).clone(),
             rsvp: None,

@@ -329,42 +329,42 @@ async fn main() {
     #[allow(unused_mut)]
     let mut runtime_extensions = vec![
         (
-            ProcessId::new(Some("http_server"), "sys", "nectar"),
+            ProcessId::new(Some("http_server"), "distro", "sys"),
             http_server_sender,
             false,
         ),
         (
-            ProcessId::new(Some("http_client"), "sys", "nectar"),
+            ProcessId::new(Some("http_client"), "distro", "sys"),
             http_client_sender,
             false,
         ),
         (
-            ProcessId::new(Some("timer"), "sys", "nectar"),
+            ProcessId::new(Some("timer"), "distro", "sys"),
             timer_service_sender,
             true,
         ),
         (
-            ProcessId::new(Some("eth"), "sys", "nectar"),
+            ProcessId::new(Some("eth"), "distro", "sys"),
             eth_provider_sender,
             false,
         ),
         (
-            ProcessId::new(Some("vfs"), "sys", "nectar"),
+            ProcessId::new(Some("vfs"), "distro", "sys"),
             vfs_message_sender,
             false,
         ),
         (
-            ProcessId::new(Some("state"), "sys", "nectar"),
+            ProcessId::new(Some("state"), "distro", "sys"),
             state_sender,
             false,
         ),
         (
-            ProcessId::new(Some("kv"), "sys", "nectar"),
+            ProcessId::new(Some("kv"), "distro", "sys"),
             kv_sender,
             false,
         ),
         (
-            ProcessId::new(Some("sqlite"), "sys", "nectar"),
+            ProcessId::new(Some("sqlite"), "distro", "sys"),
             sqlite_sender,
             false,
         ),
@@ -372,7 +372,7 @@ async fn main() {
 
     /*
      *  the kernel module will handle our userspace processes and receives
-     *  all "messages", the basic message format for nectar.
+     *  the basic message format for this OS.
      *
      *  if any of these modules fail, the program exits with an error.
      */

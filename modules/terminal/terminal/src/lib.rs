@@ -36,7 +36,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                 node_id
             };
             Request::new()
-                .target((node_id, "net", "sys", "nectar"))
+                .target((node_id, "net", "distro", "sys"))
                 .body(message)
                 .expects_response(5)
                 .send()?;
@@ -75,7 +75,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
         }
         // send a message to kernel asking it to print debugging information
         "/top" | "/kernel_debug" => {
-            let kernel_addr = Address::new("our", ("kernel", "sys", "nectar"));
+            let kernel_addr = Address::new("our", ("kernel", "distro", "sys"));
             match tail {
                 "" => Request::new()
                     .target(kernel_addr)

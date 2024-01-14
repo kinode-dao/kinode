@@ -930,7 +930,7 @@ async fn handle_local_message(
                             id: km.id,
                             source: Address {
                                 node: our.name.clone(),
-                                process: ProcessId::new(Some("net"), "sys", "nectar"),
+                                process: ProcessId::new(Some("net"), "distro", "sys"),
                             },
                             target: km.rsvp.unwrap_or(km.source),
                             rsvp: None,
