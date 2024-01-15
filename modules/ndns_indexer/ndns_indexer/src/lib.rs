@@ -1,6 +1,6 @@
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
-use nectar_process_lib::eth::{EthAddress, SubscribeLogsRequest};
+use nectar_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
 use nectar_process_lib::{
     await_message, get_typed_state, http, print_to_terminal, println, set_state, Address,
     LazyLoadBlob, Message, Request, Response,
@@ -29,11 +29,6 @@ struct State {
     nodes: HashMap<String, NdnsUpdate>,
     // last block we read from
     block: u64,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum IndexerActions {
-    EventSubscription(Log),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -146,7 +141,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    SubscribeLogsRequest::new()
+    SubscribeLogsRequest::new(1) // subscription id 1
         .address(EthAddress::from_str(contract_address.unwrap().as_str())?)
         .from_block(state.block - 1)
         .events(vec![
@@ -206,20 +201,20 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         }
 
-        let Ok(msg) = serde_json::from_slice::<IndexerActions>(&body) else {
+        let Ok(msg) = serde_json::from_slice::<EthSubEvent>(&body) else {
             println!("ndns_indexer: got invalid message");
             continue;
         };
 
         match msg {
-            IndexerActions::EventSubscription(e) => {
-                state.block = e.clone().block_number.expect("expect").to::<u64>();
+            EthSubEvent::Log(log) => {
+                state.block = log.block_number.expect("expect").to::<u64>();
 
-                let node_id: alloy_primitives::FixedBytes<32> = e.topics[1];
+                let node_id: alloy_primitives::FixedBytes<32> = log.topics[1];
 
-                let name = match state.names.entry(node_id.clone().to_string()) {
+                let name = match state.names.entry(node_id.to_string()) {
                     Entry::Occupied(o) => o.into_mut(),
-                    Entry::Vacant(v) => v.insert(get_name(&e)),
+                    Entry::Vacant(v) => v.insert(get_name(&log)),
                 };
 
                 let node = state
@@ -229,15 +224,15 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
                 let mut send = true;
 
-                match e.topics[0].clone() {
+                match log.topics[0] {
                     KeyUpdate::SIGNATURE_HASH => {
-                        node.public_key = KeyUpdate::abi_decode_data(&e.data, true)
+                        node.public_key = KeyUpdate::abi_decode_data(&log.data, true)
                             .unwrap()
                             .0
                             .to_string();
                     }
                     IpUpdate::SIGNATURE_HASH => {
-                        let ip = IpUpdate::abi_decode_data(&e.data, true).unwrap().0;
+                        let ip = IpUpdate::abi_decode_data(&log.data, true).unwrap().0;
                         node.ip = format!(
                             "{}.{}.{}.{}",
                             (ip >> 24) & 0xFF,
@@ -245,25 +240,44 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             (ip >> 8) & 0xFF,
                             ip & 0xFF
                         );
+                        // when we get ip data, we should delete any router data,
+                        // since the assignment of ip indicates an direct node
+                        node.routers = vec![];
                     }
                     WsUpdate::SIGNATURE_HASH => {
-                        node.port = WsUpdate::abi_decode_data(&e.data, true).unwrap().0;
+                        node.port = WsUpdate::abi_decode_data(&log.data, true).unwrap().0;
+                        // when we get port data, we should delete any router data,
+                        // since the assignment of port indicates an direct node
+                        node.routers = vec![];
                     }
                     RoutingUpdate::SIGNATURE_HASH => {
-                        node.routers = RoutingUpdate::abi_decode_data(&e.data, true)
+                        node.routers = RoutingUpdate::abi_decode_data(&log.data, true)
                             .unwrap()
                             .0
                             .iter()
                             .map(|r| r.to_string())
                             .collect::<Vec<String>>();
+                        // when we get routing data, we should delete any ws/ip data,
+                        // since the assignment of routers indicates an indirect node
+                        node.ip = "".to_string();
+                        node.port = 0;
                     }
                     _ => {
                         send = false;
                     }
                 }
 
-                if send {
-                    print_to_terminal(1, &format!("ndns_indexer: sending ID to net: {:?}", node));
+                if node.public_key != ""
+                    && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
+                    && send
+                {
+                    print_to_terminal(
+                        1,
+                        &format!(
+                            "ndns_indexer: sending ID to net: {node:?} (blocknum {})",
+                            state.block
+                        ),
+                    );
                     Request::new()
                         .target((&our.node, "net", "sys", "nectar"))
                         .try_body(NetActions::NdnsUpdate(node.clone()))?
