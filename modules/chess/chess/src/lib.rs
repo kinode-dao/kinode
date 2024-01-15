@@ -1,5 +1,5 @@
 #![feature(let_chains)]
-use nectar_process_lib::{
+use kinode_process_lib::{
     await_message, call_init, get_blob, get_typed_state, http, println, set_state, Address,
     LazyLoadBlob, Message, NodeId, Request, Response,
 };

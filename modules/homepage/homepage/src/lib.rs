@@ -1,5 +1,5 @@
 #![feature(let_chains)]
-use nectar_process_lib::{
+use kinode_process_lib::{
     await_message, http::bind_http_static_path, http::HttpServerError, println, Address, Message,
 };
 

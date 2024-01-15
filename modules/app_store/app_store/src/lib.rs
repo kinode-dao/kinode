@@ -1,6 +1,6 @@
-use nectar_process_lib::kernel_types as kt;
-use nectar_process_lib::*;
-use nectar_process_lib::{call_init, println};
+use kinode_process_lib::kernel_types as kt;
+use kinode_process_lib::*;
+use kinode_process_lib::{call_init, println};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::Digest;

@@ -5,7 +5,7 @@
 ```bash
 # Clone the repo.
 
-git clone git@github.com:uqbar-dao/nectar.git
+git clone git@github.com:uqbar-dao/kinode.git
 
 # Configure dependency retrieval from GitHub
 mkdir .cargo
@@ -13,7 +13,7 @@ echo "net.git-fetch-with-cli = true" > .cargo/config
 
 # Get some stuff so we can build Wasm.
 
-cd nectar
+cd kinode
 cargo install wasm-tools
 rustup install nightly
 rustup target add wasm32-wasi

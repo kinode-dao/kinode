@@ -43,7 +43,7 @@ pub fn auth_cookie_valid(our_node: &str, cookie: &str, jwt_secret: &[u8]) -> boo
     for cookie_part in cookie_parts {
         let cookie_part_parts: Vec<&str> = cookie_part.split('=').collect();
         if cookie_part_parts.len() == 2
-            && cookie_part_parts[0] == format!("nectar-auth_{}", our_node)
+            && cookie_part_parts[0] == format!("kinode-auth_{}", our_node)
         {
             auth_token = Some(cookie_part_parts[1].to_string());
             break;

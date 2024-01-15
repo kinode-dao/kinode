@@ -1,7 +1,7 @@
 use indexmap::map::IndexMap;
 
-use nectar_process_lib::kernel_types as kt;
-use nectar_process_lib::{
+use kinode_process_lib::kernel_types as kt;
+use kinode_process_lib::{
     await_message, call_init, our_capabilities, println, spawn, vfs, Address, Message, OnExit,
     ProcessId, Request, Response,
 };

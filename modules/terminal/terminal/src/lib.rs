@@ -1,7 +1,7 @@
 use anyhow::anyhow;
-use nectar_process_lib::kernel_types::{KernelCommand, KernelPrint};
-use nectar_process_lib::nectar::process::standard as wit;
-use nectar_process_lib::{println, Address, ProcessId, Request};
+use kinode_process_lib::kernel_types::{KernelCommand, KernelPrint};
+use kinode_process_lib::kinode::process::standard as wit;
+use kinode_process_lib::{println, Address, ProcessId, Request};
 
 wit_bindgen::generate!({
     path: "../../../wit",

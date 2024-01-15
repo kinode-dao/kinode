@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use nectar_process_lib::kernel_types as kt;
-use nectar_process_lib::{Address, Response};
-// use nectar_process_lib::nectar::process::standard as wit;
+use kinode_process_lib::kernel_types as kt;
+use kinode_process_lib::{Address, Response};
+// use kinode_process_lib::kinode::process::standard as wit;
 
 type Rsvp = Option<Address>;
 

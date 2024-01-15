@@ -241,7 +241,7 @@ async fn login_handler(
             )
             .into_response();
 
-            match HeaderValue::from_str(&format!("nectar-auth_{}={};", our.as_ref(), &token)) {
+            match HeaderValue::from_str(&format!("kinode-auth_{}={};", our.as_ref(), &token)) {
                 Ok(v) => {
                     response.headers_mut().append(http::header::SET_COOKIE, v);
                     Ok(response)

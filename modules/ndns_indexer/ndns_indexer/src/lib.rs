@@ -1,7 +1,7 @@
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
-use nectar_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
-use nectar_process_lib::{
+use kinode_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
+use kinode_process_lib::{
     await_message, get_typed_state, http, print_to_terminal, println, set_state, Address,
     LazyLoadBlob, Message, Request, Response,
 };

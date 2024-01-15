@@ -12,7 +12,7 @@ use wasmtime::{Config, Engine, WasmBacktraceDetails};
 
 /// Manipulate a single process.
 pub mod process;
-/// Implement the functions served to processes by `nectar.wit`.
+/// Implement the functions served to processes by `kinode.wit`.
 mod standard_host;
 
 const PROCESS_CHANNEL_CAPACITY: usize = 100;

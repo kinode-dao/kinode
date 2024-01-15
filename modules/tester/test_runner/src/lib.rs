@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use nectar_process_lib::{
+use kinode_process_lib::{
     await_message, our_capabilities, println, spawn, vfs, Address, Message, OnExit, ProcessId,
     Request, Response,
 };
