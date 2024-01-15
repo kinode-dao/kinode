@@ -1,0 +1,21 @@
+[
+    {
+        "process_name": "script_runner",
+        "process_wasm_path": "/script_runner.wasm",
+        "on_exit": "Restart",
+        "request_networking": false,
+        "request_capabilities": [
+            "filesystem:sys:nectar",
+            "vfs:sys:nectar",
+            "kernel:sys:nectar",
+            {
+                "process": "vfs:sys:nectar",
+                "params": {
+                    "root": true
+                }
+            }
+        ],
+        "grant_capabilities": [],
+        "public": true
+    }
+]
