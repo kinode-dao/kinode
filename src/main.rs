@@ -92,7 +92,7 @@ async fn serve_register_fe(
 
 #[tokio::main]
 async fn main() {
-    let mut app = Command::new("nectar")
+    let app = Command::new("nectar")
         .version(VERSION)
         .author("Uqbar DAO: https://github.com/uqbar-dao")
         .about("A General Purpose Sovereign Cloud Computing Platform")
