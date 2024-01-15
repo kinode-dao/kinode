@@ -18,6 +18,27 @@ use tokio::signal::unix::{signal, SignalKind};
 
 mod utils;
 
+struct RawMode;
+impl RawMode {
+    fn new() -> anyhow::Result<Self> {
+        enable_raw_mode()?;
+        Ok(RawMode)
+    }
+}
+impl Drop for RawMode {
+    fn drop(&mut self) {
+        match disable_raw_mode() {
+            Ok(_) => {
+                let is_enabled = crossterm::terminal::is_raw_mode_enabled();
+                println!("nectar: disabled raw mode successfully: {is_enabled:?}\r");
+            }
+            Err(e) => {
+                println!("nectar: failed to disable raw mode: {e:?}\r");
+            }
+        }
+    }
+}
+
 /*
  *  terminal driver
  */
@@ -29,6 +50,7 @@ pub async fn terminal(
     debug_event_loop: DebugSender,
     print_tx: PrintSender,
     mut print_rx: PrintReceiver,
+    is_detached: bool,
 ) -> Result<()> {
     let mut stdout = stdout();
     execute!(
@@ -89,7 +111,12 @@ pub async fn terminal(
         );
     }
 
-    enable_raw_mode()?;
+    let _raw_mode = if is_detached {
+        None
+    } else {
+        Some(RawMode::new()?)
+    };
+
     let mut reader = EventStream::new();
     let mut current_line = format!("{} > ", our.name);
     let prompt_len: usize = our.name.len() + 3;
@@ -219,7 +246,6 @@ pub async fn terminal(
                         ..
                     }) => {
                         execute!(stdout, DisableBracketedPaste, terminal::SetTitle(""))?;
-                        disable_raw_mode()?;
                         break;
                     },
                     // CTRL+V: toggle through verbosity modes
@@ -621,6 +647,5 @@ pub async fn terminal(
         }
     }
     execute!(stdout.lock(), DisableBracketedPaste, terminal::SetTitle(""))?;
-    disable_raw_mode()?;
     Ok(())
 }

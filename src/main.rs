@@ -39,7 +39,7 @@ const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Tshis can and should be an environment variable / setting. It configures networking
+/// This can and should be an environment variable / setting. It configures networking
 /// such that indirect nodes always use routers, even when target is a direct node,
 /// such that only their routers can ever see their physical networking details.
 const REVEAL_IP: bool = true;
@@ -120,6 +120,10 @@ async fn main() {
             arg!(--"network-router-port" <PORT> "Network router port")
                 .default_value("9001")
                 .value_parser(value_parser!(u16)),
+        )
+        .arg(
+            arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
+                .action(clap::ArgAction::SetTrue),
         );
 
     let matches = app.get_matches();
@@ -134,10 +138,10 @@ async fn main() {
     };
 
     #[cfg(not(feature = "simulation-mode"))]
-    let rpc_url = matches.get_one::<String>("rpc").unwrap();
+    let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").unwrap(), false);
 
     #[cfg(feature = "simulation-mode")]
-    let (rpc_url, password, network_router_port, fake_node_name) = (
+    let (rpc_url, password, network_router_port, fake_node_name, is_detached) = (
         matches.get_one::<String>("rpc"),
         matches.get_one::<String>("password"),
         matches
@@ -145,6 +149,7 @@ async fn main() {
             .unwrap()
             .clone(),
         matches.get_one::<String>("fake-node-name"),
+        matches.get_one::<bool>("detached").unwrap().clone(),
     );
 
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
@@ -503,6 +508,7 @@ async fn main() {
             kernel_debug_message_sender,
             print_sender.clone(),
             print_receiver,
+            is_detached,
         ) => {
             match quit {
                 Ok(_) => "graceful exit".into(),
@@ -537,6 +543,7 @@ async fn main() {
 
     // abort all remaining tasks
     tasks.shutdown().await;
+    //let _ = crossterm::terminal::disable_raw_mode().unwrap();
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
     let _ = crossterm::execute!(
@@ -544,7 +551,6 @@ async fn main() {
         crossterm::event::DisableBracketedPaste,
         crossterm::terminal::SetTitle(""),
     );
-    let _ = crossterm::terminal::disable_raw_mode();
     println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
     return;
 }
