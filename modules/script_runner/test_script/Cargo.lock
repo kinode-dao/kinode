@@ -244,19 +244,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f98d2aa92eebf49b69786be48e4477826b256916e84a57ff2a4f21923b48eb4c"
 
 [[package]]
-name = "script_runner"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "nectar_process_lib",
- "rand",
- "serde",
- "serde_json",
- "wit-bindgen",
-]
-
-[[package]]
 name = "semver"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -317,6 +304,17 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "test_script"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "nectar_process_lib",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
 ]
 
 [[package]]
