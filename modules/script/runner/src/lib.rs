@@ -272,11 +272,15 @@ fn handle_run(
     //         }
     //     }
     // }
-    Request::new()
+    let _ = Request::new()
         .target(("our", "kernel", "sys", "nectar"))
         .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
-            parsed_new_process_id,
+            parsed_new_process_id.clone(),
         ))?)
         .send_and_await_response(5)??;
+    let _ = Request::new()
+        .target(("our", parsed_new_process_id))
+        .body(args.into_bytes())
+        .send();
     Ok(())
 }
