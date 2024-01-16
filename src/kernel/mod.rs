@@ -818,9 +818,6 @@ pub async fn kernel(
         .await
         .expect("fatal: kernel event loop died");
 
-    #[cfg(feature = "simulation-mode")]
-    let tester_process_id = t::ProcessId::new(Some("tester"), "tester", "nectar");
-
     // main event loop
     loop {
         tokio::select! {
