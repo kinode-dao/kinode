@@ -1,7 +1,7 @@
 [
     {
-        "process_name": "script_runner",
-        "process_wasm_path": "/script_runner.wasm",
+        "process_name": "runner",
+        "process_wasm_path": "/runner.wasm",
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [
