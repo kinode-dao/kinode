@@ -551,10 +551,16 @@ fn display_message(m: &Message, delimiter: &str) -> String {
                         Err(_) => format!("{:?}", request.body),
                     }
                 ),
-                format!("metadata: {},", &request.metadata.as_ref().unwrap_or(&"None".into())),
-                format!("capabilities: {}", display_capabilities(&request.capabilities, delimiter)),
+                format!(
+                    "metadata: {},",
+                    &request.metadata.as_ref().unwrap_or(&"None".into())
+                ),
+                format!(
+                    "capabilities: {}",
+                    display_capabilities(&request.capabilities, delimiter)
+                ),
             ]
-        },
+        }
         Message::Response((response, context)) => {
             vec![
                 "Response(".into(),
@@ -566,21 +572,28 @@ fn display_message(m: &Message, delimiter: &str) -> String {
                         Err(_) => format!("{:?}", response.body),
                     }
                 ),
-                format!("metadata: {},", &response.metadata.as_ref().unwrap_or(&"None".into())),
+                format!(
+                    "metadata: {},",
+                    &response.metadata.as_ref().unwrap_or(&"None".into())
+                ),
                 format!(
                     "context: {},",
                     if context.is_none() {
                         "None".into()
                     } else {
-                        match serde_json::from_slice::<serde_json::Value>(context.as_ref().unwrap()) {
+                        match serde_json::from_slice::<serde_json::Value>(context.as_ref().unwrap())
+                        {
                             Ok(json) => format!("{}", json),
                             Err(_) => format!("{:?}", context.as_ref().unwrap()),
                         }
                     },
                 ),
-                format!("capabilities: {}", display_capabilities(&response.capabilities, delimiter)),
+                format!(
+                    "capabilities: {}",
+                    display_capabilities(&response.capabilities, delimiter)
+                ),
             ]
-        },
+        }
     };
     lines.into_iter().collect::<Vec<_>>().join(delimiter) + &delimiter[..delimiter.len() - 4] + ")"
 }
