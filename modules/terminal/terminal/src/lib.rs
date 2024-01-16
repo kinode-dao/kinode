@@ -92,7 +92,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                     .send(),
             }
         }
-        "/run" => {
+        "/script" | "/s" => {
             let (process, args) = match tail.split_once(" ") {
                 Some((p, a)) => (
                     match p.parse::<ProcessId>() {
