@@ -514,6 +514,9 @@ async fn http_handler(
         }
     }
 
+    // unlock to avoid deadlock with .write()s
+    drop(path_bindings);
+
     let timeout_duration = tokio::time::Duration::from_secs(HTTP_SELF_IMPOSED_TIMEOUT);
     let result = tokio::time::timeout(timeout_duration, response_receiver).await;
 
