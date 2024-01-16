@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use nectar_process_lib::kernel_types::{KernelCommand, KernelPrint};
 use nectar_process_lib::nectar::process::standard as wit;
 use nectar_process_lib::{println, Address, ProcessId, Request};
+use serde_json::json;
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -90,6 +91,36 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                     ))?)
                     .send(),
             }
+        }
+        "/run" => {
+            let (process, args) = match tail.split_once(" ") {
+                Some((p, a)) => (
+                    match p.parse::<ProcessId>() {
+                        Ok(p) => p,
+                        Err(_) => return Err(anyhow!("invalid process id: \"{tail}\"")),
+                    },
+                    a,
+                ),
+                None => return Err(anyhow!("invalid command: \"{line}\"")),
+            };
+            Request::new()
+                .target(Address::new("our", ("runner", "script", "nectar")))
+                .body(
+                    json!({
+                        "Run": {
+                            // TODO we should add a package_id() method to ProcessId that will get this for you
+                            "package": {
+                                "package_name": process.package(),
+                                "publisher_node": process.publisher(),
+                            },
+                            "wasm_path": format!("{}.wasm", process.process()),
+                            "args": args
+                        }
+                    })
+                    .to_string()
+                    .into_bytes(),
+                )
+                .send()
         }
         _ => return Err(anyhow!("invalid command: \"{line}\"")),
     }
