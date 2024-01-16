@@ -320,6 +320,9 @@ async fn ws_handler(
     }
 
     let app = bound_path.app.clone();
+
+    drop(ws_path_bindings);
+
     Ok(ws_connection.on_upgrade(move |ws: WebSocket| async move {
         maintain_websocket(
             ws,
@@ -502,6 +505,9 @@ async fn http_handler(
         }
     };
 
+    // unlock to avoid deadlock with .write()s
+    drop(path_bindings);
+
     let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
     http_response_senders.insert(id, (original_path, response_sender));
 
@@ -513,9 +519,6 @@ async fn http_handler(
             );
         }
     }
-
-    // unlock to avoid deadlock with .write()s
-    drop(path_bindings);
 
     let timeout_duration = tokio::time::Duration::from_secs(HTTP_SELF_IMPOSED_TIMEOUT);
     let result = tokio::time::timeout(timeout_duration, response_receiver).await;
