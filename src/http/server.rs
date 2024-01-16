@@ -469,7 +469,7 @@ async fn http_handler(
         // separated by "/" and taking all but the first
         let segments: Vec<&str> = original_path.split('/').collect();
         let stripped_path = if segments.len() > 2 {
-            segments[2..].join("/")
+            format!("/{}", segments[2..].join("/"))
         } else {
             "/".to_string()
         };
