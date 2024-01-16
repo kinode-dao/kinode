@@ -462,9 +462,7 @@ async fn http_handler(
     // and send it to the correct app.
     let (message, is_fire_and_forget) = if bound_path.app == "rpc:sys:nectar" {
         match handle_rpc_message(our, id, body, print_tx).await {
-            Ok((message, is_fire_and_forget)) => {
-                (message, is_fire_and_forget)
-            }
+            Ok((message, is_fire_and_forget)) => (message, is_fire_and_forget),
             Err(e) => {
                 return Ok(warp::reply::with_status(vec![], e).into_response());
             }
@@ -518,7 +516,8 @@ async fn http_handler(
             Ok(_) => {}
             Err(_) => {
                 return Ok(
-                    warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR).into_response(),
+                    warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR)
+                        .into_response(),
                 );
             }
         }
@@ -614,13 +613,10 @@ async fn handle_rpc_message(
         },
     };
 
-    let rsvp = rpc_message
-        .expects_response
-        .map(|_er| {
-            Address {
-                node: our.to_string(),
-                process: HTTP_SERVER_PROCESS_ID.clone(),
-        }});
+    let rsvp = rpc_message.expects_response.map(|_er| Address {
+        node: our.to_string(),
+        process: HTTP_SERVER_PROCESS_ID.clone(),
+    });
     Ok((
         KernelMessage {
             id,
