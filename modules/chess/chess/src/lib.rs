@@ -418,7 +418,7 @@ fn handle_http_request(
     state: &mut ChessState,
     http_request: &http::IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    if http_request.path()? != "games" {
+    if http_request.raw_path != "/games" {
         return http::send_response(
             http::StatusCode::NOT_FOUND,
             None,
