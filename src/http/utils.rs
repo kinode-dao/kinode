@@ -99,8 +99,8 @@ pub fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
     header_map
 }
 
-pub async fn find_open_port(start_at: u16) -> Option<u16> {
-    for port in start_at..(start_at + 1000) {
+pub async fn find_open_port(start_at: u16, end_at: u16) -> Option<u16> {
+    for port in start_at..end_at {
         let bind_addr = format!("0.0.0.0:{}", port);
         if is_port_available(&bind_addr).await {
             return Some(port);
