@@ -95,8 +95,8 @@ pub enum NetActions {
     ConnectionRequest(NodeId),
     /// can only receive from trusted source, for now just ourselves locally,
     /// in the future could get from remote provider
-    NdnsUpdate(NdnsUpdate),
-    NdnsBatchUpdate(Vec<NdnsUpdate>),
+    KnsUpdate(KnsUpdate),
+    KnsBatchUpdate(Vec<KnsUpdate>),
 }
 
 /// For now, only sent in response to a ConnectionRequest.
@@ -108,7 +108,7 @@ pub enum NetResponses {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct NdnsUpdate {
+pub struct KnsUpdate {
     pub name: String, // actual username / domain name
     pub owner: String,
     pub node: String, // hex namehash of node
