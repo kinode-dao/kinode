@@ -9,6 +9,7 @@
             "http_client:distro:sys",
             "kernel:distro:sys"
         ],
+        "grant_capabilities": [],
         "public": true
     }
 ]
