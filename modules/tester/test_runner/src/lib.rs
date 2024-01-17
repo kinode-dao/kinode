@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use kinode_process_lib::{
     await_message, our_capabilities, println, spawn, vfs, Address, Message, OnExit, ProcessId,
-    Request, Response,
+    Request, Response, vfs::{DirEntry, FileType},
 };
 
 mod tester_types;
@@ -24,7 +24,7 @@ fn make_vfs_address(our: &Address) -> anyhow::Result<Address> {
 }
 
 fn handle_message(our: &Address) -> anyhow::Result<()> {
-    let message = await_message().unwrap();
+    let message = await_message()?;
 
     match message {
         Message::Response { .. } => {
@@ -32,13 +32,15 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
         }
         Message::Request { ref body, .. } => {
             match serde_json::from_slice(body)? {
-                tt::TesterRequest::Run { test_timeout, .. } => {
+                tt::TesterRequest::Run { ref test_names, test_timeout, .. } => {
                     println!("test_runner: got Run");
+
+                    let dir_prefix = "tester:sys/tests";
 
                     let response = Request::new()
                         .target(make_vfs_address(&our)?)
                         .body(serde_json::to_vec(&vfs::VfsRequest {
-                            path: "/tester:sys/tests".into(),
+                            path: dir_prefix.into(),
                             action: vfs::VfsAction::ReadDir,
                         })?)
                         .send_and_await_response(test_timeout)?
@@ -57,40 +59,43 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                         panic!("")
                     };
 
-                    let caps_file_path = "tester:sys/tests/grant_capabilities.json";
-                    let caps_index = children.iter().position(|i| *i.path == *caps_file_path);
-                    let caps_by_child: std::collections::HashMap<String, Vec<String>> =
-                        match caps_index {
-                            None => std::collections::HashMap::new(),
-                            Some(caps_index) => {
-                                children.remove(caps_index);
-                                let file = vfs::file::open_file(caps_file_path, false)?;
-                                let file_contents = file.read()?;
-                                serde_json::from_slice(&file_contents)?
-                            }
+                    for test_name in test_names {
+                        let test_entry = DirEntry {
+                            path: format!("{}/{}.wasm", dir_prefix, test_name),
+                            file_type: FileType::File,
                         };
+                        if !children.contains(&test_entry) {
+                            return Err(anyhow::anyhow!(
+                                "test {} not found amongst {:?}",
+                                test_name,
+                                children,
+                            ));
+                        }
+                    }
+
+                    let caps_file_path = format!("{}/grant_capabilities.json", dir_prefix);
+                    let caps_index = children.iter().position(|i| *i.path == *caps_file_path);
+                    let caps_by_child: std::collections::HashMap<String, Vec<String>> = match caps_index {
+                        None => std::collections::HashMap::new(),
+                        Some(caps_index) => {
+                            children.remove(caps_index);
+                            let file = vfs::file::open_file(&caps_file_path, false)?;
+                            let file_contents = file.read()?;
+                            serde_json::from_slice(&file_contents)?
+                        }
+                    };
 
                     println!("test_runner: running {:?}...", children);
 
-                    for child in &children {
-                        let grant_caps = child
-                            .path
-                            .split("/")
-                            .last()
-                            .and_then(|child_file_name| child_file_name.strip_suffix(".wasm"))
-                            .and_then(|child_file_name| {
-                                caps_by_child.get(child_file_name).and_then(|caps| {
-                                    Some(
-                                        caps.iter()
-                                            .map(|cap| ProcessId::from_str(cap).unwrap())
-                                            .collect(),
-                                    )
-                                })
-                            })
+                    for test_name in test_names {
+                        let test_path = format!("{}/{}.wasm", dir_prefix, test_name);
+                        let grant_caps = caps_by_child
+                            .get(test_name)
+                            .and_then(|caps| Some(caps.iter().map(|cap| ProcessId::from_str(cap).unwrap()).collect()))
                             .unwrap_or(vec![]);
                         let child_process_id = match spawn(
                             None,
-                            &child.path,
+                            &test_path,
                             OnExit::None, //  TODO: notify us
                             our_capabilities(),
                             grant_caps,
@@ -98,7 +103,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                         ) {
                             Ok(child_process_id) => child_process_id,
                             Err(e) => {
-                                println!("couldn't spawn {}: {}", child.path, e);
+                                println!("couldn't spawn {}: {}", test_path, e);
                                 panic!("couldn't spawn"); //  TODO
                             }
                         };
