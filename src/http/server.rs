@@ -468,7 +468,6 @@ async fn http_handler(
             }
         }
     } else {
-        // otherwise, make a message to the correct app
         KernelMessage {
             id,
             source: Address {
@@ -486,7 +485,7 @@ async fn http_handler(
                 body: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
                     source_socket_addr: socket_addr.map(|addr| addr.to_string()),
                     method: method.to_string(),
-                    raw_path: format!(
+                    url: format!(
                         "http://{}{}",
                         host.unwrap_or(Authority::from_static("localhost")),
                         original_path
