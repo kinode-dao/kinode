@@ -110,7 +110,11 @@ pub async fn register(
     let tx = Arc::new(tx);
 
     // TODO: if IP is localhost, don't allow registration as direct
-    let ws_port = crate::http::utils::find_open_port(9000).await.unwrap();
+    let ws_port = crate::http::utils::find_open_port(9000, 65535)
+        .await
+        .expect(
+            "Unable to find free port between 9000 and 65535 for a new websocket, are you kidding?",
+        );
 
     // This is a temporary identity, passed to the UI. If it is confirmed through a /boot or /confirm-change-network-keys, then it will be used to replace the current identity
     let our_temp_id = Arc::new(Identity {
@@ -355,7 +359,7 @@ async fn handle_import_keyfile(
         }
     };
 
-    let Some(ws_port) = crate::http::utils::find_open_port(9000).await else {
+    let Some(ws_port) = crate::http::utils::find_open_port(9000, 9999).await else {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Unable to find free port"),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -417,7 +421,7 @@ async fn handle_login(
     }
     let encoded_keyfile = encoded_keyfile.unwrap();
 
-    let Some(ws_port) = crate::http::utils::find_open_port(9000).await else {
+    let Some(ws_port) = crate::http::utils::find_open_port(9000, 65535).await else {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Unable to find free port"),
             StatusCode::INTERNAL_SERVER_ERROR,
