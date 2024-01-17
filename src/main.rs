@@ -239,7 +239,6 @@ async fn main() {
         }
     };
 
-    if http_server_port != port {}
     println!(
         "login or register at http://localhost:{}\r",
         http_server_port
