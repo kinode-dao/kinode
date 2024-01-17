@@ -138,13 +138,13 @@ fn main() {
     // Pull wit from git repo
     let wit_dir = pwd.join("wit");
     fs::create_dir_all(&wit_dir).unwrap();
-    let wit_file = wit_dir.join("nectar.wit");
+    let wit_file = wit_dir.join("kinode.wit");
     if !wit_file.exists() {
         // TODO: cache in better way
         let mut wit_file = std::fs::File::create(&wit_file).unwrap();
-        let nectar_wit_url =
-            "https://raw.githubusercontent.com/uqbar-dao/nectar-wit/master/nectar.wit";
-        let mut response = reqwest::blocking::get(nectar_wit_url).unwrap();
+        let kinode_wit_url =
+            "https://raw.githubusercontent.com/uqbar-dao/kinode-wit/master/kinode.wit";
+        let mut response = reqwest::blocking::get(kinode_wit_url).unwrap();
         io::copy(&mut response, &mut wit_file).unwrap();
     }
 

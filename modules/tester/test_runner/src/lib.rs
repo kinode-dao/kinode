@@ -1,7 +1,8 @@
 use std::str::FromStr;
 
-use nectar_process_lib::{
-    await_message, our_capabilities, println, spawn, vfs, Address, Message, OnExit, ProcessId, Request, Response,
+use kinode_process_lib::{
+    await_message, our_capabilities, println, spawn, vfs, Address, Message, OnExit, ProcessId,
+    Request, Response,
 };
 
 mod tester_types;
@@ -18,7 +19,7 @@ wit_bindgen::generate!({
 fn make_vfs_address(our: &Address) -> anyhow::Result<Address> {
     Ok(Address::new(
         our.node.clone(),
-        ProcessId::from_str("vfs:sys:nectar")?,
+        ProcessId::from_str("vfs:distro:sys")?,
     ))
 }
 
@@ -37,7 +38,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     let response = Request::new()
                         .target(make_vfs_address(&our)?)
                         .body(serde_json::to_vec(&vfs::VfsRequest {
-                            path: "/tester:nectar/tests".into(),
+                            path: "/tester:sys/tests".into(),
                             action: vfs::VfsAction::ReadDir,
                         })?)
                         .send_and_await_response(test_timeout)?
@@ -46,7 +47,8 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     let Message::Response { body: vfs_body, .. } = response else {
                         panic!("")
                     };
-                    let vfs::VfsResponse::ReadDir(mut children) = serde_json::from_slice(&vfs_body)?
+                    let vfs::VfsResponse::ReadDir(mut children) =
+                        serde_json::from_slice(&vfs_body)?
                     else {
                         println!(
                             "{:?}",
@@ -55,29 +57,35 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                         panic!("")
                     };
 
-                    let caps_file_path = "tester:nectar/tests/grant_capabilities.json";
+                    let caps_file_path = "tester:sys/tests/grant_capabilities.json";
                     let caps_index = children.iter().position(|i| *i.path == *caps_file_path);
-                    let caps_by_child: std::collections::HashMap<String, Vec<String>> = match caps_index {
-                        None => std::collections::HashMap::new(),
-                        Some(caps_index) => {
-                            children.remove(caps_index);
-                            let file = vfs::file::open_file(caps_file_path, false)?;
-                            let file_contents = file.read()?;
-                            serde_json::from_slice(&file_contents)?
-                        }
-                    };
+                    let caps_by_child: std::collections::HashMap<String, Vec<String>> =
+                        match caps_index {
+                            None => std::collections::HashMap::new(),
+                            Some(caps_index) => {
+                                children.remove(caps_index);
+                                let file = vfs::file::open_file(caps_file_path, false)?;
+                                let file_contents = file.read()?;
+                                serde_json::from_slice(&file_contents)?
+                            }
+                        };
 
                     println!("test_runner: running {:?}...", children);
 
                     for child in &children {
-                        let grant_caps = child.path
+                        let grant_caps = child
+                            .path
                             .split("/")
                             .last()
                             .and_then(|child_file_name| child_file_name.strip_suffix(".wasm"))
                             .and_then(|child_file_name| {
-                                caps_by_child
-                                    .get(child_file_name)
-                                    .and_then(|caps| Some(caps.iter().map(|cap| ProcessId::from_str(cap).unwrap()).collect()))
+                                caps_by_child.get(child_file_name).and_then(|caps| {
+                                    Some(
+                                        caps.iter()
+                                            .map(|cap| ProcessId::from_str(cap).unwrap())
+                                            .collect(),
+                                    )
+                                })
                             })
                             .unwrap_or(vec![]);
                         let child_process_id = match spawn(

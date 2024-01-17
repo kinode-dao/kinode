@@ -5,16 +5,16 @@ use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 lazy_static::lazy_static! {
-    pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "sys", "nectar");
-    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "sys", "nectar");
-    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "sys", "nectar");
-    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "sys", "nectar");
-    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "nectar");
-    pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "sys", "nectar");
-    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "sys", "nectar");
-    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "sys", "nectar");
-    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "sys", "nectar");
-    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "sys", "nectar");
+    pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys");
+    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "distro", "sys");
+    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "distro", "sys");
+    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys");
+    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "sys");
+    pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "distro", "sys");
+    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "distro", "sys");
+    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
+    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
+    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
 }
 
 //
@@ -521,52 +521,81 @@ impl OnExit {
 
 impl std::fmt::Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Message::Request(request) => write!(
-                f,
-                "Request(\n    inherit: {},\n    expects_response: {:?},\n    body: {},\n    metadata: {}\n    capabilities:\n{}\n)",
-                request.inherit,
-                request.expects_response,
-                match serde_json::from_slice::<serde_json::Value>(&request.body) {
-                    Ok(json) => format!("{}", json),
-                    Err(_) => format!("{:?}", request.body),
-                },
-                &request.metadata.as_ref().unwrap_or(&"None".into()),
-                {
-                    let mut caps_string = "[".to_string();
-                    for cap in request.capabilities.iter() {
-                        caps_string += &format!("\n        {}", cap.0.to_string());
-                    }
-                    caps_string + "\n    ]"
-                },
-            ),
-            Message::Response((response, context)) => write!(
-                f,
-                "Response(\n    inherit: {},\n    body: {},\n    metadata: {},\n    context: {},\n    capabilities:\n{}\n)",
-                response.inherit,
-                match serde_json::from_slice::<serde_json::Value>(&response.body) {
-                    Ok(json) => format!("{}", json),
-                    Err(_) => format!("{:?}", response.body),
-                },
-                &response.metadata.as_ref().unwrap_or(&"None".into()),
-                if context.is_none() {
-                    "None".into()
-                } else {
-                    match serde_json::from_slice::<serde_json::Value>(context.as_ref().unwrap()) {
-                        Ok(json) => format!("{}", json),
-                        Err(_) => format!("{:?}", context.as_ref().unwrap()),
-                    }
-                },
-                {
-                    let mut caps_string = "[".to_string();
-                    for cap in response.capabilities.iter() {
-                        caps_string += &format!("\n        {}", cap.0.to_string());
-                    }
-                    caps_string + "\n    ]"
-                },
-            ),
-        }
+        write!(f, "{}", display_message(self, "\n    "))
     }
+}
+
+fn display_capabilities(capabilities: &Vec<(Capability, Vec<u8>)>, delimiter: &str) -> String {
+    if capabilities.is_empty() {
+        return "[],".to_string();
+    }
+
+    let mut caps_string = "[".to_string();
+    for cap in capabilities.iter() {
+        caps_string += &format!("{}    {}", delimiter, cap.0.to_string());
+    }
+    format!("{}{}]", caps_string, delimiter)
+}
+
+fn display_message(m: &Message, delimiter: &str) -> String {
+    let lines = match m {
+        Message::Request(request) => {
+            vec![
+                "Request(".into(),
+                format!("inherit: {},", request.inherit),
+                format!("expects_response: {:?},", request.expects_response),
+                format!(
+                    "body: {},",
+                    match serde_json::from_slice::<serde_json::Value>(&request.body) {
+                        Ok(json) => format!("{}", json),
+                        Err(_) => format!("{:?}", request.body),
+                    }
+                ),
+                format!(
+                    "metadata: {},",
+                    &request.metadata.as_ref().unwrap_or(&"None".into())
+                ),
+                format!(
+                    "capabilities: {}",
+                    display_capabilities(&request.capabilities, delimiter)
+                ),
+            ]
+        }
+        Message::Response((response, context)) => {
+            vec![
+                "Response(".into(),
+                format!("inherit: {},", response.inherit),
+                format!(
+                    "body: {},",
+                    match serde_json::from_slice::<serde_json::Value>(&response.body) {
+                        Ok(json) => format!("{}", json),
+                        Err(_) => format!("{:?}", response.body),
+                    }
+                ),
+                format!(
+                    "metadata: {},",
+                    &response.metadata.as_ref().unwrap_or(&"None".into())
+                ),
+                format!(
+                    "context: {},",
+                    if context.is_none() {
+                        "None".into()
+                    } else {
+                        match serde_json::from_slice::<serde_json::Value>(context.as_ref().unwrap())
+                        {
+                            Ok(json) => format!("{}", json),
+                            Err(_) => format!("{:?}", context.as_ref().unwrap()),
+                        }
+                    },
+                ),
+                format!(
+                    "capabilities: {}",
+                    display_capabilities(&response.capabilities, delimiter)
+                ),
+            ]
+        }
+    };
+    lines.into_iter().collect::<Vec<_>>().join(delimiter) + &delimiter[..delimiter.len() - 4] + ")"
 }
 
 //
@@ -720,7 +749,7 @@ pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
 pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
 
 //
-// types used for Nectar's identity system
+// types used for onchain identity system
 //
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -836,7 +865,7 @@ impl std::fmt::Display for KernelMessage {
                 Some(rsvp) => rsvp.to_string(),
                 None => "None".to_string()
             },
-            self.message,
+            display_message(&self.message, "\n        "),
             self.lazy_load_blob.is_some(),
         )
     }

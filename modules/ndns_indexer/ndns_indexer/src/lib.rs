@@ -1,7 +1,7 @@
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
-use nectar_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
-use nectar_process_lib::{
+use kinode_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
+use kinode_process_lib::{
     await_message, get_typed_state, http, print_to_terminal, println, set_state, Address,
     LazyLoadBlob, Message, Request, Response,
 };
@@ -114,7 +114,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         let Ok(Message::Request { source, body, .. }) = await_message() else {
             continue;
         };
-        if source.process != "kernel:sys:nectar" {
+        if source.process != "kernel:distro:sys" {
             continue;
         }
         contract_address = Some(std::str::from_utf8(&body).unwrap().to_string());
@@ -135,7 +135,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     }
     // shove all state into net::net
     Request::new()
-        .target((&our.node, "net", "sys", "nectar"))
+        .target((&our.node, "net", "distro", "sys"))
         .try_body(NetActions::NdnsBatchUpdate(
             state.nodes.values().cloned().collect::<Vec<_>>(),
         ))?
@@ -166,7 +166,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         };
 
-        if source.process == "http_server:sys:nectar" {
+        if source.process == "http_server:distro:sys" {
             if let Ok(body_json) = serde_json::from_slice::<serde_json::Value>(&body) {
                 if body_json["path"].as_str().unwrap_or_default() == "/node/:name" {
                     if let Some(name) = body_json["url_params"]["name"].as_str() {
@@ -279,7 +279,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                         ),
                     );
                     Request::new()
-                        .target((&our.node, "net", "sys", "nectar"))
+                        .target((&our.node, "net", "distro", "sys"))
                         .try_body(NetActions::NdnsUpdate(node.clone()))?
                         .send()?;
                 }
