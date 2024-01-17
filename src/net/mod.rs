@@ -645,7 +645,7 @@ async fn recv_connection(
     noise.read_message(first_message, &mut buf)?;
 
     // -> e, ee, s, es
-    send_nectar_handshake(
+    send_protocol_handshake(
         our,
         keypair,
         &our_static_key,
@@ -658,7 +658,7 @@ async fn recv_connection(
 
     // <- s, se
     let their_handshake =
-        recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_protocol_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the NDNS PKI
     let their_id = pki
@@ -724,7 +724,7 @@ async fn recv_connection_via_router(
     )?;
 
     // -> e, ee, s, es
-    send_nectar_handshake(
+    send_protocol_handshake(
         our,
         keypair,
         &our_static_key,
@@ -737,7 +737,7 @@ async fn recv_connection_via_router(
 
     // <- s, se
     let their_handshake =
-        recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_protocol_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the NDNS PKI
     let their_id = pki
@@ -816,7 +816,7 @@ async fn init_connection(
 
     // <- e, ee, s, es
     let their_handshake =
-        recv_nectar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_protocol_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
     // now validate this handshake payload against the NDNS PKI
     validate_handshake(
@@ -828,7 +828,7 @@ async fn init_connection(
     )?;
 
     // -> s, se
-    send_nectar_handshake(
+    send_protocol_handshake(
         our,
         keypair,
         &our_static_key,
@@ -930,7 +930,7 @@ async fn handle_local_message(
                             id: km.id,
                             source: Address {
                                 node: our.name.clone(),
-                                process: ProcessId::new(Some("net"), "sys", "nectar"),
+                                process: ProcessId::new(Some("net"), "distro", "sys"),
                             },
                             target: km.rsvp.unwrap_or(km.source),
                             rsvp: None,

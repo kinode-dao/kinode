@@ -5,10 +5,11 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "net:sys:nectar",
-            "http_client:sys:nectar",
-            "kernel:sys:nectar"
+            "net:distro:sys",
+            "http_client:distro:sys",
+            "kernel:distro:sys"
         ],
+        "grant_capabilities": [],
         "public": true
     }
 ]

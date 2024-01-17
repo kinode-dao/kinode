@@ -86,13 +86,13 @@ pub async fn http_server(
     // add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
-        app: ProcessId::new(Some("rpc"), "sys", "nectar"),
+        app: ProcessId::new(Some("rpc"), "distro", "sys"),
         secure_subdomain: None, // TODO maybe RPC should have subdomain?
         authenticated: false,
         local_only: true,
         static_content: None,
     };
-    bindings_map.add("/rpc:sys:nectar/message", rpc_bound_path);
+    bindings_map.add("/rpc:distro:sys/message", rpc_bound_path);
     let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
     // ws path bindings
@@ -241,7 +241,7 @@ async fn login_handler(
             )
             .into_response();
 
-            match HeaderValue::from_str(&format!("nectar-auth_{}={};", our.as_ref(), &token)) {
+            match HeaderValue::from_str(&format!("kinode-auth_{}={};", our.as_ref(), &token)) {
                 Ok(v) => {
                     response.headers_mut().append(http::header::SET_COOKIE, v);
                     Ok(response)
@@ -457,10 +457,10 @@ async fn http_handler(
         }
     }
 
-    // RPC functionality: if path is /rpc:sys:nectar/message,
+    // RPC functionality: if path is /rpc:distro:sys/message,
     // we extract message from base64 encoded bytes in data
     // and send it to the correct app.
-    let (message, is_fire_and_forget) = if bound_path.app == "rpc:sys:nectar" {
+    let (message, is_fire_and_forget) = if bound_path.app == "rpc:distro:sys" {
         match handle_rpc_message(our, id, body, print_tx).await {
             Ok((message, is_fire_and_forget)) => (message, is_fire_and_forget),
             Err(e) => {
@@ -821,7 +821,7 @@ async fn handle_app_message(
                 return;
             };
             // if path is /rpc/message, return accordingly with base64 encoded blob
-            if path == "/rpc:sys:nectar/message" {
+            if path == "/rpc:distro:sys/message" {
                 let blob = km.lazy_load_blob.map(|p| LazyLoadBlob {
                     mime: p.mime,
                     bytes: base64::encode(p.bytes).into_bytes(),
@@ -883,7 +883,7 @@ async fn handle_app_message(
                     cache,
                 } => {
                     let mut path_bindings = path_bindings.write().await;
-                    if km.source.process != "homepage:homepage:nectar" {
+                    if km.source.process != "homepage:homepage:sys" {
                         path = if path.starts_with('/') {
                             format!("/{}{}", km.source.process, path)
                         } else {

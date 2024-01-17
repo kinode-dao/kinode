@@ -1,6 +1,6 @@
-use nectar_process_lib::kernel_types as kt;
-use nectar_process_lib::*;
-use nectar_process_lib::{call_init, println};
+use kinode_process_lib::kernel_types as kt;
+use kinode_process_lib::*;
+use kinode_process_lib::{call_init, println};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::Digest;
@@ -19,7 +19,7 @@ use ft_worker_lib::{
     spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
 };
 
-/// Nectar App Store:
+/// App Store:
 /// acts as both a local package manager and a protocol to share packages across the network.
 /// packages are apps; apps are packages. we use an onchain app listing contract to determine
 /// what apps are available to download and what node(s) to download them from.
@@ -173,12 +173,12 @@ struct ManifestCap {
     params: Value,
 }
 
-// /m our@main:app_store:ben.nec {"Download": {"package": {"package_name": "sdapi", "publisher_node": "benjammin.nec"}, "install_from": "testnode107.nec"}}
-// /m our@main:app_store:ben.nec {"Install": {"package_name": "sdapi", "publisher_node": "benjammin.nec"}}
+// /m our@main:app_store:ben.os {"Download": {"package": {"package_name": "sdapi", "publisher_node": "benjammin.os"}, "install_from": "testnode107.os"}}
+// /m our@main:app_store:ben.os {"Install": {"package_name": "sdapi", "publisher_node": "benjammin.os"}}
 
 call_init!(init);
 fn init(our: Address) {
-    println!("{}: running", our.process);
+    println!("{}: started", our.package());
 
     // load in our saved state or initalize a new one if none exists
     let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)).unwrap_or(State {
@@ -346,7 +346,7 @@ fn handle_new_package(
 
     // create a new drive for this package in VFS
     Request::new()
-        .target(("our", "vfs", "sys", "nectar"))
+        .target(("our", "vfs", "distro", "sys"))
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: drive.clone(),
             action: vfs::VfsAction::CreateDrive,
@@ -361,7 +361,7 @@ fn handle_new_package(
     // add zip bytes
     blob.mime = Some("application/zip".to_string());
     let response = Request::new()
-        .target(("our", "vfs", "sys", "nectar"))
+        .target(("our", "vfs", "distro", "sys"))
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: drive.clone(),
             action: vfs::VfsAction::AddZip,
@@ -379,7 +379,7 @@ fn handle_new_package(
     // call it <package>.zip
     let zip_path = format!("{}/{}.zip", drive.clone(), package);
     Request::new()
-        .target(("our", "vfs", "sys", "nectar"))
+        .target(("our", "vfs", "distro", "sys"))
         .inherit(true)
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: zip_path,
@@ -392,7 +392,7 @@ fn handle_new_package(
     // now, read the pkg contents to create our own listing and state,
     // such that we can mirror this package to others.
     Request::new()
-        .target(("our", "vfs", "sys", "nectar"))
+        .target(("our", "vfs", "distro", "sys"))
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: metadata_path,
             action: vfs::VfsAction::Read,
@@ -427,7 +427,7 @@ fn handle_new_package(
 fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
     let drive_path = format!("/{}/pkg", package);
     Request::new()
-        .target(("our", "vfs", "sys", "nectar"))
+        .target(("our", "vfs", "distro", "sys"))
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: format!("{}/manifest.json", drive_path),
             action: vfs::VfsAction::Read,
@@ -440,7 +440,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
     let manifest = serde_json::from_str::<Vec<kt::PackageManifestEntry>>(&manifest)?;
     // always grant read/write to their drive, which we created for them
     let Some(read_cap) = get_capability(
-        &Address::new(&our.node, ("vfs", "sys", "nectar")),
+        &Address::new(&our.node, ("vfs", "distro", "sys")),
         &serde_json::to_string(&serde_json::json!({
             "kind": "read",
             "drive": drive_path,
@@ -449,7 +449,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("app store: no read cap"));
     };
     let Some(write_cap) = get_capability(
-        &Address::new(&our.node, ("vfs", "sys", "nectar")),
+        &Address::new(&our.node, ("vfs", "distro", "sys")),
         &serde_json::to_string(&serde_json::json!({
             "kind": "write",
             "drive": drive_path,
@@ -458,7 +458,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
         return Err(anyhow::anyhow!("app store: no write cap"));
     };
     let Some(networking_cap) = get_capability(
-        &Address::new(&our.node, ("kernel", "sys", "nectar")),
+        &Address::new(&our.node, ("kernel", "distro", "sys")),
         &"\"network\"".to_string(),
     ) else {
         return Err(anyhow::anyhow!("app store: no net cap"));
@@ -486,77 +486,75 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
         };
         // kill process if it already exists
         Request::new()
-            .target(("our", "kernel", "sys", "nectar"))
+            .target(("our", "kernel", "distro", "sys"))
             .body(serde_json::to_vec(&kt::KernelCommand::KillProcess(
                 parsed_new_process_id.clone(),
             ))?)
             .send()?;
 
         let _bytes_response = Request::new()
-            .target(("our", "vfs", "sys", "nectar"))
+            .target(("our", "vfs", "distro", "sys"))
             .body(serde_json::to_vec(&vfs::VfsRequest {
                 path: wasm_path.clone(),
                 action: vfs::VfsAction::Read,
             })?)
             .send_and_await_response(5)??;
-        if let Some(to_request) = &entry.request_capabilities {
-            for value in to_request {
-                let mut capability = None;
-                match value {
-                    serde_json::Value::String(process_name) => {
-                        if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                            capability = get_capability(
-                                &Address {
-                                    node: our.node.clone(),
-                                    process: parsed_process_id.clone(),
-                                },
-                                "\"messaging\"".into(),
-                            );
-                        }
+        for value in &entry.request_capabilities {
+            let mut capability = None;
+            match value {
+                serde_json::Value::String(process_name) => {
+                    if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
+                        capability = get_capability(
+                            &Address {
+                                node: our.node.clone(),
+                                process: parsed_process_id.clone(),
+                            },
+                            "\"messaging\"".into(),
+                        );
                     }
-                    serde_json::Value::Object(map) => {
-                        if let Some(process_name) = map.get("process") {
-                            if let Ok(parsed_process_id) = process_name
-                                .as_str()
-                                .unwrap_or_default()
-                                .parse::<ProcessId>()
-                            {
-                                if let Some(params) = map.get("params") {
-                                    if params.to_string() == "\"root\"" {
-                                        println!(
-                                            "app-store: app requested root capability, ignoring"
-                                        );
-                                        continue;
-                                    }
-
-                                    capability = get_capability(
-                                        &Address {
-                                            node: our.node.clone(),
-                                            process: parsed_process_id.clone(),
-                                        },
-                                        &params.to_string(),
+                }
+                serde_json::Value::Object(map) => {
+                    if let Some(process_name) = map.get("process") {
+                        if let Ok(parsed_process_id) = process_name
+                            .as_str()
+                            .unwrap_or_default()
+                            .parse::<ProcessId>()
+                        {
+                            if let Some(params) = map.get("params") {
+                                if params.to_string() == "\"root\"" {
+                                    println!(
+                                        "app-store: app requested root capability, ignoring"
                                     );
+                                    continue;
                                 }
+
+                                capability = get_capability(
+                                    &Address {
+                                        node: our.node.clone(),
+                                        process: parsed_process_id.clone(),
+                                    },
+                                    &params.to_string(),
+                                );
                             }
                         }
                     }
-                    _ => {
-                        continue;
-                    }
                 }
-                if let Some(cap) = capability {
-                    initial_capabilities.insert(kt::de_wit_capability(cap));
-                } else {
-                    println!(
-                        "app-store: no cap: {}, for {} to request!",
-                        value.to_string(),
-                        package
-                    );
+                _ => {
+                    continue;
                 }
+            }
+            if let Some(cap) = capability {
+                initial_capabilities.insert(kt::de_wit_capability(cap));
+            } else {
+                println!(
+                    "app-store: no cap: {}, for {} to request!",
+                    value.to_string(),
+                    package
+                );
             }
         }
         Request::new()
-            .target(("our", "kernel", "sys", "nectar"))
+            .target(("our", "kernel", "distro", "sys"))
             .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                 id: parsed_new_process_id.clone(),
                 wasm_bytes_handle: wasm_path,
@@ -567,67 +565,65 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
             })?)
             .inherit(true)
             .send_and_await_response(5)??;
-        if let Some(to_grant) = &entry.grant_capabilities {
-            for value in to_grant {
-                match value {
-                    serde_json::Value::String(process_name) => {
-                        if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                            let _ = Request::new()
-                                .target(("our", "kernel", "sys", "nectar"))
-                                .body(
-                                    serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                                        target: parsed_process_id,
-                                        capabilities: vec![kt::Capability {
-                                            issuer: Address {
-                                                node: our.node.clone(),
-                                                process: parsed_new_process_id.clone(),
-                                            },
-                                            params: "\"messaging\"".into(),
-                                        }],
-                                    })
-                                    .unwrap(),
-                                )
-                                .send()?;
-                        }
+        for value in &entry.grant_capabilities {
+            match value {
+                serde_json::Value::String(process_name) => {
+                    if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
+                        let _ = Request::new()
+                            .target(("our", "kernel", "distro", "sys"))
+                            .body(
+                                serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                                    target: parsed_process_id,
+                                    capabilities: vec![kt::Capability {
+                                        issuer: Address {
+                                            node: our.node.clone(),
+                                            process: parsed_new_process_id.clone(),
+                                        },
+                                        params: "\"messaging\"".into(),
+                                    }],
+                                })
+                                .unwrap(),
+                            )
+                            .send()?;
                     }
-                    serde_json::Value::Object(map) => {
-                        if let Some(process_name) = map.get("process") {
-                            if let Ok(parsed_process_id) = process_name
-                                .as_str()
-                                .unwrap_or_default()
-                                .parse::<ProcessId>()
-                            {
-                                if let Some(params) = map.get("params") {
-                                    let _ = Request::new()
-                                        .target(("our", "kernel", "sys", "nectar"))
-                                        .body(
-                                            serde_json::to_vec(
-                                                &kt::KernelCommand::GrantCapabilities {
-                                                    target: parsed_process_id,
-                                                    capabilities: vec![kt::Capability {
-                                                        issuer: Address {
-                                                            node: our.node.clone(),
-                                                            process: parsed_new_process_id.clone(),
-                                                        },
-                                                        params: params.to_string(),
-                                                    }],
-                                                },
-                                            )
-                                            .unwrap(),
+                }
+                serde_json::Value::Object(map) => {
+                    if let Some(process_name) = map.get("process") {
+                        if let Ok(parsed_process_id) = process_name
+                            .as_str()
+                            .unwrap_or_default()
+                            .parse::<ProcessId>()
+                        {
+                            if let Some(params) = map.get("params") {
+                                let _ = Request::new()
+                                    .target(("our", "kernel", "distro", "sys"))
+                                    .body(
+                                        serde_json::to_vec(
+                                            &kt::KernelCommand::GrantCapabilities {
+                                                target: parsed_process_id,
+                                                capabilities: vec![kt::Capability {
+                                                    issuer: Address {
+                                                        node: our.node.clone(),
+                                                        process: parsed_new_process_id.clone(),
+                                                    },
+                                                    params: params.to_string(),
+                                                }],
+                                            },
                                         )
-                                        .send()?;
-                                }
+                                        .unwrap(),
+                                    )
+                                    .send()?;
                             }
                         }
                     }
-                    _ => {
-                        continue;
-                    }
+                }
+                _ => {
+                    continue;
                 }
             }
         }
         Request::new()
-            .target(("our", "kernel", "sys", "nectar"))
+            .target(("our", "kernel", "distro", "sys"))
             .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
                 parsed_new_process_id,
             ))?)
@@ -639,7 +635,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
 fn handle_uninstall(package: &PackageId) -> anyhow::Result<()> {
     let drive_path = format!("/{}/pkg", package);
     Request::new()
-        .target(("our", "vfs", "sys", "nectar"))
+        .target(("our", "vfs", "distro", "sys"))
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: format!("{}/manifest.json", drive_path),
             action: vfs::VfsAction::Read,
@@ -657,7 +653,7 @@ fn handle_uninstall(package: &PackageId) -> anyhow::Result<()> {
             continue;
         };
         Request::new()
-            .target(("our", "kernel", "sys", "nectar"))
+            .target(("our", "kernel", "distro", "sys"))
             .body(serde_json::to_vec(&kt::KernelCommand::KillProcess(
                 parsed_new_process_id,
             ))?)
@@ -665,7 +661,7 @@ fn handle_uninstall(package: &PackageId) -> anyhow::Result<()> {
     }
     // then, delete the drive
     Request::new()
-        .target(("our", "vfs", "sys", "nectar"))
+        .target(("our", "vfs", "distro", "sys"))
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: drive_path,
             action: vfs::VfsAction::RemoveDirAll,
@@ -691,7 +687,7 @@ fn handle_remote_request(
             // get the .zip from VFS and attach as blob to response
             let file_path = format!("/{}/pkg/{}.zip", package, package);
             let Ok(Ok(_)) = Request::new()
-                .target(("our", "vfs", "sys", "nectar"))
+                .target(("our", "vfs", "distro", "sys"))
                 .body(
                     serde_json::to_vec(&vfs::VfsRequest {
                         path: file_path,

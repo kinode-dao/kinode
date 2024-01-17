@@ -5,10 +5,10 @@
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [
-            "http_server:sys:nectar"
+            "http_server:distro:sys"
         ],
         "grant_capabilities": [
-            "http_server:sys:nectar"
+            "http_server:distro:sys"
         ],
         "public": false
     }

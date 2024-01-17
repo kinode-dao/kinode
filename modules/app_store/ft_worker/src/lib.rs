@@ -1,5 +1,5 @@
-use nectar_process_lib::println;
-use nectar_process_lib::*;
+use kinode_process_lib::println;
+use kinode_process_lib::*;
 use serde::{Deserialize, Serialize};
 
 mod ft_worker_lib;

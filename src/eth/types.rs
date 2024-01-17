@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::task::JoinHandle;
 
-/// The Request type that can be made to eth:sys:nectar. Currently primitive, this
+/// The Request type that can be made to eth:distro:sys. Currently primitive, this
 /// enum will expand to support more actions in the future.
 ///
 /// Will be serialized and deserialized using `serde_json::to_vec` and `serde_json::from_slice`.
