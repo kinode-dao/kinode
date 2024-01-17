@@ -13,6 +13,10 @@
             "vfs:distro:sys",
             "kernel:distro:sys",
             "eth:distro:sys",
+            "sqlite:distro:sys",
+            "kv:distro:sys",
+            "chess:chess:sys",
+            "kns_indexer:kns_indexer:sys",
             {
                 "process": "vfs:distro:sys",
                 "params": {
