@@ -4,10 +4,11 @@
         "process_wasm_path": "/homepage.wasm",
         "on_exit": "Restart",
         "request_networking": false,
-        "request_messaging": [
-            "http_bindings:http_bindings:uqbar",
-            "http_server:sys:uqbar",
-            "encryptor:sys:uqbar"
+        "request_capabilities": [
+            "http_server:distro:sys"
+        ],
+        "grant_capabilities": [
+            "http_server:distro:sys"
         ],
         "public": false
     }

@@ -138,11 +138,13 @@ fn main() {
     // Pull wit from git repo
     let wit_dir = pwd.join("wit");
     fs::create_dir_all(&wit_dir).unwrap();
-    let wit_file = wit_dir.join("uqbar.wit");
+    let wit_file = wit_dir.join("kinode.wit");
     if !wit_file.exists() {
+        // TODO: cache in better way
         let mut wit_file = std::fs::File::create(&wit_file).unwrap();
-        let uqbar_wit_url = "https://raw.githubusercontent.com/uqbar-dao/uqwit/master/uqbar.wit";
-        let mut response = reqwest::blocking::get(uqbar_wit_url).unwrap();
+        let kinode_wit_url =
+            "https://raw.githubusercontent.com/uqbar-dao/kinode-wit/master/kinode.wit";
+        let mut response = reqwest::blocking::get(kinode_wit_url).unwrap();
         io::copy(&mut response, &mut wit_file).unwrap();
     }
 
@@ -163,7 +165,7 @@ fn main() {
         fs::File::create(format!("{}/src/bootstrapped_processes.rs", pwd.display(),)).unwrap();
     writeln!(
         bootstrapped_processes,
-        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &'static [u8])] = &[",
+        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &[u8])] = &[",
     )
     .unwrap();
     let modules_dir = format!("{}/modules", pwd.display());

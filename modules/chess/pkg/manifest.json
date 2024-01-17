@@ -4,11 +4,13 @@
         "process_wasm_path": "/chess.wasm",
         "on_exit": "Restart",
         "request_networking": true,
-        "request_messaging": [
-            "net:sys:uqbar"
+        "request_capabilities": [
+            "http_server:distro:sys",
+            "net:distro:sys",
+            "vfs:distro:sys"
         ],
-        "grant_messaging": [
-            "http_server:sys:uqbar"
+        "grant_capabilities": [
+            "http_server:distro:sys"
         ],
         "public": true
     }

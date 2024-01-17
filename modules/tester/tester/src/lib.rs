@@ -1,9 +1,9 @@
 use indexmap::map::IndexMap;
 
-use uqbar_process_lib::kernel_types as kt;
-use uqbar_process_lib::{
-    await_message, call_init, get_capability, println, share_capability, spawn, Address,
-    Capabilities, Message, OnExit, ProcessId, Request, Response,
+use kinode_process_lib::kernel_types as kt;
+use kinode_process_lib::{
+    await_message, call_init, our_capabilities, println, spawn, vfs, Address, Message, OnExit,
+    ProcessId, Request, Response,
 };
 
 mod tester_types;
@@ -22,7 +22,7 @@ type Messages = IndexMap<kt::Message, tt::KernelMessage>;
 fn make_vfs_address(our: &Address) -> anyhow::Result<Address> {
     Ok(Address {
         node: our.node.clone(),
-        process: ProcessId::from_str("vfs:sys:uqbar")?,
+        process: "vfs:distro:sys".parse()?,
     })
 }
 
@@ -36,15 +36,15 @@ fn handle_message(
     };
 
     match message {
-        Message::Response { source, ipc, .. } => {
-            match serde_json::from_slice(&ipc)? {
+        Message::Response { source, body, .. } => {
+            match serde_json::from_slice(&body)? {
                 tt::TesterResponse::Pass | tt::TesterResponse::Fail { .. } => {
                     if (source.process.package_name != "tester")
-                        | (source.process.publisher_node != "uqbar")
+                        | (source.process.publisher_node != "sys")
                     {
                         return Err(tt::TesterError::UnexpectedResponse.into());
                     }
-                    Response::new().ipc(ipc).send().unwrap();
+                    Response::new().body(body).send().unwrap();
                 }
                 tt::TesterResponse::GetFullMessage(_) => {
                     unimplemented!()
@@ -52,11 +52,12 @@ fn handle_message(
             }
             Ok(())
         }
-        Message::Request { source, ipc, .. } => {
-            match serde_json::from_slice(&ipc)? {
+        Message::Request { body, .. } => {
+            match serde_json::from_slice(&body)? {
                 tt::TesterRequest::Run {
                     input_node_names,
                     test_timeout,
+                    ..
                 } => {
                     println!("tester: got Run");
 
@@ -65,17 +66,18 @@ fn handle_message(
 
                     if our.node != node_names[0] {
                         Response::new()
-                            .ipc(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
+                            .body(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
                             .send()
                             .unwrap();
                     } else {
                         // we are master node
-                        let child = "/tester:uqbar/pkg/test_runner.wasm";
+                        let child = "/tester:sys/pkg/test_runner.wasm";
                         let child_process_id = match spawn(
                             None,
                             child,
                             OnExit::None, //  TODO: notify us
-                            &Capabilities::All,
+                            our_capabilities(),
+                            vec!["vfs:distro:sys".parse::<ProcessId>().unwrap()],
                             false, // not public
                         ) {
                             Ok(child_process_id) => child_process_id,
@@ -89,7 +91,7 @@ fn handle_message(
                                 node: our.node.clone(),
                                 process: child_process_id,
                             })
-                            .ipc(ipc)
+                            .body(body)
                             .expects_response(test_timeout)
                             .send()?;
                     }
@@ -109,31 +111,42 @@ fn init(our: Address) {
 
     let mut messages: Messages = IndexMap::new();
     let mut node_names: Vec<String> = Vec::new();
+    let _ = Request::new()
+        .target(make_vfs_address(&our).unwrap())
+        .body(
+            serde_json::to_vec(&vfs::VfsRequest {
+                path: "/tester:sys/tests".into(),
+                action: vfs::VfsAction::CreateDrive,
+            })
+            .unwrap(),
+        )
+        .send_and_await_response(5)
+        .unwrap()
+        .unwrap();
 
     // orchestrate tests using external scripts
     //  -> must give drive cap to rpc
     let _ = Request::new()
-        .target(make_vfs_address(&our).unwrap())
-        .ipc(serde_json::to_vec(&kt::VfsRequest {
-            path: "/tester:uqbar/tests".into(),
-            action: kt::VfsAction::CreateDrive,
-        }).unwrap())
-        .send_and_await_response(5)
-        .unwrap()
+        .target(("our", "kernel", "distro", "sys"))
+        .body(
+            serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                target: ProcessId::new(Some("http_server"), "distro", "sys"),
+                capabilities: vec![kt::Capability {
+                    issuer: Address::new(
+                        our.node.clone(),
+                        ProcessId::new(Some("vfs"), "distro", "sys"),
+                    ),
+                    params: serde_json::json!({
+                        "kind": "write",
+                        "drive": "/tester:sys/tests",
+                    })
+                    .to_string(),
+                }],
+            })
+            .unwrap(),
+        )
+        .send()
         .unwrap();
-    let drive_cap = get_capability(
-        &make_vfs_address(&our).unwrap(),
-        &serde_json::to_string(&serde_json::json!({
-            "kind": "write",
-            "drive": "/tester:uqbar/tests",
-        }))
-        .expect("couldn't serialize"),
-    )
-    .expect("couldn't get drive cap");
-    share_capability(
-        &ProcessId::from_str("http_server:sys:uqbar").expect("couldn't make pid"),
-        &drive_cap,
-    );
 
     loop {
         match handle_message(&our, &mut messages, &mut node_names) {

@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
-use uqbar_process_lib::kernel_types as kt;
-use uqbar_process_lib::uqbar::process::standard as wit;
-use uqbar_process_lib::{spawn, Address, Message, OnExit, ProcessId, Request, Response};
+use kinode_process_lib::{
+    await_message, our_capabilities, println, spawn, vfs, Address, Message, OnExit, ProcessId,
+    Request, Response, vfs::{DirEntry, FileType},
+};
 
 mod tester_types;
 use tester_types as tt;
@@ -16,70 +16,94 @@ wit_bindgen::generate!({
     },
 });
 
-fn make_vfs_address(our: &wit::Address) -> anyhow::Result<Address> {
-    Ok(wit::Address {
-        node: our.node.clone(),
-        process: ProcessId::from_str("vfs:sys:uqbar")?,
-    })
+fn make_vfs_address(our: &Address) -> anyhow::Result<Address> {
+    Ok(Address::new(
+        our.node.clone(),
+        ProcessId::from_str("vfs:distro:sys")?,
+    ))
 }
 
 fn handle_message(our: &Address) -> anyhow::Result<()> {
-    let (source, message) = wit::receive().unwrap();
-
-    if our.node != source.node {
-        return Err(tt::TesterError::RejectForeign.into());
-    }
+    let message = await_message()?;
 
     match message {
-        wit::Message::Response(_) => {
+        Message::Response { .. } => {
             return Err(tt::TesterError::UnexpectedResponse.into());
         }
-        wit::Message::Request(wit::Request { ref ipc, .. }) => {
-            match serde_json::from_slice(ipc)? {
-                tt::TesterRequest::Run { test_timeout, .. } => {
-                    wit::print_to_terminal(0, "test_runner: got Run");
+        Message::Request { ref body, .. } => {
+            match serde_json::from_slice(body)? {
+                tt::TesterRequest::Run { ref test_names, test_timeout, .. } => {
+                    println!("test_runner: got Run");
+
+                    let dir_prefix = "tester:sys/tests";
 
                     let response = Request::new()
                         .target(make_vfs_address(&our)?)
-                        .ipc(serde_json::to_vec(&kt::VfsRequest {
-                            path: "/tester:uqbar/tests".into(),
-                            action: kt::VfsAction::ReadDir,
+                        .body(serde_json::to_vec(&vfs::VfsRequest {
+                            path: dir_prefix.into(),
+                            action: vfs::VfsAction::ReadDir,
                         })?)
                         .send_and_await_response(test_timeout)?
                         .unwrap();
 
-                    let Message::Response { ipc: vfs_ipc, .. } = response else {
+                    let Message::Response { body: vfs_body, .. } = response else {
                         panic!("")
                     };
-                    let kt::VfsResponse::ReadDir(children) =
-                        serde_json::from_slice(&vfs_ipc)?
+                    let vfs::VfsResponse::ReadDir(mut children) =
+                        serde_json::from_slice(&vfs_body)?
                     else {
-                        wit::print_to_terminal(
-                            0,
-                            &format!(
-                                "{:?}",
-                                serde_json::from_slice::<serde_json::Value>(&vfs_ipc)?,
-                            ),
+                        println!(
+                            "{:?}",
+                            serde_json::from_slice::<serde_json::Value>(&vfs_body)?
                         );
                         panic!("")
                     };
 
-                    wit::print_to_terminal(0, &format!("test_runner: running {:?}...", children));
+                    for test_name in test_names {
+                        let test_entry = DirEntry {
+                            path: format!("{}/{}.wasm", dir_prefix, test_name),
+                            file_type: FileType::File,
+                        };
+                        if !children.contains(&test_entry) {
+                            return Err(anyhow::anyhow!(
+                                "test {} not found amongst {:?}",
+                                test_name,
+                                children,
+                            ));
+                        }
+                    }
 
-                    for child in &children {
+                    let caps_file_path = format!("{}/grant_capabilities.json", dir_prefix);
+                    let caps_index = children.iter().position(|i| *i.path == *caps_file_path);
+                    let caps_by_child: std::collections::HashMap<String, Vec<String>> = match caps_index {
+                        None => std::collections::HashMap::new(),
+                        Some(caps_index) => {
+                            children.remove(caps_index);
+                            let file = vfs::file::open_file(&caps_file_path, false)?;
+                            let file_contents = file.read()?;
+                            serde_json::from_slice(&file_contents)?
+                        }
+                    };
+
+                    println!("test_runner: running {:?}...", children);
+
+                    for test_name in test_names {
+                        let test_path = format!("{}/{}.wasm", dir_prefix, test_name);
+                        let grant_caps = caps_by_child
+                            .get(test_name)
+                            .and_then(|caps| Some(caps.iter().map(|cap| ProcessId::from_str(cap).unwrap()).collect()))
+                            .unwrap_or(vec![]);
                         let child_process_id = match spawn(
                             None,
-                            child,
+                            &test_path,
                             OnExit::None, //  TODO: notify us
-                            &wit::Capabilities::All,
+                            our_capabilities(),
+                            grant_caps,
                             false, // not public
                         ) {
                             Ok(child_process_id) => child_process_id,
                             Err(e) => {
-                                wit::print_to_terminal(
-                                    0,
-                                    &format!("couldn't spawn {}: {}", child, e),
-                                );
+                                println!("couldn't spawn {}: {}", test_path, e);
                                 panic!("couldn't spawn"); //  TODO
                             }
                         };
@@ -89,14 +113,14 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                                 node: our.node.clone(),
                                 process: child_process_id,
                             })
-                            .ipc(ipc.clone())
+                            .body(body.clone())
                             .send_and_await_response(test_timeout)?
                             .unwrap();
 
-                        let Message::Response { ipc, .. } = response else {
+                        let Message::Response { body, .. } = response else {
                             panic!("")
                         };
-                        match serde_json::from_slice(&ipc)? {
+                        match serde_json::from_slice(&body)? {
                             tt::TesterResponse::Pass => {}
                             tt::TesterResponse::GetFullMessage(_) => {}
                             tt::TesterResponse::Fail {
@@ -110,10 +134,10 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                         }
                     }
 
-                    wit::print_to_terminal(0, &format!("test_runner: done running {:?}", children));
+                    println!("test_runner: done running {:?}", children);
 
                     Response::new()
-                        .ipc(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
+                        .body(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
                         .send()
                         .unwrap();
                 }
@@ -129,20 +153,15 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
 struct Component;
 impl Guest for Component {
     fn init(our: String) {
-        wit::print_to_terminal(0, "test_runner: begin");
+        println!("{:?}@test_runner: begin", our);
 
-        let our = Address::from_str(&our).unwrap();
-
-        wit::create_capability(
-            &ProcessId::new(Some("vfs"), "sys", "uqbar"),
-            &"\"messaging\"".into(),
-        );
+        let our: Address = our.parse().unwrap();
 
         loop {
             match handle_message(&our) {
                 Ok(()) => {}
                 Err(e) => {
-                    wit::print_to_terminal(0, format!("test_runner: error: {:?}", e,).as_str());
+                    println!("test_runner: error: {:?}", e);
                     fail!("test_runner");
                 }
             };

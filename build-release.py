@@ -11,13 +11,13 @@ def build_and_move(feature, tmp_dir):
 
     if feature:
         subprocess.run(["cargo", "+nightly", "build", "--release", "--features", feature], check=True)
-        binary_name = f"uqbar-{feature}"
+        binary_name = f"kinode-{feature}"
     else:
         subprocess.run(["cargo", "+nightly", "build", "--release"], check=True)
-        binary_name = "uqbar"
+        binary_name = "kinode"
 
     # Move and rename the binary
-    source_path = "target/release/uqbar"
+    source_path = "target/release/kinode"
     dest_path = os.path.join(tmp_dir, binary_name)
     shutil.move(source_path, dest_path)
 
@@ -26,7 +26,7 @@ def main():
     features = ["", "simulation-mode"]  # Add more features as needed
 
     # Ensure the tmp directory is clean
-    tmp_dir = "/tmp/uqbar-release"
+    tmp_dir = "/tmp/kinode-release"
     if os.path.exists(tmp_dir):
         shutil.rmtree(tmp_dir)
     os.makedirs(tmp_dir)
@@ -35,7 +35,7 @@ def main():
     for feature in features:
         build_and_move(feature, tmp_dir)
 
-    print("Build and move process completed.\nFind release in {tmp_dir}.")
+    print(f"Build and move process completed.\nFind release in {tmp_dir}.")
 
 if __name__ == "__main__":
     main()

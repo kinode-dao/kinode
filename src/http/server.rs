@@ -1,4 +1,4 @@
-use crate::http::types::*;
+use crate::http::server_types::*;
 use crate::http::utils::*;
 use crate::types::*;
 use crate::{keygen, register};
@@ -43,7 +43,7 @@ struct BoundPath {
     pub secure_subdomain: Option<String>,
     pub authenticated: bool,
     pub local_only: bool,
-    pub static_content: Option<Payload>, // TODO store in filesystem and cache
+    pub static_content: Option<LazyLoadBlob>, // TODO store in filesystem and cache
 }
 
 struct BoundWsPath {
@@ -86,13 +86,13 @@ pub async fn http_server(
     // add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
-        app: ProcessId::from_str("rpc:sys:uqbar").unwrap(),
+        app: ProcessId::new(Some("rpc"), "distro", "sys"),
         secure_subdomain: None, // TODO maybe RPC should have subdomain?
         authenticated: false,
         local_only: true,
         static_content: None,
     };
-    bindings_map.add("/rpc:sys:uqbar/message", rpc_bound_path);
+    bindings_map.add("/rpc:distro:sys/message", rpc_bound_path);
     let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
     // ws path bindings
@@ -120,6 +120,7 @@ pub async fn http_server(
             ws_path_bindings.clone(),
             ws_senders.clone(),
             send_to_loop.clone(),
+            print_tx.clone(),
         )
         .await;
     }
@@ -164,11 +165,20 @@ async fn serve(
         .and(warp::any().map(move || cloned_print_tx.clone()))
         .and_then(ws_handler);
 
+    #[cfg(feature = "simulation-mode")]
+    let fake_node = "true";
+    #[cfg(not(feature = "simulation-mode"))]
+    let fake_node = "false";
+
     // filter to receive and handle login requests
+    let login_html: &'static str = LOGIN_HTML
+        .replace("${node}", &our)
+        .replace("${fake}", fake_node)
+        .leak();
     let cloned_our = our.clone();
     let login = warp::path("login").and(warp::path::end()).and(
         warp::get()
-            .map(|| warp::reply::with_status(warp::reply::html(LOGIN_HTML), StatusCode::OK))
+            .map(move || warp::reply::with_status(warp::reply::html(login_html), StatusCode::OK))
             .or(warp::post()
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
@@ -207,6 +217,11 @@ async fn login_handler(
     our: Arc<String>,
     encoded_keyfile: Arc<Vec<u8>>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
+    #[cfg(feature = "simulation-mode")]
+    let info = LoginInfo {
+        password: "secret".to_string(),
+    };
+
     match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
         Ok(keyfile) => {
             let token = match register::generate_jwt(&keyfile.jwt_secret_bytes, our.as_ref()) {
@@ -222,22 +237,20 @@ async fn login_handler(
 
             let mut response = warp::reply::with_status(
                 warp::reply::json(&base64::encode(encoded_keyfile.to_vec())),
-                StatusCode::FOUND,
+                StatusCode::OK,
             )
             .into_response();
 
-            match HeaderValue::from_str(&format!("uqbar-auth_{}={};", our.as_ref(), &token)) {
+            match HeaderValue::from_str(&format!("kinode-auth_{}={};", our.as_ref(), &token)) {
                 Ok(v) => {
                     response.headers_mut().append(http::header::SET_COOKIE, v);
                     Ok(response)
                 }
-                Err(_) => {
-                    return Ok(warp::reply::with_status(
-                        warp::reply::json(&"Failed to generate Auth JWT"),
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                    )
-                    .into_response())
-                }
+                Err(_) => Ok(warp::reply::with_status(
+                    warp::reply::json(&"Failed to generate Auth JWT"),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+                .into_response()),
             }
         }
         Err(_) => Ok(warp::reply::with_status(
@@ -261,10 +274,12 @@ async fn ws_handler(
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     let original_path = normalize_path(path.as_str());
-    let _ = print_tx.send(Printout {
-        verbosity: 1,
-        content: format!("got ws request for {original_path}"),
-    });
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("http_server: got ws request for {original_path}"),
+        })
+        .await;
 
     let serialized_headers = serialize_headers(&headers);
     let ws_path_bindings = ws_path_bindings.read().await;
@@ -279,7 +294,7 @@ async fn ws_handler(
             .send(Printout {
                 verbosity: 1,
                 content: format!(
-                    "got request for path {original_path} bound by subdomain {subdomain}"
+                    "http_server: ws request for {original_path} bound by subdomain {subdomain}"
                 ),
             })
             .await;
@@ -299,12 +314,15 @@ async fn ws_handler(
         let Some(auth_token) = serialized_headers.get("cookie") else {
             return Err(warp::reject::not_found());
         };
-        if !auth_cookie_valid(&our, &auth_token, &jwt_secret_bytes) {
+        if !auth_cookie_valid(&our, auth_token, &jwt_secret_bytes) {
             return Err(warp::reject::not_found());
         }
     }
 
     let app = bound_path.app.clone();
+
+    drop(ws_path_bindings);
+
     Ok(ws_connection.on_upgrade(move |ws: WebSocket| async move {
         maintain_websocket(
             ws,
@@ -341,14 +359,12 @@ async fn http_handler(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    // TODO this is all so dirty. Figure out what actually matters.
-
     // trim trailing "/"
     let original_path = normalize_path(path.as_str());
     let _ = print_tx
         .send(Printout {
             verbosity: 1,
-            content: format!("got request for path {original_path}"),
+            content: format!("http_server: got request for path {original_path}"),
         })
         .await;
     let id: u64 = rand::random();
@@ -356,41 +372,43 @@ async fn http_handler(
     let path_bindings = path_bindings.read().await;
 
     let Ok(route) = path_bindings.recognize(&original_path) else {
+        let _ = print_tx
+            .send(Printout {
+                verbosity: 1,
+                content: format!("http_server: no route found for {original_path}"),
+            })
+            .await;
         return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
     };
     let bound_path = route.handler();
 
-    if bound_path.authenticated {
-        match serialized_headers.get("cookie") {
-            Some(auth_token) => {
-                // they have an auth token, validate
-                if !auth_cookie_valid(&our, &auth_token, &jwt_secret_bytes) {
-                    return Ok(
-                        warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response()
-                    );
-                }
-            }
-            None => {
-                // redirect to login page so they can get an auth token
-                let _ = print_tx
-                    .send(Printout {
-                        verbosity: 1,
-                        content: format!("redirecting request from {socket_addr:?} to login page"),
-                    })
-                    .await;
-                return Ok(warp::http::Response::builder()
-                    .status(StatusCode::TEMPORARY_REDIRECT)
-                    .header(
-                        "Location",
-                        format!(
-                            "http://{}/login",
-                            host.unwrap_or(Authority::from_static("localhost"))
-                        ),
-                    )
-                    .body(vec![])
-                    .into_response());
-            }
-        }
+    if bound_path.authenticated
+        && !auth_cookie_valid(
+            &our,
+            serialized_headers.get("cookie").unwrap_or(&"".to_string()),
+            &jwt_secret_bytes,
+        )
+    {
+        // redirect to login page so they can get an auth token
+        let _ = print_tx
+            .send(Printout {
+                verbosity: 1,
+                content: format!(
+                    "http_server: redirecting request from {socket_addr:?} to login page"
+                ),
+            })
+            .await;
+        return Ok(warp::http::Response::builder()
+            .status(StatusCode::TEMPORARY_REDIRECT)
+            .header(
+                "Location",
+                format!(
+                    "http://{}/login",
+                    host.unwrap_or(Authority::from_static("localhost"))
+                ),
+            )
+            .body(vec![])
+            .into_response());
     }
 
     if let Some(ref subdomain) = bound_path.secure_subdomain {
@@ -398,7 +416,7 @@ async fn http_handler(
             .send(Printout {
                 verbosity: 1,
                 content: format!(
-                    "got request for path {original_path} bound by subdomain {subdomain}"
+                    "http_server: request for {original_path} bound by subdomain {subdomain}"
                 ),
             })
             .await;
@@ -422,69 +440,89 @@ async fn http_handler(
         return Ok(warp::reply::with_status(vec![], StatusCode::FORBIDDEN).into_response());
     }
 
-    // if path has static content, serve it
-    if let Some(static_content) = &bound_path.static_content {
-        return Ok(warp::http::Response::builder()
-            .status(StatusCode::OK)
-            .header(
-                "Content-Type",
-                static_content
-                    .mime
-                    .as_ref()
-                    .unwrap_or(&"text/plain".to_string()),
-            )
-            .body(static_content.bytes.clone())
-            .into_response());
+    // if path has static content and this is a GET request, serve it
+    if method == warp::http::Method::GET {
+        if let Some(static_content) = &bound_path.static_content {
+            return Ok(warp::http::Response::builder()
+                .status(StatusCode::OK)
+                .header(
+                    "Content-Type",
+                    static_content
+                        .mime
+                        .as_ref()
+                        .unwrap_or(&"text/plain".to_string()),
+                )
+                .body(static_content.bytes.clone())
+                .into_response());
+        }
     }
 
-    // RPC functionality: if path is /rpc:sys:uqbar/message,
+    // RPC functionality: if path is /rpc:distro:sys/message,
     // we extract message from base64 encoded bytes in data
     // and send it to the correct app.
-    let message = if bound_path.app == "rpc:sys:uqbar" {
-        match handle_rpc_message(our, id, body).await {
-            Ok(message) => message,
+    let (message, is_fire_and_forget) = if bound_path.app == "rpc:distro:sys" {
+        match handle_rpc_message(our, id, body, print_tx).await {
+            Ok((message, is_fire_and_forget)) => (message, is_fire_and_forget),
             Err(e) => {
                 return Ok(warp::reply::with_status(vec![], e).into_response());
             }
         }
     } else {
         // otherwise, make a message to the correct app
-        KernelMessage {
-            id,
-            source: Address {
-                node: our.to_string(),
-                process: HTTP_SERVER_PROCESS_ID.clone(),
+        (
+            KernelMessage {
+                id,
+                source: Address {
+                    node: our.to_string(),
+                    process: HTTP_SERVER_PROCESS_ID.clone(),
+                },
+                target: Address {
+                    node: our.to_string(),
+                    process: bound_path.app.clone(),
+                },
+                rsvp: None,
+                message: Message::Request(Request {
+                    inherit: false,
+                    expects_response: Some(HTTP_SELF_IMPOSED_TIMEOUT),
+                    body: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
+                        source_socket_addr: socket_addr.map(|addr| addr.to_string()),
+                        method: method.to_string(),
+                        url: format!(
+                            "http://{}{}",
+                            host.unwrap_or(Authority::from_static("localhost")),
+                            original_path
+                        ),
+                        headers: serialized_headers,
+                        query_params,
+                    }))
+                    .unwrap(),
+                    metadata: Some("http".into()),
+                    capabilities: vec![],
+                }),
+                lazy_load_blob: Some(LazyLoadBlob {
+                    mime: None,
+                    bytes: body.to_vec(),
+                }),
             },
-            target: Address {
-                node: our.to_string(),
-                process: bound_path.app.clone(),
-            },
-            rsvp: None,
-            message: Message::Request(Request {
-                inherit: false,
-                expects_response: Some(HTTP_SELF_IMPOSED_TIMEOUT),
-                ipc: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
-                    source_socket_addr: socket_addr.map(|addr| addr.to_string()),
-                    method: method.to_string(),
-                    raw_path: format!(
-                        "http://{}{}",
-                        host.unwrap_or(Authority::from_static("localhost"))
-                            .to_string(),
-                        original_path
-                    ),
-                    headers: serialized_headers,
-                    query_params,
-                }))
-                .unwrap(),
-                metadata: Some("http".into()),
-            }),
-            payload: Some(Payload {
-                mime: None,
-                bytes: body.to_vec(),
-            }),
-            signed_capabilities: None,
-        }
+            false,
+        )
     };
+
+    // unlock to avoid deadlock with .write()s
+    drop(path_bindings);
+
+    if is_fire_and_forget {
+        match send_to_loop.send(message).await {
+            Ok(_) => {}
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR)
+                        .into_response(),
+                );
+            }
+        }
+        return Ok(warp::reply::with_status(vec![], StatusCode::OK).into_response());
+    }
 
     let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
     http_response_senders.insert(id, (original_path, response_sender));
@@ -547,19 +585,27 @@ async fn handle_rpc_message(
     our: Arc<String>,
     id: u64,
     body: warp::hyper::body::Bytes,
-) -> Result<KernelMessage, StatusCode> {
+    print_tx: PrintSender,
+) -> Result<(KernelMessage, bool), StatusCode> {
     let Ok(rpc_message) = serde_json::from_slice::<RpcMessage>(&body) else {
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    let Ok(target_process) = ProcessId::from_str(&rpc_message.process) else {
+    let Ok(target_process) = rpc_message.process.parse::<ProcessId>() else {
         return Err(StatusCode::BAD_REQUEST);
     };
 
-    let payload: Option<Payload> = match rpc_message.data {
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 2,
+            content: format!("http_server: passing on RPC message to {target_process}"),
+        })
+        .await;
+
+    let blob: Option<LazyLoadBlob> = match rpc_message.data {
         None => None,
         Some(b64_bytes) => match base64::decode(b64_bytes) {
-            Ok(bytes) => Some(Payload {
+            Ok(bytes) => Some(LazyLoadBlob {
                 mime: rpc_message.mime,
                 bytes,
             }),
@@ -567,32 +613,37 @@ async fn handle_rpc_message(
         },
     };
 
-    Ok(KernelMessage {
-        id,
-        source: Address {
-            node: our.to_string(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        target: Address {
-            node: rpc_message.node.unwrap_or(our.to_string()),
-            process: target_process,
-        },
-        rsvp: Some(Address {
-            node: our.to_string(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        }),
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: Some(15), // NB: no effect on runtime
-            ipc: match rpc_message.ipc {
-                Some(ipc_string) => ipc_string.into_bytes(),
-                None => Vec::new(),
+    let rsvp = rpc_message.expects_response.map(|_er| Address {
+        node: our.to_string(),
+        process: HTTP_SERVER_PROCESS_ID.clone(),
+    });
+    Ok((
+        KernelMessage {
+            id,
+            source: Address {
+                node: our.to_string(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
             },
-            metadata: rpc_message.metadata,
-        }),
-        payload,
-        signed_capabilities: None,
-    })
+            target: Address {
+                node: rpc_message.node.unwrap_or(our.to_string()),
+                process: target_process,
+            },
+            rsvp,
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: rpc_message.expects_response.clone(),
+                //expects_response: Some(15), // NB: no effect on runtime
+                body: match rpc_message.body {
+                    Some(body_string) => body_string.into_bytes(),
+                    None => Vec::new(),
+                },
+                metadata: rpc_message.metadata,
+                capabilities: vec![],
+            }),
+            lazy_load_blob: blob,
+        },
+        rpc_message.expects_response.is_none(),
+    ))
 }
 
 async fn maintain_websocket(
@@ -606,16 +657,17 @@ async fn maintain_websocket(
     print_tx: PrintSender,
 ) {
     let (mut write_stream, mut read_stream) = ws.split();
-    let _ = print_tx
-        .send(Printout {
-            verbosity: 1,
-            content: format!("got new client websocket connection"),
-        })
-        .await;
 
     let channel_id: u32 = rand::random();
     let (ws_sender, mut ws_receiver) = tokio::sync::mpsc::channel(100);
     ws_senders.insert(channel_id, (app.clone(), ws_sender));
+
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("http_server: new websocket connection to {app} with id {channel_id}"),
+        })
+        .await;
 
     let _ = send_to_loop
         .send(KernelMessage {
@@ -632,24 +684,33 @@ async fn maintain_websocket(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketOpen { path, channel_id })
+                body: serde_json::to_vec(&HttpServerRequest::WebSocketOpen { path, channel_id })
                     .unwrap(),
                 metadata: Some("ws".into()),
+                capabilities: vec![],
             }),
-            payload: None,
-            signed_capabilities: None,
+            lazy_load_blob: None,
         })
         .await;
 
-    let _ = print_tx.send(Printout {
-        verbosity: 1,
-        content: format!("websocket channel {channel_id} opened"),
-    });
     loop {
         tokio::select! {
             read = read_stream.next() => {
                 match read {
                     Some(Ok(msg)) => {
+
+                        let ws_msg_type = if msg.is_text() {
+                            WsMessageType::Text
+                        } else if msg.is_binary() {
+                            WsMessageType::Binary
+                        } else if msg.is_ping() {
+                            WsMessageType::Ping
+                        } else if msg.is_pong() {
+                            WsMessageType::Pong
+                        } else {
+                            WsMessageType::Close
+                        };
+
                         let _ = send_to_loop.send(KernelMessage {
                             id: rand::random(),
                             source: Address {
@@ -664,18 +725,18 @@ async fn maintain_websocket(
                             message: Message::Request(Request {
                                 inherit: false,
                                 expects_response: None,
-                                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
+                                body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
                                     channel_id,
-                                    message_type: WsMessageType::Binary,
+                                    message_type: ws_msg_type,
                                 }).unwrap(),
                                 metadata: Some("ws".into()),
+                                capabilities: vec![],
                             }),
-                            payload: Some(Payload {
+                            lazy_load_blob: Some(LazyLoadBlob {
                                 mime: None,
                                 bytes: msg.into_bytes(),
                             }),
-                            signed_capabilities: None,
-                        });
+                        }).await;
                     }
                     _ => {
                         websocket_close(channel_id, app.clone(), &ws_senders, &send_to_loop).await;
@@ -694,6 +755,12 @@ async fn maintain_websocket(
             }
         }
     }
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 1,
+            content: format!("http_server: websocket connection {channel_id} closed"),
+        })
+        .await;
     let stream = write_stream.reunite(read_stream).unwrap();
     let _ = stream.close().await;
 }
@@ -720,18 +787,18 @@ async fn websocket_close(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&HttpServerRequest::WebSocketClose(channel_id)).unwrap(),
+                body: serde_json::to_vec(&HttpServerRequest::WebSocketClose(channel_id)).unwrap(),
                 metadata: Some("ws".into()),
+                capabilities: vec![],
             }),
-            payload: Some(Payload {
+            lazy_load_blob: Some(LazyLoadBlob {
                 mime: None,
                 bytes: serde_json::to_vec(&RpcResponseBody {
-                    ipc: Vec::new(),
-                    payload: None,
+                    body: Vec::new(),
+                    lazy_load_blob: None,
                 })
                 .unwrap(),
             }),
-            signed_capabilities: None,
         })
         .await;
 }
@@ -743,6 +810,7 @@ async fn handle_app_message(
     ws_path_bindings: WsPathBindings,
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
+    print_tx: PrintSender,
 ) {
     // when we get a Response, try to match it to an outstanding HTTP
     // request and send it there.
@@ -752,9 +820,9 @@ async fn handle_app_message(
             let Some((_id, (path, sender))) = http_response_senders.remove(&km.id) else {
                 return;
             };
-            // if path is /rpc/message, return accordingly with base64 encoded payload
-            if path == "/rpc:sys:uqbar/message" {
-                let payload = km.payload.map(|p| Payload {
+            // if path is /rpc/message, return accordingly with base64 encoded blob
+            if path == "/rpc:distro:sys/message" {
+                let blob = km.lazy_load_blob.map(|p| LazyLoadBlob {
                     mime: p.mime,
                     bytes: base64::encode(p.bytes).into_bytes(),
                 });
@@ -768,13 +836,13 @@ async fn handle_app_message(
                         headers: default_headers,
                     },
                     serde_json::to_vec(&RpcResponseBody {
-                        ipc: response.ipc,
-                        payload,
+                        body: response.body,
+                        lazy_load_blob: blob,
                     })
                     .unwrap(),
                 ));
             } else {
-                let Ok(response) = serde_json::from_slice::<HttpResponse>(&response.ipc) else {
+                let Ok(response) = serde_json::from_slice::<HttpResponse>(&response.body) else {
                     // the receiver will automatically trigger a 503 when sender is dropped.
                     return;
                 };
@@ -783,25 +851,25 @@ async fn handle_app_message(
                         status: response.status,
                         headers: response.headers,
                     },
-                    match km.payload {
+                    match km.lazy_load_blob {
                         None => vec![],
                         Some(p) => p.bytes,
                     },
                 ));
             }
         }
-        Message::Request(Request { ref ipc, .. }) => {
-            let Ok(message) = serde_json::from_slice::<HttpServerAction>(ipc) else {
+        Message::Request(Request { ref body, .. }) => {
+            let Ok(message) = serde_json::from_slice::<HttpServerAction>(body) else {
                 println!(
                     "http_server: got malformed request from {}: {:?}\r",
-                    km.source, ipc
+                    km.source, body
                 );
                 send_action_response(
                     km.id,
                     km.source,
                     &send_to_loop,
                     Err(HttpServerError::BadRequest {
-                        req: String::from_utf8_lossy(ipc).to_string(),
+                        req: String::from_utf8_lossy(body).to_string(),
                     }),
                 )
                 .await;
@@ -815,13 +883,22 @@ async fn handle_app_message(
                     cache,
                 } => {
                     let mut path_bindings = path_bindings.write().await;
-                    if km.source.process != "homepage:homepage:uqbar" {
+                    if km.source.process != "homepage:homepage:sys" {
                         path = if path.starts_with('/') {
                             format!("/{}{}", km.source.process, path)
                         } else {
                             format!("/{}/{}", km.source.process, path)
                         };
                     }
+                    let _ = print_tx
+                        .send(Printout {
+                            verbosity: 1,
+                            content: format!(
+                                "binding path {path} for {}, authenticated={authenticated}, local={local_only}, cached={cache}",
+                                km.source.process
+                            ),
+                        })
+                        .await;
                     if !cache {
                         // trim trailing "/"
                         path_bindings.add(
@@ -835,12 +912,12 @@ async fn handle_app_message(
                             },
                         );
                     } else {
-                        let Some(payload) = km.payload else {
+                        let Some(blob) = km.lazy_load_blob else {
                             send_action_response(
                                 km.id,
                                 km.source,
                                 &send_to_loop,
-                                Err(HttpServerError::NoPayload),
+                                Err(HttpServerError::NoBlob),
                             )
                             .await;
                             return;
@@ -853,7 +930,7 @@ async fn handle_app_message(
                                 secure_subdomain: None,
                                 authenticated,
                                 local_only,
-                                static_content: Some(payload),
+                                static_content: Some(blob),
                             },
                         );
                     }
@@ -881,12 +958,12 @@ async fn handle_app_message(
                             },
                         );
                     } else {
-                        let Some(payload) = km.payload else {
+                        let Some(blob) = km.lazy_load_blob else {
                             send_action_response(
                                 km.id,
                                 km.source,
                                 &send_to_loop,
-                                Err(HttpServerError::NoPayload),
+                                Err(HttpServerError::NoBlob),
                             )
                             .await;
                             return;
@@ -899,7 +976,7 @@ async fn handle_app_message(
                                 secure_subdomain: Some(subdomain),
                                 authenticated: true,
                                 local_only: false,
-                                static_content: Some(payload),
+                                static_content: Some(blob),
                             },
                         );
                     }
@@ -967,23 +1044,23 @@ async fn handle_app_message(
                     channel_id,
                     message_type,
                 } => {
-                    let Some(payload) = km.payload else {
+                    let Some(blob) = km.lazy_load_blob else {
                         send_action_response(
                             km.id,
                             km.source,
                             &send_to_loop,
-                            Err(HttpServerError::NoPayload),
+                            Err(HttpServerError::NoBlob),
                         )
                         .await;
                         return;
                     };
                     let ws_message = match message_type {
                         WsMessageType::Text => warp::ws::Message::text(
-                            String::from_utf8_lossy(&payload.bytes).to_string(),
+                            String::from_utf8_lossy(&blob.bytes).to_string(),
                         ),
-                        WsMessageType::Binary => warp::ws::Message::binary(payload.bytes),
+                        WsMessageType::Binary => warp::ws::Message::binary(blob.bytes),
                         WsMessageType::Ping | WsMessageType::Pong => {
-                            if payload.bytes.len() > 125 {
+                            if blob.bytes.len() > 125 {
                                 send_action_response(
                                     km.id,
                                     km.source,
@@ -997,10 +1074,13 @@ async fn handle_app_message(
                                 return;
                             }
                             if message_type == WsMessageType::Ping {
-                                warp::ws::Message::ping(payload.bytes)
+                                warp::ws::Message::ping(blob.bytes)
                             } else {
-                                warp::ws::Message::pong(payload.bytes)
+                                warp::ws::Message::pong(blob.bytes)
                             }
+                        }
+                        WsMessageType::Close => {
+                            unreachable!();
                         }
                     };
                     // Send to the websocket if registered
@@ -1091,13 +1171,13 @@ pub async fn send_action_response(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc: serde_json::to_vec(&result).unwrap(),
+                    body: serde_json::to_vec(&result).unwrap(),
                     metadata: None,
+                    capabilities: vec![],
                 },
                 None,
             )),
-            payload: None,
-            signed_capabilities: None,
+            lazy_load_blob: None,
         })
         .await;
 }

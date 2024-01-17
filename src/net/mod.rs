@@ -39,6 +39,7 @@ pub async fn networking(
     print_tx: PrintSender,
     self_message_tx: MessageSender,
     message_rx: MessageReceiver,
+    contract_address: String,
     reveal_ip: bool,
 ) -> Result<()> {
     // branch on whether we are a direct or indirect node
@@ -61,6 +62,7 @@ pub async fn networking(
                 self_message_tx,
                 message_rx,
                 reveal_ip,
+                contract_address,
             )
             .await
         }
@@ -68,7 +70,7 @@ pub async fn networking(
             // direct node: run the direct networking strategy
             if &our_ip != ip {
                 return Err(anyhow!(
-                    "net: fatal error: IP address mismatch: {} != {}, update your QNS identity",
+                    "net: fatal error: IP address mismatch: {} != {}, update your KNS identity",
                     our_ip,
                     ip
                 ));
@@ -77,7 +79,7 @@ pub async fn networking(
                 Ok(tcp) => tcp,
                 Err(_e) => {
                     return Err(anyhow!(
-                        "net: fatal error: can't listen on port {}, update your QNS identity or free up that port",
+                        "net: fatal error: can't listen on port {}, update your KNS identity or free up that port",
                         port,
                     ));
                 }
@@ -98,6 +100,7 @@ pub async fn networking(
                 print_tx,
                 self_message_tx,
                 message_rx,
+                contract_address,
             )
             .await
         }
@@ -114,17 +117,18 @@ async fn indirect_networking(
     _self_message_tx: MessageSender,
     mut message_rx: MessageReceiver,
     reveal_ip: bool,
+    contract_address: String,
 ) -> Result<()> {
     print_debug(&print_tx, "net: starting as indirect").await;
     let pki: OnchainPKI = Arc::new(DashMap::new());
     let peers: Peers = Arc::new(DashMap::new());
-    // mapping from QNS namehash to username
+    // mapping from KNS namehash to username
     let names: PKINames = Arc::new(DashMap::new());
     // track peers that we're already in the midst of establishing a connection with
     let mut pending_connections = JoinSet::<(NodeId, Result<()>)>::new();
     let mut peer_message_queues = HashMap::<NodeId, Vec<KernelMessage>>::new();
 
-    // some initial delay as we wait for QNS data to be piped in from qns_indexer
+    // some initial delay as we wait for KNS data to be piped in from kns_indexer
     let mut router_reconnect_delay = std::time::Duration::from_secs(2);
 
     loop {
@@ -149,6 +153,7 @@ async fn indirect_networking(
                         names.clone(),
                         &kernel_message_tx,
                         &print_tx,
+                        &contract_address,
                     )
                     .await {
                         Ok(()) => continue,
@@ -182,7 +187,7 @@ async fn indirect_networking(
                     reveal_ip,
                     kernel_message_tx.clone(),
                     network_error_tx.clone(),
-                    print_tx.clone()
+                    print_tx.clone(),
                 ));
             }
             // 2. recover the result of a pending connection and flush any message
@@ -283,11 +288,12 @@ async fn direct_networking(
     print_tx: PrintSender,
     _self_message_tx: MessageSender,
     mut message_rx: MessageReceiver,
+    contract_address: String,
 ) -> Result<()> {
     print_debug(&print_tx, "net: starting as direct").await;
     let pki: OnchainPKI = Arc::new(DashMap::new());
     let peers: Peers = Arc::new(DashMap::new());
-    // mapping from QNS namehash to username
+    // mapping from KNS namehash to username
     let names: PKINames = Arc::new(DashMap::new());
     // direct-specific structures
     let mut forwarding_connections = JoinSet::<()>::new();
@@ -317,6 +323,7 @@ async fn direct_networking(
                         names.clone(),
                         &kernel_message_tx,
                         &print_tx,
+                        &contract_address,
                     )
                     .await {
                         Ok(()) => continue,
@@ -638,7 +645,7 @@ async fn recv_connection(
     noise.read_message(first_message, &mut buf)?;
 
     // -> e, ee, s, es
-    send_uqbar_handshake(
+    send_protocol_handshake(
         our,
         keypair,
         &our_static_key,
@@ -651,12 +658,12 @@ async fn recv_connection(
 
     // <- s, se
     let their_handshake =
-        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_protocol_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
-    // now validate this handshake payload against the QNS PKI
+    // now validate this handshake payload against the KNS PKI
     let their_id = pki
         .get(&their_handshake.name)
-        .ok_or(anyhow!("unknown QNS name"))?;
+        .ok_or(anyhow!("unknown KNS name"))?;
     validate_handshake(
         &their_handshake,
         noise
@@ -717,7 +724,7 @@ async fn recv_connection_via_router(
     )?;
 
     // -> e, ee, s, es
-    send_uqbar_handshake(
+    send_protocol_handshake(
         our,
         keypair,
         &our_static_key,
@@ -730,12 +737,12 @@ async fn recv_connection_via_router(
 
     // <- s, se
     let their_handshake =
-        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_protocol_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
-    // now validate this handshake payload against the QNS PKI
+    // now validate this handshake payload against the KNS PKI
     let their_id = pki
         .get(&their_handshake.name)
-        .ok_or(anyhow!("unknown QNS name"))?;
+        .ok_or(anyhow!("unknown KNS name"))?;
     validate_handshake(
         &their_handshake,
         noise
@@ -809,9 +816,9 @@ async fn init_connection(
 
     // <- e, ee, s, es
     let their_handshake =
-        recv_uqbar_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
+        recv_protocol_handshake(&mut noise, &mut buf, &mut read_stream, &mut write_stream).await?;
 
-    // now validate this handshake payload against the QNS PKI
+    // now validate this handshake payload against the KNS PKI
     validate_handshake(
         &their_handshake,
         noise
@@ -821,7 +828,7 @@ async fn init_connection(
     )?;
 
     // -> s, se
-    send_uqbar_handshake(
+    send_protocol_handshake(
         our,
         keypair,
         &our_static_key,
@@ -853,14 +860,15 @@ async fn handle_local_message(
     names: PKINames,
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
+    contract_address: &str,
 ) -> Result<()> {
     print_debug(print_tx, "net: handling local message").await;
-    let ipc = match km.message {
-        Message::Request(ref request) => &request.ipc,
+    let body = match km.message {
+        Message::Request(ref request) => &request.body,
         Message::Response((response, _context)) => {
             // these are received as a router, when we send ConnectionRequests
             // to a node we do routing for.
-            match rmp_serde::from_slice::<NetResponses>(&response.ipc) {
+            match rmp_serde::from_slice::<NetResponses>(&response.body) {
                 Ok(NetResponses::Accepted(_)) => {
                     // TODO anything here?
                 }
@@ -880,9 +888,9 @@ async fn handle_local_message(
     };
 
     if km.source.node != our.name {
-        if let Ok(act) = rmp_serde::from_slice::<NetActions>(ipc) {
+        if let Ok(act) = rmp_serde::from_slice::<NetActions>(body) {
             match act {
-                NetActions::QnsBatchUpdate(_) | NetActions::QnsUpdate(_) => {
+                NetActions::KnsBatchUpdate(_) | NetActions::KnsUpdate(_) => {
                     // for now, we don't get these from remote.
                 }
                 NetActions::ConnectionRequest(from) => {
@@ -922,22 +930,22 @@ async fn handle_local_message(
                             id: km.id,
                             source: Address {
                                 node: our.name.clone(),
-                                process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+                                process: ProcessId::new(Some("net"), "distro", "sys"),
                             },
                             target: km.rsvp.unwrap_or(km.source),
                             rsvp: None,
                             message: Message::Response((
                                 Response {
                                     inherit: false,
-                                    ipc: rmp_serde::to_vec(
+                                    body: rmp_serde::to_vec(
                                         &res.unwrap_or(NetResponses::Rejected(from)),
                                     )?,
                                     metadata: None,
+                                    capabilities: vec![],
                                 },
                                 None,
                             )),
-                            payload: None,
-                            signed_capabilities: None,
+                            lazy_load_blob: None,
                         })
                         .await?;
                 }
@@ -946,101 +954,108 @@ async fn handle_local_message(
         };
         // if we can't parse this to a netaction, treat it as a hello and print it
         // respond to a text message with a simple "delivered" response
-        parse_hello_message(our, &km, ipc, kernel_message_tx, print_tx).await?;
+        parse_hello_message(our, &km, body, kernel_message_tx, print_tx).await?;
         Ok(())
     } else {
         // available commands: "peers", "pki", "names", "diagnostics"
         // first parse as raw string, then deserialize to NetActions object
         let mut printout = String::new();
-        match std::str::from_utf8(ipc) {
-            Ok("peers") => {
-                printout.push_str(&format!(
-                    "{:#?}",
-                    peers
-                        .iter()
-                        .map(|p| p.identity.name.clone())
-                        .collect::<Vec<_>>()
-                ));
+        match rmp_serde::from_slice::<NetActions>(body) {
+            Ok(NetActions::ConnectionRequest(_)) => {
+                // we shouldn't receive these from ourselves.
             }
-            Ok("pki") => {
-                printout.push_str(&format!("{:#?}", pki));
+            Ok(NetActions::KnsUpdate(log)) => {
+                pki.insert(
+                    log.name.clone(),
+                    Identity {
+                        name: log.name.clone(),
+                        networking_key: log.public_key,
+                        ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
+                            None
+                        } else {
+                            Some((log.ip, log.port))
+                        },
+                        allowed_routers: log.routers,
+                    },
+                );
+                names.insert(log.node, log.name);
             }
-            Ok("names") => {
-                printout.push_str(&format!("{:#?}", names));
-            }
-            Ok("diagnostics") => {
-                printout.push_str(&format!("our Identity: {:#?}\r\n", our));
-                printout.push_str("we have connections with peers:\r\n");
-                for peer in peers.iter() {
-                    printout.push_str(&format!(
-                        "    {}, routing_for={}\r\n",
-                        peer.identity.name, peer.routing_for,
-                    ));
-                }
-                printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
-                if pending_passthroughs.is_some() {
-                    printout.push_str(&format!(
-                        "we have {} pending passthrough connections\r\n",
-                        pending_passthroughs.unwrap().len()
-                    ));
-                }
-                if forwarding_connections.is_some() {
-                    printout.push_str(&format!(
-                        "we have {} open passthrough connections\r\n",
-                        forwarding_connections.unwrap().len()
-                    ));
-                }
-            }
-            _ => {
-                match rmp_serde::from_slice::<NetActions>(ipc) {
-                    Ok(NetActions::ConnectionRequest(_)) => {
-                        // we shouldn't receive these from ourselves.
-                    }
-                    Ok(NetActions::QnsUpdate(log)) => {
-                        // printout.push_str(&format!("net: got QNS update for {}", log.name));
-                        pki.insert(
-                            log.name.clone(),
-                            Identity {
-                                name: log.name.clone(),
-                                networking_key: log.public_key,
-                                ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
-                                    None
-                                } else {
-                                    Some((log.ip, log.port))
-                                },
-                                allowed_routers: log.routers,
+            Ok(NetActions::KnsBatchUpdate(log_list)) => {
+                for log in log_list {
+                    pki.insert(
+                        log.name.clone(),
+                        Identity {
+                            name: log.name.clone(),
+                            networking_key: log.public_key,
+                            ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
+                                None
+                            } else {
+                                Some((log.ip, log.port))
                             },
-                        );
-                        names.insert(log.node, log.name);
+                            allowed_routers: log.routers,
+                        },
+                    );
+                    names.insert(log.node, log.name);
+                }
+            }
+            _ => match std::str::from_utf8(body) {
+                Ok("peers") => {
+                    printout.push_str(&format!(
+                        "{:#?}",
+                        peers
+                            .iter()
+                            .map(|p| p.identity.name.clone())
+                            .collect::<Vec<_>>()
+                    ));
+                }
+                Ok("pki") => {
+                    printout.push_str(&format!("{:#?}", pki));
+                }
+                Ok("names") => {
+                    printout.push_str(&format!("{:#?}", names));
+                }
+                Ok("diagnostics") => {
+                    printout.push_str(&format!(
+                        "indexing from contract address {}\r\n",
+                        contract_address
+                    ));
+                    printout.push_str(&format!("our Identity: {:#?}\r\n", our));
+                    printout.push_str("we have connections with peers:\r\n");
+                    for peer in peers.iter() {
+                        printout.push_str(&format!(
+                            "    {}, routing_for={}\r\n",
+                            peer.identity.name, peer.routing_for,
+                        ));
                     }
-                    Ok(NetActions::QnsBatchUpdate(log_list)) => {
-                        // printout.push_str(&format!(
-                        //     "net: got QNS update with {} peers",
-                        //     log_list.len()
-                        // ));
-                        for log in log_list {
-                            pki.insert(
-                                log.name.clone(),
-                                Identity {
-                                    name: log.name.clone(),
-                                    networking_key: log.public_key,
-                                    ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
-                                        None
-                                    } else {
-                                        Some((log.ip, log.port))
-                                    },
-                                    allowed_routers: log.routers,
-                                },
-                            );
-                            names.insert(log.node, log.name);
+                    printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
+                    if pending_passthroughs.is_some() {
+                        printout.push_str(&format!(
+                            "we have {} pending passthrough connections\r\n",
+                            pending_passthroughs.unwrap().len()
+                        ));
+                    }
+                    if forwarding_connections.is_some() {
+                        printout.push_str(&format!(
+                            "we have {} open passthrough connections\r\n",
+                            forwarding_connections.unwrap().len()
+                        ));
+                    }
+                }
+                Ok(other) => {
+                    // parse non-commands as a request to fetch networking data
+                    // about a specific node name
+                    printout.push_str(&format!("net: printing known identity for {}\r\n", other));
+                    match pki.get(other) {
+                        Some(id) => {
+                            printout.push_str(&format!("{:#?}", *id));
+                        }
+                        None => {
+                            printout.push_str("no such identity known!");
                         }
                     }
-                    _ => {
-                        parse_hello_message(our, &km, ipc, kernel_message_tx, print_tx).await?;
-                        return Ok(());
-                    }
                 }
-            }
+                _ => {}
+            },
         }
         if !printout.is_empty() {
             print_tx

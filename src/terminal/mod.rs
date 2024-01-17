@@ -14,8 +14,30 @@ use crossterm::{
 use futures::{future::FutureExt, StreamExt};
 use std::fs::{read_to_string, OpenOptions};
 use std::io::{stdout, BufWriter, Write};
+use tokio::signal::unix::{signal, SignalKind};
 
 mod utils;
+
+struct RawMode;
+impl RawMode {
+    fn new() -> anyhow::Result<Self> {
+        enable_raw_mode()?;
+        Ok(RawMode)
+    }
+}
+impl Drop for RawMode {
+    fn drop(&mut self) {
+        match disable_raw_mode() {
+            Ok(_) => {
+                // let is_enabled = crossterm::terminal::is_raw_mode_enabled();
+                // println!("nectar: disabled raw mode successfully: {is_enabled:?}\r");
+            }
+            Err(e) => {
+                println!("nectar: failed to disable raw mode: {e:?}\r");
+            }
+        }
+    }
+}
 
 /*
  *  terminal driver
@@ -28,45 +50,49 @@ pub async fn terminal(
     debug_event_loop: DebugSender,
     print_tx: PrintSender,
     mut print_rx: PrintReceiver,
+    is_detached: bool,
 ) -> Result<()> {
     let mut stdout = stdout();
     execute!(
         stdout,
         EnableBracketedPaste,
-        terminal::SetTitle(format!("{}@{}", our.name, "uqbar"))
+        terminal::SetTitle(format!("{}", our.name))
     )?;
 
     let (mut win_cols, mut win_rows) = terminal::size().unwrap();
     // print initial splash screen, large if there's room, small otherwise
-    if win_cols >= 93 {
+    if win_cols >= 90 {
         println!(
             "\x1b[38;5;128m{}\x1b[0m",
             format_args!(
                 r#"
-                ,,   UU
-            s#  lUL  UU       !p
-           !UU  lUL  UU       !UUlb
-       #U  !UU  lUL  UU       !UUUUU#
-       UU  !UU  lUL  UU       !UUUUUUUb
-       UU  !UU  %"     ;-     !UUUUUUUU#
-   $   UU  !UU         @UU#p  !UUUUUUUUU#
-  ]U   UU  !#          @UUUUS !UUUUUUUUUUb
-  @U   UU  !           @UUUUUUlUUUUUUUUUUU                         888
-  UU   UU  !           @UUUUUUUUUUUUUUUUUU                         888
-  @U   UU  !           @UUUUUU!UUUUUUUUUUU                         888
-  'U   UU  !#          @UUUU# !UUUUUUUUUU~       888  888  .d88888 88888b.   8888b.  888d888
-   \   UU  !UU         @UU#^  !UUUUUUUUU#        888  888 d88" 888 888 "88b     "88b 888P"
-       UU  !UU  @Np  ,,"      !UUUUUUUU#         888  888 888  888 888  888 .d888888 888
-       UU  !UU  lUL  UU       !UUUUUUU^          Y88b 888 Y88b 888 888 d88P 888  888 888
-       "U  !UU  lUL  UU       !UUUUUf             "Y88888  "Y88888 88888P"  "Y888888 888
-           !UU  lUL  UU       !UUl^                            888
-            `"  lUL  UU       '^                               888    {}
-                     ""                                        888    version {}
-                                                 a general purpose sovereign cloud computer
-
-  networking public key: {}
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡠⠖⠉
+ ⠁⠶⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠔⠋⠀⠀⠀888    d8P  d8b                        888
+ ⠀⠀⠈⢛⠿⣷⣦⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡤⠤⣴⡞⠁⠀⠀⠀⠀⠀888   d8P   Y8P                        888
+ ⠀⠀⠀⠀⠙⠳⢾⣿⣟⣻⠷⣦⣤⣀⠀⠀⠀⠀⠀⠀⣾⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀888  d8P                               888
+ ⠀⠀⠀⠀⠀⠀⠙⠲⣯⣿⣿⣿⣿⠽⢿⣷⣦⣤⣀⠀⢿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀888d88K     888 88888b.   .d88b.   .d88888  .d88b.
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠲⠾⠿⣿⣿⣿⣿⣿⣿⣿⣷⣿⣿⣿⣿⣿⡀⠀⠀⠀⠀⠀⠀8888888b    888 888 "88b d88""88b d88" 888 d8P  Y8b
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⣛⣯⣿⣿⣿⣿⣿⢿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀888  Y88b   888 888  888 888  888 888  888 88888888
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⠛⡵⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀888   Y88b  888 888  888 Y88..88P Y88b 888 Y8b.
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⣱⣿⣿⣿⣿⣿⣿⡿⠁⠀⠀⠀⠀⠀⠀888    Y88b 888 888  888  "Y88P"   "Y88888  "Y8888
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣿⣿⡽⠋⠀⠀⠀⠀⠀⠀⠀⠀
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⣿⡿⠿⠛⣫⡽⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{} ({})
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣯⣷⡞⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀version {}
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⡾⣿⡿⣿⣿⣿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀a general purpose sovereign cloud computer
+ ⠀⠀⠀⠀⠀⠀⠀⣠⠴⠛⠉⢰⡿⢱⡿⢹⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+ ⠀⠀⠀⠀⠀⠀⠉⠀⠀⠀⢠⡿⠁⡿⠁⡿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠟⠀⡸⠁⠀⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+ ⠀⠀⠀⠀⠀⠀⠀⢀⠔⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+ networking public key: {}
                 "#,
-                our.name, version, our.networking_key,
+                our.name,
+                if our.ws_routing.is_some() {
+                    "direct"
+                } else {
+                    "indirect"
+                },
+                version,
+                our.networking_key,
             )
         );
     } else {
@@ -74,27 +100,38 @@ pub async fn terminal(
             "\x1b[38;5;128m{}\x1b[0m",
             format_args!(
                 r#"
-                   888
-                   888
-                   888
- 888  888  .d88888 88888b.   8888b.  888d888
- 888  888 d88" 888 888 "88b     "88b 888P"
- 888  888 888  888 888  888 .d888888 888
- Y88b 888 Y88b 888 888 d88P 888  888 888
-  "Y88888  "Y88888 88888P"  "Y888888 888
-               888
-               888    {}
-               888    version {}
- a general purpose sovereign cloud computer
+ 888    d8P  d8b                        888
+ 888   d8P   Y8P                        888
+ 888  d8P                               888
+ 888d88K     888 88888b.   .d88b.   .d88888  .d88b.
+ 8888888b    888 888 "88b d88""88b d88" 888 d8P  Y8b
+ 888  Y88b   888 888  888 888  888 888  888 88888888
+ 888   Y88b  888 888  888 Y88..88P Y88b 888 Y8b.
+ 888    Y88b 888 888  888  "Y88P"   "Y88888  "Y8888
 
- networking pubkey: {}
+ {} ({})
+ version {}
+ a general purpose sovereign cloud computer
+ net pubkey: {}
                 "#,
-                our.name, version, our.networking_key,
+                our.name,
+                if our.ws_routing.is_some() {
+                    "direct"
+                } else {
+                    "indirect"
+                },
+                version,
+                our.networking_key,
             )
         );
     }
 
-    enable_raw_mode()?;
+    let _raw_mode = if is_detached {
+        None
+    } else {
+        Some(RawMode::new()?)
+    };
+
     let mut reader = EventStream::new();
     let mut current_line = format!("{} > ", our.name);
     let prompt_len: usize = our.name.len() + 3;
@@ -128,6 +165,24 @@ pub async fn terminal(
         .open(&log_path)
         .unwrap();
     let mut log_writer = BufWriter::new(log_handle);
+
+    // use to trigger cleanup if receive signal to kill process
+    let mut sigalrm =
+        signal(SignalKind::alarm()).expect("terminal: failed to set up SIGALRM handler");
+    let mut sighup =
+        signal(SignalKind::hangup()).expect("terminal: failed to set up SIGHUP handler");
+    let mut sigint =
+        signal(SignalKind::interrupt()).expect("terminal: failed to set up SIGINT handler");
+    let mut sigpipe =
+        signal(SignalKind::pipe()).expect("terminal: failed to set up SIGPIPE handler");
+    let mut sigquit =
+        signal(SignalKind::quit()).expect("terminal: failed to set up SIGQUIT handler");
+    let mut sigterm =
+        signal(SignalKind::terminate()).expect("terminal: failed to set up SIGTERM handler");
+    let mut sigusr1 =
+        signal(SignalKind::user_defined1()).expect("terminal: failed to set up SIGUSR1 handler");
+    let mut sigusr2 =
+        signal(SignalKind::user_defined2()).expect("terminal: failed to set up SIGUSR2 handler");
 
     loop {
         let event = reader.next().fuse();
@@ -172,7 +227,7 @@ pub async fn terminal(
                     Print(utils::truncate_in_place(&current_line, prompt_len, win_cols, (line_col, cursor_col))),
                     cursor::MoveTo(cursor_col, win_rows),
                 )?;
-            },
+            }
             Some(Ok(event)) = event => {
                 let mut stdout = stdout.lock();
                 match event {
@@ -209,7 +264,6 @@ pub async fn terminal(
                         ..
                     }) => {
                         execute!(stdout, DisableBracketedPaste, terminal::SetTitle(""))?;
-                        disable_raw_mode()?;
                         break;
                     },
                     // CTRL+V: toggle through verbosity modes
@@ -586,11 +640,11 @@ pub async fn terminal(
                                         message: Message::Request(Request {
                                             inherit: false,
                                             expects_response: None,
-                                            ipc: command.into_bytes(),
+                                            body: command.into_bytes(),
                                             metadata: None,
+                                            capabilities: vec![],
                                         }),
-                                        payload: None,
-                                        signed_capabilities: None,
+                                        lazy_load_blob: None,
                                     }
                                 ).await.expect("terminal: couldn't execute command!");
                             },
@@ -599,10 +653,17 @@ pub async fn terminal(
                     },
                     _ => {},
                 }
-                }
+            }
+            _ = sigalrm.recv() => return Err(anyhow::anyhow!("exiting due to SIGALRM")),
+            _ = sighup.recv() =>  return Err(anyhow::anyhow!("exiting due to SIGHUP")),
+            _ = sigint.recv() =>  return Err(anyhow::anyhow!("exiting due to SIGINT")),
+            _ = sigpipe.recv() => return Err(anyhow::anyhow!("exiting due to SIGPIPE")),
+            _ = sigquit.recv() => return Err(anyhow::anyhow!("exiting due to SIGQUIT")),
+            _ = sigterm.recv() => return Err(anyhow::anyhow!("exiting due to SIGTERM")),
+            _ = sigusr1.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR1")),
+            _ = sigusr2.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR2")),
         }
     }
     execute!(stdout.lock(), DisableBracketedPaste, terminal::SetTitle(""))?;
-    disable_raw_mode()?;
     Ok(())
 }

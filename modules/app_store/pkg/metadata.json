@@ -1,6 +1,10 @@
 {
     "package": "app_store",
-    "publisher": "uqbar",
-    "version": [0, 1, 0],
-    "description": "A package manager + app store. This JSON field is optional and you can add whatever you want in addition to this."
+    "publisher": "sys",
+    "version": [
+        0,
+        2,
+        0
+    ],
+    "description": "A package manager + app store."
 }

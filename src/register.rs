@@ -23,7 +23,7 @@ use crate::types::*;
 
 // Human readable ABI
 abigen!(
-    QNSRegistry,
+    KNSRegistry,
     r"[
     function ws(uint256 node) external view returns (bytes32,uint32,uint16,bytes32[])
 ]"
@@ -31,7 +31,8 @@ abigen!(
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
-pub const _QNS_SEPOLIA_ADDRESS: &str = "0x4C8D8d4A71cE21B4A16dAbf4593cDF30d79728F1";
+pub const KNS_SEPOLIA_ADDRESS: &str = "0x3807fBD692Aa5c96F1D8D7c59a1346a885F40B1C";
+pub const KNS_OPTIMISM_ADDRESS: &str = "0xca5b5811c0C40aAB3295f932b1B5112Eb7bb4bD6";
 
 pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
     let octets: Vec<&str> = ip.split('.').collect();
@@ -82,7 +83,7 @@ pub fn generate_jwt(jwt_secret_bytes: &[u8], username: &str) -> Option<String> {
         Err(_) => return None,
     };
 
-    let claims = crate::http::types::JwtClaims {
+    let claims = crate::http::server_types::JwtClaims {
         username: username.to_string(),
         expiration: 0,
     };
@@ -101,6 +102,7 @@ pub async fn register(
     port: u16,
     rpc_url: String,
     keyfile: Option<Vec<u8>>,
+    testnet: bool,
 ) {
     // Networking info is generated and passed to the UI, but not used until confirmed
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
@@ -108,7 +110,11 @@ pub async fn register(
     let tx = Arc::new(tx);
 
     // TODO: if IP is localhost, don't allow registration as direct
-    let ws_port = crate::http::utils::find_open_port(9000).await.unwrap();
+    let ws_port = crate::http::utils::find_open_port(9000, 65535)
+        .await
+        .expect(
+            "Unable to find free port between 9000 and 65535 for a new websocket, are you kidding?",
+        );
 
     // This is a temporary identity, passed to the UI. If it is confirmed through a /boot or /confirm-change-network-keys, then it will be used to replace the current identity
     let our_temp_id = Arc::new(Identity {
@@ -116,9 +122,10 @@ pub async fn register(
         name: "".to_string(),
         ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
-            "uqbar-router-1.uq".into(),
-            "uqbar-router-2.uq".into(),
-            "uqbar-router-3.uq".into(),
+            "next-release-router.os".into(),
+            // "default-router-1.os".into(),
+            // "default-router-2.os".into(),
+            // "default-router-3.os".into(),
         ],
     });
 
@@ -133,7 +140,32 @@ pub async fn register(
 
     let react_app = warp::path::end()
         .and(warp::get())
-        .map(move || warp::reply::html(include_str!("register-ui/build/index.html")));
+        .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
+        .or(warp::path("login")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("register-name")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("claim-invite")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("reset")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("import-keyfile")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("set-password")
+            .and(warp::get())
+            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .or(warp::path("current-chain").and(warp::get()).map(move || {
+            if testnet {
+                warp::reply::json(&"0xaa36a7")
+            } else {
+                warp::reply::json(&"0xa")
+            }
+        }));
 
     let api = warp::path("info")
         .and(
@@ -327,7 +359,7 @@ async fn handle_import_keyfile(
         }
     };
 
-    let Some(ws_port) = crate::http::utils::find_open_port(9000).await else {
+    let Some(ws_port) = crate::http::utils::find_open_port(9000, 9999).await else {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Unable to find free port"),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -389,7 +421,7 @@ async fn handle_login(
     }
     let encoded_keyfile = encoded_keyfile.unwrap();
 
-    let Some(ws_port) = crate::http::utils::find_open_port(9000).await else {
+    let Some(ws_port) = crate::http::utils::find_open_port(9000, 65535).await else {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Unable to find free port"),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -516,7 +548,7 @@ async fn success_response(
 
     let headers = response.headers_mut();
 
-    match HeaderValue::from_str(&format!("uqbar-auth_{}={};", &our.name, &token)) {
+    match HeaderValue::from_str(&format!("kinode-auth_{}={};", &our.name, &token)) {
         Ok(v) => {
             headers.append(SET_COOKIE, v);
         }
@@ -538,10 +570,10 @@ async fn _networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: 
     let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
         return false;
     };
-    let Ok(qns_address): Result<EthAddress, _> = _QNS_SEPOLIA_ADDRESS.parse() else {
+    let Ok(kns_address): Result<EthAddress, _> = KNS_SEPOLIA_ADDRESS.parse() else {
         return false;
     };
-    let contract = QNSRegistry::new(qns_address, ws_rpc.into());
+    let contract = KNSRegistry::new(kns_address, ws_rpc.into());
     let node_id: U256 = namehash(&our.name).as_bytes().into();
     let Ok((chain_pubkey, chain_ip, chain_port, chain_routers)) = contract.ws(node_id).call().await
     else {

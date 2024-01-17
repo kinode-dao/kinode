@@ -121,11 +121,11 @@ async fn handle_request(
         id,
         source,
         message,
-        payload,
+        lazy_load_blob: blob,
         ..
     } = km.clone();
     let Message::Request(Request {
-        ipc,
+        body,
         expects_response,
         metadata,
         ..
@@ -136,7 +136,7 @@ async fn handle_request(
         });
     };
 
-    let request: SqliteRequest = match serde_json::from_slice(&ipc) {
+    let request: SqliteRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
             println!("sqlite: got invalid Request: {}", e);
@@ -156,10 +156,13 @@ async fn handle_request(
     )
     .await?;
 
-    let (ipc, bytes) = match request.action {
-        SqliteAction::New => {
+    let (body, bytes) = match request.action {
+        SqliteAction::Open => {
             // handled in check_caps
-            //
+            (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
+        }
+        SqliteAction::RemoveDb => {
+            // handled in check_caps
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Read { query } => {
@@ -176,10 +179,10 @@ async fn handle_request(
                 .map(|word| word.to_uppercase())
                 .unwrap_or("".to_string());
             if !READ_KEYWORDS.contains(&first_word) {
-                return Err(SqliteError::NotAReadKeyword.into());
+                return Err(SqliteError::NotAReadKeyword);
             }
 
-            let parameters = get_json_params(payload)?;
+            let parameters = get_json_params(blob)?;
 
             let mut statement = db.prepare(&query)?;
             let column_names: Vec<String> = statement
@@ -232,15 +235,15 @@ async fn handle_request(
                 .unwrap_or("".to_string());
 
             if !WRITE_KEYWORDS.contains(&first_word) {
-                return Err(SqliteError::NotAWriteKeyword.into());
+                return Err(SqliteError::NotAWriteKeyword);
             }
 
-            let parameters = get_json_params(payload)?;
+            let parameters = get_json_params(blob)?;
 
             match tx_id {
                 Some(tx_id) => {
                     txs.entry(tx_id)
-                        .or_insert_with(Vec::new)
+                        .or_default()
                         .push((statement.clone(), parameters));
                 }
                 None => {
@@ -284,8 +287,17 @@ async fn handle_request(
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
         SqliteAction::Backup => {
-            // execute WAL flush.
-            //
+            for db_ref in open_dbs.iter() {
+                let db = db_ref.value().lock().await;
+                let result: rusqlite::Result<()> = db
+                    .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+                    .map(|_| ());
+                if let Err(e) = result {
+                    return Err(SqliteError::RusqliteError {
+                        error: e.to_string(),
+                    });
+                }
+            }
             (serde_json::to_vec(&SqliteResponse::Ok).unwrap(), None)
         }
     };
@@ -307,16 +319,16 @@ async fn handle_request(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc,
+                    body,
                     metadata,
+                    capabilities: vec![],
                 },
                 None,
             )),
-            payload: bytes.map(|bytes| Payload {
+            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
             }),
-            signed_capabilities: None,
         };
 
         let _ = send_to_loop.send(response).await;
@@ -326,7 +338,7 @@ async fn handle_request(
                 verbosity: 2,
                 content: format!(
                     "sqlite: not sending response: {:?}",
-                    serde_json::from_slice::<SqliteResponse>(&ipc)
+                    serde_json::from_slice::<SqliteResponse>(&body)
                 ),
             })
             .await
@@ -400,7 +412,7 @@ async fn check_caps(
             }
             Ok(())
         }
-        SqliteAction::New => {
+        SqliteAction::Open => {
             if src_package_id != request.package_id {
                 return Err(SqliteError::NoCap {
                     error: request.action.to_string(),
@@ -425,20 +437,15 @@ async fn check_caps(
             .await?;
 
             if open_dbs.contains_key(&(request.package_id.clone(), request.db.clone())) {
-                return Err(SqliteError::DbAlreadyExists);
+                return Ok(());
             }
 
-            let db_path = format!(
-                "{}/{}/{}",
-                sqlite_path,
-                request.package_id.to_string(),
-                request.db.to_string()
-            );
+            let db_path = format!("{}/{}/{}", sqlite_path, request.package_id, request.db);
             fs::create_dir_all(&db_path).await?;
 
-            let db_file_path = format!("{}/{}.db", db_path, request.db.to_string());
+            let db_file_path = format!("{}/{}.db", db_path, request.db);
 
-            let db = Connection::open(&db_file_path)?;
+            let db = Connection::open(db_file_path)?;
             let _ = db.execute("PRAGMA journal_mode=WAL", []);
 
             open_dbs.insert(
@@ -447,12 +454,21 @@ async fn check_caps(
             );
             Ok(())
         }
-        SqliteAction::Backup => {
-            if source.process != *STATE_PROCESS_ID {
+        SqliteAction::RemoveDb => {
+            if src_package_id != request.package_id {
                 return Err(SqliteError::NoCap {
                     error: request.action.to_string(),
                 });
             }
+
+            let db_path = format!("{}/{}/{}", sqlite_path, request.package_id, request.db);
+            open_dbs.remove(&(request.package_id.clone(), request.db.clone()));
+
+            fs::remove_dir_all(&db_path).await?;
+            Ok(())
+        }
+        SqliteAction::Backup => {
+            // flushing WALs for backup
             Ok(())
         }
     }
@@ -476,7 +492,7 @@ async fn add_capability(
     send_to_caps_oracle
         .send(CapMessage::Add {
             on: source.process.clone(),
-            cap,
+            caps: vec![cap],
             responder: send_cap_bool,
         })
         .await?;
@@ -496,7 +512,7 @@ fn json_to_sqlite(value: &serde_json::Value) -> Result<SqlValue, SqliteError> {
             }
         }
         serde_json::Value::String(s) => {
-            match base64::decode(&s) {
+            match base64::decode(s) {
                 Ok(decoded_bytes) => {
                     // convert to SQLite Blob if it's a valid base64 string
                     Ok(SqlValue::Blob(decoded_bytes))
@@ -513,13 +529,13 @@ fn json_to_sqlite(value: &serde_json::Value) -> Result<SqlValue, SqliteError> {
     }
 }
 
-fn get_json_params(payload: Option<Payload>) -> Result<Vec<SqlValue>, SqliteError> {
-    match payload {
+fn get_json_params(blob: Option<LazyLoadBlob>) -> Result<Vec<SqlValue>, SqliteError> {
+    match blob {
         None => Ok(vec![]),
-        Some(payload) => match serde_json::from_slice::<serde_json::Value>(&payload.bytes) {
+        Some(blob) => match serde_json::from_slice::<serde_json::Value>(&blob.bytes) {
             Ok(serde_json::Value::Array(vec)) => vec
                 .iter()
-                .map(|value| json_to_sqlite(value))
+                .map(json_to_sqlite)
                 .collect::<Result<Vec<_>, _>>(),
             _ => Err(SqliteError::InvalidParameters),
         },
@@ -531,7 +547,7 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: SqliteError) 
         id: km.id,
         source: Address {
             node: our_name.clone(),
-            process: KV_PROCESS_ID.clone(),
+            process: SQLITE_PROCESS_ID.clone(),
         },
         target: match &km.rsvp {
             None => km.source.clone(),
@@ -541,13 +557,13 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: SqliteError) 
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: serde_json::to_vec(&SqliteResponse::Err { error: error }).unwrap(),
+                body: serde_json::to_vec(&SqliteResponse::Err { error }).unwrap(),
                 metadata: None,
+                capabilities: vec![],
             },
             None,
         )),
-        payload: None,
-        signed_capabilities: None,
+        lazy_load_blob: None,
     }
 }
 impl ToSql for SqlValue {

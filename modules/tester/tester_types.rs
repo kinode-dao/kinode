@@ -1,8 +1,7 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use uqbar_process_lib::{Address, Response};
-use uqbar_process_lib::kernel_types as kt;
-// use uqbar_process_lib::uqbar::process::standard as wit;
+use kinode_process_lib::kernel_types as kt;
+use kinode_process_lib::Address;
 
 type Rsvp = Option<Address>;
 
@@ -13,13 +12,16 @@ pub struct KernelMessage {
     pub target: Address,
     pub rsvp: Rsvp,
     pub message: kt::Message,
-    pub payload: Option<kt::Payload>,
-    pub signed_capabilities: Option<Vec<kt::SignedCapability>>,
+    pub lazy_load_blob: Option<kt::LazyLoadBlob>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TesterRequest {
-    Run { input_node_names: Vec<String>, test_timeout: u64 },
+    Run {
+        input_node_names: Vec<String>,
+        test_names: Vec<String>,
+        test_timeout: u64,
+    },
     KernelMessage(KernelMessage),
     GetFullMessage(kt::Message),
 }
@@ -35,7 +37,12 @@ pub struct TesterFail {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum TesterResponse {
     Pass,
-    Fail { test: String, file: String, line: u32, column: u32 },
+    Fail {
+        test: String,
+        file: String,
+        line: u32,
+        column: u32,
+    },
     GetFullMessage(Option<KernelMessage>),
 }
 
@@ -53,24 +60,30 @@ pub enum TesterError {
 macro_rules! fail {
     ($test:expr) => {
         Response::new()
-            .ipc(serde_json::to_vec(&tt::TesterResponse::Fail {
-                test: $test.into(),
-                file: file!().into(),
-                line: line!(),
-                column: column!(),
-            }).unwrap())
+            .body(
+                serde_json::to_vec(&tt::TesterResponse::Fail {
+                    test: $test.into(),
+                    file: file!().into(),
+                    line: line!(),
+                    column: column!(),
+                })
+                .unwrap(),
+            )
             .send()
             .unwrap();
         panic!("")
     };
     ($test:expr, $file:expr, $line:expr, $column:expr) => {
         Response::new()
-            .ipc(serde_json::to_vec(&tt::TesterResponse::Fail {
-                test: $test.into(),
-                file: $file.into(),
-                line: $line,
-                column: $column,
-            }).unwrap())
+            .body(
+                serde_json::to_vec(&tt::TesterResponse::Fail {
+                    test: $test.into(),
+                    file: $file.into(),
+                    line: $line,
+                    column: $column,
+                })
+                .unwrap(),
+            )
             .send()
             .unwrap();
         panic!("")

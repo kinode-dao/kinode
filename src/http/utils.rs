@@ -1,4 +1,4 @@
-use crate::http::types::*;
+use crate::http::server_types::*;
 use hmac::{Hmac, Mac};
 use jwt::VerifyWithKey;
 use serde::{Deserialize, Serialize};
@@ -13,7 +13,7 @@ pub struct RpcMessage {
     pub process: String,
     pub inherit: Option<bool>,
     pub expects_response: Option<u64>,
-    pub ipc: Option<String>,
+    pub body: Option<String>,
     pub metadata: Option<String>,
     pub context: Option<String>,
     pub mime: Option<String>,
@@ -43,7 +43,7 @@ pub fn auth_cookie_valid(our_node: &str, cookie: &str, jwt_secret: &[u8]) -> boo
     for cookie_part in cookie_parts {
         let cookie_part_parts: Vec<&str> = cookie_part.split('=').collect();
         if cookie_part_parts.len() == 2
-            && cookie_part_parts[0] == format!("uqbar-auth_{}", our_node)
+            && cookie_part_parts[0] == format!("kinode-auth_{}", our_node)
         {
             auth_token = Some(cookie_part_parts[1].to_string());
             break;
@@ -99,8 +99,8 @@ pub fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
     header_map
 }
 
-pub async fn find_open_port(start_at: u16) -> Option<u16> {
-    for port in start_at..(start_at + 1000) {
+pub async fn find_open_port(start_at: u16, end_at: u16) -> Option<u16> {
+    for port in start_at..end_at {
         let bind_addr = format!("0.0.0.0:{}", port);
         if is_port_available(&bind_addr).await {
             return Some(port);

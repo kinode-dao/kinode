@@ -4,10 +4,12 @@
         "process_wasm_path": "/terminal.wasm",
         "on_exit": "Restart",
         "request_networking": true,
-        "request_messaging": [
-            "net:sys:uqbar",
-            "http_client:sys:uqbar"
+        "request_capabilities": [
+            "net:distro:sys",
+            "http_client:distro:sys",
+            "kernel:distro:sys"
         ],
+        "grant_capabilities": [],
         "public": true
     }
 ]

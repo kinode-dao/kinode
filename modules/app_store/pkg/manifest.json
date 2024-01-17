@@ -4,22 +4,30 @@
         "process_wasm_path": "/app_store.wasm",
         "on_exit": "Restart",
         "request_networking": true,
-        "request_messaging": [
-            "terminal:terminal:uqbar",
-            "filesystem:sys:uqbar",
-            "http_server:sys:uqbar",
-            "http_client:sys:uqbar",
-            "encryptor:sys:uqbar",
-            "net:sys:uqbar",
-            "vfs:sys:uqbar",
-            "kernel:sys:uqbar",
-            "eth_rpc:sys:uqbar",
+        "request_capabilities": [
+            "terminal:terminal:sys",
+            "filesystem:distro:sys",
+            "http_server:distro:sys",
+            "http_client:distro:sys",
+            "net:distro:sys",
+            "vfs:distro:sys",
+            "kernel:distro:sys",
+            "eth:distro:sys",
+            "sqlite:distro:sys",
+            "kv:distro:sys",
+            "chess:chess:sys",
+            "kns_indexer:kns_indexer:sys",
             {
-                "process": "vfs:sys:uqbar",
+                "process": "vfs:distro:sys",
                 "params": {
                     "root": true
                 }
             }
+        ],
+        "grant_capabilities": [
+            "http_server:distro:sys",
+            "terminal:terminal:sys",
+            "vfs:distro:sys"
         ],
         "public": false
     }

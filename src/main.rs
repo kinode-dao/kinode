@@ -11,7 +11,7 @@ use tokio::{fs, time::timeout};
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
-mod eth_rpc;
+mod eth;
 mod http;
 mod kernel;
 mod keygen;
@@ -31,7 +31,7 @@ const TERMINAL_CHANNEL_CAPACITY: usize = 32;
 const WEBSOCKET_SENDER_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CHANNEL_CAPACITY: usize = 32;
 const HTTP_CLIENT_CHANNEL_CAPACITY: usize = 32;
-const ETH_RPC_CHANNEL_CAPACITY: usize = 32;
+const ETH_PROVIDER_CHANNEL_CAPACITY: usize = 32;
 const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
@@ -39,7 +39,7 @@ const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Tshis can and should be an environment variable / setting. It configures networking
+/// This can and should be an environment variable / setting. It configures networking
 /// such that indirect nodes always use routers, even when target is a direct node,
 /// such that only their routers can ever see their physical networking details.
 const REVEAL_IP: bool = true;
@@ -49,6 +49,7 @@ async fn serve_register_fe(
     our_ip: String,
     http_server_port: u16,
     rpc_url: String,
+    testnet: bool,
 ) -> (Identity, Vec<u8>, Keyfile) {
     // check if we have keys saved on disk, encrypted
     // if so, prompt user for "password" to decrypt with
@@ -69,7 +70,7 @@ async fn serve_register_fe(
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-        _ = register::register(tx, kill_rx, our_ip, http_server_port, rpc_url, disk_keyfile) => {
+        _ = register::register(tx, kill_rx, our_ip, http_server_port, rpc_url, disk_keyfile, testnet) => {
             panic!("registration failed")
         }
         Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
@@ -91,15 +92,16 @@ async fn serve_register_fe(
 
 #[tokio::main]
 async fn main() {
-    let app = Command::new("Uqbar")
+    let app = Command::new("kinode")
         .version(VERSION)
         .author("Uqbar DAO: https://github.com/uqbar-dao")
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
+        .arg(arg!(--port <PORT> "First port to try binding").value_parser(value_parser!(u16)))
         .arg(
-            arg!(--port <PORT> "First port to try binding")
-                .default_value("8080")
-                .value_parser(value_parser!(u16)),
+            arg!(--testnet "Use Sepolia testnet")
+                .default_value("false")
+                .value_parser(value_parser!(bool)),
         );
 
     #[cfg(not(feature = "simulation-mode"))]
@@ -114,18 +116,31 @@ async fn main() {
             arg!(--"network-router-port" <PORT> "Network router port")
                 .default_value("9001")
                 .value_parser(value_parser!(u16)),
+        )
+        .arg(
+            arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
+                .action(clap::ArgAction::SetTrue),
         );
 
     let matches = app.get_matches();
 
     let home_directory_path = matches.get_one::<String>("home").unwrap();
-    let port = matches.get_one::<u16>("port").unwrap().clone();
+    let (port, port_flag_used) = match matches.get_one::<u16>("port") {
+        Some(port) => (*port, true),
+        None => (8080, false),
+    };
+    let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
+    let contract_address = if on_testnet {
+        register::KNS_SEPOLIA_ADDRESS
+    } else {
+        register::KNS_OPTIMISM_ADDRESS
+    };
 
     #[cfg(not(feature = "simulation-mode"))]
-    let rpc_url = matches.get_one::<String>("rpc").unwrap();
+    let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").unwrap(), false);
 
     #[cfg(feature = "simulation-mode")]
-    let (rpc_url, password, network_router_port, fake_node_name) = (
+    let (rpc_url, password, network_router_port, fake_node_name, is_detached) = (
         matches.get_one::<String>("rpc"),
         matches.get_one::<String>("password"),
         matches
@@ -133,6 +148,7 @@ async fn main() {
             .unwrap()
             .clone(),
         matches.get_one::<String>("fake-node-name"),
+        matches.get_one::<bool>("detached").unwrap().clone(),
     );
 
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
@@ -169,8 +185,8 @@ async fn main() {
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
     let (timer_service_sender, timer_service_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
-    let (eth_rpc_sender, eth_rpc_receiver): (MessageSender, MessageReceiver) =
-        mpsc::channel(ETH_RPC_CHANNEL_CAPACITY);
+    let (eth_provider_sender, eth_provider_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(ETH_PROVIDER_CHANNEL_CAPACITY);
     // http client performs http requests on behalf of processes
     let (http_client_sender, http_client_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CLIENT_CHANNEL_CAPACITY);
@@ -194,26 +210,46 @@ async fn main() {
         }
     };
 
-    let http_server_port = http::utils::find_open_port(port).await.unwrap();
-    if http_server_port != port {
-        let error_message = format!(
-            "uqbar: couldn't bind {}; first available port found {}. Set an available port with `--port` and try again.",
-            port,
-            http_server_port,
-        );
-        println!("{error_message}");
-        panic!("{error_message}");
-    }
+    let http_server_port = if port_flag_used {
+        match http::utils::find_open_port(port, port + 1).await {
+            Some(port) => port,
+            None => {
+                println!(
+                    "error: couldn't bind {}; first available port found was {}. \
+                    Set an available port with `--port` and try again.",
+                    port,
+                    http::utils::find_open_port(port, port + 1000)
+                        .await
+                        .expect("no ports found in range"),
+                );
+                panic!();
+            }
+        }
+    } else {
+        match http::utils::find_open_port(port, port + 1000).await {
+            Some(port) => port,
+            None => {
+                println!(
+                    "error: couldn't bind any ports between {port} and {}. \
+                    Set an available port with `--port` and try again.",
+                    port + 1000,
+                );
+                panic!();
+            }
+        }
+    };
+
     println!(
         "login or register at http://localhost:{}\r",
         http_server_port
     );
     #[cfg(not(feature = "simulation-mode"))]
     let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
-        &home_directory_path,
+        home_directory_path,
         our_ip.to_string(),
-        http_server_port.clone(),
+        http_server_port,
         rpc_url.clone(),
+        on_testnet, // true if testnet mode
     )
     .await;
     #[cfg(feature = "simulation-mode")]
@@ -228,6 +264,7 @@ async fn main() {
                             our_ip.to_string(),
                             http_server_port.clone(),
                             rpc_url.clone(),
+                            on_testnet, // true if testnet mode
                         )
                         .await
                     }
@@ -315,65 +352,63 @@ async fn main() {
     #[allow(unused_mut)]
     let mut runtime_extensions = vec![
         (
-            ProcessId::new(Some("http_server"), "sys", "uqbar"),
+            ProcessId::new(Some("http_server"), "distro", "sys"),
             http_server_sender,
-            true,
+            false,
         ),
         (
-            ProcessId::new(Some("http_client"), "sys", "uqbar"),
+            ProcessId::new(Some("http_client"), "distro", "sys"),
             http_client_sender,
             false,
         ),
         (
-            ProcessId::new(Some("timer"), "sys", "uqbar"),
+            ProcessId::new(Some("timer"), "distro", "sys"),
             timer_service_sender,
             true,
         ),
         (
-            ProcessId::new(Some("eth_rpc"), "sys", "uqbar"),
-            eth_rpc_sender,
-            true,
+            ProcessId::new(Some("eth"), "distro", "sys"),
+            eth_provider_sender,
+            false,
         ),
         (
-            ProcessId::new(Some("vfs"), "sys", "uqbar"),
+            ProcessId::new(Some("vfs"), "distro", "sys"),
             vfs_message_sender,
-            true,
+            false,
         ),
         (
-            ProcessId::new(Some("state"), "sys", "uqbar"),
+            ProcessId::new(Some("state"), "distro", "sys"),
             state_sender,
-            true,
+            false,
         ),
-        (ProcessId::new(Some("kv"), "sys", "uqbar"), kv_sender, true),
         (
-            ProcessId::new(Some("sqlite"), "sys", "uqbar"),
+            ProcessId::new(Some("kv"), "distro", "sys"),
+            kv_sender,
+            false,
+        ),
+        (
+            ProcessId::new(Some("sqlite"), "distro", "sys"),
             sqlite_sender,
-            true,
+            false,
         ),
     ];
 
-    #[cfg(feature = "llm")]
-    runtime_extensions.push((
-        ProcessId::new(Some("llm"), "sys", "uqbar"), // TODO llm:extensions:uqbar ?
-        llm_sender,
-        true,
-    ));
+    /*
+     *  the kernel module will handle our userspace processes and receives
+     *  the basic message format for this OS.
+     *
+     *  if any of these modules fail, the program exits with an error.
+     */
+    let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
 
     let (kernel_process_map, db) = state::load_state(
         our.name.clone(),
+        networking_keypair_arc.clone(),
         home_directory_path.clone(),
         runtime_extensions.clone(),
     )
     .await
     .expect("state load failed!");
-
-    /*
-     *  the kernel module will handle our userspace processes and receives
-     *  all "messages", the basic message format for uqbar.
-     *
-     *  if any of these modules fail, the program exits with an error.
-     */
-    let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
 
     let mut tasks = tokio::task::JoinSet::<Result<()>>::new();
     tasks.spawn(kernel::kernel(
@@ -388,6 +423,8 @@ async fn main() {
         network_error_receiver,
         kernel_debug_message_receiver,
         net_message_sender.clone(),
+        home_directory_path.clone(),
+        contract_address.to_string(),
         runtime_extensions,
     ));
     #[cfg(not(feature = "simulation-mode"))]
@@ -400,6 +437,7 @@ async fn main() {
         print_sender.clone(),
         net_message_sender,
         net_message_receiver,
+        contract_address.to_string(),
         REVEAL_IP,
     ));
     #[cfg(feature = "simulation-mode")]
@@ -455,11 +493,11 @@ async fn main() {
         print_sender.clone(),
     ));
     #[cfg(not(feature = "simulation-mode"))]
-    tasks.spawn(eth_rpc::eth_rpc(
+    tasks.spawn(eth::provider::provider(
         our.name.clone(),
         rpc_url.clone(),
         kernel_message_sender.clone(),
-        eth_rpc_receiver,
+        eth_provider_receiver,
         print_sender.clone(),
     ));
     tasks.spawn(vfs::vfs(
@@ -472,6 +510,7 @@ async fn main() {
     ));
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
+    // or a SIG* was intercepted
     let quit_msg: String = tokio::select! {
         Some(Ok(res)) = tasks.join_next() => {
             format!(
@@ -487,6 +526,7 @@ async fn main() {
             kernel_debug_message_sender,
             print_sender.clone(),
             print_receiver,
+            is_detached,
         ) => {
             match quit {
                 Ok(_) => "graceful exit".into(),
@@ -511,17 +551,24 @@ async fn main() {
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: None,
-                ipc: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
+                body: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
                 metadata: None,
+                capabilities: vec![],
             }),
-            payload: None,
-            signed_capabilities: None,
+            lazy_load_blob: None,
         })
         .await;
 
     // abort all remaining tasks
     tasks.shutdown().await;
-    let _ = crossterm::terminal::disable_raw_mode();
+    //let _ = crossterm::terminal::disable_raw_mode().unwrap();
+    let stdout = std::io::stdout();
+    let mut stdout = stdout.lock();
+    let _ = crossterm::execute!(
+        stdout,
+        crossterm::event::DisableBracketedPaste,
+        crossterm::terminal::SetTitle(""),
+    );
     println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
     return;
 }

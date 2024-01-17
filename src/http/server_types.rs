@@ -1,10 +1,10 @@
-use crate::types::Payload;
+use crate::types::LazyLoadBlob;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
 /// HTTP Request type that can be shared over WASM boundary to apps.
-/// This is the one you receive from the `http_server:sys:uqbar` service.
+/// This is the one you receive from the `http_server:distro:sys` service.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpServerRequest {
     Http(IncomingHttpRequest),
@@ -17,7 +17,7 @@ pub enum HttpServerRequest {
     },
     /// Processes can both SEND and RECEIVE this kind of request
     /// (send as [`type@HttpServerAction::WebSocketPush`]).
-    /// When received, will contain the message bytes as payload.
+    /// When received, will contain the message bytes as lazy_load_blob.
     WebSocketPush {
         channel_id: u32,
         message_type: WsMessageType,
@@ -31,22 +31,10 @@ pub enum HttpServerRequest {
 pub struct IncomingHttpRequest {
     pub source_socket_addr: Option<String>, // will parse to SocketAddr
     pub method: String,                     // will parse to http::Method
-    pub raw_path: String,
+    pub url: String,                        // will parse to url::Url
     pub headers: HashMap<String, String>,
     pub query_params: HashMap<String, String>,
-    // BODY is stored in the payload, as bytes
-}
-
-/// HTTP Request type that can be shared over WASM boundary to apps.
-/// This is the one you send to the `http_client:sys:uqbar` service.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct OutgoingHttpRequest {
-    pub method: String,          // must parse to http::Method
-    pub version: Option<String>, // must parse to http::Version
-    pub url: String,             // must parse to url::Url
-    pub headers: HashMap<String, String>,
-    // BODY is stored in the payload, as bytes
-    // TIMEOUT is stored in the message expect_response
+    // BODY is stored in the lazy_load_blob, as bytes
 }
 
 /// HTTP Response type that can be shared over WASM boundary to apps.
@@ -55,30 +43,16 @@ pub struct OutgoingHttpRequest {
 pub struct HttpResponse {
     pub status: u16,
     pub headers: HashMap<String, String>,
-    // BODY is stored in the payload, as bytes
+    // BODY is stored in the lazy_load_blob, as bytes
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RpcResponseBody {
-    pub ipc: Vec<u8>,
-    pub payload: Option<Payload>,
+    pub body: Vec<u8>,
+    pub lazy_load_blob: Option<LazyLoadBlob>,
 }
 
-#[derive(Error, Debug, Serialize, Deserialize)]
-pub enum HttpClientError {
-    #[error("http_client: request could not be parsed to HttpRequest: {}.", req)]
-    BadRequest { req: String },
-    #[error("http_client: http method not supported: {}", method)]
-    BadMethod { method: String },
-    #[error("http_client: url could not be parsed: {}", url)]
-    BadUrl { url: String },
-    #[error("http_client: http version not supported: {}", version)]
-    BadVersion { version: String },
-    #[error("http_client: failed to execute request {}", error)]
-    RequestFailed { error: String },
-}
-
-/// Request type sent to `http_server:sys:uqbar` in order to configure it.
+/// Request type sent to `http_server:distro:sys` in order to configure it.
 /// You can also send [`type@HttpServerAction::WebSocketPush`], which
 /// allows you to push messages across an existing open WebSocket connection.
 ///
@@ -86,7 +60,7 @@ pub enum HttpClientError {
 /// with the shape Result<(), HttpServerActionError> serialized to JSON.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpServerAction {
-    /// Bind expects a payload if and only if `cache` is TRUE. The payload should
+    /// Bind expects a lazy_load_blob if and only if `cache` is TRUE. The lazy_load_blob should
     /// be the static file to serve at this path.
     Bind {
         path: String,
@@ -95,11 +69,11 @@ pub enum HttpServerAction {
         authenticated: bool,
         /// Set whether requests can be fielded from anywhere, or only the loopback address.
         local_only: bool,
-        /// Set whether to bind the payload statically to this path. That is, take the
-        /// payload bytes and serve them as the response to any request to this path.
+        /// Set whether to bind the lazy_load_blob statically to this path. That is, take the
+        /// lazy_load_blob bytes and serve them as the response to any request to this path.
         cache: bool,
     },
-    /// SecureBind expects a payload if and only if `cache` is TRUE. The payload should
+    /// SecureBind expects a lazy_load_blob if and only if `cache` is TRUE. The lazy_load_blob should
     /// be the static file to serve at this path.
     ///
     /// SecureBind is the same as Bind, except that it forces requests to be made from
@@ -110,8 +84,8 @@ pub enum HttpServerAction {
     /// will require the user to be logged in separately to the general domain authentication.
     SecureBind {
         path: String,
-        /// Set whether to bind the payload statically to this path. That is, take the
-        /// payload bytes and serve them as the response to any request to this path.
+        /// Set whether to bind the lazy_load_blob statically to this path. That is, take the
+        /// lazy_load_blob bytes and serve them as the response to any request to this path.
         cache: bool,
     },
     /// Bind a path to receive incoming WebSocket connections.
@@ -130,7 +104,7 @@ pub enum HttpServerAction {
     /// If a process does not want this websocket open, they should issue a *request*
     /// containing a [`type@HttpServerAction::WebSocketClose`] message and this channel ID.
     WebSocketOpen { path: String, channel_id: u32 },
-    /// When sent, expects a payload containing the WebSocket message bytes to send.
+    /// When sent, expects a lazy_load_blob containing the WebSocket message bytes to send.
     WebSocketPush {
         channel_id: u32,
         message_type: WsMessageType,
@@ -140,15 +114,16 @@ pub enum HttpServerAction {
 }
 
 /// The possible message types for WebSocketPush. Ping and Pong are limited to 125 bytes
-/// by the WebSockets protocol. Text will be sent as a Text frame, with the payload bytes
+/// by the WebSockets protocol. Text will be sent as a Text frame, with the lazy_load_blob bytes
 /// being the UTF-8 encoding of the string. Binary will be sent as a Binary frame containing
-/// the unmodified payload bytes.
+/// the unmodified lazy_load_blob bytes.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum WsMessageType {
     Text,
     Binary,
     Ping,
     Pong,
+    Close,
 }
 
 /// Part of the Response type issued by http_server
@@ -159,8 +134,8 @@ pub enum HttpServerError {
         req
     )]
     BadRequest { req: String },
-    #[error("http_server: action expected payload")]
-    NoPayload,
+    #[error("http_server: action expected blob")]
+    NoBlob,
     #[error("http_server: path binding error: {:?}", error)]
     PathBindError { error: String },
     #[error("http_server: WebSocket error: {:?}", error)]

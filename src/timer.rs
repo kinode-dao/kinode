@@ -39,7 +39,7 @@ pub async fn timer_service(
                 // we only handle Requests which contain a little-endian u64 as IPC,
                 // except for a special "debug" message, which prints the current state
                 let Message::Request(req) = km.message else { continue };
-                if req.ipc == "debug".as_bytes() {
+                if req.body == "debug".as_bytes() {
                     let _ = print_tx.send(Printout {
                         verbosity: 0,
                         content: format!("timer service active timers ({}):", timer_map.timers.len()),
@@ -52,7 +52,7 @@ pub async fn timer_service(
                     }
                     continue
                 }
-                let Ok(bytes): Result<[u8; 8], _> = req.ipc.try_into() else { continue };
+                let Ok(bytes): Result<[u8; 8], _> = req.body.try_into() else { continue };
                 let timer_millis = u64::from_le_bytes(bytes);
                 // if the timer is set to pop in 0 millis, we immediately respond
                 // otherwise, store in our persisted map, and spawn a task that
@@ -66,6 +66,10 @@ pub async fn timer_service(
                     send_response(&our, km.id, km.rsvp.unwrap_or(km.source), &kernel_message_sender).await;
                     continue
                 }
+                let _ = print_tx.send(Printout {
+                    verbosity: 1,
+                    content: format!("set timer to pop in {}ms", timer_millis),
+                }).await;
                 if !timer_map.contains(pop_time) {
                     timer_tasks.spawn(async move {
                         tokio::time::sleep(std::time::Duration::from_millis(timer_millis - 1)).await;
@@ -121,13 +125,13 @@ async fn send_response(our_node: &str, id: u64, target: Address, send_to_loop: &
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc: vec![],
+                    body: vec![],
                     metadata: None,
+                    capabilities: vec![],
                 },
                 None,
             )),
-            payload: None,
-            signed_capabilities: None,
+            lazy_load_blob: None,
         })
         .await;
 }

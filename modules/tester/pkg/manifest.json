@@ -4,11 +4,14 @@
         "process_wasm_path": "/tester.wasm",
         "on_exit": "Restart",
         "request_networking": true,
-        "request_messaging": [
-            "net:sys:uqbar"
+        "request_capabilities": [
+            "net:distro:sys",
+            "kernel:distro:sys",
+            "http_server:distro:sys",
+            "vfs:distro:sys"
         ],
-        "grant_messaging": [
-            "vfs:sys:uqbar"
+        "grant_capabilities": [
+            "vfs:distro:sys"
         ],
         "public": true
     }

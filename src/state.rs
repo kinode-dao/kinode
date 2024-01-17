@@ -1,7 +1,8 @@
 use anyhow::Result;
+use ring::signature;
 use rocksdb::checkpoint::Checkpoint;
 use rocksdb::{Options, DB};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
@@ -14,6 +15,7 @@ include!("bootstrapped_processes.rs");
 
 pub async fn load_state(
     our_name: String,
+    keypair: Arc<signature::Ed25519KeyPair>,
     home_directory_path: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, bool)>,
 ) -> Result<(ProcessMap, DB), StateError> {
@@ -43,6 +45,7 @@ pub async fn load_state(
         Ok(None) => {
             bootstrap(
                 &our_name,
+                keypair,
                 home_directory_path.clone(),
                 runtime_extensions.clone(),
                 &mut process_map,
@@ -138,12 +141,12 @@ async fn handle_request(
         source,
         rsvp,
         message,
-        payload,
+        lazy_load_blob: blob,
         ..
     } = kernel_message;
     let Message::Request(Request {
         expects_response,
-        ipc,
+        body,
         metadata, // for kernel
         ..
     }) = message
@@ -153,7 +156,7 @@ async fn handle_request(
         });
     };
 
-    let action: StateAction = match serde_json::from_slice(&ipc) {
+    let action: StateAction = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
             return Err(StateError::BadJson {
@@ -162,17 +165,17 @@ async fn handle_request(
         }
     };
 
-    let (ipc, bytes) = match action {
+    let (body, bytes) = match action {
         StateAction::SetState(process_id) => {
             let key = process_to_vec(process_id);
 
-            let Some(ref payload) = payload else {
+            let Some(ref blob) = blob else {
                 return Err(StateError::BadBytes {
                     action: "SetState".into(),
                 });
             };
 
-            db.put(key, &payload.bytes)
+            db.put(key, &blob.bytes)
                 .map_err(|e| StateError::RocksDBError {
                     action: "SetState".into(),
                     error: e.to_string(),
@@ -218,15 +221,23 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            // handle Backup action
-            println!("got backup");
-            let checkpoint_dir = format!("{}/kernel/checkpoint", &home_directory_path);
+            let checkpoint_dir = format!("{}/kernel/backup", &home_directory_path);
 
             if Path::new(&checkpoint_dir).exists() {
-                let _ = fs::remove_dir_all(&checkpoint_dir).await;
+                fs::remove_dir_all(&checkpoint_dir).await?;
             }
-            let checkpoint = Checkpoint::new(&db).unwrap();
-            checkpoint.create_checkpoint(&checkpoint_dir).unwrap();
+            let checkpoint = Checkpoint::new(&db).map_err(|e| StateError::RocksDBError {
+                action: "BackupCheckpointNew".into(),
+                error: e.to_string(),
+            })?;
+
+            checkpoint.create_checkpoint(&checkpoint_dir).map_err(|e| {
+                StateError::RocksDBError {
+                    action: "BackupCheckpointCreate".into(),
+                    error: e.to_string(),
+                }
+            })?;
+
             (serde_json::to_vec(&StateResponse::Backup).unwrap(), None)
         }
     };
@@ -248,16 +259,16 @@ async fn handle_request(
             message: Message::Response((
                 Response {
                     inherit: false,
-                    ipc,
+                    body,
                     metadata,
+                    capabilities: vec![],
                 },
                 None,
             )),
-            payload: bytes.map(|bytes| Payload {
+            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
             }),
-            signed_capabilities: None,
         };
 
         let _ = send_to_loop.send(response).await;
@@ -276,61 +287,68 @@ async fn handle_request(
 /// thin air.
 async fn bootstrap(
     our_name: &str,
+    keypair: Arc<signature::Ed25519KeyPair>,
     home_directory_path: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, bool)>,
     process_map: &mut ProcessMap,
 ) -> Result<()> {
     println!("bootstrapping node...\r");
 
-    let mut runtime_caps: HashSet<Capability> = HashSet::new();
+    let mut runtime_caps: HashMap<Capability, Vec<u8>> = HashMap::new();
     // kernel is a special case
-    runtime_caps.insert(Capability {
+    let k_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::from_str("kernel:sys:uqbar").unwrap(),
+            process: ProcessId::new(Some("kernel"), "distro", "sys"),
         },
         params: "\"messaging\"".into(),
-    });
+    };
+    runtime_caps.insert(k_cap.clone(), sign_cap(k_cap, keypair.clone()));
     // net is a special case
-    runtime_caps.insert(Capability {
+    let n_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::from_str("net:sys:uqbar").unwrap(),
+            process: ProcessId::new(Some("net"), "distro", "sys"),
         },
         params: "\"messaging\"".into(),
-    });
+    };
+    runtime_caps.insert(n_cap.clone(), sign_cap(n_cap, keypair.clone()));
     for runtime_module in runtime_extensions.clone() {
-        runtime_caps.insert(Capability {
+        let m_cap = Capability {
             issuer: Address {
                 node: our_name.to_string(),
                 process: runtime_module.0,
             },
             params: "\"messaging\"".into(),
-        });
+        };
+        runtime_caps.insert(m_cap.clone(), sign_cap(m_cap, keypair.clone()));
     }
     // give all runtime processes the ability to send messages across the network
-    runtime_caps.insert(Capability {
+    let net_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
             process: KERNEL_PROCESS_ID.clone(),
         },
         params: "\"network\"".into(),
-    });
+    };
+    runtime_caps.insert(net_cap.clone(), sign_cap(net_cap, keypair.clone()));
 
     // finally, save runtime modules in state map as well, somewhat fakely
     // special cases for kernel and net
     process_map
-        .entry(ProcessId::from_str("kernel:sys:uqbar").unwrap())
+        .entry(ProcessId::new(Some("kernel"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
+            wit_version: None,
             on_exit: OnExit::Restart,
             capabilities: runtime_caps.clone(),
             public: false,
         });
     process_map
-        .entry(ProcessId::from_str("net:sys:uqbar").unwrap())
+        .entry(ProcessId::new(Some("net"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
+            wit_version: None,
             on_exit: OnExit::Restart,
             capabilities: runtime_caps.clone(),
             public: false,
@@ -340,6 +358,7 @@ async fn bootstrap(
             .entry(runtime_module.0)
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: "".into(),
+                wit_version: None,
                 on_exit: OnExit::Restart,
                 capabilities: runtime_caps.clone(),
                 public: runtime_module.2,
@@ -348,13 +367,11 @@ async fn bootstrap(
 
     let packages = get_zipped_packages().await;
 
-    for (package_name, mut package) in packages {
+    for (package_name, mut package) in packages.clone() {
         // special case tester: only load it in if in simulation mode
         if package_name == "tester" {
             #[cfg(not(feature = "simulation-mode"))]
             continue;
-            #[cfg(feature = "simulation-mode")]
-            {}
         }
 
         println!("fs: handling package {package_name}...\r");
@@ -393,23 +410,51 @@ async fn bootstrap(
 
         let drive_path = format!("/{}/pkg", &our_drive_name);
 
-        // for each file in package.zip, recursively through all dirs, send a newfile KM to VFS
+        // for each file in package.zip, write to vfs folder
         for i in 0..package.len() {
-            let mut file = package.by_index(i).unwrap();
-            if file.is_file() {
-                let file_path = file
-                    .enclosed_name()
-                    .expect("fs: name error reading package.zip")
-                    .to_owned();
-                let mut file_path = file_path.to_string_lossy().to_string();
-                if !file_path.starts_with('/') {
-                    file_path = format!("/{}", file_path);
+            let mut file = match package.by_index(i) {
+                Ok(f) => f,
+                Err(e) => {
+                    println!("Error accessing file by index: {}", e);
+                    continue;
                 }
-                println!("fs: found file {}...\r", file_path);
+            };
+
+            let file_path = match file.enclosed_name() {
+                Some(path) => path.to_owned(),
+                None => {
+                    println!("Error getting the file name from the package");
+                    continue;
+                }
+            };
+
+            let file_path_str = file_path.to_string_lossy().to_string();
+            let full_path = Path::new(&pkg_path).join(&file_path_str);
+
+            if file.is_dir() {
+                // It's a directory, create it
+                if let Err(e) = fs::create_dir_all(&full_path).await {
+                    println!("Failed to create directory {}: {}", full_path.display(), e);
+                }
+            } else if file.is_file() {
+                // It's a file, ensure the parent directory exists and write the file
+                if let Some(parent) = full_path.parent() {
+                    if let Err(e) = fs::create_dir_all(parent).await {
+                        println!("Failed to create parent directory: {}", e);
+                        continue;
+                    }
+                }
+
                 let mut file_content = Vec::new();
-                file.read_to_end(&mut file_content).unwrap();
-                let path = format!("{}/{}", &pkg_path, file_path);
-                fs::write(&path, file_content).await.unwrap();
+                if let Err(e) = file.read_to_end(&mut file_content) {
+                    println!("Error reading file contents: {}", e);
+                    continue;
+                }
+
+                // Write the file content
+                if let Err(e) = fs::write(&full_path, file_content).await {
+                    println!("Failed to write file {}: {}", full_path.display(), e);
+                }
             }
         }
 
@@ -445,113 +490,64 @@ async fn bootstrap(
 
             // spawn the requested capabilities
             // remember: out of thin air, because this is the root distro
-            let mut requested_caps = HashSet::new();
+            let mut requested_caps = HashMap::new();
             let our_process_id = format!(
                 "{}:{}:{}",
                 entry.process_name, package_name, package_publisher
             );
-            entry.request_messaging = Some(entry.request_messaging.unwrap_or_default());
-            if let Some(ref mut request_messaging) = entry.request_messaging {
-                request_messaging.push(serde_json::Value::String(our_process_id.clone()));
-                for value in request_messaging {
-                    match value {
-                        serde_json::Value::String(process_name) => {
-                            requested_caps.insert(Capability {
-                                issuer: Address {
-                                    node: our_name.to_string(),
-                                    process: ProcessId::from_str(process_name).unwrap(),
-                                },
-                                params: "\"messaging\"".into(),
-                            });
-                        }
-                        serde_json::Value::Object(map) => {
-                            if let Some(process_name) = map.get("process") {
-                                if let Some(params) = map.get("params") {
-                                    requested_caps.insert(Capability {
-                                        issuer: Address {
-                                            node: our_name.to_string(),
-                                            process: ProcessId::from_str(
-                                                process_name.as_str().unwrap(),
-                                            )
-                                            .unwrap(),
-                                        },
-                                        params: params.to_string(),
-                                    });
-                                }
-                            }
-                        }
-                        _ => {
-                            // other json types
-                            continue;
-                        }
-                    }
-                }
-            }
-
-            // grant capabilities to other initially spawned processes, distro
-            if let Some(to_grant) = &entry.grant_messaging {
-                for value in to_grant {
-                    let mut capability = None;
-                    let mut to_process = None;
-                    match value {
-                        serde_json::Value::String(process_name) => {
-                            if let Ok(parsed_process_id) = ProcessId::from_str(process_name) {
-                                capability = Some(Capability {
+            entry
+                .request_capabilities
+                .push(serde_json::Value::String(our_process_id.clone()));
+            for value in entry.request_capabilities {
+                let requested_cap = match value {
+                    serde_json::Value::String(process_name) => Capability {
+                        issuer: Address {
+                            node: our_name.to_string(),
+                            process: process_name.parse().unwrap(),
+                        },
+                        params: "\"messaging\"".into(),
+                    },
+                    serde_json::Value::Object(map) => {
+                        if let Some(process_name) = map.get("process") {
+                            if let Some(params) = map.get("params") {
+                                Capability {
                                     issuer: Address {
                                         node: our_name.to_string(),
-                                        process: ProcessId::from_str(process_name).unwrap(),
+                                        process: process_name.as_str().unwrap().parse().unwrap(),
                                     },
-                                    params: "\"messaging\"".into(),
-                                });
-                                to_process = Some(parsed_process_id);
-                            }
-                        }
-                        serde_json::Value::Object(map) => {
-                            if let Some(process_name) = map.get("process") {
-                                if let Ok(parsed_process_id) =
-                                    ProcessId::from_str(&process_name.as_str().unwrap())
-                                {
-                                    if let Some(params) = map.get("params") {
-                                        capability = Some(Capability {
-                                            issuer: Address {
-                                                node: our_name.to_string(),
-                                                process: ProcessId::from_str(
-                                                    process_name.as_str().unwrap(),
-                                                )
-                                                .unwrap(),
-                                            },
-                                            params: params.to_string(),
-                                        });
-                                        to_process = Some(parsed_process_id);
-                                    }
+                                    params: params.to_string(),
                                 }
+                            } else {
+                                continue;
                             }
-                        }
-                        _ => {
+                        } else {
                             continue;
                         }
                     }
-
-                    if let Some(cap) = capability {
-                        if let Some(process) = process_map.get_mut(&to_process.unwrap()) {
-                            process.capabilities.insert(cap);
-                        }
+                    _ => {
+                        // other json types
+                        continue;
                     }
-                }
+                };
+                requested_caps.insert(
+                    requested_cap.clone(),
+                    sign_cap(requested_cap, keypair.clone()),
+                );
             }
 
             if entry.request_networking {
-                requested_caps.insert(Capability {
+                let net_cap = Capability {
                     issuer: Address {
                         node: our_name.to_string(),
                         process: KERNEL_PROCESS_ID.clone(),
                     },
                     params: "\"network\"".into(),
-                });
+                };
+                requested_caps.insert(net_cap.clone(), sign_cap(net_cap, keypair.clone()));
             }
 
             // give access to package_name vfs
-            requested_caps.insert(Capability {
+            let read_cap = Capability {
                 issuer: Address {
                     node: our_name.into(),
                     process: VFS_PROCESS_ID.clone(),
@@ -561,8 +557,9 @@ async fn bootstrap(
                     "drive": drive_path,
                 }))
                 .unwrap(),
-            });
-            requested_caps.insert(Capability {
+            };
+            requested_caps.insert(read_cap.clone(), sign_cap(read_cap, keypair.clone()));
+            let write_cap = Capability {
                 issuer: Address {
                     node: our_name.into(),
                     process: VFS_PROCESS_ID.clone(),
@@ -572,7 +569,8 @@ async fn bootstrap(
                     "drive": drive_path,
                 }))
                 .unwrap(),
-            });
+            };
+            requested_caps.insert(write_cap.clone(), sign_cap(write_cap, keypair.clone()));
 
             let public_process = entry.public;
 
@@ -582,6 +580,7 @@ async fn bootstrap(
                 ProcessId::new(Some(&entry.process_name), package_name, package_publisher),
                 PersistedProcess {
                     wasm_bytes_handle,
+                    wit_version: None,
                     on_exit: entry.on_exit,
                     capabilities: requested_caps,
                     public: public_process,
@@ -589,7 +588,121 @@ async fn bootstrap(
             );
         }
     }
+    // second loop: go and grant_capabilities to processes
+    // can't do this in first loop because we need to have all processes in the map first
+    for (package_name, mut package) in packages {
+        // special case tester: only load it in if in simulation mode
+        if package_name == "tester" {
+            #[cfg(not(feature = "simulation-mode"))]
+            continue;
+        }
+
+        // get and read manifest.json
+        let Ok(mut package_manifest_zip) = package.by_name("manifest.json") else {
+            println!(
+                "fs: missing manifest for package {}, skipping",
+                package_name
+            );
+            continue;
+        };
+        let mut manifest_content = Vec::new();
+        package_manifest_zip
+            .read_to_end(&mut manifest_content)
+            .unwrap();
+        drop(package_manifest_zip);
+        let package_manifest = String::from_utf8(manifest_content)?;
+        let package_manifest = serde_json::from_str::<Vec<PackageManifestEntry>>(&package_manifest)
+            .expect("fs: manifest parse error");
+
+        // get and read metadata.json
+        let Ok(mut package_metadata_zip) = package.by_name("metadata.json") else {
+            println!(
+                "fs: missing metadata for package {}, skipping",
+                package_name
+            );
+            continue;
+        };
+        let mut metadata_content = Vec::new();
+        package_metadata_zip
+            .read_to_end(&mut metadata_content)
+            .unwrap();
+        drop(package_metadata_zip);
+        let package_metadata: serde_json::Value =
+            serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
+
+        println!("fs: found package metadata: {:?}\r", package_metadata);
+
+        let package_name = package_metadata["package"]
+            .as_str()
+            .expect("fs: metadata parse error: bad package name");
+
+        let package_publisher = package_metadata["publisher"]
+            .as_str()
+            .expect("fs: metadata parse error: bad publisher name");
+
+        // for each process-entry in manifest.json:
+        for entry in package_manifest {
+            let our_process_id = format!(
+                "{}:{}:{}",
+                entry.process_name, package_name, package_publisher
+            );
+
+            // grant capabilities to other initially spawned processes, distro
+            for value in entry.grant_capabilities {
+                match value {
+                    serde_json::Value::String(process_name) => {
+                        if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
+                            if let Some(process) = process_map.get_mut(&parsed_process_id) {
+                                let cap = Capability {
+                                    issuer: Address {
+                                        node: our_name.to_string(),
+                                        process: our_process_id.parse().unwrap(),
+                                    },
+                                    params: "\"messaging\"".into(),
+                                };
+                                process
+                                    .capabilities
+                                    .insert(cap.clone(), sign_cap(cap, keypair.clone()));
+                            }
+                        }
+                    }
+                    serde_json::Value::Object(map) => {
+                        if let Some(process_name) = map.get("process") {
+                            if let Ok(parsed_process_id) =
+                                process_name.as_str().unwrap().parse::<ProcessId>()
+                            {
+                                if let Some(params) = map.get("params") {
+                                    if let Some(process) = process_map.get_mut(&parsed_process_id) {
+                                        let cap = Capability {
+                                            issuer: Address {
+                                                node: our_name.to_string(),
+                                                process: our_process_id.parse().unwrap(),
+                                            },
+                                            params: params.to_string(),
+                                        };
+                                        process
+                                            .capabilities
+                                            .insert(cap.clone(), sign_cap(cap, keypair.clone()));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        continue;
+                    }
+                }
+            }
+        }
+    }
     Ok(())
+}
+
+fn sign_cap(cap: Capability, keypair: Arc<signature::Ed25519KeyPair>) -> Vec<u8> {
+    keypair
+        .sign(&rmp_serde::to_vec(&cap).unwrap())
+        .as_ref()
+        .to_vec()
 }
 
 /// read in `include!()`ed .zip package files
@@ -609,6 +722,14 @@ async fn get_zipped_packages() -> Vec<(String, zip::ZipArchive<std::io::Cursor<&
     packages
 }
 
+impl From<std::io::Error> for StateError {
+    fn from(err: std::io::Error) -> Self {
+        StateError::IOError {
+            error: err.to_string(),
+        }
+    }
+}
+
 fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -> KernelMessage {
     KernelMessage {
         id: km.id,
@@ -624,13 +745,13 @@ fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -
         message: Message::Response((
             Response {
                 inherit: false,
-                ipc: serde_json::to_vec(&StateResponse::Err(error)).unwrap(),
+                body: serde_json::to_vec(&StateResponse::Err(error)).unwrap(),
                 metadata: None,
+                capabilities: vec![],
             },
             None,
         )),
-        payload: None,
-        signed_capabilities: None,
+        lazy_load_blob: None,
     }
 }
 

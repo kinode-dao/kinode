@@ -1,14 +1,21 @@
 use crate::kernel::process;
-use crate::kernel::process::uqbar::process::standard as wit;
+use crate::kernel::process::kinode::process::standard as wit;
+use crate::kernel::process::StandardHost;
 use crate::types as t;
 use crate::types::STATE_PROCESS_ID;
 use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
 use anyhow::Result;
-use ring::signature::{self, KeyPair};
-use std::collections::HashSet;
 
-use crate::kernel::process::StandardHost;
+async fn print_debug(proc: &process::ProcessState, content: &str) {
+    let _ = proc
+        .send_to_terminal
+        .send(t::Printout {
+            verbosity: 2,
+            content: format!("{}: {}", proc.metadata.our.process, content),
+        })
+        .await;
+}
 
 ///
 /// create the process API. this is where the functions that a process can use live.
@@ -19,29 +26,21 @@ impl StandardHost for process::ProcessWasi {
     // system utils:
     //
     async fn print_to_terminal(&mut self, verbosity: u8, content: String) -> Result<()> {
-        match self
-            .process
+        self.process
             .send_to_terminal
             .send(t::Printout { verbosity, content })
             .await
-        {
-            Ok(()) => Ok(()),
-            Err(e) => Err(anyhow::anyhow!("fatal: couldn't send to terminal: {:?}", e)),
-        }
-    }
-
-    async fn get_eth_block(&mut self) -> Result<u64> {
-        // TODO connect to eth RPC
-        unimplemented!()
+            .map_err(|e| anyhow::anyhow!("fatal: couldn't send to terminal: {e:?}"))
     }
 
     //
     // process management:
     //
 
-    ///  TODO critical: move to kernel logic to enable persistence of choice made here
+    /// TODO critical: move to kernel logic to enable persistence of choice made here
     async fn set_on_exit(&mut self, on_exit: wit::OnExit) -> Result<()> {
         self.process.metadata.on_exit = t::OnExit::de_wit(on_exit);
+        print_debug(&self.process, "set new on-exit behavior").await;
         Ok(())
     }
 
@@ -52,7 +51,7 @@ impl StandardHost for process::ProcessWasi {
     /// create a message from the *kernel* to the filesystem,
     /// asking it to fetch the current state saved under this process
     async fn get_state(&mut self) -> Result<Option<Vec<u8>>> {
-        let old_last_payload = self.process.last_payload.clone();
+        let old_last_blob = self.process.last_blob.clone();
         let res = match process::send_and_await_response(
             self,
             Some(t::Address {
@@ -66,11 +65,12 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::StateAction::GetState(
+                body: serde_json::to_vec(&t::StateAction::GetState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
                 metadata: Some(self.process.metadata.our.process.to_string()),
+                capabilities: vec![],
             },
             None,
         )
@@ -78,14 +78,14 @@ impl StandardHost for process::ProcessWasi {
         {
             Ok(Ok(_resp)) => {
                 // basically assuming filesystem responding properly here
-                match &self.process.last_payload {
+                match &self.process.last_blob {
                     None => Ok(None),
-                    Some(payload) => Ok(Some(payload.bytes.clone())),
+                    Some(blob) => Ok(Some(blob.bytes.clone())),
                 }
             }
             _ => Ok(None),
         };
-        self.process.last_payload = old_last_payload;
+        self.process.last_blob = old_last_blob;
         return res;
     }
 
@@ -93,7 +93,7 @@ impl StandardHost for process::ProcessWasi {
     /// asking it to replace the current state saved under
     /// this process with these bytes
     async fn set_state(&mut self, bytes: Vec<u8>) -> Result<()> {
-        let old_last_payload = self.process.last_payload.clone();
+        let old_last_blob = self.process.last_blob.clone();
         let res = match process::send_and_await_response(
             self,
             Some(t::Address {
@@ -107,13 +107,14 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::StateAction::SetState(
+                body: serde_json::to_vec(&t::StateAction::SetState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
                 metadata: Some(self.process.metadata.our.process.to_string()),
+                capabilities: vec![],
             },
-            Some(wit::Payload { mime: None, bytes }),
+            Some(wit::LazyLoadBlob { mime: None, bytes }),
         )
         .await
         {
@@ -125,14 +126,15 @@ impl StandardHost for process::ProcessWasi {
                 "filesystem did not respond properly to SetState!!"
             )),
         };
-        self.process.last_payload = old_last_payload;
+        self.process.last_blob = old_last_blob;
+        print_debug(&self.process, "persisted state").await;
         return res;
     }
 
     /// create a message from the *kernel* to the filesystem,
     /// asking it to delete the current state saved under this process
     async fn clear_state(&mut self) -> Result<()> {
-        let old_last_payload = self.process.last_payload.clone();
+        let old_last_blob = self.process.last_blob.clone();
         let res = match process::send_and_await_response(
             self,
             Some(t::Address {
@@ -146,11 +148,12 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::StateAction::DeleteState(
+                body: serde_json::to_vec(&t::StateAction::DeleteState(
                     self.process.metadata.our.process.clone(),
                 ))
                 .unwrap(),
                 metadata: None,
+                capabilities: vec![],
             },
             None,
         )
@@ -164,7 +167,8 @@ impl StandardHost for process::ProcessWasi {
                 "filesystem did not respond properly to ClearState!!"
             )),
         };
-        self.process.last_payload = old_last_payload;
+        self.process.last_blob = old_last_blob;
+        print_debug(&self.process, "cleared persisted state").await;
         return res;
     }
 
@@ -176,11 +180,12 @@ impl StandardHost for process::ProcessWasi {
         name: Option<String>,
         wasm_path: String, // must be located within package's drive
         on_exit: wit::OnExit,
-        capabilities: wit::Capabilities,
+        request_capabilities: Vec<wit::Capability>,
+        grant_capabilities: Vec<wit::ProcessId>,
         public: bool,
     ) -> Result<Result<wit::ProcessId, wit::SpawnError>> {
-        // save existing payload to restore later
-        let old_last_payload = self.process.last_payload.clone();
+        // save existing blob to restore later
+        let old_last_blob = self.process.last_blob.clone();
         let vfs_address = wit::Address {
             node: self.process.metadata.our.node.clone(),
             process: VFS_PROCESS_ID.en_wit(),
@@ -192,35 +197,36 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5),
-                ipc: serde_json::to_vec(&t::VfsRequest {
+                body: serde_json::to_vec(&t::VfsRequest {
                     path: wasm_path.clone(),
                     action: t::VfsAction::Read,
                 })
                 .unwrap(),
                 metadata: None,
+                capabilities: vec![],
             },
             None,
         )
         .await
         else {
             println!("spawn: GetHash fail");
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let wit::Message::Response((wit::Response { ipc, .. }, _)) = hash_response else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+        let wit::Message::Response((wit::Response { body, .. }, _)) = hash_response else {
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let t::VfsResponse::Read = serde_json::from_slice(&ipc).unwrap() else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+        let t::VfsResponse::Read = serde_json::from_slice(&body).unwrap() else {
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let Some(t::Payload { mime: _, ref bytes }) = self.process.last_payload else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+        let Some(t::LazyLoadBlob { mime: _, ref bytes }) = self.process.last_blob else {
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
 
@@ -233,6 +239,7 @@ impl StandardHost for process::ProcessWasi {
             self.process.metadata.our.process.package(),
             self.process.metadata.our.process.publisher(),
         );
+        // TODO I think we need to kill this process first in case it already exists
         let Ok(Ok((_, _response))) = process::send_and_await_response(
             self,
             Some(t::Address {
@@ -246,49 +253,55 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5), // TODO evaluate
-                ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
+                body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                     id: new_process_id.clone(),
                     wasm_bytes_handle: wasm_path,
+                    wit_version: Some(self.process.metadata.wit_version),
                     on_exit: t::OnExit::de_wit(on_exit),
-                    initial_capabilities: match capabilities {
-                        wit::Capabilities::None => HashSet::new(),
-                        wit::Capabilities::All => {
-                            let (tx, rx) = tokio::sync::oneshot::channel();
-                            let _ = self
-                                .process
-                                .caps_oracle
-                                .send(t::CapMessage::GetAll {
-                                    on: self.process.metadata.our.process.clone(),
-                                    responder: tx,
-                                })
-                                .await;
-                            rx.await.unwrap()
-                        }
-                        wit::Capabilities::Some(caps) => caps
-                            .into_iter()
-                            .map(|cap| t::SignedCapability {
-                                issuer: t::Address::de_wit(cap.issuer),
-                                params: cap.params,
-                                signature: cap.signature,
-                            })
-                            .collect(),
-                    },
+                    initial_capabilities: request_capabilities
+                        .iter()
+                        .map(|cap| t::Capability {
+                            issuer: t::Address::de_wit(cap.clone().issuer),
+                            params: cap.clone().params,
+                        })
+                        .collect(),
                     public,
                 })
                 .unwrap(),
                 metadata: None,
+                capabilities: vec![],
             },
-            Some(wit::Payload {
+            Some(wit::LazyLoadBlob {
                 mime: None,
                 bytes: bytes.to_vec(),
             }),
         )
         .await
         else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NameTaken));
         };
+        // insert messaging capabilities into requested processes
+        for process in grant_capabilities {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            self.process
+                .caps_oracle
+                .send(t::CapMessage::Add {
+                    on: t::ProcessId::de_wit(process),
+                    caps: vec![t::Capability {
+                        issuer: t::Address {
+                            node: self.process.metadata.our.node.clone(),
+                            process: new_process_id.clone(),
+                        },
+                        params: "\"messaging\"".into(),
+                    }],
+                    responder: tx,
+                })
+                .await
+                .unwrap();
+            let _ = rx.await.unwrap();
+        }
         // finally, send the command to run the new process
         let Ok(Ok((_, response))) = process::send_and_await_response(
             self,
@@ -303,24 +316,25 @@ impl StandardHost for process::ProcessWasi {
             wit::Request {
                 inherit: false,
                 expects_response: Some(5), // TODO evaluate
-                ipc: serde_json::to_vec(&t::KernelCommand::RunProcess(new_process_id.clone()))
+                body: serde_json::to_vec(&t::KernelCommand::RunProcess(new_process_id.clone()))
                     .unwrap(),
                 metadata: None,
+                capabilities: vec![],
             },
             None,
         )
         .await
         else {
-            // reset payload to what it was
-            self.process.last_payload = old_last_payload;
+            // reset blob to what it was
+            self.process.last_blob = old_last_blob;
             return Ok(Err(wit::SpawnError::NameTaken));
         };
-        // reset payload to what it was
-        self.process.last_payload = old_last_payload;
-        let wit::Message::Response((wit::Response { ipc, .. }, _)) = response else {
+        // reset blob to what it was
+        self.process.last_blob = old_last_blob;
+        let wit::Message::Response((wit::Response { body, .. }, _)) = response else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
-        let t::KernelResponse::StartedProcess = serde_json::from_slice(&ipc).unwrap() else {
+        let t::KernelResponse::StartedProcess = serde_json::from_slice(&body).unwrap() else {
             return Ok(Err(wit::SpawnError::NoFileAtPath));
         };
         // child processes are always able to Message parent
@@ -329,10 +343,10 @@ impl StandardHost for process::ProcessWasi {
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: new_process_id.clone(),
-                cap: t::Capability {
+                caps: vec![t::Capability {
                     issuer: self.process.metadata.our.clone(),
                     params: "\"messaging\"".into(),
-                },
+                }],
                 responder: tx,
             })
             .await
@@ -345,25 +359,44 @@ impl StandardHost for process::ProcessWasi {
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: self.process.metadata.our.process.clone(),
-                cap: t::Capability {
+                caps: vec![t::Capability {
                     issuer: t::Address {
                         node: self.process.metadata.our.node.clone(),
                         process: new_process_id.clone(),
                     },
                     params: "\"messaging\"".into(),
-                },
+                }],
                 responder: tx,
             })
             .await
             .unwrap();
         let _ = rx.await.unwrap();
+        print_debug(&self.process, "spawned a new process").await;
         Ok(Ok(new_process_id.en_wit().to_owned()))
     }
-
     //
     // capabilities management
     //
-    async fn get_capabilities(&mut self) -> Result<Vec<wit::SignedCapability>> {
+
+    async fn save_capabilities(&mut self, caps: Vec<wit::Capability>) -> Result<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Add {
+                on: self.process.metadata.our.process.clone(),
+                caps: caps
+                    .iter()
+                    .map(|cap| t::de_wit_capability(cap.clone()).0)
+                    .collect(),
+                responder: tx,
+            })
+            .await?;
+        let _ = rx.await?;
+        Ok(())
+    }
+
+    async fn our_capabilities(&mut self) -> Result<Vec<wit::Capability>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         let _ = self
             .process
@@ -372,185 +405,17 @@ impl StandardHost for process::ProcessWasi {
                 on: self.process.metadata.our.process.clone(),
                 responder: tx,
             })
-            .await;
-        Ok(rx
-            .await
-            .unwrap()
+            .await?;
+        let caps = rx.await?;
+        Ok(caps
             .into_iter()
-            .map(|cap| wit::SignedCapability {
-                issuer: cap.issuer.en_wit(),
-                params: cap.params,
-                signature: cap.signature,
+            .map(|cap| wit::Capability {
+                issuer: t::Address::en_wit(&cap.0.issuer),
+                params: cap.0.params,
             })
             .collect())
     }
 
-    async fn get_capability(
-        &mut self,
-        issuer: wit::Address,
-        params: String,
-    ) -> Result<Option<wit::SignedCapability>> {
-        let cap = t::Capability {
-            issuer: t::Address::de_wit(issuer),
-            params,
-        };
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self
-            .process
-            .caps_oracle
-            .send(t::CapMessage::Has {
-                on: self.process.metadata.our.process.clone(),
-                cap: cap.clone(),
-                responder: tx,
-            })
-            .await;
-        if rx.await.unwrap() {
-            let sig = self
-                .process
-                .keypair
-                .sign(&rmp_serde::to_vec(&cap).unwrap_or_default());
-            return Ok(Some(wit::SignedCapability {
-                issuer: cap.issuer.en_wit().to_owned(),
-                params: cap.params.clone(),
-                signature: sig.as_ref().to_vec(),
-            }));
-        } else {
-            return Ok(None);
-        }
-    }
-
-    async fn attach_capability(&mut self, capability: wit::SignedCapability) -> Result<()> {
-        match self.process.next_message_caps {
-            None => {
-                self.process.next_message_caps =
-                    Some(vec![t::de_wit_signed_capability(capability)]);
-                Ok(())
-            }
-            Some(ref mut v) => {
-                v.push(t::de_wit_signed_capability(capability));
-                Ok(())
-            }
-        }
-    }
-
-    async fn save_capabilities(&mut self, capabilities: Vec<wit::SignedCapability>) -> Result<()> {
-        let pk = signature::UnparsedPublicKey::new(
-            &signature::ED25519,
-            self.process.keypair.public_key(),
-        );
-        for signed_cap in capabilities {
-            // validate our signature!
-            let cap = t::Capability {
-                issuer: t::Address::de_wit(signed_cap.issuer),
-                params: signed_cap.params,
-            };
-            pk.verify(
-                &rmp_serde::to_vec(&cap).unwrap_or_default(),
-                &signed_cap.signature,
-            )?;
-
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = self
-                .process
-                .caps_oracle
-                .send(t::CapMessage::Add {
-                    on: self.process.metadata.our.process.clone(),
-                    cap: cap.clone(),
-                    responder: tx,
-                })
-                .await?;
-            let _ = rx.await?;
-        }
-        Ok(())
-    }
-
-    async fn has_capability(&mut self, params: String) -> Result<bool> {
-        if self.process.prompting_message.is_none() {
-            return Err(anyhow::anyhow!(
-                "kernel: has_capability() called with no prompting_message"
-            ));
-        }
-        let prompt = self.process.prompting_message.as_ref().unwrap();
-        if prompt.source.node == self.process.metadata.our.node {
-            // if local, need to ask them
-            let cap = t::Capability {
-                issuer: self.process.metadata.our.clone(),
-                params,
-            };
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = self
-                .process
-                .caps_oracle
-                .send(t::CapMessage::Has {
-                    on: prompt.source.process.clone(),
-                    cap,
-                    responder: tx,
-                })
-                .await;
-            Ok(rx.await.unwrap_or(false))
-        } else {
-            // if remote, just check prompting_message
-            if prompt.signed_capabilities.is_none() {
-                return Ok(false);
-            }
-            for cap in prompt.signed_capabilities.as_ref().unwrap() {
-                if cap.issuer == self.process.metadata.our && cap.params == params {
-                    return Ok(true);
-                }
-            }
-            return Ok(false);
-        }
-    }
-
-    /// generate a new cap with this process as the issuer and send to caps oracle
-    async fn create_capability(&mut self, to: wit::ProcessId, params: String) -> Result<()> {
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self
-            .process
-            .caps_oracle
-            .send(t::CapMessage::Add {
-                on: t::ProcessId::de_wit(to),
-                cap: t::Capability {
-                    issuer: self.process.metadata.our.clone(),
-                    params,
-                },
-                responder: tx,
-            })
-            .await?;
-        let _ = rx.await?;
-        Ok(())
-    }
-
-    async fn share_capability(
-        &mut self,
-        to: wit::ProcessId,
-        signed_cap: wit::SignedCapability,
-    ) -> Result<()> {
-        let pk = signature::UnparsedPublicKey::new(
-            &signature::ED25519,
-            self.process.keypair.public_key(),
-        );
-        let cap = t::Capability {
-            issuer: t::Address::de_wit(signed_cap.issuer),
-            params: signed_cap.params,
-        };
-        pk.verify(
-            &rmp_serde::to_vec(&cap).unwrap_or_default(),
-            &signed_cap.signature,
-        )?;
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self
-            .process
-            .caps_oracle
-            .send(t::CapMessage::Add {
-                on: t::ProcessId::de_wit(to),
-                cap,
-                responder: tx,
-            })
-            .await?;
-        let _ = rx.await?;
-        Ok(())
-    }
     //
     // message I/O:
     //
@@ -563,11 +428,11 @@ impl StandardHost for process::ProcessWasi {
         Ok(self.process.get_next_message_for_process().await)
     }
 
-    /// from a process: grab the payload part of the current prompting message.
-    /// if the prompting message did not have a payload, will return None.
+    /// from a process: grab the blob part of the current prompting message.
+    /// if the prompting message did not have a blob, will return None.
     /// will also return None if there is no prompting message.
-    async fn get_payload(&mut self) -> Result<Option<wit::Payload>> {
-        Ok(t::en_wit_payload(self.process.last_payload.clone()))
+    async fn get_blob(&mut self) -> Result<Option<wit::LazyLoadBlob>> {
+        Ok(t::en_wit_blob(self.process.last_blob.clone()))
     }
 
     async fn send_request(
@@ -575,11 +440,11 @@ impl StandardHost for process::ProcessWasi {
         target: wit::Address,
         request: wit::Request,
         context: Option<wit::Context>,
-        payload: Option<wit::Payload>,
+        blob: Option<wit::LazyLoadBlob>,
     ) -> Result<()> {
         let id = self
             .process
-            .handle_request(None, target, request, context, payload)
+            .send_request(None, target, request, context, blob)
             .await;
         match id {
             Ok(_id) => Ok(()),
@@ -593,13 +458,13 @@ impl StandardHost for process::ProcessWasi {
             wit::Address,
             wit::Request,
             Option<wit::Context>,
-            Option<wit::Payload>,
+            Option<wit::LazyLoadBlob>,
         )>,
     ) -> Result<()> {
         for request in requests {
             let id = self
                 .process
-                .handle_request(None, request.0, request.1, request.2, request.3)
+                .send_request(None, request.0, request.1, request.2, request.3)
                 .await;
             match id {
                 Ok(_id) => continue,
@@ -612,9 +477,9 @@ impl StandardHost for process::ProcessWasi {
     async fn send_response(
         &mut self,
         response: wit::Response,
-        payload: Option<wit::Payload>,
+        blob: Option<wit::LazyLoadBlob>,
     ) -> Result<()> {
-        self.process.send_response(response, payload).await;
+        self.process.send_response(response, blob).await;
         Ok(())
     }
 
@@ -622,8 +487,8 @@ impl StandardHost for process::ProcessWasi {
         &mut self,
         target: wit::Address,
         request: wit::Request,
-        payload: Option<wit::Payload>,
+        blob: Option<wit::LazyLoadBlob>,
     ) -> Result<Result<(wit::Address, wit::Message), wit::SendError>> {
-        process::send_and_await_response(self, None, target, request, payload).await
+        process::send_and_await_response(self, None, target, request, blob).await
     }
 }

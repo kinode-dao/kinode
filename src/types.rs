@@ -5,17 +5,16 @@ use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 lazy_static::lazy_static! {
-    pub static ref ENCRYPTOR_PROCESS_ID: ProcessId = ProcessId::new(Some("encryptor"), "sys", "uqbar");
-    pub static ref ETH_RPC_PROCESS_ID: ProcessId = ProcessId::new(Some("eth_rpc"), "sys", "uqbar");
-    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "sys", "uqbar");
-    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "sys", "uqbar");
-    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "sys", "uqbar");
-    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "uqbar");
-    pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "sys", "uqbar");
-    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "sys", "uqbar");
-    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "sys", "uqbar");
-    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "sys", "uqbar");
-    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "sys", "uqbar");
+    pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys");
+    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "distro", "sys");
+    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "distro", "sys");
+    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys");
+    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "sys");
+    pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "distro", "sys");
+    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "distro", "sys");
+    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
+    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
+    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
 }
 
 //
@@ -26,7 +25,7 @@ lazy_static::lazy_static! {
 // standard library. make sure to keep this synced with process_lib.
 //
 pub type Context = Vec<u8>;
-pub type NodeId = String; // QNS domain name
+pub type NodeId = String; // KNS domain name
 
 /// process ID is a formatted unique identifier that contains
 /// the publishing node's ID, the package name, and finally the process name.
@@ -55,7 +54,7 @@ impl<'a> Deserialize<'a> for ProcessId {
         D: serde::de::Deserializer<'a>,
     {
         let s = String::deserialize(deserializer)?;
-        ProcessId::from_str(&s).map_err(serde::de::Error::custom)
+        s.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -74,7 +73,24 @@ impl PackageId {
             publisher_node: publisher_node.into(),
         }
     }
-    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+    pub fn _package(&self) -> &str {
+        &self.package_name
+    }
+    pub fn _publisher(&self) -> &str {
+        &self.publisher_node
+    }
+}
+
+impl std::str::FromStr for PackageId {
+    type Err = ProcessIdParseError;
+    /// Attempt to parse a `PackageId` from a string. The string must
+    /// contain exactly two segments, where segments are strings separated
+    /// by a colon `:`. The segments cannot themselves contain colons.
+    /// Please note that while any string without colons will parse successfully
+    /// to create a `PackageId`, not all strings without colons are actually
+    /// valid usernames, which the `publisher_node` field of a `PackageId` will
+    /// always in practice be.
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
         // split string on colons into 2 segments
         let mut segments = input.split(':');
         let package_name = segments
@@ -92,12 +108,6 @@ impl PackageId {
             package_name,
             publisher_node,
         })
-    }
-    pub fn _package(&self) -> &str {
-        &self.package_name
-    }
-    pub fn _publisher(&self) -> &str {
-        &self.publisher_node
     }
 }
 
@@ -119,30 +129,6 @@ impl ProcessId {
             package_name: package_name.into(),
             publisher_node: publisher_node.into(),
         }
-    }
-    pub fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
-        // split string on colons into 3 segments
-        let mut segments = input.split(':');
-        let process_name = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        let package_name = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        let publisher_node = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        if segments.next().is_some() {
-            return Err(ProcessIdParseError::TooManyColons);
-        }
-        Ok(ProcessId {
-            process_name,
-            package_name,
-            publisher_node,
-        })
     }
     pub fn process(&self) -> &str {
         &self.process_name
@@ -166,6 +152,40 @@ impl ProcessId {
             package_name: wit.package_name,
             publisher_node: wit.publisher_node,
         }
+    }
+}
+
+impl std::str::FromStr for ProcessId {
+    type Err = ProcessIdParseError;
+    /// Attempts to parse a `ProcessId` from a string. To succeed, the string must contain
+    /// exactly 3 segments, separated by colons `:`. The segments must not contain colons.
+    /// Please note that while any string without colons will parse successfully
+    /// to create a `ProcessId`, not all strings without colons are actually
+    /// valid usernames, which the `publisher_node` field of a `ProcessId` will
+    /// always in practice be.
+    fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
+        // split string on colons into 3 segments
+        let mut segments = input.split(':');
+        let process_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let package_name = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        let publisher_node = segments
+            .next()
+            .ok_or(ProcessIdParseError::MissingField)?
+            .to_string();
+        if segments.next().is_some() {
+            return Err(ProcessIdParseError::TooManyColons);
+        }
+        Ok(ProcessId {
+            process_name,
+            package_name,
+            publisher_node,
+        })
     }
 }
 
@@ -249,7 +269,33 @@ impl Address {
             process: process.into(),
         }
     }
-    pub fn from_str(input: &str) -> Result<Self, AddressParseError> {
+    pub fn en_wit(&self) -> wit::Address {
+        wit::Address {
+            node: self.node.clone(),
+            process: self.process.en_wit(),
+        }
+    }
+    pub fn de_wit(wit: wit::Address) -> Address {
+        Address {
+            node: wit.node,
+            process: ProcessId {
+                process_name: wit.process.process_name,
+                package_name: wit.process.package_name,
+                publisher_node: wit.process.publisher_node,
+            },
+        }
+    }
+}
+
+impl std::str::FromStr for Address {
+    type Err = AddressParseError;
+    /// Attempt to parse an `Address` from a string. The formatting structure for
+    /// an Address is `node@process_name:package_name:publisher_node`.
+    ///
+    /// TODO: clarify if `@` can be present in process name / package name / publisher name
+    ///
+    /// TODO: ensure `:` cannot sneak into first segment
+    fn from_str(input: &str) -> Result<Self, AddressParseError> {
         // split string on colons into 4 segments,
         // first one with @, next 3 with :
         let mut name_rest = input.split('@');
@@ -285,22 +331,6 @@ impl Address {
             },
         })
     }
-    pub fn en_wit(&self) -> wit::Address {
-        wit::Address {
-            node: self.node.clone(),
-            process: self.process.en_wit(),
-        }
-    }
-    pub fn de_wit(wit: wit::Address) -> Address {
-        Address {
-            node: wit.node,
-            process: ProcessId {
-                process_name: wit.process.process_name,
-                package_name: wit.process.package_name,
-                publisher_node: wit.process.publisher_node,
-            },
-        }
-    }
 }
 
 impl Serialize for Address {
@@ -318,7 +348,7 @@ impl<'a> Deserialize<'a> for Address {
         D: serde::de::Deserializer<'a>,
     {
         let s = String::deserialize(deserializer)?;
-        Address::from_str(&s).map_err(serde::de::Error::custom)
+        s.parse().map_err(serde::de::Error::custom)
     }
 }
 
@@ -376,7 +406,7 @@ impl std::error::Error for AddressParseError {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Payload {
+pub struct LazyLoadBlob {
     pub mime: Option<String>, // MIME type
     pub bytes: Vec<u8>,
 }
@@ -385,15 +415,17 @@ pub struct Payload {
 pub struct Request {
     pub inherit: bool,
     pub expects_response: Option<u64>, // number of seconds until timeout
-    pub ipc: Vec<u8>,
+    pub body: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
+    pub capabilities: Vec<(Capability, Vec<u8>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Response {
     pub inherit: bool,
-    pub ipc: Vec<u8>,
+    pub body: Vec<u8>,
     pub metadata: Option<String>, // JSON-string
+    pub capabilities: Vec<(Capability, Vec<u8>)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -408,11 +440,16 @@ pub struct Capability {
     pub params: String, // JSON-string
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
-pub struct SignedCapability {
-    pub issuer: Address,
-    pub params: String,     // JSON-string
-    pub signature: Vec<u8>, // signed by the kernel, so we can verify that the kernel issued it
+impl std::fmt::Display for Capability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}({})",
+            self.issuer,
+            serde_json::from_str::<serde_json::Value>(&self.params)
+                .unwrap_or(serde_json::json!("invalid JSON in capability"))
+        )
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -420,7 +457,7 @@ pub struct SendError {
     pub kind: SendErrorKind,
     pub target: Address,
     pub message: Message,
-    pub payload: Option<Payload>,
+    pub lazy_load_blob: Option<LazyLoadBlob>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -433,7 +470,7 @@ pub enum SendErrorKind {
 pub enum OnExit {
     None,
     Restart,
-    Requests(Vec<(Address, Request, Option<Payload>)>),
+    Requests(Vec<(Address, Request, Option<LazyLoadBlob>)>),
 }
 
 impl OnExit {
@@ -451,11 +488,11 @@ impl OnExit {
             OnExit::Restart => wit::OnExit::Restart,
             OnExit::Requests(reqs) => wit::OnExit::Requests(
                 reqs.iter()
-                    .map(|(address, request, payload)| {
+                    .map(|(address, request, blob)| {
                         (
                             address.en_wit(),
                             en_wit_request(request.clone()),
-                            en_wit_payload(payload.clone()),
+                            en_wit_blob(blob.clone()),
                         )
                     })
                     .collect(),
@@ -469,11 +506,11 @@ impl OnExit {
             wit::OnExit::Restart => OnExit::Restart,
             wit::OnExit::Requests(reqs) => OnExit::Requests(
                 reqs.into_iter()
-                    .map(|(address, request, payload)| {
+                    .map(|(address, request, blob)| {
                         (
                             Address::de_wit(address),
                             de_wit_request(request),
-                            de_wit_payload(payload),
+                            de_wit_blob(blob),
                         )
                     })
                     .collect(),
@@ -484,38 +521,81 @@ impl OnExit {
 
 impl std::fmt::Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            Message::Request(request) => write!(
-                f,
-                "Request(\n        inherit: {},\n        expects_response: {:?},\n        ipc: {},\n        metadata: {}\n    )",
-                request.inherit,
-                request.expects_response,
-                match serde_json::from_slice::<serde_json::Value>(&request.ipc) {
-                    Ok(json) => format!("{}", json),
-                    Err(_) => format!("{:?}", request.ipc),
-                },
-                &request.metadata.as_ref().unwrap_or(&"None".into()),
-            ),
-            Message::Response((response, context)) => write!(
-                f,
-                "Response(\n        inherit: {},\n        ipc: {},\n        metadata: {},\n        context: {}\n    )",
-                response.inherit,
-                match serde_json::from_slice::<serde_json::Value>(&response.ipc) {
-                    Ok(json) => format!("{}", json),
-                    Err(_) => format!("{:?}", response.ipc),
-                },
-                &response.metadata.as_ref().unwrap_or(&"None".into()),
-                if context.is_none() {
-                    "None".into()
-                } else {
-                    match serde_json::from_slice::<serde_json::Value>(context.as_ref().unwrap()) {
-                        Ok(json) => format!("{}", json),
-                        Err(_) => format!("{:?}", context.as_ref().unwrap()),
-                    }
-                },
-            ),
-        }
+        write!(f, "{}", display_message(self, "\n    "))
     }
+}
+
+fn display_capabilities(capabilities: &Vec<(Capability, Vec<u8>)>, delimiter: &str) -> String {
+    if capabilities.is_empty() {
+        return "[],".to_string();
+    }
+
+    let mut caps_string = "[".to_string();
+    for cap in capabilities.iter() {
+        caps_string += &format!("{}    {}", delimiter, cap.0.to_string());
+    }
+    format!("{}{}]", caps_string, delimiter)
+}
+
+fn display_message(m: &Message, delimiter: &str) -> String {
+    let lines = match m {
+        Message::Request(request) => {
+            vec![
+                "Request(".into(),
+                format!("inherit: {},", request.inherit),
+                format!("expects_response: {:?},", request.expects_response),
+                format!(
+                    "body: {},",
+                    match serde_json::from_slice::<serde_json::Value>(&request.body) {
+                        Ok(json) => format!("{}", json),
+                        Err(_) => format!("{:?}", request.body),
+                    }
+                ),
+                format!(
+                    "metadata: {},",
+                    &request.metadata.as_ref().unwrap_or(&"None".into())
+                ),
+                format!(
+                    "capabilities: {}",
+                    display_capabilities(&request.capabilities, delimiter)
+                ),
+            ]
+        }
+        Message::Response((response, context)) => {
+            vec![
+                "Response(".into(),
+                format!("inherit: {},", response.inherit),
+                format!(
+                    "body: {},",
+                    match serde_json::from_slice::<serde_json::Value>(&response.body) {
+                        Ok(json) => format!("{}", json),
+                        Err(_) => format!("{:?}", response.body),
+                    }
+                ),
+                format!(
+                    "metadata: {},",
+                    &response.metadata.as_ref().unwrap_or(&"None".into())
+                ),
+                format!(
+                    "context: {},",
+                    if context.is_none() {
+                        "None".into()
+                    } else {
+                        match serde_json::from_slice::<serde_json::Value>(context.as_ref().unwrap())
+                        {
+                            Ok(json) => format!("{}", json),
+                            Err(_) => format!("{:?}", context.as_ref().unwrap()),
+                        }
+                    },
+                ),
+                format!(
+                    "capabilities: {}",
+                    display_capabilities(&response.capabilities, delimiter)
+                ),
+            ]
+        }
+    };
+    lines.into_iter().collect::<Vec<_>>().join(delimiter) + &delimiter[..delimiter.len() - 4] + ")"
 }
 
 //
@@ -526,8 +606,13 @@ pub fn de_wit_request(wit: wit::Request) -> Request {
     Request {
         inherit: wit.inherit,
         expects_response: wit.expects_response,
-        ipc: wit.ipc,
+        body: wit.body,
         metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .iter()
+            .map(|cap| de_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
@@ -535,67 +620,83 @@ pub fn en_wit_request(request: Request) -> wit::Request {
     wit::Request {
         inherit: request.inherit,
         expects_response: request.expects_response,
-        ipc: request.ipc,
+        body: request.body,
         metadata: request.metadata,
+        capabilities: request
+            .capabilities
+            .iter()
+            .map(|cap| en_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
 pub fn de_wit_response(wit: wit::Response) -> Response {
     Response {
         inherit: wit.inherit,
-        ipc: wit.ipc,
+        body: wit.body,
         metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .iter()
+            .map(|cap| de_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
 pub fn en_wit_response(response: Response) -> wit::Response {
     wit::Response {
         inherit: response.inherit,
-        ipc: response.ipc,
+        body: response.body,
         metadata: response.metadata,
+        capabilities: response
+            .capabilities
+            .iter()
+            .map(|cap| en_wit_capability(cap.clone()))
+            .collect(),
     }
 }
 
-pub fn de_wit_payload(wit: Option<wit::Payload>) -> Option<Payload> {
+pub fn de_wit_blob(wit: Option<wit::LazyLoadBlob>) -> Option<LazyLoadBlob> {
     match wit {
         None => None,
-        Some(wit) => Some(Payload {
+        Some(wit) => Some(LazyLoadBlob {
             mime: wit.mime,
             bytes: wit.bytes,
         }),
     }
 }
 
-pub fn en_wit_payload(load: Option<Payload>) -> Option<wit::Payload> {
+pub fn en_wit_blob(load: Option<LazyLoadBlob>) -> Option<wit::LazyLoadBlob> {
     match load {
         None => None,
-        Some(load) => Some(wit::Payload {
+        Some(load) => Some(wit::LazyLoadBlob {
             mime: load.mime,
             bytes: load.bytes,
         }),
     }
 }
 
-pub fn de_wit_signed_capability(wit: wit::SignedCapability) -> SignedCapability {
-    SignedCapability {
-        issuer: Address {
-            node: wit.issuer.node,
-            process: ProcessId {
-                process_name: wit.issuer.process.process_name,
-                package_name: wit.issuer.process.package_name,
-                publisher_node: wit.issuer.process.publisher_node,
+pub fn de_wit_capability(wit: wit::Capability) -> (Capability, Vec<u8>) {
+    (
+        Capability {
+            issuer: Address {
+                node: wit.issuer.node,
+                process: ProcessId {
+                    process_name: wit.issuer.process.process_name,
+                    package_name: wit.issuer.process.package_name,
+                    publisher_node: wit.issuer.process.publisher_node,
+                },
             },
+            params: wit.params,
         },
-        params: wit.params,
-        signature: wit.signature,
-    }
+        vec![],
+    )
 }
 
-pub fn _en_wit_signed_capability(cap: SignedCapability) -> wit::SignedCapability {
-    wit::SignedCapability {
-        issuer: cap.issuer.en_wit(),
-        params: cap.params,
-        signature: cap.signature,
+pub fn en_wit_capability(cap: (Capability, Vec<u8>)) -> wit::Capability {
+    wit::Capability {
+        issuer: cap.0.issuer.en_wit(),
+        params: cap.0.params,
     }
 }
 
@@ -612,7 +713,7 @@ pub fn en_wit_send_error(error: SendError) -> wit::SendError {
     wit::SendError {
         kind: en_wit_send_error_kind(error.kind),
         message: en_wit_message(error.message),
-        payload: en_wit_payload(error.payload),
+        lazy_load_blob: en_wit_blob(error.lazy_load_blob),
     }
 }
 
@@ -648,7 +749,7 @@ pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
 pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
 
 //
-// types used for UQI: uqbar's identity system
+// types used for onchain identity system
 //
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -737,6 +838,7 @@ pub struct IdentityTransaction {
 pub struct ProcessMetadata {
     pub our: Address,
     pub wasm_bytes_handle: String,
+    pub wit_version: u32,
     pub on_exit: OnExit,
     pub public: bool,
 }
@@ -748,15 +850,14 @@ pub struct KernelMessage {
     pub target: Address,
     pub rsvp: Rsvp,
     pub message: Message,
-    pub payload: Option<Payload>,
-    pub signed_capabilities: Option<Vec<SignedCapability>>,
+    pub lazy_load_blob: Option<LazyLoadBlob>,
 }
 
 impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    payload: {}\n}}",
+            "{{\n    id: {},\n    source: {},\n    target: {},\n    rsvp: {},\n    message: {},\n    blob: {},\n}}",
             self.id,
             self.source,
             self.target,
@@ -764,8 +865,8 @@ impl std::fmt::Display for KernelMessage {
                 Some(rsvp) => rsvp.to_string(),
                 None => "None".to_string()
             },
-            self.message,
-            self.payload.is_some(),
+            display_message(&self.message, "\n        "),
+            self.lazy_load_blob.is_some(),
         )
     }
 }
@@ -810,12 +911,21 @@ pub enum KernelCommand {
     ///
     /// The process that sends this command will be given messaging capabilities
     /// for the new process if `public` is false.
+    ///
+    /// All capabilities passed into initial_capabilities must be held by the source
+    /// of this message, or the kernel will discard them (silently for now).
     InitializeProcess {
         id: ProcessId,
         wasm_bytes_handle: String,
+        wit_version: Option<u32>,
         on_exit: OnExit,
-        initial_capabilities: HashSet<SignedCapability>,
+        initial_capabilities: HashSet<Capability>,
         public: bool,
+    },
+    /// Create an arbitrary capability and grant it to a process.
+    GrantCapabilities {
+        target: ProcessId,
+        capabilities: Vec<Capability>,
     },
     /// Tell the kernel to run a process that has already been installed.
     /// TODO: in the future, this command could be extended to allow for
@@ -826,6 +936,15 @@ pub enum KernelCommand {
     /// RUNTIME ONLY: notify the kernel that the runtime is shutting down and it
     /// should gracefully stop and persist the running processes.
     Shutdown,
+    /// Ask kernel to produce debugging information
+    Debug(KernelPrint),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KernelPrint {
+    ProcessMap,
+    Process(ProcessId),
+    HasCap { on: ProcessId, cap: Capability },
 }
 
 /// IPC format for all KernelCommand responses
@@ -842,7 +961,7 @@ pub enum KernelResponse {
 pub enum CapMessage {
     Add {
         on: ProcessId,
-        cap: Capability,
+        caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
     _Drop {
@@ -859,7 +978,12 @@ pub enum CapMessage {
     },
     GetAll {
         on: ProcessId,
-        responder: tokio::sync::oneshot::Sender<HashSet<SignedCapability>>,
+        responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
+    },
+    GetSome {
+        on: ProcessId,
+        caps: Vec<Capability>,
+        responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
 }
 
@@ -868,9 +992,36 @@ pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistedProcess {
     pub wasm_bytes_handle: String,
+    pub wit_version: Option<u32>,
     pub on_exit: OnExit,
-    pub capabilities: HashSet<Capability>,
+    pub capabilities: HashMap<Capability, Vec<u8>>,
     pub public: bool, // marks if a process allows messages from any process
+}
+
+impl std::fmt::Display for PersistedProcess {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "Process {{\n    wasm_bytes_handle: {},\n    wit_version: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
+            {
+                if &self.wasm_bytes_handle == "" {
+                    "(none, this is a runtime process)"
+                } else {
+                    &self.wasm_bytes_handle
+                }
+            },
+            self.wit_version.unwrap_or_default(),
+            self.on_exit,
+            self.public,
+            {
+                let mut caps_string = "[".to_string();
+                for cap in self.capabilities.keys() {
+                    caps_string += &format!("\n        {}", cap.to_string());
+                }
+                caps_string + "\n    ]"
+            },
+        )
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -901,8 +1052,8 @@ pub struct PackageManifestEntry {
     pub process_wasm_path: String,
     pub on_exit: OnExit,
     pub request_networking: bool,
-    pub request_messaging: Option<Vec<serde_json::Value>>,
-    pub grant_messaging: Option<Vec<serde_json::Value>>,
+    pub request_capabilities: Vec<serde_json::Value>,
+    pub grant_capabilities: Vec<serde_json::Value>,
     pub public: bool,
 }
 
@@ -929,11 +1080,11 @@ pub enum StateError {
     RocksDBError { action: String, error: String },
     #[error("kernel_state: startup error")]
     StartupError { action: String },
-    #[error("kernel_state: bytes payload required for {action}")]
+    #[error("kernel_state: bytes blob required for {action}")]
     BadBytes { action: String },
     #[error("kernel_state: bad request error: {error}")]
     BadRequest { error: String },
-    #[error("kernel_state: Bad JSON payload: {error}")]
+    #[error("kernel_state: Bad JSON blob: {error}")]
     BadJson { error: String },
     #[error("kernel_state: state not found for ProcessId {process_id}")]
     NotFound { process_id: ProcessId },
@@ -968,12 +1119,10 @@ pub enum VfsAction {
     CreateDir,
     CreateDirAll,
     CreateFile,
-    OpenFile,
+    OpenFile { create: bool },
     CloseFile,
-    WriteAll,
     Write,
-    ReWrite,
-    WriteAt(u64),
+    WriteAll,
     Append,
     SyncAll,
     Read,
@@ -981,13 +1130,14 @@ pub enum VfsAction {
     ReadToEnd,
     ReadExact(u64),
     ReadToString,
-    Seek(SeekFrom),
+    Seek { seek_from: SeekFrom },
     RemoveFile,
     RemoveDir,
     RemoveDirAll,
-    Rename(String),
+    Rename { new_path: String },
     Metadata,
     AddZip,
+    CopyFile { new_path: String },
     Len,
     SetLen(u64),
     Hash,
@@ -1025,6 +1175,7 @@ pub enum VfsResponse {
     Ok,
     Err(VfsError),
     Read,
+    SeekFrom(u64),
     ReadDir(Vec<DirEntry>),
     ReadToString(String),
     Metadata(FileMetadata),
@@ -1036,7 +1187,7 @@ pub enum VfsResponse {
 pub enum VfsError {
     #[error("vfs: No capability for action {action} at path {path}")]
     NoCap { action: String, path: String },
-    #[error("vfs: Bytes payload required for {action} at path {path}")]
+    #[error("vfs: Bytes blob required for {action} at path {path}")]
     BadBytes { action: String, path: String },
     #[error("vfs: bad request error: {error}")]
     BadRequest { error: String },
@@ -1046,7 +1197,7 @@ pub enum VfsError {
     IOError { error: String, path: String },
     #[error("vfs: kernel capability channel error: {error}")]
     CapChannelFail { error: String },
-    #[error("vfs: Bad JSON payload: {error}")]
+    #[error("vfs: Bad JSON blob: {error}")]
     BadJson { error: String },
     #[error("vfs: File not found at path {path}")]
     NotFound { path: String },
@@ -1080,7 +1231,8 @@ pub struct KvRequest {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum KvAction {
-    New,
+    Open,
+    RemoveDb,
     Set { key: Vec<u8>, tx_id: Option<u64> },
     Delete { key: Vec<u8>, tx_id: Option<u64> },
     Get { key: Vec<u8> },
@@ -1101,8 +1253,6 @@ pub enum KvResponse {
 pub enum KvError {
     #[error("kv: DbDoesNotExist")]
     NoDb,
-    #[error("kv: DbAlreadyExists")]
-    DbAlreadyExists,
     #[error("kv: KeyNotFound")]
     KeyNotFound,
     #[error("kv: no Tx found")]
@@ -1126,7 +1276,8 @@ pub struct SqliteRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum SqliteAction {
-    New,
+    Open,
+    RemoveDb,
     Write {
         statement: String,
         tx_id: Option<u64>,
@@ -1163,8 +1314,6 @@ pub enum SqlValue {
 pub enum SqliteError {
     #[error("sqlite: DbDoesNotExist")]
     NoDb,
-    #[error("sqlite: DbAlreadyExists")]
-    DbAlreadyExists,
     #[error("sqlite: NoTx")]
     NoTx,
     #[error("sqlite: No capability: {error}")]

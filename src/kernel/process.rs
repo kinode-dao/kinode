@@ -2,12 +2,12 @@ use crate::kernel::{ProcessMessageReceiver, ProcessMessageSender};
 use crate::types as t;
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
-use ring::signature;
+pub use kinode::process::standard as wit;
+pub use kinode::process::standard::Host as StandardHost;
+use ring::signature::{self, KeyPair};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
-pub use uqbar::process::standard as wit;
-pub use uqbar::process::standard::Host as StandardHost;
 use wasmtime::component::*;
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView};
@@ -26,11 +26,10 @@ pub struct ProcessState {
     pub send_to_loop: t::MessageSender,
     pub send_to_terminal: t::PrintSender,
     pub prompting_message: Option<t::KernelMessage>,
-    pub last_payload: Option<t::Payload>,
+    pub last_blob: Option<t::LazyLoadBlob>,
     pub contexts: HashMap<u64, (t::ProcessContext, JoinHandle<()>)>,
     pub message_queue: VecDeque<Result<t::KernelMessage, t::WrappedSendError>>,
     pub caps_oracle: t::CapMessageSender,
-    pub next_message_caps: Option<Vec<t::SignedCapability>>,
 }
 
 pub struct ProcessWasi {
@@ -59,7 +58,7 @@ pub async fn send_and_await_response(
     source: Option<t::Address>,
     target: wit::Address,
     request: wit::Request,
-    payload: Option<wit::Payload>,
+    blob: Option<wit::LazyLoadBlob>,
 ) -> Result<Result<(wit::Address, wit::Message), wit::SendError>> {
     if request.expects_response.is_none() {
         return Err(anyhow::anyhow!(
@@ -69,7 +68,7 @@ pub async fn send_and_await_response(
     }
     let id = process
         .process
-        .handle_request(source, target, request, None, payload)
+        .send_request(source, target, request, None, blob)
         .await;
     match id {
         Ok(id) => match process.process.get_specific_message_for_process(id).await {
@@ -103,13 +102,13 @@ impl ProcessState {
     /// will only fail if process does not have capability to send to target.
     /// if the request has a timeout (expects response), start a task to track
     /// that timeout and return timeout error if it expires.
-    pub async fn handle_request(
+    pub async fn send_request(
         &mut self,
         fake_source: Option<t::Address>, // only used when kernel steps in to get/set state
         target: wit::Address,
         request: wit::Request,
         new_context: Option<wit::Context>,
-        payload: Option<wit::Payload>,
+        blob: Option<wit::LazyLoadBlob>,
     ) -> Result<u64> {
         let source = match &fake_source {
             Some(_) => fake_source.unwrap(),
@@ -131,15 +130,33 @@ impl ProcessState {
             }
         };
 
-        let payload = match payload {
-            Some(p) => Some(t::Payload {
+        let blob = match blob {
+            Some(p) => Some(t::LazyLoadBlob {
                 mime: p.mime,
                 bytes: p.bytes,
             }),
             None => match request.inherit {
-                true => self.last_payload.clone(),
+                true => self.last_blob.clone(),
                 false => None,
             },
+        };
+
+        let mut inner_request = t::de_wit_request(request.clone());
+
+        inner_request.capabilities = {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            self.caps_oracle
+                .send(t::CapMessage::GetSome {
+                    on: self.metadata.our.process.clone(),
+                    caps: request
+                        .capabilities
+                        .iter()
+                        .map(|cap| t::de_wit_capability(cap.clone()).0)
+                        .collect(),
+                    responder: tx,
+                })
+                .await?;
+            rx.await?
         };
 
         // rsvp is set if there was a Request expecting Response
@@ -167,9 +184,8 @@ impl ProcessState {
                 // no rsvp because neither prompting message nor this request wants a response
                 (_, None, None) => None,
             },
-            message: t::Message::Request(t::de_wit_request(request.clone())),
-            payload: payload.clone(),
-            signed_capabilities: None,
+            message: t::Message::Request(inner_request),
+            lazy_load_blob: blob.clone(),
         };
 
         // modify the process' context map as needed.
@@ -188,13 +204,25 @@ impl ProcessState {
                             kind: t::SendErrorKind::Timeout,
                             target: t::Address::de_wit(target),
                             message: t::Message::Request(t::de_wit_request(request.clone())),
-                            payload,
+                            lazy_load_blob: blob,
                         },
                     }))
                     .await;
             });
-            self.save_context(kernel_message.id, new_context, timeout_handle)
-                .await;
+            self.contexts.insert(
+                request_id,
+                (
+                    t::ProcessContext {
+                        prompting_message: if self.prompting_message.is_some() {
+                            self.prompting_message.clone()
+                        } else {
+                            None
+                        },
+                        context: new_context,
+                    },
+                    timeout_handle,
+                ),
+            );
         }
 
         self.send_to_loop
@@ -206,7 +234,11 @@ impl ProcessState {
     }
 
     /// takes Response generated by a process and sends it to the main event loop.
-    pub async fn send_response(&mut self, response: wit::Response, payload: Option<wit::Payload>) {
+    pub async fn send_response(
+        &mut self,
+        response: wit::Response,
+        blob: Option<wit::LazyLoadBlob>,
+    ) {
         let (id, target) = match self.make_response_id_target().await {
             Some(r) => r,
             None => {
@@ -221,9 +253,28 @@ impl ProcessState {
             }
         };
 
-        let payload = match response.inherit {
-            true => self.last_payload.clone(),
-            false => t::de_wit_payload(payload),
+        let blob = match response.inherit {
+            true => self.last_blob.clone(),
+            false => t::de_wit_blob(blob),
+        };
+
+        let mut inner_response = t::de_wit_response(response.clone());
+
+        inner_response.capabilities = {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            let _ = self
+                .caps_oracle
+                .send(t::CapMessage::GetSome {
+                    on: self.metadata.our.process.clone(),
+                    caps: response
+                        .capabilities
+                        .iter()
+                        .map(|cap| t::de_wit_capability(cap.clone()).0)
+                        .collect(),
+                    responder: tx,
+                })
+                .await;
+            rx.await.expect("fatal: process couldn't get caps")
         };
 
         self.send_to_loop
@@ -233,38 +284,14 @@ impl ProcessState {
                 target,
                 rsvp: None,
                 message: t::Message::Response((
-                    t::de_wit_response(response),
+                    inner_response,
                     // the context will be set by the process receiving this Response.
                     None,
                 )),
-                payload,
-                signed_capabilities: None,
+                lazy_load_blob: blob,
             })
             .await
             .expect("fatal: kernel couldn't send response");
-    }
-
-    /// save a context for a given request.
-    async fn save_context(
-        &mut self,
-        request_id: u64,
-        context: Option<t::Context>,
-        jh: tokio::task::JoinHandle<()>,
-    ) {
-        self.contexts.insert(
-            request_id,
-            (
-                t::ProcessContext {
-                    prompting_message: if self.prompting_message.is_some() {
-                        self.prompting_message.clone()
-                    } else {
-                        None
-                    },
-                    context,
-                },
-                jh,
-            ),
-        );
     }
 
     /// instead of ingesting latest, wait for a specific ID and queue all others
@@ -305,21 +332,26 @@ impl ProcessState {
         res: Result<t::KernelMessage, t::WrappedSendError>,
     ) -> Result<(wit::Address, wit::Message), (wit::SendError, Option<wit::Context>)> {
         let (context, km) = match res {
-            Ok(km) => match self.contexts.remove(&km.id) {
-                None => {
-                    // TODO if this a response, ignore it if we don't have outstanding context
-                    self.last_payload = km.payload.clone();
+            Ok(km) => match &km.message {
+                t::Message::Request(_) => {
+                    self.last_blob = km.lazy_load_blob.clone();
                     self.prompting_message = Some(km.clone());
                     (None, km)
                 }
-                Some((context, timeout_handle)) => {
-                    timeout_handle.abort();
-                    self.last_payload = km.payload.clone();
-                    self.prompting_message = match context.prompting_message {
-                        None => Some(km.clone()),
-                        Some(prompting_message) => Some(prompting_message),
-                    };
-                    (context.context, km)
+                t::Message::Response(_) => {
+                    if let Some((context, timeout_handle)) = self.contexts.remove(&km.id) {
+                        timeout_handle.abort();
+                        self.last_blob = km.lazy_load_blob.clone();
+                        self.prompting_message = match context.prompting_message {
+                            None => Some(km.clone()),
+                            Some(prompting_message) => Some(prompting_message),
+                        };
+                        (context.context, km)
+                    } else {
+                        self.last_blob = km.lazy_load_blob.clone();
+                        self.prompting_message = Some(km.clone());
+                        (None, km)
+                    }
                 }
             },
             Err(e) => match self.contexts.remove(&e.id) {
@@ -332,14 +364,51 @@ impl ProcessState {
             },
         };
 
-        // note: the context in the KernelMessage is not actually the one we want:
-        // (in fact it should be None, possibly always)
-        // we need to get *our* context for this message id
+        let pk = signature::UnparsedPublicKey::new(
+            &signature::ED25519,
+            self.keypair.as_ref().public_key(),
+        );
+
         Ok((
-            km.source.en_wit().to_owned(),
+            km.source.en_wit(),
             match km.message {
-                t::Message::Request(request) => wit::Message::Request(t::en_wit_request(request)),
-                t::Message::Response((response, _context)) => {
+                t::Message::Request(mut request) => {
+                    // prune any invalid caps before sending
+                    request.capabilities = request
+                        .capabilities
+                        .iter()
+                        .filter_map(|(cap, sig)| {
+                            if cap.issuer.node != self.metadata.our.node {
+                                // accept all remote caps uncritically
+                                return Some((cap.clone(), sig.clone()));
+                            }
+                            // otherwise only return capabilities that were properly signed
+                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
+                                Ok(_) => Some((cap.clone(), sig.clone())),
+                                Err(_) => None,
+                            }
+                        })
+                        .collect::<Vec<(t::Capability, Vec<u8>)>>();
+                    wit::Message::Request(t::en_wit_request(request))
+                }
+                // NOTE: we throw away whatever context came from the sender, that's not ours
+                t::Message::Response((mut response, _context)) => {
+                    // prune any invalid caps before sending
+                    response.capabilities = response
+                        .capabilities
+                        .iter()
+                        .filter_map(|(cap, sig)| {
+                            if cap.issuer.node != self.metadata.our.node {
+                                // accept all remote caps uncritically
+                                return Some((cap.clone(), sig.clone()));
+                            }
+                            // otherwise only return capabilities that were properly signed
+                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
+                                Ok(_) => Some((cap.clone(), sig.clone())),
+                                Err(_) => None,
+                            }
+                        })
+                        .collect::<Vec<(t::Capability, Vec<u8>)>>();
                     wit::Message::Response((t::en_wit_response(response), context))
                 }
             },
@@ -394,8 +463,9 @@ pub async fn make_process_loop(
                         == t::Message::Request(t::Request {
                             inherit: false,
                             expects_response: None,
-                            ipc: b"run".to_vec(),
+                            body: b"run".to_vec(),
                             metadata: None,
+                            capabilities: vec![],
                         }))
                 {
                     break;
@@ -406,10 +476,7 @@ pub async fn make_process_loop(
     }
     // now that we've received the run message, we can send the pre-boot queue
     for message in pre_boot_queue {
-        send_to_process
-            .send(message)
-            .await
-            .expect("make_process_loop: couldn't send message to process");
+        send_to_process.send(message).await?;
     }
 
     let component =
@@ -434,11 +501,10 @@ pub async fn make_process_loop(
                 send_to_loop: send_to_loop.clone(),
                 send_to_terminal: send_to_terminal.clone(),
                 prompting_message: None,
-                last_payload: None,
+                last_blob: None,
                 contexts: HashMap::new(),
                 message_queue: VecDeque::new(),
                 caps_oracle: caps_oracle.clone(),
-                next_message_caps: None,
             },
             table,
             wasi,
@@ -462,7 +528,7 @@ pub async fn make_process_loop(
             }
         };
 
-    // the process will run until it returns from init()
+    // the process will run until it returns from init() or crashes
     let is_error = match bindings
         .call_init(&mut store, &metadata.our.to_string())
         .await
@@ -470,8 +536,8 @@ pub async fn make_process_loop(
         Ok(()) => {
             let _ = send_to_terminal
                 .send(t::Printout {
-                    verbosity: 2,
-                    content: format!("process {} returned without error", metadata.our.process,),
+                    verbosity: 1,
+                    content: format!("process {} returned without error", metadata.our.process),
                 })
                 .await;
             false
@@ -480,65 +546,96 @@ pub async fn make_process_loop(
             let _ = send_to_terminal
                 .send(t::Printout {
                     verbosity: 0,
-                    content: format!("process {:?} ended with error:", metadata.our.process,),
+                    content: format!(
+                        "\x1b[38;5;196mprocess {} ended with error: {}\x1b[0m",
+                        metadata.our.process,
+                        format!("{:?}", e).lines().last().unwrap(),
+                    ),
                 })
                 .await;
-            for line in format!("{:?}", e).lines() {
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: line.into(),
-                    })
-                    .await;
-            }
             true
         }
     };
 
-    // the process has completed, perform cleanup
+    //
+    // the process has completed, time to perform cleanup
+    //
+
     let our_kernel = t::Address {
         node: metadata.our.node.clone(),
         process: KERNEL_PROCESS_ID.clone(),
     };
 
-    if is_error {
-        // get caps before killing
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = caps_oracle
-            .send(t::CapMessage::GetAll {
-                on: metadata.our.process.clone(),
-                responder: tx,
-            })
-            .await;
-        let initial_capabilities = rx.await.unwrap().into_iter().collect();
+    // get caps before killing
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let _ = caps_oracle
+        .send(t::CapMessage::GetAll {
+            on: metadata.our.process.clone(),
+            responder: tx,
+        })
+        .await;
+    let initial_capabilities = rx
+        .await?
+        .iter()
+        .map(|c| t::Capability {
+            issuer: c.0.issuer.clone(),
+            params: c.0.params.clone(),
+        })
+        .collect();
 
-        // always send message to tell main kernel loop to remove handler
-        send_to_loop
-            .send(t::KernelMessage {
-                id: rand::random(),
-                source: our_kernel.clone(),
-                target: our_kernel.clone(),
-                rsvp: None,
-                message: t::Message::Request(t::Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: serde_json::to_vec(&t::KernelCommand::KillProcess(
-                        metadata.our.process.clone(),
-                    ))
-                    .unwrap(),
-                    metadata: None,
-                }),
-                payload: None,
-                signed_capabilities: None,
-            })
-            .await
-            .expect("event loop: fatal: sender died");
+    // send message to tell main kernel loop to remove handler
+    send_to_loop
+        .send(t::KernelMessage {
+            id: rand::random(),
+            source: our_kernel.clone(),
+            target: our_kernel.clone(),
+            rsvp: None,
+            message: t::Message::Request(t::Request {
+                inherit: false,
+                expects_response: None,
+                body: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                    metadata.our.process.clone(),
+                ))
+                .unwrap(),
+                metadata: None,
+                capabilities: vec![],
+            }),
+            lazy_load_blob: None,
+        })
+        .await?;
 
-        // fulfill the designated OnExit behavior
-        match metadata.on_exit {
-            t::OnExit::None => {}
-            // if restart, tell ourselves to init the app again, with same capabilities
-            t::OnExit::Restart => {
+    // fulfill the designated OnExit behavior
+    match metadata.on_exit {
+        t::OnExit::None => {
+            let _ = send_to_terminal
+                .send(t::Printout {
+                    verbosity: 1,
+                    content: format!("process {} had no OnExit behavior", metadata.our.process),
+                })
+                .await;
+        }
+        // if restart, tell ourselves to init the app again, with same capabilities
+        t::OnExit::Restart => {
+            if is_error {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!(
+                            "skipping OnExit::Restart for process {} due to crash",
+                            metadata.our.process
+                        ),
+                    })
+                    .await;
+            } else {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 1,
+                        content: format!(
+                            "firing OnExit::Restart for process {}",
+                            metadata.our.process
+                        ),
+                    })
+                    .await;
                 send_to_loop
                     .send(t::KernelMessage {
                         id: rand::random(),
@@ -548,55 +645,81 @@ pub async fn make_process_loop(
                         message: t::Message::Request(t::Request {
                             inherit: false,
                             expects_response: None,
-                            ipc: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
+                            body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
                                 id: metadata.our.process.clone(),
                                 wasm_bytes_handle: metadata.wasm_bytes_handle,
+                                wit_version: Some(metadata.wit_version),
                                 on_exit: metadata.on_exit,
                                 initial_capabilities,
                                 public: metadata.public,
                             })
                             .unwrap(),
                             metadata: None,
+                            capabilities: vec![],
                         }),
-                        payload: Some(t::Payload {
+                        lazy_load_blob: Some(t::LazyLoadBlob {
                             mime: None,
                             bytes: wasm_bytes,
                         }),
-                        signed_capabilities: None,
                     })
-                    .await
-                    .expect("event loop: fatal: sender died");
+                    .await?;
+                send_to_loop
+                    .send(t::KernelMessage {
+                        id: rand::random(),
+                        source: our_kernel.clone(),
+                        target: our_kernel.clone(),
+                        rsvp: None,
+                        message: t::Message::Request(t::Request {
+                            inherit: false,
+                            expects_response: None,
+                            body: serde_json::to_vec(&t::KernelCommand::RunProcess(
+                                metadata.our.process.clone(),
+                            ))
+                            .unwrap(),
+                            metadata: None,
+                            capabilities: vec![],
+                        }),
+                        lazy_load_blob: None,
+                    })
+                    .await?;
             }
-            // if requests, fire them
-            // even in death, a process can only message processes it has capabilities for
-            t::OnExit::Requests(requests) => {
-                for (address, mut request, payload) in requests {
-                    request.expects_response = None;
-                    let (tx, rx) = tokio::sync::oneshot::channel();
-                    let _ = caps_oracle
-                        .send(t::CapMessage::Has {
-                            on: metadata.our.process.clone(),
-                            cap: t::Capability {
-                                issuer: address.clone(),
-                                params: "\"messaging\"".into(),
-                            },
-                            responder: tx,
+        }
+        // if requests, fire them
+        // even in death, a process can only message processes it has capabilities for
+        t::OnExit::Requests(requests) => {
+            send_to_terminal
+                .send(t::Printout {
+                    verbosity: 1,
+                    content: format!(
+                        "firing OnExit::Requests for process {}",
+                        metadata.our.process
+                    ),
+                })
+                .await?;
+            for (address, mut request, blob) in requests {
+                request.expects_response = None;
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                caps_oracle
+                    .send(t::CapMessage::Has {
+                        on: metadata.our.process.clone(),
+                        cap: t::Capability {
+                            issuer: address.clone(),
+                            params: "\"messaging\"".into(),
+                        },
+                        responder: tx,
+                    })
+                    .await?;
+                if let Ok(true) = rx.await {
+                    send_to_loop
+                        .send(t::KernelMessage {
+                            id: rand::random(),
+                            source: metadata.our.clone(),
+                            target: address,
+                            rsvp: None,
+                            message: t::Message::Request(request),
+                            lazy_load_blob: blob,
                         })
-                        .await;
-                    if let Ok(true) = rx.await {
-                        send_to_loop
-                            .send(t::KernelMessage {
-                                id: rand::random(),
-                                source: metadata.our.clone(),
-                                target: address,
-                                rsvp: None,
-                                message: t::Message::Request(request),
-                                payload,
-                                signed_capabilities: None,
-                            })
-                            .await
-                            .expect("event loop: fatal: sender died");
-                    }
+                        .await?;
                 }
             }
         }

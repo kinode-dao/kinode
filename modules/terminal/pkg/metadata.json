@@ -1,5 +1,9 @@
 {
     "package": "terminal",
-    "publisher": "uqbar",
-    "version": [0, 1, 0]
+    "publisher": "sys",
+    "version": [
+        0,
+        1,
+        0
+    ]
 }
