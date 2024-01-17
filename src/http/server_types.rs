@@ -31,7 +31,7 @@ pub enum HttpServerRequest {
 pub struct IncomingHttpRequest {
     pub source_socket_addr: Option<String>, // will parse to SocketAddr
     pub method: String,                     // will parse to http::Method
-    pub raw_path: String,
+    pub url: String,                        // will parse to url::Url
     pub headers: HashMap<String, String>,
     pub query_params: HashMap<String, String>,
     // BODY is stored in the lazy_load_blob, as bytes

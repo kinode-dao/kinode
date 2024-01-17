@@ -465,14 +465,6 @@ async fn http_handler(
             }
         }
     } else {
-        // remove process id from beginning of path by splitting into segments
-        // separated by "/" and taking all but the first
-        let segments: Vec<&str> = original_path.split('/').collect();
-        let stripped_path = if segments.len() > 2 {
-            format!("/{}", segments[2..].join("/"))
-        } else {
-            "/".to_string()
-        };
         KernelMessage {
             id,
             source: Address {
@@ -490,7 +482,12 @@ async fn http_handler(
                 body: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
                     source_socket_addr: socket_addr.map(|addr| addr.to_string()),
                     method: method.to_string(),
-                    raw_path: stripped_path,
+                    url: format!(
+                        "http://{}{}",
+                        host.unwrap_or(Authority::from_static("localhost"))
+                            .to_string(),
+                        original_path
+                    ),
                     headers: serialized_headers,
                     query_params,
                 }))
