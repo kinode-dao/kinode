@@ -13,6 +13,8 @@
             "vfs:distro:sys",
             "kernel:distro:sys",
             "eth:distro:sys",
+            "sqlite:distro:sys",
+            "kv:distro:sys",
             {
                 "process": "vfs:distro:sys",
                 "params": {
