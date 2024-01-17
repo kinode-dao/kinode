@@ -495,7 +495,9 @@ async fn bootstrap(
                 "{}:{}:{}",
                 entry.process_name, package_name, package_publisher
             );
-            entry.request_capabilities.push(serde_json::Value::String(our_process_id.clone()));
+            entry
+                .request_capabilities
+                .push(serde_json::Value::String(our_process_id.clone()));
             for value in entry.request_capabilities {
                 let requested_cap = match value {
                     serde_json::Value::String(process_name) => Capability {
@@ -511,11 +513,7 @@ async fn bootstrap(
                                 Capability {
                                     issuer: Address {
                                         node: our_name.to_string(),
-                                        process: process_name
-                                            .as_str()
-                                            .unwrap()
-                                            .parse()
-                                            .unwrap(),
+                                        process: process_name.as_str().unwrap().parse().unwrap(),
                                     },
                                     params: params.to_string(),
                                 }
@@ -674,9 +672,7 @@ async fn bootstrap(
                                 process_name.as_str().unwrap().parse::<ProcessId>()
                             {
                                 if let Some(params) = map.get("params") {
-                                    if let Some(process) =
-                                        process_map.get_mut(&parsed_process_id)
-                                    {
+                                    if let Some(process) = process_map.get_mut(&parsed_process_id) {
                                         let cap = Capability {
                                             issuer: Address {
                                                 node: our_name.to_string(),
@@ -684,10 +680,9 @@ async fn bootstrap(
                                             },
                                             params: params.to_string(),
                                         };
-                                        process.capabilities.insert(
-                                            cap.clone(),
-                                            sign_cap(cap, keypair.clone()),
-                                        );
+                                        process
+                                            .capabilities
+                                            .insert(cap.clone(), sign_cap(cap, keypair.clone()));
                                     }
                                 }
                             }
