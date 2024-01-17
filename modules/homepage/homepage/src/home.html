@@ -207,7 +207,7 @@
 
     <h4>Apps:</h4>
     <!-- <a id="file-transfer" href="/file-transfer">File Transfer</a> -->
-    <a id="chess" href="/chess:chess:nectar/">Chess</a>
+    <a id="chess" href="/chess:chess:sys/">Chess</a>
   </div>
   <script>window.ourName = window.our = '${our}'</script>
   <script>
@@ -228,14 +228,14 @@
       chessLink.attributes.href.value = (window.location.pathname + chessLink.attributes.href.value).replace('//', '/')
 
       console.log('OUR NODE NAME:', window.our)
-      console.log(getCookie(`nectar-ws-auth_${window.our}`))
+      console.log(getCookie(`kinode-ws-auth_${window.our}`))
 
       // const webSocket = new WebSocket('ws://' + window.location.host) // Handle proxying later
       // webSocket.onopen = () => {
       //   console.log('WS OPENED')
       //   webSocket.send(JSON.stringify({
       //       Register: {
-      //           auth_token: getCookie(`nectar-ws-auth_${window.our}`),
+      //           auth_token: getCookie(`kinode-ws-auth_${window.our}`),
       //           channel_id: "homepage"           // Can be unique to this connection, app, or omitted entirely
       //       }
       //   }))
@@ -243,7 +243,7 @@
       //   setTimeout(() => {
       //     webSocket.send(JSON.stringify({
       //       Action: {
-      //         auth_token: getCookie(`nectar-ws-auth_${window.our}`),
+      //         auth_token: getCookie(`kinode-ws-auth_${window.our}`),
       //         target: {
       //           node: window.our,
       //           process: 'homepage'
