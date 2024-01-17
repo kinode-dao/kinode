@@ -460,52 +460,69 @@ async fn http_handler(
     // RPC functionality: if path is /rpc:distro:sys/message,
     // we extract message from base64 encoded bytes in data
     // and send it to the correct app.
-    let message = if bound_path.app == "rpc:distro:sys" {
+    let (message, is_fire_and_forget) = if bound_path.app == "rpc:distro:sys" {
         match handle_rpc_message(our, id, body, print_tx).await {
-            Ok(message) => message,
+            Ok((message, is_fire_and_forget)) => (message, is_fire_and_forget),
             Err(e) => {
                 return Ok(warp::reply::with_status(vec![], e).into_response());
             }
         }
     } else {
-        KernelMessage {
-            id,
-            source: Address {
-                node: our.to_string(),
-                process: HTTP_SERVER_PROCESS_ID.clone(),
+        // otherwise, make a message to the correct app
+        (
+            KernelMessage {
+                id,
+                source: Address {
+                    node: our.to_string(),
+                    process: HTTP_SERVER_PROCESS_ID.clone(),
+                },
+                target: Address {
+                    node: our.to_string(),
+                    process: bound_path.app.clone(),
+                },
+                rsvp: None,
+                message: Message::Request(Request {
+                    inherit: false,
+                    expects_response: Some(HTTP_SELF_IMPOSED_TIMEOUT),
+                    body: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
+                        source_socket_addr: socket_addr.map(|addr| addr.to_string()),
+                        method: method.to_string(),
+                        url: format!(
+                            "http://{}{}",
+                            host.unwrap_or(Authority::from_static("localhost")),
+                            original_path
+                        ),
+                        headers: serialized_headers,
+                        query_params,
+                    }))
+                    .unwrap(),
+                    metadata: Some("http".into()),
+                    capabilities: vec![],
+                }),
+                lazy_load_blob: Some(LazyLoadBlob {
+                    mime: None,
+                    bytes: body.to_vec(),
+                }),
             },
-            target: Address {
-                node: our.to_string(),
-                process: bound_path.app.clone(),
-            },
-            rsvp: None,
-            message: Message::Request(Request {
-                inherit: false,
-                expects_response: Some(HTTP_SELF_IMPOSED_TIMEOUT),
-                body: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
-                    source_socket_addr: socket_addr.map(|addr| addr.to_string()),
-                    method: method.to_string(),
-                    url: format!(
-                        "http://{}{}",
-                        host.unwrap_or(Authority::from_static("localhost")),
-                        original_path
-                    ),
-                    headers: serialized_headers,
-                    query_params,
-                }))
-                .unwrap(),
-                metadata: Some("http".into()),
-                capabilities: vec![],
-            }),
-            lazy_load_blob: Some(LazyLoadBlob {
-                mime: None,
-                bytes: body.to_vec(),
-            }),
-        }
+            false,
+        )
     };
 
     // unlock to avoid deadlock with .write()s
     drop(path_bindings);
+
+    if is_fire_and_forget {
+        match send_to_loop.send(message).await {
+            Ok(_) => {}
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR)
+                        .into_response(),
+                );
+            }
+        }
+        return Ok(warp::reply::with_status(vec![], StatusCode::OK).into_response());
+    }
 
     let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
     http_response_senders.insert(id, (original_path, response_sender));
@@ -569,7 +586,7 @@ async fn handle_rpc_message(
     id: u64,
     body: warp::hyper::body::Bytes,
     print_tx: PrintSender,
-) -> Result<KernelMessage, StatusCode> {
+) -> Result<(KernelMessage, bool), StatusCode> {
     let Ok(rpc_message) = serde_json::from_slice::<RpcMessage>(&body) else {
         return Err(StatusCode::BAD_REQUEST);
     };
@@ -596,32 +613,37 @@ async fn handle_rpc_message(
         },
     };
 
-    Ok(KernelMessage {
-        id,
-        source: Address {
-            node: our.to_string(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        target: Address {
-            node: rpc_message.node.unwrap_or(our.to_string()),
-            process: target_process,
-        },
-        rsvp: Some(Address {
-            node: our.to_string(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        }),
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: Some(15), // NB: no effect on runtime
-            body: match rpc_message.body {
-                Some(body_string) => body_string.into_bytes(),
-                None => Vec::new(),
+    let rsvp = rpc_message.expects_response.map(|_er| Address {
+        node: our.to_string(),
+        process: HTTP_SERVER_PROCESS_ID.clone(),
+    });
+    Ok((
+        KernelMessage {
+            id,
+            source: Address {
+                node: our.to_string(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
             },
-            metadata: rpc_message.metadata,
-            capabilities: vec![],
-        }),
-        lazy_load_blob: blob,
-    })
+            target: Address {
+                node: rpc_message.node.unwrap_or(our.to_string()),
+                process: target_process,
+            },
+            rsvp,
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: rpc_message.expects_response.clone(),
+                //expects_response: Some(15), // NB: no effect on runtime
+                body: match rpc_message.body {
+                    Some(body_string) => body_string.into_bytes(),
+                    None => Vec::new(),
+                },
+                metadata: rpc_message.metadata,
+                capabilities: vec![],
+            }),
+            lazy_load_blob: blob,
+        },
+        rpc_message.expects_response.is_none(),
+    ))
 }
 
 async fn maintain_websocket(
