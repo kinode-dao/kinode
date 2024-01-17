@@ -122,10 +122,10 @@ pub async fn register(
         name: "".to_string(),
         ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
-            "next-release-router.os".into(),
-            // "default-router-1.os".into(),
-            // "default-router-2.os".into(),
-            // "default-router-3.os".into(),
+            // "next-release-router.os".into(),
+            "default-router-1.os".into(),
+            "default-router-2.os".into(),
+            "default-router-3.os".into(),
         ],
     });
 
