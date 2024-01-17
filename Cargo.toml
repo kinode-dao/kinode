@@ -4,10 +4,8 @@ authors = ["UqbarDAO"]
 version = "0.5.0"
 edition = "2021"
 description = "A general-purpose sovereign cloud computing platform"
-homepage = "https://uqbar.network"
-repository = "https://github.com/uqbar-dao/uqbar"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+homepage = "https://kinode.org"
+repository = "https://github.com/uqbar-dao/kinode"
 
 [build-dependencies]
 reqwest = { version = "0.11.22", features = ["blocking"] }
