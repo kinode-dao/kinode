@@ -118,10 +118,10 @@ pub async fn register(
         name: "".to_string(),
         ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
-            "nectar-next-router.nec".into(),
-            // "nectar-router-1.nec".into(),
-            // "nectar-router-2.nec".into(),
-            // "nectar-router-3.nec".into(),
+            "next-release-router.os".into(),
+            // "default-router-1.os".into(),
+            // "default-router-2.os".into(),
+            // "default-router-3.os".into(),
         ],
     });
 
@@ -544,7 +544,7 @@ async fn success_response(
 
     let headers = response.headers_mut();
 
-    match HeaderValue::from_str(&format!("nectar-auth_{}={};", &our.name, &token)) {
+    match HeaderValue::from_str(&format!("kinode-auth_{}={};", &our.name, &token)) {
         Ok(v) => {
             headers.append(SET_COOKIE, v);
         }

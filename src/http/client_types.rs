@@ -6,7 +6,7 @@ use thiserror::Error;
 // TODO: add documentation similar to server_types
 
 /// Request type that can be shared over WASM boundary to apps.
-/// This is the one you send to the `http_client:sys:nectar` service.
+/// This is the one you send to the `http_client:distro:sys` service.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpClientAction {
     Http(OutgoingHttpRequest),
@@ -25,7 +25,7 @@ pub enum HttpClientAction {
 }
 
 /// HTTP Request type that can be shared over WASM boundary to apps.
-/// This is the one you send to the `http_client:sys:nectar` service.
+/// This is the one you send to the `http_client:distro:sys` service.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OutgoingHttpRequest {
     pub method: String,          // must parse to http::Method
@@ -37,7 +37,7 @@ pub struct OutgoingHttpRequest {
 }
 
 /// WebSocket Client Request type that can be shared over WASM boundary to apps.
-/// This comes from an open websocket client connection in the `http_client:sys:nectar` service.
+/// This comes from an open websocket client connection in the `http_client:distro:sys` service.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpClientRequest {
     WebSocketPush {
@@ -50,7 +50,7 @@ pub enum HttpClientRequest {
 }
 
 /// HTTP Client Response type that can be shared over WASM boundary to apps.
-/// This is the one you receive from the `http_client:sys:nectar` service.
+/// This is the one you receive from the `http_client:distro:sys` service.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpClientResponse {
     Http(HttpResponse),
