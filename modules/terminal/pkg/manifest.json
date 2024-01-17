@@ -9,6 +9,7 @@
             "http_client:sys:nectar",
             "kernel:sys:nectar"
         ],
+        "grant_capabilities": [],
         "public": true
     }
 ]

@@ -1023,8 +1023,8 @@ pub struct PackageManifestEntry {
     pub process_wasm_path: String,
     pub on_exit: OnExit,
     pub request_networking: bool,
-    pub request_capabilities: Option<Vec<serde_json::Value>>,
-    pub grant_capabilities: Option<Vec<serde_json::Value>>,
+    pub request_capabilities: Vec<serde_json::Value>,
+    pub grant_capabilities: Vec<serde_json::Value>,
     pub public: bool,
 }
 

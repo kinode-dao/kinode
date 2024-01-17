@@ -499,60 +499,58 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                 action: vfs::VfsAction::Read,
             })?)
             .send_and_await_response(5)??;
-        if let Some(to_request) = &entry.request_capabilities {
-            for value in to_request {
-                let mut capability = None;
-                match value {
-                    serde_json::Value::String(process_name) => {
-                        if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                            capability = get_capability(
-                                &Address {
-                                    node: our.node.clone(),
-                                    process: parsed_process_id.clone(),
-                                },
-                                "\"messaging\"".into(),
-                            );
-                        }
+        for value in &entry.request_capabilities {
+            let mut capability = None;
+            match value {
+                serde_json::Value::String(process_name) => {
+                    if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
+                        capability = get_capability(
+                            &Address {
+                                node: our.node.clone(),
+                                process: parsed_process_id.clone(),
+                            },
+                            "\"messaging\"".into(),
+                        );
                     }
-                    serde_json::Value::Object(map) => {
-                        if let Some(process_name) = map.get("process") {
-                            if let Ok(parsed_process_id) = process_name
-                                .as_str()
-                                .unwrap_or_default()
-                                .parse::<ProcessId>()
-                            {
-                                if let Some(params) = map.get("params") {
-                                    if params.to_string() == "\"root\"" {
-                                        println!(
-                                            "app-store: app requested root capability, ignoring"
-                                        );
-                                        continue;
-                                    }
-
-                                    capability = get_capability(
-                                        &Address {
-                                            node: our.node.clone(),
-                                            process: parsed_process_id.clone(),
-                                        },
-                                        &params.to_string(),
+                }
+                serde_json::Value::Object(map) => {
+                    if let Some(process_name) = map.get("process") {
+                        if let Ok(parsed_process_id) = process_name
+                            .as_str()
+                            .unwrap_or_default()
+                            .parse::<ProcessId>()
+                        {
+                            if let Some(params) = map.get("params") {
+                                if params.to_string() == "\"root\"" {
+                                    println!(
+                                        "app-store: app requested root capability, ignoring"
                                     );
+                                    continue;
                                 }
+
+                                capability = get_capability(
+                                    &Address {
+                                        node: our.node.clone(),
+                                        process: parsed_process_id.clone(),
+                                    },
+                                    &params.to_string(),
+                                );
                             }
                         }
                     }
-                    _ => {
-                        continue;
-                    }
                 }
-                if let Some(cap) = capability {
-                    initial_capabilities.insert(kt::de_wit_capability(cap));
-                } else {
-                    println!(
-                        "app-store: no cap: {}, for {} to request!",
-                        value.to_string(),
-                        package
-                    );
+                _ => {
+                    continue;
                 }
+            }
+            if let Some(cap) = capability {
+                initial_capabilities.insert(kt::de_wit_capability(cap));
+            } else {
+                println!(
+                    "app-store: no cap: {}, for {} to request!",
+                    value.to_string(),
+                    package
+                );
             }
         }
         Request::new()
@@ -567,62 +565,60 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
             })?)
             .inherit(true)
             .send_and_await_response(5)??;
-        if let Some(to_grant) = &entry.grant_capabilities {
-            for value in to_grant {
-                match value {
-                    serde_json::Value::String(process_name) => {
-                        if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                            let _ = Request::new()
-                                .target(("our", "kernel", "sys", "nectar"))
-                                .body(
-                                    serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                                        target: parsed_process_id,
-                                        capabilities: vec![kt::Capability {
-                                            issuer: Address {
-                                                node: our.node.clone(),
-                                                process: parsed_new_process_id.clone(),
-                                            },
-                                            params: "\"messaging\"".into(),
-                                        }],
-                                    })
-                                    .unwrap(),
-                                )
-                                .send()?;
-                        }
+        for value in &entry.grant_capabilities {
+            match value {
+                serde_json::Value::String(process_name) => {
+                    if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
+                        let _ = Request::new()
+                            .target(("our", "kernel", "sys", "nectar"))
+                            .body(
+                                serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                                    target: parsed_process_id,
+                                    capabilities: vec![kt::Capability {
+                                        issuer: Address {
+                                            node: our.node.clone(),
+                                            process: parsed_new_process_id.clone(),
+                                        },
+                                        params: "\"messaging\"".into(),
+                                    }],
+                                })
+                                .unwrap(),
+                            )
+                            .send()?;
                     }
-                    serde_json::Value::Object(map) => {
-                        if let Some(process_name) = map.get("process") {
-                            if let Ok(parsed_process_id) = process_name
-                                .as_str()
-                                .unwrap_or_default()
-                                .parse::<ProcessId>()
-                            {
-                                if let Some(params) = map.get("params") {
-                                    let _ = Request::new()
-                                        .target(("our", "kernel", "sys", "nectar"))
-                                        .body(
-                                            serde_json::to_vec(
-                                                &kt::KernelCommand::GrantCapabilities {
-                                                    target: parsed_process_id,
-                                                    capabilities: vec![kt::Capability {
-                                                        issuer: Address {
-                                                            node: our.node.clone(),
-                                                            process: parsed_new_process_id.clone(),
-                                                        },
-                                                        params: params.to_string(),
-                                                    }],
-                                                },
-                                            )
-                                            .unwrap(),
+                }
+                serde_json::Value::Object(map) => {
+                    if let Some(process_name) = map.get("process") {
+                        if let Ok(parsed_process_id) = process_name
+                            .as_str()
+                            .unwrap_or_default()
+                            .parse::<ProcessId>()
+                        {
+                            if let Some(params) = map.get("params") {
+                                let _ = Request::new()
+                                    .target(("our", "kernel", "sys", "nectar"))
+                                    .body(
+                                        serde_json::to_vec(
+                                            &kt::KernelCommand::GrantCapabilities {
+                                                target: parsed_process_id,
+                                                capabilities: vec![kt::Capability {
+                                                    issuer: Address {
+                                                        node: our.node.clone(),
+                                                        process: parsed_new_process_id.clone(),
+                                                    },
+                                                    params: params.to_string(),
+                                                }],
+                                            },
                                         )
-                                        .send()?;
-                                }
+                                        .unwrap(),
+                                    )
+                                    .send()?;
                             }
                         }
                     }
-                    _ => {
-                        continue;
-                    }
+                }
+                _ => {
+                    continue;
                 }
             }
         }
