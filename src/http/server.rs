@@ -484,8 +484,7 @@ async fn http_handler(
                     method: method.to_string(),
                     url: format!(
                         "http://{}{}",
-                        host.unwrap_or(Authority::from_static("localhost"))
-                            .to_string(),
+                        host.unwrap_or(Authority::from_static("localhost")),
                         original_path
                     ),
                     headers: serialized_headers,
