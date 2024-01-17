@@ -372,8 +372,6 @@ async fn bootstrap(
         if package_name == "tester" {
             #[cfg(not(feature = "simulation-mode"))]
             continue;
-            #[cfg(feature = "simulation-mode")]
-            {}
         }
 
         println!("fs: handling package {package_name}...\r");
@@ -602,8 +600,6 @@ async fn bootstrap(
         if package_name == "tester" {
             #[cfg(not(feature = "simulation-mode"))]
             continue;
-            #[cfg(feature = "simulation-mode")]
-            {}
         }
 
         // get and read manifest.json
