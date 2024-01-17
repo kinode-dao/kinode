@@ -57,6 +57,7 @@ fn handle_message(
                 tt::TesterRequest::Run {
                     input_node_names,
                     test_timeout,
+                    ..
                 } => {
                     println!("tester: got Run");
 

@@ -19,6 +19,7 @@ pub struct KernelMessage {
 pub enum TesterRequest {
     Run {
         input_node_names: Vec<String>,
+        test_names: Vec<String>,
         test_timeout: u64,
     },
     KernelMessage(KernelMessage),
