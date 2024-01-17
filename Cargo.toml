@@ -6,6 +6,7 @@ edition = "2021"
 description = "A general-purpose sovereign cloud computing platform"
 homepage = "https://kinode.org"
 repository = "https://github.com/uqbar-dao/kinode"
+license = "Apache-2.0"
 
 [build-dependencies]
 reqwest = { version = "0.11.22", features = ["blocking"] }
@@ -31,7 +32,7 @@ clap = { version = "4.4", features = ["derive"] }
 crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"] }
 dashmap = "5.5.3"
 digest = "0.10"
-elliptic-curve = { version = "0.13.5", features = ["ecdh"] }
+elliptic-curve = { version = "0.13.8", features = ["ecdh"] }
 ethers = "2.0"
 ethers-providers = "2.0.9"
 flate2 = "1.0"
@@ -44,7 +45,7 @@ hmac = "0.12"
 http = "0.2.9"
 jwt = "0.16"
 lazy_static = "1.4.0"
-log = "*"
+log = "0.4.20"
 nohash-hasher = "0.2.0"
 num-traits = "0.2"
 open = "5.0.0"
