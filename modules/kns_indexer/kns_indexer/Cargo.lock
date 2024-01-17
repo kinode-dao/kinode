@@ -1065,6 +1065,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "kns_indexer"
+version = "0.2.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rpc-types",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "hex",
+ "kinode_process_lib",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1120,23 +1137,6 @@ checksum = "4192263c238a5f0d0c6bfd21f336a313a4ce1c450542449ca191bb657b4642ef"
 dependencies = [
  "mime",
  "unicase",
-]
-
-[[package]]
-name = "ndns_indexer"
-version = "0.2.0"
-dependencies = [
- "alloy-primitives",
- "alloy-rpc-types",
- "alloy-sol-types",
- "anyhow",
- "bincode",
- "hex",
- "kinode_process_lib",
- "rmp-serde",
- "serde",
- "serde_json",
- "wit-bindgen",
 ]
 
 [[package]]

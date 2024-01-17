@@ -25,7 +25,7 @@ lazy_static::lazy_static! {
 // standard library. make sure to keep this synced with process_lib.
 //
 pub type Context = Vec<u8>;
-pub type NodeId = String; // NDNS domain name
+pub type NodeId = String; // KNS domain name
 
 /// process ID is a formatted unique identifier that contains
 /// the publishing node's ID, the package name, and finally the process name.

@@ -418,14 +418,14 @@ fn handle_http_request(
     state: &mut ChessState,
     http_request: &http::IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    if http_request.path()? != "games" {
+    if http_request.path()? != "/games" {
         return http::send_response(
             http::StatusCode::NOT_FOUND,
             None,
             "Not Found".to_string().as_bytes().to_vec(),
         );
     }
-    match http_request.method.as_str() {
+    match http_request.method()?.as_str() {
         // on GET: give the frontend all of our active games
         "GET" => http::send_response(
             http::StatusCode::OK,
@@ -563,7 +563,7 @@ fn handle_http_request(
         }
         // on DELETE: end the game
         "DELETE" => {
-            let Some(game_id) = http_request.query_params.get("id") else {
+            let Some(game_id) = http_request.query_params().get("id") else {
                 return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
             };
             let Some(game) = state.games.get_mut(game_id) else {
