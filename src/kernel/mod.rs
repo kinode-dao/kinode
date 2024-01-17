@@ -187,7 +187,6 @@ async fn handle_kernel_request(
             };
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
-            let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
             let parent_caps: &HashMap<t::Capability, Vec<u8>> =
                 &process_map.get(&km.source.process).unwrap().capabilities;
             let mut valid_capabilities: HashMap<t::Capability, Vec<u8>> = HashMap::new();
@@ -200,7 +199,9 @@ async fn handle_kernel_request(
                 for cap in initial_capabilities {
                     match parent_caps.get(&cap) {
                         // NOTE: verifying sigs here would be unnecessary
-                        Some(sig) => valid_capabilities.insert(cap, sig.to_vec()),
+                        Some(sig) => {
+                            valid_capabilities.insert(cap, sig.to_vec());
+                        }
                         None => {
                             println!(
                                 "kernel: InitializeProcess caller {} doesn't have capability\r",
