@@ -97,11 +97,7 @@ async fn main() {
         .author("Uqbar DAO: https://github.com/uqbar-dao")
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
-        .arg(
-            arg!(--port <PORT> "First port to try binding")
-                .default_value("8080")
-                .value_parser(value_parser!(u16)),
-        )
+        .arg(arg!(--port <PORT> "First port to try binding").value_parser(value_parser!(u16)))
         .arg(
             arg!(--testnet "Use Sepolia testnet")
                 .default_value("false")
@@ -129,7 +125,10 @@ async fn main() {
     let matches = app.get_matches();
 
     let home_directory_path = matches.get_one::<String>("home").unwrap();
-    let port = *matches.get_one::<u16>("port").unwrap();
+    let (port, port_flag_used) = match matches.get_one::<u16>("port") {
+        Some(port) => (*port, true),
+        None => (8080, false),
+    };
     let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
     let contract_address = if on_testnet {
         register::KNS_SEPOLIA_ADDRESS
@@ -211,16 +210,35 @@ async fn main() {
         }
     };
 
-    let http_server_port = http::utils::find_open_port(port).await.unwrap();
-    if http_server_port != port {
-        let error_message = format!(
-            "error: couldn't bind {}; first available port found {}. Set an available port with `--port` and try again.",
-            port,
-            http_server_port,
-        );
-        println!("{error_message}");
-        panic!("{error_message}");
-    }
+    let http_server_port = if port_flag_used {
+        match http::utils::find_open_port(port, port + 1).await {
+            Some(port) => port,
+            None => {
+                println!(
+                    "error: couldn't bind {}; first available port found was {}. \
+                    Set an available port with `--port` and try again.",
+                    port,
+                    http::utils::find_open_port(port, port + 1000)
+                        .await
+                        .expect("no ports found in range"),
+                );
+                panic!();
+            }
+        }
+    } else {
+        match http::utils::find_open_port(port, port + 1000).await {
+            Some(port) => port,
+            None => {
+                println!(
+                    "error: couldn't bind any ports between {port} and {}. \
+                    Set an available port with `--port` and try again.",
+                    port + 1000,
+                );
+                panic!();
+            }
+        }
+    };
+
     println!(
         "login or register at http://localhost:{}\r",
         http_server_port
