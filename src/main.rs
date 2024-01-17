@@ -132,9 +132,9 @@ async fn main() {
     let port = *matches.get_one::<u16>("port").unwrap();
     let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
     let contract_address = if on_testnet {
-        register::NDNS_SEPOLIA_ADDRESS
+        register::KNS_SEPOLIA_ADDRESS
     } else {
-        register::NDNS_OPTIMISM_ADDRESS
+        register::KNS_OPTIMISM_ADDRESS
     };
 
     #[cfg(not(feature = "simulation-mode"))]

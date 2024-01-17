@@ -42,7 +42,7 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH
 
 The base OS install comes with certain runtime modules. These are interacted with in the same way as userspace processes, but are deeply ingrained to the system and the APIs they present at their Process IDs are assumed to be available by userspace processes. All of these are identified in the `distro:sys` package.
 
-This distribution of the OS also comes with userspace packages pre-installed. Some of these packages are intimately tied to the runtime: `terminal`, `homepage`, and `ndns_indexer`. Modifying, removing or replacing the distro userspace packages should only be done in highly specialized use-cases.
+This distribution of the OS also comes with userspace packages pre-installed. Some of these packages are intimately tied to the runtime: `terminal`, `homepage`, and `kns_indexer`. Modifying, removing or replacing the distro userspace packages should only be done in highly specialized use-cases.
 
 The runtime distro processes are:
 
@@ -63,7 +63,7 @@ The distro userspace packages are:
 - `app_store:sys`
 - `chess:sys`
 - `homepage:sys`
-- `ndns_indexer:sys`
+- `kns_indexer:sys`
 - `terminal:sys`
 - `tester:sys` (only installed in if compiled with feature flag `simulation-mode`)
 

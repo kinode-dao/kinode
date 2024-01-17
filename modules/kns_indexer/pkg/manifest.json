@@ -1,7 +1,7 @@
 [
     {
-        "process_name": "ndns_indexer",
-        "process_wasm_path": "/ndns_indexer.wasm",
+        "process_name": "kns_indexer",
+        "process_wasm_path": "/kns_indexer.wasm",
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [

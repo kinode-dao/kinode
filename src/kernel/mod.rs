@@ -791,7 +791,7 @@ pub async fn kernel(
         })
         .await
         .expect("fatal: kernel event loop died");
-    // finally, in order to trigger the ndns_indexer app to find the right
+    // finally, in order to trigger the kns_indexer app to find the right
     // contract, queue up a message that will send the contract address
     // to it on boot.
     send_to_loop
@@ -803,7 +803,7 @@ pub async fn kernel(
             },
             target: t::Address {
                 node: our.name.clone(),
-                process: t::ProcessId::new(Some("ndns_indexer"), "ndns_indexer", "sys"),
+                process: t::ProcessId::new(Some("kns_indexer"), "kns_indexer", "sys"),
             },
             rsvp: None,
             message: t::Message::Request(t::Request {

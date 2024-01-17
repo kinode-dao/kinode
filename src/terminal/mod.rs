@@ -29,8 +29,8 @@ impl Drop for RawMode {
     fn drop(&mut self) {
         match disable_raw_mode() {
             Ok(_) => {
-                let is_enabled = crossterm::terminal::is_raw_mode_enabled();
-                println!("nectar: disabled raw mode successfully: {is_enabled:?}\r");
+                // let is_enabled = crossterm::terminal::is_raw_mode_enabled();
+                // println!("nectar: disabled raw mode successfully: {is_enabled:?}\r");
             }
             Err(e) => {
                 println!("nectar: failed to disable raw mode: {e:?}\r");
