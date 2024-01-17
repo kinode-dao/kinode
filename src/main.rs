@@ -97,9 +97,9 @@ async fn main() {
         .author("Uqbar DAO: https://github.com/uqbar-dao")
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
-        .arg(arg!(--port <PORT> "First port to try binding").value_parser(value_parser!(u16)))
+        .arg(arg!(--port <PORT> "Port to bind [default: first unbound above 8080]").value_parser(value_parser!(u16)))
         .arg(
-            arg!(--testnet "Use Sepolia testnet")
+            arg!(--testnet "If set, use Sepolia testnet")
                 .default_value("false")
                 .value_parser(value_parser!(bool)),
         );
