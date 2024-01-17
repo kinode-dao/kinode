@@ -299,7 +299,7 @@ async fn bootstrap(
     let k_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::new(Some("kernel"), "sys", "nectar"),
+            process: ProcessId::new(Some("kernel"), "distro", "sys"),
         },
         params: "\"messaging\"".into(),
     };
@@ -308,7 +308,7 @@ async fn bootstrap(
     let n_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::new(Some("net"), "sys", "nectar"),
+            process: ProcessId::new(Some("net"), "distro", "sys"),
         },
         params: "\"messaging\"".into(),
     };
@@ -336,7 +336,7 @@ async fn bootstrap(
     // finally, save runtime modules in state map as well, somewhat fakely
     // special cases for kernel and net
     process_map
-        .entry(ProcessId::new(Some("kernel"), "sys", "nectar"))
+        .entry(ProcessId::new(Some("kernel"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             wit_version: None,
@@ -345,7 +345,7 @@ async fn bootstrap(
             public: false,
         });
     process_map
-        .entry(ProcessId::new(Some("net"), "sys", "nectar"))
+        .entry(ProcessId::new(Some("net"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             wit_version: None,

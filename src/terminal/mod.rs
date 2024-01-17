@@ -56,7 +56,7 @@ pub async fn terminal(
     execute!(
         stdout,
         EnableBracketedPaste,
-        terminal::SetTitle(format!("{}@{}", our.name, "nectar"))
+        terminal::SetTitle(format!("{}", our.name))
     )?;
 
     let (mut win_cols, mut win_rows) = terminal::size().unwrap();
@@ -67,16 +67,16 @@ pub async fn terminal(
             format_args!(
                 r#"
  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡠⠖⠉
- ⠁⠶⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠔⠋⠀⠀⠀
- ⠀⠀⠈⢛⠿⣷⣦⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡤⠤⣴⡞⠁⠀⠀⠀⠀⠀                               888
- ⠀⠀⠀⠀⠙⠳⢾⣿⣟⣻⠷⣦⣤⣀⠀⠀⠀⠀⠀⠀⣾⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀                              888
- ⠀⠀⠀⠀⠀⠀⠙⠲⣯⣿⣿⣿⣿⠽⢿⣷⣦⣤⣀⠀⢿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀88888bo   od88bo   od8888b 88888888  8888bo  888d888
- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠲⠾⠿⣿⣿⣿⣿⣿⣿⣿⣷⣿⣿⣿⣿⣿⡀⠀⠀⠀⠀⠀⠀888 "88b d8P  Y8b d88P"      888        "88b 888P"
- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⣛⣯⣿⣿⣿⣿⣿⢿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀888  888 88888888 888        888    .d888888 888
- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⠛⡵⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀888  888 Y8b.     Y88b.      Y88b.  888  888 888
- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⣱⣿⣿⣿⣿⣿⣿⡿⠁⠀⠀⠀⠀⠀⠀888  888  "Y8888   "Y8888P    "Y888 "Y888888 888
+ ⠁⠶⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠔⠋⠀⠀⠀888    d8P  d8b                        888
+ ⠀⠀⠈⢛⠿⣷⣦⣤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡤⠤⣴⡞⠁⠀⠀⠀⠀⠀888   d8P   Y8P                        888
+ ⠀⠀⠀⠀⠙⠳⢾⣿⣟⣻⠷⣦⣤⣀⠀⠀⠀⠀⠀⠀⣾⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀888  d8P                               888
+ ⠀⠀⠀⠀⠀⠀⠙⠲⣯⣿⣿⣿⣿⠽⢿⣷⣦⣤⣀⠀⢿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀888d88K     888 88888b.   .d88b.   .d88888  .d88b.
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠲⠾⠿⣿⣿⣿⣿⣿⣿⣿⣷⣿⣿⣿⣿⣿⡀⠀⠀⠀⠀⠀⠀8888888b    888 888 "88b d88""88b d88" 888 d8P  Y8b
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⣛⣯⣿⣿⣿⣿⣿⢿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀888  Y88b   888 888  888 888  888 888  888 88888888
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⠛⡵⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀888   Y88b  888 888  888 Y88..88P Y88b 888 Y8b.
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⣱⣿⣿⣿⣿⣿⣿⡿⠁⠀⠀⠀⠀⠀⠀888    Y88b 888 888  888  "Y88P"   "Y88888  "Y8888
  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣿⣿⡽⠋⠀⠀⠀⠀⠀⠀⠀⠀
- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⣿⡿⠿⠛⣫⡽⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{}
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣿⣿⡿⠿⠛⣫⡽⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{} ({})
  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣯⣷⡞⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀version {}
  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⡾⣿⡿⣿⣿⣿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀a general purpose sovereign cloud computer
  ⠀⠀⠀⠀⠀⠀⠀⣠⠴⠛⠉⢰⡿⢱⡿⢹⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -85,7 +85,14 @@ pub async fn terminal(
  ⠀⠀⠀⠀⠀⠀⠀⢀⠔⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
  networking public key: {}
                 "#,
-                our.name, version, our.networking_key,
+                our.name,
+                if our.ws_routing.is_some() {
+                    "direct"
+                } else {
+                    "indirect"
+                },
+                version,
+                our.networking_key,
             )
         );
     } else {
@@ -93,20 +100,28 @@ pub async fn terminal(
             "\x1b[38;5;128m{}\x1b[0m",
             format_args!(
                 r#"
-                                888
-                               888
- 88888bo   od88bo   od8888b 8888888   8888bo  888d888
- 888 "88b d8P  Y8b d88P"      888        "88b 888P"
- 888  888 88888888 888        888    .d888888 888
- 888  888 Y8b.     Y88b.      Y88b.  888  888 888
- 888  888  "Y8888   "Y8888P    "Y888 "Y888888 888
+ 888    d8P  d8b                        888
+ 888   d8P   Y8P                        888
+ 888  d8P                               888
+ 888d88K     888 88888b.   .d88b.   .d88888  .d88b.
+ 8888888b    888 888 "88b d88""88b d88" 888 d8P  Y8b
+ 888  Y88b   888 888  888 888  888 888  888 88888888
+ 888   Y88b  888 888  888 Y88..88P Y88b 888 Y8b.
+ 888    Y88b 888 888  888  "Y88P"   "Y88888  "Y8888
 
- {}
+ {} ({})
  version {}
  a general purpose sovereign cloud computer
  net pubkey: {}
                 "#,
-                our.name, version, our.networking_key,
+                our.name,
+                if our.ws_routing.is_some() {
+                    "direct"
+                } else {
+                    "indirect"
+                },
+                version,
+                our.networking_key,
             )
         );
     }
@@ -153,18 +168,21 @@ pub async fn terminal(
 
     // use to trigger cleanup if receive signal to kill process
     let mut sigalrm =
-        signal(SignalKind::alarm()).expect("nectar: failed to set up SIGALRM handler");
-    let mut sighup = signal(SignalKind::hangup()).expect("nectar: failed to set up SIGHUP handler");
+        signal(SignalKind::alarm()).expect("terminal: failed to set up SIGALRM handler");
+    let mut sighup =
+        signal(SignalKind::hangup()).expect("terminal: failed to set up SIGHUP handler");
     let mut sigint =
-        signal(SignalKind::interrupt()).expect("nectar: failed to set up SIGINT handler");
-    let mut sigpipe = signal(SignalKind::pipe()).expect("nectar: failed to set up SIGPIPE handler");
-    let mut sigquit = signal(SignalKind::quit()).expect("nectar: failed to set up SIGQUIT handler");
+        signal(SignalKind::interrupt()).expect("terminal: failed to set up SIGINT handler");
+    let mut sigpipe =
+        signal(SignalKind::pipe()).expect("terminal: failed to set up SIGPIPE handler");
+    let mut sigquit =
+        signal(SignalKind::quit()).expect("terminal: failed to set up SIGQUIT handler");
     let mut sigterm =
-        signal(SignalKind::terminate()).expect("nectar: failed to set up SIGTERM handler");
+        signal(SignalKind::terminate()).expect("terminal: failed to set up SIGTERM handler");
     let mut sigusr1 =
-        signal(SignalKind::user_defined1()).expect("nectar: failed to set up SIGUSR1 handler");
+        signal(SignalKind::user_defined1()).expect("terminal: failed to set up SIGUSR1 handler");
     let mut sigusr2 =
-        signal(SignalKind::user_defined2()).expect("nectar: failed to set up SIGUSR2 handler");
+        signal(SignalKind::user_defined2()).expect("terminal: failed to set up SIGUSR2 handler");
 
     loop {
         let event = reader.next().fuse();

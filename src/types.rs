@@ -5,16 +5,16 @@ use std::collections::{HashMap, HashSet};
 use thiserror::Error;
 
 lazy_static::lazy_static! {
-    pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "sys", "nectar");
-    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "sys", "nectar");
-    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "sys", "nectar");
-    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "sys", "nectar");
-    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "nectar");
-    pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "sys", "nectar");
-    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "sys", "nectar");
-    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "sys", "nectar");
-    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "sys", "nectar");
-    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "sys", "nectar");
+    pub static ref ETH_PROCESS_ID: ProcessId = ProcessId::new(Some("eth"), "distro", "sys");
+    pub static ref HTTP_CLIENT_PROCESS_ID: ProcessId = ProcessId::new(Some("http_client"), "distro", "sys");
+    pub static ref HTTP_SERVER_PROCESS_ID: ProcessId = ProcessId::new(Some("http_server"), "distro", "sys");
+    pub static ref KERNEL_PROCESS_ID: ProcessId = ProcessId::new(Some("kernel"), "distro", "sys");
+    pub static ref TERMINAL_PROCESS_ID: ProcessId = ProcessId::new(Some("terminal"), "terminal", "sys");
+    pub static ref TIMER_PROCESS_ID: ProcessId = ProcessId::new(Some("timer"), "distro", "sys");
+    pub static ref VFS_PROCESS_ID: ProcessId = ProcessId::new(Some("vfs"), "distro", "sys");
+    pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
+    pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
+    pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
 }
 
 //
@@ -749,7 +749,7 @@ pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
 pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
 
 //
-// types used for Nectar's identity system
+// types used for onchain identity system
 //
 
 #[derive(Debug, Serialize, Deserialize)]

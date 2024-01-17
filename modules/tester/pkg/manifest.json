@@ -5,13 +5,13 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "net:sys:nectar",
-            "kernel:sys:nectar",
-            "http_server:sys:nectar",
-            "vfs:sys:nectar"
+            "net:distro:sys",
+            "kernel:distro:sys",
+            "http_server:distro:sys",
+            "vfs:distro:sys"
         ],
         "grant_capabilities": [
-            "vfs:sys:nectar"
+            "vfs:distro:sys"
         ],
         "public": true
     }

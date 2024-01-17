@@ -1,4 +1,4 @@
-use nectar_process_lib::*;
+use kinode_process_lib::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]

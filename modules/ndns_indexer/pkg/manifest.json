@@ -5,13 +5,13 @@
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [
-            "eth:sys:nectar",
-            "http_server:sys:nectar",
-            "net:sys:nectar"
+            "eth:distro:sys",
+            "http_server:distro:sys",
+            "net:distro:sys"
         ],
         "grant_capabilities": [
-            "eth:sys:nectar",
-            "http_server:sys:nectar"
+            "eth:distro:sys",
+            "http_server:distro:sys"
         ],
         "public": false
     }
