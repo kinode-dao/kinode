@@ -25,24 +25,6 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
     let (head, tail) = line.split_once(" ").unwrap_or((&line, ""));
     match head {
         "" | " " => return Ok(()),
-        // send a raw text message over the network to a node
-        "/hi" => {
-            let (node_id, message) = match tail.split_once(" ") {
-                Some((s, t)) => (s, t),
-                None => return Err(anyhow!("invalid command: \"{line}\"")),
-            };
-            let node_id = if node_id == "our" {
-                &state.our.node
-            } else {
-                node_id
-            };
-            Request::new()
-                .target((node_id, "net", "distro", "sys"))
-                .body(message)
-                .expects_response(5)
-                .send()?;
-            Ok(())
-        }
         // set the current target, so you can message it without specifying
         "/a" | "/app" => {
             if tail == "" || tail == "clear" {
@@ -74,25 +56,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                 Request::new().target(target).body(body).send()
             }
         }
-        // send a message to kernel asking it to print debugging information
-        "/top" | "/kernel_debug" => {
-            let kernel_addr = Address::new("our", ("kernel", "distro", "sys"));
-            match tail {
-                "" => Request::new()
-                    .target(kernel_addr)
-                    .body(serde_json::to_vec(&KernelCommand::Debug(
-                        KernelPrint::ProcessMap,
-                    ))?)
-                    .send(),
-                proc_id => Request::new()
-                    .target(kernel_addr)
-                    .body(serde_json::to_vec(&KernelCommand::Debug(
-                        KernelPrint::Process(proc_id.parse()?),
-                    ))?)
-                    .send(),
-            }
-        }
-        "/script" | "/s" => {
+        "/s" | "/script" => {
             let (process, args) = match tail.split_once(" ") {
                 Some((p, a)) => (
                     match p.parse::<ProcessId>() {
