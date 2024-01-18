@@ -3,11 +3,20 @@
         "process_name": "runner",
         "process_wasm_path": "/runner.wasm",
         "on_exit": "Restart",
-        "request_networking": false,
+        "request_networking": true,
         "request_capabilities": [
+            "terminal:terminal:sys",
             "filesystem:distro:sys",
+            "http_server:distro:sys",
+            "http_client:distro:sys",
+            "net:distro:sys",
             "vfs:distro:sys",
             "kernel:distro:sys",
+            "eth:distro:sys",
+            "sqlite:distro:sys",
+            "kv:distro:sys",
+            "chess:chess:sys",
+            "kns_indexer:kns_indexer:sys",
             {
                 "process": "vfs:distro:sys",
                 "params": {

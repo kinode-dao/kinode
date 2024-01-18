@@ -18,5 +18,15 @@
             }
         ],
         "grantCapabilities": []
+    },
+    "hi.wasm": {
+        "public": false,
+        "requestNetworking": true,
+        "requestCapabilities": [
+            "net:distro:sys"
+        ],
+        "grantCapabilities": [
+            "net:distro:sys"
+        ]
     }
 }
