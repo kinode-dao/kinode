@@ -41,7 +41,7 @@ pub enum ScriptRequest {
 
 call_init!(init);
 fn init(our: Address) {
-    println!("script_runner: begin");
+    println!("runner:script : begin");
 
     loop {
         match handle_message(&our) {
@@ -55,7 +55,6 @@ fn init(our: Address) {
 
 fn handle_message(our: &Address) -> anyhow::Result<()> {
     let message = await_message()?;
-
     match message {
         Message::Response { .. } => {
             return Err(anyhow::anyhow!("unexpected Response: {:?}", message));
@@ -92,7 +91,7 @@ fn handle_run(
 ) -> anyhow::Result<()> {
     let drive_path = format!("/{}/pkg", package);
     Request::new()
-        .target(("our", "vfs", "sys", "kinode"))
+        .target(("our", "vfs", "distro", "sys"))
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: format!("{}/scripts.json", drive_path),
             action: vfs::VfsAction::Read,
@@ -116,7 +115,7 @@ fn handle_run(
     let mut initial_capabilities: HashSet<kt::Capability> = HashSet::new();
     if entry.request_networking {
         initial_capabilities.insert(kt::de_wit_capability(Capability {
-            issuer: Address::new(&our.node, ("kernel", "sys", "kinode")),
+            issuer: Address::new(&our.node, ("kernel", "distro", "sys")),
             params: "\"network\"".to_string(),
         }));
     }
@@ -126,7 +125,7 @@ fn handle_run(
     };
 
     let _bytes_response = Request::new()
-        .target(("our", "vfs", "sys", "kinode"))
+        .target(("our", "vfs", "distro", "sys"))
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: wasm_path.clone(),
             action: vfs::VfsAction::Read,
@@ -182,7 +181,7 @@ fn handle_run(
         }
     }
     Request::new()
-        .target(("our", "kernel", "sys", "kinode"))
+        .target(("our", "kernel", "distro", "sys"))
         .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
             id: parsed_new_process_id.clone(),
             wasm_bytes_handle: wasm_path,
@@ -199,7 +198,7 @@ fn handle_run(
                 serde_json::Value::String(process_name) => {
                     if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
                         let _ = Request::new()
-                            .target(("our", "kernel", "sys", "kinode"))
+                            .target(("our", "kernel", "distro", "sys"))
                             .body(
                                 serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
                                     target: parsed_process_id,
@@ -225,7 +224,7 @@ fn handle_run(
                         {
                             if let Some(params) = map.get("params") {
                                 let _ = Request::new()
-                                    .target(("our", "kernel", "sys", "kinode"))
+                                    .target(("our", "kernel", "distro", "sys"))
                                     .body(
                                         serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
                                             target: parsed_process_id,
@@ -251,7 +250,7 @@ fn handle_run(
         }
     }
     let _ = Request::new()
-        .target(("our", "kernel", "sys", "kinode"))
+        .target(("our", "kernel", "distro", "sys"))
         .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
             parsed_new_process_id.clone(),
         ))?)

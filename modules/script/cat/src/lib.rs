@@ -25,7 +25,7 @@ fn init(_our: Address) {
     };
 
     Request::new()
-        .target(("our", "vfs", "sys", "kinode"))
+        .target(("our", "vfs", "distro", "sys"))
         .body(
             serde_json::to_vec(&vfs::VfsRequest {
                 path: file_path.clone(),

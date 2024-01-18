@@ -1,14 +1,22 @@
 {
-    "echo": {
+    "echo.wasm": {
         "public": false,
         "requestNetworking": false,
         "requestCapabilities": [],
         "grantCapabilities": []
     },
-    "cat": {
+    "cat.wasm": {
         "public": false,
         "requestNetworking": false,
-        "requestCapabilities": [],
+        "requestCapabilities": [
+            "vfs:distro:sys",
+            {
+                "process": "vfs:distro:sys",
+                "params": {
+                    "root": true
+                }
+            }
+        ],
         "grantCapabilities": []
     }
 }
