@@ -12,7 +12,7 @@ use wasmtime::{Config, Engine, WasmBacktraceDetails};
 
 /// Manipulate a single process.
 pub mod process;
-/// Implement the functions served to processes by `nectar.wit`.
+/// Implement the functions served to processes by `kinode.wit`.
 mod standard_host;
 
 const PROCESS_CHANNEL_CAPACITY: usize = 100;
@@ -191,7 +191,7 @@ async fn handle_kernel_request(
             let parent_caps: &HashMap<t::Capability, Vec<u8>> =
                 &process_map.get(&km.source.process).unwrap().capabilities;
             let mut valid_capabilities: HashMap<t::Capability, Vec<u8>> = HashMap::new();
-            if km.source.process == "kernel:sys:nectar" {
+            if km.source.process == "kernel:distro:sys" {
                 for cap in initial_capabilities {
                     let sig = keypair.sign(&rmp_serde::to_vec(&cap).unwrap());
                     valid_capabilities.insert(cap, sig.as_ref().to_vec());
@@ -619,7 +619,7 @@ async fn start_process(
     Ok(())
 }
 
-/// the nectar kernel. contains event loop which handles all message-passing between
+/// the OS kernel. contains event loop which handles all message-passing between
 /// all processes (WASM apps) and also runtime tasks.
 pub async fn kernel(
     our: t::Identity,
@@ -651,7 +651,7 @@ pub async fn kernel(
 
     let mut senders: Senders = HashMap::new();
     senders.insert(
-        t::ProcessId::new(Some("net"), "sys", "nectar"),
+        t::ProcessId::new(Some("net"), "distro", "sys"),
         ProcessSender::Runtime(send_to_net.clone()),
     );
     for (process_id, sender, _) in runtime_extensions {
@@ -791,7 +791,7 @@ pub async fn kernel(
         })
         .await
         .expect("fatal: kernel event loop died");
-    // finally, in order to trigger the ndns_indexer app to find the right
+    // finally, in order to trigger the kns_indexer app to find the right
     // contract, queue up a message that will send the contract address
     // to it on boot.
     send_to_loop
@@ -803,7 +803,7 @@ pub async fn kernel(
             },
             target: t::Address {
                 node: our.name.clone(),
-                process: t::ProcessId::new(Some("ndns_indexer"), "ndns_indexer", "nectar"),
+                process: t::ProcessId::new(Some("kns_indexer"), "kns_indexer", "sys"),
             },
             rsvp: None,
             message: t::Message::Request(t::Request {
@@ -817,9 +817,6 @@ pub async fn kernel(
         })
         .await
         .expect("fatal: kernel event loop died");
-
-    #[cfg(feature = "simulation-mode")]
-    let tester_process_id = t::ProcessId::new(Some("tester"), "tester", "nectar");
 
     // main event loop
     loop {

@@ -39,7 +39,7 @@ const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Tshis can and should be an environment variable / setting. It configures networking
+/// This can and should be an environment variable / setting. It configures networking
 /// such that indirect nodes always use routers, even when target is a direct node,
 /// such that only their routers can ever see their physical networking details.
 const REVEAL_IP: bool = true;
@@ -92,18 +92,17 @@ async fn serve_register_fe(
 
 #[tokio::main]
 async fn main() {
-    let app = Command::new("nectar")
+    let app = Command::new("kinode")
         .version(VERSION)
         .author("Uqbar DAO: https://github.com/uqbar-dao")
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
         .arg(
-            arg!(--port <PORT> "First port to try binding")
-                .default_value("8080")
+            arg!(--port <PORT> "Port to bind [default: first unbound above 8080]")
                 .value_parser(value_parser!(u16)),
         )
         .arg(
-            arg!(--testnet "Use Sepolia testnet")
+            arg!(--testnet "If set, use Sepolia testnet")
                 .default_value("false")
                 .value_parser(value_parser!(bool)),
         );
@@ -120,24 +119,31 @@ async fn main() {
             arg!(--"network-router-port" <PORT> "Network router port")
                 .default_value("9001")
                 .value_parser(value_parser!(u16)),
+        )
+        .arg(
+            arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
+                .action(clap::ArgAction::SetTrue),
         );
 
     let matches = app.get_matches();
 
     let home_directory_path = matches.get_one::<String>("home").unwrap();
-    let port = *matches.get_one::<u16>("port").unwrap();
+    let (port, port_flag_used) = match matches.get_one::<u16>("port") {
+        Some(port) => (*port, true),
+        None => (8080, false),
+    };
     let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
     let contract_address = if on_testnet {
-        register::NDNS_SEPOLIA_ADDRESS
+        register::KNS_SEPOLIA_ADDRESS
     } else {
-        register::NDNS_OPTIMISM_ADDRESS
+        register::KNS_OPTIMISM_ADDRESS
     };
 
     #[cfg(not(feature = "simulation-mode"))]
-    let rpc_url = matches.get_one::<String>("rpc").unwrap();
+    let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").unwrap(), false);
 
     #[cfg(feature = "simulation-mode")]
-    let (rpc_url, password, network_router_port, fake_node_name) = (
+    let (rpc_url, password, network_router_port, fake_node_name, is_detached) = (
         matches.get_one::<String>("rpc"),
         matches.get_one::<String>("password"),
         matches
@@ -145,6 +151,7 @@ async fn main() {
             .unwrap()
             .clone(),
         matches.get_one::<String>("fake-node-name"),
+        matches.get_one::<bool>("detached").unwrap().clone(),
     );
 
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
@@ -206,16 +213,35 @@ async fn main() {
         }
     };
 
-    let http_server_port = http::utils::find_open_port(port).await.unwrap();
-    if http_server_port != port {
-        let error_message = format!(
-            "error: couldn't bind {}; first available port found {}. Set an available port with `--port` and try again.",
-            port,
-            http_server_port,
-        );
-        println!("{error_message}");
-        panic!("{error_message}");
-    }
+    let http_server_port = if port_flag_used {
+        match http::utils::find_open_port(port, port + 1).await {
+            Some(port) => port,
+            None => {
+                println!(
+                    "error: couldn't bind {}; first available port found was {}. \
+                    Set an available port with `--port` and try again.",
+                    port,
+                    http::utils::find_open_port(port, port + 1000)
+                        .await
+                        .expect("no ports found in range"),
+                );
+                panic!();
+            }
+        }
+    } else {
+        match http::utils::find_open_port(port, port + 1000).await {
+            Some(port) => port,
+            None => {
+                println!(
+                    "error: couldn't bind any ports between {port} and {}. \
+                    Set an available port with `--port` and try again.",
+                    port + 1000,
+                );
+                panic!();
+            }
+        }
+    };
+
     println!(
         "login or register at http://localhost:{}\r",
         http_server_port
@@ -329,42 +355,42 @@ async fn main() {
     #[allow(unused_mut)]
     let mut runtime_extensions = vec![
         (
-            ProcessId::new(Some("http_server"), "sys", "nectar"),
+            ProcessId::new(Some("http_server"), "distro", "sys"),
             http_server_sender,
             false,
         ),
         (
-            ProcessId::new(Some("http_client"), "sys", "nectar"),
+            ProcessId::new(Some("http_client"), "distro", "sys"),
             http_client_sender,
             false,
         ),
         (
-            ProcessId::new(Some("timer"), "sys", "nectar"),
+            ProcessId::new(Some("timer"), "distro", "sys"),
             timer_service_sender,
             true,
         ),
         (
-            ProcessId::new(Some("eth"), "sys", "nectar"),
+            ProcessId::new(Some("eth"), "distro", "sys"),
             eth_provider_sender,
             false,
         ),
         (
-            ProcessId::new(Some("vfs"), "sys", "nectar"),
+            ProcessId::new(Some("vfs"), "distro", "sys"),
             vfs_message_sender,
             false,
         ),
         (
-            ProcessId::new(Some("state"), "sys", "nectar"),
+            ProcessId::new(Some("state"), "distro", "sys"),
             state_sender,
             false,
         ),
         (
-            ProcessId::new(Some("kv"), "sys", "nectar"),
+            ProcessId::new(Some("kv"), "distro", "sys"),
             kv_sender,
             false,
         ),
         (
-            ProcessId::new(Some("sqlite"), "sys", "nectar"),
+            ProcessId::new(Some("sqlite"), "distro", "sys"),
             sqlite_sender,
             false,
         ),
@@ -372,7 +398,7 @@ async fn main() {
 
     /*
      *  the kernel module will handle our userspace processes and receives
-     *  all "messages", the basic message format for nectar.
+     *  the basic message format for this OS.
      *
      *  if any of these modules fail, the program exits with an error.
      */
@@ -503,6 +529,7 @@ async fn main() {
             kernel_debug_message_sender,
             print_sender.clone(),
             print_receiver,
+            is_detached,
         ) => {
             match quit {
                 Ok(_) => "graceful exit".into(),
@@ -537,6 +564,7 @@ async fn main() {
 
     // abort all remaining tasks
     tasks.shutdown().await;
+    //let _ = crossterm::terminal::disable_raw_mode().unwrap();
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
     let _ = crossterm::execute!(
@@ -544,7 +572,6 @@ async fn main() {
         crossterm::event::DisableBracketedPaste,
         crossterm::terminal::SetTitle(""),
     );
-    let _ = crossterm::terminal::disable_raw_mode();
     println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
     return;
 }

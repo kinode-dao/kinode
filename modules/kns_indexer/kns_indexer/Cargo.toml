@@ -1,5 +1,5 @@
 [package]
-name = "ndns_indexer"
+name = "kns_indexer"
 version = "0.2.0"
 edition = "2021"
 
@@ -20,11 +20,11 @@ hex = "0.4.3"
 rmp-serde = "1.1.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-nectar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", tag = "v0.5.1-alpha", features = ["eth"] }
+kinode_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", tag = "v0.5.3-alpha", features = ["eth"] }
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "efcc759" }
 
 [lib]
 crate-type = ["cdylib"]
 
 [package.metadata.component]
-package = "nectar:process"
+package = "kinode:process"

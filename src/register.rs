@@ -23,7 +23,7 @@ use crate::types::*;
 
 // Human readable ABI
 abigen!(
-    NDNSRegistry,
+    KNSRegistry,
     r"[
     function ws(uint256 node) external view returns (bytes32,uint32,uint16,bytes32[])
 ]"
@@ -31,8 +31,8 @@ abigen!(
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
-pub const NDNS_SEPOLIA_ADDRESS: &str = "0xa11e3794e701565aD37f84DD364d581f5e9518c9";
-pub const NDNS_OPTIMISM_ADDRESS: &str = "0x942A69Cc3dd5d9a87c35f13ebA444adc00934B0F";
+pub const KNS_SEPOLIA_ADDRESS: &str = "0x3807fBD692Aa5c96F1D8D7c59a1346a885F40B1C";
+pub const KNS_OPTIMISM_ADDRESS: &str = "0xca5b5811c0C40aAB3295f932b1B5112Eb7bb4bD6";
 
 pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
     let octets: Vec<&str> = ip.split('.').collect();
@@ -110,7 +110,11 @@ pub async fn register(
     let tx = Arc::new(tx);
 
     // TODO: if IP is localhost, don't allow registration as direct
-    let ws_port = crate::http::utils::find_open_port(9000).await.unwrap();
+    let ws_port = crate::http::utils::find_open_port(9000, 65535)
+        .await
+        .expect(
+            "Unable to find free port between 9000 and 65535 for a new websocket, are you kidding?",
+        );
 
     // This is a temporary identity, passed to the UI. If it is confirmed through a /boot or /confirm-change-network-keys, then it will be used to replace the current identity
     let our_temp_id = Arc::new(Identity {
@@ -118,10 +122,10 @@ pub async fn register(
         name: "".to_string(),
         ws_routing: Some((ip.clone(), ws_port)),
         allowed_routers: vec![
-            "nectar-next-router.nec".into(),
-            // "nectar-router-1.nec".into(),
-            // "nectar-router-2.nec".into(),
-            // "nectar-router-3.nec".into(),
+            // "next-release-router.os".into(),
+            "default-router-1.os".into(),
+            "default-router-2.os".into(),
+            "default-router-3.os".into(),
         ],
     });
 
@@ -157,9 +161,9 @@ pub async fn register(
             .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
         .or(warp::path("current-chain").and(warp::get()).map(move || {
             if testnet {
-                warp::reply::json(&"0xAA36A7")
+                warp::reply::json(&"0xaa36a7")
             } else {
-                warp::reply::json(&"0xA")
+                warp::reply::json(&"0xa")
             }
         }));
 
@@ -355,7 +359,7 @@ async fn handle_import_keyfile(
         }
     };
 
-    let Some(ws_port) = crate::http::utils::find_open_port(9000).await else {
+    let Some(ws_port) = crate::http::utils::find_open_port(9000, 9999).await else {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Unable to find free port"),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -417,7 +421,7 @@ async fn handle_login(
     }
     let encoded_keyfile = encoded_keyfile.unwrap();
 
-    let Some(ws_port) = crate::http::utils::find_open_port(9000).await else {
+    let Some(ws_port) = crate::http::utils::find_open_port(9000, 65535).await else {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Unable to find free port"),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -544,7 +548,7 @@ async fn success_response(
 
     let headers = response.headers_mut();
 
-    match HeaderValue::from_str(&format!("nectar-auth_{}={};", &our.name, &token)) {
+    match HeaderValue::from_str(&format!("kinode-auth_{}={};", &our.name, &token)) {
         Ok(v) => {
             headers.append(SET_COOKIE, v);
         }
@@ -566,10 +570,10 @@ async fn _networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: 
     let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
         return false;
     };
-    let Ok(ndns_address): Result<EthAddress, _> = NDNS_SEPOLIA_ADDRESS.parse() else {
+    let Ok(kns_address): Result<EthAddress, _> = KNS_SEPOLIA_ADDRESS.parse() else {
         return false;
     };
-    let contract = NDNSRegistry::new(ndns_address, ws_rpc.into());
+    let contract = KNSRegistry::new(kns_address, ws_rpc.into());
     let node_id: U256 = namehash(&our.name).as_bytes().into();
     let Ok((chain_pubkey, chain_ip, chain_port, chain_routers)) = contract.ws(node_id).call().await
     else {

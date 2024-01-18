@@ -18,12 +18,15 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 // !message our http_client {"method": "POST", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}
 // !message our http_client {"method": "PUT", "url": "https://jsonplaceholder.typicode.com/posts", "headers": {"Content-Type": "application/json"}}
 
-// Outgoing WebSocket connections are stored by the source process ID and the channel_id
+/// WebSocket client connections are mapped by a tuple of ProcessId and
+/// a process-supplied channel_id (u32)
 type WebSocketId = (ProcessId, u32);
 type WebSocketMap = DashMap<
     WebSocketId,
     SplitSink<WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>, tungstenite::Message>,
 >;
+/// The WebSocket streams are split into sink and stream
+/// so that both incoming and outgoing pushes can be routed appropriately
 type WebSocketStreams = Arc<WebSocketMap>;
 
 pub async fn http_client(
@@ -51,8 +54,9 @@ pub async fn http_client(
         ..
     }) = recv_in_client.recv().await
     {
+        // Check that the incoming request body is a HttpClientAction
         let Ok(request) = serde_json::from_slice::<HttpClientAction>(&body) else {
-            // Send a "BadRequest" error
+            // Send a "BadRequest" error if deserialization fails
             http_error_message(
                 our_name.clone(),
                 id,
@@ -68,8 +72,11 @@ pub async fn http_client(
         };
 
         let our = our_name.clone();
+        // target is the source or specified rsvp Address to which
+        // responses or incoming WS messages will be routed
         let target = rsvp.unwrap_or(source);
 
+        // Handle the request, returning if the request was a WS request
         let (is_ws, result) = match request {
             HttpClientAction::Http(req) => {
                 tokio::spawn(handle_http_request(
@@ -136,13 +143,15 @@ pub async fn http_client(
             ),
         };
 
+        // If the incoming request was a WS request, send a response
+        // HTTP responses are handled in the handle_http_request function
         if is_ws {
             let _ = send_to_loop
                 .send(KernelMessage {
                     id,
                     source: Address {
                         node: our_name.to_string(),
-                        process: ProcessId::new(Some("http_client"), "sys", "nectar"),
+                        process: ProcessId::new(Some("http_client"), "distro", "sys"),
                     },
                     target: target.clone(),
                     rsvp: None,
@@ -180,6 +189,7 @@ async fn connect_websocket(
 ) -> Result<HttpClientResponse, HttpClientError> {
     let print_tx_clone = print_tx.clone();
 
+    // First check the URL
     let Ok(url) = url::Url::parse(url) else {
         return Err(HttpClientError::BadUrl {
             url: url.to_string(),
@@ -192,6 +202,7 @@ async fn connect_websocket(
         });
     };
 
+    // Add headers to the request
     let req_headers = req.headers_mut();
     for (key, value) in headers.clone() {
         req_headers.insert(
@@ -200,6 +211,7 @@ async fn connect_websocket(
         );
     }
 
+    // Connect the WebSocket
     let ws_stream = match connect_async(req).await {
         Ok((ws_stream, _)) => ws_stream,
         Err(_) => {
@@ -209,14 +221,18 @@ async fn connect_websocket(
         }
     };
 
+    // Split the WebSocket connection
     let (sink, stream) = ws_stream.split();
 
+    // Close any existing sink with the same ProcessId and channel_id
     if let Some(mut sink) = ws_streams.get_mut(&(target.process.clone(), channel_id)) {
         let _ = sink.close().await;
     }
 
+    // Insert the sink (send or push part of the WebSocket connection)
     ws_streams.insert((target.process.clone(), channel_id), sink);
 
+    // Spawn a new tokio process to listen to incoming WS events on the stream
     tokio::spawn(listen_to_stream(
         our.clone(),
         id,
@@ -244,7 +260,7 @@ async fn listen_to_stream(
     while let Some(message) = stream.next().await {
         match message {
             Ok(msg) => {
-                // Handle different types of messages here
+                // Handle different types of incoming WebSocket messages
                 let (body, blob) = match msg {
                     TungsteniteMessage::Text(text) => (
                         HttpClientRequest::WebSocketPush {
@@ -311,8 +327,10 @@ async fn listen_to_stream(
                     // Close the stream. The stream is closed even on error.
                     let _ = ws_sink.close().await;
                 }
+                // Remove the stream from the map
                 ws_streams.remove(&(target.process.clone(), channel_id));
 
+                // Notify the originating process that the connection was closed
                 handle_ws_message(
                     our.clone(),
                     id,
@@ -340,6 +358,7 @@ async fn handle_http_request(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) {
+    // Parse the HTTP Method
     let Ok(req_method) = http::Method::from_bytes(req.method.as_bytes()) else {
         http_error_message(
             our,
@@ -360,6 +379,7 @@ async fn handle_http_request(
         })
         .await;
 
+    // Build the request
     let mut request_builder = client.request(req_method, req.url);
 
     if let Some(version) = req.version {
@@ -384,10 +404,12 @@ async fn handle_http_request(
         }
     }
 
+    // Add the body as appropriate
     if let Some(blob) = body {
         request_builder = request_builder.body(blob.bytes);
     }
 
+    // Add the headers
     let Ok(request) = request_builder
         .headers(deserialize_headers(req.headers))
         .build()
@@ -406,6 +428,7 @@ async fn handle_http_request(
         return;
     };
 
+    // Send the HTTP request
     match client.execute(request).await {
         Ok(response) => {
             let _ = print_tx
@@ -414,12 +437,13 @@ async fn handle_http_request(
                     content: "http_client: executed request, got response".to_string(),
                 })
                 .await;
+            // Handle the response and forward to the target process
             let _ = send_to_loop
                 .send(KernelMessage {
                     id,
                     source: Address {
                         node: our.to_string(),
-                        process: ProcessId::new(Some("http_client"), "sys", "nectar"),
+                        process: ProcessId::new(Some("http_client"), "distro", "sys"),
                     },
                     target,
                     rsvp: None,
@@ -453,6 +477,7 @@ async fn handle_http_request(
                     content: "http_client: executed request but got error".to_string(),
                 })
                 .await;
+            // Forward the error to the target process
             http_error_message(
                 our,
                 id,
@@ -472,6 +497,7 @@ async fn handle_http_request(
 //  helpers
 //
 
+/// Convert a &str to Pascal-Case (for HTTP headers)
 fn to_pascal_case(s: &str) -> String {
     s.split('-')
         .map(|word| {
@@ -485,6 +511,7 @@ fn to_pascal_case(s: &str) -> String {
         .join("-")
 }
 
+// Convert from HeaderMap to HashMap
 fn serialize_headers(headers: &HeaderMap) -> HashMap<String, String> {
     let mut hashmap = HashMap::new();
     for (key, value) in headers.iter() {
@@ -495,6 +522,7 @@ fn serialize_headers(headers: &HeaderMap) -> HashMap<String, String> {
     hashmap
 }
 
+// Convert from HashMap to HeaderMap
 fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
     let mut header_map = HeaderMap::new();
     for (key, value) in hashmap {
@@ -506,6 +534,7 @@ fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
     header_map
 }
 
+/// Send an HTTP error to a target
 async fn http_error_message(
     our: Arc<String>,
     id: u64,
@@ -520,7 +549,7 @@ async fn http_error_message(
                 id,
                 source: Address {
                     node: our.to_string(),
-                    process: ProcessId::new(Some("http_client"), "sys", "nectar"),
+                    process: ProcessId::new(Some("http_client"), "distro", "sys"),
                 },
                 target,
                 rsvp: None,
@@ -542,6 +571,7 @@ async fn http_error_message(
     }
 }
 
+/// Send a WS push to a connection
 async fn send_ws_push(
     target: Address,
     channel_id: u32,
@@ -588,6 +618,7 @@ async fn send_ws_push(
     Ok(HttpClientResponse::WebSocketAck)
 }
 
+/// Close a WS connection, sending a close event to the sink will also close the stream
 async fn close_ws_connection(
     target: Address,
     channel_id: u32,
@@ -604,6 +635,7 @@ async fn close_ws_connection(
     Ok(HttpClientResponse::WebSocketAck)
 }
 
+/// Forward an incoming WS request from an external source to the corresponding process
 async fn handle_ws_message(
     our: Arc<String>,
     id: u64,
@@ -617,7 +649,7 @@ async fn handle_ws_message(
             id,
             source: Address {
                 node: our.to_string(),
-                process: ProcessId::new(Some("http_client"), "sys", "nectar"),
+                process: ProcessId::new(Some("http_client"), "distro", "sys"),
             },
             target,
             rsvp: None,

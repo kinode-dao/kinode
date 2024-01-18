@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use thiserror::Error;
 
 /// HTTP Request type that can be shared over WASM boundary to apps.
-/// This is the one you receive from the `http_server:sys:nectar` service.
+/// This is the one you receive from the `http_server:distro:sys` service.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum HttpServerRequest {
     Http(IncomingHttpRequest),
@@ -31,7 +31,7 @@ pub enum HttpServerRequest {
 pub struct IncomingHttpRequest {
     pub source_socket_addr: Option<String>, // will parse to SocketAddr
     pub method: String,                     // will parse to http::Method
-    pub raw_path: String,
+    pub url: String,                        // will parse to url::Url
     pub headers: HashMap<String, String>,
     pub query_params: HashMap<String, String>,
     // BODY is stored in the lazy_load_blob, as bytes
@@ -52,7 +52,7 @@ pub struct RpcResponseBody {
     pub lazy_load_blob: Option<LazyLoadBlob>,
 }
 
-/// Request type sent to `http_server:sys:nectar` in order to configure it.
+/// Request type sent to `http_server:distro:sys` in order to configure it.
 /// You can also send [`type@HttpServerAction::WebSocketPush`], which
 /// allows you to push messages across an existing open WebSocket connection.
 ///

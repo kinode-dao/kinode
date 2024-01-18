@@ -1,5 +1,5 @@
 #![feature(let_chains)]
-use nectar_process_lib::{
+use kinode_process_lib::{
     await_message, call_init, get_blob, get_typed_state, http, println, set_state, Address,
     LazyLoadBlob, Message, NodeId, Request, Response,
 };
@@ -73,7 +73,7 @@ fn load_chess_state() -> ChessState {
 fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> anyhow::Result<()> {
     for channel in open_channels {
         Request::new()
-            .target((&our.node, "http_server", "sys", "nectar"))
+            .target((&our.node, "http_server", "distro", "sys"))
             .body(serde_json::to_vec(
                 &http::HttpServerAction::WebSocketPush {
                     channel_id: *channel,
@@ -94,7 +94,7 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
     Ok(())
 }
 
-// Boilerplate: generate the wasm bindings for a Nectar app
+// Boilerplate: generate the wasm bindings for a process
 wit_bindgen::generate!({
     path: "../../../wit",
     world: "process",
@@ -108,7 +108,7 @@ call_init!(initialize);
 
 fn initialize(our: Address) {
     // A little printout to show in terminal that the process has started.
-    println!("{} by {}: start", our.process(), our.publisher());
+    println!("{}: started", our.package());
 
     // Serve the index.html and other UI files found in pkg/ui at the root path.
     http::serve_ui(&our, "ui").unwrap();
@@ -168,14 +168,14 @@ fn handle_request(our: &Address, message: &Message, state: &mut ChessState) -> a
     // Note that since this is a local request, we *can* trust the ProcessId.
     // Here, we'll accept messages from the local terminal so as to make this a "CLI" app.
     } else if message.source().node == our.node
-        && message.source().process == "terminal:terminal:nectar"
+        && message.source().process == "terminal:terminal:sys"
     {
         let Ok(chess_request) = serde_json::from_slice::<ChessRequest>(message.body()) else {
             return Err(anyhow::anyhow!("invalid chess request"));
         };
         handle_local_request(our, state, &chess_request)
     } else if message.source().node == our.node
-        && message.source().process == "http_server:sys:nectar"
+        && message.source().process == "http_server:distro:sys"
     {
         // receive HTTP requests and websocket connection messages from our server
         match serde_json::from_slice::<http::HttpServerRequest>(message.body())? {
@@ -418,14 +418,14 @@ fn handle_http_request(
     state: &mut ChessState,
     http_request: &http::IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    if http_request.path()? != "games" {
+    if http_request.path()? != "/games" {
         return http::send_response(
             http::StatusCode::NOT_FOUND,
             None,
             "Not Found".to_string().as_bytes().to_vec(),
         );
     }
-    match http_request.method.as_str() {
+    match http_request.method()?.as_str() {
         // on GET: give the frontend all of our active games
         "GET" => http::send_response(
             http::StatusCode::OK,
@@ -563,7 +563,7 @@ fn handle_http_request(
         }
         // on DELETE: end the game
         "DELETE" => {
-            let Some(game_id) = http_request.query_params.get("id") else {
+            let Some(game_id) = http_request.query_params().get("id") else {
                 return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
             };
             let Some(game) = state.games.get_mut(game_id) else {

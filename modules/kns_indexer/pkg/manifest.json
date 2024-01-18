@@ -1,13 +1,16 @@
 [
     {
-        "process_name": "homepage",
-        "process_wasm_path": "/homepage.wasm",
+        "process_name": "kns_indexer",
+        "process_wasm_path": "/kns_indexer.wasm",
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [
-            "http_server:distro:sys"
+            "eth:distro:sys",
+            "http_server:distro:sys",
+            "net:distro:sys"
         ],
         "grant_capabilities": [
+            "eth:distro:sys",
             "http_server:distro:sys"
         ],
         "public": false

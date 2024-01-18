@@ -299,7 +299,7 @@ async fn bootstrap(
     let k_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::new(Some("kernel"), "sys", "nectar"),
+            process: ProcessId::new(Some("kernel"), "distro", "sys"),
         },
         params: "\"messaging\"".into(),
     };
@@ -308,7 +308,7 @@ async fn bootstrap(
     let n_cap = Capability {
         issuer: Address {
             node: our_name.to_string(),
-            process: ProcessId::new(Some("net"), "sys", "nectar"),
+            process: ProcessId::new(Some("net"), "distro", "sys"),
         },
         params: "\"messaging\"".into(),
     };
@@ -336,7 +336,7 @@ async fn bootstrap(
     // finally, save runtime modules in state map as well, somewhat fakely
     // special cases for kernel and net
     process_map
-        .entry(ProcessId::new(Some("kernel"), "sys", "nectar"))
+        .entry(ProcessId::new(Some("kernel"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             wit_version: None,
@@ -345,7 +345,7 @@ async fn bootstrap(
             public: false,
         });
     process_map
-        .entry(ProcessId::new(Some("net"), "sys", "nectar"))
+        .entry(ProcessId::new(Some("net"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
             wit_version: None,
@@ -372,8 +372,6 @@ async fn bootstrap(
         if package_name == "tester" {
             #[cfg(not(feature = "simulation-mode"))]
             continue;
-            #[cfg(feature = "simulation-mode")]
-            {}
         }
 
         println!("fs: handling package {package_name}...\r");
@@ -497,49 +495,44 @@ async fn bootstrap(
                 "{}:{}:{}",
                 entry.process_name, package_name, package_publisher
             );
-            entry.request_capabilities = Some(entry.request_capabilities.unwrap_or_default());
-            if let Some(ref mut request_capabilities) = entry.request_capabilities {
-                request_capabilities.push(serde_json::Value::String(our_process_id.clone()));
-                for value in request_capabilities {
-                    let requested_cap = match value {
-                        serde_json::Value::String(process_name) => Capability {
-                            issuer: Address {
-                                node: our_name.to_string(),
-                                process: process_name.parse().unwrap(),
-                            },
-                            params: "\"messaging\"".into(),
+            entry
+                .request_capabilities
+                .push(serde_json::Value::String(our_process_id.clone()));
+            for value in entry.request_capabilities {
+                let requested_cap = match value {
+                    serde_json::Value::String(process_name) => Capability {
+                        issuer: Address {
+                            node: our_name.to_string(),
+                            process: process_name.parse().unwrap(),
                         },
-                        serde_json::Value::Object(map) => {
-                            if let Some(process_name) = map.get("process") {
-                                if let Some(params) = map.get("params") {
-                                    Capability {
-                                        issuer: Address {
-                                            node: our_name.to_string(),
-                                            process: process_name
-                                                .as_str()
-                                                .unwrap()
-                                                .parse()
-                                                .unwrap(),
-                                        },
-                                        params: params.to_string(),
-                                    }
-                                } else {
-                                    continue;
+                        params: "\"messaging\"".into(),
+                    },
+                    serde_json::Value::Object(map) => {
+                        if let Some(process_name) = map.get("process") {
+                            if let Some(params) = map.get("params") {
+                                Capability {
+                                    issuer: Address {
+                                        node: our_name.to_string(),
+                                        process: process_name.as_str().unwrap().parse().unwrap(),
+                                    },
+                                    params: params.to_string(),
                                 }
                             } else {
                                 continue;
                             }
-                        }
-                        _ => {
-                            // other json types
+                        } else {
                             continue;
                         }
-                    };
-                    requested_caps.insert(
-                        requested_cap.clone(),
-                        sign_cap(requested_cap, keypair.clone()),
-                    );
-                }
+                    }
+                    _ => {
+                        // other json types
+                        continue;
+                    }
+                };
+                requested_caps.insert(
+                    requested_cap.clone(),
+                    sign_cap(requested_cap, keypair.clone()),
+                );
             }
 
             if entry.request_networking {
@@ -602,8 +595,6 @@ async fn bootstrap(
         if package_name == "tester" {
             #[cfg(not(feature = "simulation-mode"))]
             continue;
-            #[cfg(feature = "simulation-mode")]
-            {}
         }
 
         // get and read manifest.json
@@ -657,53 +648,48 @@ async fn bootstrap(
             );
 
             // grant capabilities to other initially spawned processes, distro
-            if let Some(to_grant) = &entry.grant_capabilities {
-                for value in to_grant {
-                    match value {
-                        serde_json::Value::String(process_name) => {
-                            if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                                if let Some(process) = process_map.get_mut(&parsed_process_id) {
-                                    let cap = Capability {
-                                        issuer: Address {
-                                            node: our_name.to_string(),
-                                            process: our_process_id.parse().unwrap(),
-                                        },
-                                        params: "\"messaging\"".into(),
-                                    };
-                                    process
-                                        .capabilities
-                                        .insert(cap.clone(), sign_cap(cap, keypair.clone()));
-                                }
+            for value in entry.grant_capabilities {
+                match value {
+                    serde_json::Value::String(process_name) => {
+                        if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
+                            if let Some(process) = process_map.get_mut(&parsed_process_id) {
+                                let cap = Capability {
+                                    issuer: Address {
+                                        node: our_name.to_string(),
+                                        process: our_process_id.parse().unwrap(),
+                                    },
+                                    params: "\"messaging\"".into(),
+                                };
+                                process
+                                    .capabilities
+                                    .insert(cap.clone(), sign_cap(cap, keypair.clone()));
                             }
                         }
-                        serde_json::Value::Object(map) => {
-                            if let Some(process_name) = map.get("process") {
-                                if let Ok(parsed_process_id) =
-                                    process_name.as_str().unwrap().parse::<ProcessId>()
-                                {
-                                    if let Some(params) = map.get("params") {
-                                        if let Some(process) =
-                                            process_map.get_mut(&parsed_process_id)
-                                        {
-                                            let cap = Capability {
-                                                issuer: Address {
-                                                    node: our_name.to_string(),
-                                                    process: our_process_id.parse().unwrap(),
-                                                },
-                                                params: params.to_string(),
-                                            };
-                                            process.capabilities.insert(
-                                                cap.clone(),
-                                                sign_cap(cap, keypair.clone()),
-                                            );
-                                        }
+                    }
+                    serde_json::Value::Object(map) => {
+                        if let Some(process_name) = map.get("process") {
+                            if let Ok(parsed_process_id) =
+                                process_name.as_str().unwrap().parse::<ProcessId>()
+                            {
+                                if let Some(params) = map.get("params") {
+                                    if let Some(process) = process_map.get_mut(&parsed_process_id) {
+                                        let cap = Capability {
+                                            issuer: Address {
+                                                node: our_name.to_string(),
+                                                process: our_process_id.parse().unwrap(),
+                                            },
+                                            params: params.to_string(),
+                                        };
+                                        process
+                                            .capabilities
+                                            .insert(cap.clone(), sign_cap(cap, keypair.clone()));
                                     }
                                 }
                             }
                         }
-                        _ => {
-                            continue;
-                        }
+                    }
+                    _ => {
+                        continue;
                     }
                 }
             }

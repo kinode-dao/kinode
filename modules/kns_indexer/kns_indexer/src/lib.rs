@@ -1,7 +1,7 @@
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
-use nectar_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
-use nectar_process_lib::{
+use kinode_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
+use kinode_process_lib::{
     await_message, get_typed_state, http, print_to_terminal, println, set_state, Address,
     LazyLoadBlob, Message, Request, Response,
 };
@@ -26,15 +26,15 @@ struct State {
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
     // NOTE: not every namehash will have a node registered
-    nodes: HashMap<String, NdnsUpdate>,
+    nodes: HashMap<String, KnsUpdate>,
     // last block we read from
     block: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NetActions {
-    NdnsUpdate(NdnsUpdate),
-    NdnsBatchUpdate(Vec<NdnsUpdate>),
+    KnsUpdate(KnsUpdate),
+    KnsBatchUpdate(Vec<KnsUpdate>),
 }
 
 impl TryInto<Vec<u8>> for NetActions {
@@ -45,7 +45,7 @@ impl TryInto<Vec<u8>> for NetActions {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct NdnsUpdate {
+pub struct KnsUpdate {
     pub name: String, // actual username / domain name
     pub owner: String,
     pub node: String, // hex namehash of node
@@ -55,7 +55,7 @@ pub struct NdnsUpdate {
     pub routers: Vec<String>,
 }
 
-impl NdnsUpdate {
+impl KnsUpdate {
     pub fn new(name: &String, node: &String) -> Self {
         Self {
             name: name.clone(),
@@ -66,7 +66,7 @@ impl NdnsUpdate {
 }
 
 sol! {
-    // Logged whenever a NDNS node is created
+    // Logged whenever a KNS node is created
     event NodeRegistered(bytes32 indexed node, bytes name);
     event KeyUpdate(bytes32 indexed node, bytes32 key);
     event IpUpdate(bytes32 indexed node, uint128 ip);
@@ -100,7 +100,7 @@ impl Guest for Component {
         match main(our, state) {
             Ok(_) => {}
             Err(e) => {
-                println!("ndns_indexer: error: {:?}", e);
+                println!("kns_indexer: error: {:?}", e);
             }
         }
     }
@@ -108,20 +108,20 @@ impl Guest for Component {
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // first, await a message from the kernel which will contain the
-    // contract address for the NDNS version we want to track.
+    // contract address for the KNS version we want to track.
     let mut contract_address: Option<String> = None;
     loop {
         let Ok(Message::Request { source, body, .. }) = await_message() else {
             continue;
         };
-        if source.process != "kernel:sys:nectar" {
+        if source.process != "kernel:distro:sys" {
             continue;
         }
         contract_address = Some(std::str::from_utf8(&body).unwrap().to_string());
         break;
     }
     println!(
-        "ndns_indexer: indexing on contract address {}",
+        "kns_indexer: indexing on contract address {}",
         contract_address.as_ref().unwrap()
     );
     // if contract address changed from a previous run, reset state
@@ -135,8 +135,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     }
     // shove all state into net::net
     Request::new()
-        .target((&our.node, "net", "sys", "nectar"))
-        .try_body(NetActions::NdnsBatchUpdate(
+        .target((&our.node, "net", "distro", "sys"))
+        .try_body(NetActions::KnsBatchUpdate(
             state.nodes.values().cloned().collect::<Vec<_>>(),
         ))?
         .send()?;
@@ -157,7 +157,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     loop {
         let Ok(message) = await_message() else {
-            println!("ndns_indexer: got network error");
+            println!("kns_indexer: got network error");
             continue;
         };
         let Message::Request { source, body, .. } = message else {
@@ -166,7 +166,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         };
 
-        if source.process == "http_server:sys:nectar" {
+        if source.process == "http_server:distro:sys" {
             if let Ok(body_json) = serde_json::from_slice::<serde_json::Value>(&body) {
                 if body_json["path"].as_str().unwrap_or_default() == "/node/:name" {
                     if let Some(name) = body_json["url_params"]["name"].as_str() {
@@ -202,7 +202,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         }
 
         let Ok(msg) = serde_json::from_slice::<EthSubEvent>(&body) else {
-            println!("ndns_indexer: got invalid message");
+            println!("kns_indexer: got invalid message");
             continue;
         };
 
@@ -220,7 +220,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 let node = state
                     .nodes
                     .entry(name.to_string())
-                    .or_insert_with(|| NdnsUpdate::new(name, &node_id.to_string()));
+                    .or_insert_with(|| KnsUpdate::new(name, &node_id.to_string()));
 
                 let mut send = true;
 
@@ -274,13 +274,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     print_to_terminal(
                         1,
                         &format!(
-                            "ndns_indexer: sending ID to net: {node:?} (blocknum {})",
+                            "kns_indexer: sending ID to net: {node:?} (blocknum {})",
                             state.block
                         ),
                     );
                     Request::new()
-                        .target((&our.node, "net", "sys", "nectar"))
-                        .try_body(NetActions::NdnsUpdate(node.clone()))?
+                        .target((&our.node, "net", "distro", "sys"))
+                        .try_body(NetActions::KnsUpdate(node.clone()))?
                         .send()?;
                 }
             }
@@ -294,7 +294,7 @@ fn get_name(log: &Log) -> String {
     let name = match dnswire_decode(decoded.0.clone()) {
         Ok(n) => n,
         Err(_) => {
-            println!("ndns_indexer: failed to decode name: {:?}", decoded.0);
+            println!("kns_indexer: failed to decode name: {:?}", decoded.0);
             panic!("")
         }
     };

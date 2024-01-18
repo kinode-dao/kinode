@@ -86,13 +86,13 @@ pub async fn http_server(
     // add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
-        app: ProcessId::new(Some("rpc"), "sys", "nectar"),
+        app: ProcessId::new(Some("rpc"), "distro", "sys"),
         secure_subdomain: None, // TODO maybe RPC should have subdomain?
         authenticated: false,
         local_only: true,
         static_content: None,
     };
-    bindings_map.add("/rpc:sys:nectar/message", rpc_bound_path);
+    bindings_map.add("/rpc:distro:sys/message", rpc_bound_path);
     let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
     // ws path bindings
@@ -241,7 +241,7 @@ async fn login_handler(
             )
             .into_response();
 
-            match HeaderValue::from_str(&format!("nectar-auth_{}={};", our.as_ref(), &token)) {
+            match HeaderValue::from_str(&format!("kinode-auth_{}={};", our.as_ref(), &token)) {
                 Ok(v) => {
                     response.headers_mut().append(http::header::SET_COOKIE, v);
                     Ok(response)
@@ -320,6 +320,9 @@ async fn ws_handler(
     }
 
     let app = bound_path.app.clone();
+
+    drop(ws_path_bindings);
+
     Ok(ws_connection.on_upgrade(move |ws: WebSocket| async move {
         maintain_websocket(
             ws,
@@ -454,53 +457,72 @@ async fn http_handler(
         }
     }
 
-    // RPC functionality: if path is /rpc:sys:nectar/message,
+    // RPC functionality: if path is /rpc:distro:sys/message,
     // we extract message from base64 encoded bytes in data
     // and send it to the correct app.
-    let message = if bound_path.app == "rpc:sys:nectar" {
+    let (message, is_fire_and_forget) = if bound_path.app == "rpc:distro:sys" {
         match handle_rpc_message(our, id, body, print_tx).await {
-            Ok(message) => message,
+            Ok((message, is_fire_and_forget)) => (message, is_fire_and_forget),
             Err(e) => {
                 return Ok(warp::reply::with_status(vec![], e).into_response());
             }
         }
     } else {
         // otherwise, make a message to the correct app
-        KernelMessage {
-            id,
-            source: Address {
-                node: our.to_string(),
-                process: HTTP_SERVER_PROCESS_ID.clone(),
+        (
+            KernelMessage {
+                id,
+                source: Address {
+                    node: our.to_string(),
+                    process: HTTP_SERVER_PROCESS_ID.clone(),
+                },
+                target: Address {
+                    node: our.to_string(),
+                    process: bound_path.app.clone(),
+                },
+                rsvp: None,
+                message: Message::Request(Request {
+                    inherit: false,
+                    expects_response: Some(HTTP_SELF_IMPOSED_TIMEOUT),
+                    body: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
+                        source_socket_addr: socket_addr.map(|addr| addr.to_string()),
+                        method: method.to_string(),
+                        url: format!(
+                            "http://{}{}",
+                            host.unwrap_or(Authority::from_static("localhost")),
+                            original_path
+                        ),
+                        headers: serialized_headers,
+                        query_params,
+                    }))
+                    .unwrap(),
+                    metadata: Some("http".into()),
+                    capabilities: vec![],
+                }),
+                lazy_load_blob: Some(LazyLoadBlob {
+                    mime: None,
+                    bytes: body.to_vec(),
+                }),
             },
-            target: Address {
-                node: our.to_string(),
-                process: bound_path.app.clone(),
-            },
-            rsvp: None,
-            message: Message::Request(Request {
-                inherit: false,
-                expects_response: Some(HTTP_SELF_IMPOSED_TIMEOUT),
-                body: serde_json::to_vec(&HttpServerRequest::Http(IncomingHttpRequest {
-                    source_socket_addr: socket_addr.map(|addr| addr.to_string()),
-                    method: method.to_string(),
-                    raw_path: format!(
-                        "http://{}{}",
-                        host.unwrap_or(Authority::from_static("localhost")),
-                        original_path
-                    ),
-                    headers: serialized_headers,
-                    query_params,
-                }))
-                .unwrap(),
-                metadata: Some("http".into()),
-                capabilities: vec![],
-            }),
-            lazy_load_blob: Some(LazyLoadBlob {
-                mime: None,
-                bytes: body.to_vec(),
-            }),
-        }
+            false,
+        )
     };
+
+    // unlock to avoid deadlock with .write()s
+    drop(path_bindings);
+
+    if is_fire_and_forget {
+        match send_to_loop.send(message).await {
+            Ok(_) => {}
+            Err(_) => {
+                return Ok(
+                    warp::reply::with_status(vec![], StatusCode::INTERNAL_SERVER_ERROR)
+                        .into_response(),
+                );
+            }
+        }
+        return Ok(warp::reply::with_status(vec![], StatusCode::OK).into_response());
+    }
 
     let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
     http_response_senders.insert(id, (original_path, response_sender));
@@ -564,7 +586,7 @@ async fn handle_rpc_message(
     id: u64,
     body: warp::hyper::body::Bytes,
     print_tx: PrintSender,
-) -> Result<KernelMessage, StatusCode> {
+) -> Result<(KernelMessage, bool), StatusCode> {
     let Ok(rpc_message) = serde_json::from_slice::<RpcMessage>(&body) else {
         return Err(StatusCode::BAD_REQUEST);
     };
@@ -591,32 +613,37 @@ async fn handle_rpc_message(
         },
     };
 
-    Ok(KernelMessage {
-        id,
-        source: Address {
-            node: our.to_string(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        },
-        target: Address {
-            node: rpc_message.node.unwrap_or(our.to_string()),
-            process: target_process,
-        },
-        rsvp: Some(Address {
-            node: our.to_string(),
-            process: HTTP_SERVER_PROCESS_ID.clone(),
-        }),
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: Some(15), // NB: no effect on runtime
-            body: match rpc_message.body {
-                Some(body_string) => body_string.into_bytes(),
-                None => Vec::new(),
+    let rsvp = rpc_message.expects_response.map(|_er| Address {
+        node: our.to_string(),
+        process: HTTP_SERVER_PROCESS_ID.clone(),
+    });
+    Ok((
+        KernelMessage {
+            id,
+            source: Address {
+                node: our.to_string(),
+                process: HTTP_SERVER_PROCESS_ID.clone(),
             },
-            metadata: rpc_message.metadata,
-            capabilities: vec![],
-        }),
-        lazy_load_blob: blob,
-    })
+            target: Address {
+                node: rpc_message.node.unwrap_or(our.to_string()),
+                process: target_process,
+            },
+            rsvp,
+            message: Message::Request(Request {
+                inherit: false,
+                expects_response: rpc_message.expects_response.clone(),
+                //expects_response: Some(15), // NB: no effect on runtime
+                body: match rpc_message.body {
+                    Some(body_string) => body_string.into_bytes(),
+                    None => Vec::new(),
+                },
+                metadata: rpc_message.metadata,
+                capabilities: vec![],
+            }),
+            lazy_load_blob: blob,
+        },
+        rpc_message.expects_response.is_none(),
+    ))
 }
 
 async fn maintain_websocket(
@@ -794,7 +821,7 @@ async fn handle_app_message(
                 return;
             };
             // if path is /rpc/message, return accordingly with base64 encoded blob
-            if path == "/rpc:sys:nectar/message" {
+            if path == "/rpc:distro:sys/message" {
                 let blob = km.lazy_load_blob.map(|p| LazyLoadBlob {
                     mime: p.mime,
                     bytes: base64::encode(p.bytes).into_bytes(),
@@ -856,7 +883,7 @@ async fn handle_app_message(
                     cache,
                 } => {
                     let mut path_bindings = path_bindings.write().await;
-                    if km.source.process != "homepage:homepage:nectar" {
+                    if km.source.process != "homepage:homepage:sys" {
                         path = if path.starts_with('/') {
                             format!("/{}{}", km.source.process, path)
                         } else {
