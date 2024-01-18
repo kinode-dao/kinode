@@ -104,7 +104,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                 None => return Err(anyhow!("invalid command: \"{line}\"")),
             };
             Request::new()
-                .target(Address::new("our", ("runner", "script", "nectar")))
+                .target(Address::new("our", ("runner", "script", "sys")))
                 .body(
                     json!({
                         "Run": {

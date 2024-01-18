@@ -1,5 +1,5 @@
-use nectar_process_lib::{
-    await_message, call_init, get_blob, println, vfs, Address, Message, Request,
+use kinode_process_lib::{
+    await_message, call_init, get_blob, println, vfs, Address, Capability, Message, Request,
 };
 
 wit_bindgen::generate!({
@@ -25,7 +25,7 @@ fn init(_our: Address) {
     };
 
     Request::new()
-        .target(("our", "vfs", "sys", "nectar"))
+        .target(("our", "vfs", "sys", "kinode"))
         .body(
             serde_json::to_vec(&vfs::VfsRequest {
                 path: file_path.clone(),

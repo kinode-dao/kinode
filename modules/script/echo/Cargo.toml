@@ -10,7 +10,7 @@ lto = true
 
 [dependencies]
 anyhow = "1.0"
-nectar_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", tag = "v0.5.1-alpha" }
+kinode_process_lib = { git = "ssh://git@github.com/uqbar-dao/process_lib.git", rev = "9790c0f" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "efcc759" }
@@ -19,4 +19,4 @@ wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "
 crate-type = ["cdylib"]
 
 [package.metadata.component]
-package = "nectar:process"
+package = "kinode:process"

@@ -1,0 +1,14 @@
+{
+    "echo": {
+        "public": false,
+        "requestNetworking": false,
+        "requestCapabilities": [],
+        "grantCapabilities": []
+    },
+    "cat": {
+        "public": false,
+        "requestNetworking": false,
+        "requestCapabilities": [],
+        "grantCapabilities": []
+    }
+}

@@ -1,4 +1,4 @@
-use nectar_process_lib::{await_message, call_init, println, Address, Message, Request};
+use kinode_process_lib::{await_message, call_init, println, Address, Message, Request};
 
 wit_bindgen::generate!({
     path: "wit",

@@ -5,11 +5,11 @@
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [
-            "filesystem:sys:nectar",
-            "vfs:sys:nectar",
-            "kernel:sys:nectar",
+            "filesystem:distro:sys",
+            "vfs:distro:sys",
+            "kernel:distro:sys",
             {
-                "process": "vfs:sys:nectar",
+                "process": "vfs:distro:sys",
                 "params": {
                     "root": true
                 }

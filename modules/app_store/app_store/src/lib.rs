@@ -521,13 +521,6 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                             .parse::<ProcessId>()
                         {
                             if let Some(params) = map.get("params") {
-                                if params.to_string() == "\"root\"" {
-                                    println!(
-                                        "app-store: app requested root capability, ignoring"
-                                    );
-                                    continue;
-                                }
-
                                 capability = get_capability(
                                     &Address {
                                         node: our.node.clone(),
@@ -598,18 +591,16 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                                 let _ = Request::new()
                                     .target(("our", "kernel", "distro", "sys"))
                                     .body(
-                                        serde_json::to_vec(
-                                            &kt::KernelCommand::GrantCapabilities {
-                                                target: parsed_process_id,
-                                                capabilities: vec![kt::Capability {
-                                                    issuer: Address {
-                                                        node: our.node.clone(),
-                                                        process: parsed_new_process_id.clone(),
-                                                    },
-                                                    params: params.to_string(),
-                                                }],
-                                            },
-                                        )
+                                        serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                                            target: parsed_process_id,
+                                            capabilities: vec![kt::Capability {
+                                                issuer: Address {
+                                                    node: our.node.clone(),
+                                                    process: parsed_new_process_id.clone(),
+                                                },
+                                                params: params.to_string(),
+                                            }],
+                                        })
                                         .unwrap(),
                                     )
                                     .send()?;
