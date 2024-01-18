@@ -101,7 +101,10 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                     },
                     a,
                 ),
-                None => return Err(anyhow!("invalid command: \"{line}\"")),
+                None => match tail.parse::<ProcessId>() {
+                    Ok(p) => (p, ""),
+                    Err(_) => return Err(anyhow!("invalid process id: \"{tail}\"")),
+                },
             };
             Request::new()
                 .target(Address::new("our", ("runner", "script", "sys")))

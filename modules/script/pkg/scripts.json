@@ -28,5 +28,13 @@
         "grantCapabilities": [
             "net:distro:sys"
         ]
+    },
+    "top.wasm": {
+        "public": false,
+        "requestNetworking": false,
+        "requestCapabilities": [
+            "kernel:distro:sys"
+        ],
+        "grantCapabilities": []
     }
 }
