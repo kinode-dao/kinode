@@ -527,9 +527,11 @@ fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
     let mut header_map = HeaderMap::new();
     for (key, value) in hashmap {
         let key_bytes = key.as_bytes();
-        let key_name = HeaderName::from_bytes(key_bytes).unwrap();
-        let value_header = HeaderValue::from_str(&value).unwrap();
-        header_map.insert(key_name, value_header);
+        if let Ok(key_name) = HeaderName::from_bytes(key_bytes) {
+            if let Ok(value_header) = HeaderValue::from_str(&value) {
+                header_map.insert(key_name, value_header);
+            }
+        }
     }
     header_map
 }
