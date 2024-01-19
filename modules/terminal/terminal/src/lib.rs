@@ -28,6 +28,7 @@ pub struct DotScriptsEntry {
 struct TerminalState {
     our: Address,
     current_target: Option<Address>,
+    aliases: HashMap<String, ProcessId>, // TODO maybe address...
 }
 
 fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
@@ -35,6 +36,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
     let (_, tail) = line.split_at(head.len_utf8());
     match head {
         ' ' => return Ok(()),
+        // TODO actually I think this can be done as a script...
         // set the current target, so you can message it without specifying
         '+' => {
             if tail == "" || tail == "clear" {
@@ -60,24 +62,27 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                     Some((a, p)) => (a, p),
                     None => return Err(anyhow!("invalid command: \"{line}\"")),
                 };
-                let Ok(target) = target.parse::<Address>() else {
-                    return Err(anyhow!("invalid address: \"{target}\""));
+                let target = match target.parse::<Address>() {
+                    Ok(t) => t,
+                    Err(e) => match state.aliases.get(target) {
+                        Some(pid) => Address::new("our", pid.clone()),
+                        None => {
+                            return Err(anyhow!("invalid address: \"{target}\""));
+                        }
+                    },
                 };
                 Request::new().target(target).body(body).send()
             }
         }
         '-' => {
-            let (process, args) = match tail.split_once(" ") {
-                Some((p, a)) => (
-                    match p.parse::<ProcessId>() {
-                        Ok(p) => p,
-                        Err(_) => return Err(anyhow!("invalid process id: \"{tail}\"")),
-                    },
-                    a,
-                ),
-                None => match tail.parse::<ProcessId>() {
-                    Ok(p) => (p, ""),
-                    Err(_) => return Err(anyhow!("invalid process id: \"{tail}\"")),
+            let (process, args) = tail.split_once(" ").unwrap_or((tail, ""));
+            let process = match process.parse::<ProcessId>() {
+                Ok(p) => p,
+                Err(e) => match state.aliases.get(process) {
+                    Some(pid) => pid.clone(),
+                    None => {
+                        return Err(anyhow!("invalid process: \"{process}\""));
+                    }
                 },
             };
             let wasm_path = format!("{}.wasm", process.process());
@@ -97,6 +102,14 @@ impl Guest for Component {
         let mut state = TerminalState {
             our: our.parse::<Address>().unwrap(),
             current_target: None,
+            aliases: {
+                let mut a = HashMap::new();
+                a.insert(
+                    "echo".to_string(),
+                    "echo:terminal:sys".parse::<ProcessId>().unwrap(),
+                );
+                a
+            },
         };
         loop {
             let (source, message) = match wit::receive() {
