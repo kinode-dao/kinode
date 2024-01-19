@@ -44,16 +44,19 @@ pub async fn http_client(
         id,
         source,
         rsvp,
-        message:
-            Message::Request(Request {
-                expects_response,
-                body,
-                ..
-            }),
+        message,
         lazy_load_blob: blob,
         ..
     }) = recv_in_client.recv().await
     {
+        let Message::Request(Request {
+            body,
+            expects_response,
+            ..
+        }) = message
+        else {
+            continue;
+        };
         // Check that the incoming request body is a HttpClientAction
         let Ok(request) = serde_json::from_slice::<HttpClientAction>(&body) else {
             // Send a "BadRequest" error if deserialization fails
