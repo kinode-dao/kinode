@@ -1,11 +1,13 @@
 {
     "echo.wasm": {
+        "root": false,
         "public": false,
         "requestNetworking": false,
         "requestCapabilities": [],
         "grantCapabilities": []
     },
     "cat.wasm": {
+        "root": false,
         "public": false,
         "requestNetworking": false,
         "requestCapabilities": [
@@ -20,6 +22,7 @@
         "grantCapabilities": []
     },
     "hi.wasm": {
+        "root": false,
         "public": false,
         "requestNetworking": true,
         "requestCapabilities": [
@@ -30,11 +33,17 @@
         ]
     },
     "top.wasm": {
+        "root": false,
         "public": false,
         "requestNetworking": false,
         "requestCapabilities": [
             "kernel:distro:sys"
         ],
         "grantCapabilities": []
+    },
+    "m.wasm": {
+        "root": true,
+        "public": false,
+        "requestNetworking": true
     }
 }

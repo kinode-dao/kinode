@@ -2,7 +2,8 @@ use anyhow::anyhow;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::kinode::process::standard as wit;
 use kinode_process_lib::{
-    get_blob, get_capability, println, vfs, Address, Capability, PackageId, ProcessId, Request,
+    get_blob, get_capability, our_capabilities, println, vfs, Address, Capability, PackageId,
+    ProcessId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -19,6 +20,7 @@ wit_bindgen::generate!({
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DotScriptsEntry {
+    pub root: bool,
     pub public: bool,
     pub request_networking: bool,
     pub request_capabilities: Option<Vec<serde_json::Value>>,
@@ -32,67 +34,22 @@ struct TerminalState {
 }
 
 fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
-    let head = line.chars().next().unwrap_or(' ');
-    let (_, tail) = line.split_at(head.len_utf8());
-    match head {
-        ' ' => return Ok(()),
-        // TODO actually I think this can be done as a script...
-        // set the current target, so you can message it without specifying
-        '+' => {
-            if tail == "" || tail == "clear" {
-                state.current_target = None;
-                println!("current target cleared");
-                return Ok(());
+    let (head, args) = line.split_once(" ").unwrap_or((line, ""));
+    let process = match state.aliases.get(head) {
+        Some(pid) => pid.clone(),
+        None => match head.parse::<ProcessId>() {
+            Ok(pid) => pid,
+            Err(_) => {
+                return Err(anyhow!("invalid script name"));
             }
-            let Ok(target) = tail.parse::<Address>() else {
-                return Err(anyhow!("invalid address: \"{tail}\""));
-            };
-            println!("current target set to {target}");
-            state.current_target = Some(target);
-            Ok(())
-        }
-        // send a message to a specified app
-        // if no current_target is set, require it,
-        // otherwise use the current_target
-        '/' => {
-            if let Some(target) = &state.current_target {
-                Request::new().target(target.clone()).body(tail).send()
-            } else {
-                let (target, body) = match tail.split_once(" ") {
-                    Some((a, p)) => (a, p),
-                    None => return Err(anyhow!("invalid command: \"{line}\"")),
-                };
-                let target = match target.parse::<Address>() {
-                    Ok(t) => t,
-                    Err(e) => match state.aliases.get(target) {
-                        Some(pid) => Address::new("our", pid.clone()),
-                        None => {
-                            return Err(anyhow!("invalid address: \"{target}\""));
-                        }
-                    },
-                };
-                Request::new().target(target).body(body).send()
-            }
-        }
-        '-' => {
-            let (process, args) = tail.split_once(" ").unwrap_or((tail, ""));
-            let process = match process.parse::<ProcessId>() {
-                Ok(p) => p,
-                Err(e) => match state.aliases.get(process) {
-                    Some(pid) => pid.clone(),
-                    None => {
-                        return Err(anyhow!("invalid process: \"{process}\""));
-                    }
-                },
-            };
-            let wasm_path = format!("{}.wasm", process.process());
-            let package = PackageId::new(process.package(), process.publisher());
-            match handle_run(&state.our, &package, wasm_path, args.to_string()) {
-                Ok(_) => Ok(()), // TODO clean up process
-                Err(e) => Err(anyhow!("failed to instantiate script: {}", e)),
-            }
-        }
-        _ => return Err(anyhow!("invalid command: \"{line}\"")),
+        },
+    };
+
+    let wasm_path = format!("{}.wasm", process.process());
+    let package = PackageId::new(process.package(), process.publisher());
+    match handle_run(&state.our, &package, wasm_path, args.to_string()) {
+        Ok(_) => Ok(()), // TODO clean up process
+        Err(e) => Err(anyhow!("failed to instantiate script: {}", e)),
     }
 }
 
@@ -105,8 +62,24 @@ impl Guest for Component {
             aliases: {
                 let mut a = HashMap::new();
                 a.insert(
+                    "cat".to_string(),
+                    "cat:terminal:sys".parse::<ProcessId>().unwrap(),
+                );
+                a.insert(
                     "echo".to_string(),
                     "echo:terminal:sys".parse::<ProcessId>().unwrap(),
+                );
+                a.insert(
+                    "hi".to_string(),
+                    "hi:terminal:sys".parse::<ProcessId>().unwrap(),
+                );
+                a.insert(
+                    "m".to_string(),
+                    "m:terminal:sys".parse::<ProcessId>().unwrap(),
+                );
+                a.insert(
+                    "top".to_string(),
+                    "top:terminal:sys".parse::<ProcessId>().unwrap(),
                 );
                 a
             },
@@ -249,7 +222,14 @@ fn handle_run(
             wasm_bytes_handle: wasm_path,
             wit_version: None,
             on_exit: kt::OnExit::None, // TODO this should send a message back to runner:script:sys so that it can Drop capabilities
-            initial_capabilities,
+            initial_capabilities: if entry.root {
+                our_capabilities()
+                    .iter()
+                    .map(|wit: &kinode_process_lib::Capability| kt::de_wit_capability(wit.clone()))
+                    .collect()
+            } else {
+                initial_capabilities
+            },
             public: entry.public,
         })?)
         .inherit(true)
