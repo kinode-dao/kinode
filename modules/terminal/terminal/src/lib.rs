@@ -31,11 +31,12 @@ struct TerminalState {
 }
 
 fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
-    let (head, tail) = line.split_once(" ").unwrap_or((&line, ""));
+    let head = line.chars().next().unwrap_or(' ');
+    let (_, tail) = line.split_at(head.len_utf8());
     match head {
-        "" | " " => return Ok(()),
+        ' ' => return Ok(()),
         // set the current target, so you can message it without specifying
-        "/a" | "/app" => {
+        '+' => {
             if tail == "" || tail == "clear" {
                 state.current_target = None;
                 println!("current target cleared");
@@ -51,7 +52,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
         // send a message to a specified app
         // if no current_target is set, require it,
         // otherwise use the current_target
-        "/m" | "/message" => {
+        '/' => {
             if let Some(target) = &state.current_target {
                 Request::new().target(target.clone()).body(tail).send()
             } else {
@@ -65,7 +66,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                 Request::new().target(target).body(body).send()
             }
         }
-        "/s" | "/script" => {
+        '-' => {
             let (process, args) = match tail.split_once(" ") {
                 Some((p, a)) => (
                     match p.parse::<ProcessId>() {
@@ -83,7 +84,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
             let package = PackageId::new(process.package(), process.publisher());
             match handle_run(&state.our, &package, wasm_path, args.to_string()) {
                 Ok(_) => Ok(()), // TODO clean up process
-                Err(e) => Err(anyhow!("terminal: failed to instantiate script: {}", e)),
+                Err(e) => Err(anyhow!("failed to instantiate script: {}", e)),
             }
         }
         _ => return Err(anyhow!("invalid command: \"{line}\"")),
@@ -143,7 +144,10 @@ fn handle_run(
         })?)
         .send_and_await_response(5)??;
     let Some(blob) = get_blob() else {
-        return Err(anyhow::anyhow!("no blob"));
+        return Err(anyhow::anyhow!(
+            "couldn't find /{}/pkg/scripts.json",
+            package
+        ));
     };
     let dot_scripts = String::from_utf8(blob.bytes)?;
     let dot_scripts = serde_json::from_str::<HashMap<String, DotScriptsEntry>>(&dot_scripts)?;
