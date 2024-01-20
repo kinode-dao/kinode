@@ -41,6 +41,22 @@ pub async fn load_state(
     match db.get(&kernel_id) {
         Ok(Some(value)) => {
             process_map = bincode::deserialize::<ProcessMap>(&value).unwrap();
+            // if our networking key changed, we need to re-sign all local caps
+            process_map.iter().map(|(_id, process)| {
+                process.capabilities.iter().map(|(cap, sig)| {
+                    if cap.issuer.node == our_name {
+                        (
+                            cap.clone(),
+                            keypair
+                                .sign(&rmp_serde::to_vec(&cap).unwrap())
+                                .as_ref()
+                                .to_vec(),
+                        )
+                    } else {
+                        (cap.clone(), sig.clone())
+                    }
+                })
+            });
         }
         Ok(None) => {
             bootstrap(

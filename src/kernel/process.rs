@@ -146,7 +146,7 @@ impl ProcessState {
         inner_request.capabilities = {
             let (tx, rx) = tokio::sync::oneshot::channel();
             self.caps_oracle
-                .send(t::CapMessage::GetSome {
+                .send(t::CapMessage::FilterCaps {
                     on: self.metadata.our.process.clone(),
                     caps: request
                         .capabilities
@@ -264,7 +264,7 @@ impl ProcessState {
             let (tx, rx) = tokio::sync::oneshot::channel();
             let _ = self
                 .caps_oracle
-                .send(t::CapMessage::GetSome {
+                .send(t::CapMessage::FilterCaps {
                     on: self.metadata.our.process.clone(),
                     caps: response
                         .capabilities
@@ -378,14 +378,17 @@ impl ProcessState {
                         .capabilities
                         .iter()
                         .filter_map(|(cap, sig)| {
-                            if cap.issuer.node != self.metadata.our.node {
-                                // accept all remote caps uncritically
+                            // The only time we verify a cap's signature is when a foreign node
+                            // sends us a cap that we (allegedly) issued
+                            if km.source.node != self.metadata.our.node
+                                && cap.issuer.node == self.metadata.our.node
+                            {
+                                match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
+                                    Ok(_) => Some((cap.clone(), sig.clone())),
+                                    Err(_) => None,
+                                }
+                            } else {
                                 return Some((cap.clone(), sig.clone()));
-                            }
-                            // otherwise only return capabilities that were properly signed
-                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
-                                Ok(_) => Some((cap.clone(), sig.clone())),
-                                Err(_) => None,
                             }
                         })
                         .collect::<Vec<(t::Capability, Vec<u8>)>>();
@@ -398,14 +401,17 @@ impl ProcessState {
                         .capabilities
                         .iter()
                         .filter_map(|(cap, sig)| {
-                            if cap.issuer.node != self.metadata.our.node {
-                                // accept all remote caps uncritically
+                            // The only time we verify a cap's signature is when a foreign node
+                            // sends us a cap that we (allegedly) issued
+                            if km.source.node != self.metadata.our.node
+                                && cap.issuer.node == self.metadata.our.node
+                            {
+                                match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
+                                    Ok(_) => Some((cap.clone(), sig.clone())),
+                                    Err(_) => None,
+                                }
+                            } else {
                                 return Some((cap.clone(), sig.clone()));
-                            }
-                            // otherwise only return capabilities that were properly signed
-                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
-                                Ok(_) => Some((cap.clone(), sig.clone())),
-                                Err(_) => None,
                             }
                         })
                         .collect::<Vec<(t::Capability, Vec<u8>)>>();
