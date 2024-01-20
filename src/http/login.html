@@ -42,7 +42,7 @@
   </div>
 
   <script>
-    if ('${fake}') {
+    if ('${fake}' === 'true') {
       document.getElementById("fake-or-not").innerHTML = "Fake node -- any password will work!";
     } else {
       document.getElementById("fake-or-not").innerHTML = "Restart node to change networking info";
