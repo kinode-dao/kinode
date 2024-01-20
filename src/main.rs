@@ -98,7 +98,7 @@ async fn main() {
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
         .arg(
-            arg!(--port <PORT> "Port to bind [default: first unbound above 8080]")
+            arg!(--port <PORT> "Port to bind [default: first unbound at or above 8080]")
                 .value_parser(value_parser!(u16)),
         )
         .arg(
