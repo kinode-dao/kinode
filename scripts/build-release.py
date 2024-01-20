@@ -41,7 +41,7 @@ def build_and_move(feature, tmp_dir, architecture, os_name):
 
     # Create a zip archive of the binary
     zip_path = os.path.join(tmp_dir, zip_name)
-    with zipfile.ZipFile(zip_path, 'w') as zipf:
+    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
         zipf.write(dest_path, os.path.basename(dest_path))
 
     # Remove the original binary
