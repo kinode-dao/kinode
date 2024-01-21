@@ -2,7 +2,7 @@ use crate::types::STATE_PROCESS_ID;
 use crate::types::{self as t, VFS_PROCESS_ID};
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
-use ring::signature::{self, KeyPair};
+use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;

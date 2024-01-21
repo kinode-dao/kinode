@@ -42,18 +42,13 @@ pub async fn load_state(
         Ok(Some(value)) => {
             process_map = bincode::deserialize::<ProcessMap>(&value).unwrap();
             // if our networking key changed, we need to re-sign all local caps
-            process_map.iter().map(|(_id, process)| {
-                process.capabilities.iter().map(|(cap, sig)| {
+            process_map.iter_mut().for_each(|(_id, process)| {
+                process.capabilities.iter_mut().for_each(|(cap, sig)| {
                     if cap.issuer.node == our_name {
-                        (
-                            cap.clone(),
-                            keypair
-                                .sign(&rmp_serde::to_vec(&cap).unwrap())
-                                .as_ref()
-                                .to_vec(),
-                        )
-                    } else {
-                        (cap.clone(), sig.clone())
+                        *sig = keypair
+                            .sign(&rmp_serde::to_vec(&cap).unwrap())
+                            .as_ref()
+                            .to_vec();
                     }
                 })
             });
