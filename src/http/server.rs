@@ -858,7 +858,11 @@ async fn handle_app_message(
                 ));
             }
         }
-        Message::Request(Request { ref body, .. }) => {
+        Message::Request(Request {
+            ref body,
+            expects_response,
+            ..
+        }) => {
             let Ok(message) = serde_json::from_slice::<HttpServerAction>(body) else {
                 println!(
                     "http_server: got malformed request from {}: {:?}\r",
@@ -934,7 +938,6 @@ async fn handle_app_message(
                             },
                         );
                     }
-                    send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                 }
                 HttpServerAction::SecureBind { path, cache } => {
                     // the process ID is hashed to generate a unique subdomain
@@ -980,7 +983,6 @@ async fn handle_app_message(
                             },
                         );
                     }
-                    send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                 }
                 HttpServerAction::WebSocketBind {
                     mut path,
@@ -1002,7 +1004,6 @@ async fn handle_app_message(
                             encrypted,
                         },
                     );
-                    send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                 }
                 HttpServerAction::WebSocketSecureBind {
                     mut path,
@@ -1026,13 +1027,12 @@ async fn handle_app_message(
                             encrypted,
                         },
                     );
-                    send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                 }
                 HttpServerAction::WebSocketOpen { .. } => {
                     // we cannot receive these, only send them to processes
                     send_action_response(
                         km.id,
-                        km.source,
+                        km.source.clone(),
                         &send_to_loop,
                         Err(HttpServerError::WebSocketPushError {
                             error: "WebSocketOpen is not a valid request".to_string(),
@@ -1101,13 +1101,11 @@ async fn handle_app_message(
                             return;
                         }
                         match sender.send(ws_message).await {
-                            Ok(_) => {
-                                send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
-                            }
+                            Ok(_) => {}
                             Err(_) => {
                                 send_action_response(
                                     km.id,
-                                    km.source,
+                                    km.source.clone(),
                                     &send_to_loop,
                                     Err(HttpServerError::WebSocketPushError {
                                         error: "WebSocket channel closed".to_string(),
@@ -1119,7 +1117,7 @@ async fn handle_app_message(
                     } else {
                         send_action_response(
                             km.id,
-                            km.source,
+                            km.source.clone(),
                             &send_to_loop,
                             Err(HttpServerError::WebSocketPushError {
                                 error: "WebSocket channel not found".to_string(),
@@ -1145,9 +1143,12 @@ async fn handle_app_message(
                         }
                         let _ = got.value().1.send(warp::ws::Message::close()).await;
                         ws_senders.remove(&channel_id);
-                        send_action_response(km.id, km.source, &send_to_loop, Ok(())).await;
                     }
                 }
+            }
+            if km.rsvp.is_some() || expects_response.is_some() {
+                let target = km.rsvp.unwrap_or(km.source);
+                send_action_response(km.id, target, &send_to_loop, Ok(())).await;
             }
         }
     }
