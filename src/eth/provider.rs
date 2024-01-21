@@ -27,13 +27,13 @@ pub async fn provider(
     match Url::parse(&rpc_url)?.scheme() {
         "http" | "https" => {
             return Err(anyhow::anyhow!(
-                "eth: you provided a `http(s)://` Ethereum RPC, bot only `ws(s)://` is supported. Please try again with a `ws(s)://` provider"
+                "eth: you provided a `http(s)://` Ethereum RPC, but only `ws(s)://` is supported. Please try again with a `ws(s)://` provider"
             ));
         }
         "ws" | "wss" => {}
         s => {
             return Err(anyhow::anyhow!(
-                "eth: you provided a `{s:?}` Ethereum RPC, bot only `ws(s)://` is supported. Please try again with a `ws(s)://` provider"
+                "eth: you provided a `{s:?}` Ethereum RPC, but only `ws(s)://` is supported. Please try again with a `ws(s)://` provider"
             ));
         }
     }
