@@ -66,10 +66,10 @@ fn init(our: Address) {
 
     match response {
         LocalResponse::InstallResponse(InstallResponse::Success) => {
-            println!("install: started installing package {package_id}");
+            println!("successfully installed package {package_id}");
         }
         LocalResponse::InstallResponse(InstallResponse::Failure) => {
-            println!("install: failed to install package {package_id}");
+            println!("failed to install package {package_id}");
             println!("make sure that the package has been downloaded!")
         }
     }

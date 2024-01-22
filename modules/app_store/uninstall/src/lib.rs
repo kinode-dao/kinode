@@ -66,10 +66,10 @@ fn init(our: Address) {
 
     match response {
         LocalResponse::UninstallResponse(UninstallResponse::Success) => {
-            println!("uninstall: started uninstalling package {package_id}");
+            println!("successfully uninstalled package {package_id}");
         }
         LocalResponse::UninstallResponse(UninstallResponse::Failure) => {
-            println!("uninstall: failed to uninstall package {package_id}");
+            println!("failed to uninstall package {package_id}!");
         }
     }
 }

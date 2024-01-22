@@ -77,10 +77,10 @@ fn init(our: Address) {
 
     match response {
         LocalResponse::DownloadResponse(DownloadResponse::Started) => {
-            println!("download: started downloading package {package_id} from {download_from}");
+            println!("started downloading package {package_id} from {download_from}");
         }
         LocalResponse::DownloadResponse(DownloadResponse::Failure) => {
-            println!("download: failed to download package {package_id} from {download_from}");
+            println!("failed to download package {package_id} from {download_from}");
         }
     }
 }
