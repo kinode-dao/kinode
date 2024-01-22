@@ -1,7 +1,7 @@
 use kinode_process_lib::{await_next_request_body, call_init, println, Address, Request};
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "../../../wit",
     world: "process",
     exports: {
         world: Component,
