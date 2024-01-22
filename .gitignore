@@ -13,3 +13,4 @@ target.wasm
 world
 .env
 src/bootstrapped_processes.rs
+src/ml/models/

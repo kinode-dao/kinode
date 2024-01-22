@@ -16,6 +16,15 @@ zip = "0.6"
 
 [features]
 simulation-mode = []
+# TODO: Luc: Feature flag?
+default = []
+# TODO: Luc: Needed? 
+# accelerate = ["dep:accelerate-src", "candle/accelerate", "candle-nn/accelerate"]
+# cuda = ["candle-core/cuda", "candle-nn/cuda"]
+# TODO: Luc: ACTUALLY USE THIS
+# flash-attn = ["cuda", "dep:candle-flash-attn"]
+metal = ["candle-core/metal", "candle-nn/metal"]
+# --- 
 
 [dependencies]
 aes-gcm = "0.10.2"
@@ -25,6 +34,11 @@ base64 = "0.13"
 bincode = "1.3.3"
 blake3 = "1.4.1"
 bytes = "1.4.0"
+# TODO: Behind feature flag? 
+candle-core = { git = "https://github.com/jaxs-ribs/candle-fork.git", branch = "main" }
+candle-nn = { git = "https://github.com/jaxs-ribs/candle-fork.git", branch = "main" }
+candle-transformers = { git = "https://github.com/jaxs-ribs/candle-fork.git", branch = "main" }
+# ---
 cap-std = "2.0.0"
 chacha20poly1305 = "0.10.1"
 chrono = "0.4.31"
@@ -64,9 +78,17 @@ sha2 = "0.10"
 snow = { version = "0.9.3", features = ["ring-resolver"] }
 static_dir = "0.2.0"
 thiserror = "1.0"
+# TODO: Luc: Feature flag? 
+tokenizers = { features = ["onig"] }
+# --- 
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "signal", "sync"] }
 tokio-stream = "0.1.14"
 tokio-tungstenite = "0.20.1"
+# TODO: Luc: Feature flag?
+tracing = "0.1.37"
+tracing-chrome = "0.7.1"
+tracing-subscriber = "0.3.7"
+# ---
 url = "2.4.1"
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"

@@ -15,6 +15,7 @@ lazy_static::lazy_static! {
     pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
     pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
     pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
+    pub static ref ML_PROCESS_ID: ProcessId = ProcessId::new(Some("ml"), "distro", "sys");
 }
 
 //
@@ -1337,4 +1338,40 @@ pub enum SqliteError {
     RusqliteError { error: String },
     #[error("sqlite: input bytes/json/key error: {error}")]
     InputError { error: String },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MLRequest {
+    pub path: String, // TODO: Zen: Is this needed?
+    pub action: MLAction,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MLAction {
+    ListModel,
+    LoadModel { model_name: String },
+    UnloadModel,
+    Infer { input: MLInput },
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MLInput {
+    Text(String),
+    // Can be anything from embeddings, image, audio, etc.
+    // TODO: Zen: Should we make this subtypes even though they're all Vec<u8>?
+    Bytes(Vec<u8>),
+}
+
+#[derive(Error, Debug, Serialize, Deserialize)]
+pub enum MLError {
+    #[error("temp")]
+    Temp,
+    // TODO: Zen: Add more errors
+}
+
+// TODO: Zen:
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MLResponse {
+    Ok,
+    Err(MLError),
 }

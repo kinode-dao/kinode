@@ -16,6 +16,7 @@ mod http;
 mod kernel;
 mod keygen;
 mod kv;
+mod ml;
 mod net;
 mod register;
 mod sqlite;
@@ -36,6 +37,7 @@ const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
+const ML_CHANNEL_CAPACITY: usize = 1_000;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -199,6 +201,8 @@ async fn main() {
     // terminal receives prints via this channel, all other modules send prints
     let (print_sender, print_receiver): (PrintSender, PrintReceiver) =
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
+    let (ml_sender, ml_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(ML_CHANNEL_CAPACITY);
 
     println!("finding public IP address...");
     let our_ip: std::net::Ipv4Addr = {
@@ -394,6 +398,11 @@ async fn main() {
             sqlite_sender,
             false,
         ),
+        (
+            ProcessId::new(Some("ml"), "distro", "sys"),
+            ml_sender,
+            false,
+        ),
     ];
 
     /*
@@ -510,6 +519,12 @@ async fn main() {
         vfs_message_receiver,
         caps_oracle_sender.clone(),
         home_directory_path.clone(),
+    ));
+    tasks.spawn(ml::ml(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        ml_receiver,
+        print_sender.clone(),
     ));
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
