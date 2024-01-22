@@ -87,7 +87,6 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - `m <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>.
     - Example: `m our@net:distro:sys diagnostics`
     - `our` will always be interpolated by the system as your node's name
-    - Can also use `m` for same command: `m our@net:distro:sys diagnostics`
 <!-- - `/app <address>`: set the terminal to a mode where all messages go to a specific app. To clear this selection, use `/app clear` or simply `/app`. This is useful for apps that have a command line interface.
     - Example: `/app our@net:distro:sys`, then `/m diagnostics`
     - Can also use `/a` for same command: `/a our@net:distro:sys`
