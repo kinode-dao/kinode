@@ -1,12 +1,9 @@
 use futures::{SinkExt, StreamExt};
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
 use tokio_tungstenite::{
     connect_async,
     tungstenite::protocol::Message::{Binary, Text},
-    WebSocketStream,
 };
-use url::Url;
 
 use crate::types;
 
@@ -18,6 +15,7 @@ pub async fn mock_client(
     node_identity: types::NodeId,
     send_to_loop: Sender,
     mut recv_from_loop: Receiver,
+    _network_error_sender: types::NetworkErrorSender,
 ) -> anyhow::Result<()> {
     let url = format!("ws://127.0.0.1:{}", port);
 
