@@ -21,6 +21,9 @@ struct TerminalState {
 }
 
 fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
+    if line.is_empty() {
+        return Ok(());
+    }
     let (head, args) = line.split_once(" ").unwrap_or((line, ""));
     let process = match state.aliases.get(head) {
         Some(pid) => pid.clone(),
