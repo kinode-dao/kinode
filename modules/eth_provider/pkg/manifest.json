@@ -1,0 +1,18 @@
+[
+    {
+        "process_name": "eth_provider",
+        "process_wasm_path": "/eth_provider.wasm",
+        "on_exit": "Restart",
+        "request_networking": false,
+        "request_capabilities": [
+            "eth:distro:sys",
+            "http_server:distro:sys",
+            "net:distro:sys"
+        ],
+        "grant_capabilities": [
+            "eth:distro:sys",
+            "http_server:distro:sys"
+        ],
+        "public": false
+    }
+]

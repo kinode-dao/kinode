@@ -1,0 +1,9 @@
+{
+    "package": "eth_provider",
+    "publisher": "sys",
+    "version": [
+        0,
+        1,
+        0
+    ]
+}
