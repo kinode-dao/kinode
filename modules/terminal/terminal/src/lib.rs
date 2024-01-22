@@ -5,7 +5,6 @@ use kinode_process_lib::{
     get_blob, get_capability, our_capabilities, println, vfs, Address, Capability, PackageId,
     ProcessId, Request,
 };
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 wit_bindgen::generate!({
@@ -16,20 +15,8 @@ wit_bindgen::generate!({
     },
 });
 
-// TODO move this into kt::
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DotScriptsEntry {
-    pub root: bool,
-    pub public: bool,
-    pub request_networking: bool,
-    pub request_capabilities: Option<Vec<serde_json::Value>>,
-    pub grant_capabilities: Option<Vec<serde_json::Value>>,
-}
-
 struct TerminalState {
     our: Address,
-    current_target: Option<Address>,
     aliases: HashMap<String, ProcessId>, // TODO maybe address...
 }
 
@@ -58,7 +45,6 @@ impl Guest for Component {
     fn init(our: String) {
         let mut state = TerminalState {
             our: our.parse::<Address>().unwrap(),
-            current_target: None,
             aliases: {
                 let mut a = HashMap::new();
                 a.insert(
@@ -136,7 +122,7 @@ fn handle_run(
         ));
     };
     let dot_scripts = String::from_utf8(blob.bytes)?;
-    let dot_scripts = serde_json::from_str::<HashMap<String, DotScriptsEntry>>(&dot_scripts)?;
+    let dot_scripts = serde_json::from_str::<HashMap<String, kt::DotScriptsEntry>>(&dot_scripts)?;
     let Some(entry) = dot_scripts.get(&wasm_path) else {
         return Err(anyhow::anyhow!("script not in scripts.json file"));
     };

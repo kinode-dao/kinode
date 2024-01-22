@@ -1,4 +1,4 @@
-use kinode_process_lib::{await_message, call_init, println, Address, Message, Request};
+use kinode_process_lib::{await_next_request_body, call_init, println, Address, Request};
 
 wit_bindgen::generate!({
     path: "wit",
@@ -11,13 +11,12 @@ wit_bindgen::generate!({
 call_init!(init);
 
 fn init(_our: Address) {
-    // TODO will need to package this up into a process lib function that makes it easy
-    let Ok(Message::Request { body, .. }) = await_message() else {
-        println!("got send error, failing out");
+    let Ok(args) = await_next_request_body() else {
+        println!("m: failed to get args, aborting");
         return;
     };
 
-    let tail = String::from_utf8(body).unwrap();
+    let tail = String::from_utf8(args).unwrap();
 
     let (target, body) = match tail.split_once(" ") {
         Some((a, p)) => (a, p),
@@ -29,7 +28,7 @@ fn init(_our: Address) {
     // TODO aliasing logic...maybe we can read from terminal state since we have root?
     let target = match target.parse::<Address>() {
         Ok(t) => t,
-        Err(e) => {
+        Err(_) => {
             println!("invalid address: \"{target}\"");
             return;
         } // match state.aliases.get(target) {

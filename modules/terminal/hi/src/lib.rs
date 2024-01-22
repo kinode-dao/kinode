@@ -1,4 +1,6 @@
-use kinode_process_lib::{await_message, call_init, println, Address, Message, Request, SendError};
+use kinode_process_lib::{
+    await_next_request_body, call_init, println, Address, Request, SendError,
+};
 
 wit_bindgen::generate!({
     path: "wit",
@@ -11,13 +13,12 @@ wit_bindgen::generate!({
 call_init!(init);
 
 fn init(our: Address) {
-    // TODO will need to package this up into a process lib function that makes it easy
-    let Ok(Message::Request { body, .. }) = await_message() else {
-        println!("got send error, failing out");
+    let Ok(args) = await_next_request_body() else {
+        println!("hi: failed to get args, aborting");
         return;
     };
 
-    let tail = String::from_utf8(body).unwrap();
+    let tail = String::from_utf8(args).unwrap();
 
     let (node_id, message) = match tail.split_once(" ") {
         Some((s, t)) => (s, t),

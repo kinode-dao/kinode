@@ -1,5 +1,5 @@
 use kinode_process_lib::{
-    await_message, call_init, get_blob, println, vfs, Address, Message, Request,
+    await_next_request_body, call_init, get_blob, println, vfs, Address, Request,
 };
 
 wit_bindgen::generate!({
@@ -13,13 +13,12 @@ wit_bindgen::generate!({
 call_init!(init);
 
 fn init(_our: Address) {
-    // TODO will need to package this up into a process lib function that makes it easy
-    let Ok(Message::Request { body, .. }) = await_message() else {
-        println!("got send error, failing out");
+    let Ok(args) = await_next_request_body() else {
+        println!("cat: failed to get args, aborting");
         return;
     };
 
-    let Ok(file_path) = String::from_utf8(body) else {
+    let Ok(file_path) = String::from_utf8(args) else {
         println!("bad file path");
         return;
     };
