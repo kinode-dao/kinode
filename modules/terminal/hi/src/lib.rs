@@ -23,7 +23,7 @@ fn init(our: Address) {
     let (node_id, message) = match tail.split_once(" ") {
         Some((s, t)) => (s, t),
         None => {
-            println!("invalid command: \"{tail}\"");
+            println!("hi: invalid command, please provide a message");
             return;
         }
     };

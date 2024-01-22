@@ -16,5 +16,8 @@ fn init(_our: Address) {
         return;
     };
 
-    println!("{}", String::from_utf8(args).unwrap());
+    println!(
+        "{}",
+        String::from_utf8(args).unwrap_or("echo: error".into())
+    );
 }

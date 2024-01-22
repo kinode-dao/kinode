@@ -45,30 +45,28 @@ impl Guest for Component {
     fn init(our: String) {
         let mut state = TerminalState {
             our: our.parse::<Address>().unwrap(),
-            aliases: {
-                let mut a = HashMap::new();
-                a.insert(
+            aliases: HashMap::from([
+                (
                     "cat".to_string(),
                     "cat:terminal:sys".parse::<ProcessId>().unwrap(),
-                );
-                a.insert(
+                ),
+                (
                     "echo".to_string(),
                     "echo:terminal:sys".parse::<ProcessId>().unwrap(),
-                );
-                a.insert(
+                ),
+                (
                     "hi".to_string(),
                     "hi:terminal:sys".parse::<ProcessId>().unwrap(),
-                );
-                a.insert(
+                ),
+                (
                     "m".to_string(),
                     "m:terminal:sys".parse::<ProcessId>().unwrap(),
-                );
-                a.insert(
+                ),
+                (
                     "top".to_string(),
                     "top:terminal:sys".parse::<ProcessId>().unwrap(),
-                );
-                a
-            },
+                ),
+            ]),
         };
         loop {
             let (source, message) = match wit::receive() {

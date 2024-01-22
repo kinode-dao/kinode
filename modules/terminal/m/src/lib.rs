@@ -21,7 +21,7 @@ fn init(_our: Address) {
     let (target, body) = match tail.split_once(" ") {
         Some((a, p)) => (a, p),
         None => {
-            println!("invalid command: \"{tail}\"");
+            println!("m: invalid command, please provide an address and json message");
             return;
         }
     };
@@ -38,5 +38,5 @@ fn init(_our: Address) {
           //     }
           // },
     };
-    let _ = Request::new().target(target).body(body).send();
+    let _ = Request::new().target(target).body(body).send().unwrap();
 }

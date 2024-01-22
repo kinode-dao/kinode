@@ -19,17 +19,31 @@ fn init(_our: Address) {
         return;
     };
 
-    let proc_id = String::from_utf8(args).unwrap();
+    let Ok(proc_id) = String::from_utf8(args) else {
+        println!("top: failed to stringify arguments");
+        return;
+    };
 
-    let kernel_addr = Address::new("our", ("kernel", "distro", "sys"));
-    let _ = Request::new()
-        .target(kernel_addr)
-        .body(
-            serde_json::to_vec(&match proc_id.parse::<ProcessId>() {
-                Ok(proc_id) => KernelCommand::Debug(KernelPrint::Process(proc_id)),
-                Err(_) => KernelCommand::Debug(KernelPrint::ProcessMap),
-            })
-            .unwrap(),
-        )
-        .send();
+    if proc_id.is_empty() {
+        let _ = Request::new()
+            .target(("our", "kernel", "distro", "sys"))
+            .body(serde_json::to_vec(&KernelCommand::Debug(KernelPrint::ProcessMap)).unwrap())
+            .send();
+    } else {
+        match proc_id.parse::<ProcessId>() {
+            Ok(proc_id) => {
+                let _ = Request::new()
+                    .target(("our", "kernel", "distro", "sys"))
+                    .body(
+                        serde_json::to_vec(&KernelCommand::Debug(KernelPrint::Process(proc_id)))
+                            .unwrap(),
+                    )
+                    .send();
+            }
+            Err(_) => {
+                println!("top: invalid process id");
+                return;
+            }
+        }
+    }
 }
