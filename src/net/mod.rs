@@ -1058,6 +1058,31 @@ async fn handle_local_message(
             },
         }
         if !printout.is_empty() {
+            if let Message::Request(req) = km.message {
+                if req.expects_response.is_some() {
+                    kernel_message_tx
+                        .send(KernelMessage {
+                            id: km.id,
+                            source: Address {
+                                node: our.name.clone(),
+                                process: ProcessId::new(Some("net"), "distro", "sys"),
+                            },
+                            target: km.rsvp.unwrap_or(km.source),
+                            rsvp: None,
+                            message: Message::Response((
+                                Response {
+                                    inherit: false,
+                                    body: printout.clone().into_bytes(),
+                                    metadata: None,
+                                    capabilities: vec![],
+                                },
+                                None,
+                            )),
+                            lazy_load_blob: None,
+                        })
+                        .await?;
+                }
+            }
             print_tx
                 .send(Printout {
                     verbosity: 0,

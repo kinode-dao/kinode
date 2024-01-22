@@ -44,16 +44,19 @@ pub async fn http_client(
         id,
         source,
         rsvp,
-        message:
-            Message::Request(Request {
-                expects_response,
-                body,
-                ..
-            }),
+        message,
         lazy_load_blob: blob,
         ..
     }) = recv_in_client.recv().await
     {
+        let Message::Request(Request {
+            body,
+            expects_response,
+            ..
+        }) = message
+        else {
+            continue;
+        };
         // Check that the incoming request body is a HttpClientAction
         let Ok(request) = serde_json::from_slice::<HttpClientAction>(&body) else {
             // Send a "BadRequest" error if deserialization fails
@@ -146,6 +149,11 @@ pub async fn http_client(
         // If the incoming request was a WS request, send a response
         // HTTP responses are handled in the handle_http_request function
         if is_ws {
+            let Ok(body) =
+                serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(&result)
+            else {
+                continue;
+            };
             let _ = send_to_loop
                 .send(KernelMessage {
                     id,
@@ -158,11 +166,7 @@ pub async fn http_client(
                     message: Message::Response((
                         Response {
                             inherit: false,
-                            body:
-                                serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(
-                                    &result,
-                                )
-                                .unwrap(),
+                            body,
                             metadata: None,
                             capabilities: vec![],
                         },
@@ -205,10 +209,11 @@ async fn connect_websocket(
     // Add headers to the request
     let req_headers = req.headers_mut();
     for (key, value) in headers.clone() {
-        req_headers.insert(
-            HeaderName::from_bytes(key.as_bytes()).unwrap(),
-            HeaderValue::from_str(&value).unwrap(),
-        );
+        if let Ok(key_name) = HeaderName::from_bytes(key.as_bytes()) {
+            if let Ok(value_header) = HeaderValue::from_str(&value) {
+                req_headers.insert(key_name, value_header);
+            }
+        }
     }
 
     // Connect the WebSocket
@@ -438,6 +443,14 @@ async fn handle_http_request(
                 })
                 .await;
             // Handle the response and forward to the target process
+            let Ok(body) = serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(&Ok(
+                HttpClientResponse::Http(HttpResponse {
+                    status: response.status().as_u16(),
+                    headers: serialize_headers(response.headers()),
+                }),
+            )) else {
+                return;
+            };
             let _ = send_to_loop
                 .send(KernelMessage {
                     id,
@@ -450,14 +463,7 @@ async fn handle_http_request(
                     message: Message::Response((
                         Response {
                             inherit: false,
-                            body:
-                                serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(
-                                    &Ok(HttpClientResponse::Http(HttpResponse {
-                                        status: response.status().as_u16(),
-                                        headers: serialize_headers(response.headers()),
-                                    })),
-                                )
-                                .unwrap(),
+                            body,
                             metadata: None,
                             capabilities: vec![],
                         },
@@ -516,7 +522,7 @@ fn serialize_headers(headers: &HeaderMap) -> HashMap<String, String> {
     let mut hashmap = HashMap::new();
     for (key, value) in headers.iter() {
         let key_str = to_pascal_case(key.as_ref());
-        let value_str = value.to_str().unwrap_or("").to_string();
+        let value_str = value.to_str().unwrap_or_default().to_string();
         hashmap.insert(key_str, value_str);
     }
     hashmap
@@ -527,9 +533,11 @@ fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
     let mut header_map = HeaderMap::new();
     for (key, value) in hashmap {
         let key_bytes = key.as_bytes();
-        let key_name = HeaderName::from_bytes(key_bytes).unwrap();
-        let value_header = HeaderValue::from_str(&value).unwrap();
-        header_map.insert(key_name, value_header);
+        if let Ok(key_name) = HeaderName::from_bytes(key_bytes) {
+            if let Ok(value_header) = HeaderValue::from_str(&value) {
+                header_map.insert(key_name, value_header);
+            }
+        }
     }
     header_map
 }
@@ -544,6 +552,10 @@ async fn http_error_message(
     send_to_loop: MessageSender,
 ) {
     if expects_response.is_some() {
+        let Ok(body) = serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(&Err(error))
+        else {
+            return;
+        };
         let _ = send_to_loop
             .send(KernelMessage {
                 id,
@@ -556,10 +568,7 @@ async fn http_error_message(
                 message: Message::Response((
                     Response {
                         inherit: false,
-                        body: serde_json::to_vec::<Result<HttpResponse, HttpClientError>>(&Err(
-                            error,
-                        ))
-                        .unwrap(),
+                        body,
                         metadata: None,
                         capabilities: vec![],
                     },
@@ -644,6 +653,9 @@ async fn handle_ws_message(
     blob: Option<LazyLoadBlob>,
     send_to_loop: MessageSender,
 ) {
+    let Ok(body) = serde_json::to_vec::<HttpClientRequest>(&body) else {
+        return;
+    };
     let _ = send_to_loop
         .send(KernelMessage {
             id,
@@ -655,7 +667,7 @@ async fn handle_ws_message(
             rsvp: None,
             message: Message::Request(Request {
                 inherit: false,
-                body: serde_json::to_vec::<HttpClientRequest>(&body).unwrap(),
+                body,
                 expects_response: None,
                 metadata: None,
                 capabilities: vec![],

@@ -521,13 +521,6 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                             .parse::<ProcessId>()
                         {
                             if let Some(params) = map.get("params") {
-                                if params.to_string() == "\"root\"" {
-                                    println!(
-                                        "app-store: app requested root capability, ignoring"
-                                    );
-                                    continue;
-                                }
-
                                 capability = get_capability(
                                     &Address {
                                         node: our.node.clone(),
@@ -547,7 +540,7 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                 initial_capabilities.insert(kt::de_wit_capability(cap));
             } else {
                 println!(
-                    "app-store: no cap: {}, for {} to request!",
+                    "app-store: no cap: {} for {} to request!",
                     value.to_string(),
                     package
                 );
@@ -565,6 +558,15 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
             })?)
             .inherit(true)
             .send_and_await_response(5)??;
+    }
+    // THEN, *after* all processes have been initialized, grant caps in manifest
+    // TODO for both grants and requests: make the vector of caps
+    // and then do one GrantCapabilities message at the end. much faster.
+    for entry in &manifest {
+        let process_id = format!("{}:{}", entry.process_name, package);
+        let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
+            return Err(anyhow::anyhow!("app store: invalid process id!"));
+        };
         for value in &entry.grant_capabilities {
             match value {
                 serde_json::Value::String(process_name) => {
@@ -598,18 +600,16 @@ fn handle_install(our: &Address, package: &PackageId) -> anyhow::Result<()> {
                                 let _ = Request::new()
                                     .target(("our", "kernel", "distro", "sys"))
                                     .body(
-                                        serde_json::to_vec(
-                                            &kt::KernelCommand::GrantCapabilities {
-                                                target: parsed_process_id,
-                                                capabilities: vec![kt::Capability {
-                                                    issuer: Address {
-                                                        node: our.node.clone(),
-                                                        process: parsed_new_process_id.clone(),
-                                                    },
-                                                    params: params.to_string(),
-                                                }],
-                                            },
-                                        )
+                                        serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                                            target: parsed_process_id,
+                                            capabilities: vec![kt::Capability {
+                                                issuer: Address {
+                                                    node: our.node.clone(),
+                                                    process: parsed_new_process_id.clone(),
+                                                },
+                                                params: params.to_string(),
+                                            }],
+                                        })
                                         .unwrap(),
                                     )
                                     .send()?;

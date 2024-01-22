@@ -959,6 +959,7 @@ pub enum KernelResponse {
 
 #[derive(Debug)]
 pub enum CapMessage {
+    /// root access: uncritically sign and add all `caps` to `on`
     Add {
         on: ProcessId,
         caps: Vec<Capability>,
@@ -970,17 +971,21 @@ pub enum CapMessage {
         cap: Capability,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
+    /// does `on` have `cap` in its store?
     Has {
         // a bool is given in response here
         on: ProcessId,
         cap: Capability,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
+    /// return all caps in `on`'s store
     GetAll {
         on: ProcessId,
         responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
-    GetSome {
+    /// before `on` sends a message, filter out any bogus caps it may have attached, sign any new
+    /// caps it may have created, and retreive the signature for the caps in its store.
+    FilterCaps {
         on: ProcessId,
         caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,

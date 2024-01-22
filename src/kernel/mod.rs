@@ -2,7 +2,7 @@ use crate::types::STATE_PROCESS_ID;
 use crate::types::{self as t, VFS_PROCESS_ID};
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
-use ring::signature::{self, KeyPair};
+use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -187,7 +187,6 @@ async fn handle_kernel_request(
             };
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
-            let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
             let parent_caps: &HashMap<t::Capability, Vec<u8>> =
                 &process_map.get(&km.source.process).unwrap().capabilities;
             let mut valid_capabilities: HashMap<t::Capability, Vec<u8>> = HashMap::new();
@@ -199,17 +198,9 @@ async fn handle_kernel_request(
             } else {
                 for cap in initial_capabilities {
                     match parent_caps.get(&cap) {
-                        // TODO I don't think we *have* to verify the sigs here but it doesn't hurt...
+                        // NOTE: verifying sigs here would be unnecessary
                         Some(sig) => {
-                            match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
-                                Ok(_) => {
-                                    valid_capabilities.insert(cap, sig.to_vec());
-                                }
-                                Err(e) => {
-                                    println!("kernel: InitializeProcess bad cap sig: {}\r", e);
-                                    continue;
-                                }
-                            }
+                            valid_capabilities.insert(cap, sig.to_vec());
                         }
                         None => {
                             println!(
@@ -1095,22 +1086,14 @@ pub async fn kernel(
                             }
                         );
                     },
-                    t::CapMessage::GetSome { on, caps, responder } => {
+                    t::CapMessage::FilterCaps { on, caps, responder } => {
                         let _ = responder.send(
                             match process_map.get(&on) {
                                 None => vec![],
                                 Some(p) => {
                                     caps.iter().filter_map(|cap| {
-                                        // if issuer is foreign, retrieve uncritically
-                                        if cap.issuer.node != our.name {
-                                            p.capabilities.get(cap).map(|sig| {
-                                                (
-                                                    cap.clone(),
-                                                    sig.clone()
-                                                )
-                                            })
-                                        // if issuer is self, retrieve uncritically
-                                        } else if cap.issuer.process == on {
+                                        // if issuer is message source, then sign the cap
+                                        if cap.issuer.process == on {
                                             Some((
                                                 cap.clone(),
                                                 keypair
@@ -1118,20 +1101,12 @@ pub async fn kernel(
                                                     .as_ref()
                                                     .to_vec()
                                             ))
-                                        // otherwise verify the signature before returning
+                                        // otherwise, only attach previously saved caps
+                                        // NOTE we don't need to verify the sigs!
                                         } else {
                                             match p.capabilities.get(cap) {
                                                 None => None,
-                                                Some(sig) => {
-                                                    let pk = signature::UnparsedPublicKey::new(&signature::ED25519, keypair.public_key());
-                                                    match pk.verify(
-                                                        &rmp_serde::to_vec(cap).unwrap_or_default(),
-                                                        sig,
-                                                    ) {
-                                                        Ok(_) => Some((cap.clone(), sig.clone())),
-                                                        Err(_) => None,
-                                                    }
-                                                },
+                                                Some(sig) => Some((cap.clone(), sig.clone()))
                                             }
                                         }
                                     }).collect()
