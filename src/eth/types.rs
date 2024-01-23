@@ -15,6 +15,7 @@ pub enum EthAction {
     SubscribeLogs { sub_id: u64, filter: Filter },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
     UnsubscribeLogs(u64),
+    Path,
 }
 
 /// The Response type which a process will get from requesting with an [`EthAction`] will be
