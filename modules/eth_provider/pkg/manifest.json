@@ -6,12 +6,12 @@
         "request_networking": false,
         "request_capabilities": [
             "eth:distro:sys",
-            "http_server:distro:sys",
+            "http_client:distro:sys",
             "net:distro:sys"
         ],
         "grant_capabilities": [
             "eth:distro:sys",
-            "http_server:distro:sys"
+            "http_client:distro:sys"
         ],
         "public": false
     }

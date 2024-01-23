@@ -1,11 +1,17 @@
 use kinode_process_lib::{
     Address,
+    LazyLoadBlob as Blob,
     Message,
     ProcessId,
     Request, 
     Response,
     await_message,
+    http,
     println
+};
+use kinode_process_lib::http::{
+    WsMessageType,
+    open_ws_connection_and_await,
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,8 +39,32 @@ enum ProviderAction {
 }
 
 struct State {
-    fulfillment: Option<Address>,
-    external_url: String,
+    conn: WsConnection
+}
+
+struct WsConnection {
+    our: Address,
+    channel: u32
+}
+
+impl WsConnection {
+
+    fn new (our: Address, channel: u32) -> Self {
+        Self {
+            our,
+            channel
+        }
+    }
+
+    fn send(&self, blob: Blob) {
+        http::send_ws_client_push(
+            self.our.node.clone(),
+            self.channel,
+            WsMessageType::Text,
+            blob,
+        );
+    }
+
 }
 
 struct Component;
@@ -43,8 +73,8 @@ impl Guest for Component {
 
         let our: Address = our.parse().unwrap();
 
-        Request::new()
-            .target(Address::new( "our", ProcessId::new(Some("eth"), "distro", "sys")))
+        let _ = Request::new()
+            .target(Address::new(&our.node, ProcessId::new(Some("eth"), "distro", "sys")))
             .body(serde_json::to_vec(&EthAction::Path).unwrap())
             .send();
 
@@ -67,7 +97,7 @@ fn main(our: Address) -> anyhow::Result<()> {
     loop {
         match await_message() {
             Ok(msg) =>  {
-                handle_message(msg, &mut state);
+                handle_message(&our, msg, &mut state);
                 continue;
             }
             Err(e) => {
@@ -82,23 +112,28 @@ fn main(our: Address) -> anyhow::Result<()> {
 }
 
 
-fn handle_message(msg: Message, state: &mut State) -> anyhow::Result<()> {
+fn handle_message(our: &Address, msg: Message, state: &mut State) -> anyhow::Result<()> {
 
     match msg {
 
-        Message::Request { source, expects_response, body, metadata, capabilities } => {
-            // Now you can use source, expects_response, body, metadata, capabilities directly
-        }
+        Message::Request { source, expects_response, body, metadata, capabilities } => { }
         Message::Response { source, body, metadata, context, capabilities } => {
 
             let rpc_path = serde_json::from_slice::<RpcPath>(&body).unwrap();
 
-            state.fulfillment = Some(rpc_path.process_addr.clone());
-            state.external_url = rpc_path.rpc_url.unwrap_or("".to_string());
-            
-            println!("RPC_PATH {:?}", rpc_path);
+            if let Ok(msg) = http::open_ws_connection_and_await(
+                our.node.clone(),
+                rpc_path.rpc_url.unwrap(),
+                None,
+                123454321
+            ) {
 
-            // Now you can use source, body, metadata, context, capabilities directly
+                state.conn = WsConnection::new(rpc_path.process_addr, msg.channel);
+                
+            } else {
+
+            };
+
         }
 
         _ => {}
