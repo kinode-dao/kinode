@@ -11,6 +11,8 @@ use kinode_process_lib::{
 };
 use kinode_process_lib::http::{
     WsMessageType,
+    HttpClientError,
+    HttpClientResponse,
     open_ws_connection_and_await,
 };
 use serde::{Deserialize, Serialize};
@@ -38,10 +40,12 @@ enum ProviderAction {
     RpcPath(RpcPath)
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 struct State {
     conn: WsConnection
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 struct WsConnection {
     our: Address,
     channel: u32
@@ -73,11 +77,6 @@ impl Guest for Component {
 
         let our: Address = our.parse().unwrap();
 
-        let _ = Request::new()
-            .target(Address::new(&our.node, ProcessId::new(Some("eth"), "distro", "sys")))
-            .body(serde_json::to_vec(&EthAction::Path).unwrap())
-            .send();
-
         match main(our) {
             Ok(_) => {}
             Err(e) => {
@@ -89,9 +88,27 @@ impl Guest for Component {
 
 fn main(our: Address) -> anyhow::Result<()> {
 
-    let mut state = State {
-        fulfillment: None,
-        external_url: "".to_string(),
+    let msg = Request::new()
+        .target(Address::new(&our.node, ProcessId::new(Some("eth"), "distro", "sys")))
+        .body(serde_json::to_vec(&EthAction::Path).unwrap())
+        .send_and_await_response(5)
+        .unwrap().unwrap();
+
+    let rpc_path = serde_json::from_slice::<RpcPath>(&msg.body()).unwrap();
+
+    let channel = 123454321;
+
+    let msg = http::open_ws_connection_and_await
+        (our.node.clone(), rpc_path.rpc_url.unwrap(), None, channel)
+            .unwrap().unwrap();
+    
+    let mut state = match serde_json::from_slice::<Result<HttpClientResponse, HttpClientError>>(msg.body()) {
+        Ok(Ok(HttpClientResponse::WebSocketAck)) => {
+            State { conn: WsConnection::new(rpc_path.process_addr, channel) }
+        },
+        _ => {
+            return Err(anyhow::anyhow!(": failed to open ws connection"))
+        }
     };
 
     loop {
@@ -119,20 +136,6 @@ fn handle_message(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
         Message::Request { source, expects_response, body, metadata, capabilities } => { }
         Message::Response { source, body, metadata, context, capabilities } => {
 
-            let rpc_path = serde_json::from_slice::<RpcPath>(&body).unwrap();
-
-            if let Ok(msg) = http::open_ws_connection_and_await(
-                our.node.clone(),
-                rpc_path.rpc_url.unwrap(),
-                None,
-                123454321
-            ) {
-
-                state.conn = WsConnection::new(rpc_path.process_addr, msg.channel);
-                
-            } else {
-
-            };
 
         }
 
