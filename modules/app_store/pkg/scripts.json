@@ -1,0 +1,35 @@
+{
+    "download.wasm": {
+        "root": false,
+        "public": false,
+        "requestNetworking": false,
+        "requestCapabilities": [
+            "main:app_store:sys"
+        ],
+        "grantCapabilities": [
+            "main:app_store:sys"
+        ]
+    },
+    "install.wasm": {
+        "root": false,
+        "public": false,
+        "requestNetworking": false,
+        "requestCapabilities": [
+            "main:app_store:sys"
+        ],
+        "grantCapabilities": [
+            "main:app_store:sys"
+        ]
+    },
+    "uninstall.wasm": {
+        "root": false,
+        "public": false,
+        "requestNetworking": false,
+        "requestCapabilities": [
+            "main:app_store:sys"
+        ],
+        "grantCapabilities": [
+            "main:app_store:sys"
+        ]
+    }
+}
