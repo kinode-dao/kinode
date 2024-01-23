@@ -1,3 +1,16 @@
+# Kinode
+
+Kinode OS is a decentralized OS, built for crypto.
+
+This repo contains the core runtime and processes.
+Most developers need not build the runtime.
+Instead, check out the [Kinode book](https://book.kinode.org/), and in particular the ["My First App" tutorial](https://book.kinode.org/my_first_app/chapter_1.html).
+
+If you want to get on the network, you can download a binary, rather than building it yourself, from [the releases page](https://github.com/uqbar-dao/kinode/tags).
+Then follow the instructions to [install it](https://book.kinode.org/install.html) and [join the network](https://book.kinode.org/login.html).
+
+If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a question!
+
 ## Setup
 
 ### Building components
@@ -33,7 +46,7 @@ Make sure not to use the same home directory for two nodes at once! You can use 
 
 TODO: document feature flags `--simulation-mode`
 ```bash
-cargo +nightly run --release -- home --rpc wss://eth-sepolia.g.alchemy.com/v2/<your-api-key>
+cargo +nightly run --release -- home --rpc wss://eth-sepolia.g.alchemy.com/v2/<your-api-key> --tesnet
 ```
 
 On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH wallet is connected to the Sepolia test network. Login should be straightforward, just submit the transactions and follow the flow. If you want to register a new ID you will either need [Sepolia testnet tokens](https://www.infura.io/faucet/sepolia) or an invite code.
