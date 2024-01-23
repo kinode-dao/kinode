@@ -1,0 +1,9 @@
+*/target/
+/target
+pkg/*.wasm
+pkg/ui
+*.swp
+*.swo
+*/wasi_snapshot_preview1.wasm
+*/wit/
+*/process_env

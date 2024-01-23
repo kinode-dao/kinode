@@ -1,0 +1,99 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+  width: 75%;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 1em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+.input-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.input-row > button {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 0.3em 0.6em;
+}
+
+.input-row > input {
+  border: 1px solid #ccc;
+  padding: 0.32em 0.6em;
+  font-size: 1em;
+  border-radius: 0.25em;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  width: 100%;
+}
+
+.chat-button {
+  padding: 0.25em 0.5em;
+  margin-bottom: 1em;
+  background-color: cornflowerblue;
+}
+
+.chat-button.selected {
+  background-color: blue;
+  color: white;
+  cursor: default;
+}
+
+.message-list {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0.5em;
+}
+
+.message {
+  align-self: flex-start;
+  background-color: lightgray;
+  border-radius: 0.25em;
+  padding: 0.25em 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.message.ours {
+  align-self: flex-end;
+  background-color: blue;
+  color: white;
+}
