@@ -5,6 +5,7 @@ use kinode_process_lib::{
     get_blob, get_capability, our_capabilities, println, vfs, Address, Capability, PackageId,
     ProcessId, Request,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 wit_bindgen::generate!({
@@ -14,6 +15,12 @@ wit_bindgen::generate!({
         world: Component,
     },
 });
+
+#[derive(Serialize, Deserialize)]
+struct EditAliases {
+    alias: String,
+    process: Option<ProcessId>,
+}
 
 struct TerminalState {
     our: Address,
@@ -50,6 +57,10 @@ impl Guest for Component {
             our: our.parse::<Address>().unwrap(),
             aliases: HashMap::from([
                 (
+                    "alias".to_string(),
+                    "alias:terminal:sys".parse::<ProcessId>().unwrap(),
+                ),
+                (
                     "cat".to_string(),
                     "cat:terminal:sys".parse::<ProcessId>().unwrap(),
                 ),
@@ -81,13 +92,38 @@ impl Guest for Component {
             };
             match message {
                 wit::Message::Request(wit::Request { body, .. }) => {
-                    if state.our != source {
+                    if state.our == source {
+                        match parse_command(
+                            &mut state,
+                            std::str::from_utf8(&body).unwrap_or_default(),
+                        ) {
+                            Ok(()) => continue,
+                            Err(e) => println!("terminal: {e}"),
+                        }
+                    } else if state.our.node == source.node {
+                        let Ok(edit_aliases) = serde_json::from_slice::<EditAliases>(&body) else {
+                            println!("terminal: invalid action!");
+                            continue;
+                        };
+
+                        match edit_aliases.process {
+                            Some(process) => {
+                                state
+                                    .aliases
+                                    .insert(edit_aliases.alias.clone(), process.clone());
+                                println!(
+                                    "terminal: alias {:?} set to {:?}",
+                                    edit_aliases.alias,
+                                    process.to_string()
+                                );
+                            }
+                            None => {
+                                state.aliases.remove(&edit_aliases.alias);
+                                println!("terminal: alias {} removed", edit_aliases.alias);
+                            }
+                        }
+                    } else {
                         continue;
-                    }
-                    match parse_command(&mut state, std::str::from_utf8(&body).unwrap_or_default())
-                    {
-                        Ok(()) => continue,
-                        Err(e) => println!("terminal: {e}"),
                     }
                 }
                 wit::Message::Response((wit::Response { body, .. }, _)) => {

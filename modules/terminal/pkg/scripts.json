@@ -1,4 +1,13 @@
 {
+    "alias.wasm": {
+        "root": false,
+        "public": false,
+        "requestNetworking": false,
+        "requestCapabilities": [
+            "terminal:terminal:sys"
+        ],
+        "grantCapabilities": []
+    },
     "echo.wasm": {
         "root": false,
         "public": false,
