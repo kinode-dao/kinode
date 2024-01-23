@@ -1,20 +1,27 @@
-use crate::net::{types::*, utils::*};
-use crate::types::*;
-use anyhow::{anyhow, Result};
-use dashmap::DashMap;
-use futures::{SinkExt, StreamExt};
-use rand::seq::SliceRandom;
-use ring::signature::Ed25519KeyPair;
-use std::{collections::HashMap, sync::Arc};
-use tokio::net::TcpListener;
-use tokio::task::JoinSet;
-use tokio::time;
-use tokio_tungstenite::{
-    accept_async, connect_async, tungstenite, MaybeTlsStream, WebSocketStream,
+#[cfg(not(feature = "simulation-mode"))]
+use {
+    anyhow::{anyhow, Result},
+    dashmap::DashMap,
+    futures::{SinkExt, StreamExt},
+    rand::seq::SliceRandom,
+    ring::signature::Ed25519KeyPair,
+    std::{collections::HashMap, sync::Arc},
+    tokio::net::TcpListener,
+    tokio::task::JoinSet,
+    tokio::time,
+    tokio_tungstenite::{
+        accept_async, connect_async, tungstenite, MaybeTlsStream, WebSocketStream,
+    },
 };
 
+#[cfg(not(feature = "simulation-mode"))]
 mod types;
+#[cfg(not(feature = "simulation-mode"))]
 mod utils;
+#[cfg(not(feature = "simulation-mode"))]
+use crate::net::{types::*, utils::*};
+#[cfg(not(feature = "simulation-mode"))]
+use crate::types::*;
 
 // Re-export for testing.
 #[cfg(feature = "simulation-mode")]
@@ -23,13 +30,16 @@ mod mock;
 pub use mock::mock_client;
 
 // only used in connection initialization, otherwise, nacks and Responses are only used for "timeouts"
+#[cfg(not(feature = "simulation-mode"))]
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// 10 MB -- TODO analyze as desired, apps can always chunk data into many messages
 /// note that this only applies to cross-network messages, not local ones.
+#[cfg(not(feature = "simulation-mode"))]
 const MESSAGE_MAX_SIZE: u32 = 10_485_800;
 
 /// Entry point from the main kernel task. Runs forever, spawns listener and sender tasks.
+#[cfg(not(feature = "simulation-mode"))]
 pub async fn networking(
     our: Identity,
     our_ip: String,
@@ -107,6 +117,7 @@ pub async fn networking(
     }
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 async fn indirect_networking(
     our: Identity,
     our_ip: String,
@@ -232,6 +243,7 @@ async fn indirect_networking(
     }
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 async fn connect_to_routers(
     our: Identity,
     our_ip: String,
@@ -278,6 +290,7 @@ async fn connect_to_routers(
     Ok(())
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 async fn direct_networking(
     our: Identity,
     our_ip: String,
@@ -460,6 +473,7 @@ async fn direct_networking(
     }
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 async fn establish_new_peer_connection(
     our: Identity,
     our_ip: String,
@@ -559,6 +573,7 @@ async fn establish_new_peer_connection(
     }
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 async fn init_connection_via_router(
     our: &Identity,
     our_ip: &str,
@@ -604,6 +619,7 @@ async fn init_connection_via_router(
     false
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 async fn recv_connection(
     our: &Identity,
     our_ip: &str,
@@ -684,6 +700,7 @@ async fn recv_connection(
     ))
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 async fn recv_connection_via_router(
     our: &Identity,
     our_ip: &str,
@@ -762,6 +779,7 @@ async fn recv_connection_via_router(
     ))
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 async fn init_connection(
     our: &Identity,
     our_ip: &str,
@@ -848,6 +866,7 @@ async fn init_connection(
 }
 
 /// net module only handles incoming local requests, will never return a response
+#[cfg(not(feature = "simulation-mode"))]
 async fn handle_local_message(
     our: &Identity,
     our_ip: &str,
