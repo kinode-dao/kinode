@@ -8,18 +8,14 @@ The purpose of this module is to behave similarly to that. It's the Provider for
 
 It receives requests from a variety of processes to perform some RPC call to the blockchain. It coordinates making all of those calls for each of the processes. There could be 50 processes making a variety of requests at any given time and the Provider process will make these requests to its RPC connection and manage returning all of the responses to the processes that requested them.
 
-Here are the three parts and each of their roles:
 
-1. Eth Runtime.
-    * Knows where to fulfill the RPC request. 
-        * External URL? 
-        * Another node on the network? 
-        * Locally running ETH node
-2. Provider Process.
-    * Builds RPC requests that will be sent to the RPC endpoint
-    * Interacts with all processes and codes the JSON requests accordingly
-    * Receives responses and dispatches them back to their relative packets
-3. Process lib imports for arbitrary processes.
+Below are the components and their roles
+
+1. Provider Process.
+    * Upon boot, it waits for a message from the kernel informing it of the RPC endpoints, which may come in the form of Kinode addresses or an http/ws endpoint.
+    * Builds RPC requests that will be sent to the RPC endpoint.
+    * Interacts with all processes and coordinates those various JSON requests and responses.
+2. Process lib imports for arbitrary processes.
     * Idiomatic imports for interacting with the chain
         * SubscribeLogsReuqest. Calls two RPC methods retrieving events for an address:
             * eth_getLogs - get all logs for a given address
@@ -30,3 +26,7 @@ Here are the three parts and each of their roles:
             * eth_getStorageAt - retrieve value at storage slot
         * SendTransaction 
             * eth_sendTransaction - send a transaction to the mempool
+
+## Handling the RPC status of a node - local or remote?
+
+The Provider must know where to fulfill the requests it is receiving and there's two options on how it can do that: over the uqbar network or directly to an external rpc url it contains.
