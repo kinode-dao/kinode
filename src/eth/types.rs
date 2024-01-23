@@ -12,7 +12,10 @@ use tokio::task::JoinHandle;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthAction {
     /// Subscribe to logs with a custom filter. ID is to be used to unsubscribe.
-    SubscribeLogs { sub_id: u64, filter: Filter },
+    SubscribeLogs {
+        sub_id: u64,
+        filter: Filter,
+    },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
     UnsubscribeLogs(u64),
     Path,

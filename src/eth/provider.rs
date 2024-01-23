@@ -151,8 +151,8 @@ async fn handle_request(
 
             handle.abort();
             Ok(())
-        }, 
-        _ => Ok(())
+        }
+        _ => Ok(()),
     }
 }
 
@@ -204,13 +204,12 @@ struct RpcPath {
     pub rpc_url: Option<String>,
 }
 
-async fn reply_with_path (
+async fn reply_with_path(
     our: &Arc<String>,
     rpc_url: &String,
     km: &KernelMessage,
     send_to_loop: &MessageSender,
 ) {
-
     // for now, we only have external RPC connections so we just send directly
     let _ = send_to_loop
         .send(KernelMessage {
@@ -225,12 +224,13 @@ async fn reply_with_path (
                 Response {
                     inherit: false,
                     body: serde_json::to_vec(&RpcPath {
-                        process_addr: Address{
+                        process_addr: Address {
                             node: our.clone().to_string(),
                             process: HTTP_CLIENT_PROCESS_ID.clone(),
                         },
                         rpc_url: Some(rpc_url.clone()),
-                    }).unwrap(),
+                    })
+                    .unwrap(),
                     metadata: None,
                     capabilities: vec![],
                 },
@@ -239,5 +239,4 @@ async fn reply_with_path (
             lazy_load_blob: None,
         })
         .await;
-
 }
