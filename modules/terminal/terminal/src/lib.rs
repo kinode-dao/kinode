@@ -112,9 +112,8 @@ impl Guest for Component {
                                     .aliases
                                     .insert(edit_aliases.alias.clone(), process.clone());
                                 println!(
-                                    "terminal: alias {:?} set to {:?}",
-                                    edit_aliases.alias,
-                                    process.to_string()
+                                    "terminal: alias {} set to {}",
+                                    edit_aliases.alias, process
                                 );
                             }
                             None => {

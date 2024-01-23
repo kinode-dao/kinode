@@ -1,6 +1,7 @@
 use kinode_process_lib::{
     await_next_request_body, call_init, println, Address, ProcessId, Request,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 wit_bindgen::generate!({
@@ -10,6 +11,12 @@ wit_bindgen::generate!({
         world: Component,
     },
 });
+
+#[derive(Serialize, Deserialize)]
+struct EditAliases {
+    alias: String,
+    process: Option<ProcessId>,
+}
 
 call_init!(init);
 
@@ -31,9 +38,9 @@ fn init(_our: Address) {
         let _ = Request::new()
             .target(("our", "terminal", "terminal", "sys"))
             .body(
-                json!({
-                    "alias": alias,
-                    "process": null
+                json!(EditAliases {
+                    alias: alias.to_string(),
+                    process: None
                 })
                 .to_string()
                 .as_bytes()
@@ -46,9 +53,9 @@ fn init(_our: Address) {
                 let _ = Request::new()
                     .target(("our", "terminal", "terminal", "sys"))
                     .body(
-                        json!({
-                            "alias": alias,
-                            "process": process
+                        json!(EditAliases {
+                            alias: alias.to_string(),
+                            process: Some(process)
                         })
                         .to_string()
                         .as_bytes()
