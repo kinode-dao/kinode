@@ -64,8 +64,9 @@ pub async fn python(
 async fn run_python(code: &str) -> anyhow::Result<Vec<u8>> {
     let wasi_stdin = ReadPipe::from(code);
     let wasi_stdout = WritePipe::new_in_memory();
+    let wasi_stderr = WritePipe::new_in_memory();
 
-    {
+    let result = {
         // Define the WASI functions globally on the `Config`.
         let mut config = Config::new();
         config.async_support(true);
@@ -88,23 +89,35 @@ async fn run_python(code: &str) -> anyhow::Result<Vec<u8>> {
             // .env("PYTHONPATH", "/venv/lib/python3.12/site-packages")?
             .stdin(Box::new(wasi_stdin.clone()))
             .stdout(Box::new(wasi_stdout.clone()))
+            .stderr(Box::new(wasi_stderr.clone()))
             .build();
         let mut store = Store::new(&engine, wasi);
 
         // Instantiate our module with the imports we've created, and run it.
         let module = Module::from_binary(&engine, PYTHON_WASM)?;
         linker.module_async(&mut store, "", &module).await?;
+
         linker
             .get_default(&mut store, "")?
             .typed::<(), ()>(&store)?
             .call_async(&mut store, ())
-            .await?;
-    }
+            .await
+    };
 
-    let contents: Vec<u8> = wasi_stdout
-        .try_into_inner()
-        .expect("sole remaining reference to WritePipe")
-        .into_inner();
+    let contents: Vec<u8> = match result {
+        Ok(_) => {
+            wasi_stdout
+                .try_into_inner()
+                .expect("sole remaining reference to WritePipe")
+                .into_inner()
+        }
+        Err(_) => {
+            wasi_stderr
+                .try_into_inner()
+                .expect("sole remaining reference to WritePipe")
+                .into_inner()
+        }
+    };
 
     Ok(contents)
 }
