@@ -15,6 +15,7 @@ lazy_static::lazy_static! {
     pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
     pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
     pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
+    pub static ref PYTHON_PROCESS_ID: ProcessId = ProcessId::new(Some("python"), "distro", "sys");
 }
 
 //
@@ -1337,4 +1338,17 @@ pub enum SqliteError {
     RusqliteError { error: String },
     #[error("sqlite: input bytes/json/key error: {error}")]
     InputError { error: String },
+}
+
+// python Requests and Responses encode the Request `code`
+//  and the Response `output` in the `lazy_load_blob`
+#[derive(Debug, Serialize, Deserialize)]
+pub enum PythonRequest {
+    Run,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum PythonResponse {
+    Run,
+    Err(String),
 }

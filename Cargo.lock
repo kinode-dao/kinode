@@ -2758,6 +2758,7 @@ dependencies = [
  "uuid 1.4.1",
  "walkdir",
  "warp",
+ "wasi-common",
  "wasmtime",
  "wasmtime-wasi",
  "zip",

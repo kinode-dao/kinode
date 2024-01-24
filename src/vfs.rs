@@ -73,8 +73,9 @@ pub async fn vfs(
                         )
                         .await
                         {
+                            let target = km.rsvp.unwrap_or_else(|| km.source);
                             let _ = send_to_loop
-                                .send(make_error_message(our_node.clone(), km.id, km.source, e))
+                                .send(make_error_message(our_node.clone(), km.id, target, e))
                                 .await;
                         }
                     }
@@ -781,7 +782,7 @@ fn get_file_type(metadata: &std::fs::Metadata) -> FileType {
 fn make_error_message(
     our_node: String,
     id: u64,
-    source: Address,
+    target: Address,
     error: VfsError,
 ) -> KernelMessage {
     KernelMessage {
@@ -790,7 +791,7 @@ fn make_error_message(
             node: our_node,
             process: VFS_PROCESS_ID.clone(),
         },
-        target: source,
+        target,
         rsvp: None,
         message: Message::Response((
             Response {
