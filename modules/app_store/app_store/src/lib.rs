@@ -1,4 +1,6 @@
-use kinode_process_lib::http::{bind_http_path, send_response, serve_ui, HttpServerRequest, IncomingHttpRequest, StatusCode};
+use kinode_process_lib::http::{
+    bind_http_path, send_response, serve_ui, HttpServerRequest, IncomingHttpRequest, StatusCode,
+};
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
 use kinode_process_lib::{call_init, println};
@@ -225,40 +227,48 @@ fn handle_http_request(
             match method.as_str() {
                 "GET" => {
                     // TODO: Return a list of the user's apps
-                    (StatusCode::OK, None, serde_json::to_vec(&vec![
-                        PackageListing {
-                            owner: our.node.clone(),
-                            publisher: our.node.clone(),
-                            name: "Chess".to_string(),
-                            icon: "".to_string(),
-                            package_name: "chess".to_string(),
-                            description: Some("A test app".to_string()),
-                            website: Some("https://example.com".to_string()),
-                            rating: 3.0,
-                            versions: HashMap::new(),
-                            mirrors: vec![],
-                        },
-                        PackageListing {
-                            owner: our.node.clone(),
-                            publisher: our.node.clone(),
-                            name: "File Transfer".to_string(),
-                            icon: "".to_string(),
-                            package_name: "file_transfer".to_string(),
-                            description: Some("A test app".to_string()),
-                            website: Some("https://example.com".to_string()),
-                            rating: 3.0,
-                            versions: HashMap::new(),
-                            mirrors: vec![],
-                        },
-                    ])?)
-                },
+                    (
+                        StatusCode::OK,
+                        None,
+                        serde_json::to_vec(&vec![
+                            PackageListing {
+                                owner: our.node.clone(),
+                                publisher: our.node.clone(),
+                                name: "Chess".to_string(),
+                                icon: "".to_string(),
+                                package_name: "chess".to_string(),
+                                description: Some("A test app".to_string()),
+                                website: Some("https://example.com".to_string()),
+                                rating: 3.0,
+                                versions: HashMap::new(),
+                                mirrors: vec![],
+                            },
+                            PackageListing {
+                                owner: our.node.clone(),
+                                publisher: our.node.clone(),
+                                name: "File Transfer".to_string(),
+                                icon: "".to_string(),
+                                package_name: "file_transfer".to_string(),
+                                description: Some("A test app".to_string()),
+                                website: Some("https://example.com".to_string()),
+                                rating: 3.0,
+                                versions: HashMap::new(),
+                                mirrors: vec![],
+                            },
+                        ])?,
+                    )
+                }
                 "POST" => {
                     // Add an app
                     (StatusCode::CREATED, None, format!("Installed").into_bytes())
-                },
-                _ => (StatusCode::METHOD_NOT_ALLOWED, None, format!("Invalid method {} for {}", method, path).into_bytes())
+                }
+                _ => (
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    None,
+                    format!("Invalid method {} for {}", method, path).into_bytes(),
+                ),
             }
-        },
+        }
         "/apps/:id" => {
             let Some(app_id) = path.split("/").last() else {
                 return Err(anyhow::anyhow!("No app ID"));
@@ -267,49 +277,69 @@ fn handle_http_request(
             match method.as_str() {
                 "PUT" => {
                     // Update an app
-                    (StatusCode::NO_CONTENT, None, format!("Updated").into_bytes())
-                },
+                    (
+                        StatusCode::NO_CONTENT,
+                        None,
+                        format!("Updated").into_bytes(),
+                    )
+                }
                 "DELETE" => {
                     // Uninstall an app
-                    (StatusCode::NO_CONTENT, None, format!("Uninstalled").into_bytes())
-                },
-                _ => (StatusCode::METHOD_NOT_ALLOWED, None, format!("Invalid method {} for {}", method, path).into_bytes())
+                    (
+                        StatusCode::NO_CONTENT,
+                        None,
+                        format!("Uninstalled").into_bytes(),
+                    )
+                }
+                _ => (
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    None,
+                    format!("Invalid method {} for {}", method, path).into_bytes(),
+                ),
             }
-        },
+        }
         "/apps/latest" => {
             match method.as_str() {
                 "GET" => {
                     // Return a list of latest apps
-                    (StatusCode::OK, None, serde_json::to_vec(&vec![
-                        PackageListing {
-                            owner: our.node.clone(),
-                            publisher: our.node.clone(),
-                            name: "Remote".to_string(),
-                            icon: "".to_string(),
-                            package_name: "remote".to_string(),
-                            description: Some("A test app".to_string()),
-                            website: Some("https://example.com".to_string()),
-                            rating: 3.0,
-                            versions: HashMap::new(),
-                            mirrors: vec![],
-                        },
-                        PackageListing {
-                            owner: our.node.clone(),
-                            publisher: our.node.clone(),
-                            name: "Happy Path".to_string(),
-                            icon: "".to_string(),
-                            package_name: "happy_path".to_string(),
-                            description: Some("A test app".to_string()),
-                            website: Some("https://example.com".to_string()),
-                            rating: 3.0,
-                            versions: HashMap::new(),
-                            mirrors: vec![],
-                        },
-                    ])?)
-                },
-                _ => (StatusCode::METHOD_NOT_ALLOWED, None, format!("Invalid method {} for {}", method, path).into_bytes())
+                    (
+                        StatusCode::OK,
+                        None,
+                        serde_json::to_vec(&vec![
+                            PackageListing {
+                                owner: our.node.clone(),
+                                publisher: our.node.clone(),
+                                name: "Remote".to_string(),
+                                icon: "".to_string(),
+                                package_name: "remote".to_string(),
+                                description: Some("A test app".to_string()),
+                                website: Some("https://example.com".to_string()),
+                                rating: 3.0,
+                                versions: HashMap::new(),
+                                mirrors: vec![],
+                            },
+                            PackageListing {
+                                owner: our.node.clone(),
+                                publisher: our.node.clone(),
+                                name: "Happy Path".to_string(),
+                                icon: "".to_string(),
+                                package_name: "happy_path".to_string(),
+                                description: Some("A test app".to_string()),
+                                website: Some("https://example.com".to_string()),
+                                rating: 3.0,
+                                versions: HashMap::new(),
+                                mirrors: vec![],
+                            },
+                        ])?,
+                    )
+                }
+                _ => (
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    None,
+                    format!("Invalid method {} for {}", method, path).into_bytes(),
+                ),
             }
-        },
+        }
         "/apps/search/:query" => {
             match method.as_str() {
                 "GET" => {
@@ -318,46 +348,62 @@ fn handle_http_request(
                     };
                     // Return a list of apps matching the query
                     // Query by name, publisher, package_name, description, website
-                    (StatusCode::OK, None, serde_json::to_vec(&vec![
-                        PackageListing {
-                            owner: our.node.clone(),
-                            publisher: our.node.clone(),
-                            name: "Winch".to_string(),
-                            icon: "".to_string(),
-                            package_name: "winch".to_string(),
-                            description: Some("A test app".to_string()),
-                            website: Some("https://example.com".to_string()),
-                            rating: 3.0,
-                            versions: HashMap::new(),
-                            mirrors: vec![],
-                        },
-                        PackageListing {
-                            owner: our.node.clone(),
-                            publisher: our.node.clone(),
-                            name: "Bucket".to_string(),
-                            icon: "".to_string(),
-                            package_name: "bucket".to_string(),
-                            description: Some("A test app".to_string()),
-                            website: Some("https://example.com".to_string()),
-                            rating: 3.0,
-                            versions: HashMap::new(),
-                            mirrors: vec![],
-                        },
-                    ])?)
-                },
-                _ => (StatusCode::METHOD_NOT_ALLOWED, None, format!("Invalid method {} for {}", method, path).into_bytes())
+                    (
+                        StatusCode::OK,
+                        None,
+                        serde_json::to_vec(&vec![
+                            PackageListing {
+                                owner: our.node.clone(),
+                                publisher: our.node.clone(),
+                                name: "Winch".to_string(),
+                                icon: "".to_string(),
+                                package_name: "winch".to_string(),
+                                description: Some("A test app".to_string()),
+                                website: Some("https://example.com".to_string()),
+                                rating: 3.0,
+                                versions: HashMap::new(),
+                                mirrors: vec![],
+                            },
+                            PackageListing {
+                                owner: our.node.clone(),
+                                publisher: our.node.clone(),
+                                name: "Bucket".to_string(),
+                                icon: "".to_string(),
+                                package_name: "bucket".to_string(),
+                                description: Some("A test app".to_string()),
+                                website: Some("https://example.com".to_string()),
+                                rating: 3.0,
+                                versions: HashMap::new(),
+                                mirrors: vec![],
+                            },
+                        ])?,
+                    )
+                }
+                _ => (
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    None,
+                    format!("Invalid method {} for {}", method, path).into_bytes(),
+                ),
             }
-        },
+        }
         "/apps/publish" => {
             match method.as_str() {
                 "POST" => {
                     // Publish an app
                     (StatusCode::OK, None, format!("Success").into_bytes())
-                },
-                _ => (StatusCode::METHOD_NOT_ALLOWED, None, format!("Invalid method {} for {}", method, path).into_bytes())
+                }
+                _ => (
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    None,
+                    format!("Invalid method {} for {}", method, path).into_bytes(),
+                ),
             }
-        },
-        _ => (StatusCode::NOT_FOUND, None, format!("Path not found: {}", path).into_bytes())
+        }
+        _ => (
+            StatusCode::NOT_FOUND,
+            None,
+            format!("Path not found: {}", path).into_bytes(),
+        ),
     };
 
     send_response(status_code, headers, body)?;
@@ -379,10 +425,13 @@ fn handle_message(our: &Address, mut state: &mut State, message: &Message) -> an
                         handle_http_request(&our, &mut state, req)?;
                     }
                     _ => {
-                        println!("app store: got non-http request from server: {:?}", http_request);
+                        println!(
+                            "app store: got non-http request from server: {:?}",
+                            http_request
+                        );
                     }
                 }
-                return Ok(())
+                return Ok(());
             }
 
             match &serde_json::from_slice::<Req>(&body)? {
