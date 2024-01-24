@@ -559,8 +559,7 @@ pub async fn make_process_loop(
                     verbosity: 0,
                     content: format!(
                         "\x1b[38;5;196mprocess {} ended with error:\x1b[0m\n{}",
-                        metadata.our.process,
-                        stderr,
+                        metadata.our.process, stderr,
                     ),
                 })
                 .await;
