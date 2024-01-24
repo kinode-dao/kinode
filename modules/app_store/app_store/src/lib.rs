@@ -1,3 +1,4 @@
+use kinode_process_lib::http::{bind_http_path, send_response, serve_ui, HttpServerRequest, IncomingHttpRequest, StatusCode};
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
 use kinode_process_lib::{call_init, println};
@@ -57,12 +58,16 @@ struct PackageState {
 /// just a sketch of what we might get from chain
 #[derive(Debug, Serialize, Deserialize)]
 struct PackageListing {
-    pub name: String,
+    pub owner: String,
     pub publisher: NodeId,
+    pub package_name: String,
+    pub name: String,
+    pub icon: String,
     pub description: Option<String>,
     pub website: Option<String>,
-    pub version: kt::PackageVersion,
-    pub version_hash: String, // sha256 hash of the package zip or whatever
+    pub rating: f32,
+    pub mirrors: Vec<String>,
+    pub versions: HashMap<kt::PackageVersion, String>, //version and sha256 hash of the package zip or whatever
 }
 
 //
@@ -186,6 +191,13 @@ fn init(our: Address) {
         requested_packages: HashSet::new(),
     });
 
+    let _ = bind_http_path("/apps", true, false);
+    let _ = bind_http_path("/apps/:id", true, false);
+    let _ = bind_http_path("/apps/latest", true, false);
+    let _ = bind_http_path("/apps/search/:query", true, false);
+    let _ = bind_http_path("/apps/publish", true, false);
+    let _ = serve_ui(&our, "ui");
+
     loop {
         match await_message() {
             Err(send_error) => {
@@ -200,6 +212,71 @@ fn init(our: Address) {
     }
 }
 
+fn handle_http_request(
+    our: &Address,
+    state: &mut State,
+    req: IncomingHttpRequest,
+) -> anyhow::Result<()> {
+    let path = req.path()?;
+    let method = req.method()?;
+
+    let (status_code, headers, body) = match path.as_str() {
+        "/apps" => {
+            match method.as_str() {
+                "GET" => {
+                    // Return a list of fake apps
+                },
+                "POST" => {
+                    // Add an app
+                },
+                _ => (StatusCode::METHOD_NOT_ALLOWED, None, format!("Invalid method {} for {}", method, path).into_bytes())
+            }
+        },
+        "/apps/:id" => {
+            match method.as_str() {
+                "PUT" => {
+                    // Update an app
+                },
+                "DELETE" => {
+                    // Uninstall an app
+                },
+                _ => (StatusCode::METHOD_NOT_ALLOWED, None, format!("Invalid method {} for {}", method, path).into_bytes())
+            }
+        },
+        "/apps/latest" => {
+            match method.as_str() {
+                "GET" => {
+                    // Return a list of latest apps
+                },
+                _ => (StatusCode::METHOD_NOT_ALLOWED, None, format!("Invalid method {} for {}", method, path).into_bytes())
+            }
+        },
+        "/apps/search/:query" => {
+            match method.as_str() {
+                "GET" => {
+                    // Return a list of apps matching the query
+                    // Query by name, publisher, package_name, description, website
+                },
+                _ => (StatusCode::METHOD_NOT_ALLOWED, None, format!("Invalid method {} for {}", method, path).into_bytes())
+            }
+        },
+        "/apps/publish" => {
+            match method.as_str() {
+                "POST" => {
+                    // Publish an app
+                    (StatusCode::OK, None, format!("Success").into_bytes())
+                },
+                _ => (StatusCode::METHOD_NOT_ALLOWED, None, format!("Invalid method {} for {}", method, path).into_bytes())
+            }
+        },
+        _ => (StatusCode::NOT_FOUND, None, format!("Path not found: {}", path).into_bytes())
+    };
+
+    send_response(status_code, headers, body)?;
+
+    Ok(())
+}
+
 fn handle_message(our: &Address, mut state: &mut State, message: &Message) -> anyhow::Result<()> {
     match message {
         Message::Request {
@@ -208,6 +285,18 @@ fn handle_message(our: &Address, mut state: &mut State, message: &Message) -> an
             body,
             ..
         } => {
+            if let Ok(http_request) = serde_json::from_slice::<HttpServerRequest>(&body) {
+                match http_request {
+                    HttpServerRequest::Http(req) => {
+                        handle_http_request(&our, &mut state, req)?;
+                    }
+                    _ => {
+                        println!("app store: got non-http request from server: {:?}", http_request);
+                    }
+                }
+                return Ok(())
+            }
+
             match &serde_json::from_slice::<Req>(&body)? {
                 Req::LocalRequest(local_request) => {
                     if our.node != source.node {
@@ -405,13 +494,20 @@ fn handle_new_package(
     let metadata = String::from_utf8(blob.bytes)?;
     let metadata = serde_json::from_str::<kt::PackageMetadata>(&metadata)?;
 
+    let versions = HashMap::new();
+    versions.insert(metadata.version, version_hash);
+
     let listing_data = PackageListing {
-        name: metadata.package,
+        owner: our.node.clone(),
         publisher: our.node.clone(),
+        name: metadata.package,
+        icon: "".to_string(),
+        package_name: metadata.package,
         description: metadata.description,
         website: metadata.website,
-        version: metadata.version,
-        version_hash,
+        rating: 3.0,
+        versions,
+        mirrors: vec![],
     };
     let package_state = PackageState {
         mirrored_from: our.node.clone(),
