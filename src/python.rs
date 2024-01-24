@@ -2,7 +2,10 @@ use wasi_common::pipe::{ReadPipe, WritePipe};
 use wasmtime::{Config, Engine, Linker, Module, Store};
 use wasmtime_wasi::WasiCtxBuilder;
 
-use crate::types::{Address, KernelMessage, LazyLoadBlob, Message, MessageReceiver, MessageSender, PythonRequest, PythonResponse, Request, Response, PYTHON_PROCESS_ID};
+use crate::types::{
+    Address, KernelMessage, LazyLoadBlob, Message, MessageReceiver, MessageSender, PythonRequest,
+    PythonResponse, Request, Response, PYTHON_PROCESS_ID,
+};
 
 include!("python_includes.rs");
 
@@ -13,12 +16,18 @@ pub async fn python(
 ) -> anyhow::Result<()> {
     loop {
         let km = recv_from_loop.recv().await.unwrap();
-        let KernelMessage { id, source, rsvp, message, lazy_load_blob, .. } = km;
+        let KernelMessage {
+            id,
+            source,
+            rsvp,
+            message,
+            lazy_load_blob,
+            ..
+        } = km;
         if our_node != source.node {
             println!(
                 "python: Request must come from our_node={}, got: {}\r",
-                our_node,
-                source.node,
+                our_node, source.node,
             );
             continue;
         }
@@ -47,9 +56,7 @@ pub async fn python(
                 Ok(output) => make_output_message(our_node, id, target, output),
                 Err(e) => make_error_message(our_node, id, target, format!("{:?}", e)),
             };
-            let _ = send_to_loop
-                .send(message)
-                .await;
+            let _ = send_to_loop.send(message).await;
         });
     }
 }
@@ -90,7 +97,8 @@ async fn run_python(code: &str) -> anyhow::Result<Vec<u8>> {
         linker
             .get_default(&mut store, "")?
             .typed::<(), ()>(&store)?
-            .call_async(&mut store, ()).await?;
+            .call_async(&mut store, ())
+            .await?;
     }
 
     let contents: Vec<u8> = wasi_stdout
@@ -131,12 +139,7 @@ fn make_output_message(
     }
 }
 
-fn make_error_message(
-    our_node: String,
-    id: u64,
-    target: Address,
-    error: String,
-) -> KernelMessage {
+fn make_error_message(our_node: String, id: u64, target: Address, error: String) -> KernelMessage {
     KernelMessage {
         id,
         source: Address {

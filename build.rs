@@ -183,9 +183,8 @@ async fn main() -> anyhow::Result<()> {
     // Get python.wasm & include it
     let mut python_includes =
         fs::File::create(format!("{}/src/python_includes.rs", pwd.display())).unwrap();
-    let python_wasm_file_path = get_python_wasm(
-        &format!("{}/{}", PYTHON_WASM_URL, PYTHON_WASM_FILE_NAME)
-    ).await?;
+    let python_wasm_file_path =
+        get_python_wasm(&format!("{}/{}", PYTHON_WASM_URL, PYTHON_WASM_FILE_NAME)).await?;
     writeln!(
         python_includes,
         "pub static PYTHON_WASM: &[u8] = include_bytes!(\"{}\");",
