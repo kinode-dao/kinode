@@ -105,18 +105,14 @@ async fn run_python(code: &str) -> anyhow::Result<Vec<u8>> {
     };
 
     let contents: Vec<u8> = match result {
-        Ok(_) => {
-            wasi_stdout
-                .try_into_inner()
-                .expect("sole remaining reference to WritePipe")
-                .into_inner()
-        }
-        Err(_) => {
-            wasi_stderr
-                .try_into_inner()
-                .expect("sole remaining reference to WritePipe")
-                .into_inner()
-        }
+        Ok(_) => wasi_stdout
+            .try_into_inner()
+            .expect("sole remaining reference to WritePipe")
+            .into_inner(),
+        Err(_) => wasi_stderr
+            .try_into_inner()
+            .expect("sole remaining reference to WritePipe")
+            .into_inner(),
     };
 
     Ok(contents)
