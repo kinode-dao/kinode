@@ -1,10 +1,12 @@
+use kinode_process_lib::eth_alloy::{
+    AlloySubscribeLogsRequest
+};
 use kinode_process_lib::{
     Address,
     LazyLoadBlob as Blob,
     Message,
     ProcessId,
     Request, 
-    Response,
     await_message,
     http,
     println
@@ -13,7 +15,6 @@ use kinode_process_lib::http::{
     WsMessageType,
     HttpClientError,
     HttpClientResponse,
-    open_ws_connection_and_await,
 };
 use serde::{Deserialize, Serialize};
 
@@ -36,9 +37,6 @@ struct RpcPath {
     pub rpc_url: Option<String>,
 }
 
-enum ProviderAction {
-    RpcPath(RpcPath)
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 struct State {
@@ -88,6 +86,8 @@ impl Guest for Component {
 
 fn main(our: Address) -> anyhow::Result<()> {
 
+    println!("OUR! {:?}", our);
+
     let msg = Request::new()
         .target(Address::new(&our.node, ProcessId::new(Some("eth"), "distro", "sys")))
         .body(serde_json::to_vec(&EthAction::Path).unwrap())
@@ -133,11 +133,13 @@ fn handle_message(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
 
     match msg {
 
-        Message::Request { source, expects_response, body, metadata, capabilities } => { }
-        Message::Response { source, body, metadata, context, capabilities } => {
+        Message::Request { source, expects_response, body, metadata, capabilities } => { 
 
+            println!("~\n~\n~\n got request: {:?},{:?},{:?}", source, body, metadata);
 
         }
+
+        Message::Response { source, body, metadata, context, capabilities } => { }
 
         _ => {}
     }
