@@ -450,6 +450,7 @@ async fn main() {
         our.name.clone(),
         kernel_message_sender.clone(),
         net_message_receiver,
+        print_sender.clone(),
         network_error_sender,
     ));
     tasks.spawn(state::state_sender(
