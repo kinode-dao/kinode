@@ -1,26 +1,11 @@
 use kinode_process_lib::{
-    Address,
-    LazyLoadBlob as Blob,
-    Message,
-    ProcessId,
-    Request, 
-    Response,
-    await_message,
-    http,
-    println
-};
-use kinode_process_lib::http::{
-    WsMessageType,
-    HttpClientError,
-    HttpClientResponse,
-    open_ws_connection_and_await,
+    await_message, call_init,
+    http::{
+        self, open_ws_connection_and_await, HttpClientError, HttpClientResponse, WsMessageType,
+    },
+    println, Address, LazyLoadBlob as Blob, Message, ProcessId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-enum EthAction {
-    Path,
-}
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -30,34 +15,25 @@ wit_bindgen::generate!({
     },
 });
 
-#[derive(Debug, Serialize, Deserialize)]
-struct RpcPath {
-    pub process_addr: Address,
-    pub rpc_url: Option<String>,
+enum RpcProvider {
+    Address(Address),
+    WS(WsConnection),
+    // http?
 }
 
-enum ProviderAction {
-    RpcPath(RpcPath)
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct State {
-    conn: WsConnection
+struct ProviderState {
+    rpc: Option<RpcProvider>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct WsConnection {
     our: Address,
-    channel: u32
+    channel: u32,
 }
 
 impl WsConnection {
-
-    fn new (our: Address, channel: u32) -> Self {
-        Self {
-            our,
-            channel
-        }
+    fn new(our: Address, channel: u32) -> Self {
+        Self { our, channel }
     }
 
     fn send(&self, blob: Blob) {
@@ -68,79 +44,77 @@ impl WsConnection {
             blob,
         );
     }
-
 }
 
-struct Component;
-impl Guest for Component {
-    fn init(our: String) {
-
-        let our: Address = our.parse().unwrap();
-
-        match main(our) {
-            Ok(_) => {}
-            Err(e) => {
-                println!(": error: {:?}", e);
-            }
+fn main(our: Address, state: &mut ProviderState) -> anyhow::Result<()> {
+    // first, await a message from the kernel which will contain
+    // rpc url or node.
+    let mut rpc_url: Option<String> = None;
+    loop {
+        let Ok(Message::Request { source, body, .. }) = await_message() else {
+            continue;
+        };
+        if source.process != "kernel:distro:sys" {
+            continue;
         }
+        rpc_url = Some(std::str::from_utf8(&body).unwrap().to_string());
+        break;
     }
-}
 
-fn main(our: Address) -> anyhow::Result<()> {
+    println!(
+        "eth_provider: starting with the rpc {}",
+        rpc_url.as_ref().unwrap()
+    );
 
-    let msg = Request::new()
-        .target(Address::new(&our.node, ProcessId::new(Some("eth"), "distro", "sys")))
-        .body(serde_json::to_vec(&EthAction::Path).unwrap())
-        .send_and_await_response(5)
-        .unwrap().unwrap();
-
-    let rpc_path = serde_json::from_slice::<RpcPath>(&msg.body()).unwrap();
-
-    let channel = 123454321;
-
-    let msg = http::open_ws_connection_and_await
-        (our.node.clone(), rpc_path.rpc_url.unwrap(), None, channel)
-            .unwrap().unwrap();
-    
-    let mut state = match serde_json::from_slice::<Result<HttpClientResponse, HttpClientError>>(msg.body()) {
-        Ok(Ok(HttpClientResponse::WebSocketAck)) => {
-            State { conn: WsConnection::new(rpc_path.process_addr, channel) }
-        },
-        _ => {
-            return Err(anyhow::anyhow!(": failed to open ws connection"))
-        }
-    };
+    let channel: u32 = 6969;
+    let msg =
+        http::open_ws_connection_and_await(our.node.clone(), rpc_url.unwrap(), None, channel)??;
 
     loop {
         match await_message() {
-            Ok(msg) =>  {
-                handle_message(&our, msg, &mut state);
+            Ok(msg) => {
+                handle_message(&our, msg, state);
                 continue;
             }
             Err(e) => {
-                break;
+                println!("eth_provider: error: {:?}", e);
+                continue;
             }
-            _ => {}
         }
     }
-
-    Ok(())
-
 }
 
-
-fn handle_message(our: &Address, msg: Message, state: &mut State) -> anyhow::Result<()> {
-
+fn handle_message(our: &Address, msg: Message, state: &mut ProviderState) -> anyhow::Result<()> {
     match msg {
-
-        Message::Request { source, expects_response, body, metadata, capabilities } => { }
-        Message::Response { source, body, metadata, context, capabilities } => {
-
-
-        }
-
-        _ => {}
+        Message::Request {
+            source,
+            expects_response,
+            body,
+            metadata,
+            capabilities,
+        } => {}
+        Message::Response {
+            source,
+            body,
+            metadata,
+            context,
+            capabilities,
+        } => {}
     }
 
     Ok(())
+}
+
+call_init!(init);
+fn init(our: Address) {
+    println!("eth_provider: begin");
+
+    let mut state = ProviderState { rpc: None };
+
+    match main(our, &mut state) {
+        Ok(_) => {}
+        Err(e) => {
+            println!("eth_provider: error: {:?}", e);
+        }
+    }
 }
