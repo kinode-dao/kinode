@@ -17,6 +17,7 @@
             "kv:distro:sys",
             "chess:chess:sys",
             "kns_indexer:kns_indexer:sys",
+            "eth_provider:eth_provider:sys",
             {
                 "process": "vfs:distro:sys",
                 "params": {
