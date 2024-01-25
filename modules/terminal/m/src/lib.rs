@@ -1,3 +1,4 @@
+use clap::{Arg, Command};
 use kinode_process_lib::{await_next_request_body, call_init, println, Address, Request};
 
 wit_bindgen::generate!({
@@ -11,32 +12,64 @@ wit_bindgen::generate!({
 call_init!(init);
 
 fn init(_our: Address) {
-    let Ok(args) = await_next_request_body() else {
+    let Ok(body) = await_next_request_body() else {
         println!("m: failed to get args, aborting");
         return;
     };
+    let body_string = String::from_utf8(body).unwrap();
 
-    let tail = String::from_utf8(args).unwrap();
+    let mut args: Vec<&str> = body_string.split_whitespace().collect();
+    args.insert(0, "m");
 
-    let (target, body) = match tail.split_once(" ") {
-        Some((a, p)) => (a, p),
-        None => {
-            println!("m: invalid command, please provide an address and json message");
-            return;
+    println!("{:?}", args);
+
+    let parsed = Command::new("m")
+        .disable_help_flag(true)
+        .arg(Arg::new("target").index(1).required(true))
+        .arg(Arg::new("body").index(2).required(true))
+        .arg(
+            Arg::new("await")
+                .short('a')
+                .value_parser(clap::value_parser!(u64)),
+        )
+        .get_matches_from(args);
+
+    let Some(target) = parsed.get_one::<String>("target") else {
+        println!("m: no target");
+        return;
+    };
+
+    let Ok(target) = target.parse::<Address>() else {
+        println!("invalid address: \"{target}\"");
+        return;
+    };
+
+    let Some(body) = parsed.get_one::<String>("body") else {
+        println!("m: no body");
+        return;
+    };
+
+    let req = Request::new().target(target).body(body.as_bytes().to_vec());
+
+    match parsed.get_one::<u64>("await") {
+        Some(s) => {
+            println!("m: awaiting response for {}s", s);
+            match req.send_and_await_response(*s) {
+                Ok(res) => match res {
+                    Ok(res) => {
+                        println!("m: {:?}", res);
+                    }
+                    Err(e) => {
+                        println!("m: SendError: {:?}", e.kind);
+                    }
+                },
+                Err(_) => {
+                    println!("m: unexpected error sending request");
+                }
+            }
         }
-    };
-    // TODO aliasing logic...maybe we can read from terminal state since we have root?
-    let target = match target.parse::<Address>() {
-        Ok(t) => t,
-        Err(_) => {
-            println!("invalid address: \"{target}\"");
-            return;
-        } // match state.aliases.get(target) {
-          //     Some(pid) => Address::new("our", pid.clone()),
-          //     None => {
-          //         return Err(anyhow!("invalid address: \"{target}\""));
-          //     }
-          // },
-    };
-    let _ = Request::new().target(target).body(body).send().unwrap();
+        None => {
+            let _ = req.send().unwrap();
+        }
+    }
 }
