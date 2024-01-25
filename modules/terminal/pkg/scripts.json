@@ -54,5 +54,10 @@
         "root": true,
         "public": false,
         "requestNetworking": true
+    },
+    "ma.wasm": {
+        "root": true,
+        "public": false,
+        "requestNetworking": true
     }
 }

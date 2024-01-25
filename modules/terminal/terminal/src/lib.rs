@@ -77,6 +77,10 @@ impl Guest for Component {
                     "m:terminal:sys".parse::<ProcessId>().unwrap(),
                 ),
                 (
+                    "ma".to_string(),
+                    "ma:terminal:sys".parse::<ProcessId>().unwrap(),
+                ),
+                (
                     "top".to_string(),
                     "top:terminal:sys".parse::<ProcessId>().unwrap(),
                 ),
