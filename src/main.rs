@@ -95,7 +95,7 @@ async fn serve_register_fe(
 async fn main() {
     let app = Command::new("kinode")
         .version(VERSION)
-        .author("Uqbar DAO: https://github.com/uqbar-dao")
+        .author("Kinode DAO: https://github.com/kinode-dao")
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
         .arg(
