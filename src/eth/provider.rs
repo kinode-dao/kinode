@@ -119,9 +119,9 @@ async fn handle_request(
     match action {
         EthAction::SubscribeLogs { sub_id, filter } => {
             let sub_id = (target.process.clone(), sub_id);
-            if connections.ws_provider_subscriptions.contains_key(&sub_id) {
-                return Err(EthError::SubscriptionIdCollision);
-            }
+
+            // if this process has already used this subscription ID,
+            // this subscription will **overwrite** the existing one.
 
             let handle = tokio::spawn(handle_subscription_stream(
                 our.clone(),
