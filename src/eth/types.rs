@@ -23,8 +23,6 @@ pub enum EthAction {
 /// and `serde_json::from_slice`.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthError {
-    /// The subscription ID already existed
-    SubscriptionIdCollision,
     /// The ethers provider threw an error when trying to subscribe
     /// (contains ProviderError serialized to debug string)
     ProviderError(String),
