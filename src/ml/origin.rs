@@ -26,6 +26,7 @@ pub struct OriginProcessor {
     iteration: usize,
     tokens: Vec<u32>,
     kv_caches: Option<Vec<(Tensor, Tensor)>>,
+    verbose: bool,
 }
 
 impl OriginProcessor {
@@ -44,6 +45,7 @@ impl OriginProcessor {
             iteration: Default::default(),
             tokens: Default::default(),
             kv_caches: None,
+            verbose: true,
         };
         Ok(result)
     }
@@ -57,6 +59,10 @@ impl OriginProcessor {
             .get_ids()
             .to_vec();
         Ok(())
+    }
+
+    fn set_verbose(&mut self, verbose: bool) {
+        self.verbose = verbose;
     }
 
     fn print_context(&mut self) -> Result<()> {
@@ -99,12 +105,7 @@ impl Processor for OriginProcessor {
     }
 
     /// Returns the activations and the start pos
-    fn forward(
-        &mut self,
-        iteration: usize,
-        input: OriginInput,
-        verbose: bool,
-    ) -> Result<(Tensor, usize)> {
+    fn forward(&mut self, input: OriginInput) -> Result<(Tensor, usize)> {
         if self.model.is_none() {
             let _ = self.load_model();
         }
@@ -117,10 +118,14 @@ impl Processor for OriginProcessor {
                 self.tokens.push(idx);
             }
         }
-        if verbose {
+        if self.verbose {
             let _ = self.print_context();
         }
-        let context_size = if iteration > 0 { 1 } else { self.tokens.len() };
+        let context_size = if self.iteration > 0 {
+            1
+        } else {
+            self.tokens.len()
+        };
 
         self.iteration += 1;
 

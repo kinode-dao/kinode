@@ -12,6 +12,7 @@ use crate::ml::end::EndProcessor;
 use crate::ml::link::LinkProcessor;
 use crate::ml::origin::OriginInput;
 use crate::ml::origin::OriginProcessor;
+use crate::ml::processor::Processor;
 use crate::ml::util::Args;
 
 fn integrity_test() -> Result<()> {
@@ -34,7 +35,7 @@ fn integrity_test() -> Result<()> {
         } else {
             OriginInput::Prompt(args.prompt.clone())
         };
-        let (activation, start_pos) = shard_0.forward(iteration, input, true)?;
+        let (activation, start_pos) = shard_0.forward(input, true)?;
         println!("Shape of the activation is {:?}", activation.shape());
         shard_0.unload();
 
