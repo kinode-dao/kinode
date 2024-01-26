@@ -318,7 +318,22 @@ fn handle_local_request(
             Ok(()) => LocalResponse::UninstallResponse(UninstallResponse::Success),
             Err(_) => LocalResponse::UninstallResponse(UninstallResponse::Failure),
         },
-        _ => todo!(),
+        LocalRequest::StartMirroring(package) => match state.start_mirroring(package) {
+            Ok(()) => LocalResponse::MirrorResponse(MirrorResponse::Success),
+            Err(_) => LocalResponse::MirrorResponse(MirrorResponse::Failure),
+        },
+        LocalRequest::StopMirroring(package) => match state.stop_mirroring(package) {
+            Ok(()) => LocalResponse::MirrorResponse(MirrorResponse::Success),
+            Err(_) => LocalResponse::MirrorResponse(MirrorResponse::Failure),
+        },
+        LocalRequest::StartAutoUpdate(package) => match state.start_auto_update(package) {
+            Ok(()) => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
+            Err(_) => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
+        },
+        LocalRequest::StopAutoUpdate(package) => match state.stop_auto_update(package) {
+            Ok(()) => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
+            Err(_) => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
+        },
     }
 }
 
