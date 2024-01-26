@@ -1,7 +1,9 @@
 use kinode_process_lib::{
-    await_next_request_body, call_init, println, Address, Message, NodeId, PackageId, Request,
+    await_next_request_body, call_init, println, Address, Message, PackageId, Request,
 };
-use serde::{Deserialize, Serialize};
+
+mod api;
+use api::*;
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -10,23 +12,6 @@ wit_bindgen::generate!({
         world: Component,
     },
 });
-
-/// grabbed from main:app_store:sys
-#[derive(Debug, Serialize, Deserialize)]
-pub enum LocalRequest {
-    Uninstall(PackageId),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum LocalResponse {
-    UninstallResponse(UninstallResponse),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum UninstallResponse {
-    Success,
-    Failure,
-}
 
 call_init!(init);
 
@@ -70,6 +55,10 @@ fn init(our: Address) {
         }
         LocalResponse::UninstallResponse(UninstallResponse::Failure) => {
             println!("failed to uninstall package {package_id}!");
+        }
+        _ => {
+            println!("uninstall: unexpected response from app_store..!");
+            return;
         }
     }
 }
