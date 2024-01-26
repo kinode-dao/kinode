@@ -1,3 +1,4 @@
+use crate::types::ProcessId;
 use ethers::prelude::Provider;
 use ethers::types::{Filter, Log};
 use ethers_providers::Ws;
@@ -48,5 +49,5 @@ pub enum EthSubEvent {
 /// Primary state object of the `eth` module
 pub struct RpcConnections {
     pub provider: Provider<Ws>,
-    pub ws_provider_subscriptions: HashMap<u64, JoinHandle<Result<(), EthError>>>,
+    pub ws_provider_subscriptions: HashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>,
 }

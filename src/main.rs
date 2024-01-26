@@ -95,7 +95,7 @@ async fn serve_register_fe(
 async fn main() {
     let app = Command::new("kinode")
         .version(VERSION)
-        .author("Uqbar DAO: https://github.com/uqbar-dao")
+        .author("Kinode DAO: https://github.com/kinode-dao")
         .about("A General Purpose Sovereign Cloud Computing Platform")
         .arg(arg!([home] "Path to home directory").required(true))
         .arg(
@@ -450,6 +450,7 @@ async fn main() {
         our.name.clone(),
         kernel_message_sender.clone(),
         net_message_receiver,
+        print_sender.clone(),
         network_error_sender,
     ));
     tasks.spawn(state::state_sender(

@@ -118,6 +118,7 @@ async fn handle_request(
 ) -> Result<(), EthError> {
     match action {
         EthAction::SubscribeLogs { sub_id, filter } => {
+            let sub_id = (target.process.clone(), sub_id);
             if connections.ws_provider_subscriptions.contains_key(&sub_id) {
                 return Err(EthError::SubscriptionIdCollision);
             }
@@ -133,6 +134,7 @@ async fn handle_request(
             Ok(())
         }
         EthAction::UnsubscribeLogs(sub_id) => {
+            let sub_id = (target.process.clone(), sub_id);
             let handle = connections
                 .ws_provider_subscriptions
                 .remove(&sub_id)
