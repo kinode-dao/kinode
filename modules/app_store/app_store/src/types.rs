@@ -33,11 +33,13 @@ pub struct PackageListing {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OnchainPackageMetadata {
     pub name: Option<String>,
+    pub subtitle: Option<String>,
     pub description: Option<String>,
     pub image: Option<String>,
     pub version: Option<String>,
     pub license: Option<String>,
     pub website: Option<String>,
+    pub screenshots: Vec<String>,
     pub mirrors: Vec<NodeId>,
     pub versions: Vec<String>,
 }

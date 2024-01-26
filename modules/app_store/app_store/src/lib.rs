@@ -181,7 +181,7 @@ fn handle_message(
                 handle_eth_sub_event(&our, &mut state, e)?;
             }
             Req::Http(incoming) => {
-                if source.node() != our.node() || source.process() != "http_server:distro:sys" {
+                if source.node() != our.node() || &source.process.to_string() != "http_server:distro:sys" {
                     return Err(anyhow::anyhow!("http_server from non-local node"));
                 }
                 if let HttpServerRequest::Http(req) = incoming {
