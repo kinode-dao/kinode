@@ -1,5 +1,6 @@
 use clap::{Arg, Command};
 use kinode_process_lib::{await_next_request_body, call_init, println, Address, Request};
+use regex::Regex;
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -18,8 +19,21 @@ fn init(_our: Address) {
     };
     let body_string = String::from_utf8(body).unwrap();
 
-    let mut args: Vec<&str> = body_string.split_whitespace().collect();
-    args.insert(0, "m");
+    let re = Regex::new(r#"'[^']*'|\S+"#).unwrap();
+    let mut args: Vec<String> = re
+        .find_iter(body_string.as_str())
+        .map(|mat| {
+            let match_str = mat.as_str();
+            // Remove the surrounding single quotes for the JSON string
+            if match_str.starts_with('\'') && match_str.ends_with('\'') {
+                match_str[1..match_str.len() - 1].to_string()
+            } else {
+                match_str.to_string()
+            }
+        })
+        .collect();
+
+    args.insert(0, "m".to_string());
 
     println!("{:?}", args);
 
