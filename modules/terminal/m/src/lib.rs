@@ -35,8 +35,6 @@ fn init(_our: Address) {
 
     args.insert(0, "m".to_string());
 
-    println!("{:?}", args);
-
     let Ok(parsed) = Command::new("m")
         .disable_help_flag(true)
         .arg(Arg::new("target").index(1).required(true))
@@ -73,17 +71,12 @@ fn init(_our: Address) {
     match parsed.get_one::<u64>("await") {
         Some(s) => {
             println!("m: awaiting response for {}s", s);
-            match req.send_and_await_response(*s) {
-                Ok(res) => match res {
-                    Ok(res) => {
-                        println!("m: {:?}", res);
-                    }
-                    Err(e) => {
-                        println!("m: SendError: {:?}", e.kind);
-                    }
-                },
-                Err(_) => {
-                    println!("m: unexpected error sending request");
+            match req.send_and_await_response(*s).unwrap() {
+                Ok(res) => {
+                    println!("m: {:?}", res);
+                }
+                Err(e) => {
+                    println!("m: SendError: {:?}", e.kind);
                 }
             }
         }
