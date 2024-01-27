@@ -37,16 +37,21 @@ fn init(_our: Address) {
 
     println!("{:?}", args);
 
-    let parsed = Command::new("m")
+    let Ok(parsed) = Command::new("m")
         .disable_help_flag(true)
         .arg(Arg::new("target").index(1).required(true))
         .arg(Arg::new("body").index(2).required(true))
         .arg(
             Arg::new("await")
                 .short('a')
+                .long("await")
                 .value_parser(clap::value_parser!(u64)),
         )
-        .get_matches_from(args);
+        .try_get_matches_from(args)
+    else {
+        println!("m: failed to parse args");
+        return;
+    };
 
     let Some(target) = parsed.get_one::<String>("target") else {
         println!("m: no target");
