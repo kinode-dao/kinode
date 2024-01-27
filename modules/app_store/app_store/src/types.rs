@@ -1,16 +1,26 @@
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
-use kinode_process_lib::eth::EthAddress;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 sol! {
-    event AppRegistered(uint256,string,string,uint256);
-    event AppUnlisted(uint256);
-    event AppMetadataUpdated(uint256,uint256);
+    event AppRegistered(bytes32,uint256,string,string,bytes32);
+    event AppMetadataUpdated(uint256,string,bytes32);
     event Transfer(address,address,uint256);
+}
+
+// from kns_indexer
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum IndexerRequests {
+    /// return the human readable name for a namehash
+    /// returns an Option<String>
+    NamehashToName(String),
+    /// return the most recent on-chain routing information for a node name.
+    /// returns an Option<KnsUpdate>
+    NodeInfo(String),
 }
 
 //
@@ -22,7 +32,7 @@ pub type PackageHash = String;
 /// listing information derived from metadata hash in listing event
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PackageListing {
-    pub owner: EthAddress,
+    pub owner: String, // eth address
     pub name: String,
     pub publisher: NodeId,
     pub metadata_hash: String,
@@ -30,7 +40,7 @@ pub struct PackageListing {
 }
 
 /// metadata derived from metadata hash in listing event
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OnchainPackageMetadata {
     pub name: Option<String>,
     pub subtitle: Option<String>,
@@ -46,6 +56,7 @@ pub struct OnchainPackageMetadata {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RequestedPackage {
+    pub from: NodeId,
     pub mirror: bool,
     pub auto_update: bool,
     // if none, we're requesting the latest version onchain
@@ -53,13 +64,16 @@ pub struct RequestedPackage {
 }
 
 /// state of an individual package we have downloaded
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PackageState {
     /// the node we last downloaded the package from
     /// this is "us" if we don't know the source (usually cause it's a local install)
     pub mirrored_from: Option<NodeId>,
     /// the version of the package we have downloaded
     pub our_version: String,
+    /// if None, package already installed. if Some, the source file
+    pub source_zip: Option<Vec<u8>>,
+    pub caps_approved: bool,
     /// are we serving this package to others?
     pub mirroring: bool,
     /// if we get a listing data update, will we try to download it?
@@ -82,151 +96,161 @@ pub struct State {
     /// we keep the full state of the package manager here, calculated from
     /// the listings contract logs. in the future, we'll offload this and
     /// only track a certain number of packages...
-    listed_packages: HashMap<PackageHash, PackageListing>, // TODO use `kv`
+    pub listed_packages: HashMap<PackageHash, PackageListing>, // TODO migrate to sqlite db
     /// we keep the full state of the packages we have downloaded here.
     /// in order to keep this synchronized with our filesystem, we will
     /// ingest apps on disk if we have to rebuild our state. this is also
     /// updated every time we download, create, or uninstall a package.
-    downloaded_packages: HashMap<PackageId, PackageState>, // TODO use `kv`
+    pub downloaded_packages: HashMap<PackageId, PackageState>, // TODO migrate to sqlite db
 }
 
 impl State {
     /// To create a new state, we populate the downloaded_packages map
     /// with all packages parseable from our filesystem.
-    pub fn new() -> Self {
+    pub fn new(our: &Address) -> anyhow::Result<Self> {
         let mut state = State {
             contract_address: None,
             last_saved_block: 1,
             listed_packages: HashMap::new(),
             downloaded_packages: HashMap::new(),
         };
-        let _ = state.populate_packages_from_filesystem();
-        state
+        // state.populate_packages_from_filesystem()?;
+        Ok(state)
     }
 
     pub fn get_listing(&self, package_id: &PackageId) -> Option<&PackageListing> {
-        let package_hash = generate_package_hash(package_id.package(), package_id.publisher());
-        self.listed_packages.get(&package_hash)
+        self.listed_packages.get(&generate_package_hash(
+            package_id.package(),
+            &generate_namehash(package_id.publisher()),
+        ))
     }
 
-    pub fn get_downloaded_package(&self, package: &PackageId) -> Option<&PackageState> {
-        self.downloaded_packages.get(package)
-    }
-
-    // saves state
-    pub fn start_mirroring(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
-        let package_state = self
-            .downloaded_packages
-            .get_mut(package_id)
-            .ok_or(anyhow::anyhow!("package not found"))?;
-        package_state.mirroring = true;
-        crate::set_state(&bincode::serialize(self)?);
-        Ok(())
-    }
-
-    // saves state
-    pub fn stop_mirroring(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
-        let package_state = self
-            .downloaded_packages
-            .get_mut(package_id)
-            .ok_or(anyhow::anyhow!("package not found"))?;
-        package_state.mirroring = false;
-        crate::set_state(&bincode::serialize(self)?);
-        Ok(())
-    }
-
-    // saves state
-    pub fn start_auto_update(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
-        let package_state = self
-            .downloaded_packages
-            .get_mut(package_id)
-            .ok_or(anyhow::anyhow!("package not found"))?;
-        package_state.auto_update = true;
-        crate::set_state(&bincode::serialize(self)?);
-        Ok(())
-    }
-
-    // saves state
-    pub fn stop_auto_update(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
-        let package_state = self
-            .downloaded_packages
-            .get_mut(package_id)
-            .ok_or(anyhow::anyhow!("package not found"))?;
-        package_state.auto_update = false;
-        crate::set_state(&bincode::serialize(self)?);
-        Ok(())
+    fn get_listing_with_hash_mut(
+        &mut self,
+        package_hash: &PackageHash,
+    ) -> Option<&mut PackageListing> {
+        self.listed_packages.get_mut(package_hash)
     }
 
     /// Done in response to any new onchain listing update other than 'delete'
-    fn update_listing(&mut self, listing: PackageListing) {
+    fn insert_listing(&mut self, listing: PackageListing) {
         self.listed_packages.insert(
-            generate_package_hash(&listing.name, &listing.publisher),
+            generate_package_hash(&listing.name, &generate_namehash(&listing.publisher)),
             listing,
         );
     }
 
     /// Done in response to an onchain listing update of 'delete'
-    fn delete_listing(&mut self, package_id: &PackageId) {
-        let package_hash = generate_package_hash(package_id.package(), package_id.publisher());
-        self.listed_packages.remove(&package_hash);
+    fn delete_listing(&mut self, package_hash: &PackageHash) {
+        self.listed_packages.remove(package_hash);
     }
 
-    /// saves state
-    pub fn populate_packages_from_filesystem(&mut self) -> anyhow::Result<()> {
-        let Message::Response { body, .. } = Request::to(("our", "vfs", "distro", "sys"))
-            .body(serde_json::to_vec(&vfs::VfsRequest {
-                path: "/".to_string(),
-                action: vfs::VfsAction::ReadDir,
-            })?)
-            .send_and_await_response(3)??
-        else {
-            return Err(anyhow::anyhow!("vfs: bad response"));
-        };
-        let response = serde_json::from_slice::<vfs::VfsResponse>(&body)?;
-        let vfs::VfsResponse::ReadDir(entries) = response else {
-            return Err(anyhow::anyhow!("vfs: unexpected response: {:?}", response));
-        };
-        let mut downloaded_packages = HashMap::new();
-        for entry in entries {
-            // ignore non-package dirs
-            let Ok(package_id) = entry.path[1..].parse::<PackageId>() else {
-                continue;
-            };
-            if entry.file_type == vfs::FileType::Directory {
-                let zip_file = vfs::File {
-                    path: format!("/{}/pkg/{}.zip", package_id, package_id),
-                };
-                let Ok(zip_file_bytes) = zip_file.read() else {
-                    continue;
-                };
-                // generate entry from this data
-                // for the version hash, take the SHA-256 hash of the zip file
-                let our_version = generate_version_hash(&zip_file_bytes);
-                // the user will need to turn mirroring and auto-update back on if they
-                // have to reset the state of their app store for some reason. the apps
-                // themselves will remain on disk unless explicitly deleted.
-                let package_state = PackageState {
-                    mirrored_from: None,
-                    our_version,
-                    mirroring: false,
-                    auto_update: false,
-                    metadata: None,
-                };
-                downloaded_packages.insert(package_id, package_state);
-            }
-        }
-        self.downloaded_packages = downloaded_packages;
-        crate::set_state(&bincode::serialize(self)?);
-        Ok(())
+    pub fn get_downloaded_package(&self, package_id: &PackageId) -> Option<PackageState> {
+        self.downloaded_packages.get(package_id).cloned()
     }
 
-    /// saves state
-    pub fn add_downloaded_package(
+    pub fn add_downloaded_package(&mut self, package_id: &PackageId, package_state: PackageState) {
+        self.downloaded_packages
+            .insert(package_id.to_owned(), package_state);
+    }
+
+    /// returns True if the package was found and updated, False otherwise
+    pub fn update_downloaded_package(
         &mut self,
-        zip_bytes: Vec<u8>,
         package_id: &PackageId,
-        package_state: PackageState,
-    ) -> anyhow::Result<()> {
+        fn_: impl FnOnce(&mut PackageState),
+    ) -> bool {
+        self.downloaded_packages
+            .get_mut(package_id)
+            .map(|package_state| {
+                fn_(package_state);
+                true
+            })
+            .unwrap_or(false)
+    }
+
+    pub fn start_mirroring(&mut self, package_id: &PackageId) -> bool {
+        self.update_downloaded_package(package_id, |package_state| {
+            package_state.mirroring = true;
+        })
+    }
+
+    pub fn stop_mirroring(&mut self, package_id: &PackageId) -> bool {
+        self.update_downloaded_package(package_id, |package_state| {
+            package_state.mirroring = false;
+        })
+    }
+
+    pub fn start_auto_update(&mut self, package_id: &PackageId) -> bool {
+        self.update_downloaded_package(package_id, |package_state| {
+            package_state.auto_update = true;
+        })
+    }
+
+    pub fn stop_auto_update(&mut self, package_id: &PackageId) -> bool {
+        self.update_downloaded_package(package_id, |package_state| {
+            package_state.auto_update = false;
+        })
+    }
+
+    /// saves state
+    /// TODO need root dir access to do this operation
+    // pub fn populate_packages_from_filesystem(&mut self) -> anyhow::Result<()> {
+    //     let Message::Response { body, .. } = Request::to(("our", "vfs", "distro", "sys"))
+    //         .body(serde_json::to_vec(&vfs::VfsRequest {
+    //             path: "/".to_string(),
+    //             action: vfs::VfsAction::ReadDir,
+    //         })?)
+    //         .send_and_await_response(3)??
+    //     else {
+    //         return Err(anyhow::anyhow!("vfs: bad response"));
+    //     };
+    //     let response = serde_json::from_slice::<vfs::VfsResponse>(&body)?;
+    //     let vfs::VfsResponse::ReadDir(entries) = response else {
+    //         return Err(anyhow::anyhow!("vfs: unexpected response: {:?}", response));
+    //     };
+    //     for entry in entries {
+    //         // ignore non-package dirs
+    //         let Ok(package_id) = entry.path[1..].parse::<PackageId>() else {
+    //             continue;
+    //         };
+    //         if entry.file_type == vfs::FileType::Directory {
+    //             let zip_file = vfs::File {
+    //                 path: format!("/{}/pkg/{}.zip", package_id, package_id),
+    //             };
+    //             let Ok(zip_file_bytes) = zip_file.read() else {
+    //                 continue;
+    //             };
+    //             // generate entry from this data
+    //             // for the version hash, take the SHA-256 hash of the zip file
+    //             let our_version = generate_version_hash(&zip_file_bytes);
+    //             // the user will need to turn mirroring and auto-update back on if they
+    //             // have to reset the state of their app store for some reason. the apps
+    //             // themselves will remain on disk unless explicitly deleted.
+    //             self.add_downloaded_package(
+    //                 &package_id,
+    //                 PackageState {
+    //                     mirrored_from: None,
+    //                     our_version,
+    //                     source_zip: None,    // since it's already installed
+    //                     caps_approved: true, // since it's already installed this must be true
+    //                     mirroring: false,
+    //                     auto_update: false,
+    //                     metadata: None,
+    //                 },
+    //             )
+    //         }
+    //     }
+    //     Ok(())
+    // }
+
+    pub fn install_downloaded_package(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
+        let Some(mut package_state) = self.get_downloaded_package(package_id) else {
+            return Err(anyhow::anyhow!("no package state"));
+        };
+        let Some(zip_bytes) = package_state.source_zip else {
+            return Err(anyhow::anyhow!("no source zip"));
+        };
         let drive_name = format!("/{package_id}/pkg");
         let blob = LazyLoadBlob {
             mime: Some("application/zip".to_string()),
@@ -269,13 +293,11 @@ impl State {
             .blob(blob)
             .send_and_await_response(5)??;
 
-        self.downloaded_packages
-            .insert(package_id.clone(), package_state);
-        crate::set_state(&bincode::serialize(self)?);
+        package_state.source_zip = None;
+        self.add_downloaded_package(package_id, package_state);
         Ok(())
     }
 
-    /// saves state
     pub fn uninstall(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
         let drive_path = format!("/{package_id}/pkg");
         Request::new()
@@ -314,8 +336,6 @@ impl State {
 
         // finally, remove from downloaded packages
         self.downloaded_packages.remove(package_id);
-        // save state
-        crate::set_state(&bincode::serialize(self)?);
         Ok(())
     }
 
@@ -331,36 +351,153 @@ impl State {
 
         match log.topics[0] {
             AppRegistered::SIGNATURE_HASH => {
-                let (package_hash, package_name, package_publisher, metadata_hash) =
-                    AppRegistered::abi_decode_data(&log.data, true)?;
-                // TODO
-                if generate_package_hash(&package_name, &package_publisher)
+                let (publisher_namehash, package_hash, package_name, metadata_url, metadata_hash) =
+                    AppRegistered::abi_decode_data(&log.data, false)?;
+
+                let publisher_namehash = publisher_namehash.to_string();
+                let metadata_hash = metadata_hash.to_string();
+
+                crate::print_to_terminal(
+                    1,
+                    &format!(
+                        "app registered with publisher_namehash {}, package_hash {}, package_name {}, metadata_url {}, metadata_hash {}",
+                        publisher_namehash, package_hash, package_name, metadata_url, metadata_hash
+                    )
+                );
+
+                if generate_package_hash(&package_name, &publisher_namehash)
                     != package_hash.to_string()
                 {
                     return Err(anyhow::anyhow!(
                         "app store: got log with mismatched package hash"
                     ));
                 }
-            }
-            AppUnlisted::SIGNATURE_HASH => {
-                // TODO
+                let Ok(Ok(Message::Response { body, .. })) =
+                    Request::to(("our", "kns_indexer", "kns_indexer", "sys"))
+                        .body(serde_json::to_vec(&IndexerRequests::NamehashToName(
+                            publisher_namehash,
+                        ))?)
+                        .send_and_await_response(3) else {
+                            return Err(anyhow::anyhow!("got invalid response from kns_indexer"));
+                        };
+                let Some(publisher_name) = serde_json::from_slice::<Option<String>>(&body)? else {
+                    return Err(anyhow::anyhow!("failed to validate publisher name in PKI"));
+                };
+
+                // TODO hash name to get namehash and verify it matches
+
+                let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
+
+                let listing = PackageListing {
+                    owner: log.address.to_string(),
+                    name: package_name,
+                    publisher: publisher_name,
+                    metadata_hash,
+                    metadata,
+                };
+                self.insert_listing(listing);
             }
             AppMetadataUpdated::SIGNATURE_HASH => {
-                // TODO
+                let (package_hash, metadata_url, metadata_hash) =
+                    AppMetadataUpdated::abi_decode_data(&log.data, false)?;
+
+                let metadata_hash = metadata_hash.to_string();
+
+                crate::print_to_terminal(
+                    1,
+                    &format!(
+                        "app metadata updated with package_hash {}, metadata_url {}, metadata_hash {}",
+                        package_hash, metadata_url, metadata_hash
+                    )
+                );
+
+                let current_listing = self
+                    .get_listing_with_hash_mut(&package_hash.to_string())
+                    .ok_or(anyhow::anyhow!(
+                        "app store: got log with no matching listing"
+                    ))?;
+
+                let metadata = fetch_metadata(&metadata_url, &metadata_hash)?;
+
+                current_listing.metadata_hash = metadata_hash;
+                current_listing.metadata = Some(metadata);
             }
             Transfer::SIGNATURE_HASH => {
-                // TODO
+                let from = alloy_primitives::Address::from_word(log.topics[1]);
+                let to = alloy_primitives::Address::from_word(log.topics[2]);
+                let package_hash = log.topics[3].to_string();
+
+                crate::print_to_terminal(
+                    1,
+                    &format!(
+                        "handling transfer from {} to {} of pkghash {}",
+                        from, to, package_hash
+                    ),
+                );
+
+                if from == alloy_primitives::Address::ZERO {
+                    crate::print_to_terminal(1, "ignoring transfer from 0 address");
+                } else if to == alloy_primitives::Address::ZERO {
+                    crate::print_to_terminal(1, "transfer to 0 address: deleting listing");
+                    self.delete_listing(&package_hash);
+                } else {
+                    crate::print_to_terminal(1, "transferring listing");
+                    let current_listing =
+                        self.get_listing_with_hash_mut(&package_hash)
+                            .ok_or(anyhow::anyhow!(
+                                "app store: got log with no matching listing"
+                            ))?;
+                    current_listing.owner = to.to_string();
+                }
             }
             _ => {}
+        }
+        if block_number > self.last_saved_block + 1000 {
+            self.last_saved_block = block_number;
+            crate::set_state(&bincode::serialize(self)?);
         }
         Ok(())
     }
 }
 
-pub fn generate_package_hash(name: &str, publisher: &str) -> String {
+/// fetch metadata from metadata_url and verify it matches metadata_hash
+pub fn fetch_metadata(
+    metadata_url: &str,
+    metadata_hash: &str,
+) -> anyhow::Result<OnchainPackageMetadata> {
+    let url = url::Url::parse(metadata_url)?;
+    let _response = http::send_request_await_response(http::Method::GET, url, None, 5, vec![])?;
+    let Some(body) = get_blob() else {
+        return Err(anyhow::anyhow!("no blob"));
+    };
+    let hash = generate_metadata_hash(&body.bytes);
+    if &hash == metadata_hash {
+        Ok(serde_json::from_slice::<OnchainPackageMetadata>(
+            &body.bytes,
+        )?)
+    } else {
+        Err(anyhow::anyhow!("metadata hash mismatch"))
+    }
+}
+
+pub fn generate_namehash(name: &str) -> String {
     use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
-    hasher.update([name, publisher].concat());
+    hasher.update(name);
+    format!("{:x}", hasher.finalize())
+}
+
+pub fn generate_metadata_hash(metadata: &[u8]) -> String {
+    use sha3::{Digest, Keccak256};
+    let mut hasher = Keccak256::new();
+    hasher.update(metadata);
+    format!("{:x}", hasher.finalize())
+}
+
+pub fn generate_package_hash(name: &str, publisher_namehash: &str) -> String {
+    use sha3::{Digest, Keccak256};
+    let mut hasher = Keccak256::new();
+    hasher.update([name, publisher_namehash].concat());
     format!("{:x}", hasher.finalize())
 }
 
