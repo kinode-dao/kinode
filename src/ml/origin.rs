@@ -19,7 +19,7 @@ pub struct LMOriginShard {
     model_path: std::path::PathBuf,
     device: Device,
     iteration: usize, // TODO: Zen: Remove
-    start_pos: usize, 
+    start_pos: usize,
     kv_caches: Option<Vec<(Tensor, Tensor)>>,
 
     tokenizer: TokenOutputStream,
@@ -37,7 +37,7 @@ impl LMOriginShard {
         println!("Loading model from {:?}", path);
         let result = Self {
             model: None,
-            model_path: path, 
+            model_path: path,
             device,
             iteration: Default::default(),
             start_pos: 0,
@@ -105,7 +105,7 @@ impl Model for LMOriginShard {
 
     /// Returns the activations and the start pos
     fn forward(&mut self, input: MLInput) -> Result<(Tensor, usize)> {
-        // TODO: Zen will we need this? 
+        // TODO: Zen will we need this?
         if self.model.is_none() {
             let _ = self.load_model();
         }
@@ -132,7 +132,7 @@ impl Model for LMOriginShard {
                     } else {
                         self.tokens.len().saturating_sub(1)
                     }
-                },
+                }
                 MLInput::NextTokIdx(_) => self.start_pos + 1,
                 _ => panic!("OriginProcessor::forward() called with invalid input"),
             }
@@ -140,7 +140,6 @@ impl Model for LMOriginShard {
 
         let ctxt = &self.tokens[start_pos..];
         let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
-
 
         println!("Start pos: {}", start_pos);
         println!("Ctxt: {:?}", ctxt);
