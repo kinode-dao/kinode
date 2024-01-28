@@ -11,14 +11,14 @@ use clap::Parser;
 use crate::ml::end::EndProcessor;
 use crate::ml::link::LinkProcessor;
 use crate::ml::origin::OriginInput;
-use crate::ml::origin::OriginProcessor;
-use crate::ml::processor::Processor;
+use crate::ml::origin::LMOriginShard;
+use crate::ml::model::Model;
 use crate::ml::util::Args;
 
 fn integrity_test() -> Result<()> {
     let args = Args::parse();
 
-    let mut shard_0 = OriginProcessor::new(&args)?;
+    let mut shard_0 = LMOriginShard::new(&args)?;
     let mut shard_1 = LinkProcessor::new(&args, 1)?;
     let mut shard_2 = LinkProcessor::new(&args, 2)?;
     let mut shard_3 = EndProcessor::new(&args, 3)?;
@@ -37,21 +37,21 @@ fn integrity_test() -> Result<()> {
         };
         let (activation, start_pos) = shard_0.forward(input, true)?;
         println!("Shape of the activation is {:?}", activation.shape());
-        shard_0.unload();
+        shard_0.unload_model();
 
         println!("Shard 1");
         let activation = shard_1.forward(&activation, start_pos)?;
         println!("Shape of the activation is {:?}", activation.shape());
-        shard_1.unload();
+        shard_1.unload_model();
 
         println!("Shard 2");
         let activation = shard_2.forward(&activation, start_pos)?;
         println!("Shape of the activation is {:?}", activation.shape());
-        shard_2.unload();
+        shard_2.unload_model();
 
         println!("Shard 3");
         next_token_idx = Some(shard_3.forward(&activation, start_pos)?);
-        shard_3.unload();
+        shard_3.unload_model();
     }
     Ok(())
 }

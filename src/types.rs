@@ -1357,6 +1357,7 @@ pub enum MLAction {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum MLInput {
     Text(String),
+    NextTokIdx(u32),
     // Can be anything from embeddings, image, audio, etc.
     // TODO: Zen: Should we make this subtypes even though they're all Vec<u8>?
     Bytes(Vec<u8>),

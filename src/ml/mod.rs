@@ -3,7 +3,7 @@ pub mod end;
 pub mod link;
 pub mod mixtral_sharded;
 pub mod origin;
-pub mod processor;
+pub mod model;
 pub mod test;
 pub mod token_output_stream;
 pub mod util;

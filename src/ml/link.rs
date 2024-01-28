@@ -8,15 +8,16 @@ use crate::ml::util::load_model;
 use crate::ml::util::Args;
 use candle_core::{Device, Tensor};
 
-use super::processor::Processor;
+use super::model::Model;
 
 pub struct LinkProcessor {
     model: Option<LinkModel>,
     model_path: std::path::PathBuf,
-    pub device: Device,
+    device: Device,
     iteration: usize,
-    shard_num: usize,
     kv_caches: Option<Vec<(Tensor, Tensor)>>,
+
+    shard_num: usize,
 }
 
 impl LinkProcessor {
@@ -37,7 +38,7 @@ impl LinkProcessor {
     }
 }
 
-impl Processor for LinkProcessor {
+impl Model for LinkProcessor {
     fn load_model(&mut self) -> Result<()> {
         let Model::Link(model) = load_model(&self.device, &self.model_path, self.shard_num)? else {
             panic!("Model is not link")
@@ -51,7 +52,7 @@ impl Processor for LinkProcessor {
         }
         Ok(())
     }
-    fn unload(&mut self) {
+    fn unload_model(&mut self) {
         if let Some(model) = &self.model {
             self.kv_caches = Some(model.get_kv_caches());
         }

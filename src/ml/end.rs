@@ -10,16 +10,17 @@ use crate::ml::util::load_model;
 use crate::ml::util::Args;
 use candle_core::{Device, Tensor};
 
-use super::processor::Processor;
+use super::model::Model;
 
 pub struct EndProcessor {
     model: Option<EndModel>,
     model_path: std::path::PathBuf,
-    logits_processor: LogitsProcessor,
     device: Device,
     iteration: usize,
-    shard_num: usize,
     kv_caches: Option<Vec<(Tensor, Tensor)>>,
+
+    logits_processor: LogitsProcessor,
+    shard_num: usize,
 }
 // TODO: Repeat penalty and repeat last n?
 
@@ -43,7 +44,7 @@ impl EndProcessor {
     }
 }
 
-impl Processor for EndProcessor {
+impl Model for EndProcessor {
     fn load_model(&mut self) -> Result<()> {
         let Model::End(model) = load_model(&self.device, &self.model_path, self.shard_num)? else {
             panic!("Model is not end")
@@ -58,7 +59,7 @@ impl Processor for EndProcessor {
         Ok(())
     }
 
-    fn unload(&mut self) {
+    fn unload_model(&mut self) {
         if let Some(model) = &self.model {
             self.kv_caches = Some(model.get_kv_caches());
         }
