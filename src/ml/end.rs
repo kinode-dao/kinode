@@ -16,14 +16,14 @@ pub struct EndProcessor {
     model: Option<EndModel>,
     model_path: std::path::PathBuf,
     device: Device,
-    iteration: usize,
+    start_pos: usize,
     kv_caches: Option<Vec<(Tensor, Tensor)>>,
 
     logits_processor: LogitsProcessor,
     shard_num: usize,
 }
-// TODO: Repeat penalty and repeat last n?
 
+// TODO: Zen: Repeat penalty and repeat last n?
 impl EndProcessor {
     pub fn new(args: &Args, shard_num: usize) -> Result<Self> {
         let paths = create_paths(&args);
@@ -34,18 +34,26 @@ impl EndProcessor {
         let result = Self {
             model: None,
             model_path,
-            logits_processor,
             device,
-            iteration: Default::default(),
-            shard_num,
+            start_pos: Default::default(),
             kv_caches: None,
+            logits_processor,
+            shard_num,
         };
         Ok(result)
+    }
+
+    fn set_start_pos(&mut self, activation: &Tensor) {
+        let received_ctx_len = activation.shape()[1];
+        self.start_pos += received_ctx_len;
     }
 }
 
 impl Model for EndProcessor {
     fn load_model_if_not_loaded(&mut self) -> Result<()> {
+        if self.model.is_some() {
+            return Ok(());
+        }
         let Model::End(model) = load_model(&self.device, &self.model_path, self.shard_num)? else {
             panic!("Model is not end")
         };
@@ -66,28 +74,25 @@ impl Model for EndProcessor {
         self.model = None;
     }
 
-    #[allow(unused)] // TODO: Luc
     fn clear(&mut self) {
-        self.iteration = 0;
+        self.start_pos = 0;
     }
 
-    fn forward(&mut self, activation: &Tensor, start_pos: usize) -> Result<u32> {
-        if self.model.is_none() {
-            if let Err(e) = self.load_model_if_not_loaded() {
-                println!("Error loading model: {:?}", e);
-            }
-        }
+    fn forward(&mut self, activation: &Tensor) -> Result<u32> {
+        let _ = self.load_model_if_not_loaded();
+
         if let Some(model) = &mut self.model {
-            // TODO: Luc: why do the squeeze here and not in the model?
+            // TODO: Zen: why do the squeeze here and not in the model?
             let logits = model
                 .forward(activation, start_pos)?
                 .squeeze(0)?
                 .squeeze(0)?
                 .to_dtype(DType::F32)?;
             let next_token = self.logits_processor.sample(&logits)?;
-            println!("Next token is {}", next_token);
+            self.set_start_pos(activation);
+
             return Ok(next_token);
         }
-        panic!("Something went terribly wrong")
+        panic!("No model was loaded, even though we tried to load one")
     }
 }

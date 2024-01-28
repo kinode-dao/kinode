@@ -33,7 +33,7 @@ impl Config {
             vocab_size: 32000,
             hidden_size: 4096,
             intermediate_size: 14336,
-            num_hidden_layers: 8, // TODO: Luc: We added this
+            num_hidden_layers: 8, // TODO: Zen: We added this
             num_attention_heads: 32,
             num_key_value_heads: 8,
             hidden_act: Activation::Silu,
@@ -375,7 +375,7 @@ impl Module for SparseMoeBlock {
             let current_hidden_states = current_hidden_states.broadcast_mul(&selected_rws)?;
             ys = ys.index_add(&top_x, &current_hidden_states, 0)?;
         }
-        // TODO: Luc: Cast the entirety of upper part to f32 and lower down cast to f16 again
+        // TODO: Zen: Cast the entirety of upper part to f32 and lower down cast to f16 again
 
         let ys = ys.reshape((b_size, seq_len, hidden_dim))?;
         // let routing_weights = routing_weights.to_dtype(DType::F32)?.to_vec2::<f32>()?;
@@ -473,7 +473,7 @@ impl OriginModel {
         })
     }
 
-    // TODO: Luc: This should be unified through a trait
+    // TODO: Zen: This should be unified through a trait
     pub fn get_kv_caches(&self) -> Vec<(Tensor, Tensor)> {
         self.layers.iter().map(|l| l.get_kv_cache()).collect()
     }
@@ -534,7 +534,7 @@ impl LinkModel {
         })
     }
 
-    // TODO: Luc: This should be unified through a trait
+    // TODO: Zen: This should be unified through a trait
     pub fn get_kv_caches(&self) -> Vec<(Tensor, Tensor)> {
         self.layers.iter().map(|l| l.get_kv_cache()).collect()
     }
@@ -601,7 +601,7 @@ impl EndModel {
         })
     }
 
-    // TODO: Luc: This should be unified through a trait
+    // TODO: Zen: This should be unified through a trait
     pub fn get_kv_caches(&self) -> Vec<(Tensor, Tensor)> {
         self.layers.iter().map(|l| l.get_kv_cache()).collect()
     }

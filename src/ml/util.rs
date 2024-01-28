@@ -74,7 +74,7 @@ pub fn tokenizer(args: &Args) -> Result<Tokenizer> {
 pub fn load_model(device: &Device, path: &std::path::PathBuf, shard_num: usize) -> Result<Model> {
     let start = std::time::Instant::now();
 
-    // TODO: Luc: Should we use `use_flash_attn`? Test with and without
+    // TODO: Zen: Should we use `use_flash_attn`? Test with and without
     let use_flash_attn = false;
 
     let config = Config::v0_1_8x7b(use_flash_attn);

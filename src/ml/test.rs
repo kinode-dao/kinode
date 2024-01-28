@@ -3,17 +3,13 @@
 
 // #[cfg(feature = "accelerate")]
 // extern crate accelerate_src;
-// TODO: Luc
+// TODO: Zen
 
 use anyhow::Result;
 use clap::Parser;
 
 use crate::ml::end::EndProcessor;
-<<<<<<< HEAD
-use crate::ml::link::LinkProcessor;
-=======
 use crate::ml::link::LMLinkShard;
->>>>>>> 990325b (Link start pos)
 use crate::ml::model::Model;
 use crate::ml::origin::LMOriginShard;
 use crate::ml::origin::OriginInput;
@@ -83,7 +79,7 @@ fn main() -> Result<()> {
 }
 
 /*
-TODO: Luc:
+TODO: Zen:
 
 Troubleshooting for useless output:
 - Are the correct shards being loaded?
