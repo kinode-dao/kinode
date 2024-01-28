@@ -18,7 +18,10 @@ pub struct LMOriginShard {
     model: Option<OriginModel>,
     model_path: std::path::PathBuf,
     device: Device,
+<<<<<<< HEAD
     iteration: usize, // TODO: Zen: Remove
+=======
+>>>>>>> 990325b (Link start pos)
     start_pos: usize,
     kv_caches: Option<Vec<(Tensor, Tensor)>>,
 
@@ -39,7 +42,6 @@ impl LMOriginShard {
             model: None,
             model_path: path,
             device,
-            iteration: Default::default(),
             start_pos: 0,
             kv_caches: None,
             tokenizer: TokenOutputStream::new(tokenizer),
@@ -90,9 +92,11 @@ impl LMOriginShard {
         Ok(())
     }
 
+    // TODO: Zen: We assume that interactive mode doesn't exist yet.
     fn set_start_pos(&mut self, input: &MLInput) {
         self.start_pos = {
             match input {
+<<<<<<< HEAD
                 MLInput::Text(_) => {
                     if start_pos == 0 {
                         self.tokens.len()
@@ -101,6 +105,10 @@ impl LMOriginShard {
                     }
                 }
                 MLInput::NextTokIdx(_) => self.start_pos + 1,
+=======
+                MLInput::Text(_) => 0,
+                MLInput::NextTokIdx(_) => self.tokens.len() - 1,
+>>>>>>> 990325b (Link start pos)
                 _ => panic!("OriginProcessor::forward() called with invalid input"),
             }
         };
@@ -134,11 +142,11 @@ impl Model for LMOriginShard {
 
     fn clear(&mut self) {
         self.tokenizer.clear();
-        self.iteration = 0;
+        self.start_pos = 0;
     }
 
-    /// Returns the activations and the start pos
-    fn forward(&mut self, input: MLInput) -> Result<(Tensor, usize)> {
+    // TODO: Zen: Don't return usize
+    fn forward(&mut self, input: MLInput) -> Result<Tensor> {
         // TODO: Zen will we need this?
         let _ = self.load_model_if_not_loaded();
 
@@ -152,9 +160,11 @@ impl Model for LMOriginShard {
         println!("Start pos: {}", start_pos);
         println!("Ctxt: {:?}", ctxt);
         if let Some(model) = &mut self.model {
-            return Ok((model.forward(&input, start_pos)?, start_pos));
+            return Ok(model.forward(&input, self.start_pos)?);
         }
         // TODO: Zen: If we encounter an eos token, we need to somehow stop generating
         panic!("No model was loaded, even though we tried to load one")
     }
 }
+
+// TODO: Zen: Food for thought: Why do we need to set the start_pos for origin before the forward, but for link and end, we set it after? This looks like there could be complexity that can be shaved off.

@@ -9,7 +9,11 @@ use anyhow::Result;
 use clap::Parser;
 
 use crate::ml::end::EndProcessor;
+<<<<<<< HEAD
 use crate::ml::link::LinkProcessor;
+=======
+use crate::ml::link::LMLinkShard;
+>>>>>>> 990325b (Link start pos)
 use crate::ml::model::Model;
 use crate::ml::origin::LMOriginShard;
 use crate::ml::origin::OriginInput;
@@ -19,8 +23,8 @@ fn integrity_test() -> Result<()> {
     let args = Args::parse();
 
     let mut shard_0 = LMOriginShard::new(&args)?;
-    let mut shard_1 = LinkProcessor::new(&args, 1)?;
-    let mut shard_2 = LinkProcessor::new(&args, 2)?;
+    let mut shard_1 = LMLinkShard::new(&args, 1)?;
+    let mut shard_2 = LMLinkShard::new(&args, 2)?;
     let mut shard_3 = EndProcessor::new(&args, 3)?;
 
     let mut next_token_idx: Option<u32> = None;

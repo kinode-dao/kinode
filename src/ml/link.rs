@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::ml::mixtral_sharded::Model;
 use anyhow::Result;
 
@@ -10,17 +12,18 @@ use candle_core::{Device, Tensor};
 
 use super::model::Model;
 
-pub struct LinkProcessor {
+pub struct LMLinkShard {
     model: Option<LinkModel>,
     model_path: std::path::PathBuf,
     device: Device,
-    iteration: usize,
+    start_pos: usize,
+
     kv_caches: Option<Vec<(Tensor, Tensor)>>,
 
     shard_num: usize,
 }
 
-impl LinkProcessor {
+impl LMLinkShard {
     pub fn new(args: &Args, shard_num: usize) -> Result<Self> {
         let paths = create_paths(&args);
         let device = device::device(args.cpu)?;
@@ -30,16 +33,24 @@ impl LinkProcessor {
             model: None,
             model_path,
             device,
-            iteration: Default::default(),
-            shard_num,
+            start_pos: 0,
             kv_caches: None,
+            shard_num,
         };
         Ok(result)
     }
+
+    fn set_start_pos(&mut self, activation: &Tensor) {
+        let received_ctx_len = activation.shape()[1];
+        self.start_pos += received_ctx_len;
+    }
 }
 
-impl Model for LinkProcessor {
+impl Model for LMLinkShard {
     fn load_model_if_not_loaded(&mut self) -> Result<()> {
+        if self.model.is_some() {
+            return Ok(());
+        }
         let Model::Link(model) = load_model(&self.device, &self.model_path, self.shard_num)? else {
             panic!("Model is not link")
         };
@@ -59,21 +70,20 @@ impl Model for LinkProcessor {
         self.model = None;
     }
 
-    #[allow(unused)] // TODO: Luc
     fn clear(&mut self) {
-        self.iteration = 0;
+        self.start_pos = 0;
     }
 
-    fn forward(&mut self, activation: &Tensor, start_pos: usize) -> Result<Tensor> {
-        if self.model.is_none() {
-            if let Err(e) = self.load_model_if_not_loaded() {
-                println!("Error loading model: {:?}", e);
-            }
-        }
+    fn forward(&mut self, activation: &Tensor) -> Result<Tensor> {
+        _ = self.load_model_if_not_loaded();
 
-        if let Some(model) = &mut self.model {
-            return Ok(model.forward(activation, start_pos)?);
-        }
-        panic!("Something went terribly wrong")
+        let output: Tensor = if let Some(model) = &mut self.model {
+            model.forward(activation, self.start_pos)?
+        } else {
+            panic!("No model was loaded, even though we tried to load one")
+        };
+
+        self.set_start_pos(activation);
+        Ok(output)
     }
 }
