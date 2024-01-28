@@ -18,10 +18,6 @@ pub struct LMOriginShard {
     model: Option<OriginModel>,
     model_path: std::path::PathBuf,
     device: Device,
-<<<<<<< HEAD
-    iteration: usize, // TODO: Zen: Remove
-=======
->>>>>>> 990325b (Link start pos)
     start_pos: usize,
     kv_caches: Option<Vec<(Tensor, Tensor)>>,
 
@@ -96,19 +92,8 @@ impl LMOriginShard {
     fn set_start_pos(&mut self, input: &MLInput) {
         self.start_pos = {
             match input {
-<<<<<<< HEAD
-                MLInput::Text(_) => {
-                    if start_pos == 0 {
-                        self.tokens.len()
-                    } else {
-                        self.tokens.len().saturating_sub(1)
-                    }
-                }
-                MLInput::NextTokIdx(_) => self.start_pos + 1,
-=======
                 MLInput::Text(_) => 0,
                 MLInput::NextTokIdx(_) => self.tokens.len() - 1,
->>>>>>> 990325b (Link start pos)
                 _ => panic!("OriginProcessor::forward() called with invalid input"),
             }
         };
