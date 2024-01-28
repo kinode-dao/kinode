@@ -122,6 +122,74 @@ async fn handle_request(
         }
     };
 
+    // special case for root reading list of all drives.
+    if request.action == VfsAction::ReadDir && request.path == "/" {
+        // check if src has root
+        let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
+        send_to_caps_oracle
+            .send(CapMessage::Has {
+                on: source.process.clone(),
+                cap: Capability {
+                    issuer: Address {
+                        node: our_node.clone(),
+                        process: VFS_PROCESS_ID.clone(),
+                    },
+                    params: serde_json::to_string(&serde_json::json!({
+                        "root": true,
+                    }))
+                    .unwrap(),
+                },
+                responder: send_cap_bool,
+            })
+            .await?;
+        let has_root_cap = recv_cap_bool.await?;
+        if has_root_cap {
+            let mut dir = fs::read_dir(vfs_path.clone()).await?;
+            let mut entries = Vec::new();
+            while let Some(entry) = dir.next_entry().await? {
+                let entry_path = entry.path();
+                let relative_path = entry_path.strip_prefix(&vfs_path).unwrap_or(&entry_path);
+
+                let metadata = entry.metadata().await?;
+                let file_type = get_file_type(&metadata);
+                let dir_entry = DirEntry {
+                    path: relative_path.display().to_string(),
+                    file_type,
+                };
+                entries.push(dir_entry);
+            }
+
+            let response = KernelMessage {
+                id,
+                source: Address {
+                    node: our_node.clone(),
+                    process: VFS_PROCESS_ID.clone(),
+                },
+                target: source,
+                rsvp: None,
+                message: Message::Response((
+                    Response {
+                        inherit: false,
+                        body: serde_json::to_vec(&VfsResponse::ReadDir(entries)).unwrap(),
+                        metadata,
+                        capabilities: vec![],
+                    },
+                    None,
+                )),
+                lazy_load_blob: None,
+            };
+
+            let _ = send_to_loop.send(response).await;
+            return Ok(());
+        } else {
+            let no_cap_error = VfsError::NoCap {
+                action: request.action.to_string(),
+                path: request.path.clone(),
+            };
+            return Err(no_cap_error);
+        }
+    }
+
     // current prepend to filepaths needs to be: /package_id/drive/path
     let (package_id, drive, rest) = parse_package_and_drive(&request.path).await?;
     let drive = format!("/{}/{}", package_id, drive);
