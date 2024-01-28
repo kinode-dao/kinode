@@ -49,6 +49,18 @@ impl LMOriginShard {
         Ok(result)
     }
 
+    fn fill_tokens(&mut self, input: &MLInput) {
+        match input {
+            MLInput::Text(text) => {
+                let _ = self.fill_tokens_with_prompt(&text);
+            }
+            MLInput::NextTokIdx(idx) => {
+                self.tokens.push(idx);
+            }
+            _ => panic!("OriginProcessor::forward() called with invalid input"),
+        }
+    }
+
     fn fill_tokens_with_prompt(&mut self, prompt: &str) -> Result<()> {
         self.tokens = self
             .tokenizer
@@ -65,6 +77,9 @@ impl LMOriginShard {
     }
 
     fn print_context(&mut self) -> Result<()> {
+        if !self.verbose {
+            return Ok(());
+        }
         let mut context = String::new();
         for &t in self.tokens.iter() {
             if let Ok(Some(t)) = self.tokenizer.next_token(t) {
@@ -74,10 +89,29 @@ impl LMOriginShard {
         println!("Context: {}", context);
         Ok(())
     }
+
+    fn set_start_pos(&mut self, input: &MLInput) {
+        self.start_pos = {
+            match input {
+                MLInput::Text(_) => {
+                    if start_pos == 0 {
+                        self.tokens.len()
+                    } else {
+                        self.tokens.len().saturating_sub(1)
+                    }
+                },
+                MLInput::NextTokIdx(_) => self.start_pos + 1,
+                _ => panic!("OriginProcessor::forward() called with invalid input"),
+            }
+        };
+    }
 }
 
 impl Model for LMOriginShard {
-    fn load_model(&mut self) -> Result<()> {
+    fn load_model_if_not_loaded(&mut self) -> Result<()> {
+        if self.model.is_some() {
+            return Ok(());
+        }
         let Model::Origin(model) = load_model(&self.device, &self.model_path, 0)? else {
             panic!("Model is not origin")
         };
@@ -105,38 +139,12 @@ impl Model for LMOriginShard {
 
     /// Returns the activations and the start pos
     fn forward(&mut self, input: MLInput) -> Result<(Tensor, usize)> {
-        // TODO: Zen will we need this?
-        if self.model.is_none() {
-            let _ = self.load_model();
-        }
+        // TODO: Zen will we need this? 
+        let _ = self.load_model_if_not_loaded();
 
-        match input {
-            MLInput::Text(text) => {
-                let _ = self.fill_tokens_with_prompt(&text);
-            }
-            MLInput::NextTokIdx(idx) => {
-                self.tokens.push(idx);
-            }
-            _ => panic!("OriginProcessor::forward() called with invalid input"),
-        }
-
-        if self.verbose {
-            let _ = self.print_context();
-        }
-
-        self.start_pos = {
-            match input {
-                MLInput::Text(_) => {
-                    if start_pos == 0 {
-                        self.tokens.len()
-                    } else {
-                        self.tokens.len().saturating_sub(1)
-                    }
-                }
-                MLInput::NextTokIdx(_) => self.start_pos + 1,
-                _ => panic!("OriginProcessor::forward() called with invalid input"),
-            }
-        };
+        self.fill_tokens(&input);
+        self.print_context();
+        self.set_start_pos(&input);
 
         let ctxt = &self.tokens[start_pos..];
         let input = Tensor::new(ctxt, &self.device)?.unsqueeze(0)?;
@@ -146,7 +154,7 @@ impl Model for LMOriginShard {
         if let Some(model) = &mut self.model {
             return Ok((model.forward(&input, start_pos)?, start_pos));
         }
-        // TODO: Luc: If we encounter an eos token, we need to somehow stop generating
-        panic!("Something went terribly wrong")
+        // TODO: Zen: If we encounter an eos token, we need to somehow stop generating
+        panic!("No model was loaded, even though we tried to load one")
     }
 }

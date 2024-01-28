@@ -39,7 +39,7 @@ impl LinkProcessor {
 }
 
 impl Model for LinkProcessor {
-    fn load_model(&mut self) -> Result<()> {
+    fn load_model_if_not_loaded(&mut self) -> Result<()> {
         let Model::Link(model) = load_model(&self.device, &self.model_path, self.shard_num)? else {
             panic!("Model is not link")
         };
@@ -66,7 +66,7 @@ impl Model for LinkProcessor {
 
     fn forward(&mut self, activation: &Tensor, start_pos: usize) -> Result<Tensor> {
         if self.model.is_none() {
-            if let Err(e) = self.load_model() {
+            if let Err(e) = self.load_model_if_not_loaded() {
                 println!("Error loading model: {:?}", e);
             }
         }

@@ -45,7 +45,7 @@ impl EndProcessor {
 }
 
 impl Model for EndProcessor {
-    fn load_model(&mut self) -> Result<()> {
+    fn load_model_if_not_loaded(&mut self) -> Result<()> {
         let Model::End(model) = load_model(&self.device, &self.model_path, self.shard_num)? else {
             panic!("Model is not end")
         };
@@ -73,7 +73,7 @@ impl Model for EndProcessor {
 
     fn forward(&mut self, activation: &Tensor, start_pos: usize) -> Result<u32> {
         if self.model.is_none() {
-            if let Err(e) = self.load_model() {
+            if let Err(e) = self.load_model_if_not_loaded() {
                 println!("Error loading model: {:?}", e);
             }
         }
