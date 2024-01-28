@@ -99,7 +99,7 @@ impl LMOriginShard {
                     } else {
                         self.tokens.len().saturating_sub(1)
                     }
-                },
+                }
                 MLInput::NextTokIdx(_) => self.start_pos + 1,
                 _ => panic!("OriginProcessor::forward() called with invalid input"),
             }
@@ -139,7 +139,7 @@ impl Model for LMOriginShard {
 
     /// Returns the activations and the start pos
     fn forward(&mut self, input: MLInput) -> Result<(Tensor, usize)> {
-        // TODO: Zen will we need this? 
+        // TODO: Zen will we need this?
         let _ = self.load_model_if_not_loaded();
 
         self.fill_tokens(&input);
