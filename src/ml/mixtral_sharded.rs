@@ -437,7 +437,7 @@ impl DecoderLayer {
 }
 
 #[derive(Debug, Clone)]
-pub enum Model {
+pub enum MixtralModel {
     Origin(OriginModel),
     Link(LinkModel),
     End(EndModel),

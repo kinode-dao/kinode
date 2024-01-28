@@ -8,12 +8,20 @@
 use anyhow::Result;
 use clap::Parser;
 
-use crate::ml::end::EndProcessor;
+use crate::ml::end::LMEndShard;
 use crate::ml::link::LMLinkShard;
 use crate::ml::model::Model;
 use crate::ml::origin::LMOriginShard;
 use crate::ml::origin::OriginInput;
 use crate::ml::util::Args;
+
+fn input(next_token_idx: Option<u32>, prompt: String) -> MLInput {
+    if let Some(next_token_idx) = next_token_idx {
+        MLInput::NextTokIdx(next_token_idx)
+    } else {
+        MLInput::Prompt(prompt)
+    }
+}
 
 fn integrity_test() -> Result<()> {
     let args = Args::parse();
@@ -21,36 +29,32 @@ fn integrity_test() -> Result<()> {
     let mut shard_0 = LMOriginShard::new(&args)?;
     let mut shard_1 = LMLinkShard::new(&args, 1)?;
     let mut shard_2 = LMLinkShard::new(&args, 2)?;
-    let mut shard_3 = EndProcessor::new(&args, 3)?;
+    let mut shard_3 = LMEndShard::new(&args, 3)?;
 
     let mut next_token_idx: Option<u32> = None;
 
     for iteration in 0..50 {
+        let input = input(next_token_idx, args.prompt.clone());
         println!("Iteration {}", iteration);
 
         println!("Shard 0");
         // TODO: Helper function
-        let input = if let Some(next_token_idx) = next_token_idx {
-            OriginInput::NextTokIdx(next_token_idx)
-        } else {
-            OriginInput::Prompt(args.prompt.clone())
-        };
-        let (activation, start_pos) = shard_0.forward(input, true)?;
+        let (activation, start_pos) = shard_0.forward(input)?;
         println!("Shape of the activation is {:?}", activation.shape());
         shard_0.unload_model();
 
         println!("Shard 1");
-        let activation = shard_1.forward(&activation, start_pos)?;
+        let activation = shard_1.forward(&activation)?;
         println!("Shape of the activation is {:?}", activation.shape());
         shard_1.unload_model();
 
         println!("Shard 2");
-        let activation = shard_2.forward(&activation, start_pos)?;
+        let activation = shard_2.forward(&activation)?;
         println!("Shape of the activation is {:?}", activation.shape());
         shard_2.unload_model();
 
         println!("Shard 3");
-        next_token_idx = Some(shard_3.forward(&activation, start_pos)?);
+        next_token_idx = Some(shard_3.forward(&activation)?);
         shard_3.unload_model();
     }
     Ok(())

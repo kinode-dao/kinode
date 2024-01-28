@@ -1,7 +1,7 @@
 use anyhow::{Error as E, Result};
 use clap::Parser;
 
-use crate::ml::mixtral_sharded::{Config, EndModel, LinkModel, Model, OriginModel};
+use crate::ml::mixtral_sharded::{Config, EndModel, LinkModel, MixtralModel, OriginModel};
 
 use candle_core::{DType, Device};
 use candle_nn::VarBuilder;
@@ -71,7 +71,11 @@ pub fn tokenizer(args: &Args) -> Result<Tokenizer> {
     Tokenizer::from_file(tokenizer_filename).map_err(E::msg)
 }
 
-pub fn load_model(device: &Device, path: &std::path::PathBuf, shard_num: usize) -> Result<Model> {
+pub fn load_model(
+    device: &Device,
+    path: &std::path::PathBuf,
+    shard_num: usize,
+) -> Result<MixtralModel> {
     let start = std::time::Instant::now();
 
     // TODO: Zen: Should we use `use_flash_attn`? Test with and without
@@ -80,11 +84,11 @@ pub fn load_model(device: &Device, path: &std::path::PathBuf, shard_num: usize) 
     let config = Config::v0_1_8x7b(use_flash_attn);
     let vb = unsafe { VarBuilder::from_mmaped_safetensors(&vec![path], DType::F16, device)? };
     let model = if shard_num == 0 {
-        Model::Origin(OriginModel::new(&config, vb)?)
+        MixtralModel::Origin(OriginModel::new(&config, vb)?)
     } else if shard_num == SHARD_AMOUNT - 1 {
-        Model::End(EndModel::new(&config, vb)?)
+        MixtralModel::End(EndModel::new(&config, vb)?)
     } else {
-        Model::Link(LinkModel::new(&config, vb)?)
+        MixtralModel::Link(LinkModel::new(&config, vb)?)
     };
     println!("loaded the model in {:?}", start.elapsed());
     Ok(model)

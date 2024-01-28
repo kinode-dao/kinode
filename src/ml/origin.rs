@@ -1,6 +1,6 @@
 use anyhow::{Error as E, Result};
 
-use crate::ml::mixtral_sharded::Model;
+use crate::ml::mixtral_sharded::MixtralModel;
 use crate::ml::mixtral_sharded::OriginModel;
 use crate::ml::token_output_stream::TokenOutputStream;
 use crate::MLInput;
@@ -13,7 +13,6 @@ use super::util::Args;
 use crate::ml::device;
 use candle_core::{Device, Tensor};
 
-#[derive(Debug, Clone, PartialEq)]
 pub struct LMOriginShard {
     model: Option<OriginModel>,
     model_path: std::path::PathBuf,
@@ -53,7 +52,7 @@ impl LMOriginShard {
                 let _ = self.fill_tokens_with_prompt(&text);
             }
             MLInput::NextTokIdx(idx) => {
-                self.tokens.push(idx);
+                self.tokens.push(*idx);
             }
             _ => panic!("OriginProcessor::forward() called with invalid input"),
         }
@@ -101,11 +100,11 @@ impl LMOriginShard {
 }
 
 impl Model for LMOriginShard {
-    fn load_model_if_not_loaded(&mut self) -> Result<()> {
+    fn load_model_if_not_loaded(&mut self) -> anyhow::Result<()> {
         if self.model.is_some() {
             return Ok(());
         }
-        let Model::Origin(model) = load_model(&self.device, &self.model_path, 0)? else {
+        let MixtralModel::Origin(model) = load_model(&self.device, &self.model_path, 0)? else {
             panic!("Model is not origin")
         };
         self.model = Some(model);

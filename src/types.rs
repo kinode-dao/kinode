@@ -1,4 +1,5 @@
 use crate::kernel::process::wit;
+use candle_core::Tensor;
 use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -1340,13 +1341,13 @@ pub enum SqliteError {
     InputError { error: String },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct MLRequest {
-    pub path: String, // TODO: Zen: Is this needed?
+    pub path: String, // TODO: Zen: This isn't needed, we could just pass MLAction?
     pub action: MLAction,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub enum MLAction {
     ListModel,
     LoadModel { model_name: String },
@@ -1354,12 +1355,19 @@ pub enum MLAction {
     Infer { input: MLInput },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub enum MLInput {
+    Tensor(Tensor),
     Text(String),
     NextTokIdx(u32),
-    // Can be anything from embeddings, image, audio, etc.
-    // TODO: Zen: Should we make this subtypes even though they're all Vec<u8>?
+    Bytes(Vec<u8>),
+}
+
+#[derive(Debug)]
+pub enum MLOutput {
+    Tensor(Tensor),
+    Text(String),
+    NextTokIdx(u32),
     Bytes(Vec<u8>),
 }
 

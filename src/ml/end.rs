@@ -1,5 +1,5 @@
 use crate::ml::mixtral_sharded::EndModel;
-use crate::ml::mixtral_sharded::Model;
+use crate::ml::mixtral_sharded::MixtralModel;
 use anyhow::Result;
 use candle_core::DType;
 use candle_transformers::generation::LogitsProcessor;
@@ -12,7 +12,7 @@ use candle_core::{Device, Tensor};
 
 use super::model::Model;
 
-pub struct EndProcessor {
+pub struct LMEndShard {
     model: Option<EndModel>,
     model_path: std::path::PathBuf,
     device: Device,
@@ -24,7 +24,7 @@ pub struct EndProcessor {
 }
 
 // TODO: Zen: Repeat penalty and repeat last n?
-impl EndProcessor {
+impl LMEndShard {
     pub fn new(args: &Args, shard_num: usize) -> Result<Self> {
         let paths = create_paths(&args);
         let model_path = paths[shard_num].clone();
@@ -44,17 +44,18 @@ impl EndProcessor {
     }
 
     fn set_start_pos(&mut self, activation: &Tensor) {
-        let received_ctx_len = activation.shape()[1];
+        let received_ctx_len = activation.shape().dims()[1];
         self.start_pos += received_ctx_len;
     }
 }
 
-impl Model for EndProcessor {
+impl Model for LMEndShard {
     fn load_model_if_not_loaded(&mut self) -> Result<()> {
         if self.model.is_some() {
             return Ok(());
         }
-        let Model::End(model) = load_model(&self.device, &self.model_path, self.shard_num)? else {
+        let MixtralModel::End(model) = load_model(&self.device, &self.model_path, self.shard_num)?
+        else {
             panic!("Model is not end")
         };
         self.model = Some(model);

@@ -1,6 +1,6 @@
 use core::panic;
 
-use crate::ml::mixtral_sharded::Model;
+use crate::ml::mixtral_sharded::MixtralModel;
 use anyhow::Result;
 
 use crate::ml::device;
@@ -41,7 +41,7 @@ impl LMLinkShard {
     }
 
     fn set_start_pos(&mut self, activation: &Tensor) {
-        let received_ctx_len = activation.shape()[1];
+        let received_ctx_len = activation.shape().dims()[1];
         self.start_pos += received_ctx_len;
     }
 }
@@ -51,7 +51,8 @@ impl Model for LMLinkShard {
         if self.model.is_some() {
             return Ok(());
         }
-        let Model::Link(model) = load_model(&self.device, &self.model_path, self.shard_num)? else {
+        let MixtralModel::Link(model) = load_model(&self.device, &self.model_path, self.shard_num)?
+        else {
             panic!("Model is not link")
         };
         self.model = Some(model);
