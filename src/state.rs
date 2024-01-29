@@ -7,6 +7,7 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use crate::types::*;
@@ -420,6 +421,12 @@ async fn bootstrap(
             .expect("bootstrap vfs dir pkg creation failed!");
 
         let drive_path = format!("/{}/pkg", &our_drive_name);
+
+        // save the zip itself inside pkg folder, for sharing with others
+        let mut zip_file =
+            fs::File::create(format!("{}/{}.zip", &pkg_path, &our_drive_name)).await?;
+        let package_zip_bytes = package.clone().into_inner().into_inner();
+        zip_file.write_all(package_zip_bytes).await?;
 
         // for each file in package.zip, write to vfs folder
         for i in 0..package.len() {
