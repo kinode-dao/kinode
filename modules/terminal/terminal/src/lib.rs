@@ -2,8 +2,8 @@ use anyhow::anyhow;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::kinode::process::standard as wit;
 use kinode_process_lib::{
-    get_blob, get_capability, our_capabilities, println, vfs, Address, Capability, PackageId,
-    ProcessId, Request,
+    get_blob, get_capability, get_typed_state, our_capabilities, println, set_state, vfs, Address,
+    Capability, PackageId, ProcessId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -16,15 +16,16 @@ wit_bindgen::generate!({
     },
 });
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct EditAliases {
     alias: String,
     process: Option<ProcessId>,
 }
 
+#[derive(Serialize, Deserialize)]
 struct TerminalState {
     our: Address,
-    aliases: HashMap<String, ProcessId>, // TODO maybe address...
+    aliases: HashMap<String, ProcessId>,
 }
 
 fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
@@ -53,35 +54,40 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
 struct Component;
 impl Guest for Component {
     fn init(our: String) {
-        let mut state = TerminalState {
-            our: our.parse::<Address>().unwrap(),
-            aliases: HashMap::from([
-                (
-                    "alias".to_string(),
-                    "alias:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-                (
-                    "cat".to_string(),
-                    "cat:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-                (
-                    "echo".to_string(),
-                    "echo:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-                (
-                    "hi".to_string(),
-                    "hi:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-                (
-                    "m".to_string(),
-                    "m:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-                (
-                    "top".to_string(),
-                    "top:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-            ]),
-        };
+        let mut state: TerminalState =
+            match get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
+                Some(s) => s,
+                None => TerminalState {
+                    our: our.parse::<Address>().unwrap(),
+                    aliases: HashMap::from([
+                        (
+                            "alias".to_string(),
+                            "alias:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                        (
+                            "cat".to_string(),
+                            "cat:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                        (
+                            "echo".to_string(),
+                            "echo:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                        (
+                            "hi".to_string(),
+                            "hi:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                        (
+                            "m".to_string(),
+                            "m:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                        (
+                            "top".to_string(),
+                            "top:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                    ]),
+                },
+            };
+
         loop {
             let (source, message) = match wit::receive() {
                 Ok((source, message)) => (source, message),
@@ -120,6 +126,11 @@ impl Guest for Component {
                                 state.aliases.remove(&edit_aliases.alias);
                                 println!("terminal: alias {} removed", edit_aliases.alias);
                             }
+                        }
+                        if let Ok(new_state) = bincode::serialize(&state) {
+                            set_state(&new_state);
+                        } else {
+                            println!("terminal: failed to serialize state!");
                         }
                     } else {
                         continue;
