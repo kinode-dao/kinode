@@ -2,6 +2,7 @@ use kinode_process_lib::eth_alloy::{
     EthProviderRequests,
     Provider,
     RpcRequest,
+    RpcResponse,
 };
 
 use kinode_process_lib::{
@@ -104,8 +105,6 @@ impl Guest for Component {
 
 fn main(our: Address) -> anyhow::Result<()> {
 
-    println!("OUR! {:?}", our);
-
     let msg = Request::new()
         .target(Address::new(&our.node, ProcessId::new(Some("eth"), "distro", "sys")))
         .body(serde_json::to_vec(&EthAction::Path).unwrap())
@@ -172,6 +171,7 @@ fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
             return Ok(());
         }
         Err(e) => { }
+        _ => {}
     }
 
     match serde_json::from_slice::<HttpServerRequest>(&msg.body()) {
@@ -181,10 +181,8 @@ fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
             match message_type {
                 WsMessageType::Text => {
                     println!("got text message");
-                    println!("message blob {:?}", msg.blob());
-                    let response = serde_json::from_slice::<serde_json::Value>(&msg.blob().unwrap().bytes).unwrap();
 
-                    println!("response {:?}", &response);
+                    let response = serde_json::from_slice::<serde_json::Value>(&msg.blob().unwrap().bytes).unwrap();
 
                     if let Some(id) = response.get("id") {
                         if state.subscription_inits.contains(&id.as_u64().unwrap()) {
@@ -193,8 +191,6 @@ fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
                                 .get("result").unwrap()
                                 .as_str().unwrap()
                                 .to_string();
-
-                            println!("subscription {:?}", subscription);
 
                             state.subscriptions_to_id.insert(subscription, id.as_u64().unwrap());
 
@@ -208,14 +204,13 @@ fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
                                 .send()?;
 
                         }
+
                     } else {
 
                         let result = response
                             .get("params").unwrap()
                             .get("result").unwrap()
-                            .as_object();
-
-                        println!("result {:?}", result);
+                            .to_string();
 
                         let subscription = response
                             .get("params").unwrap()
@@ -223,24 +218,18 @@ fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
                             .as_str().unwrap()
                             .to_string();
 
-                        println!("subscription {:?}", subscription);
-
                         let subscription_id = state.subscriptions_to_id.get(&subscription).unwrap();
-
-                        println!("subscription_id {:?}", subscription_id);
 
                         let target = state.id_to_process.get(subscription_id).unwrap();
 
-                        println!("target {:?}", target);
-
                         Request::new()
                             .target(target)
-                            .body(serde_json::to_vec(&result)?)
+                            .body(serde_json::to_vec(&EthProviderRequests::RpcResponse(RpcResponse{ result }))?)
+                            .metadata(&subscription_id.to_string())
                             .send()?;
 
                     }
 
-                    println!("response {:?}", response);
                 }
                 WsMessageType::Binary => {
                     println!("got binary message");
@@ -266,8 +255,6 @@ fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
 
 
 fn handle_rpc_request(msg: Message, req: RpcRequest, state: &mut State) -> anyhow::Result<()> {
-
-    println!("Message {:?}", msg);
 
     let current_id = state.current_id.clone();
 
