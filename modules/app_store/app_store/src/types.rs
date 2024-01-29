@@ -1,3 +1,4 @@
+use alloy_primitives::FixedBytes;
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::kernel_types as kt;
@@ -6,9 +7,23 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 sol! {
-    event AppRegistered(bytes32,uint256,string,string,bytes32);
-    event AppMetadataUpdated(uint256,string,bytes32);
-    event Transfer(address,address,uint256);
+    event AppRegistered(
+        bytes32 indexed publisherKnsNodeId,
+        uint256 indexed package,
+        string packageName,
+        string metadataUrl,
+        bytes32 metadataHash
+    );
+    event AppMetadataUpdated(
+        uint256 indexed package,
+        string metadataUrl,
+        bytes32 metadataHash
+    );
+    event Transfer(
+        address,
+        address,
+        uint256
+    );
 }
 
 // from kns_indexer
@@ -85,8 +100,7 @@ pub struct PackageState {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct State {
     /// the address of the contract we are using to read package listings
-    /// this is set by runtime distro at boot-time
-    pub contract_address: Option<String>,
+    pub contract_address: String,
     /// the last block at which we saved the state of the listings to disk.
     /// we don't want to save the state every time we get a new listing,
     /// so we only save it every so often and then mark the block at which
@@ -96,6 +110,7 @@ pub struct State {
     /// we keep the full state of the package manager here, calculated from
     /// the listings contract logs. in the future, we'll offload this and
     /// only track a certain number of packages...
+    pub package_hashes: HashMap<PackageId, PackageHash>, // TODO migrate to sqlite db
     pub listed_packages: HashMap<PackageHash, PackageListing>, // TODO migrate to sqlite db
     /// we keep the full state of the packages we have downloaded here.
     /// in order to keep this synchronized with our filesystem, we will
@@ -107,22 +122,25 @@ pub struct State {
 impl State {
     /// To create a new state, we populate the downloaded_packages map
     /// with all packages parseable from our filesystem.
-    pub fn new(our: &Address) -> anyhow::Result<Self> {
+    pub fn new(contract_address: String) -> anyhow::Result<Self> {
+        crate::print_to_terminal(1, "app store: producing new state");
         let mut state = State {
-            contract_address: None,
+            contract_address,
             last_saved_block: 1,
+            package_hashes: HashMap::new(),
             listed_packages: HashMap::new(),
             downloaded_packages: HashMap::new(),
         };
-        // state.populate_packages_from_filesystem()?;
+        crate::print_to_terminal(
+            1,
+            &format!("populate: {:?}", state.populate_packages_from_filesystem()),
+        );
         Ok(state)
     }
 
     pub fn get_listing(&self, package_id: &PackageId) -> Option<&PackageListing> {
-        self.listed_packages.get(&generate_package_hash(
-            package_id.package(),
-            &generate_namehash(package_id.publisher()),
-        ))
+        self.listed_packages
+            .get(self.package_hashes.get(package_id)?)
     }
 
     fn get_listing_with_hash_mut(
@@ -133,16 +151,20 @@ impl State {
     }
 
     /// Done in response to any new onchain listing update other than 'delete'
-    fn insert_listing(&mut self, listing: PackageListing) {
-        self.listed_packages.insert(
-            generate_package_hash(&listing.name, &generate_namehash(&listing.publisher)),
-            listing,
+    fn insert_listing(&mut self, package_hash: PackageHash, listing: PackageListing) {
+        self.package_hashes.insert(
+            PackageId::new(&listing.name, &listing.publisher),
+            package_hash.clone(),
         );
+        self.listed_packages.insert(package_hash, listing);
     }
 
     /// Done in response to an onchain listing update of 'delete'
     fn delete_listing(&mut self, package_hash: &PackageHash) {
-        self.listed_packages.remove(package_hash);
+        if let Some(old) = self.listed_packages.remove(package_hash) {
+            self.package_hashes
+                .remove(&PackageId::new(&old.name, &old.publisher));
+        }
     }
 
     pub fn get_downloaded_package(&self, package_id: &PackageId) -> Option<PackageState> {
@@ -194,55 +216,56 @@ impl State {
     }
 
     /// saves state
-    /// TODO need root dir access to do this operation
-    // pub fn populate_packages_from_filesystem(&mut self) -> anyhow::Result<()> {
-    //     let Message::Response { body, .. } = Request::to(("our", "vfs", "distro", "sys"))
-    //         .body(serde_json::to_vec(&vfs::VfsRequest {
-    //             path: "/".to_string(),
-    //             action: vfs::VfsAction::ReadDir,
-    //         })?)
-    //         .send_and_await_response(3)??
-    //     else {
-    //         return Err(anyhow::anyhow!("vfs: bad response"));
-    //     };
-    //     let response = serde_json::from_slice::<vfs::VfsResponse>(&body)?;
-    //     let vfs::VfsResponse::ReadDir(entries) = response else {
-    //         return Err(anyhow::anyhow!("vfs: unexpected response: {:?}", response));
-    //     };
-    //     for entry in entries {
-    //         // ignore non-package dirs
-    //         let Ok(package_id) = entry.path[1..].parse::<PackageId>() else {
-    //             continue;
-    //         };
-    //         if entry.file_type == vfs::FileType::Directory {
-    //             let zip_file = vfs::File {
-    //                 path: format!("/{}/pkg/{}.zip", package_id, package_id),
-    //             };
-    //             let Ok(zip_file_bytes) = zip_file.read() else {
-    //                 continue;
-    //             };
-    //             // generate entry from this data
-    //             // for the version hash, take the SHA-256 hash of the zip file
-    //             let our_version = generate_version_hash(&zip_file_bytes);
-    //             // the user will need to turn mirroring and auto-update back on if they
-    //             // have to reset the state of their app store for some reason. the apps
-    //             // themselves will remain on disk unless explicitly deleted.
-    //             self.add_downloaded_package(
-    //                 &package_id,
-    //                 PackageState {
-    //                     mirrored_from: None,
-    //                     our_version,
-    //                     source_zip: None,    // since it's already installed
-    //                     caps_approved: true, // since it's already installed this must be true
-    //                     mirroring: false,
-    //                     auto_update: false,
-    //                     metadata: None,
-    //                 },
-    //             )
-    //         }
-    //     }
-    //     Ok(())
-    // }
+    pub fn populate_packages_from_filesystem(&mut self) -> anyhow::Result<()> {
+        let Message::Response { body, .. } = Request::to(("our", "vfs", "distro", "sys"))
+            .body(serde_json::to_vec(&vfs::VfsRequest {
+                path: "/".to_string(),
+                action: vfs::VfsAction::ReadDir,
+            })?)
+            .send_and_await_response(3)??
+        else {
+            return Err(anyhow::anyhow!("vfs: bad response"));
+        };
+        let response = serde_json::from_slice::<vfs::VfsResponse>(&body)?;
+        crate::print_to_terminal(1, &format!("vfs response: {:?}", response));
+        let vfs::VfsResponse::ReadDir(entries) = response else {
+            return Err(anyhow::anyhow!("vfs: unexpected response: {:?}", response));
+        };
+        for entry in entries {
+            crate::print_to_terminal(1, &format!("entry: {:?}", entry));
+            // ignore non-package dirs
+            let Ok(package_id) = entry.path.parse::<PackageId>() else {
+                continue;
+            };
+            if entry.file_type == vfs::FileType::Directory {
+                let zip_file = vfs::File {
+                    path: format!("/{}/pkg/{}.zip", package_id, package_id),
+                };
+                let Ok(zip_file_bytes) = zip_file.read() else {
+                    continue;
+                };
+                // generate entry from this data
+                // for the version hash, take the SHA-256 hash of the zip file
+                let our_version = generate_version_hash(&zip_file_bytes);
+                // the user will need to turn mirroring and auto-update back on if they
+                // have to reset the state of their app store for some reason. the apps
+                // themselves will remain on disk unless explicitly deleted.
+                self.add_downloaded_package(
+                    &package_id,
+                    PackageState {
+                        mirrored_from: None,
+                        our_version,
+                        source_zip: None,    // since it's already installed
+                        caps_approved: true, // since it's already installed this must be true
+                        mirroring: false,
+                        auto_update: false,
+                        metadata: None,
+                    },
+                )
+            }
+        }
+        Ok(())
+    }
 
     pub fn install_downloaded_package(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
         let Some(mut package_state) = self.get_downloaded_package(package_id) else {
@@ -351,10 +374,10 @@ impl State {
 
         match log.topics[0] {
             AppRegistered::SIGNATURE_HASH => {
-                let (publisher_namehash, package_hash, package_name, metadata_url, metadata_hash) =
-                    AppRegistered::abi_decode_data(&log.data, false)?;
-
-                let publisher_namehash = publisher_namehash.to_string();
+                let publisher_namehash = log.topics[1];
+                let package_hash = log.topics[2];
+                let (package_name, metadata_url, metadata_hash) =
+                    AppRegistered::abi_decode_data(&log.data, true)?;
                 let metadata_hash = metadata_hash.to_string();
 
                 crate::print_to_terminal(
@@ -365,7 +388,7 @@ impl State {
                     )
                 );
 
-                if generate_package_hash(&package_name, &publisher_namehash)
+                if generate_package_hash(&package_name, publisher_namehash.as_slice())
                     != package_hash.to_string()
                 {
                     return Err(anyhow::anyhow!(
@@ -375,7 +398,7 @@ impl State {
                 let Ok(Ok(Message::Response { body, .. })) =
                     Request::to(("our", "kns_indexer", "kns_indexer", "sys"))
                         .body(serde_json::to_vec(&IndexerRequests::NamehashToName(
-                            publisher_namehash,
+                            publisher_namehash.to_string(),
                         ))?)
                         .send_and_await_response(3) else {
                             return Err(anyhow::anyhow!("got invalid response from kns_indexer"));
@@ -395,12 +418,12 @@ impl State {
                     metadata_hash,
                     metadata,
                 };
-                self.insert_listing(listing);
+                self.insert_listing(package_hash.to_string(), listing);
             }
             AppMetadataUpdated::SIGNATURE_HASH => {
-                let (package_hash, metadata_url, metadata_hash) =
+                let package_hash = log.topics[1].to_string();
+                let (metadata_url, metadata_hash) =
                     AppMetadataUpdated::abi_decode_data(&log.data, false)?;
-
                 let metadata_hash = metadata_hash.to_string();
 
                 crate::print_to_terminal(
@@ -417,10 +440,10 @@ impl State {
                         "app store: got log with no matching listing"
                     ))?;
 
-                let metadata = fetch_metadata(&metadata_url, &metadata_hash)?;
+                let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
 
                 current_listing.metadata_hash = metadata_hash;
-                current_listing.metadata = Some(metadata);
+                current_listing.metadata = metadata;
             }
             Transfer::SIGNATURE_HASH => {
                 let from = alloy_primitives::Address::from_word(log.topics[1]);
@@ -480,13 +503,6 @@ pub fn fetch_metadata(
     }
 }
 
-pub fn generate_namehash(name: &str) -> String {
-    use sha3::{Digest, Keccak256};
-    let mut hasher = Keccak256::new();
-    hasher.update(name);
-    format!("{:x}", hasher.finalize())
-}
-
 pub fn generate_metadata_hash(metadata: &[u8]) -> String {
     use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
@@ -494,11 +510,12 @@ pub fn generate_metadata_hash(metadata: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub fn generate_package_hash(name: &str, publisher_namehash: &str) -> String {
+pub fn generate_package_hash(name: &str, publisher_namehash: &[u8]) -> String {
     use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
-    hasher.update([name, publisher_namehash].concat());
-    format!("{:x}", hasher.finalize())
+    hasher.update([name.as_bytes(), publisher_namehash].concat());
+    let hash = hasher.finalize();
+    format!("0x{:x}", hash)
 }
 
 pub fn generate_version_hash(zip_bytes: &[u8]) -> String {

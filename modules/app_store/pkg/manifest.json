@@ -25,7 +25,10 @@
             }
         ],
         "grant_capabilities": [
+            "eth:distro:sys",
+            "http_client:distro:sys",
             "http_server:distro:sys",
+            "kns_indexer:kns_indexer:sys",
             "terminal:terminal:sys",
             "vfs:distro:sys"
         ],

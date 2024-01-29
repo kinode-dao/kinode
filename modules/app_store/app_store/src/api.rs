@@ -45,7 +45,7 @@ pub enum LocalRequest {
     /// No blob is expected.
     Download {
         package: PackageId,
-        install_from: NodeId,
+        download_from: NodeId,
         /// Sets whether we will mirror this package for others
         mirror: bool,
         /// Sets whether we will try to automatically update this package

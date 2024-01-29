@@ -42,7 +42,7 @@ fn init(our: Address) {
             .body(
                 serde_json::to_vec(&LocalRequest::Download {
                     package: package_id.clone(),
-                    install_from: download_from.clone(),
+                    download_from: download_from.clone(),
                     mirror: true,
                     auto_update: true,
                     desired_version_hash: None,

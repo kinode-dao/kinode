@@ -1,4 +1,4 @@
-use crate::{OnchainPackageMetadata, PackageListing, State};
+use crate::{OnchainPackageMetadata, PackageListing, PackageState, State};
 use kinode_process_lib::{
     eth::EthAddress,
     http::{send_response, IncomingHttpRequest, Method, StatusCode},
@@ -30,12 +30,18 @@ pub fn handle_http_request(
     req: &IncomingHttpRequest,
 ) -> anyhow::Result<()> {
     match serve_paths(state, req) {
-        Ok((status_code, headers, body)) => send_response(status_code, headers, body),
-        Err(e) => send_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            None,
-            e.to_string().into_bytes(),
+        Ok((status_code, headers, body)) => send_response(
+            status_code,
+            Some(HashMap::from([(
+                String::from("Content-Type"),
+                String::from("application/json"),
+            )])),
+            body,
         ),
+        Err(e) => {
+            crate::print_to_terminal(1, &format!("http error: {:?}", e));
+            send_response(StatusCode::INTERNAL_SERVER_ERROR, None, vec![])
+        }
     }
 }
 
@@ -58,7 +64,12 @@ fn serve_paths(
             return Ok((
                 StatusCode::OK,
                 None,
-                serde_json::to_vec(&state.downloaded_packages)?,
+                serde_json::to_vec(
+                    &state
+                        .downloaded_packages
+                        .iter()
+                        .collect::<Vec<(&PackageId, &PackageState)>>(),
+                )?,
             ));
         }
         // GET all listed apps

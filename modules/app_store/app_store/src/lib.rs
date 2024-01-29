@@ -66,39 +66,31 @@ call_init!(init);
 fn init(our: Address) {
     println!("{}: started", our.package());
 
-    bind_http_path("/apps", true, false).expect("failed to bind http path");
-    bind_http_path("/apps/:id", true, false).expect("failed to bind http path");
-    bind_http_path("/apps/caps/:id", true, false).expect("failed to bind http path");
-    bind_http_path("/apps/latest", true, false).expect("failed to bind http path");
-    bind_http_path("/apps/search/:query", true, false).expect("failed to bind http path");
+    for path in [
+        "/apps",
+        "/apps/listed",
+        "/apps/:id",
+        "/apps/listed/:id",
+        "/apps/:id/caps",
+        "/apps/:id/mirror",
+        "/apps/:id/auto-update",
+    ] {
+        bind_http_path(path, true, false).expect("failed to bind http path");
+    }
     // serve_ui(&our, "ui", true, false).expect("failed to serve static UI");
 
     // load in our saved state or initalize a new one if none exists
     let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))
-        .unwrap_or(State::new(&our).unwrap());
+        .unwrap_or(State::new(CONTRACT_ADDRESS.to_string()).unwrap());
 
-    // TODO: first, await a message from the kernel which will contain the
-    // contract address for the KNS version we want to track.
-    let contract_address: Option<String> = Some(CONTRACT_ADDRESS.to_string());
-    // loop {
-    //     let Ok(Message::Request { source, body, .. }) = await_message() else {
-    //         continue;
-    //     };
-    //     if source.process != "kernel:distro:sys" {
-    //         continue;
-    //     }
-    //     contract_address = Some(std::str::from_utf8(&body).unwrap().to_string());
-    //     break;
-    // }
-
-    // if contract address changed from a previous run, reset state
-    if state.contract_address != contract_address {
-        state = State::new(&our).unwrap();
+    if state.contract_address != CONTRACT_ADDRESS {
+        println!("app store: warning: contract address mismatch--overwriting saved state");
+        state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
     }
 
     println!(
         "app store: indexing on contract address {}",
-        contract_address.as_ref().unwrap()
+        state.contract_address
     );
 
     crate::print_to_terminal(1, &format!("starting state: {state:?}"));
@@ -107,7 +99,7 @@ fn init(our: Address) {
 
     // subscribe to events on the app store contract
     SubscribeLogsRequest::new(1) // subscription id 1
-        .address(EthAddress::from_str(contract_address.unwrap().as_str()).unwrap())
+        .address(EthAddress::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block - 1)
         .events(vec![
             "AppRegistered(bytes32,uint256,string,string,bytes32)",
@@ -284,12 +276,12 @@ fn handle_local_request(
         }
         LocalRequest::Download {
             package: package_id,
-            install_from,
+            download_from,
             mirror,
             auto_update,
             desired_version_hash,
         } => LocalResponse::DownloadResponse(
-            match Request::to((install_from.as_str(), our.process.clone()))
+            match Request::to((download_from.as_str(), our.process.clone()))
                 .inherit(true)
                 .body(
                     serde_json::to_vec(&RemoteRequest::Download {
@@ -306,7 +298,7 @@ fn handle_local_request(
                             requested_packages.insert(
                                 package_id.clone(),
                                 RequestedPackage {
-                                    from: install_from.clone(),
+                                    from: download_from.clone(),
                                     mirror: *mirror,
                                     auto_update: *auto_update,
                                     desired_version_hash: desired_version_hash.clone(),
