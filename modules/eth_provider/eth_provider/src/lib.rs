@@ -157,9 +157,6 @@ fn main(our: Address) -> anyhow::Result<()> {
 
 fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Result<()> {
 
-    // the body can have arbitrary data in it, and I want to detect if that data is a type of request. Do I need to match it against an enum?
-    // the body of the message is definitely a request, so I want to match whatever serialized data is in msg.body()
-    // what should I do here?
     match serde_json::from_slice::<EthProviderRequests>(&msg.body()) { 
         Ok(EthProviderRequests::Test) => {
             println!("~\n~\n~\n got test {:?}", msg.source());
@@ -262,7 +259,7 @@ fn handle_rpc_request(msg: Message, req: RpcRequest, state: &mut State) -> anyho
 
     state.id_to_process.insert(current_id.clone(), msg.source().clone());
 
-    if (req.method == "eth_subscribe") {
+    if req.method == "eth_subscribe" {
         state.subscription_inits.insert(current_id.clone());
     }
 
