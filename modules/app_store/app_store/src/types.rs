@@ -26,16 +26,15 @@ sol! {
     );
 }
 
-// from kns_indexer
-
+/// from kns_indexer:sys
 #[derive(Debug, Serialize, Deserialize)]
 pub enum IndexerRequests {
     /// return the human readable name for a namehash
     /// returns an Option<String>
-    NamehashToName(String),
+    NamehashToName { hash: String, block: u64 },
     /// return the most recent on-chain routing information for a node name.
     /// returns an Option<KnsUpdate>
-    NodeInfo(String),
+    NodeInfo { name: String, block: u64 },
 }
 
 //
@@ -397,12 +396,14 @@ impl State {
                 }
                 let Ok(Ok(Message::Response { body, .. })) =
                     Request::to(("our", "kns_indexer", "kns_indexer", "sys"))
-                        .body(serde_json::to_vec(&IndexerRequests::NamehashToName(
-                            publisher_namehash.to_string(),
-                        ))?)
-                        .send_and_await_response(3) else {
-                            return Err(anyhow::anyhow!("got invalid response from kns_indexer"));
-                        };
+                        .body(serde_json::to_vec(&IndexerRequests::NamehashToName {
+                            hash: publisher_namehash.to_string(),
+                            block: block_number,
+                        })?)
+                        .send_and_await_response(5)
+                else {
+                    return Err(anyhow::anyhow!("got invalid response from kns_indexer"));
+                };
                 let Some(publisher_name) = serde_json::from_slice::<Option<String>>(&body)? else {
                     return Err(anyhow::anyhow!("failed to validate publisher name in PKI"));
                 };
