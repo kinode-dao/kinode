@@ -219,8 +219,8 @@ fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
                             .as_str().unwrap()
                             .to_string();
 
-                        let process_addr = state.id_to_process_addr.get(subscription_id).unwrap();
                         let process_id = state.subscriptions_to_process_id.get(&subscription).unwrap();
+                        let process_addr = state.id_to_process_addr.get(process_id).unwrap();
 
                         Request::new()
                             .target(process_addr.clone())
