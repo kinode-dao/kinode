@@ -30,10 +30,10 @@ impl Drop for RawMode {
         match disable_raw_mode() {
             Ok(_) => {
                 // let is_enabled = crossterm::terminal::is_raw_mode_enabled();
-                // println!("nectar: disabled raw mode successfully: {is_enabled:?}\r");
+                // println!("terminal: disabled raw mode successfully: {is_enabled:?}\r");
             }
             Err(e) => {
-                println!("nectar: failed to disable raw mode: {e:?}\r");
+                println!("terminal: failed to disable raw mode: {e:?}\r");
             }
         }
     }
