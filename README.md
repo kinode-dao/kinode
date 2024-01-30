@@ -6,7 +6,7 @@ This repo contains the core runtime and processes.
 Most developers need not build the runtime.
 Instead, check out the [Kinode book](https://book.kinode.org/), and in particular the ["My First App" tutorial](https://book.kinode.org/my_first_app/chapter_1.html).
 
-If you want to get on the network, you can download a binary, rather than building it yourself, from [the releases page](https://github.com/uqbar-dao/kinode/tags).
+If you want to get on the network, you can download a binary, rather than building it yourself, from [the releases page](https://github.com/kinode-dao/kinode/tags).
 Then follow the instructions to [install it](https://book.kinode.org/install.html) and [join the network](https://book.kinode.org/login.html).
 
 If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a question!
@@ -18,7 +18,7 @@ If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) 
 ```bash
 # Clone the repo.
 
-git clone git@github.com:uqbar-dao/kinode.git
+git clone git@github.com:kinode-dao/kinode.git
 
 # Configure dependency retrieval from GitHub
 mkdir .cargo

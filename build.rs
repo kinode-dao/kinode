@@ -143,7 +143,7 @@ fn main() {
         // TODO: cache in better way
         let mut wit_file = std::fs::File::create(&wit_file).unwrap();
         let kinode_wit_url =
-            "https://raw.githubusercontent.com/uqbar-dao/kinode-wit/master/kinode.wit";
+            "https://raw.githubusercontent.com/kinode-dao/kinode-wit/master/kinode.wit";
         let mut response = reqwest::blocking::get(kinode_wit_url).unwrap();
         io::copy(&mut response, &mut wit_file).unwrap();
     }

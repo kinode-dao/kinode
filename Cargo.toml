@@ -1,6 +1,6 @@
 [package]
 name = "kinode"
-authors = ["UqbarDAO"]
+authors = ["KinodeDAO"]
 version = "0.5.2"
 edition = "2021"
 description = "A general-purpose sovereign cloud computing platform"
