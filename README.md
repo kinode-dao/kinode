@@ -97,7 +97,7 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - UpArrow/DownArrow or CTRL+P/CTRL+N to move up and down through command history
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
-- `m <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>.
+- `m <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>. JSON containing spaces must be wrapped in single-quotes (`''`).
     - Example: `m our@net:distro:sys diagnostics`
     - `our` will always be interpolated by the system as your node's name
 - `hi <name> <string>`: send a text message to another node's command line.
@@ -114,6 +114,6 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 
 Download and install an app:
 ```
-m our@main:app_store:sys {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
-m our@main:app_store:sys {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
+m our@main:app_store:sys '{"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}'
+m our@main:app_store:sys '{"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}'
 ```
