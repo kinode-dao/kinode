@@ -782,6 +782,30 @@ pub async fn kernel(
         })
         .await
         .expect("fatal: kernel event loop died");
+    // send the rpc url/node to the eth_provider app to initialize it!
+    send_to_loop
+        .send(t::KernelMessage {
+            id: rand::random(),
+            source: t::Address {
+                node: our.name.clone(),
+                process: KERNEL_PROCESS_ID.clone(),
+            },
+            target: t::Address {
+                node: our.name.clone(),
+                process: t::ProcessId::new(Some("eth_provider"), "eth_provider", "sys"),
+            },
+            rsvp: None,
+            message: t::Message::Request(t::Request {
+                inherit: false,
+                expects_response: None,
+                body: b"some_rpc.ws".to_vec(),
+                metadata: None,
+                capabilities: vec![],
+            }),
+            lazy_load_blob: None,
+        })
+        .await
+        .expect("fatal: kernel event loop died");
     // finally, in order to trigger the kns_indexer app to find the right
     // contract, queue up a message that will send the contract address
     // to it on boot.

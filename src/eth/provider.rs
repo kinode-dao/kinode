@@ -4,7 +4,6 @@ use anyhow::Result;
 use ethers::prelude::Provider;
 use ethers::types::Filter;
 use ethers_providers::{Middleware, StreamExt, Ws};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use url::Url;
@@ -61,15 +60,6 @@ pub async fn provider(
         let Ok(action) = serde_json::from_slice::<EthAction>(&req.body) else {
             continue;
         };
-
-        // New Path action. This returns the path for making RPC requests.
-        // It could be to the HTTP_SERVER
-        // It could be to the NETWORK
-        // It could be to THIS process (if node is running eth node)
-        if let EthAction::Path = action {
-            reply_with_path(&our, &rpc_url, &km, &send_to_loop).await;
-            continue;
-        }
 
         match handle_request(
             our.clone(),
@@ -152,7 +142,6 @@ async fn handle_request(
             handle.abort();
             Ok(())
         }
-        _ => Ok(()),
     }
 }
 
@@ -196,47 +185,4 @@ async fn handle_subscription_stream(
             .unwrap();
     }
     Err(EthError::SubscriptionClosed)
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RpcPath {
-    pub process_addr: Address,
-    pub rpc_url: Option<String>,
-}
-
-async fn reply_with_path(
-    our: &Arc<String>,
-    rpc_url: &String,
-    km: &KernelMessage,
-    send_to_loop: &MessageSender,
-) {
-    // for now, we only have external RPC connections so we just send directly
-    let _ = send_to_loop
-        .send(KernelMessage {
-            id: km.id,
-            source: Address {
-                node: our.to_string(),
-                process: ETH_PROCESS_ID.clone(),
-            },
-            target: km.source.clone(),
-            rsvp: None,
-            message: Message::Response((
-                Response {
-                    inherit: false,
-                    body: serde_json::to_vec(&RpcPath {
-                        process_addr: Address {
-                            node: our.clone().to_string(),
-                            process: HTTP_CLIENT_PROCESS_ID.clone(),
-                        },
-                        rpc_url: Some(rpc_url.clone()),
-                    })
-                    .unwrap(),
-                    metadata: None,
-                    capabilities: vec![],
-                },
-                None,
-            )),
-            lazy_load_blob: None,
-        })
-        .await;
 }
