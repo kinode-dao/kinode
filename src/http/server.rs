@@ -51,6 +51,7 @@ struct BoundWsPath {
     pub secure_subdomain: Option<String>,
     pub authenticated: bool,
     pub encrypted: bool, // TODO use
+    pub extension: bool,
 }
 
 /// HTTP server: a runtime module that handles HTTP requests at a given port.
@@ -320,6 +321,7 @@ async fn ws_handler(
     }
 
     let app = bound_path.app.clone();
+    let extension = bound_path.extension.clone();
 
     drop(ws_path_bindings);
 
@@ -339,6 +341,7 @@ async fn ws_handler(
             ws_senders.clone(),
             send_to_loop.clone(),
             print_tx.clone(),
+            extension,
         )
         .await;
     }))
@@ -646,6 +649,112 @@ async fn handle_rpc_message(
     ))
 }
 
+fn make_websocket_message(
+    our: String,
+    app: ProcessId,
+    channel_id: u32,
+    ws_msg_type: WsMessageType,
+    msg: Vec<u8>,
+) -> KernelMessage {
+    KernelMessage {
+        id: rand::random(),
+        source: Address {
+            node: our.to_string(),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
+        },
+        target: Address {
+            node: our.to_string(),
+            process: app,
+        },
+        rsvp: None,
+        message: Message::Request(Request {
+            inherit: false,
+            expects_response: None,
+            body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
+                channel_id,
+                message_type: ws_msg_type,
+            }).unwrap(),
+            metadata: None,
+            capabilities: vec![],
+        }),
+        lazy_load_blob: Some(LazyLoadBlob {
+            mime: None,
+            bytes: msg,
+        }),
+    }
+}
+
+fn make_ext_websocket_message(
+    our: String,
+    app: ProcessId,
+    channel_id: u32,
+    ws_msg_type: WsMessageType,
+    msg: Vec<u8>,
+) -> KernelMessage {
+    let (id, message, blob) = match rmp_serde::from_slice::<KinodeExtWSMessage>(&msg) {
+        Err(_) => (
+            rand::random(),
+            Message::Request(Request {
+                inherit: false,
+                expects_response: None,
+                body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
+                    channel_id,
+                    message_type: ws_msg_type,
+                }).unwrap(),
+                metadata: None,
+                capabilities: vec![],
+            }),
+            Some(LazyLoadBlob {
+                mime: None,
+                bytes: msg,
+            }),
+        ),
+        Ok(m) => (
+            m.id,
+            match m.message_type {
+                MessageType::Request => Message::Request(Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
+                        channel_id,
+                        message_type: ws_msg_type,
+                    }).unwrap(),
+                    metadata: None,
+                    capabilities: vec![],
+                }),
+                MessageType::Response => Message::Response((Response {
+                    inherit: false,
+                    body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
+                        channel_id,
+                        message_type: ws_msg_type,
+                    }).unwrap(),
+                    metadata: None,
+                    capabilities: vec![],
+                }, None)),
+            },
+            Some(LazyLoadBlob {
+                mime: None,
+                bytes: m.blob,
+            }),
+        ),
+    };
+
+    KernelMessage {
+        id,
+        source: Address {
+            node: our.to_string(),
+            process: HTTP_SERVER_PROCESS_ID.clone(),
+        },
+        target: Address {
+            node: our.to_string(),
+            process: app,
+        },
+        rsvp: None,
+        message,
+        lazy_load_blob: blob,
+    }
+}
+
 async fn maintain_websocket(
     ws: WebSocket,
     our: Arc<String>,
@@ -655,6 +764,7 @@ async fn maintain_websocket(
     ws_senders: WebSocketSenders,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
+    extension: bool,
 ) {
     let (mut write_stream, mut read_stream) = ws.split();
 
@@ -693,6 +803,13 @@ async fn maintain_websocket(
         })
         .await;
 
+    let make_ws_message =
+        if extension {
+            make_ext_websocket_message
+        } else {
+            make_websocket_message
+        };
+
     loop {
         tokio::select! {
             read = read_stream.next() => {
@@ -711,32 +828,13 @@ async fn maintain_websocket(
                             WsMessageType::Close
                         };
 
-                        let _ = send_to_loop.send(KernelMessage {
-                            id: rand::random(),
-                            source: Address {
-                                node: our.to_string(),
-                                process: HTTP_SERVER_PROCESS_ID.clone(),
-                            },
-                            target: Address {
-                                node: our.to_string(),
-                                process: app.clone(),
-                            },
-                            rsvp: None,
-                            message: Message::Request(Request {
-                                inherit: false,
-                                expects_response: None,
-                                body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
-                                    channel_id,
-                                    message_type: ws_msg_type,
-                                }).unwrap(),
-                                metadata: None,
-                                capabilities: vec![],
-                            }),
-                            lazy_load_blob: Some(LazyLoadBlob {
-                                mime: None,
-                                bytes: msg.into_bytes(),
-                            }),
-                        }).await;
+                        let _ = send_to_loop.send(make_ws_message(
+                            our.to_string(),
+                            app.clone(),
+                            channel_id,
+                            ws_msg_type,
+                            msg.into_bytes(),
+                        )).await;
                     }
                     _ => {
                         websocket_close(channel_id, app.clone(), &ws_senders, &send_to_loop).await;
@@ -988,6 +1086,7 @@ async fn handle_app_message(
                     mut path,
                     authenticated,
                     encrypted,
+                    extension,
                 } => {
                     path = if path.starts_with('/') {
                         format!("/{}{}", km.source.process, path)
@@ -1002,12 +1101,14 @@ async fn handle_app_message(
                             secure_subdomain: None,
                             authenticated,
                             encrypted,
+                            extension,
                         },
                     );
                 }
                 HttpServerAction::WebSocketSecureBind {
                     mut path,
                     encrypted,
+                    extension,
                 } => {
                     path = if path.starts_with('/') {
                         format!("/{}{}", km.source.process, path)
@@ -1025,6 +1126,7 @@ async fn handle_app_message(
                             secure_subdomain: Some(subdomain),
                             authenticated: true,
                             encrypted,
+                            extension,
                         },
                     );
                 }

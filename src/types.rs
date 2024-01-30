@@ -1338,3 +1338,16 @@ pub enum SqliteError {
     #[error("sqlite: input bytes/json/key error: {error}")]
     InputError { error: String },
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MessageType {
+    Request,
+    Response,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KinodeExtWSMessage {
+    pub id: u64,
+    pub message_type: MessageType,
+    pub blob: Vec<u8>,
+}
