@@ -81,6 +81,9 @@ pub enum LocalRequest {
     StartAutoUpdate(PackageId),
     /// Turn off automatic updates to a package. This will fail if the package has not been downloaded.
     StopAutoUpdate(PackageId),
+    /// This is an expensive operation! Throw away our state and rebuild from scratch.
+    /// Re-index the locally downloaded/installed packages AND the onchain data.
+    RebuildIndex,
 }
 
 /// Local responses take this form.
@@ -94,6 +97,7 @@ pub enum LocalResponse {
     UninstallResponse(UninstallResponse),
     MirrorResponse(MirrorResponse),
     AutoUpdateResponse(AutoUpdateResponse),
+    RebuiltIndex,
 }
 
 // TODO for all: expand these to elucidate why something failed

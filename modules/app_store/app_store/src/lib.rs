@@ -1,4 +1,4 @@
-use kinode_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
+use kinode_process_lib::eth::{EthAction, EthAddress, EthSubEvent, SubscribeLogsRequest};
 use kinode_process_lib::http::{bind_http_path, serve_ui, HttpServerRequest};
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
@@ -39,7 +39,13 @@ use ft_worker_lib::{
 /// - uninstalled + deleted
 /// - set to automatically update if a new version is available
 
-const CONTRACT_ADDRESS: &str = "0xA73ff2FF76F554646DD424cBc5A8D10130C265d8";
+const CONTRACT_ADDRESS: &str = "0x18c39eB547A0060C6034f8bEaFB947D1C16eADF1";
+
+const EVENTS: [&str; 3] = [
+    "AppRegistered(uint256,string,bytes,string,bytes32)",
+    "AppMetadataUpdated(uint256,string,bytes32)",
+    "Transfer(address,address,uint256)",
+];
 
 // internal types
 
@@ -93,19 +99,13 @@ fn init(our: Address) {
         state.contract_address
     );
 
-    crate::print_to_terminal(1, &format!("starting state: {state:?}"));
-
     let mut requested_packages: HashMap<PackageId, RequestedPackage> = HashMap::new();
 
     // subscribe to events on the app store contract
     SubscribeLogsRequest::new(1) // subscription id 1
         .address(EthAddress::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block - 1)
-        .events(vec![
-            "AppRegistered(bytes32,uint256,string,string,bytes32)",
-            "AppMetadataUpdated(uint256,string,bytes32)",
-            "Transfer(address,address,uint256)",
-        ])
+        .events(EVENTS)
         .send()
         .unwrap();
 
@@ -336,6 +336,21 @@ fn handle_local_request(
             true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
             false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
         },
+        LocalRequest::RebuildIndex => {
+            *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
+            // kill our old subscription and build a new one.
+            Request::to(("our", "eth", "distro", "sys"))
+                .body(serde_json::to_vec(&EthAction::UnsubscribeLogs(1)).unwrap())
+                .send()
+                .unwrap();
+            SubscribeLogsRequest::new(1) // subscription id 1
+                .address(EthAddress::from_str(&state.contract_address).unwrap())
+                .from_block(state.last_saved_block - 1)
+                .events(EVENTS)
+                .send()
+                .unwrap();
+            LocalResponse::RebuiltIndex
+        }
     }
 }
 

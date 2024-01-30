@@ -8,9 +8,9 @@ use std::collections::HashMap;
 
 sol! {
     event AppRegistered(
-        bytes32 indexed publisherKnsNodeId,
         uint256 indexed package,
         string packageName,
+        bytes publisherName,
         string metadataUrl,
         bytes32 metadataHash
     );
@@ -20,9 +20,9 @@ sol! {
         bytes32 metadataHash
     );
     event Transfer(
-        address,
-        address,
-        uint256
+        address indexed from,
+        address indexed to,
+        uint256 indexed tokenId
     );
 }
 
@@ -81,7 +81,12 @@ pub struct PackageInfo {
     pub state: Option<PackageState>,
 }
 
-pub fn gen_package_info(id: &PackageId, metadata_hash: Option<String>, listing: Option<&PackageListing>, state: Option<&PackageState>) -> PackageInfo {
+pub fn gen_package_info(
+    id: &PackageId,
+    metadata_hash: Option<String>,
+    listing: Option<&PackageListing>,
+    state: Option<&PackageState>,
+) -> PackageInfo {
     let owner = match listing {
         Some(listing) => Some(listing.owner.clone()),
         None => None,
@@ -91,7 +96,7 @@ pub fn gen_package_info(id: &PackageId, metadata_hash: Option<String>, listing: 
         None => match state {
             Some(state) => state.metadata.clone(),
             None => None,
-        }
+        },
     };
 
     let state = state.cloned().map(|state| {
@@ -192,7 +197,12 @@ impl State {
 
         let state = self.downloaded_packages.get(package_id);
 
-        Some(gen_package_info(package_id, Some(hash.to_string()), listing, state))
+        Some(gen_package_info(
+            package_id,
+            Some(hash.to_string()),
+            listing,
+            state,
+        ))
     }
 
     pub fn get_downloaded_packages_info(&self) -> Vec<PackageInfo> {
@@ -451,39 +461,31 @@ impl State {
 
         match log.topics[0] {
             AppRegistered::SIGNATURE_HASH => {
-                let publisher_namehash = log.topics[1];
-                let package_hash = log.topics[2];
-                let (package_name, metadata_url, metadata_hash) =
+                let package_hash = log.topics[1];
+                let (package_name, publisher_dnswire, metadata_url, metadata_hash) =
                     AppRegistered::abi_decode_data(&log.data, true)?;
                 let metadata_hash = metadata_hash.to_string();
 
                 crate::print_to_terminal(
                     1,
                     &format!(
-                        "app registered with publisher_namehash {}, package_hash {}, package_name {}, metadata_url {}, metadata_hash {}",
-                        publisher_namehash, package_hash, package_name, metadata_url, metadata_hash
+                        "app registered with publisher_dnswire {:?}, package_hash {}, package_name {}, metadata_url {}, metadata_hash {}",
+                        publisher_dnswire, package_hash, package_name, metadata_url, metadata_hash
                     )
                 );
 
-                if generate_package_hash(&package_name, publisher_namehash.as_slice())
+                if generate_package_hash(&package_name, publisher_dnswire.as_slice())
                     != package_hash.to_string()
                 {
                     return Err(anyhow::anyhow!(
                         "app store: got log with mismatched package hash"
                     ));
                 }
-                let Ok(Ok(Message::Response { body, .. })) =
-                    Request::to(("our", "kns_indexer", "kns_indexer", "sys"))
-                        .body(serde_json::to_vec(&IndexerRequests::NamehashToName {
-                            hash: publisher_namehash.to_string(),
-                            block: block_number,
-                        })?)
-                        .send_and_await_response(5)
-                else {
-                    return Err(anyhow::anyhow!("got invalid response from kns_indexer"));
-                };
-                let Some(publisher_name) = serde_json::from_slice::<Option<String>>(&body)? else {
-                    return Err(anyhow::anyhow!("failed to validate publisher name in PKI"));
+
+                let Ok(publisher_name) = dnswire_decode(publisher_dnswire.as_slice()) else {
+                    return Err(anyhow::anyhow!(
+                        "app store: got log with invalid publisher name"
+                    ));
                 };
 
                 // TODO hash name to get namehash and verify it matches
@@ -562,8 +564,37 @@ impl State {
     }
 }
 
+/// take a DNSwire-formatted node ID from chain and convert it to a String
+fn dnswire_decode(wire_format_bytes: &[u8]) -> Result<String, std::string::FromUtf8Error> {
+    let mut i = 0;
+    let mut result = Vec::new();
+
+    while i < wire_format_bytes.len() {
+        let len = wire_format_bytes[i] as usize;
+        if len == 0 {
+            break;
+        }
+        let end = i + len + 1;
+        let mut span = wire_format_bytes[i + 1..end].to_vec();
+        span.push('.' as u8);
+        result.push(span);
+        i = end;
+    }
+
+    let flat: Vec<_> = result.into_iter().flatten().collect();
+
+    let name = String::from_utf8(flat)?;
+
+    // Remove the trailing '.' if it exists (it should always exist)
+    if name.ends_with('.') {
+        Ok(name[0..name.len() - 1].to_string())
+    } else {
+        Ok(name)
+    }
+}
+
 /// fetch metadata from metadata_url and verify it matches metadata_hash
-pub fn fetch_metadata(
+fn fetch_metadata(
     metadata_url: &str,
     metadata_hash: &str,
 ) -> anyhow::Result<OnchainPackageMetadata> {
@@ -582,21 +613,24 @@ pub fn fetch_metadata(
     }
 }
 
-pub fn generate_metadata_hash(metadata: &[u8]) -> String {
+/// generate a Keccak-256 hash of the metadata bytes
+fn generate_metadata_hash(metadata: &[u8]) -> String {
     use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
     hasher.update(metadata);
     format!("{:x}", hasher.finalize())
 }
 
-pub fn generate_package_hash(name: &str, publisher_namehash: &[u8]) -> String {
+/// generate a Keccak-256 hash of the package name and publisher (match onchain)
+fn generate_package_hash(name: &str, publisher_dnswire: &[u8]) -> String {
     use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
-    hasher.update([name.as_bytes(), publisher_namehash].concat());
+    hasher.update([name.as_bytes(), publisher_dnswire].concat());
     let hash = hasher.finalize();
     format!("0x{:x}", hash)
 }
 
+/// generate a SHA-256 hash of the zip bytes to act as a version hash
 pub fn generate_version_hash(zip_bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
