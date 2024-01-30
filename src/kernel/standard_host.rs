@@ -436,7 +436,9 @@ impl StandardHost for process::ProcessWasi {
     }
 
     async fn mutate_blob_for_ext_ws(&mut self, message_type: wit::MessageType) -> Result<()> {
-        let id = self.process.prompting_message
+        let id = self
+            .process
+            .prompting_message
             .as_ref()
             .map(|pm| pm.id.clone())
             .unwrap_or_else(|| rand::random());
@@ -451,7 +453,7 @@ impl StandardHost for process::ProcessWasi {
                     id,
                     message_type,
                     blob: blob.bytes.clone(),
-                })?
+                })?,
             });
         }
         Ok(())

@@ -673,7 +673,8 @@ fn make_websocket_message(
             body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
                 channel_id,
                 message_type: ws_msg_type,
-            }).unwrap(),
+            })
+            .unwrap(),
             metadata: None,
             capabilities: vec![],
         }),
@@ -700,7 +701,8 @@ fn make_ext_websocket_message(
                 body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
                     channel_id,
                     message_type: ws_msg_type,
-                }).unwrap(),
+                })
+                .unwrap(),
                 metadata: None,
                 capabilities: vec![],
             }),
@@ -718,19 +720,24 @@ fn make_ext_websocket_message(
                     body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
                         channel_id,
                         message_type: ws_msg_type,
-                    }).unwrap(),
+                    })
+                    .unwrap(),
                     metadata: None,
                     capabilities: vec![],
                 }),
-                MessageType::Response => Message::Response((Response {
-                    inherit: false,
-                    body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
-                        channel_id,
-                        message_type: ws_msg_type,
-                    }).unwrap(),
-                    metadata: None,
-                    capabilities: vec![],
-                }, None)),
+                MessageType::Response => Message::Response((
+                    Response {
+                        inherit: false,
+                        body: serde_json::to_vec(&HttpServerRequest::WebSocketPush {
+                            channel_id,
+                            message_type: ws_msg_type,
+                        })
+                        .unwrap(),
+                        metadata: None,
+                        capabilities: vec![],
+                    },
+                    None,
+                )),
             },
             Some(LazyLoadBlob {
                 mime: None,
@@ -803,12 +810,11 @@ async fn maintain_websocket(
         })
         .await;
 
-    let make_ws_message =
-        if extension {
-            make_ext_websocket_message
-        } else {
-            make_websocket_message
-        };
+    let make_ws_message = if extension {
+        make_ext_websocket_message
+    } else {
+        make_websocket_message
+    };
 
     loop {
         tokio::select! {
