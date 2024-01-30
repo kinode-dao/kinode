@@ -428,6 +428,7 @@ async fn main() {
         net_message_sender.clone(),
         home_directory_path.clone(),
         contract_address.to_string(),
+        rpc_url.clone(),
         runtime_extensions,
     ));
     #[cfg(not(feature = "simulation-mode"))]

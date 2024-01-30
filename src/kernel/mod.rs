@@ -626,6 +626,7 @@ pub async fn kernel(
     send_to_net: t::MessageSender,
     home_directory_path: String,
     contract_address: String,
+    rpc_url: String,
     runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
 ) -> Result<()> {
     let mut config = Config::new();
@@ -798,7 +799,7 @@ pub async fn kernel(
             message: t::Message::Request(t::Request {
                 inherit: false,
                 expects_response: None,
-                body: b"some_rpc.ws".to_vec(),
+                body: rpc_url.as_bytes().to_vec(),
                 metadata: None,
                 capabilities: vec![],
             }),
