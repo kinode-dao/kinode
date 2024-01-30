@@ -1,10 +1,10 @@
-use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
-use kinode_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
+use kinode_process_lib::eth_alloy::{Address as AlloyAddress, Filter, Provider, RpcResponse};
 use kinode_process_lib::{
     await_message, get_typed_state, http, print_to_terminal, println, set_state, Address,
     LazyLoadBlob, Message, Request, Response,
 };
+
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
@@ -89,6 +89,11 @@ impl Guest for Component {
             block: 1,
         };
 
+        let mut provider = Provider::<State> {
+            closures: HashMap::new(),
+            count: 0,
+        };
+
         // if we have state, load it in
         match get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
             Some(s) => {
@@ -97,7 +102,7 @@ impl Guest for Component {
             None => {}
         }
 
-        match main(our, state) {
+        match main(our, state, provider) {
             Ok(_) => {}
             Err(e) => {
                 println!("kns_indexer: error: {:?}", e);
@@ -106,7 +111,7 @@ impl Guest for Component {
     }
 }
 
-fn main(our: Address, mut state: State) -> anyhow::Result<()> {
+fn main(our: Address, mut state: State, mut provider: Provider<State>) -> anyhow::Result<()> {
     // first, await a message from the kernel which will contain the
     // contract address for the KNS version we want to track.
     let mut contract_address: Option<String> = None;
@@ -141,8 +146,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    SubscribeLogsRequest::new(1) // subscription id 1
-        .address(EthAddress::from_str(contract_address.unwrap().as_str())?)
+    let sub_filter = Filter::new()
+        .address(AlloyAddress::from_str(&contract_address.unwrap())?)
         .from_block(state.block - 1)
         .events(vec![
             "NodeRegistered(bytes32,bytes)",
@@ -150,64 +155,25 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             "IpUpdate(bytes32,uint128)",
             "WsUpdate(bytes32,uint16)",
             "RoutingUpdate(bytes32,bytes32[])",
-        ])
-        .send()?;
+        ]);
 
-    http::bind_http_path("/node/:name", false, false)?;
-
-    loop {
-        let Ok(message) = await_message() else {
-            println!("kns_indexer: got network error");
-            continue;
-        };
-        let Message::Request { source, body, .. } = message else {
-            // TODO we should store the subscription ID for eth
-            // incase we want to cancel/reset it
-            continue;
-        };
-
-        if source.process == "http_server:distro:sys" {
-            if let Ok(body_json) = serde_json::from_slice::<serde_json::Value>(&body) {
-                if body_json["path"].as_str().unwrap_or_default() == "/node/:name" {
-                    if let Some(name) = body_json["url_params"]["name"].as_str() {
-                        if let Some(node) = state.nodes.get(name) {
-                            Response::new()
-                                .body(serde_json::to_vec(&http::HttpResponse {
-                                    status: 200,
-                                    headers: HashMap::from([(
-                                        "Content-Type".to_string(),
-                                        "application/json".to_string(),
-                                    )]),
-                                })?)
-                                .blob(LazyLoadBlob {
-                                    mime: Some("application/json".to_string()),
-                                    bytes: serde_json::to_string(&node)?.as_bytes().to_vec(),
-                                })
-                                .send()?;
-                            continue;
+    provider.subscribe_logs(
+        sub_filter,
+        Box::new(move |event: Vec<u8>, state: &mut State| {
+            let logs: Vec<alloy_rpc_types::Log> = match serde_json::from_slice(&event) {
+                Ok(logs) => logs, // If successful, use the deserialized Vec
+                Err(_) => {
+                    // If unsuccessful, try to deserialize as a single AlloyLog
+                    match serde_json::from_slice(&event) {
+                        Ok(log) => vec![log], // If successful, create a Vec with the single log
+                        Err(e) => {
+                            println!("Failed to parse event data: {:?}", e);
+                            return;
                         }
                     }
                 }
-            }
-            Response::new()
-                .body(serde_json::to_vec(&http::HttpResponse {
-                    status: 404,
-                    headers: HashMap::from([(
-                        "Content-Type".to_string(),
-                        "application/json".to_string(),
-                    )]),
-                })?)
-                .send()?;
-            continue;
-        }
-
-        let Ok(msg) = serde_json::from_slice::<EthSubEvent>(&body) else {
-            println!("kns_indexer: got invalid message");
-            continue;
-        };
-
-        match msg {
-            EthSubEvent::Log(log) => {
+            };
+            for log in logs {
                 state.block = log.block_number.expect("expect").to::<u64>();
 
                 let node_id: alloy_primitives::FixedBytes<32> = log.topics[1];
@@ -280,16 +246,82 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     );
                     Request::new()
                         .target((&our.node, "net", "distro", "sys"))
-                        .try_body(NetActions::KnsUpdate(node.clone()))?
-                        .send()?;
+                        .try_body(NetActions::KnsUpdate(node.clone()))
+                        .unwrap()
+                        .send()
+                        .unwrap();
                 }
             }
+        }),
+    );
+    http::bind_http_path("/node/:name", false, false)?;
+
+    loop {
+        let Ok(message) = await_message() else {
+            println!("kns_indexer: got network error");
+            continue;
+        };
+        let Message::Request {
+            source,
+            body,
+            metadata,
+            ..
+        } = message
+        else {
+            // TODO we should store the subscription ID for eth
+            // incase we want to cancel/reset it
+            continue;
+        };
+
+        if source.process == "http_server:distro:sys" {
+            if let Ok(body_json) = serde_json::from_slice::<serde_json::Value>(&body) {
+                if body_json["path"].as_str().unwrap_or_default() == "/node/:name" {
+                    if let Some(name) = body_json["url_params"]["name"].as_str() {
+                        if let Some(node) = state.nodes.get(name) {
+                            Response::new()
+                                .body(serde_json::to_vec(&http::HttpResponse {
+                                    status: 200,
+                                    headers: HashMap::from([(
+                                        "Content-Type".to_string(),
+                                        "application/json".to_string(),
+                                    )]),
+                                })?)
+                                .blob(LazyLoadBlob {
+                                    mime: Some("application/json".to_string()),
+                                    bytes: serde_json::to_string(&node)?.as_bytes().to_vec(),
+                                })
+                                .send()?;
+                            continue;
+                        }
+                    }
+                }
+            }
+            Response::new()
+                .body(serde_json::to_vec(&http::HttpResponse {
+                    status: 404,
+                    headers: HashMap::from([(
+                        "Content-Type".to_string(),
+                        "application/json".to_string(),
+                    )]),
+                })?)
+                .send()?;
+            continue;
         }
+
+        let Ok(msg) = serde_json::from_slice::<RpcResponse>(&body) else {
+            println!("kns_indexer: got invalid message");
+            continue;
+        };
+
+        // note this reserialization, afuera..
+        let actual_log = serde_json::to_vec(&msg.result)?;
+        provider.receive(metadata.unwrap().parse().unwrap(), actual_log, &mut state);
+
         set_state(&bincode::serialize(&state)?);
     }
 }
 
-fn get_name(log: &Log) -> String {
+fn get_name(log: &alloy_rpc_types::Log) -> String {
     let decoded = NodeRegistered::abi_decode_data(&log.data, true).unwrap();
     let name = match dnswire_decode(decoded.0.clone()) {
         Ok(n) => n,

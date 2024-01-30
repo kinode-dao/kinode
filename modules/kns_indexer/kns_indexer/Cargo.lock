@@ -12,6 +12,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloy-json-rpc"
+version = "0.1.0"
+source = "git+https://github.com/alloy-rs/alloy.git?rev=51a8253#51a82534eb302fd3225c5b228801c7dc98bc03a6"
+dependencies = [
+ "alloy-primitives 0.6.2",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "alloy-primitives"
 version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -24,6 +35,28 @@ dependencies = [
  "derive_more",
  "hex-literal",
  "itoa",
+ "keccak-asm",
+ "proptest",
+ "rand",
+ "ruint",
+ "serde",
+ "tiny-keccak",
+]
+
+[[package]]
+name = "alloy-primitives"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f4b6fb2b432ff223d513db7f908937f63c252bee0af9b82bfd25b0a5dd1eb0d8"
+dependencies = [
+ "alloy-rlp",
+ "bytes",
+ "cfg-if",
+ "const-hex",
+ "derive_more",
+ "hex-literal",
+ "itoa",
+ "k256",
  "keccak-asm",
  "proptest",
  "rand",
@@ -60,13 +93,26 @@ name = "alloy-rpc-types"
 version = "0.1.0"
 source = "git+https://github.com/alloy-rs/alloy.git?rev=3b1c310#3b1c3108ccd33c78abd7da8191e3744b4ae9a735"
 dependencies = [
- "alloy-primitives",
+ "alloy-primitives 0.5.4",
  "alloy-rlp",
  "itertools 0.12.0",
  "jsonrpsee-types",
  "serde",
  "serde_json",
  "serde_with",
+ "thiserror",
+]
+
+[[package]]
+name = "alloy-rpc-types"
+version = "0.1.0"
+source = "git+https://github.com/alloy-rs/alloy.git?rev=51a8253#51a82534eb302fd3225c5b228801c7dc98bc03a6"
+dependencies = [
+ "alloy-primitives 0.6.2",
+ "alloy-rlp",
+ "itertools 0.12.0",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -94,7 +140,7 @@ version = "0.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a059d4d2c78f8f21e470772c75f9abd9ac6d48c2aaf6b278d1ead06ed9ac664"
 dependencies = [
- "alloy-primitives",
+ "alloy-primitives 0.5.4",
  "alloy-sol-macro",
  "const-hex",
  "serde",
@@ -1024,6 +1070,7 @@ dependencies = [
  "elliptic-curve",
  "once_cell",
  "sha2",
+ "signature",
 ]
 
 [[package]]
@@ -1048,9 +1095,10 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.5.0"
-source = "git+ssh://git@github.com/uqbar-dao/process_lib.git?tag=v0.5.3-alpha#8de14aa7132e6b7992c720c6aae24a64e108779d"
 dependencies = [
- "alloy-rpc-types",
+ "alloy-json-rpc",
+ "alloy-primitives 0.6.2",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=51a8253)",
  "anyhow",
  "bincode",
  "ethers-core",
@@ -1068,8 +1116,8 @@ dependencies = [
 name = "kns_indexer"
 version = "0.2.0"
 dependencies = [
- "alloy-primitives",
- "alloy-rpc-types",
+ "alloy-primitives 0.5.4",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=3b1c310)",
  "alloy-sol-types",
  "anyhow",
  "bincode",
