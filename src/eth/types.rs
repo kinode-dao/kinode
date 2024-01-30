@@ -1,3 +1,4 @@
+use crate::types::ProcessId;
 use ethers::prelude::Provider;
 use ethers::types::{Filter, Log};
 use ethers_providers::Ws;
@@ -22,8 +23,6 @@ pub enum EthAction {
 /// and `serde_json::from_slice`.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthError {
-    /// The subscription ID already existed
-    SubscriptionIdCollision,
     /// The ethers provider threw an error when trying to subscribe
     /// (contains ProviderError serialized to debug string)
     ProviderError(String),
@@ -48,5 +47,5 @@ pub enum EthSubEvent {
 /// Primary state object of the `eth` module
 pub struct RpcConnections {
     pub provider: Provider<Ws>,
-    pub ws_provider_subscriptions: HashMap<u64, JoinHandle<Result<(), EthError>>>,
+    pub ws_provider_subscriptions: HashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>,
 }

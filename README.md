@@ -6,7 +6,7 @@ This repo contains the core runtime and processes.
 Most developers need not build the runtime.
 Instead, check out the [Kinode book](https://book.kinode.org/), and in particular the ["My First App" tutorial](https://book.kinode.org/my_first_app/chapter_1.html).
 
-If you want to get on the network, you can download a binary, rather than building it yourself, from [the releases page](https://github.com/uqbar-dao/kinode/tags).
+If you want to get on the network, you can download a binary, rather than building it yourself, from [the releases page](https://github.com/kinode-dao/kinode/tags).
 Then follow the instructions to [install it](https://book.kinode.org/install.html) and [join the network](https://book.kinode.org/login.html).
 
 If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a question!
@@ -18,7 +18,7 @@ If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) 
 ```bash
 # Clone the repo.
 
-git clone git@github.com:uqbar-dao/kinode.git
+git clone git@github.com:kinode-dao/kinode.git
 
 # Configure dependency retrieval from GitHub
 mkdir .cargo
@@ -97,28 +97,23 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - UpArrow/DownArrow or CTRL+P/CTRL+N to move up and down through command history
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
-- `/message <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>.
-    - Example: `/message our@net:distro:sys diagnostics`
+- `m <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>.
+    - Example: `m our@net:distro:sys diagnostics`
     - `our` will always be interpolated by the system as your node's name
-    - Can also use `/m` for same command: `/m our@net:distro:sys diagnostics`
-- `/app <address>`: set the terminal to a mode where all messages go to a specific app. To clear this selection, use `/app clear` or simply `/app`. This is useful for apps that have a command line interface.
-    - Example: `/app our@net:distro:sys`, then `/m diagnostics`
-    - Can also use `/a` for same command: `/a our@net:distro:sys`
-    - Example of sending many messages:
-        - `/a ben.os@net:distro:sys`
-        - `/m hey there`
-        - `/m how are you?`
-        - `/a` (to exit app mode)
-- `/hi <name> <string>`: send a text message to another node's command line.
-    - Example: `/hi ben.os hello world`
-- `/top <process_id>`: display kernel debugging info about a process. Leave the process ID blank to display info about all processes and get the total number of running processes.
-    - Example: `/top net:distro:sys`
-    - Example: `/top`
+- `hi <name> <string>`: send a text message to another node's command line.
+    - Example: `hi ben.os hello world`
+- `top <process_id>`: display kernel debugging info about a process. Leave the process ID blank to display info about all processes and get the total number of running processes.
+    - Example: `top net:distro:sys`
+    - Example: `top`
+- `cat <vfs-file-path>`: print the contents of a file in the terminal
+    - Example: `cat /terminal:sys/pkg/scripts.json`
+- `echo <text>`: print `text` to the terminal
+    - Example: `echo foo`
 
 ### Terminal example usage
 
 Download and install an app:
 ```
-/m our@main:app_store:sys {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
-/m our@main:app_store:sys {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
+m our@main:app_store:sys {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
+m our@main:app_store:sys {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
 ```

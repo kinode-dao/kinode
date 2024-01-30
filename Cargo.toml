@@ -1,11 +1,11 @@
 [package]
 name = "kinode"
-authors = ["UqbarDAO"]
-version = "0.5.1"
+authors = ["KinodeDAO"]
+version = "0.5.2"
 edition = "2021"
 description = "A general-purpose sovereign cloud computing platform"
 homepage = "https://kinode.org"
-repository = "https://github.com/uqbar-dao/kinode"
+repository = "https://github.com/kinode-dao/kinode"
 license = "Apache-2.0"
 
 [build-dependencies]

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use wasmtime::component::*;
 use wasmtime::{Engine, Store};
-use wasmtime_wasi::preview2::{Table, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::preview2::{pipe::MemoryOutputPipe, Table, WasiCtx, WasiCtxBuilder, WasiView};
 
 bindgen!({
     path: "wit",
@@ -52,6 +52,8 @@ impl WasiView for ProcessWasi {
         &mut self.wasi
     }
 }
+
+const STACK_TRACE_SIZE: usize = 5000;
 
 pub async fn send_and_await_response(
     process: &mut ProcessWasi,
@@ -492,7 +494,8 @@ pub async fn make_process_loop(
     Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
 
     let table = Table::new();
-    let wasi = WasiCtxBuilder::new().build();
+    let wasi_stderr = MemoryOutputPipe::new(STACK_TRACE_SIZE);
+    let wasi = WasiCtxBuilder::new().stderr(wasi_stderr.clone()).build();
 
     wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
 
@@ -548,14 +551,15 @@ pub async fn make_process_loop(
                 .await;
             false
         }
-        Err(e) => {
+        Err(_) => {
+            let stderr = wasi_stderr.contents().into();
+            let stderr = String::from_utf8(stderr)?;
             let _ = send_to_terminal
                 .send(t::Printout {
                     verbosity: 0,
                     content: format!(
-                        "\x1b[38;5;196mprocess {} ended with error: {}\x1b[0m",
-                        metadata.our.process,
-                        format!("{:?}", e).lines().last().unwrap(),
+                        "\x1b[38;5;196mprocess {} ended with error:\x1b[0m\n{}",
+                        metadata.our.process, stderr,
                     ),
                 })
                 .await;

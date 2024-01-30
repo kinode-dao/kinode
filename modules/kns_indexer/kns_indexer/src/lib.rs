@@ -2,11 +2,14 @@ use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
 use kinode_process_lib::{
-    await_message, get_typed_state, http, print_to_terminal, println, set_state, Address,
-    LazyLoadBlob, Message, Request, Response,
+    await_message, get_typed_state, print_to_terminal, println, set_state, Address, Message,
+    Request, Response,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::{Entry, HashMap};
+use std::collections::{
+    hash_map::{Entry, HashMap},
+    BTreeMap,
+};
 use std::str::FromStr;
 use std::string::FromUtf8Error;
 
@@ -29,6 +32,23 @@ struct State {
     nodes: HashMap<String, KnsUpdate>,
     // last block we read from
     block: u64,
+}
+
+/// IndexerRequests are used to query discrete information from the indexer
+/// for example, if you want to know the human readable name for a namehash,
+/// you would send a NamehashToName request.
+/// If you want to know the most recent on-chain routing information for a
+/// human readable name, you would send a NodeInfo request.
+/// The block parameter specifies the recency of the data: the indexer will
+/// not respond until it has processed events up to the specified block.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum IndexerRequests {
+    /// return the human readable name for a namehash
+    /// returns an Option<String>
+    NamehashToName { hash: String, block: u64 },
+    /// return the most recent on-chain routing information for a node name.
+    /// returns an Option<KnsUpdate>
+    NodeInfo { name: String, block: u64 },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -153,7 +173,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ])
         .send()?;
 
-    http::bind_http_path("/node/:name", false, false)?;
+    let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
     loop {
         let Ok(message) = await_message() else {
@@ -161,132 +181,170 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         };
         let Message::Request { source, body, .. } = message else {
-            // TODO we should store the subscription ID for eth
-            // incase we want to cancel/reset it
+            // TODO we could store the subscription ID for eth
+            // in case we want to cancel/reset it
             continue;
         };
 
-        if source.process == "http_server:distro:sys" {
-            if let Ok(body_json) = serde_json::from_slice::<serde_json::Value>(&body) {
-                if body_json["path"].as_str().unwrap_or_default() == "/node/:name" {
-                    if let Some(name) = body_json["url_params"]["name"].as_str() {
-                        if let Some(node) = state.nodes.get(name) {
-                            Response::new()
-                                .body(serde_json::to_vec(&http::HttpResponse {
-                                    status: 200,
-                                    headers: HashMap::from([(
-                                        "Content-Type".to_string(),
-                                        "application/json".to_string(),
-                                    )]),
-                                })?)
-                                .blob(LazyLoadBlob {
-                                    mime: Some("application/json".to_string()),
-                                    bytes: serde_json::to_string(&node)?.as_bytes().to_vec(),
-                                })
-                                .send()?;
-                            continue;
-                        }
+        if source.process == "eth:distro:sys" {
+            handle_eth_message(&our, &mut state, &mut pending_requests, &body)?;
+        } else {
+            let Ok(request) = serde_json::from_slice::<IndexerRequests>(&body) else {
+                println!("kns_indexer: got invalid message");
+                continue;
+            };
+
+            match request {
+                IndexerRequests::NamehashToName { ref hash, block } => {
+                    if block <= state.block {
+                        Response::new()
+                            .body(serde_json::to_vec(&state.names.get(hash))?)
+                            .send()?;
+                    } else {
+                        pending_requests
+                            .entry(block)
+                            .or_insert(vec![])
+                            .push(request);
+                    }
+                }
+                IndexerRequests::NodeInfo { ref name, block } => {
+                    if block <= state.block {
+                        Response::new()
+                            .body(serde_json::to_vec(&state.nodes.get(name))?)
+                            .send()?;
+                    } else {
+                        pending_requests
+                            .entry(block)
+                            .or_insert(vec![])
+                            .push(request);
                     }
                 }
             }
-            Response::new()
-                .body(serde_json::to_vec(&http::HttpResponse {
-                    status: 404,
-                    headers: HashMap::from([(
-                        "Content-Type".to_string(),
-                        "application/json".to_string(),
-                    )]),
-                })?)
-                .send()?;
-            continue;
         }
-
-        let Ok(msg) = serde_json::from_slice::<EthSubEvent>(&body) else {
-            println!("kns_indexer: got invalid message");
-            continue;
-        };
-
-        match msg {
-            EthSubEvent::Log(log) => {
-                state.block = log.block_number.expect("expect").to::<u64>();
-
-                let node_id: alloy_primitives::FixedBytes<32> = log.topics[1];
-
-                let name = match state.names.entry(node_id.to_string()) {
-                    Entry::Occupied(o) => o.into_mut(),
-                    Entry::Vacant(v) => v.insert(get_name(&log)),
-                };
-
-                let node = state
-                    .nodes
-                    .entry(name.to_string())
-                    .or_insert_with(|| KnsUpdate::new(name, &node_id.to_string()));
-
-                let mut send = true;
-
-                match log.topics[0] {
-                    KeyUpdate::SIGNATURE_HASH => {
-                        node.public_key = KeyUpdate::abi_decode_data(&log.data, true)
-                            .unwrap()
-                            .0
-                            .to_string();
-                    }
-                    IpUpdate::SIGNATURE_HASH => {
-                        let ip = IpUpdate::abi_decode_data(&log.data, true).unwrap().0;
-                        node.ip = format!(
-                            "{}.{}.{}.{}",
-                            (ip >> 24) & 0xFF,
-                            (ip >> 16) & 0xFF,
-                            (ip >> 8) & 0xFF,
-                            ip & 0xFF
-                        );
-                        // when we get ip data, we should delete any router data,
-                        // since the assignment of ip indicates an direct node
-                        node.routers = vec![];
-                    }
-                    WsUpdate::SIGNATURE_HASH => {
-                        node.port = WsUpdate::abi_decode_data(&log.data, true).unwrap().0;
-                        // when we get port data, we should delete any router data,
-                        // since the assignment of port indicates an direct node
-                        node.routers = vec![];
-                    }
-                    RoutingUpdate::SIGNATURE_HASH => {
-                        node.routers = RoutingUpdate::abi_decode_data(&log.data, true)
-                            .unwrap()
-                            .0
-                            .iter()
-                            .map(|r| r.to_string())
-                            .collect::<Vec<String>>();
-                        // when we get routing data, we should delete any ws/ip data,
-                        // since the assignment of routers indicates an indirect node
-                        node.ip = "".to_string();
-                        node.port = 0;
-                    }
-                    _ => {
-                        send = false;
-                    }
-                }
-
-                if node.public_key != ""
-                    && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
-                    && send
-                {
-                    print_to_terminal(
-                        1,
-                        &format!(
-                            "kns_indexer: sending ID to net: {node:?} (blocknum {})",
-                            state.block
-                        ),
-                    );
-                    Request::new()
-                        .target((&our.node, "net", "distro", "sys"))
-                        .try_body(NetActions::KnsUpdate(node.clone()))?
-                        .send()?;
-                }
-            }
-        }
-        set_state(&bincode::serialize(&state)?);
     }
+}
+
+fn handle_eth_message(
+    our: &Address,
+    state: &mut State,
+    pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
+    body: &[u8],
+) -> anyhow::Result<()> {
+    let Ok(msg) = serde_json::from_slice::<EthSubEvent>(body) else {
+        return Err(anyhow::anyhow!("kns_indexer: got invalid message"));
+    };
+
+    match msg {
+        EthSubEvent::Log(log) => {
+            state.block = log.block_number.expect("expect").to::<u64>();
+
+            let node_id: alloy_primitives::FixedBytes<32> = log.topics[1];
+
+            let name = match state.names.entry(node_id.to_string()) {
+                Entry::Occupied(o) => o.into_mut(),
+                Entry::Vacant(v) => v.insert(get_name(&log)),
+            };
+
+            let node = state
+                .nodes
+                .entry(name.to_string())
+                .or_insert_with(|| KnsUpdate::new(name, &node_id.to_string()));
+
+            let mut send = true;
+
+            match log.topics[0] {
+                KeyUpdate::SIGNATURE_HASH => {
+                    node.public_key = KeyUpdate::abi_decode_data(&log.data, true)
+                        .unwrap()
+                        .0
+                        .to_string();
+                }
+                IpUpdate::SIGNATURE_HASH => {
+                    let ip = IpUpdate::abi_decode_data(&log.data, true).unwrap().0;
+                    node.ip = format!(
+                        "{}.{}.{}.{}",
+                        (ip >> 24) & 0xFF,
+                        (ip >> 16) & 0xFF,
+                        (ip >> 8) & 0xFF,
+                        ip & 0xFF
+                    );
+                    // when we get ip data, we should delete any router data,
+                    // since the assignment of ip indicates an direct node
+                    node.routers = vec![];
+                }
+                WsUpdate::SIGNATURE_HASH => {
+                    node.port = WsUpdate::abi_decode_data(&log.data, true).unwrap().0;
+                    // when we get port data, we should delete any router data,
+                    // since the assignment of port indicates an direct node
+                    node.routers = vec![];
+                }
+                RoutingUpdate::SIGNATURE_HASH => {
+                    node.routers = RoutingUpdate::abi_decode_data(&log.data, true)
+                        .unwrap()
+                        .0
+                        .iter()
+                        .map(|r| r.to_string())
+                        .collect::<Vec<String>>();
+                    // when we get routing data, we should delete any ws/ip data,
+                    // since the assignment of routers indicates an indirect node
+                    node.ip = "".to_string();
+                    node.port = 0;
+                }
+                _ => {
+                    send = false;
+                }
+            }
+
+            if node.public_key != ""
+                && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
+                && send
+            {
+                print_to_terminal(
+                    1,
+                    &format!(
+                        "kns_indexer: sending ID to net: {node:?} (blocknum {})",
+                        state.block
+                    ),
+                );
+                Request::new()
+                    .target((&our.node, "net", "distro", "sys"))
+                    .try_body(NetActions::KnsUpdate(node.clone()))?
+                    .send()?;
+            }
+        }
+    }
+    // check the pending_requests btreemap to see if there are any requests that
+    // can be handled now that the state block has been updated
+    let mut blocks_to_remove = vec![];
+    for (block, requests) in pending_requests.iter() {
+        if *block <= state.block {
+            for request in requests.iter() {
+                match request {
+                    IndexerRequests::NamehashToName { hash, .. } => {
+                        Response::new()
+                            .body(serde_json::to_vec(&state.names.get(hash))?)
+                            .send()
+                            .unwrap();
+                    }
+                    IndexerRequests::NodeInfo { name, .. } => {
+                        Response::new()
+                            .body(serde_json::to_vec(&state.nodes.get(name))?)
+                            .send()
+                            .unwrap();
+                    }
+                }
+            }
+            blocks_to_remove.push(*block);
+        } else {
+            break;
+        }
+    }
+    for block in blocks_to_remove.iter() {
+        pending_requests.remove(block);
+    }
+
+    set_state(&bincode::serialize(state)?);
+    Ok(())
 }
 
 fn get_name(log: &Log) -> String {

@@ -7,6 +7,7 @@ use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use crate::types::*;
@@ -54,16 +55,6 @@ pub async fn load_state(
             });
         }
         Ok(None) => {
-            bootstrap(
-                &our_name,
-                keypair,
-                home_directory_path.clone(),
-                runtime_extensions.clone(),
-                &mut process_map,
-            )
-            .await
-            .unwrap();
-
             db.put(&kernel_id, bincode::serialize(&process_map).unwrap())
                 .unwrap();
         }
@@ -71,6 +62,20 @@ pub async fn load_state(
             panic!("failed to load kernel state from db: {:?}", e);
         }
     }
+
+    // bootstrap the distro processes into the node. TODO:
+    // once we manage userspace sys packages onchain, stop
+    // doing this and allow node operator to manually or auto-update
+    // all their own userspace packages.
+    bootstrap(
+        &our_name,
+        keypair,
+        home_directory_path.clone(),
+        runtime_extensions.clone(),
+        &mut process_map,
+    )
+    .await
+    .unwrap();
 
     Ok((process_map, db))
 }
@@ -303,7 +308,7 @@ async fn bootstrap(
     runtime_extensions: Vec<(ProcessId, MessageSender, bool)>,
     process_map: &mut ProcessMap,
 ) -> Result<()> {
-    println!("bootstrapping node...\r");
+    // println!("bootstrapping node...\r");
 
     let mut runtime_caps: HashMap<Capability, Vec<u8>> = HashMap::new();
     // kernel is a special case
@@ -346,7 +351,7 @@ async fn bootstrap(
 
     // finally, save runtime modules in state map as well, somewhat fakely
     // special cases for kernel and net
-    process_map
+    let current_kernel = process_map
         .entry(ProcessId::new(Some("kernel"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
@@ -355,7 +360,8 @@ async fn bootstrap(
             capabilities: runtime_caps.clone(),
             public: false,
         });
-    process_map
+    current_kernel.capabilities.extend(runtime_caps.clone());
+    let current_net = process_map
         .entry(ProcessId::new(Some("net"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
@@ -364,8 +370,9 @@ async fn bootstrap(
             capabilities: runtime_caps.clone(),
             public: false,
         });
+    current_net.capabilities.extend(runtime_caps.clone());
     for runtime_module in runtime_extensions {
-        process_map
+        let current = process_map
             .entry(runtime_module.0)
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: "".into(),
@@ -374,6 +381,7 @@ async fn bootstrap(
                 capabilities: runtime_caps.clone(),
                 public: runtime_module.2,
             });
+        current.capabilities.extend(runtime_caps.clone());
     }
 
     let packages = get_zipped_packages().await;
@@ -402,7 +410,7 @@ async fn bootstrap(
         let package_metadata: serde_json::Value =
             serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
 
-        println!("fs: found package metadata: {:?}\r", package_metadata);
+        // println!("fs: found package metadata: {:?}\r", package_metadata);
 
         let package_name = package_metadata["package"]
             .as_str()
@@ -420,6 +428,12 @@ async fn bootstrap(
             .expect("bootstrap vfs dir pkg creation failed!");
 
         let drive_path = format!("/{}/pkg", &our_drive_name);
+
+        // save the zip itself inside pkg folder, for sharing with others
+        let mut zip_file =
+            fs::File::create(format!("{}/{}.zip", &pkg_path, &our_drive_name)).await?;
+        let package_zip_bytes = package.clone().into_inner().into_inner();
+        zip_file.write_all(package_zip_bytes).await?;
 
         // for each file in package.zip, write to vfs folder
         for i in 0..package.len() {
@@ -587,16 +601,28 @@ async fn bootstrap(
 
             let wasm_bytes_handle = format!("{}/{}", &drive_path, &file_path);
 
-            process_map.insert(
-                ProcessId::new(Some(&entry.process_name), package_name, package_publisher),
-                PersistedProcess {
-                    wasm_bytes_handle,
-                    wit_version: None,
-                    on_exit: entry.on_exit,
-                    capabilities: requested_caps,
-                    public: public_process,
-                },
-            );
+            match process_map.entry(ProcessId::new(
+                Some(&entry.process_name),
+                package_name,
+                package_publisher,
+            )) {
+                std::collections::hash_map::Entry::Occupied(p) => {
+                    let p = p.into_mut();
+                    p.wasm_bytes_handle = wasm_bytes_handle.clone();
+                    p.on_exit = entry.on_exit;
+                    p.capabilities.extend(requested_caps);
+                    p.public = public_process;
+                }
+                std::collections::hash_map::Entry::Vacant(v) => {
+                    v.insert(PersistedProcess {
+                        wasm_bytes_handle: wasm_bytes_handle.clone(),
+                        wit_version: None,
+                        on_exit: entry.on_exit,
+                        capabilities: requested_caps,
+                        public: public_process,
+                    });
+                }
+            }
         }
     }
     // second loop: go and grant_capabilities to processes
@@ -641,7 +667,7 @@ async fn bootstrap(
         let package_metadata: serde_json::Value =
             serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
 
-        println!("fs: found package metadata: {:?}\r", package_metadata);
+        // println!("fs: found package metadata: {:?}\r", package_metadata);
 
         let package_name = package_metadata["package"]
             .as_str()
@@ -718,14 +744,14 @@ fn sign_cap(cap: Capability, keypair: Arc<signature::Ed25519KeyPair>) -> Vec<u8>
 
 /// read in `include!()`ed .zip package files
 async fn get_zipped_packages() -> Vec<(String, zip::ZipArchive<std::io::Cursor<&'static [u8]>>)> {
-    println!("fs: reading distro packages...\r");
+    // println!("fs: reading distro packages...\r");
 
     let mut packages = Vec::new();
 
     for (package_name, bytes) in BOOTSTRAPPED_PROCESSES.iter() {
         if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(*bytes)) {
             // add to list of packages
-            println!("fs: found package: {}\r", package_name);
+            // println!("fs: found package: {}\r", package_name);
             packages.push((package_name.to_string(), zip));
         }
     }

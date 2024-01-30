@@ -496,7 +496,7 @@ async fn http_handler(
                         query_params,
                     }))
                     .unwrap(),
-                    metadata: Some("http".into()),
+                    metadata: None,
                     capabilities: vec![],
                 }),
                 lazy_load_blob: Some(LazyLoadBlob {
@@ -686,7 +686,7 @@ async fn maintain_websocket(
                 expects_response: None,
                 body: serde_json::to_vec(&HttpServerRequest::WebSocketOpen { path, channel_id })
                     .unwrap(),
-                metadata: Some("ws".into()),
+                metadata: None,
                 capabilities: vec![],
             }),
             lazy_load_blob: None,
@@ -729,7 +729,7 @@ async fn maintain_websocket(
                                     channel_id,
                                     message_type: ws_msg_type,
                                 }).unwrap(),
-                                metadata: Some("ws".into()),
+                                metadata: None,
                                 capabilities: vec![],
                             }),
                             lazy_load_blob: Some(LazyLoadBlob {
@@ -788,7 +788,7 @@ async fn websocket_close(
                 inherit: false,
                 expects_response: None,
                 body: serde_json::to_vec(&HttpServerRequest::WebSocketClose(channel_id)).unwrap(),
-                metadata: Some("ws".into()),
+                metadata: None,
                 capabilities: vec![],
             }),
             lazy_load_blob: Some(LazyLoadBlob {
