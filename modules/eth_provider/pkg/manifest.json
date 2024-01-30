@@ -5,15 +5,12 @@
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [
-            "eth:distro:sys",
             "http_client:distro:sys",
-            "net:distro:sys",
-            "safe:safe:jurassics.os"
+            "net:distro:sys"
         ],
         "grant_capabilities": [
             "eth:distro:sys",
-            "http_client:distro:sys",
-            "safe:safe:jurassics.os"
+            "http_client:distro:sys"
         ],
         "public": false
     }

@@ -1,6 +1,6 @@
 use kinode_process_lib::{
     await_message, call_init,
-    eth_alloy::{EthProviderRequests, RpcResponse},
+    eth_alloy::{EthProviderRequest, RpcResponse},
     get_blob,
     http::{self, HttpClientError, HttpClientResponse, HttpServerRequest, WsMessageType},
     println, Address, LazyLoadBlob as Blob, Message, Request,
@@ -74,7 +74,9 @@ fn init(our: Address) {
         break;
     }
 
-    let channel = 123454321;
+    println!("eth_provider: initialized with rpc_url: {:?}", rpc_url);
+
+    let channel = 6969420;
     // open a websocket to the rpc_url, populate state.
     // todo add retry logic
     let msg = http::open_ws_connection_and_await(our.node.clone(), rpc_url.unwrap(), None, channel)
@@ -107,24 +109,21 @@ fn init(our: Address) {
     }
 }
 
-fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
+fn handle_message(_our: &Address, state: &mut State) -> anyhow::Result<()> {
     let message = await_message()?;
 
-    match message {
-        Message::Request {
-            source,
-            body,
-            metadata,
-            ..
-        } => {
-            if source.process == "http_server:distro:sys" {
-                handle_http_request(body, state)?;
-            } else {
-                handle_request(body, state, source, metadata)?;
-            }
-        }
-        Message::Response { .. } => {
-            println!("ok");
+    if let Message::Request {
+        source,
+        body,
+        metadata,
+        ..
+    } = message
+    {
+        if source.process == "http_server:distro:sys" || source.process == "http_client:distro:sys"
+        {
+            handle_http_request(body, state)?;
+        } else {
+            handle_request(body, state, source, metadata)?;
         }
     }
 
@@ -136,64 +135,80 @@ fn handle_http_request(body: Vec<u8>, state: &mut State) -> anyhow::Result<()> {
         serde_json::from_slice::<HttpServerRequest>(&body)?
     {
         if let WsMessageType::Text = message_type {
-            let blob = match get_blob() {
-                Some(blob) => blob,
-                None => {
-                    return Err(anyhow::anyhow!(": failed to get blob"));
-                }
-            };
+            let blob = get_blob().ok_or_else(|| anyhow::anyhow!("Failed to get blob"))?;
             let response = serde_json::from_slice::<serde_json::Value>(&blob.bytes)?;
-
             if let Some(id) = response.get("id") {
-                if state.subscription_inits.contains(&id.as_u64().unwrap()) {
+                if state.subscription_inits.contains(
+                    &id.as_u64()
+                        .ok_or_else(|| anyhow::anyhow!("Failed to get id as u64"))?,
+                ) {
                     let subscription = response
                         .get("result")
-                        .unwrap()
-                        .as_str()
-                        .unwrap()
+                        .and_then(|r| r.as_str())
+                        .ok_or_else(|| anyhow::anyhow!("Failed to get result as string"))?
                         .to_string();
 
-                    state
-                        .subscriptions_to_process_id
-                        .insert(subscription, id.as_u64().unwrap());
+                    state.subscriptions_to_process_id.insert(
+                        subscription,
+                        id.as_u64()
+                            .ok_or_else(|| anyhow::anyhow!("Failed to get id as u64"))?,
+                    );
                 } else {
-                    let process_addr = state.id_to_process_addr.get(&id.as_u64().unwrap()).unwrap();
-                    let process_id = state.id_to_process_id.get(&id.as_u64().unwrap()).unwrap();
+                    let process_addr = state
+                        .id_to_process_addr
+                        .get(
+                            &id.as_u64()
+                                .ok_or_else(|| anyhow::anyhow!("Failed to get id as u64"))?,
+                        )
+                        .ok_or_else(|| anyhow::anyhow!("Failed to get process address"))?;
+                    let closure_id = state
+                        .id_to_process_id
+                        .get(
+                            &id.as_u64()
+                                .ok_or_else(|| anyhow::anyhow!("Failed to get id as u64"))?,
+                        )
+                        .ok_or_else(|| anyhow::anyhow!("Failed to get closure id"))?;
+
+                    let result = response
+                        .get("result")
+                        .ok_or_else(|| anyhow::anyhow!("Failed to get result"))?;
 
                     Request::new()
                         .target(process_addr.clone())
-                        .body(serde_json::to_vec(&response.get("result"))?)
-                        .metadata(&process_id.to_string())
+                        .body(serde_json::to_vec(&RpcResponse {
+                            result: result.clone(),
+                        })?)
+                        .metadata(&closure_id.to_string())
                         .send()?;
                 }
             } else {
                 let result = response
                     .get("params")
-                    .unwrap()
-                    .get("result")
-                    .unwrap()
-                    .to_string();
+                    .and_then(|p| p.get("result"))
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get result"))?;
 
                 let subscription = response
                     .get("params")
-                    .unwrap()
-                    .get("subscription")
-                    .unwrap()
-                    .as_str()
-                    .unwrap()
+                    .and_then(|p| p.get("subscription"))
+                    .and_then(|s| s.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get subscription as string"))?
                     .to_string();
 
                 let process_id = state
                     .subscriptions_to_process_id
                     .get(&subscription)
-                    .unwrap();
-                let process_addr = state.id_to_process_addr.get(process_id).unwrap();
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get process id"))?;
+
+                let process_addr = state
+                    .id_to_process_addr
+                    .get(process_id)
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get process address"))?;
 
                 Request::new()
                     .target(process_addr.clone())
-                    .body(serde_json::to_vec(&EthProviderRequests::RpcResponse(
-                        RpcResponse { result },
-                    ))?)
+                    .body(serde_json::to_vec(&RpcResponse {
+                        result: result.clone(),
+                    })?)
                     .metadata(&process_id.to_string())
                     .send()?;
             }
@@ -208,8 +223,8 @@ fn handle_request(
     source: Address,
     metadata: Option<String>,
 ) -> anyhow::Result<()> {
-    if let EthProviderRequests::RpcRequest(req) =
-        serde_json::from_slice::<EthProviderRequests>(&body)?
+    if let EthProviderRequest::RpcRequest(req) =
+        serde_json::from_slice::<EthProviderRequest>(&body)?
     {
         let current_id = state.current_id.clone();
         state.current_id += 1;
@@ -217,10 +232,16 @@ fn handle_request(
         state
             .id_to_process_addr
             .insert(current_id.clone(), source.clone());
-
+        let parsed_metadata = metadata
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("metadata is missing"))?
+            .parse()
+            .map_err(|_| {
+                anyhow::anyhow!("failed to parse metadata: {}", metadata.unwrap_or_default())
+            })?;
         state
             .id_to_process_id
-            .insert(current_id.clone(), metadata.unwrap().parse().unwrap());
+            .insert(current_id.clone(), parsed_metadata);
 
         if req.method == "eth_subscribe" {
             state.subscription_inits.insert(current_id.clone());
@@ -229,7 +250,7 @@ fn handle_request(
         let inflight = serde_json::to_string(&json!({
             "jsonrpc": "2.0",
             "method": req.method,
-            "params": serde_json::from_str::<serde_json::Value>(&req.params.clone()).unwrap(),
+            "params": req.params,
             "id": current_id,
         }))?;
 
