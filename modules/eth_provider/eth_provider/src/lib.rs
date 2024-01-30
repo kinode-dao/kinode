@@ -1,36 +1,14 @@
-use kinode_process_lib::eth_alloy::{
-    EthProviderRequests,
-    Provider,
-    RpcRequest,
-    RpcResponse,
-};
-
 use kinode_process_lib::{
-    Address,
-    LazyLoadBlob as Blob,
-    Message,
-    ProcessId,
-    Request, 
-    Response,
-    await_message,
-    http,
-    println
+    await_message, call_init,
+    eth_alloy::{EthProviderRequests, RpcResponse},
+    get_blob,
+    http::{self, HttpClientError, HttpClientResponse, HttpServerRequest, WsMessageType},
+    println, Address, LazyLoadBlob as Blob, Message, Request,
 };
 
-use kinode_process_lib::http::{
-    WsMessageType,
-    HttpClientError,
-    HttpClientResponse,
-    HttpServerRequest,
-};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
-
-#[derive(Debug, Serialize, Deserialize)]
-enum EthAction {
-    Path,
-}
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -70,12 +48,8 @@ struct Subscriptions {
 }
 
 impl WsConnection {
-
-    fn new (our: Address, channel: u32) -> Self {
-        Self {
-            our,
-            channel,
-        }
+    fn new(our: Address, channel: u32) -> Self {
+        Self { our, channel }
     }
 
     fn send(&self, blob: Blob) {
@@ -86,203 +60,184 @@ impl WsConnection {
             blob,
         );
     }
-
 }
 
-struct Component;
-impl Guest for Component {
-    fn init(our: String) {
-
-        let our: Address = our.parse().unwrap();
-
-        match main(our) {
-            Ok(_) => {}
-            Err(e) => {
-                println!(": error: {:?}", e);
-            }
-        }
+call_init!(init);
+fn init(our: Address) {
+    // listen to first message as an rpc_url initializer.
+    let mut rpc_url: Option<String> = None;
+    loop {
+        let Ok(Message::Request { body, .. }) = await_message() else {
+            continue;
+        };
+        rpc_url = Some(std::str::from_utf8(&body).unwrap().to_string());
+        break;
     }
-}
-
-fn main(our: Address) -> anyhow::Result<()> {
-
-    let msg = Request::new()
-        .target(Address::new(&our.node, ProcessId::new(Some("eth"), "distro", "sys")))
-        .body(serde_json::to_vec(&EthAction::Path).unwrap())
-        .send_and_await_response(5)
-        .unwrap().unwrap();
-
-    let rpc_path = serde_json::from_slice::<RpcPath>(&msg.body()).unwrap();
 
     let channel = 123454321;
+    // open a websocket to the rpc_url, populate state.
+    // todo add retry logic
+    let msg = http::open_ws_connection_and_await(our.node.clone(), rpc_url.unwrap(), None, channel)
+        .unwrap()
+        .unwrap();
 
-    let msg = http::open_ws_connection_and_await
-        (our.node.clone(), rpc_path.rpc_url.unwrap(), None, channel)
-            .unwrap().unwrap();
-    
-    let mut state = match serde_json::from_slice::<Result<HttpClientResponse, HttpClientError>>(msg.body()) {
-        Ok(Ok(HttpClientResponse::WebSocketAck)) => {
-            State { 
-                conn: WsConnection::new(rpc_path.process_addr, channel), 
+    let mut state =
+        match serde_json::from_slice::<Result<HttpClientResponse, HttpClientError>>(msg.body()) {
+            Ok(Ok(HttpClientResponse::WebSocketAck)) => State {
+                conn: WsConnection::new(our.clone(), channel),
                 current_id: 0,
                 id_to_process_addr: HashMap::new(),
                 id_to_process_id: HashMap::new(),
                 subscriptions_to_process_id: HashMap::new(),
                 subscription_inits: HashSet::new(),
+            },
+            _ => {
+                println!("eth_provider: error: {:?}", "unexpected response");
+                return;
             }
-        },
-        _ => {
-            return Err(anyhow::anyhow!(": failed to open ws connection"))
-        }
-    };
+        };
 
     loop {
-        match await_message() {
-            Ok(msg) =>  {
-                if msg.is_request() {
-                    let _ = handle_request(&our, msg, &mut state);
-                } else {
-                    let _ = handle_response(&our, msg, &mut state);
-                }
-            }
+        match handle_message(&our, &mut state) {
+            Ok(_) => {}
             Err(e) => {
-                break;
+                println!("eth_provider: error: {:?}", e);
             }
-            _ => {}
         }
     }
-
-    Ok(())
-
 }
 
+fn handle_message(our: &Address, state: &mut State) -> anyhow::Result<()> {
+    let message = await_message()?;
 
-fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Result<()> {
-
-    match serde_json::from_slice::<EthProviderRequests>(&msg.body()) {
-        Ok(EthProviderRequests::Test) => {
-            println!("~\n~\n~\n got test {:?}", msg.source());
-            return Ok(());
-        }
-        Ok(EthProviderRequests::RpcRequest(req)) => {
-            println!("~\n~\n~\n got request: {:?}", req);
-            let _ = handle_rpc_request(msg, req, state);
-            return Ok(());
-        }
-        Err(e) => { }
-        _ => {}
-    }
-
-    match serde_json::from_slice::<HttpServerRequest>(&msg.body()) {
-
-        Ok(HttpServerRequest::WebSocketPush{message_type, .. }) => {
-
-            match message_type {
-                WsMessageType::Text => {
-                    println!("got text message");
-
-                    let response = serde_json::from_slice::<serde_json::Value>(&msg.blob().unwrap().bytes).unwrap();
-
-                    if let Some(id) = response.get("id") {
-                        if state.subscription_inits.contains(&id.as_u64().unwrap()) {
-
-                            let subscription = response
-                                .get("result").unwrap()
-                                .as_str().unwrap()
-                                .to_string();
-
-                            state.subscriptions_to_process_id.insert(subscription, id.as_u64().unwrap());
-
-                        } else {
-
-                            let process_addr = state.id_to_process_addr.get(&id.as_u64().unwrap()).unwrap();
-                            let process_id = state.id_to_process_id.get(&id.as_u64().unwrap()).unwrap();
-
-                            Request::new()
-                                .target(process_addr.clone())
-                                .body(serde_json::to_vec(&response.get("result"))?)
-                                .metadata(&process_id.to_string())
-                                .send()?;
-
-                        }
-
-                    } else {
-
-                        let result = response
-                            .get("params").unwrap()
-                            .get("result").unwrap()
-                            .to_string();
-
-                        let subscription = response
-                            .get("params").unwrap()
-                            .get("subscription").unwrap()
-                            .as_str().unwrap()
-                            .to_string();
-
-                        let process_id = state.subscriptions_to_process_id.get(&subscription).unwrap();
-                        let process_addr = state.id_to_process_addr.get(process_id).unwrap();
-
-                        Request::new()
-                            .target(process_addr.clone())
-                            .body(serde_json::to_vec(&EthProviderRequests::RpcResponse(RpcResponse{ result }))?)
-                            .metadata(&process_id.to_string())
-                            .send()?;
-
-                    }
-
-                }
-                WsMessageType::Binary => {
-                    println!("got binary message");
-                }
-                WsMessageType::Ping | WsMessageType::Pong => {
-                    println!("got ping/pong");
-
-                }
-                WsMessageType::Close => {
-
-                }
+    match message {
+        Message::Request {
+            source,
+            body,
+            metadata,
+            ..
+        } => {
+            if source.process == "http_server:distro:sys" {
+                handle_http_request(body, state)?;
+            } else {
+                handle_request(body, state, source, metadata)?;
             }
-            return Ok(());
         }
-        Err(e) => {
-            println!("~\n~\n~\n got error: {:?}", e);
+        Message::Response { .. } => {
+            println!("ok");
         }
-        _ => {}
     }
 
     Ok(())
 }
 
+fn handle_http_request(body: Vec<u8>, state: &mut State) -> anyhow::Result<()> {
+    if let HttpServerRequest::WebSocketPush { message_type, .. } =
+        serde_json::from_slice::<HttpServerRequest>(&body)?
+    {
+        if let WsMessageType::Text = message_type {
+            let blob = match get_blob() {
+                Some(blob) => blob,
+                None => {
+                    return Err(anyhow::anyhow!(": failed to get blob"));
+                }
+            };
+            let response = serde_json::from_slice::<serde_json::Value>(&blob.bytes)?;
 
-fn handle_rpc_request(msg: Message, req: RpcRequest, state: &mut State) -> anyhow::Result<()> {
+            if let Some(id) = response.get("id") {
+                if state.subscription_inits.contains(&id.as_u64().unwrap()) {
+                    let subscription = response
+                        .get("result")
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .to_string();
 
-    let current_id = state.current_id.clone();
+                    state
+                        .subscriptions_to_process_id
+                        .insert(subscription, id.as_u64().unwrap());
+                } else {
+                    let process_addr = state.id_to_process_addr.get(&id.as_u64().unwrap()).unwrap();
+                    let process_id = state.id_to_process_id.get(&id.as_u64().unwrap()).unwrap();
 
-    state.current_id += 1;
+                    Request::new()
+                        .target(process_addr.clone())
+                        .body(serde_json::to_vec(&response.get("result"))?)
+                        .metadata(&process_id.to_string())
+                        .send()?;
+                }
+            } else {
+                let result = response
+                    .get("params")
+                    .unwrap()
+                    .get("result")
+                    .unwrap()
+                    .to_string();
 
-    state.id_to_process_addr.insert(current_id.clone(), msg.source().clone());
-    state.id_to_process_id.insert(current_id.clone(), msg.metadata().unwrap().parse().unwrap());
+                let subscription = response
+                    .get("params")
+                    .unwrap()
+                    .get("subscription")
+                    .unwrap()
+                    .as_str()
+                    .unwrap()
+                    .to_string();
 
-    if req.method == "eth_subscribe" {
-        state.subscription_inits.insert(current_id.clone());
+                let process_id = state
+                    .subscriptions_to_process_id
+                    .get(&subscription)
+                    .unwrap();
+                let process_addr = state.id_to_process_addr.get(process_id).unwrap();
+
+                Request::new()
+                    .target(process_addr.clone())
+                    .body(serde_json::to_vec(&EthProviderRequests::RpcResponse(
+                        RpcResponse { result },
+                    ))?)
+                    .metadata(&process_id.to_string())
+                    .send()?;
+            }
+        }
     }
-
-    let inflight = serde_json::to_string(&json!({
-        "jsonrpc": "2.0",
-        "method": req.method,
-        "params": serde_json::from_str::<serde_json::Value>(&req.params.clone()).unwrap(),
-        "id": current_id,
-    })).unwrap();
-
-    state.conn.send(Blob {
-        mime: Some("application/json".to_string()),
-        bytes: inflight.into()
-    });
-
     Ok(())
 }
 
-fn handle_response(our: &Address, msg: Message, state: &mut State) -> anyhow::Result<()> {
+fn handle_request(
+    body: Vec<u8>,
+    state: &mut State,
+    source: Address,
+    metadata: Option<String>,
+) -> anyhow::Result<()> {
+    if let EthProviderRequests::RpcRequest(req) =
+        serde_json::from_slice::<EthProviderRequests>(&body)?
+    {
+        let current_id = state.current_id.clone();
+        state.current_id += 1;
+
+        state
+            .id_to_process_addr
+            .insert(current_id.clone(), source.clone());
+
+        state
+            .id_to_process_id
+            .insert(current_id.clone(), metadata.unwrap().parse().unwrap());
+
+        if req.method == "eth_subscribe" {
+            state.subscription_inits.insert(current_id.clone());
+        }
+
+        let inflight = serde_json::to_string(&json!({
+            "jsonrpc": "2.0",
+            "method": req.method,
+            "params": serde_json::from_str::<serde_json::Value>(&req.params.clone()).unwrap(),
+            "id": current_id,
+        }))?;
+
+        state.conn.send(Blob {
+            mime: Some("application/json".to_string()),
+            bytes: inflight.into(),
+        });
+    }
 
     Ok(())
 }
