@@ -383,7 +383,7 @@ fn handle_receive_download(
                 ));
             };
             if let Some(metadata) = &package_listing.metadata {
-                if let Some(latest_hash) = metadata.versions.first() {
+                if let Some(latest_hash) = metadata.versions.clone().unwrap_or(vec![]).first() {
                     if &download_hash != latest_hash {
                         return Err(anyhow::anyhow!(
                             "app store: downloaded package is not latest version--rejecting download!"

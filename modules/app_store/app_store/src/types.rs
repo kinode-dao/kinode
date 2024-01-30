@@ -63,9 +63,51 @@ pub struct OnchainPackageMetadata {
     pub version: Option<String>,
     pub license: Option<String>,
     pub website: Option<String>,
-    pub screenshots: Vec<String>,
-    pub mirrors: Vec<NodeId>,
-    pub versions: Vec<String>,
+    pub screenshots: Option<Vec<String>>,
+    pub mirrors: Option<Vec<NodeId>>,
+    pub versions: Option<Vec<String>>,
+}
+
+/// package information sent to UI
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageInfo {
+    pub owner: Option<String>, // eth address
+    pub package: String,
+    pub publisher: NodeId,
+    pub metadata_hash: Option<String>,
+
+    pub metadata: Option<OnchainPackageMetadata>,
+    pub state: Option<PackageState>,
+}
+
+pub fn gen_package_info(id: &PackageId, metadata_hash: Option<String>, listing: Option<&PackageListing>, state: Option<&PackageState>) -> PackageInfo {
+    let owner = match listing {
+        Some(listing) => Some(listing.owner.clone()),
+        None => None,
+    };
+    let metadata = match listing {
+        Some(listing) => listing.metadata.clone(),
+        None => match state {
+            Some(state) => state.metadata.clone(),
+            None => None,
+        }
+    };
+
+    let state = state.cloned().map(|state| {
+        let mut state = state;
+        state.metadata = None;
+        state
+    });
+
+    PackageInfo {
+        owner,
+        package: id.package().to_string(),
+        publisher: id.publisher().to_string(),
+        metadata_hash,
+        metadata,
+        state,
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -79,6 +121,7 @@ pub struct RequestedPackage {
 
 /// state of an individual package we have downloaded
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PackageState {
     /// the node we last downloaded the package from
     /// this is "us" if we don't know the source (usually cause it's a local install)
@@ -140,6 +183,41 @@ impl State {
     pub fn get_listing(&self, package_id: &PackageId) -> Option<&PackageListing> {
         self.listed_packages
             .get(self.package_hashes.get(package_id)?)
+    }
+
+    pub fn get_package_info(&self, package_id: &PackageId) -> Option<PackageInfo> {
+        let hash = self.package_hashes.get(package_id)?;
+
+        let listing = self.listed_packages.get(hash);
+
+        let state = self.downloaded_packages.get(package_id);
+
+        Some(gen_package_info(package_id, Some(hash.to_string()), listing, state))
+    }
+
+    pub fn get_downloaded_packages_info(&self) -> Vec<PackageInfo> {
+        self.downloaded_packages
+            .iter()
+            .map(|(package_id, state)| {
+                let hash = self.package_hashes.get(package_id);
+                let listing = match hash {
+                    Some(hash) => self.listed_packages.get(hash),
+                    None => None,
+                };
+                gen_package_info(package_id, hash.cloned(), listing, Some(state))
+            })
+            .collect()
+    }
+
+    pub fn get_listed_packages_info(&self) -> Vec<PackageInfo> {
+        self.listed_packages
+            .iter()
+            .map(|(hash, listing)| {
+                let package_id = PackageId::new(&listing.name, &listing.publisher);
+                let state = self.downloaded_packages.get(&package_id);
+                gen_package_info(&package_id, Some(hash.to_string()), Some(listing), state)
+            })
+            .collect()
     }
 
     fn get_listing_with_hash_mut(

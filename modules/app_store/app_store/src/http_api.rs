@@ -65,10 +65,7 @@ fn serve_paths(
                 StatusCode::OK,
                 None,
                 serde_json::to_vec(
-                    &state
-                        .downloaded_packages
-                        .iter()
-                        .collect::<Vec<(&PackageId, &PackageState)>>(),
+                    &state.get_downloaded_packages_info()
                 )?,
             ));
         }
@@ -84,7 +81,7 @@ fn serve_paths(
             return Ok((
                 StatusCode::OK,
                 None,
-                serde_json::to_vec(&state.listed_packages)?,
+                serde_json::to_vec(&state.get_listed_packages_info())?,
             ));
         }
         // GET detail about a specific downloaded app
@@ -96,7 +93,7 @@ fn serve_paths(
                 return Err(anyhow::anyhow!("No app ID"));
             };
             match method {
-                Method::GET => Ok(match state.get_downloaded_package(&package_id) {
+                Method::GET => Ok(match state.get_package_info(&package_id) {
                     Some(pkg) => (StatusCode::OK, None, serde_json::to_vec(&pkg)?),
                     None => (
                         StatusCode::NOT_FOUND,
@@ -142,7 +139,7 @@ fn serve_paths(
                 return Err(anyhow::anyhow!("No app ID"));
             };
             match method {
-                Method::GET => Ok(match state.get_listing(&package_id) {
+                Method::GET => Ok(match state.get_package_info(&package_id) {
                     Some(pkg) => (StatusCode::OK, None, serde_json::to_vec(&pkg)?),
                     None => (
                         StatusCode::NOT_FOUND,
