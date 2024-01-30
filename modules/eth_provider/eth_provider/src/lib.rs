@@ -50,8 +50,9 @@ struct RpcPath {
 struct State {
     conn: WsConnection,
     subscription_inits: HashSet<u64>,
-    subscriptions_to_id: HashMap<String, u64>,
-    id_to_process: HashMap<u64, Address>,
+    subscriptions_to_process_id: HashMap<String, u64>,
+    id_to_process_addr: HashMap<u64, Address>,
+    id_to_process_id: HashMap<u64, u64>,
     current_id: u64,
 }
 
@@ -124,8 +125,9 @@ fn main(our: Address) -> anyhow::Result<()> {
             State { 
                 conn: WsConnection::new(rpc_path.process_addr, channel), 
                 current_id: 0,
-                id_to_process: HashMap::new(),
-                subscriptions_to_id: HashMap::new(),
+                id_to_process_addr: HashMap::new(),
+                id_to_process_id: HashMap::new(),
+                subscriptions_to_process_id: HashMap::new(),
                 subscription_inits: HashSet::new(),
             }
         },
@@ -157,7 +159,7 @@ fn main(our: Address) -> anyhow::Result<()> {
 
 fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Result<()> {
 
-    match serde_json::from_slice::<EthProviderRequests>(&msg.body()) { 
+    match serde_json::from_slice::<EthProviderRequests>(&msg.body()) {
         Ok(EthProviderRequests::Test) => {
             println!("~\n~\n~\n got test {:?}", msg.source());
             return Ok(());
@@ -189,15 +191,17 @@ fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
                                 .as_str().unwrap()
                                 .to_string();
 
-                            state.subscriptions_to_id.insert(subscription, id.as_u64().unwrap());
+                            state.subscriptions_to_process_id.insert(subscription, id.as_u64().unwrap());
 
                         } else {
 
-                            let target = state.id_to_process.get(&id.as_u64().unwrap()).unwrap();
+                            let process_addr = state.id_to_process_addr.get(&id.as_u64().unwrap()).unwrap();
+                            let process_id = state.id_to_process_id.get(&id.as_u64().unwrap()).unwrap();
 
                             Request::new()
-                                .target(target.clone())
+                                .target(process_addr.clone())
                                 .body(serde_json::to_vec(&response.get("result"))?)
+                                .metadata(&process_id.to_string())
                                 .send()?;
 
                         }
@@ -215,14 +219,13 @@ fn handle_request(our: &Address, msg: Message, state: &mut State) -> anyhow::Res
                             .as_str().unwrap()
                             .to_string();
 
-                        let subscription_id = state.subscriptions_to_id.get(&subscription).unwrap();
-
-                        let target = state.id_to_process.get(subscription_id).unwrap();
+                        let process_addr = state.id_to_process_addr.get(subscription_id).unwrap();
+                        let process_id = state.subscriptions_to_process_id.get(&subscription).unwrap();
 
                         Request::new()
-                            .target(target)
+                            .target(process_addr.clone())
                             .body(serde_json::to_vec(&EthProviderRequests::RpcResponse(RpcResponse{ result }))?)
-                            .metadata(&subscription_id.to_string())
+                            .metadata(&process_id.to_string())
                             .send()?;
 
                     }
@@ -257,7 +260,8 @@ fn handle_rpc_request(msg: Message, req: RpcRequest, state: &mut State) -> anyho
 
     state.current_id += 1;
 
-    state.id_to_process.insert(current_id.clone(), msg.source().clone());
+    state.id_to_process_addr.insert(current_id.clone(), msg.source().clone());
+    state.id_to_process_id.insert(current_id.clone(), msg.metadata().unwrap().parse().unwrap());
 
     if req.method == "eth_subscribe" {
         state.subscription_inits.insert(current_id.clone());
