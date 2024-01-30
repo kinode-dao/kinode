@@ -2,9 +2,10 @@ use anyhow::anyhow;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::kinode::process::standard as wit;
 use kinode_process_lib::{
-    get_blob, get_capability, our_capabilities, println, vfs, Address, Capability, PackageId,
-    ProcessId, Request,
+    get_blob, get_capability, get_typed_state, our_capabilities, println, set_state, vfs, Address,
+    Capability, PackageId, ProcessId, Request,
 };
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -16,15 +17,16 @@ wit_bindgen::generate!({
     },
 });
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 struct EditAliases {
     alias: String,
     process: Option<ProcessId>,
 }
 
+#[derive(Serialize, Deserialize)]
 struct TerminalState {
     our: Address,
-    aliases: HashMap<String, ProcessId>, // TODO maybe address...
+    aliases: HashMap<String, ProcessId>,
 }
 
 fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
@@ -42,9 +44,32 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
         },
     };
 
+    let re = Regex::new(r"(.*?)\|(\d+)\s*(.*)").unwrap();
+    let pipe = match re.captures(args) {
+        Some(caps) => {
+            let parsed_args = caps
+                .get(1)
+                .map_or("", |m| m.as_str())
+                .trim_end()
+                .to_string();
+
+            let time_str = caps.get(2).map_or("", |m| m.as_str());
+            let time: u64 = time_str.parse().unwrap_or(0);
+
+            let pipe = caps
+                .get(3)
+                .map_or("", |m| m.as_str())
+                .trim_start()
+                .to_string();
+
+            (parsed_args, Some((pipe, time)))
+        }
+        None => (args.to_string(), None),
+    };
+
     let wasm_path = format!("{}.wasm", process.process());
     let package = PackageId::new(process.package(), process.publisher());
-    match handle_run(&state.our, &package, wasm_path, args.to_string()) {
+    match handle_run(&state.our, &package, wasm_path, pipe.0, pipe.1) {
         Ok(_) => Ok(()), // TODO clean up process
         Err(e) => Err(anyhow!("failed to instantiate script: {}", e)),
     }
@@ -53,35 +78,40 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
 struct Component;
 impl Guest for Component {
     fn init(our: String) {
-        let mut state = TerminalState {
-            our: our.parse::<Address>().unwrap(),
-            aliases: HashMap::from([
-                (
-                    "alias".to_string(),
-                    "alias:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-                (
-                    "cat".to_string(),
-                    "cat:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-                (
-                    "echo".to_string(),
-                    "echo:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-                (
-                    "hi".to_string(),
-                    "hi:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-                (
-                    "m".to_string(),
-                    "m:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-                (
-                    "top".to_string(),
-                    "top:terminal:sys".parse::<ProcessId>().unwrap(),
-                ),
-            ]),
-        };
+        let mut state: TerminalState =
+            match get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
+                Some(s) => s,
+                None => TerminalState {
+                    our: our.parse::<Address>().unwrap(),
+                    aliases: HashMap::from([
+                        (
+                            "alias".to_string(),
+                            "alias:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                        (
+                            "cat".to_string(),
+                            "cat:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                        (
+                            "echo".to_string(),
+                            "echo:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                        (
+                            "hi".to_string(),
+                            "hi:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                        (
+                            "m".to_string(),
+                            "m:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                        (
+                            "top".to_string(),
+                            "top:terminal:sys".parse::<ProcessId>().unwrap(),
+                        ),
+                    ]),
+                },
+            };
+
         loop {
             let (source, message) = match wit::receive() {
                 Ok((source, message)) => (source, message),
@@ -121,15 +151,20 @@ impl Guest for Component {
                                 println!("terminal: alias {} removed", edit_aliases.alias);
                             }
                         }
+                        if let Ok(new_state) = bincode::serialize(&state) {
+                            set_state(&new_state);
+                        } else {
+                            println!("terminal: failed to serialize state!");
+                        }
                     } else {
                         continue;
                     }
                 }
                 wit::Message::Response((wit::Response { body, .. }, _)) => {
                     if let Ok(txt) = std::str::from_utf8(&body) {
-                        println!("response from {source}: {txt}");
+                        println!("{txt}");
                     } else {
-                        println!("response from {source}: {body:?}");
+                        println!("{body:?}");
                     }
                 }
             }
@@ -142,6 +177,7 @@ fn handle_run(
     package: &PackageId,
     wasm_path: String,
     args: String,
+    pipe: Option<(String, u64)>,
 ) -> anyhow::Result<()> {
     let drive_path = format!("/{}/pkg", package);
     Request::new()
@@ -319,9 +355,31 @@ fn handle_run(
             parsed_new_process_id.clone(),
         ))?)
         .send_and_await_response(5)??;
-    let _ = Request::new()
+    let req = Request::new()
         .target(("our", parsed_new_process_id))
-        .body(args.into_bytes())
-        .send();
+        .body(args.into_bytes());
+
+    let Some(pipe) = pipe else {
+        req.send().unwrap();
+        return Ok(());
+    };
+
+    let Ok(res) = req.clone().send_and_await_response(pipe.1).unwrap() else {
+        return Err(anyhow::anyhow!("script timed out"));
+    };
+
+    let _ = Request::new()
+        .target(our)
+        .body(
+            format!(
+                "{} {}",
+                pipe.0,
+                String::from_utf8(res.body().to_vec()).unwrap()
+            )
+            .into_bytes()
+            .to_vec(),
+        )
+        .send()?;
+
     Ok(())
 }

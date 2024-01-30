@@ -1,3 +1,16 @@
+# Kinode
+
+Kinode OS is a decentralized OS, built for crypto.
+
+This repo contains the core runtime and processes.
+Most developers need not build the runtime.
+Instead, check out the [Kinode book](https://book.kinode.org/), and in particular the ["My First App" tutorial](https://book.kinode.org/my_first_app/chapter_1.html).
+
+If you want to get on the network, you can download a binary, rather than building it yourself, from [the releases page](https://github.com/kinode-dao/kinode/tags).
+Then follow the instructions to [install it](https://book.kinode.org/install.html) and [join the network](https://book.kinode.org/login.html).
+
+If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a question!
+
 ## Setup
 
 ### Building components
@@ -5,7 +18,7 @@
 ```bash
 # Clone the repo.
 
-git clone git@github.com:uqbar-dao/kinode.git
+git clone git@github.com:kinode-dao/kinode.git
 
 # Configure dependency retrieval from GitHub
 mkdir .cargo
@@ -84,7 +97,7 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - UpArrow/DownArrow or CTRL+P/CTRL+N to move up and down through command history
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
-- `m <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>.
+- `m <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>. JSON containing spaces must be wrapped in single-quotes (`''`).
     - Example: `m our@net:distro:sys diagnostics`
     - `our` will always be interpolated by the system as your node's name
 - `hi <name> <string>`: send a text message to another node's command line.
@@ -101,6 +114,6 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 
 Download and install an app:
 ```
-m our@main:app_store:sys {"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}
-m our@main:app_store:sys {"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}
+m our@main:app_store:sys '{"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}'
+m our@main:app_store:sys '{"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}'
 ```

@@ -1,4 +1,4 @@
-use kinode_process_lib::{await_next_request_body, call_init, println, Address};
+use kinode_process_lib::{await_next_request_body, call_init, println, Address, Response};
 
 wit_bindgen::generate!({
     path: "../../../wit",
@@ -16,8 +16,10 @@ fn init(_our: Address) {
         return;
     };
 
-    println!(
-        "{}",
-        String::from_utf8(args).unwrap_or("echo: error".into())
-    );
+    let _ = Response::new()
+        .body(format!(
+            "{}",
+            String::from_utf8(args).unwrap_or("echo: error".into())
+        ))
+        .send();
 }
