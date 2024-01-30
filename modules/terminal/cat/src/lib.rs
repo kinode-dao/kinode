@@ -1,5 +1,5 @@
 use kinode_process_lib::{
-    await_next_request_body, call_init, get_blob, println, vfs, Address, Request,
+    await_next_request_body, call_init, get_blob, println, vfs, Address, Request, Response,
 };
 
 wit_bindgen::generate!({
@@ -39,8 +39,5 @@ fn init(_our: Address) {
         println!("no file found at {}", file_path);
         return;
     };
-    println!(
-        "{}",
-        String::from_utf8(blob.bytes).unwrap_or("could not stringify file".to_string())
-    );
+    let _ = Response::new().body(blob.bytes).send();
 }

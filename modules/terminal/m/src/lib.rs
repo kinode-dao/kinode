@@ -1,5 +1,5 @@
 use clap::{Arg, Command};
-use kinode_process_lib::{await_next_request_body, call_init, println, Address, Request};
+use kinode_process_lib::{await_next_request_body, call_init, println, Address, Request, Response};
 use regex::Regex;
 
 wit_bindgen::generate!({
@@ -73,7 +73,7 @@ fn init(_our: Address) {
             println!("m: awaiting response for {}s", s);
             match req.send_and_await_response(*s).unwrap() {
                 Ok(res) => {
-                    println!("m: {:?}", res);
+                    let _ = Response::new().body(res.body()).send();
                 }
                 Err(e) => {
                     println!("m: SendError: {:?}", e.kind);
