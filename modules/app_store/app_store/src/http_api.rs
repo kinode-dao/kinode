@@ -1,8 +1,6 @@
 use crate::{OnchainPackageMetadata, PackageListing, PackageState, State};
 use kinode_process_lib::{
-    eth::EthAddress,
-    http::{send_response, IncomingHttpRequest, Method, StatusCode},
-    Address, PackageId,
+    eth::EthAddress, http::{send_response, IncomingHttpRequest, Method, StatusCode}, print_to_terminal, Address, PackageId
 };
 use sha3::digest::generic_array::arr::Inc;
 use std::collections::HashMap;
@@ -39,10 +37,22 @@ pub fn handle_http_request(
             body,
         ),
         Err(e) => {
-            crate::print_to_terminal(1, &format!("http error: {:?}", e));
+            print_to_terminal(1, &format!("http error: {:?}", e));
             send_response(StatusCode::INTERNAL_SERVER_ERROR, None, vec![])
         }
     }
+
+    Ok(())
+}
+
+fn get_package_id(segment: &str) -> anyhow::Result<PackageId> {
+    let mut segments = segment.split(":");
+    let package = segments.next().unwrap_or_default();
+    let publisher = segments.next().unwrap_or_default();
+
+    let package_id = PackageId::new(package, publisher);
+
+    Ok(package_id)
 }
 
 fn serve_paths(
@@ -51,7 +61,22 @@ fn serve_paths(
 ) -> anyhow::Result<(StatusCode, Option<HashMap<String, String>>, Vec<u8>)> {
     let path = req.path()?;
     let method = req.method()?;
-    match path.as_str() {
+
+    let mut bound_path: &str = if path.ends_with("auto-update") {
+        "/apps/:id/auto-update"
+    } else if path.ends_with("mirror") {
+        "/apps/:id/mirror"
+    } else if path.ends_with("caps") {
+        "/apps/:id/caps"
+    } else if path.contains("/apps/listing/") {
+        "/apps/listed/:id"
+    } else if &path == "/apps/listed" || &path == "/apps" {
+        &path
+    } else {
+        "/apps/:id"
+    };
+
+    match bound_path {
         // GET all downloaded apps
         "/apps" => {
             if method != Method::GET {
@@ -89,9 +114,7 @@ fn serve_paths(
         // update a downloaded app: PUT
         // uninstall/delete a downloaded app: DELETE
         "/apps/:id" => {
-            let Ok(package_id) = path.split("/").last().unwrap_or_default().parse::<PackageId>() else {
-                return Err(anyhow::anyhow!("No app ID"));
-            };
+            let package_id = get_package_id(path.split("/").last().unwrap_or_default())?;
             match method {
                 Method::GET => Ok(match state.get_package_info(&package_id) {
                     Some(pkg) => (StatusCode::OK, None, serde_json::to_vec(&pkg)?),
@@ -135,9 +158,7 @@ fn serve_paths(
         // GET detail about a specific listed app
         // download a listed app: POST
         "/apps/listed/:id" => {
-            let Ok(package_id) = path.split("/").last().unwrap_or_default().parse::<PackageId>() else {
-                return Err(anyhow::anyhow!("No app ID"));
-            };
+            let package_id = get_package_id(path.split("/").last().unwrap_or_default())?;
             match method {
                 Method::GET => Ok(match state.get_package_info(&package_id) {
                     Some(pkg) => (StatusCode::OK, None, serde_json::to_vec(&pkg)?),
@@ -166,9 +187,7 @@ fn serve_paths(
         // GET caps for a specific downloaded app
         // approve capabilities for a downloaded app: POST
         "/apps/:id/caps" => {
-            let Ok(package_id) = path.split("/").nth(1).unwrap_or_default().parse::<PackageId>() else {
-                return Err(anyhow::anyhow!("No app ID"));
-            };
+            let package_id = get_package_id(path.split("/").nth(1).unwrap_or_default())?;
             match method {
                 // return the capabilities for that app
                 Method::GET => Ok(match crate::fetch_package_manifest(&package_id) {
@@ -202,9 +221,7 @@ fn serve_paths(
         // start mirroring a downloaded app: PUT
         // stop mirroring a downloaded app: DELETE
         "/apps/:id/mirror" => {
-            let Ok(package_id) = path.split("/").nth(1).unwrap_or_default().parse::<PackageId>() else {
-                return Err(anyhow::anyhow!("No app ID"));
-            };
+            let package_id = get_package_id(path.split("/").nth(1).unwrap_or_default())?;
             match method {
                 // start mirroring an app
                 Method::PUT => {
@@ -226,9 +243,7 @@ fn serve_paths(
         // start auto-updating a downloaded app: PUT
         // stop auto-updating a downloaded app: DELETE
         "/apps/:id/auto-update" => {
-            let Ok(package_id) = path.split("/").nth(1).unwrap_or_default().parse::<PackageId>() else {
-                return Err(anyhow::anyhow!("No app ID"));
-            };
+            let package_id = get_package_id(path.split("/").nth(1).unwrap_or_default())?;
             match method {
                 // start auto-updating an app
                 Method::PUT => {

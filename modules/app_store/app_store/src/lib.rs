@@ -83,7 +83,12 @@ fn init(our: Address) {
     ] {
         bind_http_path(path, true, false).expect("failed to bind http path");
     }
-    // serve_ui(&our, "ui", true, false).expect("failed to serve static UI");
+    serve_ui(&our, "ui", true, false, vec![
+        "/",
+        "/my-apps",
+        "/app-details/:id",
+        "/publish",
+    ]).expect("failed to serve static UI");
 
     // load in our saved state or initalize a new one if none exists
     let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))

@@ -83,7 +83,6 @@ pub struct PackageInfo {
 
 pub fn gen_package_info(
     id: &PackageId,
-    metadata_hash: Option<String>,
     listing: Option<&PackageListing>,
     state: Option<&PackageState>,
 ) -> PackageInfo {
@@ -97,6 +96,10 @@ pub fn gen_package_info(
             Some(state) => state.metadata.clone(),
             None => None,
         },
+    };
+    let metadata_hash = match listing {
+        Some(listing) => Some(listing.metadata_hash.clone()),
+        None => None,
     };
 
     let state = state.cloned().map(|state| {
@@ -199,7 +202,6 @@ impl State {
 
         Some(gen_package_info(
             package_id,
-            Some(hash.to_string()),
             listing,
             state,
         ))
@@ -214,7 +216,7 @@ impl State {
                     Some(hash) => self.listed_packages.get(hash),
                     None => None,
                 };
-                gen_package_info(package_id, hash.cloned(), listing, Some(state))
+                gen_package_info(package_id, listing, Some(state))
             })
             .collect()
     }
@@ -222,10 +224,10 @@ impl State {
     pub fn get_listed_packages_info(&self) -> Vec<PackageInfo> {
         self.listed_packages
             .iter()
-            .map(|(hash, listing)| {
+            .map(|(_hash, listing)| {
                 let package_id = PackageId::new(&listing.name, &listing.publisher);
                 let state = self.downloaded_packages.get(&package_id);
-                gen_package_info(&package_id, Some(hash.to_string()), Some(listing), state)
+                gen_package_info(&package_id, Some(listing), state)
             })
             .collect()
     }
@@ -604,7 +606,7 @@ fn fetch_metadata(
         return Err(anyhow::anyhow!("no blob"));
     };
     let hash = generate_metadata_hash(&body.bytes);
-    if &hash == metadata_hash {
+    if &hash == &metadata_hash.replace("0x", "") {
         Ok(serde_json::from_slice::<OnchainPackageMetadata>(
             &body.bytes,
         )?)
