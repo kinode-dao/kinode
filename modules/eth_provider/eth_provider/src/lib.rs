@@ -28,9 +28,9 @@ struct RpcPath {
 struct State {
     conn: WsConnection,
     subscription_inits: HashSet<u64>,
-    subscriptions_to_process_id: HashMap<String, u64>,
+    subscriptions_to_rpc_id: HashMap<String, u64>,
     id_to_process_addr: HashMap<u64, Address>,
-    id_to_process_id: HashMap<u64, u64>,
+    id_to_handler_ids: HashMap<u64, u64>,
     current_id: u64,
 }
 
@@ -89,8 +89,8 @@ fn init(our: Address) {
                 conn: WsConnection::new(our.clone(), channel),
                 current_id: 0,
                 id_to_process_addr: HashMap::new(),
-                id_to_process_id: HashMap::new(),
-                subscriptions_to_process_id: HashMap::new(),
+                id_to_handler_ids: HashMap::new(),
+                subscriptions_to_rpc_id: HashMap::new(),
                 subscription_inits: HashSet::new(),
             },
             _ => {
@@ -142,18 +142,21 @@ fn handle_http_request(body: Vec<u8>, state: &mut State) -> anyhow::Result<()> {
                     &id.as_u64()
                         .ok_or_else(|| anyhow::anyhow!("Failed to get id as u64"))?,
                 ) {
+
                     let subscription = response
                         .get("result")
                         .and_then(|r| r.as_str())
                         .ok_or_else(|| anyhow::anyhow!("Failed to get result as string"))?
                         .to_string();
 
-                    state.subscriptions_to_process_id.insert(
+                    state.subscriptions_to_rpc_id.insert(
                         subscription,
                         id.as_u64()
                             .ok_or_else(|| anyhow::anyhow!("Failed to get id as u64"))?,
                     );
+                    
                 } else {
+
                     let process_addr = state
                         .id_to_process_addr
                         .get(
@@ -161,8 +164,8 @@ fn handle_http_request(body: Vec<u8>, state: &mut State) -> anyhow::Result<()> {
                                 .ok_or_else(|| anyhow::anyhow!("Failed to get id as u64"))?,
                         )
                         .ok_or_else(|| anyhow::anyhow!("Failed to get process address"))?;
-                    let closure_id = state
-                        .id_to_process_id
+                    let handler_id = state
+                        .id_to_handler_ids
                         .get(
                             &id.as_u64()
                                 .ok_or_else(|| anyhow::anyhow!("Failed to get id as u64"))?,
@@ -178,10 +181,11 @@ fn handle_http_request(body: Vec<u8>, state: &mut State) -> anyhow::Result<()> {
                         .body(serde_json::to_vec(&RpcResponse {
                             result: result.clone(),
                         })?)
-                        .metadata(&closure_id.to_string())
+                        .metadata(&handler_id.to_string())
                         .send()?;
                 }
             } else {
+
                 let result = response
                     .get("params")
                     .and_then(|p| p.get("result"))
@@ -194,22 +198,27 @@ fn handle_http_request(body: Vec<u8>, state: &mut State) -> anyhow::Result<()> {
                     .ok_or_else(|| anyhow::anyhow!("Failed to get subscription as string"))?
                     .to_string();
 
-                let process_id = state
-                    .subscriptions_to_process_id
+                let rpc_id = state
+                    .subscriptions_to_rpc_id
                     .get(&subscription)
                     .ok_or_else(|| anyhow::anyhow!("Failed to get process id"))?;
 
                 let process_addr = state
                     .id_to_process_addr
-                    .get(process_id)
+                    .get(rpc_id)
                     .ok_or_else(|| anyhow::anyhow!("Failed to get process address"))?;
+
+                let handler_id = state
+                    .id_to_handler_ids
+                    .get(rpc_id)
+                    .ok_or_else(|| anyhow::anyhow!("Failed to get closure id"))?;
 
                 Request::new()
                     .target(process_addr.clone())
                     .body(serde_json::to_vec(&RpcResponse {
                         result: result.clone(),
                     })?)
-                    .metadata(&process_id.to_string())
+                    .metadata(&handler_id.to_string())
                     .send()?;
             }
         }
@@ -232,6 +241,7 @@ fn handle_request(
         state
             .id_to_process_addr
             .insert(current_id.clone(), source.clone());
+
         let parsed_metadata = metadata
             .clone()
             .ok_or_else(|| anyhow::anyhow!("metadata is missing"))?
@@ -240,7 +250,7 @@ fn handle_request(
                 anyhow::anyhow!("failed to parse metadata: {}", metadata.unwrap_or_default())
             })?;
         state
-            .id_to_process_id
+            .id_to_handler_ids
             .insert(current_id.clone(), parsed_metadata);
 
         if req.method == "eth_subscribe" {
