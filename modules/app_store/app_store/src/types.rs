@@ -200,11 +200,7 @@ impl State {
 
         let state = self.downloaded_packages.get(package_id);
 
-        Some(gen_package_info(
-            package_id,
-            listing,
-            state,
-        ))
+        Some(gen_package_info(package_id, listing, state))
     }
 
     pub fn get_downloaded_packages_info(&self) -> Vec<PackageInfo> {
@@ -466,6 +462,7 @@ impl State {
                 let package_hash = log.topics[1];
                 let (package_name, publisher_dnswire, metadata_url, metadata_hash) =
                     AppRegistered::abi_decode_data(&log.data, true)?;
+                let package_hash = package_hash.to_string();
                 let metadata_hash = metadata_hash.to_string();
 
                 crate::print_to_terminal(
@@ -477,7 +474,7 @@ impl State {
                 );
 
                 if generate_package_hash(&package_name, publisher_dnswire.as_slice())
-                    != package_hash.to_string()
+                    != package_hash
                 {
                     return Err(anyhow::anyhow!(
                         "app store: got log with mismatched package hash"
@@ -490,18 +487,26 @@ impl State {
                     ));
                 };
 
-                // TODO hash name to get namehash and verify it matches
-
                 let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
 
-                let listing = PackageListing {
-                    owner: log.address.to_string(),
-                    name: package_name,
-                    publisher: publisher_name,
-                    metadata_hash,
-                    metadata,
-                };
-                self.insert_listing(package_hash.to_string(), listing);
+                match self.get_listing_with_hash_mut(&package_hash) {
+                    Some(current_listing) => {
+                        current_listing.name = package_name;
+                        current_listing.publisher = publisher_name;
+                        current_listing.metadata_hash = metadata_hash;
+                        current_listing.metadata = metadata;
+                    }
+                    None => {
+                        let listing = PackageListing {
+                            owner: "".to_string(),
+                            name: package_name,
+                            publisher: publisher_name,
+                            metadata_hash,
+                            metadata,
+                        };
+                        self.insert_listing(package_hash, listing);
+                    }
+                }
             }
             AppMetadataUpdated::SIGNATURE_HASH => {
                 let package_hash = log.topics[1].to_string();
@@ -542,7 +547,22 @@ impl State {
                 );
 
                 if from == alloy_primitives::Address::ZERO {
-                    crate::print_to_terminal(1, "ignoring transfer from 0 address");
+                    crate::print_to_terminal(1, "transfer from 0 address: new app listed");
+                    match self.get_listing_with_hash_mut(&package_hash) {
+                        Some(current_listing) => {
+                            current_listing.owner = to.to_string();
+                        }
+                        None => {
+                            let listing = PackageListing {
+                                owner: to.to_string(),
+                                name: "".to_string(),
+                                publisher: "".to_string(),
+                                metadata_hash: "".to_string(),
+                                metadata: None,
+                            };
+                            self.insert_listing(package_hash, listing);
+                        }
+                    }
                 } else if to == alloy_primitives::Address::ZERO {
                     crate::print_to_terminal(1, "transfer to 0 address: deleting listing");
                     self.delete_listing(&package_hash);
