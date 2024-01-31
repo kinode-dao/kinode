@@ -12,9 +12,9 @@ lto = true
 
 [dependencies]
 anyhow = "1.0"
-alloy-primitives = "0.5.1"
-alloy-rpc-types = { git = "https://github.com/alloy-rs/alloy.git", rev = "3b1c310" }
-alloy-sol-types = "0.5.1"
+alloy-primitives = "0.6"
+alloy-rpc-types = { git = "https://github.com/alloy-rs/alloy.git", rev = "51a8253" }
+alloy-sol-types = "0.6"
 bincode = "1.3.3"
 hex = "0.4.3"
 rmp-serde = "1.1.2"
