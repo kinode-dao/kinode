@@ -90,7 +90,7 @@ impl Guest for Component {
         };
 
         let mut provider = Provider::<State> {
-            closures: HashMap::new(),
+            handlers: HashMap::new(),
             count: 0,
         };
 
