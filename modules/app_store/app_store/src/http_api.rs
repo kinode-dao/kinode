@@ -62,19 +62,21 @@ fn serve_paths(
     let path = req.path()?;
     let method = req.method()?;
 
-    let mut bound_path: &str = if path.ends_with("auto-update") {
+    let bound_path: &str = if path.ends_with("auto-update") {
         "/apps/:id/auto-update"
     } else if path.ends_with("mirror") {
         "/apps/:id/mirror"
     } else if path.ends_with("caps") {
         "/apps/:id/caps"
-    } else if path.contains("/apps/listing/") {
+    } else if path.starts_with("/apps/listed/") {
         "/apps/listed/:id"
     } else if &path == "/apps/listed" || &path == "/apps" {
         &path
     } else {
         "/apps/:id"
     };
+
+    // print_to_terminal(0, &format!("HTTP {method} {path} {bound_path}", method = method, path = path, bound_path = bound_path));
 
     match bound_path {
         // GET all downloaded apps
@@ -127,7 +129,7 @@ fn serve_paths(
                 Method::POST => {
                     // install an app
                     Ok((
-                        StatusCode::NO_CONTENT,
+                        StatusCode::CREATED,
                         None,
                         format!("Installed").into_bytes(),
                     ))
@@ -172,7 +174,7 @@ fn serve_paths(
                     // download an app
                     // TODO
                     Ok((
-                        StatusCode::NO_CONTENT,
+                        StatusCode::CREATED,
                         None,
                         format!("Downloaded").into_bytes(),
                     ))

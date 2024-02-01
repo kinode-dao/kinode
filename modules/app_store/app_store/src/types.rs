@@ -44,7 +44,7 @@ pub enum IndexerRequests {
 pub type PackageHash = String;
 
 /// listing information derived from metadata hash in listing event
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PackageListing {
     pub owner: String, // eth address
     pub name: String,
@@ -489,24 +489,25 @@ impl State {
 
                 let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
 
-                match self.get_listing_with_hash_mut(&package_hash) {
+                let listing = match self.get_listing_with_hash_mut(&package_hash) {
                     Some(current_listing) => {
                         current_listing.name = package_name;
                         current_listing.publisher = publisher_name;
                         current_listing.metadata_hash = metadata_hash;
                         current_listing.metadata = metadata;
+                        current_listing.clone()
                     }
                     None => {
-                        let listing = PackageListing {
+                        PackageListing {
                             owner: "".to_string(),
                             name: package_name,
                             publisher: publisher_name,
                             metadata_hash,
                             metadata,
-                        };
-                        self.insert_listing(package_hash, listing);
+                        }
                     }
-                }
+                };
+                self.insert_listing(package_hash, listing);
             }
             AppMetadataUpdated::SIGNATURE_HASH => {
                 let package_hash = log.topics[1].to_string();

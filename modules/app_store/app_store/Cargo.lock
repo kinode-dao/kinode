@@ -1065,8 +1065,8 @@ dependencies = [
 
 [[package]]
 name = "kinode_process_lib"
-version = "0.5.6"
-source = "git+https://github.com/uqbar-dao/process_lib?tag=v0.5.6-alpha#3bf55edc4c530ba1caf86c3131583287822b379c"
+version = "0.5.7"
+source = "git+https://github.com/uqbar-dao/process_lib?rev=ea5e303#ea5e3030369065c4b1d25dd0ba01e6d966ec7883"
 dependencies = [
  "alloy-rpc-types",
  "anyhow",
