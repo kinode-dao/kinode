@@ -65,25 +65,13 @@ async fn send_push(
     maybe_ext: Option<MessageType>,
 ) -> bool {
     let Some(mut blob) = lazy_load_blob else {
-        send_action_response(
-            id,
-            source,
-            send_to_loop,
-            Err(HttpServerError::NoBlob),
-        )
-        .await;
+        send_action_response(id, source, send_to_loop, Err(HttpServerError::NoBlob)).await;
         return true;
     };
     if maybe_ext.is_some() {
         let WsMessageType::Binary = message_type else {
             // TODO
-            send_action_response(
-                id,
-                source,
-                send_to_loop,
-                Err(HttpServerError::NoBlob),
-            )
-            .await;
+            send_action_response(id, source, send_to_loop, Err(HttpServerError::NoBlob)).await;
             return true;
         };
         let action = HttpServerAction::WebSocketExtPushData {
@@ -94,9 +82,9 @@ async fn send_push(
         blob.bytes = rmp_serde::to_vec(&action).unwrap();
     }
     let ws_message = match message_type {
-        WsMessageType::Text => warp::ws::Message::text(
-            String::from_utf8_lossy(&blob.bytes).to_string(),
-        ),
+        WsMessageType::Text => {
+            warp::ws::Message::text(String::from_utf8_lossy(&blob.bytes).to_string())
+        }
         WsMessageType::Binary => warp::ws::Message::binary(blob.bytes),
         WsMessageType::Ping | WsMessageType::Pong => {
             if blob.bytes.len() > 125 {
@@ -105,8 +93,7 @@ async fn send_push(
                     source,
                     send_to_loop,
                     Err(HttpServerError::WebSocketPushError {
-                        error: "Ping and Pong messages must be 125 bytes or less"
-                            .to_string(),
+                        error: "Ping and Pong messages must be 125 bytes or less".to_string(),
                     }),
                 )
                 .await;
@@ -132,8 +119,7 @@ async fn send_push(
                 source,
                 send_to_loop,
                 Err(HttpServerError::WebSocketPushError {
-                    error: "WebSocket channel not owned by this process"
-                        .to_string(),
+                    error: "WebSocket channel not owned by this process".to_string(),
                 }),
             )
             .await;
@@ -826,7 +812,11 @@ fn make_ext_websocket_message(
                 bytes: msg,
             }),
         )),
-        Ok(HttpServerAction::WebSocketExtPushData { id, kinode_message_type, blob }) => Some((
+        Ok(HttpServerAction::WebSocketExtPushData {
+            id,
+            kinode_message_type,
+            blob,
+        }) => Some((
             id,
             match kinode_message_type {
                 MessageType::Request => Message::Request(Request {
@@ -862,7 +852,7 @@ fn make_ext_websocket_message(
         Ok(m) => {
             println!("http server: got unexpected message from ext websocket: {m:?}\r");
             None
-        },
+        }
     };
     let Some((id, message, blob)) = option else {
         return None;
@@ -1285,7 +1275,8 @@ async fn handle_app_message(
                         channel_id,
                         message_type,
                         None,
-                    ).await;
+                    )
+                    .await;
                     if is_return {
                         return;
                     }
@@ -1304,7 +1295,8 @@ async fn handle_app_message(
                         channel_id,
                         message_type,
                         Some(desired_reply_type),
-                    ).await;
+                    )
+                    .await;
                     return;
                 }
                 HttpServerAction::WebSocketExtPushData { .. } => {
