@@ -1,14 +1,13 @@
 use crate::eth::types::*;
 use crate::types::*;
+use alloy_primitives::U256;
+use alloy_rpc_client::ClientBuilder;
+use alloy_rpc_types::pubsub::SubscriptionResult;
+use alloy_transport_ws::WsConnect;
 use anyhow::Result;
-use ethers::prelude::Provider;
-use ethers::types::Filter;
-use ethers_providers::{Middleware, StreamExt, Ws};
 use std::collections::HashMap;
 use std::sync::Arc;
 use url::Url;
-
-const WS_RECONNECTS: usize = 10_000; // TODO workshop this
 
 /// The ETH provider runtime process is responsible for connecting to one or more ETH RPC providers
 /// and using them to service indexing requests from other apps. This could also be done by a wasm
@@ -24,6 +23,7 @@ pub async fn provider(
     let our = Arc::new(our);
     // for now, we can only handle WebSocket RPC URLs. In the future, we should
     // be able to handle HTTP too, at least.
+    // todo add http reqwest..
     match Url::parse(&rpc_url)?.scheme() {
         "http" | "https" => {
             return Err(anyhow::anyhow!(
@@ -38,15 +38,18 @@ pub async fn provider(
         }
     }
 
-    let provider = match Provider::<Ws>::connect_with_reconnects(&rpc_url, WS_RECONNECTS).await {
-        Ok(provider) => provider,
-        Err(e) => {
-            return Err(anyhow::anyhow!(
-                "eth: fatal: given RPC URL could not connect! {e:?}"
-            ));
-        }
+    let connector = WsConnect {
+        url: rpc_url.clone(),
+        auth: None,
     };
 
+    // http option here, although doesn't implement .get_watcher()... investigating
+    // let client = ClientBuilder::default().reqwest_http(Url::from_str(&rpc_url)?);
+
+    let client = ClientBuilder::default().pubsub(connector).await?;
+
+    let provider = alloy_providers::provider::Provider::new_with_client(client);
+    let x = provider.inner();
     let mut connections = RpcConnections {
         provider,
         ws_provider_subscriptions: HashMap::new(),
@@ -123,10 +126,18 @@ async fn handle_request(
             // if this process has already used this subscription ID,
             // this subscription will **overwrite** the existing one.
 
+            let id = connections
+                .provider
+                .inner()
+                .prepare::<_, U256>("eth_subscribe", filter)
+                .await
+                .unwrap();
+
+            let rx = connections.provider.inner().get_watcher(id).await;
+
             let handle = tokio::spawn(handle_subscription_stream(
                 our.clone(),
-                connections.provider.clone(),
-                filter,
+                rx,
                 target.clone(),
                 send_to_loop.clone(),
             ));
@@ -151,19 +162,13 @@ async fn handle_request(
 /// for a specific subscription made by a process.
 async fn handle_subscription_stream(
     our: Arc<String>,
-    provider: Provider<Ws>,
-    filter: Filter,
+    mut rx: tokio::sync::broadcast::Receiver<Box<serde_json::value::RawValue>>,
     target: Address,
     send_to_loop: MessageSender,
 ) -> Result<(), EthError> {
-    let mut stream = match provider.subscribe_logs(&filter).await {
-        Ok(s) => s,
-        Err(e) => {
-            return Err(EthError::ProviderError(e.to_string()));
-        }
-    };
-
-    while let Some(event) = stream.next().await {
+    while let Ok(value) = rx.recv().await {
+        println!("got some sub!! {:?}", value);
+        let event: SubscriptionResult = serde_json::from_value(value.get().into()).unwrap();
         send_to_loop
             .send(KernelMessage {
                 id: rand::random(),
@@ -176,7 +181,7 @@ async fn handle_subscription_stream(
                 message: Message::Request(Request {
                     inherit: false,
                     expects_response: None,
-                    body: serde_json::to_vec(&EthSubEvent::Log(event)).unwrap(),
+                    body: serde_json::to_vec(&event).unwrap(),
                     metadata: None,
                     capabilities: vec![],
                 }),

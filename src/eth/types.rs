@@ -1,7 +1,13 @@
 use crate::types::ProcessId;
-use ethers::prelude::Provider;
-use ethers::types::{Filter, Log};
-use ethers_providers::Ws;
+use alloy_primitives::{Address, ChainId, U256};
+use alloy_providers::provider::Provider;
+use alloy_pubsub::{PubSubConnect, PubSubFrontend};
+use alloy_rpc_client::ClientBuilder;
+use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
+use alloy_rpc_types::{Filter, Log};
+use alloy_transport::BoxTransport;
+use alloy_transport::Transport;
+use alloy_transport_ws::WsConnect;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::task::JoinHandle;
@@ -46,6 +52,7 @@ pub enum EthSubEvent {
 
 /// Primary state object of the `eth` module
 pub struct RpcConnections {
-    pub provider: Provider<Ws>,
+    // todo generics when they work properly: pub struct RpcConnections<T>
+    pub provider: Provider<PubSubFrontend>,
     pub ws_provider_subscriptions: HashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>,
 }

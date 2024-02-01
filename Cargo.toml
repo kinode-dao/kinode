@@ -19,6 +19,18 @@ simulation-mode = []
 
 [dependencies]
 aes-gcm = "0.10.2"
+alloy-rpc-types = { git = "https://github.com/alloy-rs/alloy" }
+alloy-primitives = { git = "https://github.com/alloy-rs/core.git" }
+alloy-providers = { git = "https://github.com/alloy-rs/alloy.git" }
+alloy-network = { git = "https://github.com/alloy-rs/alloy.git" }
+alloy-rpc-client = { git = "https://github.com/alloy-rs/alloy.git", features = [
+    "pubsub",
+    "ws",
+] }
+alloy-pubsub = { git = "https://github.com/alloy-rs/alloy.git" }
+alloy-transport = { git = "https://github.com/alloy-rs/alloy.git" }
+alloy-transport-ws = { git = "https://github.com/alloy-rs/alloy.git" }
+alloy-transport-http = { git = "https://github.com/alloy-rs/alloy.git" }
 anyhow = "1.0.71"
 async-trait = "0.1.71"
 base64 = "0.13"
@@ -33,8 +45,8 @@ crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"]
 dashmap = "5.5.3"
 digest = "0.10"
 elliptic-curve = { version = "0.13.8", features = ["ecdh"] }
-ethers = "2.0"
-ethers-providers = "2.0.9"
+ethers = "2.0.13"
+ethers-providers = "2.0.13"
 flate2 = "1.0"
 futures = "0.3"
 generic-array = "0.14"
