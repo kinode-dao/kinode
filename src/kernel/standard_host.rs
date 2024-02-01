@@ -435,30 +435,6 @@ impl StandardHost for process::ProcessWasi {
         Ok(t::en_wit_blob(self.process.last_blob.clone()))
     }
 
-    async fn mutate_blob_for_ext_ws(&mut self, message_type: wit::MessageType) -> Result<()> {
-        let id = self
-            .process
-            .prompting_message
-            .as_ref()
-            .map(|pm| pm.id.clone())
-            .unwrap_or_else(|| rand::random());
-        let message_type = match message_type {
-            wit::MessageType::Request => t::MessageType::Request,
-            wit::MessageType::Response => t::MessageType::Response,
-        };
-        if let Some(blob) = self.process.last_blob.as_ref() {
-            self.process.last_blob = Some(t::LazyLoadBlob {
-                mime: blob.mime.clone(),
-                bytes: rmp_serde::to_vec(&t::KinodeExtWSMessage {
-                    id,
-                    message_type,
-                    blob: blob.bytes.clone(),
-                })?,
-            });
-        }
-        Ok(())
-    }
-
     async fn send_request(
         &mut self,
         target: wit::Address,

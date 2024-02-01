@@ -54,6 +54,121 @@ struct BoundWsPath {
     pub extension: bool,
 }
 
+async fn send_push(
+    id: u64,
+    lazy_load_blob: Option<LazyLoadBlob>,
+    source: Address,
+    send_to_loop: &MessageSender,
+    ws_senders: WebSocketSenders,
+    channel_id: u32,
+    message_type: WsMessageType,
+    maybe_ext: Option<MessageType>,
+) -> bool {
+    let Some(mut blob) = lazy_load_blob else {
+        send_action_response(
+            id,
+            source,
+            send_to_loop,
+            Err(HttpServerError::NoBlob),
+        )
+        .await;
+        return true;
+    };
+    if maybe_ext.is_some() {
+        let WsMessageType::Binary = message_type else {
+            // TODO
+            send_action_response(
+                id,
+                source,
+                send_to_loop,
+                Err(HttpServerError::NoBlob),
+            )
+            .await;
+            return true;
+        };
+        let action = HttpServerAction::WebSocketExtPushData {
+            id,
+            kinode_message_type: maybe_ext.unwrap(),
+            blob: blob.bytes,
+        };
+        blob.bytes = rmp_serde::to_vec(&action).unwrap();
+    }
+    let ws_message = match message_type {
+        WsMessageType::Text => warp::ws::Message::text(
+            String::from_utf8_lossy(&blob.bytes).to_string(),
+        ),
+        WsMessageType::Binary => warp::ws::Message::binary(blob.bytes),
+        WsMessageType::Ping | WsMessageType::Pong => {
+            if blob.bytes.len() > 125 {
+                send_action_response(
+                    id,
+                    source,
+                    send_to_loop,
+                    Err(HttpServerError::WebSocketPushError {
+                        error: "Ping and Pong messages must be 125 bytes or less"
+                            .to_string(),
+                    }),
+                )
+                .await;
+                return true;
+            }
+            if message_type == WsMessageType::Ping {
+                warp::ws::Message::ping(blob.bytes)
+            } else {
+                warp::ws::Message::pong(blob.bytes)
+            }
+        }
+        WsMessageType::Close => {
+            unreachable!();
+        }
+    };
+    // Send to the websocket if registered
+    if let Some(got) = ws_senders.get(&channel_id) {
+        let owner_process = &got.value().0;
+        let sender = &got.value().1;
+        if owner_process != &source.process {
+            send_action_response(
+                id,
+                source,
+                send_to_loop,
+                Err(HttpServerError::WebSocketPushError {
+                    error: "WebSocket channel not owned by this process"
+                        .to_string(),
+                }),
+            )
+            .await;
+            return true;
+        }
+        match sender.send(ws_message).await {
+            Ok(_) => {}
+            Err(_) => {
+                send_action_response(
+                    id,
+                    source.clone(),
+                    send_to_loop,
+                    Err(HttpServerError::WebSocketPushError {
+                        error: "WebSocket channel closed".to_string(),
+                    }),
+                )
+                .await;
+                return true;
+            }
+        }
+    } else {
+        send_action_response(
+            id,
+            source.clone(),
+            send_to_loop,
+            Err(HttpServerError::WebSocketPushError {
+                error: "WebSocket channel not found".to_string(),
+            }),
+        )
+        .await;
+        return true;
+    }
+    false
+}
+
 /// HTTP server: a runtime module that handles HTTP requests at a given port.
 /// The server accepts bindings-requests from apps. These can be used in two ways:
 ///
@@ -655,8 +770,8 @@ fn make_websocket_message(
     channel_id: u32,
     ws_msg_type: WsMessageType,
     msg: Vec<u8>,
-) -> KernelMessage {
-    KernelMessage {
+) -> Option<KernelMessage> {
+    Some(KernelMessage {
         id: rand::random(),
         source: Address {
             node: our.to_string(),
@@ -682,7 +797,7 @@ fn make_websocket_message(
             mime: None,
             bytes: msg,
         }),
-    }
+    })
 }
 
 fn make_ext_websocket_message(
@@ -691,9 +806,9 @@ fn make_ext_websocket_message(
     channel_id: u32,
     ws_msg_type: WsMessageType,
     msg: Vec<u8>,
-) -> KernelMessage {
-    let (id, message, blob) = match rmp_serde::from_slice::<KinodeExtWSMessage>(&msg) {
-        Err(_) => (
+) -> Option<KernelMessage> {
+    let option = match rmp_serde::from_slice::<HttpServerAction>(&msg) {
+        Err(_) => Some((
             rand::random(),
             Message::Request(Request {
                 inherit: false,
@@ -710,10 +825,10 @@ fn make_ext_websocket_message(
                 mime: None,
                 bytes: msg,
             }),
-        ),
-        Ok(m) => (
-            m.id,
-            match m.message_type {
+        )),
+        Ok(HttpServerAction::WebSocketExtPushData { id, kinode_message_type, blob }) => Some((
+            id,
+            match kinode_message_type {
                 MessageType::Request => Message::Request(Request {
                     inherit: false,
                     expects_response: None,
@@ -741,12 +856,19 @@ fn make_ext_websocket_message(
             },
             Some(LazyLoadBlob {
                 mime: None,
-                bytes: m.blob,
+                bytes: blob,
             }),
-        ),
+        )),
+        Ok(m) => {
+            println!("http server: got unexpected message from ext websocket: {m:?}\r");
+            None
+        },
+    };
+    let Some((id, message, blob)) = option else {
+        return None;
     };
 
-    KernelMessage {
+    Some(KernelMessage {
         id,
         source: Address {
             node: our.to_string(),
@@ -759,7 +881,7 @@ fn make_ext_websocket_message(
         rsvp: None,
         message,
         lazy_load_blob: blob,
-    }
+    })
 }
 
 async fn maintain_websocket(
@@ -834,13 +956,15 @@ async fn maintain_websocket(
                             WsMessageType::Close
                         };
 
-                        let _ = send_to_loop.send(make_ws_message(
+                        if let Some(message) = make_ws_message(
                             our.to_string(),
                             app.clone(),
                             channel_id,
                             ws_msg_type,
                             msg.into_bytes(),
-                        )).await;
+                        ) {
+                            let _ = send_to_loop.send(message).await;
+                        }
                     }
                     _ => {
                         websocket_close(channel_id, app.clone(), &ws_senders, &send_to_loop).await;
@@ -1152,87 +1276,49 @@ async fn handle_app_message(
                     channel_id,
                     message_type,
                 } => {
-                    let Some(blob) = km.lazy_load_blob else {
-                        send_action_response(
-                            km.id,
-                            km.source,
-                            &send_to_loop,
-                            Err(HttpServerError::NoBlob),
-                        )
-                        .await;
+                    let is_return = send_push(
+                        km.id,
+                        km.lazy_load_blob,
+                        km.source.clone(),
+                        &send_to_loop,
+                        ws_senders,
+                        channel_id,
+                        message_type,
+                        None,
+                    ).await;
+                    if is_return {
                         return;
-                    };
-                    let ws_message = match message_type {
-                        WsMessageType::Text => warp::ws::Message::text(
-                            String::from_utf8_lossy(&blob.bytes).to_string(),
-                        ),
-                        WsMessageType::Binary => warp::ws::Message::binary(blob.bytes),
-                        WsMessageType::Ping | WsMessageType::Pong => {
-                            if blob.bytes.len() > 125 {
-                                send_action_response(
-                                    km.id,
-                                    km.source,
-                                    &send_to_loop,
-                                    Err(HttpServerError::WebSocketPushError {
-                                        error: "Ping and Pong messages must be 125 bytes or less"
-                                            .to_string(),
-                                    }),
-                                )
-                                .await;
-                                return;
-                            }
-                            if message_type == WsMessageType::Ping {
-                                warp::ws::Message::ping(blob.bytes)
-                            } else {
-                                warp::ws::Message::pong(blob.bytes)
-                            }
-                        }
-                        WsMessageType::Close => {
-                            unreachable!();
-                        }
-                    };
-                    // Send to the websocket if registered
-                    if let Some(got) = ws_senders.get(&channel_id) {
-                        let owner_process = &got.value().0;
-                        let sender = &got.value().1;
-                        if owner_process != &km.source.process {
-                            send_action_response(
-                                km.id,
-                                km.source,
-                                &send_to_loop,
-                                Err(HttpServerError::WebSocketPushError {
-                                    error: "WebSocket channel not owned by this process"
-                                        .to_string(),
-                                }),
-                            )
-                            .await;
-                            return;
-                        }
-                        match sender.send(ws_message).await {
-                            Ok(_) => {}
-                            Err(_) => {
-                                send_action_response(
-                                    km.id,
-                                    km.source.clone(),
-                                    &send_to_loop,
-                                    Err(HttpServerError::WebSocketPushError {
-                                        error: "WebSocket channel closed".to_string(),
-                                    }),
-                                )
-                                .await;
-                            }
-                        }
-                    } else {
-                        send_action_response(
-                            km.id,
-                            km.source.clone(),
-                            &send_to_loop,
-                            Err(HttpServerError::WebSocketPushError {
-                                error: "WebSocket channel not found".to_string(),
-                            }),
-                        )
-                        .await;
                     }
+                }
+                HttpServerAction::WebSocketExtPushOutgoing {
+                    channel_id,
+                    message_type,
+                    desired_reply_type,
+                } => {
+                    send_push(
+                        km.id,
+                        km.lazy_load_blob,
+                        km.source.clone(),
+                        &send_to_loop,
+                        ws_senders,
+                        channel_id,
+                        message_type,
+                        Some(desired_reply_type),
+                    ).await;
+                    return;
+                }
+                HttpServerAction::WebSocketExtPushData { .. } => {
+                    send_action_response(
+                        km.id,
+                        km.source,
+                        &send_to_loop,
+                        Err(HttpServerError::WebSocketPushError {
+                            error: "Use WebSocketExtPushOutgoing, not WebSocketExtPushData"
+                                .to_string(),
+                        }),
+                    )
+                    .await;
+                    return;
                 }
                 HttpServerAction::WebSocketClose(channel_id) => {
                     if let Some(got) = ws_senders.get(&channel_id) {
