@@ -1,7 +1,10 @@
 use alloy_primitives::Address as EthAddress;
-use alloy_rpc_types::pubsub::SubscriptionResult;
-use alloy_rpc_types::{Filter, Log};
+use alloy_rpc_types::{
+    pubsub::{Params, SubscriptionKind, SubscriptionResult},
+    BlockNumberOrTag, Filter, Log,
+};
 use alloy_sol_types::{sol, SolEvent};
+
 use kinode_process_lib::{
     await_message, get_typed_state, print_to_terminal, println, set_state, Address, Message,
     Request, Response,
@@ -28,7 +31,11 @@ wit_bindgen::generate!({
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthAction {
     /// Subscribe to logs with a custom filter. ID is to be used to unsubscribe.
-    SubscribeLogs { sub_id: u64, filter: Filter },
+    SubscribeLogs {
+        sub_id: u64,
+        kind: SubscriptionKind,
+        params: Params,
+    },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
     UnsubscribeLogs(u64),
 }
@@ -173,9 +180,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    let mut filter = Filter::new()
+    let filter = Filter::new()
         .address(contract_address.unwrap().parse::<EthAddress>().unwrap())
         .from_block(0)
+        .to_block(BlockNumberOrTag::Latest)
         .events(vec![
             "NodeRegistered(bytes32,bytes)",
             "KeyUpdate(bytes32,bytes32)",
@@ -184,13 +192,15 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             "RoutingUpdate(bytes32,bytes32[])",
         ]);
 
-    filter = filter.from_block(0);
+    let params = Params::Logs(Box::new(filter));
+    let kind = SubscriptionKind::Logs;
 
     Request::new()
         .target((&our.node, "eth", "distro", "sys"))
         .body(serde_json::to_vec(&EthAction::SubscribeLogs {
             sub_id: 8,
-            filter,
+            kind,
+            params,
         })?)
         .send()?;
 

@@ -1,8 +1,10 @@
 use crate::eth::types::*;
 use crate::types::*;
-use alloy_primitives::U256;
+use alloy_primitives::{Bytes, U256};
+use alloy_providers::provider::TempProvider;
 use alloy_rpc_client::ClientBuilder;
-use alloy_rpc_types::pubsub::SubscriptionResult;
+use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
+use alloy_rpc_types::{BlockNumberOrTag, Filter};
 use alloy_transport_ws::WsConnect;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -43,13 +45,14 @@ pub async fn provider(
         auth: None,
     };
 
-    // http option here, although doesn't implement .get_watcher()... investigating
+    // note, reqwest::http is an option here, although doesn't implement .get_watcher()
+    // polling should be an option, investigating
     // let client = ClientBuilder::default().reqwest_http(Url::from_str(&rpc_url)?);
 
     let client = ClientBuilder::default().pubsub(connector).await?;
 
     let provider = alloy_providers::provider::Provider::new_with_client(client);
-    let x = provider.inner();
+
     let mut connections = RpcConnections {
         provider,
         ws_provider_subscriptions: HashMap::new(),
@@ -120,27 +123,31 @@ async fn handle_request(
     send_to_loop: &MessageSender,
 ) -> Result<(), EthError> {
     match action {
-        EthAction::SubscribeLogs { sub_id, filter } => {
+        EthAction::SubscribeLogs {
+            sub_id,
+            kind,
+            params,
+        } => {
             let sub_id = (target.process.clone(), sub_id);
 
-            // if this process has already used this subscription ID,
-            // this subscription will **overwrite** the existing one.
+            let kind = serde_json::to_value(&kind).unwrap();
+            let params = serde_json::to_value(&params).unwrap();
 
             let id = connections
                 .provider
                 .inner()
-                .prepare::<_, U256>("eth_subscribe", filter)
+                .prepare("eth_subscribe", [kind, params])
                 .await
                 .unwrap();
 
             let rx = connections.provider.inner().get_watcher(id).await;
-
             let handle = tokio::spawn(handle_subscription_stream(
                 our.clone(),
                 rx,
                 target.clone(),
                 send_to_loop.clone(),
             ));
+
             connections.ws_provider_subscriptions.insert(sub_id, handle);
             Ok(())
         }
@@ -166,29 +173,35 @@ async fn handle_subscription_stream(
     target: Address,
     send_to_loop: MessageSender,
 ) -> Result<(), EthError> {
-    while let Ok(value) = rx.recv().await {
-        println!("got some sub!! {:?}", value);
-        let event: SubscriptionResult = serde_json::from_value(value.get().into()).unwrap();
-        send_to_loop
-            .send(KernelMessage {
-                id: rand::random(),
-                source: Address {
-                    node: our.to_string(),
-                    process: ETH_PROCESS_ID.clone(),
-                },
-                target: target.clone(),
-                rsvp: None,
-                message: Message::Request(Request {
-                    inherit: false,
-                    expects_response: None,
-                    body: serde_json::to_vec(&event).unwrap(),
-                    metadata: None,
-                    capabilities: vec![],
-                }),
-                lazy_load_blob: None,
-            })
-            .await
-            .unwrap();
+    match rx.recv().await {
+        Err(e) => {
+            println!("got an error from the subscription stream: {:?}", e);
+            // TODO should we stop the subscription here?
+            // return Err(EthError::ProviderError(format!("{:?}", e)));
+        }
+        Ok(value) => {
+            let event: SubscriptionResult = serde_json::from_str(value.get()).unwrap();
+            send_to_loop
+                .send(KernelMessage {
+                    id: rand::random(),
+                    source: Address {
+                        node: our.to_string(),
+                        process: ETH_PROCESS_ID.clone(),
+                    },
+                    target: target.clone(),
+                    rsvp: None,
+                    message: Message::Request(Request {
+                        inherit: false,
+                        expects_response: None,
+                        body: serde_json::to_vec(&event).unwrap(),
+                        metadata: None,
+                        capabilities: vec![],
+                    }),
+                    lazy_load_blob: None,
+                })
+                .await
+                .unwrap();
+        }
     }
     Err(EthError::SubscriptionClosed)
 }
