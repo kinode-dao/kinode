@@ -431,12 +431,18 @@ async fn handle_kernel_request(
                     let _ = send_to_terminal
                         .send(t::Printout {
                             verbosity: 2,
-                            content: format!("kernel: no such process {:?} to kill", process_id),
+                            content: format!("kernel: no such process {process_id} to kill"),
                         })
                         .await;
                     return;
                 }
             };
+            let _ = send_to_terminal
+                .send(t::Printout {
+                    verbosity: 2,
+                    content: format!("killing process {process_id}"),
+                })
+                .await;
             process_handle.abort();
             process_map.remove(&process_id);
             let _ = persist_state(&our_name, &send_to_loop, process_map).await;

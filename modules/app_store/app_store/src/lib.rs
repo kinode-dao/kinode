@@ -83,12 +83,14 @@ fn init(our: Address) {
     ] {
         bind_http_path(path, true, false).expect("failed to bind http path");
     }
-    serve_ui(&our, "ui", true, false, vec![
-        "/",
-        "/my-apps",
-        "/app-details/:id",
-        "/publish",
-    ]).expect("failed to serve static UI");
+    serve_ui(
+        &our,
+        "ui",
+        true,
+        false,
+        vec!["/", "/my-apps", "/app-details/:id", "/publish"],
+    )
+    .expect("failed to serve static UI");
 
     // load in our saved state or initalize a new one if none exists
     let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))
@@ -185,7 +187,7 @@ fn handle_message(
                     return Err(anyhow::anyhow!("http_server from non-local node"));
                 }
                 if let HttpServerRequest::Http(req) = incoming {
-                    http_api::handle_http_request(&our, &mut state, &req)?;
+                    http_api::handle_http_request(&our, &mut state, requested_packages, &req)?;
                 }
             }
         },
@@ -285,38 +287,15 @@ fn handle_local_request(
             mirror,
             auto_update,
             desired_version_hash,
-        } => LocalResponse::DownloadResponse(
-            match Request::to((download_from.as_str(), our.process.clone()))
-                .inherit(true)
-                .body(
-                    serde_json::to_vec(&RemoteRequest::Download {
-                        package_id: package_id.clone(),
-                        desired_version_hash: desired_version_hash.clone(),
-                    })
-                    .unwrap(),
-                )
-                .send_and_await_response(5)
-            {
-                Ok(Ok(Message::Response { body, .. })) => {
-                    match serde_json::from_slice::<Resp>(&body) {
-                        Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) => {
-                            requested_packages.insert(
-                                package_id.clone(),
-                                RequestedPackage {
-                                    from: download_from.clone(),
-                                    mirror: *mirror,
-                                    auto_update: *auto_update,
-                                    desired_version_hash: desired_version_hash.clone(),
-                                },
-                            );
-                            DownloadResponse::Started
-                        }
-                        _ => DownloadResponse::Failure,
-                    }
-                }
-                _ => DownloadResponse::Failure,
-            },
-        ),
+        } => LocalResponse::DownloadResponse(start_download(
+            our,
+            requested_packages,
+            package_id,
+            download_from,
+            *mirror,
+            *auto_update,
+            desired_version_hash,
+        )),
         LocalRequest::Install(package) => match handle_install(our, state, package) {
             Ok(()) => LocalResponse::InstallResponse(InstallResponse::Success),
             Err(_) => LocalResponse::InstallResponse(InstallResponse::Failure),
@@ -356,6 +335,45 @@ fn handle_local_request(
                 .unwrap();
             LocalResponse::RebuiltIndex
         }
+    }
+}
+
+pub fn start_download(
+    our: &Address,
+    requested_packages: &mut HashMap<PackageId, RequestedPackage>,
+    package_id: &PackageId,
+    download_from: &NodeId,
+    mirror: bool,
+    auto_update: bool,
+    desired_version_hash: &Option<String>,
+) -> DownloadResponse {
+    match Request::to((download_from.as_str(), our.process.clone()))
+        .inherit(true)
+        .body(
+            serde_json::to_vec(&RemoteRequest::Download {
+                package_id: package_id.clone(),
+                desired_version_hash: desired_version_hash.clone(),
+            })
+            .unwrap(),
+        )
+        .send_and_await_response(5)
+    {
+        Ok(Ok(Message::Response { body, .. })) => match serde_json::from_slice::<Resp>(&body) {
+            Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) => {
+                requested_packages.insert(
+                    package_id.clone(),
+                    RequestedPackage {
+                        from: download_from.clone(),
+                        mirror,
+                        auto_update,
+                        desired_version_hash: desired_version_hash.clone(),
+                    },
+                );
+                DownloadResponse::Started
+            }
+            _ => DownloadResponse::Failure,
+        },
+        _ => DownloadResponse::Failure,
     }
 }
 
@@ -480,7 +498,11 @@ fn fetch_package_manifest(package: &PackageId) -> anyhow::Result<Vec<kt::Package
 
 /// the steps to take an existing package on disk and install/start it
 /// make sure you have reviewed and approved caps in manifest before calling this
-fn handle_install(our: &Address, state: &mut State, package_id: &PackageId) -> anyhow::Result<()> {
+pub fn handle_install(
+    our: &Address,
+    state: &mut State,
+    package_id: &PackageId,
+) -> anyhow::Result<()> {
     state.install_downloaded_package(package_id)?;
     let drive_path = format!("/{package_id}/pkg");
     let manifest = fetch_package_manifest(package_id)?;

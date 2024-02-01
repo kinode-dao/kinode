@@ -76,7 +76,6 @@ pub struct PackageInfo {
     pub package: String,
     pub publisher: NodeId,
     pub metadata_hash: Option<String>,
-
     pub metadata: Option<OnchainPackageMetadata>,
     pub state: Option<PackageState>,
 }
@@ -497,15 +496,13 @@ impl State {
                         current_listing.metadata = metadata;
                         current_listing.clone()
                     }
-                    None => {
-                        PackageListing {
-                            owner: "".to_string(),
-                            name: package_name,
-                            publisher: publisher_name,
-                            metadata_hash,
-                            metadata,
-                        }
-                    }
+                    None => PackageListing {
+                        owner: "".to_string(),
+                        name: package_name,
+                        publisher: publisher_name,
+                        metadata_hash,
+                        metadata,
+                    },
                 };
                 self.insert_listing(package_hash, listing);
             }
