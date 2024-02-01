@@ -8,6 +8,8 @@ homepage = "https://kinode.org"
 repository = "https://github.com/kinode-dao/kinode"
 license = "Apache-2.0"
 
+[lib]
+
 [build-dependencies]
 reqwest = { version = "0.11.22", features = ["blocking"] }
 sha2 = "0.10"
