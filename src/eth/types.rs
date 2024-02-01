@@ -5,9 +5,6 @@ use alloy_pubsub::{PubSubConnect, PubSubFrontend};
 use alloy_rpc_client::ClientBuilder;
 use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
 use alloy_rpc_types::{Filter, Log};
-use alloy_transport::BoxTransport;
-use alloy_transport::Transport;
-use alloy_transport_ws::WsConnect;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::task::JoinHandle;
@@ -26,6 +23,10 @@ pub enum EthAction {
     },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
     UnsubscribeLogs(u64),
+    /// get_logs
+    GetLogs { filter: Filter },
+    /// get_block_number
+    GetBlockNumber,
 }
 
 /// The Response type which a process will get from requesting with an [`EthAction`] will be

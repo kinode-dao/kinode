@@ -161,6 +161,44 @@ async fn handle_request(
             handle.abort();
             Ok(())
         }
+        EthAction::GetBlockNumber => {
+            let block_number = connections.provider.get_block_number().await.unwrap();
+
+            Ok(())
+        }
+        EthAction::GetLogs { filter } => {
+            let logs = connections
+                .provider
+                .get_logs(filter)
+                .await
+                .map_err(|e| EthError::ProviderError(format!("{:?}", e)))?;
+
+            // TEMP, will change.
+            for log in logs {
+                send_to_loop
+                    .send(KernelMessage {
+                        id: rand::random(),
+                        source: Address {
+                            node: our.to_string(),
+                            process: ETH_PROCESS_ID.clone(),
+                        },
+                        target: target.clone(),
+                        rsvp: None,
+                        message: Message::Request(Request {
+                            inherit: false,
+                            expects_response: None,
+                            body: serde_json::to_vec(&log).unwrap(),
+                            metadata: None,
+                            capabilities: vec![],
+                        }),
+                        lazy_load_blob: None,
+                    })
+                    .await
+                    .unwrap();
+            }
+
+            Ok(())
+        }
     }
 }
 

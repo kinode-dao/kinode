@@ -38,6 +38,10 @@ pub enum EthAction {
     },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
     UnsubscribeLogs(u64),
+    /// get_logs
+    GetLogs { filter: Filter },
+    /// get_block_number
+    GetBlockNumber,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -192,8 +196,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             "RoutingUpdate(bytes32,bytes32[])",
         ]);
 
-    let params = Params::Logs(Box::new(filter));
+    let params = Params::Logs(Box::new(filter.clone()));
     let kind = SubscriptionKind::Logs;
+
+    Request::new()
+        .target((&our.node, "eth", "distro", "sys"))
+        .body(serde_json::to_vec(&EthAction::GetLogs { filter })?)
+        .send()?;
 
     Request::new()
         .target((&our.node, "eth", "distro", "sys"))
