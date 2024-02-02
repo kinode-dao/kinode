@@ -373,10 +373,12 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Rename { new_path } => {
+            let new_path = format!("{}/{}", vfs_path, new_path);
             fs::rename(path, new_path).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::CopyFile { new_path } => {
+            let new_path = format!("{}/{}", vfs_path, new_path);
             fs::copy(path, new_path).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
