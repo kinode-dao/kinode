@@ -1,5 +1,7 @@
 target/
 wit/
+**/target/
+**/wit/
 .vscode
 .app-signing
 .DS_Store
@@ -7,9 +9,10 @@ wit/
 *.swo
 *.zip
 /home
-modules/**/pkg/*.wasm
-modules/**/wit
+packages/**/pkg/*.wasm
+packages/**/wit
 target.wasm
 world
 .env
-src/bootstrapped_processes.rs
+kinode/src/bootstrapped_processes.rs
+kinode/packages/**/wasi_snapshot_preview1.wasm
