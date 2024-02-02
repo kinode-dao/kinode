@@ -1338,3 +1338,9 @@ pub enum SqliteError {
     #[error("sqlite: input bytes/json/key error: {error}")]
     InputError { error: String },
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MessageType {
+    Request,
+    Response,
+}

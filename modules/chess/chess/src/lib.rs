@@ -111,13 +111,13 @@ fn initialize(our: Address) {
     println!("{}: started", our.package());
 
     // Serve the index.html and other UI files found in pkg/ui at the root path.
-    http::serve_ui(&our, "ui").unwrap();
+    http::serve_ui(&our, "ui", true, true).unwrap();
 
     // Allow HTTP requests to be made to /games; they will be handled dynamically.
     http::bind_http_path("/games", true, false).unwrap();
 
     // Allow websockets to be opened at / (our process ID will be prepended).
-    http::bind_ws_path("/", true, false).unwrap();
+    http::bind_ws_path("/", true, false, false).unwrap();
 
     // Grab our state, then enter the main event loop.
     let mut state: ChessState = load_chess_state();
