@@ -20,7 +20,7 @@ simulation-mode = []
 [dependencies]
 aes-gcm = "0.10.2"
 alloy-rpc-types = { git = "https://github.com/alloy-rs/alloy" }
-alloy-primitives = { git = "https://github.com/alloy-rs/core.git" }
+alloy-primitives = "0.6.2"
 alloy-providers = { git = "https://github.com/alloy-rs/alloy.git" }
 alloy-network = { git = "https://github.com/alloy-rs/alloy.git" }
 alloy-rpc-client = { git = "https://github.com/alloy-rs/alloy.git", features = [

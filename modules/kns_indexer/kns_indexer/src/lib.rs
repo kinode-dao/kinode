@@ -44,6 +44,30 @@ pub enum EthAction {
     GetBlockNumber,
 }
 
+//TEMP
+/// Potential EthResponse type.
+/// Can encapsulate all methods in their own response type,
+/// or return generic result which can be parsed later..
+#[derive(Debug, Serialize, Deserialize)]
+pub enum EthResponse {
+    // another possible strat, just return RpcResult<T, E, ErrResp>,
+    // then try deserializing on the process_lib side.
+    Ok,
+    //Err(EthError),
+    Sub(SubscriptionResult),
+    GetLogs(Vec<Log>),
+    // GetBlockNumber(u64),
+    // GetBalance(U256),
+    // GetGasPrice(U256),
+    // Call(Vec<u8>), // alloy_primimtives::Bytes deserialization..
+    // GetTransactionCount(U256),
+    // GetBlockByNumber(Option<Block>),
+    // GetBlockByHash(Option<Block>),
+    // // raw json vs enum type vs into T?
+    // RawRequest(serde_json::Value),
+    // SendRawTransaction(Vec<u8>), // alloy_primitives::TxHash deserialization..
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
     // what contract this state pertains to
@@ -270,10 +294,60 @@ fn handle_eth_message(
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
     body: &[u8],
 ) -> anyhow::Result<()> {
-    let Ok(log) = serde_json::from_slice::<Log>(body) else {
+    let Ok(res) = serde_json::from_slice::<EthResponse>(body) else {
         return Err(anyhow::anyhow!("kns_indexer: got invalid message"));
     };
 
+    match res {
+        EthResponse::GetLogs(logs) => {
+            for log in logs {
+                handle_log(our, state, &log)?;
+            }
+        }
+        EthResponse::Sub(result) => match result {
+            SubscriptionResult::Log(log) => {
+                handle_log(our, state, &log)?;
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+
+    // check the pending_requests btreemap to see if there are any requests that
+    // can be handled now that the state block has been updated
+    let mut blocks_to_remove = vec![];
+    for (block, requests) in pending_requests.iter() {
+        if *block <= state.block {
+            for request in requests.iter() {
+                match request {
+                    IndexerRequests::NamehashToName { hash, .. } => {
+                        Response::new()
+                            .body(serde_json::to_vec(&state.names.get(hash))?)
+                            .send()
+                            .unwrap();
+                    }
+                    IndexerRequests::NodeInfo { name, .. } => {
+                        Response::new()
+                            .body(serde_json::to_vec(&state.nodes.get(name))?)
+                            .send()
+                            .unwrap();
+                    }
+                }
+            }
+            blocks_to_remove.push(*block);
+        } else {
+            break;
+        }
+    }
+    for block in blocks_to_remove.iter() {
+        pending_requests.remove(block);
+    }
+
+    set_state(&bincode::serialize(state)?);
+    Ok(())
+}
+
+fn handle_log(our: &Address, state: &mut State, log: &Log) -> anyhow::Result<()> {
     state.block = log.block_number.expect("expect").to::<u64>();
 
     let node_id: alloy_primitives::FixedBytes<32> = log.topics[1];
@@ -349,37 +423,6 @@ fn handle_eth_message(
             .try_body(NetActions::KnsUpdate(node.clone()))?
             .send()?;
     }
-    // check the pending_requests btreemap to see if there are any requests that
-    // can be handled now that the state block has been updated
-    let mut blocks_to_remove = vec![];
-    for (block, requests) in pending_requests.iter() {
-        if *block <= state.block {
-            for request in requests.iter() {
-                match request {
-                    IndexerRequests::NamehashToName { hash, .. } => {
-                        Response::new()
-                            .body(serde_json::to_vec(&state.names.get(hash))?)
-                            .send()
-                            .unwrap();
-                    }
-                    IndexerRequests::NodeInfo { name, .. } => {
-                        Response::new()
-                            .body(serde_json::to_vec(&state.nodes.get(name))?)
-                            .send()
-                            .unwrap();
-                    }
-                }
-            }
-            blocks_to_remove.push(*block);
-        } else {
-            break;
-        }
-    }
-    for block in blocks_to_remove.iter() {
-        pending_requests.remove(block);
-    }
-
-    set_state(&bincode::serialize(state)?);
     Ok(())
 }
 
