@@ -12,9 +12,9 @@ use wasmtime::{Engine, Store};
 use wasmtime_wasi::preview2::{pipe::MemoryOutputPipe, Table, WasiCtx, WasiCtxBuilder, WasiView};
 
 use lib::types::core as t;
-pub use lib::Process;
 pub use lib::wit;
 pub use lib::wit::Host as StandardHost;
+pub use lib::Process;
 
 // bindgen!({
 //     path: "wit",

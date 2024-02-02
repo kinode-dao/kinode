@@ -1,8 +1,8 @@
+use anyhow::Result;
 use lib::types::core::{
     Address, KernelMessage, Message, MessageReceiver, MessageSender, PrintSender, Printout,
     Response, TIMER_PROCESS_ID,
 };
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 /// A runtime module that allows processes to set timers. Interacting with the

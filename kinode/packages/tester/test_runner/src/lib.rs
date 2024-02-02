@@ -1,8 +1,9 @@
 use std::str::FromStr;
 
 use kinode_process_lib::{
-    await_message, our_capabilities, println, spawn, vfs, Address, Message, OnExit, ProcessId,
-    Request, Response, vfs::{DirEntry, FileType},
+    await_message, our_capabilities, println, spawn, vfs,
+    vfs::{DirEntry, FileType},
+    Address, Message, OnExit, ProcessId, Request, Response,
 };
 
 mod tester_types;
@@ -32,7 +33,11 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
         }
         Message::Request { ref body, .. } => {
             match serde_json::from_slice(body)? {
-                tt::TesterRequest::Run { ref test_names, test_timeout, .. } => {
+                tt::TesterRequest::Run {
+                    ref test_names,
+                    test_timeout,
+                    ..
+                } => {
                     println!("test_runner: got Run");
 
                     let dir_prefix = "tester:sys/tests";
@@ -75,15 +80,16 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
 
                     let caps_file_path = format!("{}/grant_capabilities.json", dir_prefix);
                     let caps_index = children.iter().position(|i| *i.path == *caps_file_path);
-                    let caps_by_child: std::collections::HashMap<String, Vec<String>> = match caps_index {
-                        None => std::collections::HashMap::new(),
-                        Some(caps_index) => {
-                            children.remove(caps_index);
-                            let file = vfs::file::open_file(&caps_file_path, false)?;
-                            let file_contents = file.read()?;
-                            serde_json::from_slice(&file_contents)?
-                        }
-                    };
+                    let caps_by_child: std::collections::HashMap<String, Vec<String>> =
+                        match caps_index {
+                            None => std::collections::HashMap::new(),
+                            Some(caps_index) => {
+                                children.remove(caps_index);
+                                let file = vfs::file::open_file(&caps_file_path, false)?;
+                                let file_contents = file.read()?;
+                                serde_json::from_slice(&file_contents)?
+                            }
+                        };
 
                     println!("test_runner: running {:?}...", children);
 
@@ -91,7 +97,13 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                         let test_path = format!("{}/{}.wasm", dir_prefix, test_name);
                         let grant_caps = caps_by_child
                             .get(test_name)
-                            .and_then(|caps| Some(caps.iter().map(|cap| ProcessId::from_str(cap).unwrap()).collect()))
+                            .and_then(|caps| {
+                                Some(
+                                    caps.iter()
+                                        .map(|cap| ProcessId::from_str(cap).unwrap())
+                                        .collect(),
+                                )
+                            })
                             .unwrap_or(vec![]);
                         let child_process_id = match spawn(
                             None,

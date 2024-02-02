@@ -1,4 +1,7 @@
-use std::{fs, io::{Read, Write}};
+use std::{
+    fs,
+    io::{Read, Write},
+};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

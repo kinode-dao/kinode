@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    io::copy,
-};
+use std::{fs, io::copy};
 
 fn main() {
     if std::env::var("SKIP_BUILD_SCRIPT").is_ok() {

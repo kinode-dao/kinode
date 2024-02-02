@@ -455,9 +455,10 @@ async fn handle_request(
                 //  Before any `.await`s are called since ZipFile is not
                 //  Send and so does not play nicely with await
                 let (is_file, is_dir, local_path, file_contents) = {
-                    let mut file = zip
-                        .by_index(i)
-                        .map_err(|e| VfsError::IOError { error: e.to_string(), path: "".into() })?;
+                    let mut file = zip.by_index(i).map_err(|e| VfsError::IOError {
+                        error: e.to_string(),
+                        path: "".into(),
+                    })?;
                     let is_file = file.is_file();
                     let is_dir = file.is_dir();
                     let mut file_contents = Vec::new();
