@@ -31,10 +31,10 @@ def build_and_move(feature, tmp_dir, architecture, os_name):
     release_env["CARGO_PROFILE_RELEASE_CODEGEN_UNITS"] = f"1"
     release_env["CARGO_PROFILE_RELEASE_STRIP"] = f"symbols"
     if feature:
-        subprocess.run(["cargo", "+nightly", "build", "--release", "--features", feature], check=True, env=release_env)
+        subprocess.run(["cargo", "+nightly", "build", "--release", "-p", "kinode", "--features", feature], check=True, env=release_env)
         zip_name = f"{zip_prefix}-{feature}.zip"
     else:
-        subprocess.run(["cargo", "+nightly", "build", "--release"], check=True, env=release_env)
+        subprocess.run(["cargo", "+nightly", "build", "--release", "-p", "kinode"], check=True, env=release_env)
         zip_name = f"{zip_prefix}.zip"
 
     # Move and rename the binary
