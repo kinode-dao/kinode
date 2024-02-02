@@ -439,7 +439,7 @@ fn handle_http_request(
                 serde_json::to_vec(&state.games)?,
             );
             Ok(())
-        },
+        }
         // on POST: create a new game
         "POST" => {
             let Some(blob) = get_blob() else {
