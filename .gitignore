@@ -2,6 +2,7 @@ target/
 wit/
 **/target/
 **/wit/
+**/*.wasm
 .vscode
 .app-signing
 .DS_Store
@@ -11,8 +12,6 @@ wit/
 /home
 packages/**/pkg/*.wasm
 packages/**/wit
-target.wasm
-world
 .env
 kinode/src/bootstrapped_processes.rs
 kinode/packages/**/wasi_snapshot_preview1.wasm
