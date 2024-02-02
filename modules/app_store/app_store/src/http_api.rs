@@ -291,7 +291,7 @@ fn serve_paths(
         "/apps/:id/caps" => {
             let package_id = path
                 .split("/")
-                .nth(1)
+                .nth(2)
                 .unwrap_or_default()
                 .parse::<PackageId>()?;
             match method {
@@ -329,7 +329,7 @@ fn serve_paths(
         "/apps/:id/mirror" => {
             let package_id = path
                 .split("/")
-                .nth(1)
+                .nth(2)
                 .unwrap_or_default()
                 .parse::<PackageId>()?;
             match method {
@@ -355,12 +355,7 @@ fn serve_paths(
         "/apps/:id/auto-update" => {
             let package_id = path
                 .split("/")
-                .nth(1)
-                .unwrap_or_default()
-                .parse::<PackageId>()?;
-            let package_id = path
-                .split("/")
-                .nth(1)
+                .nth(2)
                 .unwrap_or_default()
                 .parse::<PackageId>()?;
             match method {
