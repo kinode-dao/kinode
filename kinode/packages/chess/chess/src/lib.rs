@@ -111,13 +111,13 @@ fn initialize(our: Address) {
     println!("{}: started", our.package());
 
     // Serve the index.html and other UI files found in pkg/ui at the root path.
-    http::serve_ui(&our, "ui", true, true).unwrap();
+    http::serve_ui(&our, "ui", true, true, vec!["/"]).unwrap();
 
     // Allow HTTP requests to be made to /games; they will be handled dynamically.
     http::bind_http_path("/games", true, false).unwrap();
 
     // Allow websockets to be opened at / (our process ID will be prepended).
-    http::bind_ws_path("/", true, false, false).unwrap();
+    http::bind_ws_path("/", true, false).unwrap();
 
     // Grab our state, then enter the main event loop.
     let mut state: ChessState = load_chess_state();
@@ -188,7 +188,8 @@ fn handle_request(our: &Address, message: &Message, state: &mut ChessState) -> a
                             http::StatusCode::SERVICE_UNAVAILABLE,
                             None,
                             "Service Unavailable".to_string().as_bytes().to_vec(),
-                        )
+                        );
+                        Ok(())
                     }
                 }
             }
@@ -419,35 +420,42 @@ fn handle_http_request(
     http_request: &http::IncomingHttpRequest,
 ) -> anyhow::Result<()> {
     if http_request.path()? != "/games" {
-        return http::send_response(
+        http::send_response(
             http::StatusCode::NOT_FOUND,
             None,
             "Not Found".to_string().as_bytes().to_vec(),
         );
+        return Ok(());
     }
     match http_request.method()?.as_str() {
         // on GET: give the frontend all of our active games
-        "GET" => http::send_response(
-            http::StatusCode::OK,
-            Some(HashMap::from([(
-                String::from("Content-Type"),
-                String::from("application/json"),
-            )])),
-            serde_json::to_vec(&state.games)?,
-        ),
+        "GET" => {
+            http::send_response(
+                http::StatusCode::OK,
+                Some(HashMap::from([(
+                    String::from("Content-Type"),
+                    String::from("application/json"),
+                )])),
+                serde_json::to_vec(&state.games)?,
+            );
+            Ok(())
+        },
         // on POST: create a new game
         "POST" => {
             let Some(blob) = get_blob() else {
-                return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                return Ok(());
             };
             let blob_json = serde_json::from_slice::<serde_json::Value>(&blob.bytes)?;
             let Some(game_id) = blob_json["id"].as_str() else {
-                return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                return Ok(());
             };
             if let Some(game) = state.games.get(game_id)
                 && !game.ended
             {
-                return http::send_response(http::StatusCode::CONFLICT, None, vec![]);
+                http::send_response(http::StatusCode::CONFLICT, None, vec![]);
+                return Ok(());
             };
 
             let player_white = blob_json["white"]
@@ -495,34 +503,42 @@ fn handle_http_request(
                     String::from("application/json"),
                 )])),
                 body,
-            )
+            );
+            return Ok(());
         }
         // on PUT: make a move
         "PUT" => {
             let Some(blob) = get_blob() else {
-                return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                return Ok(());
             };
             let blob_json = serde_json::from_slice::<serde_json::Value>(&blob.bytes)?;
             let Some(game_id) = blob_json["id"].as_str() else {
-                return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                return Ok(());
             };
             let Some(game) = state.games.get_mut(game_id) else {
-                return http::send_response(http::StatusCode::NOT_FOUND, None, vec![]);
+                http::send_response(http::StatusCode::NOT_FOUND, None, vec![]);
+                return Ok(());
             };
             if (game.turns % 2 == 0 && game.white != our.node)
                 || (game.turns % 2 == 1 && game.black != our.node)
             {
-                return http::send_response(http::StatusCode::FORBIDDEN, None, vec![]);
+                http::send_response(http::StatusCode::FORBIDDEN, None, vec![]);
+                return Ok(());
             } else if game.ended {
-                return http::send_response(http::StatusCode::CONFLICT, None, vec![]);
+                http::send_response(http::StatusCode::CONFLICT, None, vec![]);
+                return Ok(());
             }
             let Some(move_str) = blob_json["move"].as_str() else {
-                return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                return Ok(());
             };
             let mut board = Board::from_fen(&game.board).unwrap();
             if !board.apply_uci_move(move_str) {
                 // TODO surface illegal move to player or something here
-                return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                return Ok(());
             }
             // send the move to the other player
             // check if the game is over
@@ -559,15 +575,18 @@ fn handle_http_request(
                     String::from("application/json"),
                 )])),
                 body,
-            )
+            );
+            return Ok(());
         }
         // on DELETE: end the game
         "DELETE" => {
             let Some(game_id) = http_request.query_params().get("id") else {
-                return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                return Ok(());
             };
             let Some(game) = state.games.get_mut(game_id) else {
-                return http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                http::send_response(http::StatusCode::BAD_REQUEST, None, vec![]);
+                return Ok(());
             };
             // send the other player an end game request
             Request::new()
@@ -584,9 +603,13 @@ fn handle_http_request(
                     String::from("application/json"),
                 )])),
                 body,
-            )
+            );
+            return Ok(());
         }
         // Any other method will be rejected.
-        _ => http::send_response(http::StatusCode::METHOD_NOT_ALLOWED, None, vec![]),
+        _ => {
+            http::send_response(http::StatusCode::METHOD_NOT_ALLOWED, None, vec![]);
+            return Ok(());
+        }
     }
 }
