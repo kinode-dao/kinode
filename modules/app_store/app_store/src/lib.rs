@@ -226,8 +226,8 @@ fn handle_remote_request(
                 }
             }
             let file_name = format!("/{}.zip", package_id);
-            if let Some(zip_bytes) = &package_state.source_zip {
-                match spawn_transfer(&our, &file_name, Some(zip_bytes.clone()), 60, &source) {
+            if let Some(zip_bytes) = package_state.source_zip {
+                match spawn_transfer(&our, &file_name, Some(zip_bytes), 60, &source) {
                     Ok(()) => return Resp::RemoteResponse(RemoteResponse::DownloadApproved),
                     Err(_e) => return Resp::RemoteResponse(RemoteResponse::DownloadDenied),
                 }

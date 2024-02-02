@@ -2,7 +2,7 @@ use alloy_primitives::FixedBytes;
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::kernel_types as kt;
-use kinode_process_lib::*;
+use kinode_process_lib::{println, *};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -68,55 +68,6 @@ pub struct OnchainPackageMetadata {
     pub versions: Option<Vec<String>>,
 }
 
-/// package information sent to UI
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PackageInfo {
-    pub owner: Option<String>, // eth address
-    pub package: String,
-    pub publisher: NodeId,
-    pub metadata_hash: Option<String>,
-    pub metadata: Option<OnchainPackageMetadata>,
-    pub state: Option<PackageState>,
-}
-
-pub fn gen_package_info(
-    id: &PackageId,
-    listing: Option<&PackageListing>,
-    state: Option<&PackageState>,
-) -> PackageInfo {
-    let owner = match listing {
-        Some(listing) => Some(listing.owner.clone()),
-        None => None,
-    };
-    let metadata = match listing {
-        Some(listing) => listing.metadata.clone(),
-        None => match state {
-            Some(state) => state.metadata.clone(),
-            None => None,
-        },
-    };
-    let metadata_hash = match listing {
-        Some(listing) => Some(listing.metadata_hash.clone()),
-        None => None,
-    };
-
-    let state = state.cloned().map(|state| {
-        let mut state = state;
-        state.metadata = None;
-        state
-    });
-
-    PackageInfo {
-        owner,
-        package: id.package().to_string(),
-        publisher: id.publisher().to_string(),
-        metadata_hash,
-        metadata,
-        state,
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RequestedPackage {
     pub from: NodeId,
@@ -128,7 +79,6 @@ pub struct RequestedPackage {
 
 /// state of an individual package we have downloaded
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct PackageState {
     /// the node we last downloaded the package from
     /// this is "us" if we don't know the source (usually cause it's a local install)
@@ -192,41 +142,6 @@ impl State {
             .get(self.package_hashes.get(package_id)?)
     }
 
-    pub fn get_package_info(&self, package_id: &PackageId) -> Option<PackageInfo> {
-        let hash = self.package_hashes.get(package_id)?;
-
-        let listing = self.listed_packages.get(hash);
-
-        let state = self.downloaded_packages.get(package_id);
-
-        Some(gen_package_info(package_id, listing, state))
-    }
-
-    pub fn get_downloaded_packages_info(&self) -> Vec<PackageInfo> {
-        self.downloaded_packages
-            .iter()
-            .map(|(package_id, state)| {
-                let hash = self.package_hashes.get(package_id);
-                let listing = match hash {
-                    Some(hash) => self.listed_packages.get(hash),
-                    None => None,
-                };
-                gen_package_info(package_id, listing, Some(state))
-            })
-            .collect()
-    }
-
-    pub fn get_listed_packages_info(&self) -> Vec<PackageInfo> {
-        self.listed_packages
-            .iter()
-            .map(|(_hash, listing)| {
-                let package_id = PackageId::new(&listing.name, &listing.publisher);
-                let state = self.downloaded_packages.get(&package_id);
-                gen_package_info(&package_id, Some(listing), state)
-            })
-            .collect()
-    }
-
     fn get_listing_with_hash_mut(
         &mut self,
         package_hash: &PackageHash,
@@ -258,6 +173,7 @@ impl State {
     pub fn add_downloaded_package(&mut self, package_id: &PackageId, package_state: PackageState) {
         self.downloaded_packages
             .insert(package_id.to_owned(), package_state);
+        crate::set_state(&bincode::serialize(self).unwrap());
     }
 
     /// returns True if the package was found and updated, False otherwise
@@ -266,13 +182,16 @@ impl State {
         package_id: &PackageId,
         fn_: impl FnOnce(&mut PackageState),
     ) -> bool {
-        self.downloaded_packages
+        let res = self
+            .downloaded_packages
             .get_mut(package_id)
             .map(|package_state| {
                 fn_(package_state);
                 true
             })
-            .unwrap_or(false)
+            .unwrap_or(false);
+        crate::set_state(&bincode::serialize(self).unwrap());
+        res
     }
 
     pub fn start_mirroring(&mut self, package_id: &PackageId) -> bool {
@@ -402,6 +321,7 @@ impl State {
 
         package_state.source_zip = None;
         self.add_downloaded_package(package_id, package_state);
+        crate::set_state(&bincode::serialize(self)?);
         Ok(())
     }
 
@@ -443,6 +363,9 @@ impl State {
 
         // finally, remove from downloaded packages
         self.downloaded_packages.remove(package_id);
+        crate::set_state(&bincode::serialize(self)?);
+
+        println!("app store: uninstalled {package_id}");
         Ok(())
     }
 

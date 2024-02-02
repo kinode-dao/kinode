@@ -6,6 +6,7 @@ use kinode_process_lib::{
     http::{send_response, IncomingHttpRequest, Method, StatusCode},
     print_to_terminal, Address, NodeId, PackageId,
 };
+use serde_json::json;
 use sha3::digest::generic_array::arr::Inc;
 use std::collections::HashMap;
 
@@ -50,14 +51,44 @@ pub fn handle_http_request(
     Ok(())
 }
 
-fn get_package_id(segment: &str) -> anyhow::Result<PackageId> {
-    let mut segments = segment.split(":");
-    let package = segments.next().unwrap_or_default();
-    let publisher = segments.next().unwrap_or_default();
-
-    let package_id = PackageId::new(package, publisher);
-
-    Ok(package_id)
+fn gen_package_info(
+    id: &PackageId,
+    listing: Option<&PackageListing>,
+    state: Option<&PackageState>,
+) -> serde_json::Value {
+    json!({
+        "owner": match &listing {
+            Some(listing) => Some(&listing.owner),
+            None => None,
+        },
+        "package": id.package().to_string(),
+        "publisher": id.publisher(),
+        "installed": match &state {
+            Some(state) => !state.source_zip.is_some(),
+            None => false,
+        },
+        "metadata_hash": match &listing {
+            Some(listing) => Some(&listing.metadata_hash),
+            None => None,
+        },
+        "metadata": match &listing {
+            Some(listing) => Some(&listing.metadata),
+            None => match state {
+                Some(state) => Some(&state.metadata),
+                None => None,
+            },
+        },
+        "state": match &state {
+            Some(state) => json!({
+                "mirrored_from": state.mirrored_from,
+                "our_version": state.our_version,
+                "caps_approved": state.caps_approved,
+                "mirroring": state.mirroring,
+                "auto_update": state.auto_update,
+            }),
+            None => json!(null),
+        },
+    })
 }
 
 fn serve_paths(
@@ -69,6 +100,7 @@ fn serve_paths(
     let path = req.path()?;
     let method = req.method()?;
 
+    // TODO get rid of this workaround when we change `IncomingHttpRequest`
     let bound_path: &str = if path.ends_with("auto-update") {
         "/apps/:id/auto-update"
     } else if path.ends_with("mirror") {
@@ -83,7 +115,7 @@ fn serve_paths(
         "/apps/:id"
     };
 
-    // print_to_terminal(0, &format!("HTTP {method} {path} {bound_path}", method = method, path = path, bound_path = bound_path));
+    // print_to_terminal(0, &format!("HTTP {method} {path} {bound_path}"));
 
     match bound_path {
         // GET all downloaded apps
@@ -95,11 +127,15 @@ fn serve_paths(
                     format!("Invalid method {method} for {path}").into_bytes(),
                 ));
             }
-            return Ok((
-                StatusCode::OK,
-                None,
-                serde_json::to_vec(&state.get_downloaded_packages_info())?,
-            ));
+            let all: Vec<serde_json::Value> = state
+                .downloaded_packages
+                .iter()
+                .map(|(package_id, package_state)| {
+                    let listing = state.get_listing(package_id);
+                    gen_package_info(package_id, listing, Some(package_state))
+                })
+                .collect();
+            return Ok((StatusCode::OK, None, serde_json::to_vec(&all)?));
         }
         // GET all listed apps
         "/apps/listed" => {
@@ -110,27 +146,45 @@ fn serve_paths(
                     format!("Invalid method {method} for {path}").into_bytes(),
                 ));
             }
-            return Ok((
-                StatusCode::OK,
-                None,
-                serde_json::to_vec(&state.get_listed_packages_info())?,
-            ));
+            let all: Vec<serde_json::Value> = state
+                .listed_packages
+                .iter()
+                .map(|(_hash, listing)| {
+                    let package_id = PackageId::new(&listing.name, &listing.publisher);
+                    let state = state.downloaded_packages.get(&package_id);
+                    gen_package_info(&package_id, Some(listing), state)
+                })
+                .collect();
+            return Ok((StatusCode::OK, None, serde_json::to_vec(&all)?));
         }
         // GET detail about a specific downloaded app
         // install a downloaded app: POST
         // update a downloaded app: PUT
         // uninstall/delete a downloaded app: DELETE
         "/apps/:id" => {
-            let package_id = get_package_id(path.split("/").last().unwrap_or_default())?;
+            let package_id = path
+                .split("/")
+                .last()
+                .unwrap_or_default()
+                .parse::<PackageId>()?;
             match method {
-                Method::GET => Ok(match state.get_package_info(&package_id) {
-                    Some(pkg) => (StatusCode::OK, None, serde_json::to_vec(&pkg)?),
-                    None => (
-                        StatusCode::NOT_FOUND,
+                Method::GET => {
+                    let Some(pkg) = state.downloaded_packages.get(&package_id) else {
+                        return Ok((
+                            StatusCode::NOT_FOUND,
+                            None,
+                            format!("App not found: {package_id}").into_bytes(),
+                        ));
+                    };
+                    let listing = state.get_listing(&package_id);
+                    Ok((
+                        StatusCode::OK,
                         None,
-                        format!("App not found: {package_id}").into_bytes(),
-                    ),
-                }),
+                        gen_package_info(&package_id, listing, Some(pkg))
+                            .to_string()
+                            .into_bytes(),
+                    ))
+                }
                 Method::POST => {
                     // install an app
                     crate::handle_install(our, state, &package_id)?;
@@ -160,16 +214,29 @@ fn serve_paths(
         // GET detail about a specific listed app
         // download a listed app: POST
         "/apps/listed/:id" => {
-            let package_id = get_package_id(path.split("/").last().unwrap_or_default())?;
+            let package_id = path
+                .split("/")
+                .last()
+                .unwrap_or_default()
+                .parse::<PackageId>()?;
             match method {
-                Method::GET => Ok(match state.get_package_info(&package_id) {
-                    Some(pkg) => (StatusCode::OK, None, serde_json::to_vec(&pkg)?),
-                    None => (
-                        StatusCode::NOT_FOUND,
+                Method::GET => {
+                    let Some(listing) = state.get_listing(&package_id) else {
+                        return Ok((
+                            StatusCode::NOT_FOUND,
+                            None,
+                            format!("App not found: {package_id}").into_bytes(),
+                        ));
+                    };
+                    let downloaded = state.downloaded_packages.get(&package_id);
+                    Ok((
+                        StatusCode::OK,
                         None,
-                        format!("App not found: {package_id}").into_bytes(),
-                    ),
-                }),
+                        gen_package_info(&package_id, Some(listing), downloaded)
+                            .to_string()
+                            .into_bytes(),
+                    ))
+                }
                 Method::POST => {
                     // download an app
                     // TODO get fields from POST body
@@ -222,7 +289,11 @@ fn serve_paths(
         // GET caps for a specific downloaded app
         // approve capabilities for a downloaded app: POST
         "/apps/:id/caps" => {
-            let package_id = get_package_id(path.split("/").nth(1).unwrap_or_default())?;
+            let package_id = path
+                .split("/")
+                .nth(1)
+                .unwrap_or_default()
+                .parse::<PackageId>()?;
             match method {
                 // return the capabilities for that app
                 Method::GET => Ok(match crate::fetch_package_manifest(&package_id) {
@@ -256,7 +327,11 @@ fn serve_paths(
         // start mirroring a downloaded app: PUT
         // stop mirroring a downloaded app: DELETE
         "/apps/:id/mirror" => {
-            let package_id = get_package_id(path.split("/").nth(1).unwrap_or_default())?;
+            let package_id = path
+                .split("/")
+                .nth(1)
+                .unwrap_or_default()
+                .parse::<PackageId>()?;
             match method {
                 // start mirroring an app
                 Method::PUT => {
@@ -278,7 +353,16 @@ fn serve_paths(
         // start auto-updating a downloaded app: PUT
         // stop auto-updating a downloaded app: DELETE
         "/apps/:id/auto-update" => {
-            let package_id = get_package_id(path.split("/").nth(1).unwrap_or_default())?;
+            let package_id = path
+                .split("/")
+                .nth(1)
+                .unwrap_or_default()
+                .parse::<PackageId>()?;
+            let package_id = path
+                .split("/")
+                .nth(1)
+                .unwrap_or_default()
+                .parse::<PackageId>()?;
             match method {
                 // start auto-updating an app
                 Method::PUT => {
