@@ -256,6 +256,7 @@ async fn serve(
     let cloned_jwt_secret_bytes = jwt_secret_bytes.clone();
     let cloned_print_tx = print_tx.clone();
     let ws_route = warp::ws()
+        .and(warp::addr::remote())
         .and(warp::path::full())
         .and(warp::filters::host::optional())
         .and(warp::filters::header::headers_cloned())
@@ -365,6 +366,7 @@ async fn login_handler(
 
 async fn ws_handler(
     ws_connection: Ws,
+    socket_addr: Option<SocketAddr>,
     path: warp::path::FullPath,
     host: Option<Authority>,
     headers: warp::http::HeaderMap,
@@ -421,8 +423,16 @@ async fn ws_handler(
         }
     }
 
+    let is_local = socket_addr
+        .map(|addr| addr.ip().is_loopback())
+        .unwrap_or(false);
+
+    if bound_path.extension && !is_local {
+        return Err(warp::reject::reject());
+    }
+
     let app = bound_path.app.clone();
-    let extension = bound_path.extension.clone();
+    let extension = bound_path.extension;
 
     drop(ws_path_bindings);
 
