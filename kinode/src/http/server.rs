@@ -80,7 +80,7 @@ async fn send_push(
             kinode_message_type: maybe_ext.unwrap(),
             blob: blob.bytes,
         };
-        blob.bytes = rmp_serde::to_vec(&action).unwrap();
+        blob.bytes = rmp_serde::to_vec_named(&action).unwrap();
     }
     let ws_message = match message_type {
         WsMessageType::Text => {
