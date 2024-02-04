@@ -1,5 +1,5 @@
 use kinode_process_lib::{
-    await_next_request_body, call_init, println, Address, Message, NodeId, PackageId, Request,
+    await_next_request_body, call_init, println, Address, Message, PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
 
