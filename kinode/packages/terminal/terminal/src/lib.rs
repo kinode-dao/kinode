@@ -2,8 +2,8 @@ use anyhow::anyhow;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::kinode::process::standard as wit;
 use kinode_process_lib::{
-    get_blob, get_capability, get_typed_state, our_capabilities, println, set_state, vfs, Address,
-    Capability, PackageId, ProcessId, Request,
+    get_blob, get_capability, get_typed_state, our_capabilities, print_to_terminal, println,
+    set_state, vfs, Address, Capability, PackageId, ProcessId, Request,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -273,6 +273,29 @@ fn handle_run(
             }
         }
     }
+    if entry.root {
+        for cap in our_capabilities() {
+            initial_capabilities.insert(kt::de_wit_capability(cap.clone()));
+        }
+    }
+    print_to_terminal(
+        1,
+        &format!(
+            "{}: Process {{\n    wasm_bytes_handle: {},\n    wit_version: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
+            parsed_new_process_id.clone(),
+            wasm_path.clone(),
+            "None",
+            kt::OnExit::None,
+            entry.public,
+            {
+                let mut caps_string = "[".to_string();
+                for cap in initial_capabilities.iter() {
+                    caps_string += &format!("\n        {}({})", cap.issuer.to_string(), cap.params);
+                }
+                caps_string + "\n    ]"
+            },
+        ),
+    );
     Request::new()
         .target(("our", "kernel", "distro", "sys"))
         .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
@@ -280,14 +303,7 @@ fn handle_run(
             wasm_bytes_handle: wasm_path,
             wit_version: None,
             on_exit: kt::OnExit::None, // TODO this should send a message back to runner:script:sys so that it can Drop capabilities
-            initial_capabilities: if entry.root {
-                our_capabilities()
-                    .iter()
-                    .map(|wit: &kinode_process_lib::Capability| kt::de_wit_capability(wit.clone()))
-                    .collect()
-            } else {
-                initial_capabilities
-            },
+            initial_capabilities,
             public: entry.public,
         })?)
         .inherit(true)
