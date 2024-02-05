@@ -1,5 +1,6 @@
 use crate::eth::types::*;
 use crate::types::*;
+use alloy_providers::provider::TempProvider;
 use alloy_pubsub::{PubSubFrontend, RawSubscription};
 use alloy_rpc_client::ClientBuilder;
 use alloy_rpc_types::pubsub::SubscriptionResult;

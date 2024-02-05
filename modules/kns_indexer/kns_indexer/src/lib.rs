@@ -6,8 +6,9 @@ use alloy_rpc_types::{
 use alloy_sol_types::{sol, SolEvent};
 
 use kinode_process_lib::{
-    await_message, get_typed_state, print_to_terminal, println, set_state, Address, Message,
-    Request, Response,
+    await_message,
+    eth::{get_block_number, get_logs, EthResponse},
+    get_typed_state, print_to_terminal, println, set_state, Address, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::string::FromUtf8Error;
@@ -38,34 +39,10 @@ pub enum EthAction {
     },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
     UnsubscribeLogs(u64),
-    /// get_logs
-    GetLogs { filter: Filter },
-    /// get_block_number
-    GetBlockNumber,
-}
-
-//TEMP
-/// Potential EthResponse type.
-/// Can encapsulate all methods in their own response type,
-/// or return generic result which can be parsed later..
-#[derive(Debug, Serialize, Deserialize)]
-pub enum EthResponse {
-    // another possible strat, just return RpcResult<T, E, ErrResp>,
-    // then try deserializing on the process_lib side.
-    Ok,
-    //Err(EthError),
-    Sub(SubscriptionResult),
-    GetLogs(Vec<Log>),
-    // GetBlockNumber(u64),
-    // GetBalance(U256),
-    // GetGasPrice(U256),
-    // Call(Vec<u8>), // alloy_primimtives::Bytes deserialization..
-    // GetTransactionCount(U256),
-    // GetBlockByNumber(Option<Block>),
-    // GetBlockByHash(Option<Block>),
-    // // raw json vs enum type vs into T?
-    // RawRequest(serde_json::Value),
-    // SendRawTransaction(Vec<u8>), // alloy_primitives::TxHash deserialization..
+    Request {
+        method: String,
+        params: serde_json::Value,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -200,6 +177,24 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             block: 1,
         };
     }
+    let filter = Filter::new()
+        .address(contract_address.unwrap().parse::<EthAddress>().unwrap())
+        .to_block(BlockNumberOrTag::Latest)
+        .from_block(state.block - 1)
+        .events(vec![
+            "NodeRegistered(bytes32,bytes)",
+            "KeyUpdate(bytes32,bytes32)",
+            "IpUpdate(bytes32,uint128)",
+            "WsUpdate(bytes32,uint16)",
+            "RoutingUpdate(bytes32,bytes32[])",
+        ]);
+    // if block in state is < current_block, get logs from that part.
+    if state.block < get_block_number()? {
+        let logs = get_logs(filter.clone())?;
+        for log in logs {
+            handle_log(&our, &mut state, &log)?;
+        }
+    }
     // shove all state into net::net
     Request::new()
         .target((&our.node, "net", "distro", "sys"))
@@ -208,25 +203,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    let filter = Filter::new()
-        .address(contract_address.unwrap().parse::<EthAddress>().unwrap())
-        .from_block(0)
-        .to_block(BlockNumberOrTag::Latest)
-        .events(vec![
-            "NodeRegistered(bytes32,bytes)",
-            "KeyUpdate(bytes32,bytes32)",
-            "IpUpdate(bytes32,uint128)",
-            "WsUpdate(bytes32,uint16)",
-            "RoutingUpdate(bytes32,bytes32[])",
-        ]);
-
-    let params = Params::Logs(Box::new(filter.clone()));
+    let params = Params::Logs(Box::new(filter));
     let kind = SubscriptionKind::Logs;
-
-    Request::new()
-        .target((&our.node, "eth", "distro", "sys"))
-        .body(serde_json::to_vec(&EthAction::GetLogs { filter })?)
-        .send()?;
 
     Request::new()
         .target((&our.node, "eth", "distro", "sys"))
@@ -299,12 +277,7 @@ fn handle_eth_message(
     };
 
     match res {
-        EthResponse::GetLogs(logs) => {
-            for log in logs {
-                handle_log(our, state, &log)?;
-            }
-        }
-        EthResponse::Sub(result) => match result {
+        EthResponse::Sub { id, result } => match result {
             SubscriptionResult::Log(log) => {
                 handle_log(our, state, &log)?;
             }
@@ -350,7 +323,7 @@ fn handle_eth_message(
 fn handle_log(our: &Address, state: &mut State, log: &Log) -> anyhow::Result<()> {
     state.block = log.block_number.expect("expect").to::<u64>();
 
-    let node_id: alloy_primitives::FixedBytes<32> = log.topics[1];
+    let node_id = log.topics[1];
 
     let name = match state.names.entry(node_id.to_string()) {
         Entry::Occupied(o) => o.into_mut(),

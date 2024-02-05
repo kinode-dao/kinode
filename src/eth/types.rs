@@ -1,12 +1,5 @@
-use crate::types::ProcessId;
-use alloy_primitives::{Address, BlockHash, Bytes, ChainId, TxHash, B256, U256};
-use alloy_providers::provider::Provider;
-use alloy_pubsub::PubSubFrontend;
 use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
-use alloy_rpc_types::{Block, BlockId, BlockNumberOrTag, CallRequest, Filter, Log};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use tokio::task::JoinHandle;
 
 /// The Request type that can be made to eth:distro:sys. Currently primitive, this
 /// enum will expand to support more actions in the future.
@@ -62,7 +55,9 @@ pub fn to_static_str(method: &str) -> Option<&'static str> {
         "eth_getBalance" => Some("eth_getBalance"),
         "eth_sendRawTransaction" => Some("eth_sendRawTransaction"),
         "eth_call" => Some("eth_call"),
+        "eth_chainId" => Some("eth_chainId"),
         "eth_getTransactionReceipt" => Some("eth_getTransactionReceipt"),
+        "eth_getTransactionCount" => Some("eth_getTransactionCount"),
         "eth_estimateGas" => Some("eth_estimateGas"),
         "eth_blockNumber" => Some("eth_blockNumber"),
         "eth_getBlockByHash" => Some("eth_getBlockByHash"),
