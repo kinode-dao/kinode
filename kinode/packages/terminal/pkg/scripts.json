@@ -1,0 +1,58 @@
+{
+    "alias.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "terminal:terminal:sys"
+        ],
+        "grant_capabilities": []
+    },
+    "echo.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [],
+        "grant_capabilities": []
+    },
+    "cat.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "vfs:distro:sys",
+            {
+                "process": "vfs:distro:sys",
+                "params": {
+                    "root": true
+                }
+            }
+        ],
+        "grant_capabilities": []
+    },
+    "hi.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": true,
+        "request_capabilities": [
+            "net:distro:sys"
+        ],
+        "grant_capabilities": [
+            "net:distro:sys"
+        ]
+    },
+    "top.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "kernel:distro:sys"
+        ],
+        "grant_capabilities": []
+    },
+    "m.wasm": {
+        "root": true,
+        "public": false,
+        "request_networking": true
+    }
+}
