@@ -3329,13 +3329,14 @@ dependencies = [
 [[package]]
 name = "kit"
 version = "0.1.0"
-source = "git+https://github.com/kinode-dao/kit?rev=a4fc76d#a4fc76db7e09b23e4532b8261d82677c76837f3d"
+source = "git+https://github.com/kinode-dao/kit?rev=15a4681#15a468109d54af140ce2b7313b3d3ed776943d7c"
 dependencies = [
  "anyhow",
  "base64 0.21.4",
  "clap",
  "dirs 5.0.1",
  "futures-util",
+ "hex",
  "kinode_process_lib 0.5.5",
  "nix",
  "regex",
