@@ -5,8 +5,8 @@ use kinode_process_lib::*;
 use kinode_process_lib::{call_init, println};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
 use std::io::Read;
+use std::str::FromStr;
 
 wit_bindgen::generate!({
     path: "wit",

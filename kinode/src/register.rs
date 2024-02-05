@@ -273,7 +273,7 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
         }),
         StatusCode::OK,
     )
-    .into_response())
+    .into_response());
 }
 
 async fn generate_networking_info(our_temp_id: Arc<Identity>) -> Result<impl Reply, Rejection> {
