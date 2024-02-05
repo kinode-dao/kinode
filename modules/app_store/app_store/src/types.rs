@@ -87,6 +87,7 @@ pub struct PackageState {
     pub our_version: String,
     /// if None, package already installed. if Some, the source file
     pub source_zip: Option<Vec<u8>>,
+    pub manifest: Option<String>,
     pub caps_approved: bool,
     /// are we serving this package to others?
     pub mirroring: bool,
@@ -259,6 +260,7 @@ impl State {
                         mirrored_from: None,
                         our_version,
                         source_zip: None,    // since it's already installed
+                        manifest: None,      // since it's already installed
                         caps_approved: true, // since it's already installed this must be true
                         mirroring: false,
                         auto_update: false,

@@ -269,10 +269,17 @@ fn handle_local_request(
             };
             // set the version hash for this new local package
             let our_version = generate_version_hash(&blob.bytes);
+            // turn the blob bytes into a zip, then attempt to extract the `pkg/manifest.json`
+            // file for usage in caps approval
+            let mut zip = zip::ZipArchive::new(std::io::Cursor::new(blob.bytes))?;
+            let mut manifest_file = zip.by_name("pkg/manifest.json")?;
+            let mut manifest = String::new();
+            manifest_file.read_to_string(&mut manifest)?;
             let package_state = PackageState {
                 mirrored_from: Some(our.node.clone()),
                 our_version,
                 source_zip: Some(blob.bytes),
+                manifest: Some(manifest),
                 caps_approved: true, // TODO see if we want to auto-approve local installs
                 mirroring: *mirror,
                 auto_update: false, // can't auto-update a local package
@@ -438,12 +445,20 @@ fn handle_receive_download(
         }
     }
 
+    // turn the blob bytes into a zip, then attempt to extract the `pkg/manifest.json`
+    // file for usage in caps approval
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(blob.bytes))?;
+    let mut manifest_file = zip.by_name("pkg/manifest.json")?;
+    let mut manifest = String::new();
+    manifest_file.read_to_string(&mut manifest)?;
+
     state.add_downloaded_package(
         &package_id,
         PackageState {
             mirrored_from: Some(requested_package.from),
             our_version: download_hash,
             source_zip: Some(blob.bytes),
+            manifest: Some(manifest),
             caps_approved: false,
             mirroring: requested_package.mirror,
             auto_update: requested_package.auto_update,
