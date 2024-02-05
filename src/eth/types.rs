@@ -85,10 +85,3 @@ pub fn to_static_str(method: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-
-/// Primary state object of the `eth` module
-pub struct RpcConnections {
-    // todo generics when they work properly: pub struct RpcConnections<T>, where T: Transport
-    pub provider: Provider<PubSubFrontend>,
-    pub ws_provider_subscriptions: HashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>,
-}
