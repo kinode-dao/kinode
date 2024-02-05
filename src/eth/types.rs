@@ -4,7 +4,6 @@ use alloy_providers::provider::Provider;
 use alloy_pubsub::PubSubFrontend;
 use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
 use alloy_rpc_types::{Block, BlockId, BlockNumberOrTag, CallRequest, Filter, Log};
-use alloy_transport::RpcResult;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::task::JoinHandle;
@@ -24,65 +23,19 @@ pub enum EthAction {
     },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
     UnsubscribeLogs(u64),
-    /// get_logs
-    /// Vec<Log> or loop through?
-    GetLogs {
-        filter: Filter,
-    },
-    /// get_block_number
-    GetBlockNumber,
-    /// eth_getBalance
-    GetBalance {
-        address: String, // alloy_primitives::Address deserialization..
-        tag: Option<BlockId>,
-    },
-    GetGasPrice,
-    Call {
-        tx: CallRequest,
-        tag: BlockNumberOrTag,
-    },
-    GetTransactionCount {
-        address: String, // alloy_primitives::Address deserialization..
-        tag: Option<BlockNumberOrTag>,
-    },
-    GetBlockByNumber {
-        block: BlockId,
-        full_tx: bool,
-    },
-    GetBlockByHash {
-        hash: Vec<u8>, // alloy_primitives::BlockHash deserialization..
-        full_tx: bool,
-    },
-    RawRequest {
+    /// Raw request. Used by kinode_process_lib.
+    Request {
         method: String,
-        params: Params,
-    },
-    SendRawTransaction {
-        tx: Vec<u8>, // alloy_primitives::Bytes deserialization..
+        params: serde_json::Value,
     },
 }
 
-/// Potential EthResponse type.
-/// Can encapsulate all methods in their own response type,
-/// or return generic result which can be parsed later..
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthResponse {
-    // another possible strat, just return RpcResult<T, E, ErrResp>,
-    // then try deserializing on the process_lib side.
     Ok,
+    Request(serde_json::Value),
     Err(EthError),
-    Sub(SubscriptionResult),
-    GetLogs(Vec<Log>),
-    GetBlockNumber(u64),
-    GetBalance(U256),
-    GetGasPrice(U256),
-    Call(Vec<u8>), // alloy_primimtives::Bytes deserialization..
-    GetTransactionCount(U256),
-    GetBlockByNumber(Option<Block>),
-    GetBlockByHash(Option<Block>),
-    // raw json vs enum type vs into T?
-    RawRequest(serde_json::Value),
-    SendRawTransaction(Vec<u8>), // alloy_primitives::TxHash deserialization..
+    Sub { id: u64, result: SubscriptionResult },
 }
 
 /// The Response type which a process will get from requesting with an [`EthAction`] will be
@@ -98,18 +51,40 @@ pub enum EthError {
     SubscriptionNotFound,
 }
 
-/// The Request type which a process will get from using SubscribeLogs to subscribe
-/// to a log.
-///
-/// Will be serialized and deserialized using `serde_json::to_vec` and `serde_json::from_slice`.
-#[derive(Debug, Serialize, Deserialize)]
-pub enum EthSubEvent {
-    Log(Log),
-}
-
 //
 // Internal types
 //
+
+/// For static lifetimes of method strings.
+/// Hopefully replaced asap by alloy-rs network abstraction.
+pub fn to_static_str(method: &str) -> Option<&'static str> {
+    match method {
+        "eth_getBalance" => Some("eth_getBalance"),
+        "eth_sendRawTransaction" => Some("eth_sendRawTransaction"),
+        "eth_call" => Some("eth_call"),
+        "eth_getTransactionReceipt" => Some("eth_getTransactionReceipt"),
+        "eth_estimateGas" => Some("eth_estimateGas"),
+        "eth_blockNumber" => Some("eth_blockNumber"),
+        "eth_getBlockByHash" => Some("eth_getBlockByHash"),
+        "eth_getBlockByNumber" => Some("eth_getBlockByNumber"),
+        "eth_getTransactionByHash" => Some("eth_getTransactionByHash"),
+        "eth_getCode" => Some("eth_getCode"),
+        "eth_getStorageAt" => Some("eth_getStorageAt"),
+        "eth_gasPrice" => Some("eth_gasPrice"),
+        "eth_accounts" => Some("eth_accounts"),
+        "eth_hashrate" => Some("eth_hashrate"),
+        "eth_getLogs" => Some("eth_getLogs"),
+        "eth_subscribe" => Some("eth_subscribe"),
+        "eth_unsubscribe" => Some("eth_unsubscribe"),
+        // "eth_mining" => Some("eth_mining"),
+        // "net_version" => Some("net_version"),
+        // "net_peerCount" => Some("net_peerCount"),
+        // "net_listening" => Some("net_listening"),
+        // "web3_clientVersion" => Some("web3_clientVersion"),
+        // "web3_sha3" => Some("web3_sha3"),
+        _ => None,
+    }
+}
 
 /// Primary state object of the `eth` module
 pub struct RpcConnections {

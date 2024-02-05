@@ -1,15 +1,11 @@
 use crate::eth::types::*;
 use crate::types::*;
-use alloy_primitives::{Address as EthAddress, Bytes, U256};
-use alloy_providers::provider::TempProvider;
 use alloy_pubsub::RawSubscription;
 use alloy_rpc_client::ClientBuilder;
-use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
-use alloy_rpc_types::{BlockNumberOrTag, Filter};
+use alloy_rpc_types::pubsub::SubscriptionResult;
 use alloy_transport_ws::WsConnect;
 use anyhow::Result;
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::Arc;
 use url::Url;
 
@@ -73,6 +69,7 @@ pub async fn provider(
         match handle_request(
             our.clone(),
             &km.rsvp.unwrap_or(km.source.clone()),
+            km.id,
             action,
             &mut connections,
             &send_to_loop,
@@ -122,6 +119,7 @@ pub async fn provider(
 async fn handle_request(
     our: Arc<String>,
     target: &Address,
+    id: u64,
     action: EthAction,
     connections: &mut RpcConnections,
     send_to_loop: &MessageSender,
@@ -147,6 +145,7 @@ async fn handle_request(
             let rx = connections.provider.inner().get_raw_subscription(id).await;
             let handle = tokio::spawn(handle_subscription_stream(
                 our.clone(),
+                sub_id.1.clone(),
                 rx,
                 target.clone(),
                 send_to_loop.clone(),
@@ -165,22 +164,23 @@ async fn handle_request(
             handle.abort();
             Ok(())
         }
-        EthAction::GetBlockNumber => {
-            let vc: Vec<u8> = Vec::new();
+        EthAction::Request { method, params } => {
+            let method = to_static_str(&method).ok_or(EthError::ProviderError(format!(
+                "eth: method not found: {}",
+                method
+            )))?;
 
-            Ok(())
-        }
-        EthAction::GetLogs { filter } => {
-            let logs = connections
+            // throw transportErrorKinds straight back to process
+            let ass: serde_json::Value = connections
                 .provider
-                .get_logs(filter)
+                .inner()
+                .prepare(method, params)
                 .await
-                .map_err(|e| EthError::ProviderError(format!("{:?}", e)))?;
-
-            // TEMP, will change.
+                .unwrap();
+            // send response back to loop:
             send_to_loop
                 .send(KernelMessage {
-                    id: rand::random(),
+                    id,
                     source: Address {
                         node: our.to_string(),
                         process: ETH_PROCESS_ID.clone(),
@@ -190,7 +190,7 @@ async fn handle_request(
                     message: Message::Response((
                         Response {
                             inherit: false,
-                            body: serde_json::to_vec(&EthResponse::GetLogs(logs)).unwrap(),
+                            body: serde_json::to_vec(&EthResponse::Request(ass)).unwrap(),
                             metadata: None,
                             capabilities: vec![],
                         },
@@ -200,68 +200,6 @@ async fn handle_request(
                 })
                 .await
                 .unwrap();
-            Ok(())
-        }
-        EthAction::GetGasPrice => {
-            let gas_price = connections
-                .provider
-                .get_gas_price()
-                .await
-                .map_err(|e| EthError::ProviderError(format!("{:?}", e)))?;
-
-            send_to_loop
-                .send(KernelMessage {
-                    id: rand::random(),
-                    source: Address {
-                        node: our.to_string(),
-                        process: ETH_PROCESS_ID.clone(),
-                    },
-                    target: target.clone(),
-                    rsvp: None,
-                    message: Message::Request(Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&gas_price).unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }),
-                    lazy_load_blob: None,
-                })
-                .await
-                .unwrap();
-
-            Ok(())
-        }
-        EthAction::GetBalance { address, tag } => {
-            let address = EthAddress::from_str(&address)
-                .map_err(|e| EthError::ProviderError(format!("{:?}", e)))?;
-            let balance = connections
-                .provider
-                .get_balance(address, tag)
-                .await
-                .map_err(|e| EthError::ProviderError(format!("{:?}", e)))?;
-
-            send_to_loop
-                .send(KernelMessage {
-                    id: rand::random(),
-                    source: Address {
-                        node: our.to_string(),
-                        process: ETH_PROCESS_ID.clone(),
-                    },
-                    target: target.clone(),
-                    rsvp: None,
-                    message: Message::Request(Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&balance).unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }),
-                    lazy_load_blob: None,
-                })
-                .await
-                .unwrap();
-
             Ok(())
         }
         _ => {
@@ -278,6 +216,7 @@ async fn handle_request(
 /// for a specific subscription made by a process.
 async fn handle_subscription_stream(
     our: Arc<String>,
+    sub_id: u64,
     mut rx: RawSubscription,
     target: Address,
     send_to_loop: MessageSender,
@@ -302,7 +241,11 @@ async fn handle_subscription_stream(
                     message: Message::Request(Request {
                         inherit: false,
                         expects_response: None,
-                        body: serde_json::to_vec(&EthResponse::Sub(event)).unwrap(),
+                        body: serde_json::to_vec(&EthResponse::Sub {
+                            id: sub_id,
+                            result: event,
+                        })
+                        .unwrap(),
                         metadata: None,
                         capabilities: vec![],
                     }),
