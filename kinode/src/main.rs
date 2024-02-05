@@ -140,6 +140,32 @@ async fn main() {
         register::KNS_OPTIMISM_ADDRESS
     };
 
+    // check .testnet file for true/false in order to enforce testnet mode on subsequent boots of this node
+    match fs::read(format!("{}/.testnet", home_directory_path)).await {
+        Ok(contents) => {
+            if contents == b"true" {
+                if !on_testnet {
+                    println!("\x1b[38;5;196mfatal: this is a testnet node, and must be booted with the --testnet flag. exiting.\x1b[0m");
+                    return;
+                }
+            } else if contents == b"false" {
+                if on_testnet {
+                    println!("\x1b[38;5;196mfatal: this is a mainnet node, and must be booted without the --testnet flag. exiting.\x1b[0m");
+                    return;
+                }
+            } else {
+                panic!("invalid contents of .testnet file");
+            }
+        }
+        Err(_) => {
+            let _ = fs::write(
+                format!("{}/.testnet", home_directory_path),
+                format!("{}", on_testnet),
+            )
+            .await;
+        }
+    }
+
     #[cfg(not(feature = "simulation-mode"))]
     let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").unwrap(), false);
 
