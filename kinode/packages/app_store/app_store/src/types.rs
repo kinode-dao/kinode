@@ -87,7 +87,6 @@ pub struct PackageState {
     pub our_version: String,
     /// if None, package already installed. if Some, the source file
     pub source_zip: Option<Vec<u8>>,
-    pub manifest: Option<String>,
     pub caps_approved: bool,
     /// are we serving this package to others?
     pub mirroring: bool,
@@ -171,10 +170,19 @@ impl State {
         self.downloaded_packages.get(package_id).cloned()
     }
 
-    pub fn add_downloaded_package(&mut self, package_id: &PackageId, package_state: PackageState) {
+    pub fn add_downloaded_package(
+        &mut self,
+        package_id: &PackageId,
+        package_state: PackageState,
+        save_to_vfs: bool,
+    ) -> anyhow::Result<()> {
         self.downloaded_packages
             .insert(package_id.to_owned(), package_state);
-        crate::set_state(&bincode::serialize(self).unwrap());
+        if save_to_vfs {
+            self.save_downloaded_package_in_vfs(package_id)?;
+        }
+        crate::set_state(&bincode::serialize(self)?);
+        Ok(())
     }
 
     /// returns True if the package was found and updated, False otherwise
@@ -260,19 +268,20 @@ impl State {
                         mirrored_from: None,
                         our_version,
                         source_zip: None,    // since it's already installed
-                        manifest: None,      // since it's already installed
                         caps_approved: true, // since it's already installed this must be true
                         mirroring: false,
                         auto_update: false,
                         metadata: None,
                     },
-                )
+                    false,
+                )?
             }
         }
         Ok(())
     }
 
-    pub fn install_downloaded_package(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
+    /// saves state
+    fn save_downloaded_package_in_vfs(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
         let Some(mut package_state) = self.get_downloaded_package(package_id) else {
             return Err(anyhow::anyhow!("no package state"));
         };
@@ -322,7 +331,6 @@ impl State {
             .send_and_await_response(5)??;
 
         package_state.source_zip = None;
-        self.add_downloaded_package(package_id, package_state);
         crate::set_state(&bincode::serialize(self)?);
         Ok(())
     }

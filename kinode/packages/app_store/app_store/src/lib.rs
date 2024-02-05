@@ -270,23 +270,19 @@ fn handle_local_request(
             };
             // set the version hash for this new local package
             let our_version = generate_version_hash(&blob.bytes);
-            // turn the blob bytes into a zip, then attempt to extract the `pkg/manifest.json`
-            // file for usage in caps approval
-            let mut zip = zip::ZipArchive::new(std::io::Cursor::new(blob.bytes.clone())).unwrap();
-            let mut manifest_file = zip.by_name("pkg/manifest.json").unwrap();
-            let mut manifest = String::new();
-            manifest_file.read_to_string(&mut manifest).unwrap();
+
             let package_state = PackageState {
                 mirrored_from: Some(our.node.clone()),
                 our_version,
                 source_zip: Some(blob.bytes),
-                manifest: Some(manifest),
                 caps_approved: true, // TODO see if we want to auto-approve local installs
                 mirroring: *mirror,
                 auto_update: false, // can't auto-update a local package
                 metadata: None,     // TODO
             };
-            state.add_downloaded_package(package, package_state);
+            let Ok(()) = state.add_downloaded_package(package, package_state, true) else {
+                return LocalResponse::NewPackageResponse(NewPackageResponse::Failure);
+            };
             LocalResponse::NewPackageResponse(NewPackageResponse::Success)
         }
         LocalRequest::Download {
@@ -446,27 +442,19 @@ fn handle_receive_download(
         }
     }
 
-    // turn the blob bytes into a zip, then attempt to extract the `pkg/manifest.json`
-    // file for usage in caps approval
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(blob.bytes.clone())).unwrap();
-    let mut manifest_file = zip.by_name("pkg/manifest.json").unwrap();
-    let mut manifest = String::new();
-    manifest_file.read_to_string(&mut manifest).unwrap();
-
     state.add_downloaded_package(
         &package_id,
         PackageState {
             mirrored_from: Some(requested_package.from),
             our_version: download_hash,
             source_zip: Some(blob.bytes),
-            manifest: Some(manifest),
             caps_approved: false,
             mirroring: requested_package.mirror,
             auto_update: requested_package.auto_update,
             metadata: None, // TODO
         },
-    );
-    Ok(())
+        true,
+    )
 }
 
 fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
@@ -519,7 +507,6 @@ pub fn handle_install(
     state: &mut State,
     package_id: &PackageId,
 ) -> anyhow::Result<()> {
-    state.install_downloaded_package(package_id)?;
     let drive_path = format!("/{package_id}/pkg");
     let manifest = fetch_package_manifest(package_id)?;
     // always grant read/write to their drive, which we created for them
