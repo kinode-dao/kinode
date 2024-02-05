@@ -43,7 +43,6 @@ enum ProcessSender {
 }
 
 /// persist kernel's process_map state for next bootup
-/// and (TODO) wait for filesystem to respond in the affirmative
 async fn persist_state(
     our_name: &str,
     send_to_loop: &t::MessageSender,
@@ -76,7 +75,7 @@ async fn persist_state(
     Ok(())
 }
 
-/// handle messages sent directly to kernel. source is always our own node.
+/// handle commands inside messages sent directly to kernel. source is always our own node.
 async fn handle_kernel_request(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
@@ -528,7 +527,7 @@ async fn handle_kernel_request(
     }
 }
 
-// double check immediate run
+/// spawn a process loop and insert the process in the relevant kernel state maps
 async fn start_process(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,

@@ -1,8 +1,10 @@
 use crate::kernel::{ProcessMessageReceiver, ProcessMessageSender};
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
-//pub use kinode::process::standard as wit;
-//pub use kinode::process::standard::Host as StandardHost;
+use lib::types::core as t;
+pub use lib::wit;
+pub use lib::wit::Host as StandardHost;
+pub use lib::Process;
 use ring::signature::{self, KeyPair};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -11,26 +13,31 @@ use wasmtime::component::*;
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::preview2::{pipe::MemoryOutputPipe, Table, WasiCtx, WasiCtxBuilder, WasiView};
 
-use lib::types::core as t;
-pub use lib::wit;
-pub use lib::wit::Host as StandardHost;
-pub use lib::Process;
-
-// bindgen!({
-//     path: "wit",
-//     world: "process",
-//     async: true,
-// });
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProcessContext {
+    // store ultimate in order to set prompting message if needed
+    pub message: Option<KernelMessage>,
+    // can be empty if a request doesn't set context, but still needs to inherit
+    pub context: Option<Context>,
+}
 
 pub struct ProcessState {
+    /// our node's networking keypair
     pub keypair: Arc<signature::Ed25519KeyPair>,
+    /// information about ourself
     pub metadata: t::ProcessMetadata,
+    /// pipe from which we get messages from the main event loop
     pub recv_in_process: ProcessMessageReceiver,
+    /// pipe to send messages to ourself (received in `recv_in_process`)
     pub self_sender: ProcessMessageSender,
+    /// pipe for sending messages to the main event loop
     pub send_to_loop: t::MessageSender,
+    /// pipe for sending [`t::Printout`]s to the terminal
     pub send_to_terminal: t::PrintSender,
-    pub prompting_message: Option<t::KernelMessage>,
-    pub last_blob: Option<t::LazyLoadBlob>,
+    /// store the nested request, if any
+    pub nested_request: Option<t::KernelMessage>,
+    /// store the current incoming message that we've gotten from receive()
+    pub current_incoming_message: Option<t::KernelMessage>,
     pub contexts: HashMap<u64, (t::ProcessContext, JoinHandle<()>)>,
     pub message_queue: VecDeque<Result<t::KernelMessage, t::WrappedSendError>>,
     pub caps_oracle: t::CapMessageSender,
@@ -124,9 +131,9 @@ impl ProcessState {
         // otherwise, id is generated randomly
         let request_id: u64 = if request.inherit
             && request.expects_response.is_none()
-            && self.prompting_message.is_some()
+            && self.current_incoming_message.is_some()
         {
-            self.prompting_message.as_ref().unwrap().id
+            self.current_incoming_message.as_ref().unwrap().id
         } else {
             loop {
                 let id = rand::random();
@@ -178,7 +185,7 @@ impl ProcessState {
             rsvp: match (
                 request.inherit,
                 request.expects_response,
-                &self.prompting_message,
+                &self.current_incoming_message,
             ) {
                 // this request expects response, so receives any response
                 // make sure to use the real source, not a fake injected-by-kernel source
@@ -219,8 +226,8 @@ impl ProcessState {
                 request_id,
                 (
                     t::ProcessContext {
-                        prompting_message: if self.prompting_message.is_some() {
-                            self.prompting_message.clone()
+                        prompting_message: if self.current_incoming_message.is_some() {
+                            self.current_incoming_message.clone()
                         } else {
                             None
                         },
@@ -341,21 +348,21 @@ impl ProcessState {
             Ok(km) => match &km.message {
                 t::Message::Request(_) => {
                     self.last_blob = km.lazy_load_blob.clone();
-                    self.prompting_message = Some(km.clone());
+                    self.current_incoming_message = Some(km.clone());
                     (None, km)
                 }
                 t::Message::Response(_) => {
                     if let Some((context, timeout_handle)) = self.contexts.remove(&km.id) {
                         timeout_handle.abort();
                         self.last_blob = km.lazy_load_blob.clone();
-                        self.prompting_message = match context.prompting_message {
+                        self.current_incoming_message = match context.prompting_message {
                             None => Some(km.clone()),
                             Some(prompting_message) => Some(prompting_message),
                         };
                         (context.context, km)
                     } else {
                         self.last_blob = km.lazy_load_blob.clone();
-                        self.prompting_message = Some(km.clone());
+                        self.current_incoming_message = Some(km.clone());
                         (None, km)
                     }
                 }
@@ -364,7 +371,7 @@ impl ProcessState {
                 None => return Err((t::en_wit_send_error(e.error), None)),
                 Some((context, timeout_handle)) => {
                     timeout_handle.abort();
-                    self.prompting_message = context.prompting_message;
+                    self.current_incoming_message = context.prompting_message;
                     return Err((t::en_wit_send_error(e.error), context.context));
                 }
             },
@@ -431,7 +438,7 @@ impl ProcessState {
     /// a response it emits should have. This takes into
     /// account the `rsvp` of the prompting message, if any.
     async fn make_response_id_target(&self) -> Option<(u64, t::Address)> {
-        let Some(ref prompting_message) = self.prompting_message else {
+        let Some(ref prompting_message) = self.current_incoming_message else {
             println!("need non-None prompting_message to handle Response");
             return None;
         };
@@ -513,8 +520,8 @@ pub async fn make_process_loop(
                 self_sender: send_to_process,
                 send_to_loop: send_to_loop.clone(),
                 send_to_terminal: send_to_terminal.clone(),
-                prompting_message: None,
-                last_blob: None,
+                nested_request: None,
+                current_incoming_message: None,
                 contexts: HashMap::new(),
                 message_queue: VecDeque::new(),
                 caps_oracle: caps_oracle.clone(),

@@ -1,6 +1,4 @@
 use crate::kernel::process;
-//use crate::kernel::process::kinode::process::standard as wit;
-//use crate::kernel::process::StandardHost;
 use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
 use anyhow::Result;
@@ -27,6 +25,7 @@ impl StandardHost for process::ProcessWasi {
     //
     // system utils:
     //
+
     async fn print_to_terminal(&mut self, verbosity: u8, content: String) -> Result<()> {
         self.process
             .send_to_terminal
@@ -376,6 +375,7 @@ impl StandardHost for process::ProcessWasi {
         print_debug(&self.process, "spawned a new process").await;
         Ok(Ok(new_process_id.en_wit().to_owned()))
     }
+
     //
     // capabilities management
     //
