@@ -205,13 +205,6 @@ fn handle_run(
     };
     let wasm_path = format!("{}{}", drive_path, wasm_path);
     // build initial caps
-    let mut initial_capabilities: HashSet<kt::Capability> = HashSet::new();
-    if entry.request_networking {
-        initial_capabilities.insert(kt::de_wit_capability(Capability {
-            issuer: Address::new(&our.node, ("kernel", "distro", "sys")),
-            params: "\"network\"".to_string(),
-        }));
-    }
     let process_id = format!("{}:{}", rand::random::<u64>(), package); // all scripts are given random process IDs
     let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
         return Err(anyhow::anyhow!("app store: invalid process id!"));
@@ -224,11 +217,6 @@ fn handle_run(
             action: vfs::VfsAction::Read,
         })?)
         .send_and_await_response(5)??;
-    if entry.root {
-        for cap in our_capabilities() {
-            initial_capabilities.insert(kt::de_wit_capability(cap.clone()));
-        }
-    }
     Request::new()
         .target(("our", "kernel", "distro", "sys"))
         .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
@@ -236,7 +224,7 @@ fn handle_run(
             wasm_bytes_handle: wasm_path.clone(),
             wit_version: None,
             on_exit: kt::OnExit::None, // TODO this should send a message back to runner:script:sys so that it can Drop capabilities
-            initial_capabilities: initial_capabilities.clone(),
+            initial_capabilities: HashSet::new(),
             public: entry.public,
         })?)
         .inherit(true)
@@ -281,6 +269,17 @@ fn handle_run(
             }
         }
     }
+    if entry.request_networking {
+        requested_caps.push(kt::de_wit_capability(Capability {
+            issuer: Address::new(&our.node, ("kernel", "distro", "sys")),
+            params: "\"network\"".to_string(),
+        }));
+    }
+    if entry.root {
+        for cap in our_capabilities() {
+            requested_caps.push(kt::de_wit_capability(cap.clone()));
+        }
+    }
     print_to_terminal(
         1,
         &format!(
@@ -292,9 +291,6 @@ fn handle_run(
             entry.public,
             {
                 let mut caps_string = "[".to_string();
-                for cap in initial_capabilities.iter() {
-                    caps_string += &format!("\n        {}({})", cap.issuer.to_string(), cap.params);
-                }
                 for cap in requested_caps.iter() {
                     caps_string += &format!("\n        {}({})", cap.issuer.to_string(), cap.params);
                 }
