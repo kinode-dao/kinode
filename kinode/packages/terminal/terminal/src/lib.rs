@@ -18,9 +18,12 @@ wit_bindgen::generate!({
 });
 
 #[derive(Debug, Serialize, Deserialize)]
-struct EditAliases {
-    alias: String,
-    process: Option<ProcessId>,
+enum TerminalAction {
+    EditAlias {
+        alias: String,
+        process: Option<ProcessId>,
+    },
+    ProcessEnded(Vec<(ProcessId, Capability)>),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -130,33 +133,30 @@ impl Guest for Component {
                             Ok(()) => continue,
                             Err(e) => println!("terminal: {e}"),
                         }
-                    } else if state.our.node == source.node {
-                        let Ok(edit_aliases) = serde_json::from_slice::<EditAliases>(&body) else {
-                            println!("terminal: invalid action!");
+                    } else if state.our.node == source.node
+                        && state.our.package() == source.package()
+                    {
+                        let Ok(action) = serde_json::from_slice::<TerminalAction>(&body) else {
+                            println!("terminal: failed to parse action from: {}", source);
                             continue;
                         };
-
-                        match edit_aliases.process {
-                            Some(process) => {
-                                state
-                                    .aliases
-                                    .insert(edit_aliases.alias.clone(), process.clone());
-                                println!(
-                                    "terminal: alias {} set to {}",
-                                    edit_aliases.alias, process
-                                );
+                        match action {
+                            TerminalAction::EditAlias { alias, process } => {
+                                match handle_alias_change(&mut state, alias, process) {
+                                    Ok(()) => continue,
+                                    Err(e) => println!("terminal: {e}"),
+                                };
                             }
-                            None => {
-                                state.aliases.remove(&edit_aliases.alias);
-                                println!("terminal: alias {} removed", edit_aliases.alias);
+                            TerminalAction::ProcessEnded(drop_caps) => {
+                                println!("terminal: process ended: {}", source);
+                                match handle_process_cleanup(drop_caps) {
+                                    Ok(()) => continue,
+                                    Err(e) => println!("terminal: {e}"),
+                                }
                             }
-                        }
-                        if let Ok(new_state) = bincode::serialize(&state) {
-                            set_state(&new_state);
-                        } else {
-                            println!("terminal: failed to serialize state!");
                         }
                     } else {
+                        println!("terminal: ignoring message from: {}", source);
                         continue;
                     }
                 }
@@ -205,7 +205,7 @@ fn handle_run(
     };
     let wasm_path = format!("{}{}", drive_path, wasm_path);
     // build initial caps
-    let process_id = format!("{}:{}", rand::random::<u64>(), package); // all scripts are given random process IDs
+    let process_id = format!("{}:terminal:sys", rand::random::<u64>()); // all scripts are given random process IDs
     let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
         return Err(anyhow::anyhow!("app store: invalid process id!"));
     };
@@ -217,13 +217,79 @@ fn handle_run(
             action: vfs::VfsAction::Read,
         })?)
         .send_and_await_response(5)??;
+    // process the caps we are going to grant to other processes
+    let mut granted_caps: Vec<(ProcessId, Capability)> = vec![];
+    if let Some(to_grant) = &entry.grant_capabilities {
+        for value in to_grant {
+            match value {
+                serde_json::Value::String(process_name) => {
+                    if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
+                        granted_caps.push((
+                            parsed_process_id,
+                            Capability {
+                                issuer: Address {
+                                    node: our.node.clone(),
+                                    process: parsed_new_process_id.clone(),
+                                },
+                                params: "\"messaging\"".into(),
+                            },
+                        ));
+                    }
+                }
+                serde_json::Value::Object(map) => {
+                    if let Some(process_name) = map.get("process") {
+                        if let Ok(parsed_process_id) = process_name
+                            .as_str()
+                            .unwrap_or_default()
+                            .parse::<ProcessId>()
+                        {
+                            if let Some(params) = map.get("params") {
+                                granted_caps.push((
+                                    parsed_process_id,
+                                    Capability {
+                                        issuer: Address {
+                                            node: our.node.clone(),
+                                            process: parsed_new_process_id.clone(),
+                                        },
+                                        params: params.to_string(),
+                                    },
+                                ));
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    continue;
+                }
+            }
+        }
+    }
+    for (process, cap) in granted_caps.clone().into_iter() {
+        Request::new()
+            .target(("our", "kernel", "distro", "sys"))
+            .body(serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                target: process,
+                capabilities: vec![kt::de_wit_capability(cap)],
+            })?)
+            .send()?;
+    }
     Request::new()
         .target(("our", "kernel", "distro", "sys"))
         .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
             id: parsed_new_process_id.clone(),
             wasm_bytes_handle: wasm_path.clone(),
             wit_version: None,
-            on_exit: kt::OnExit::None, // TODO this should send a message back to runner:script:sys so that it can Drop capabilities
+            on_exit: kt::OnExit::Requests(vec![(
+                kt::de_wit_address(our.clone()),
+                kt::Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&TerminalAction::ProcessEnded(granted_caps))?,
+                    metadata: None,
+                    capabilities: vec![],
+                },
+                None,
+            )]),
             initial_capabilities: HashSet::new(),
             public: entry.public,
         })?)
@@ -269,6 +335,12 @@ fn handle_run(
             }
         }
     }
+    // always give it the cap to message the terminal back
+    // NOTE a malicious script could use this to drop a ton of caps from other processes
+    requested_caps.push(kt::de_wit_capability(Capability {
+        issuer: our.clone(),
+        params: "\"messaging\"".to_string(),
+    }));
     if entry.request_networking {
         requested_caps.push(kt::de_wit_capability(Capability {
             issuer: Address::new(&our.node, ("kernel", "distro", "sys")),
@@ -287,7 +359,7 @@ fn handle_run(
             parsed_new_process_id.clone(),
             wasm_path.clone(),
             "None",
-            kt::OnExit::None,
+            kt::OnExit::None, // TODO fix this
             entry.public,
             {
                 let mut caps_string = "[".to_string();
@@ -305,63 +377,6 @@ fn handle_run(
             capabilities: requested_caps,
         })?)
         .send()?;
-    if let Some(to_grant) = &entry.grant_capabilities {
-        for value in to_grant {
-            match value {
-                serde_json::Value::String(process_name) => {
-                    if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                        let _ = Request::new()
-                            .target(("our", "kernel", "distro", "sys"))
-                            .body(
-                                serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                                    target: parsed_process_id,
-                                    capabilities: vec![kt::Capability {
-                                        issuer: Address {
-                                            node: our.node.clone(),
-                                            process: parsed_new_process_id.clone(),
-                                        },
-                                        params: "\"messaging\"".into(),
-                                    }],
-                                })
-                                .unwrap(),
-                            )
-                            .send()?;
-                    }
-                }
-                serde_json::Value::Object(map) => {
-                    if let Some(process_name) = map.get("process") {
-                        if let Ok(parsed_process_id) = process_name
-                            .as_str()
-                            .unwrap_or_default()
-                            .parse::<ProcessId>()
-                        {
-                            if let Some(params) = map.get("params") {
-                                let _ = Request::new()
-                                    .target(("our", "kernel", "distro", "sys"))
-                                    .body(
-                                        serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                                            target: parsed_process_id,
-                                            capabilities: vec![kt::Capability {
-                                                issuer: Address {
-                                                    node: our.node.clone(),
-                                                    process: parsed_new_process_id.clone(),
-                                                },
-                                                params: params.to_string(),
-                                            }],
-                                        })
-                                        .unwrap(),
-                                    )
-                                    .send()?;
-                            }
-                        }
-                    }
-                }
-                _ => {
-                    continue;
-                }
-            }
-        }
-    }
     let _ = Request::new()
         .target(("our", "kernel", "distro", "sys"))
         .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
@@ -394,5 +409,42 @@ fn handle_run(
         )
         .send()?;
 
+    Ok(())
+}
+
+fn handle_alias_change(
+    state: &mut TerminalState,
+    alias: String,
+    process: Option<ProcessId>,
+) -> anyhow::Result<()> {
+    match process {
+        Some(process) => {
+            state.aliases.insert(alias.clone(), process.clone());
+            println!("terminal: alias {} set to {}", alias, process);
+        }
+        None => {
+            state.aliases.remove(&alias);
+            println!("terminal: alias {} removed", alias);
+        }
+    }
+    if let Ok(new_state) = bincode::serialize(&state) {
+        set_state(&new_state);
+        Ok(())
+    } else {
+        Err(anyhow!("failed to serialize state!"))
+    }
+}
+
+fn handle_process_cleanup(caps_to_remove: Vec<(ProcessId, Capability)>) -> anyhow::Result<()> {
+    for (process, cap) in caps_to_remove {
+        println!("terminal: cleaning up process {}, {}", process, cap);
+        Request::new()
+            .target(("our", "kernel", "distro", "sys"))
+            .body(serde_json::to_vec(&kt::KernelCommand::DropCapabilities {
+                target: process,
+                capabilities: vec![kt::de_wit_capability(cap)],
+            })?)
+            .send()?;
+    }
     Ok(())
 }

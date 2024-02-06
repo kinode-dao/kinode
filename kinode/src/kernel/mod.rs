@@ -337,6 +337,36 @@ async fn handle_kernel_request(
             entry.capabilities.extend(signed_caps);
             let _ = persist_state(&our_name, &send_to_loop, process_map).await;
         }
+        t::KernelCommand::DropCapabilities {
+            target,
+            capabilities,
+        } => {
+            let Some(entry) = process_map.get_mut(&target) else {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 0,
+                        content: format!(
+                            "kernel: no such process {:?} to DropCapabilities",
+                            target
+                        ),
+                    })
+                    .await;
+                return;
+            };
+            let _ = send_to_terminal
+                .send(t::Printout {
+                    verbosity: 0,
+                    content: format!(
+                        "kernel: got DropCapabilities {:?}",
+                        capabilities.clone()
+                    ),
+                })
+                .await;
+            for cap in capabilities {
+                entry.capabilities.remove(&cap);
+            }
+            let _ = persist_state(&our_name, &send_to_loop, process_map).await;
+        }
         // send 'run' message to a process that's already been initialized
         t::KernelCommand::RunProcess(process_id) => {
             if let Some(ProcessSender::Userspace(process_sender)) = senders.get(&process_id) {
@@ -1058,13 +1088,15 @@ pub async fn kernel(
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
                     },
-                    t::CapMessage::_Drop { on, cap, responder } => {
+                    t::CapMessage::Drop { on, caps, responder } => {
                         // remove cap from process map
                         let Some(entry) = process_map.get_mut(&on) else {
                             let _ = responder.send(false);
                             continue;
                         };
-                        entry.capabilities.remove(&cap);
+                        for cap in &caps {
+                            entry.capabilities.remove(&cap);
+                        }
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
                     },

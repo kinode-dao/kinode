@@ -928,6 +928,11 @@ pub enum KernelCommand {
         target: ProcessId,
         capabilities: Vec<Capability>,
     },
+    /// Drop capabilities. Does nothing if process doesn't have these caps
+    DropCapabilities {
+        target: ProcessId,
+        capabilities: Vec<Capability>,
+    },
     /// Tell the kernel to run a process that has already been installed.
     /// TODO: in the future, this command could be extended to allow for
     /// resource provision.
@@ -966,10 +971,10 @@ pub enum CapMessage {
         caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
-    _Drop {
-        // not used yet!
+    /// root delete: uncritically remove all `caps` from `on`
+    Drop {
         on: ProcessId,
-        cap: Capability,
+        caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
     /// does `on` have `cap` in its store?
