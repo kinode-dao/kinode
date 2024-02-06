@@ -64,7 +64,7 @@ fn gen_package_info(
         "package": id.package().to_string(),
         "publisher": id.publisher(),
         "installed": match &state {
-            Some(state) => !state.source_zip.is_some(),
+            Some(state) => state.installed,
             None => false,
         },
         "metadata_hash": match &listing {

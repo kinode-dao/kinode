@@ -227,12 +227,6 @@ fn handle_remote_request(
                 }
             }
             let file_name = format!("/{}.zip", package_id);
-            if let Some(zip_bytes) = package_state.source_zip {
-                match spawn_transfer(&our, &file_name, Some(zip_bytes), 60, &source) {
-                    Ok(()) => return Resp::RemoteResponse(RemoteResponse::DownloadApproved),
-                    Err(_e) => return Resp::RemoteResponse(RemoteResponse::DownloadDenied),
-                }
-            }
             // get the .zip from VFS and attach as blob to response
             let file_path = format!("/{}/pkg/{}.zip", package_id, package_id);
             let Ok(Ok(_)) = Request::to(("our", "vfs", "distro", "sys"))
@@ -274,13 +268,14 @@ fn handle_local_request(
             let package_state = PackageState {
                 mirrored_from: Some(our.node.clone()),
                 our_version,
-                source_zip: Some(blob.bytes),
+                installed: false,
                 caps_approved: true, // TODO see if we want to auto-approve local installs
                 mirroring: *mirror,
                 auto_update: false, // can't auto-update a local package
                 metadata: None,     // TODO
             };
-            let Ok(()) = state.add_downloaded_package(package, package_state, true) else {
+            let Ok(()) = state.add_downloaded_package(package, package_state, Some(blob.bytes))
+            else {
                 return LocalResponse::NewPackageResponse(NewPackageResponse::Failure);
             };
             LocalResponse::NewPackageResponse(NewPackageResponse::Success)
@@ -447,13 +442,13 @@ fn handle_receive_download(
         PackageState {
             mirrored_from: Some(requested_package.from),
             our_version: download_hash,
-            source_zip: Some(blob.bytes),
+            installed: false,
             caps_approved: false,
             mirroring: requested_package.mirror,
             auto_update: requested_package.auto_update,
             metadata: None, // TODO
         },
-        true,
+        Some(blob.bytes),
     )
 }
 
@@ -693,5 +688,9 @@ pub fn handle_install(
             ))?)
             .send_and_await_response(5)??;
     }
+    // finally set the package as installed
+    state.update_downloaded_package(package_id, |package_state| {
+        package_state.installed = true;
+    });
     Ok(())
 }
