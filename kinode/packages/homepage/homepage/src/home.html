@@ -9,7 +9,7 @@
   <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport"
     content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1.00001, viewport-fit=cover" />
-    <link href='https://fonts.googleapis.com/css?family=Montserrat' rel='stylesheet'>
+  <link href='https://fonts.googleapis.com/css?family=Montserrat' rel='stylesheet'>
 
   <style>
     :root {
@@ -197,7 +197,8 @@
     <h3 id="uq-name">Welcome ${our}!</h3>
 
     <h4>Apps:</h4>
-    <!-- <a id="file-transfer" href="/file-transfer">File Transfer</a> -->
+    <a id="app-store" href="/main:app_store:sys/">App Store</a>
+    <br />
     <a id="chess" href="/chess:chess:sys/">Chess</a>
   </div>
   <script>window.ourName = window.our = '${our}'</script>
@@ -215,8 +216,8 @@
     document.addEventListener('DOMContentLoaded', function () {
       // const fileTransferLink = document.getElementById('file-transfer')
       // fileTransferLink.attributes.href.value = (window.location.pathname + fileTransferLink.attributes.href.value).replace('//', '/')
-      const chessLink = document.getElementById('chess')
-      chessLink.attributes.href.value = (window.location.pathname + chessLink.attributes.href.value).replace('//', '/')
+      // const chessLink = document.getElementById('chess')
+      // chessLink.attributes.href.value = (window.location.pathname + chessLink.attributes.href.value).replace('//', '/')
 
       // const webSocket = new WebSocket('ws://' + window.location.host) // Handle proxying later
       // webSocket.onopen = () => {

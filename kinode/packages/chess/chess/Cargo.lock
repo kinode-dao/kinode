@@ -222,8 +222,13 @@ checksum = "b1a46d1a171d865aa5f83f92695765caa047a9b4cbae2cbf37dbd613a793fd4c"
 
 [[package]]
 name = "kinode_process_lib"
+<<<<<<< HEAD:modules/chess/chess/Cargo.lock
+version = "0.5.7"
+source = "git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha#c1ac7227951fbd8cabf6568704f0ce11e8558c8a"
+=======
 version = "0.5.6"
-source = "git+https://github.com/uqbar-dao/process_lib.git?rev=fccb6a0#fccb6a0c07ebda3e385bff7f76e4984b741f01c7"
+source = "git+https://github.com/kinode-dao/process_lib?rev=fccb6a0#fccb6a0c07ebda3e385bff7f76e4984b741f01c7"
+>>>>>>> develop:kinode/packages/chess/chess/Cargo.lock
 dependencies = [
  "anyhow",
  "bincode",

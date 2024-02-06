@@ -1,7 +1,9 @@
 use kinode_process_lib::{
     await_next_request_body, call_init, println, Address, Message, PackageId, Request,
 };
-use serde::{Deserialize, Serialize};
+
+mod api;
+use api::*;
 
 wit_bindgen::generate!({
     path: "wit",
@@ -10,23 +12,6 @@ wit_bindgen::generate!({
         world: Component,
     },
 });
-
-/// grabbed from main:app_store:sys
-#[derive(Debug, Serialize, Deserialize)]
-pub enum LocalRequest {
-    Install(PackageId),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum LocalResponse {
-    InstallResponse(InstallResponse),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum InstallResponse {
-    Success,
-    Failure,
-}
 
 call_init!(init);
 
@@ -71,6 +56,10 @@ fn init(our: Address) {
         LocalResponse::InstallResponse(InstallResponse::Failure) => {
             println!("failed to install package {package_id}");
             println!("make sure that the package has been downloaded!")
+        }
+        _ => {
+            println!("install: unexpected response from app_store..!");
+            return;
         }
     }
 }
