@@ -1,13 +1,9 @@
-use crate::{
-    DownloadResponse, OnchainPackageMetadata, PackageListing, PackageState, RequestedPackage, State,
-};
+use crate::{DownloadResponse, PackageListing, PackageState, RequestedPackage, State};
 use kinode_process_lib::{
-    eth::EthAddress,
     http::{send_response, IncomingHttpRequest, Method, StatusCode},
     print_to_terminal, Address, NodeId, PackageId,
 };
 use serde_json::json;
-use sha3::digest::generic_array::arr::Inc;
 use std::collections::HashMap;
 
 /// Actions supported over HTTP:

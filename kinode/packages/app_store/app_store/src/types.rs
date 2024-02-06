@@ -1,4 +1,3 @@
-use alloy_primitives::FixedBytes;
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::kernel_types as kt;
@@ -172,7 +171,7 @@ impl State {
     pub fn add_downloaded_package(
         &mut self,
         package_id: &PackageId,
-        mut package_state: PackageState,
+        package_state: PackageState,
         package_bytes: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         if let Some(package_bytes) = package_bytes {

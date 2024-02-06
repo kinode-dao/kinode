@@ -2,8 +2,8 @@ use anyhow::anyhow;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::kinode::process::standard as wit;
 use kinode_process_lib::{
-    get_blob, get_capability, get_typed_state, our_capabilities, println, set_state, vfs, Address,
-    Capability, PackageId, ProcessId, Request,
+    get_blob, get_typed_state, our_capabilities, print_to_terminal, println, set_state, vfs,
+    Address, Capability, PackageId, ProcessId, Request,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -205,13 +205,6 @@ fn handle_run(
     };
     let wasm_path = format!("{}{}", drive_path, wasm_path);
     // build initial caps
-    let mut initial_capabilities: HashSet<kt::Capability> = HashSet::new();
-    if entry.request_networking {
-        initial_capabilities.insert(kt::de_wit_capability(Capability {
-            issuer: Address::new(&our.node, ("kernel", "distro", "sys")),
-            params: "\"network\"".to_string(),
-        }));
-    }
     let process_id = format!("{}:{}", rand::random::<u64>(), package); // all scripts are given random process IDs
     let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
         return Err(anyhow::anyhow!("app store: invalid process id!"));
@@ -224,19 +217,31 @@ fn handle_run(
             action: vfs::VfsAction::Read,
         })?)
         .send_and_await_response(5)??;
+    Request::new()
+        .target(("our", "kernel", "distro", "sys"))
+        .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
+            id: parsed_new_process_id.clone(),
+            wasm_bytes_handle: wasm_path.clone(),
+            wit_version: None,
+            on_exit: kt::OnExit::None, // TODO this should send a message back to runner:script:sys so that it can Drop capabilities
+            initial_capabilities: HashSet::new(),
+            public: entry.public,
+        })?)
+        .inherit(true)
+        .send_and_await_response(5)??;
+    let mut requested_caps: Vec<kt::Capability> = vec![];
     if let Some(to_request) = &entry.request_capabilities {
         for value in to_request {
-            let mut capability = None;
             match value {
                 serde_json::Value::String(process_name) => {
                     if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                        capability = get_capability(
-                            &Address {
+                        requested_caps.push(kt::Capability {
+                            issuer: Address {
                                 node: our.node.clone(),
                                 process: parsed_process_id.clone(),
                             },
-                            "\"messaging\"".into(),
-                        );
+                            params: "\"messaging\"".into(),
+                        });
                     }
                 }
                 serde_json::Value::Object(map) => {
@@ -247,13 +252,13 @@ fn handle_run(
                             .parse::<ProcessId>()
                         {
                             if let Some(params) = map.get("params") {
-                                capability = get_capability(
-                                    &Address {
+                                requested_caps.push(kt::Capability {
+                                    issuer: Address {
                                         node: our.node.clone(),
                                         process: parsed_process_id.clone(),
                                     },
-                                    &params.to_string(),
-                                );
+                                    params: params.to_string(),
+                                });
                             }
                         }
                     }
@@ -262,36 +267,44 @@ fn handle_run(
                     continue;
                 }
             }
-            if let Some(cap) = capability {
-                initial_capabilities.insert(kt::de_wit_capability(cap));
-            } else {
-                println!(
-                    "runner: no cap: {}, for {} to request!",
-                    value.to_string(),
-                    package
-                );
-            }
         }
     }
+    if entry.request_networking {
+        requested_caps.push(kt::de_wit_capability(Capability {
+            issuer: Address::new(&our.node, ("kernel", "distro", "sys")),
+            params: "\"network\"".to_string(),
+        }));
+    }
+    if entry.root {
+        for cap in our_capabilities() {
+            requested_caps.push(kt::de_wit_capability(cap.clone()));
+        }
+    }
+    print_to_terminal(
+        1,
+        &format!(
+            "{}: Process {{\n    wasm_bytes_handle: {},\n    wit_version: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
+            parsed_new_process_id.clone(),
+            wasm_path.clone(),
+            "None",
+            kt::OnExit::None,
+            entry.public,
+            {
+                let mut caps_string = "[".to_string();
+                for cap in requested_caps.iter() {
+                    caps_string += &format!("\n        {}({})", cap.issuer.to_string(), cap.params);
+                }
+                caps_string + "\n    ]"
+            },
+        ),
+    );
     Request::new()
         .target(("our", "kernel", "distro", "sys"))
-        .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
-            id: parsed_new_process_id.clone(),
-            wasm_bytes_handle: wasm_path,
-            wit_version: None,
-            on_exit: kt::OnExit::None, // TODO this should send a message back to runner:script:sys so that it can Drop capabilities
-            initial_capabilities: if entry.root {
-                our_capabilities()
-                    .iter()
-                    .map(|wit: &kinode_process_lib::Capability| kt::de_wit_capability(wit.clone()))
-                    .collect()
-            } else {
-                initial_capabilities
-            },
-            public: entry.public,
+        .body(serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+            target: parsed_new_process_id.clone(),
+            capabilities: requested_caps,
         })?)
-        .inherit(true)
-        .send_and_await_response(5)??;
+        .send()?;
     if let Some(to_grant) = &entry.grant_capabilities {
         for value in to_grant {
             match value {
