@@ -298,15 +298,12 @@ fn handle_run(
             },
         ),
     );
-    let _ = Request::new()
+    Request::new()
         .target(("our", "kernel", "distro", "sys"))
-        .body(
-            serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                target: parsed_new_process_id.clone(),
-                capabilities: requested_caps,
-            })
-            .unwrap(),
-        )
+        .body(serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+            target: parsed_new_process_id.clone(),
+            capabilities: requested_caps,
+        })?)
         .send()?;
     if let Some(to_grant) = &entry.grant_capabilities {
         for value in to_grant {
