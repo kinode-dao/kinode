@@ -1096,11 +1096,11 @@ pub async fn kernel(
                             match process_map.get(&on) {
                                 None => vec![],
                                 Some(p) => {
-                                    caps.iter().filter_map(|cap| {
+                                    caps.into_iter().filter_map(|cap| {
                                         // if issuer is message source, then sign the cap
                                         if cap.issuer.process == on {
                                             Some((
-                                                cap.clone(),
+                                                cap,
                                                 keypair
                                                     .sign(&rmp_serde::to_vec(&cap).unwrap())
                                                     .as_ref()
@@ -1109,10 +1109,7 @@ pub async fn kernel(
                                         // otherwise, only attach previously saved caps
                                         // NOTE we don't need to verify the sigs!
                                         } else {
-                                            match p.capabilities.get(cap) {
-                                                None => None,
-                                                Some(sig) => Some((cap.clone(), sig.clone()))
-                                            }
+                                            p.capabilities.get(&cap).map(|sig| (cap, sig.clone()))
                                         }
                                     }).collect()
                                 },
