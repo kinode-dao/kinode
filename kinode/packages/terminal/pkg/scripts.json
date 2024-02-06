@@ -52,7 +52,7 @@
     },
     "m.wasm": {
         "root": true,
-        "public": false,
+        "public": true,
         "request_networking": true
     }
 }
