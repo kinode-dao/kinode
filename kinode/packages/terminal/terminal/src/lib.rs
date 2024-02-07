@@ -423,8 +423,12 @@ fn handle_alias_change(
             println!("terminal: alias {} set to {}", alias, process);
         }
         None => {
-            state.aliases.remove(&alias);
-            println!("terminal: alias {} removed", alias);
+            if state.aliases.contains_key(&alias) {
+                state.aliases.remove(&alias);
+                println!("terminal: alias {} removed", alias);
+            } else {
+                println!("terminal: alias {} not found", alias);
+            }
         }
     }
     if let Ok(new_state) = bincode::serialize(&state) {
