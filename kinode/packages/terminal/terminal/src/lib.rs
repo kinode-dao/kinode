@@ -137,7 +137,6 @@ impl Guest for Component {
                         && state.our.package() == source.package()
                     {
                         let Ok(action) = serde_json::from_slice::<TerminalAction>(&body) else {
-                            println!("HERE {}", String::from_utf8(body).unwrap_or_default());
                             println!("terminal: failed to parse action from: {}", source);
                             continue;
                         };
@@ -473,3 +472,5 @@ fn handle_process_cleanup(caps_to_remove: Vec<(ProcessId, Capability)>) -> anyho
     }
     Ok(())
 }
+
+fn get_entry() -> anyhow::Result<()> {}
