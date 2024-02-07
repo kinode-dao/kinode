@@ -3191,8 +3191,25 @@ dependencies = [
 
 [[package]]
 name = "kinode_process_lib"
-version = "0.5.8"
-source = "git+https://github.com/uqbar-dao/process_lib.git?rev=9668c82#9668c820986e32f7b8430648147c2498d5abb9f8"
+version = "0.5.9"
+source = "git+https://github.com/uqbar-dao/process_lib.git?tag=v0.5.9-alpha#5e705086bbd10fde89e11d3e3671f6a618a875a7"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "http 1.0.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "kinode_process_lib"
+version = "0.6.0"
+source = "git+https://github.com/uqbar-dao/process_lib.git?rev=509b1ed#509b1ed65041762dc6dfa7dd85811b7783c1997c"
 dependencies = [
  "anyhow",
  "bincode",
@@ -5535,7 +5552,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
+ "kinode_process_lib 0.6.0",
  "rand 0.8.5",
  "regex",
  "serde",

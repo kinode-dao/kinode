@@ -3,7 +3,7 @@ use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::kinode::process::standard as wit;
 use kinode_process_lib::{
     get_blob, get_typed_state, our_capabilities, print_to_terminal, println, set_state, vfs,
-    Address, Capability, PackageId, ProcessId, Request,
+    Address, Capability, ProcessId, Request,
 };
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -70,9 +70,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
         None => (args.to_string(), None),
     };
 
-    let wasm_path = format!("{}.wasm", process.process());
-    let package = PackageId::new(process.package(), process.publisher());
-    match handle_run(&state.our, &package, wasm_path, pipe.0, pipe.1) {
+    match handle_run(&state.our, &process, pipe.0, pipe.1) {
         Ok(_) => Ok(()), // TODO clean up process
         Err(e) => Err(anyhow!("failed to instantiate script: {}", e)),
     }
@@ -173,28 +171,13 @@ impl Guest for Component {
 
 fn handle_run(
     our: &Address,
-    package: &PackageId,
-    wasm_path: String,
+    process: &ProcessId,
     args: String,
     pipe: Option<(String, u64)>,
 ) -> anyhow::Result<()> {
-    let drive_path = format!("/{}/pkg", package);
-    Request::new()
-        .target(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: format!("{}/scripts.json", drive_path),
-            action: vfs::VfsAction::Read,
-        })?)
-        .send_and_await_response(5)??;
-    let Some(blob) = get_blob() else {
-        return Err(anyhow::anyhow!(
-            "couldn't find /{}/pkg/scripts.json",
-            package
-        ));
-    };
-    let dot_scripts = String::from_utf8(blob.bytes)?;
-    let dot_scripts = serde_json::from_str::<HashMap<String, kt::DotScriptsEntry>>(&dot_scripts)?;
-    let Some(entry) = dot_scripts.get(&wasm_path) else {
+    let wasm_path = format!("{}.wasm", process.process());
+    let drive_path = format!("/{}:{}/pkg", process.package(), process.publisher());
+    let Ok(entry) = get_entry(process) else {
         return Err(anyhow::anyhow!("script not in scripts.json file"));
     };
     let wasm_path = if wasm_path.starts_with("/") {
@@ -418,27 +401,11 @@ fn handle_alias_change(
 ) -> anyhow::Result<()> {
     match process {
         Some(process) => {
-            // check to make sure the script is actually a script
-            let drive_path = format!("/{}:{}/pkg", process.package(), process.publisher());
-            Request::new()
-                .target(("our", "vfs", "distro", "sys"))
-                .body(serde_json::to_vec(&vfs::VfsRequest {
-                    path: format!("{}/scripts.json", drive_path),
-                    action: vfs::VfsAction::Read,
-                })?)
-                .send_and_await_response(5)??;
-            let Some(blob) = get_blob() else {
-                return Err(anyhow::anyhow!(
-                    "couldn't find /{}/pkg/scripts.json",
-                    process.package()
-                ));
+            // first check to make sure the script is actually a script
+            let Ok(_) = get_entry(&process) else {
+                return Err(anyhow!("terminal: process {} not found", process));
             };
-            let dot_scripts = String::from_utf8(blob.bytes)?;
-            let dot_scripts =
-                serde_json::from_str::<HashMap<String, kt::DotScriptsEntry>>(&dot_scripts)?;
-            let Some(_) = dot_scripts.get(&format!("{}.wasm", process.process())) else {
-                return Err(anyhow::anyhow!("script not in scripts.json file"));
-            };
+
             state.aliases.insert(alias.clone(), process.clone());
             println!("terminal: alias {} set to {}", alias, process);
         }
@@ -473,4 +440,25 @@ fn handle_process_cleanup(caps_to_remove: Vec<(ProcessId, Capability)>) -> anyho
     Ok(())
 }
 
-fn get_entry() -> anyhow::Result<()> {}
+fn get_entry(process: &ProcessId) -> anyhow::Result<kt::DotScriptsEntry> {
+    let drive_path = format!("/{}:{}/pkg", process.package(), process.publisher());
+    Request::new()
+        .target(("our", "vfs", "distro", "sys"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
+            path: format!("{}/scripts.json", drive_path),
+            action: vfs::VfsAction::Read,
+        })?)
+        .send_and_await_response(5)??;
+    let Some(blob) = get_blob() else {
+        return Err(anyhow::anyhow!(
+            "couldn't find /{}/pkg/scripts.json",
+            process.package()
+        ));
+    };
+    let dot_scripts = String::from_utf8(blob.bytes)?;
+    let dot_scripts = serde_json::from_str::<HashMap<String, kt::DotScriptsEntry>>(&dot_scripts)?;
+    let Some(entry) = dot_scripts.get(&format!("{}.wasm", process.process())) else {
+        return Err(anyhow::anyhow!("script not in scripts.json file"));
+    };
+    Ok(entry.clone())
+}
