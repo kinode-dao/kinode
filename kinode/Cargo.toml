@@ -1,0 +1,83 @@
+[package]
+name = "kinode"
+authors = ["KinodeDAO"]
+version = "0.5.3"
+edition = "2021"
+description = "A general-purpose sovereign cloud computing platform"
+homepage = "https://kinode.org"
+repository = "https://github.com/kinode-dao/kinode"
+license = "Apache-2.0"
+
+[[bin]]
+name = "kinode"
+path = "src/main.rs"
+
+[build-dependencies]
+anyhow = "1.0.71"
+kit = { git = "https://github.com/kinode-dao/kit", rev = "15a4681" }
+reqwest = { version = "0.11.22", features = ["blocking"] }
+sha2 = "0.10"
+tokio = { version = "1.28", features = ["macros"] }
+walkdir = "2.4"
+zip = "0.6"
+
+[features]
+simulation-mode = []
+
+[dependencies]
+aes-gcm = "0.10.2"
+anyhow = "1.0.71"
+async-trait = "0.1.71"
+base64 = "0.13"
+bincode = "1.3.3"
+blake3 = "1.4.1"
+bytes = "1.4.0"
+cap-std = "2.0.0"
+chacha20poly1305 = "0.10.1"
+chrono = "0.4.31"
+clap = { version = "4.4", features = ["derive"] }
+crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"] }
+dashmap = "5.5.3"
+digest = "0.10"
+elliptic-curve = { version = "0.13.8", features = ["ecdh"] }
+ethers = "2.0.13"
+ethers-providers = "2.0.13"
+flate2 = "1.0"
+futures = "0.3"
+generic-array = "0.14"
+getrandom = "0.2.10"
+hex = "0.4.3"
+hkdf = "0.12.3"
+hmac = "0.12"
+http = "0.2.9"
+jwt = "0.16"
+lib = { path = "../lib" }
+lazy_static = "1.4.0"
+log = "0.4.20"
+nohash-hasher = "0.2.0"
+num-traits = "0.2"
+open = "5.0.0"
+public-ip = "0.2.2"
+rand = "0.8.4"
+reqwest = "0.11.18"
+ring = "0.16.20"
+rmp-serde = "1.1.2"
+rocksdb = { version = "0.21.0", features = ["multi-threaded-cf"] }
+route-recognizer = "0.3.1"
+rusqlite = { version = "0.30.0", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_urlencoded = "0.7"
+sha2 = "0.10"
+snow = { version = "0.9.3", features = ["ring-resolver"] }
+static_dir = "0.2.0"
+thiserror = "1.0"
+tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "signal", "sync"] }
+tokio-stream = "0.1.14"
+tokio-tungstenite = "0.20.1"
+url = "2.4.1"
+uuid = { version = "1.1.2", features = ["serde", "v4"] }
+warp = "0.3.5"
+wasmtime = "15.0.1"
+wasmtime-wasi = "15.0.1"
+zip = "0.6"
