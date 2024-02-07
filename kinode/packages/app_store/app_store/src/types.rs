@@ -441,7 +441,16 @@ impl State {
                         "app store: got log with no matching listing"
                     ))?;
 
-                let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
+                let metadata = match fetch_metadata(&metadata_url, &metadata_hash) {
+                    Ok(metadata) => Some(metadata),
+                    Err(e) => {
+                        crate::print_to_terminal(
+                            1,
+                            &format!("app store: failed to fetch metadata: {e:?}"),
+                        );
+                        None
+                    }
+                };
 
                 current_listing.metadata_hash = metadata_hash;
                 current_listing.metadata = metadata;
@@ -539,12 +548,14 @@ fn fetch_metadata(
         return Err(anyhow::anyhow!("no blob"));
     };
     let hash = generate_metadata_hash(&body.bytes);
-    if &hash == &metadata_hash.replace("0x", "") {
+    if &hash == metadata_hash {
         Ok(serde_json::from_slice::<OnchainPackageMetadata>(
             &body.bytes,
         )?)
     } else {
-        Err(anyhow::anyhow!("metadata hash mismatch"))
+        Err(anyhow::anyhow!(
+            "metadata hash mismatch: got {hash}, expected {metadata_hash}"
+        ))
     }
 }
 
@@ -553,7 +564,7 @@ fn generate_metadata_hash(metadata: &[u8]) -> String {
     use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
     hasher.update(metadata);
-    format!("{:x}", hasher.finalize())
+    format!("0x{:x}", hasher.finalize())
 }
 
 /// generate a Keccak-256 hash of the package name and publisher (match onchain)

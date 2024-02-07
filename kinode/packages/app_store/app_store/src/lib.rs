@@ -630,7 +630,7 @@ pub fn handle_install(
                 target: parsed_new_process_id.clone(),
                 capabilities: requested_capabilities,
             })?)
-            .send_and_await_response(5)??;
+            .send()?;
     }
     // THEN, *after* all processes have been initialized, grant caps in manifest
     // TODO for both grants and requests: make the vector of caps
