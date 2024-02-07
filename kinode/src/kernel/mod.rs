@@ -353,12 +353,6 @@ async fn handle_kernel_request(
                     .await;
                 return;
             };
-            let _ = send_to_terminal
-                .send(t::Printout {
-                    verbosity: 0,
-                    content: format!("kernel: got DropCapabilities {:?}", capabilities.clone()),
-                })
-                .await;
             for cap in capabilities {
                 entry.capabilities.remove(&cap);
             }
