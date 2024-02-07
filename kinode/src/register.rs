@@ -266,14 +266,14 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
             }
         }
     };
-    Ok(warp::reply::with_status(
-        Ok(warp::reply::json(&UnencryptedIdentity {
+    return Ok(warp::reply::with_status(
+        warp::reply::json(&UnencryptedIdentity {
             name,
             allowed_routers,
-        })),
+        }),
         StatusCode::OK,
     )
-    .into_response())
+    .into_response());
 }
 
 async fn generate_networking_info(our_temp_id: Arc<Identity>) -> Result<impl Reply, Rejection> {

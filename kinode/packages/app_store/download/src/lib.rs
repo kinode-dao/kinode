@@ -1,7 +1,9 @@
 use kinode_process_lib::{
     await_next_request_body, call_init, println, Address, Message, NodeId, PackageId, Request,
 };
-use serde::{Deserialize, Serialize};
+
+mod api;
+use api::*;
 
 wit_bindgen::generate!({
     path: "wit",
@@ -10,26 +12,6 @@ wit_bindgen::generate!({
         world: Component,
     },
 });
-
-/// grabbed from main:app_store:sys
-#[derive(Debug, Serialize, Deserialize)]
-pub enum LocalRequest {
-    Download {
-        package: PackageId,
-        install_from: NodeId,
-    },
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum LocalResponse {
-    DownloadResponse(DownloadResponse),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum DownloadResponse {
-    Started,
-    Failure,
-}
 
 call_init!(init);
 
@@ -60,7 +42,10 @@ fn init(our: Address) {
             .body(
                 serde_json::to_vec(&LocalRequest::Download {
                     package: package_id.clone(),
-                    install_from: download_from.clone(),
+                    download_from: download_from.clone(),
+                    mirror: true,
+                    auto_update: true,
+                    desired_version_hash: None,
                 })
                 .unwrap(),
             )
@@ -81,6 +66,10 @@ fn init(our: Address) {
         }
         LocalResponse::DownloadResponse(DownloadResponse::Failure) => {
             println!("failed to download package {package_id} from {download_from}");
+        }
+        _ => {
+            println!("download: unexpected response from app_store..!");
+            return;
         }
     }
 }
