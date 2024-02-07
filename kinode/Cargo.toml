@@ -14,7 +14,7 @@ path = "src/main.rs"
 
 [build-dependencies]
 anyhow = "1.0.71"
-kit = { git = "https://github.com/kinode-dao/kit", rev = "15a4681" }
+kit = { git = "https://github.com/kinode-dao/kit", rev = "25b098f" }
 reqwest = { version = "0.11.22", features = ["blocking"] }
 sha2 = "0.10"
 tokio = { version = "1.28", features = ["macros"] }

@@ -88,7 +88,7 @@ name = "alias"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -272,7 +272,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -809,7 +809,7 @@ name = "cat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -871,7 +871,7 @@ dependencies = [
  "anyhow",
  "base64 0.13.1",
  "bincode",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "pleco",
  "serde",
  "serde_json",
@@ -1611,7 +1611,7 @@ name = "download"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -1642,7 +1642,7 @@ name = "echo"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2002,7 +2002,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "tokio-tungstenite 0.20.1",
+ "tokio-tungstenite",
  "tracing",
  "tracing-futures",
  "url",
@@ -2214,7 +2214,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -2408,6 +2408,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "git2"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b3ba52851e73b46a4c3df1d89343741112003f0f6f13beb0dfac9e457c3fdcd"
+dependencies = [
+ "bitflags 2.4.2",
+ "libc",
+ "libgit2-sys",
+ "log",
+ "openssl-probe",
+ "openssl-sys",
+ "url",
+]
+
+[[package]]
 name = "glob"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2556,7 +2571,7 @@ checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 name = "hi"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2595,7 +2610,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2870,7 +2885,7 @@ name = "install"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3138,7 +3153,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tokio-tungstenite 0.20.1",
+ "tokio-tungstenite",
  "url",
  "uuid 1.7.0",
  "walkdir",
@@ -3153,23 +3168,6 @@ name = "kinode_lib"
 version = "0.6.0"
 dependencies = [
  "lib",
-]
-
-[[package]]
-name = "kinode_process_lib"
-version = "0.5.5"
-source = "git+https://github.com/uqbar-dao/process_lib.git?tag=v0.5.5-alpha#722f2dbfbcc4d1bf5da1fa5db137632a3cede44c"
-dependencies = [
- "anyhow",
- "bincode",
- "http 1.0.0",
- "mime_guess",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "thiserror",
- "url",
- "wit-bindgen",
 ]
 
 [[package]]
@@ -3192,17 +3190,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "kinode_process_lib"
+version = "0.5.9"
+source = "git+https://github.com/uqbar-dao/process_lib.git?tag=v0.5.9-alpha#5e705086bbd10fde89e11d3e3671f6a618a875a7"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "http 1.0.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "kit"
 version = "0.1.0"
-source = "git+https://github.com/kinode-dao/kit?rev=15a4681#15a468109d54af140ce2b7313b3d3ed776943d7c"
+source = "git+https://github.com/kinode-dao/kit?rev=25b098f#25b098fab136387065d6058162d33c727d277ab8"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
  "clap",
  "dirs 5.0.1",
  "futures-util",
+ "git2",
  "hex",
- "kinode_process_lib 0.5.5",
+ "kinode_process_lib 0.5.9 (git+https://github.com/uqbar-dao/process_lib.git?tag=v0.5.9-alpha)",
  "nix",
  "regex",
  "reqwest",
@@ -3212,7 +3228,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
- "tokio-tungstenite 0.21.0",
+ "tokio-tungstenite",
  "toml 0.8.9",
  "walkdir",
  "zip",
@@ -3228,7 +3244,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "hex",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -3306,6 +3322,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c198f91728a82281a64e1f4f9eeb25d82cb32a5de251c6bd1b5154d63a8e7bd"
 
 [[package]]
+name = "libgit2-sys"
+version = "0.16.2+1.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee4126d8b4ee5c9d9ea891dd875cfdc1e9d0950437179104b183d7d8a74d24e8"
+dependencies = [
+ "cc",
+ "libc",
+ "libssh2-sys",
+ "libz-sys",
+ "openssl-sys",
+ "pkg-config",
+]
+
+[[package]]
 name = "libloading"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3360,12 +3390,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "libssh2-sys"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dc8a030b787e2119a731f1951d6a773e2280c660f8ec4b0f5e1505a386e71ee"
+dependencies = [
+ "cc",
+ "libc",
+ "libz-sys",
+ "openssl-sys",
+ "pkg-config",
+ "vcpkg",
+]
+
+[[package]]
 name = "libz-sys"
 version = "1.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "037731f5d3aaa87a5675e895b63ddff1a87624bc29f77004ea829809654e48f6"
 dependencies = [
  "cc",
+ "libc",
  "pkg-config",
  "vcpkg",
 ]
@@ -3408,7 +3453,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "regex",
  "serde",
  "serde_json",
@@ -5490,7 +5535,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "rand 0.8.5",
  "regex",
  "serde",
@@ -5504,7 +5549,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "thiserror",
@@ -5518,7 +5563,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "indexmap 2.2.2",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "thiserror",
@@ -5671,20 +5716,8 @@ dependencies = [
  "rustls",
  "tokio",
  "tokio-rustls",
- "tungstenite 0.20.1",
+ "tungstenite",
  "webpki-roots",
-]
-
-[[package]]
-name = "tokio-tungstenite"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c83b561d025642014097b66e6c1bb422783339e0909e4429cde4749d1990bc38"
-dependencies = [
- "futures-util",
- "log",
- "tokio",
- "tungstenite 0.21.0",
 ]
 
 [[package]]
@@ -5771,7 +5804,7 @@ name = "top"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -5899,25 +5932,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tungstenite"
-version = "0.21.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ef1a641ea34f399a848dea702823bbecfb4c486f911735368f1f137cb8257e1"
-dependencies = [
- "byteorder",
- "bytes",
- "data-encoding",
- "http 1.0.0",
- "httparse",
- "log",
- "rand 0.8.5",
- "sha1",
- "thiserror",
- "url",
- "utf-8",
-]
-
-[[package]]
 name = "typenum"
 version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6000,7 +6014,7 @@ name = "uninstall"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.5.9",
+ "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -6154,7 +6168,7 @@ dependencies = [
  "serde_urlencoded",
  "tokio",
  "tokio-stream",
- "tokio-tungstenite 0.20.1",
+ "tokio-tungstenite",
  "tokio-util",
  "tower-service",
  "tracing",
