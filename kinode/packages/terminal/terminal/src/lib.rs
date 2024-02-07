@@ -137,6 +137,7 @@ impl Guest for Component {
                         && state.our.package() == source.package()
                     {
                         let Ok(action) = serde_json::from_slice::<TerminalAction>(&body) else {
+                            println!("HERE {}", String::from_utf8(body).unwrap_or_default());
                             println!("terminal: failed to parse action from: {}", source);
                             continue;
                         };
@@ -148,7 +149,6 @@ impl Guest for Component {
                                 };
                             }
                             TerminalAction::ProcessEnded(drop_caps) => {
-                                println!("terminal: process ended: {}", source);
                                 match handle_process_cleanup(drop_caps) {
                                     Ok(()) => continue,
                                     Err(e) => println!("terminal: {e}"),
@@ -419,6 +419,27 @@ fn handle_alias_change(
 ) -> anyhow::Result<()> {
     match process {
         Some(process) => {
+            // check to make sure the script is actually a script
+            let drive_path = format!("/{}:{}/pkg", process.package(), process.publisher());
+            Request::new()
+                .target(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: format!("{}/scripts.json", drive_path),
+                    action: vfs::VfsAction::Read,
+                })?)
+                .send_and_await_response(5)??;
+            let Some(blob) = get_blob() else {
+                return Err(anyhow::anyhow!(
+                    "couldn't find /{}/pkg/scripts.json",
+                    process.package()
+                ));
+            };
+            let dot_scripts = String::from_utf8(blob.bytes)?;
+            let dot_scripts =
+                serde_json::from_str::<HashMap<String, kt::DotScriptsEntry>>(&dot_scripts)?;
+            let Some(_) = dot_scripts.get(&format!("{}.wasm", process.process())) else {
+                return Err(anyhow::anyhow!("script not in scripts.json file"));
+            };
             state.aliases.insert(alias.clone(), process.clone());
             println!("terminal: alias {} set to {}", alias, process);
         }

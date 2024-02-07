@@ -12,10 +12,12 @@ wit_bindgen::generate!({
     },
 });
 
-#[derive(Serialize, Deserialize)]
-struct EditAliases {
-    alias: String,
-    process: Option<ProcessId>,
+#[derive(Debug, Serialize, Deserialize)]
+enum TerminalAction {
+    EditAlias {
+        alias: String,
+        process: Option<ProcessId>,
+    },
 }
 
 call_init!(init);
@@ -38,7 +40,7 @@ fn init(_our: Address) {
         let _ = Request::new()
             .target(("our", "terminal", "terminal", "sys"))
             .body(
-                json!(EditAliases {
+                json!(TerminalAction::EditAlias {
                     alias: alias.to_string(),
                     process: None
                 })
@@ -53,7 +55,7 @@ fn init(_our: Address) {
                 let _ = Request::new()
                     .target(("our", "terminal", "terminal", "sys"))
                     .body(
-                        json!(EditAliases {
+                        json!(TerminalAction::EditAlias {
                             alias: alias.to_string(),
                             process: Some(process)
                         })
