@@ -19,7 +19,7 @@ pub async fn load_state(
     keypair: Arc<signature::Ed25519KeyPair>,
     home_directory_path: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, bool)>,
-) -> Result<(ProcessMap, DB), StateError> {
+) -> Result<(ProcessMap, DB, ReverseCapIndex), StateError> {
     let state_path = format!("{}/kernel", &home_directory_path);
 
     if let Err(e) = fs::create_dir_all(&state_path).await {
@@ -37,6 +37,7 @@ pub async fn load_state(
     // let cf_descriptor = ColumnFamilyDescriptor::new(cf_name, Options::default());
     let db = DB::open_default(state_path).unwrap();
     let mut process_map: ProcessMap = HashMap::new();
+    let mut reverse_cap_index: ReverseCapIndex = HashMap::new();
 
     let kernel_id = process_to_vec(KERNEL_PROCESS_ID.clone());
     match db.get(&kernel_id) {
@@ -73,11 +74,12 @@ pub async fn load_state(
         home_directory_path.clone(),
         runtime_extensions.clone(),
         &mut process_map,
+        &mut reverse_cap_index,
     )
     .await
     .unwrap();
 
-    Ok((process_map, db))
+    Ok((process_map, db, reverse_cap_index))
 }
 
 pub async fn state_sender(
@@ -307,6 +309,7 @@ async fn bootstrap(
     home_directory_path: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, bool)>,
     process_map: &mut ProcessMap,
+    reverse_cap_index: &mut ReverseCapIndex,
 ) -> Result<()> {
     // println!("bootstrapping node...\r");
 
@@ -699,7 +702,12 @@ async fn bootstrap(
                                 };
                                 process
                                     .capabilities
-                                    .insert(cap.clone(), sign_cap(cap, keypair.clone()));
+                                    .insert(cap.clone(), sign_cap(cap.clone(), keypair.clone()));
+                                reverse_cap_index.entry(cap.clone().issuer.process)
+                                    .or_insert_with(HashMap::new)
+                                    .entry(our_process_id.parse().unwrap())
+                                    .or_insert_with(Vec::new)
+                                    .push(cap);
                             }
                         }
                     }
@@ -719,7 +727,12 @@ async fn bootstrap(
                                         };
                                         process
                                             .capabilities
-                                            .insert(cap.clone(), sign_cap(cap, keypair.clone()));
+                                            .insert(cap.clone(), sign_cap(cap.clone(), keypair.clone()));
+                                        reverse_cap_index.entry(cap.clone().issuer.process)
+                                            .or_insert_with(HashMap::new)
+                                            .entry(our_process_id.parse().unwrap())
+                                            .or_insert_with(Vec::new)
+                                            .push(cap);
                                     }
                                 }
                             }
