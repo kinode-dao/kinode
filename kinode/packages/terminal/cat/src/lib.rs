@@ -19,9 +19,15 @@ fn init(_our: Address) {
     };
 
     let Ok(file_path) = String::from_utf8(args) else {
-        println!("bad file path");
+        println!("cat: bad args, aborting");
         return;
     };
+
+    if file_path.is_empty() {
+        println!("Print the contents of a file to the terminal");
+        println!("\x1b[1mUsage:\x1b[0m cat <file_path>");
+        return;
+    }
 
     Request::new()
         .target(("our", "vfs", "distro", "sys"))

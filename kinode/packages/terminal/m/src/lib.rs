@@ -18,6 +18,11 @@ fn init(_our: Address) {
         return;
     };
     let body_string = String::from_utf8(body).unwrap();
+    if body_string.is_empty() {
+        println!("Send a Request to a Process");
+        println!("\x1b[1mUsage:\x1b[0m m <target> <body> [-a <await_time>]");
+        return;
+    }
 
     let re = Regex::new(r#"'[^']*'|\S+"#).unwrap();
     let mut args: Vec<String> = re

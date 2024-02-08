@@ -29,6 +29,12 @@ fn init(_our: Address) {
     };
 
     let line = String::from_utf8(args).unwrap_or("alias: error".into());
+    if line.is_empty() {
+        println!("Change alias for a process");
+        println!("\x1b[1mUsage:\x1b[0m alias <alias_name> <process_id>");
+        return;
+    }
+
     let (alias, process) = line.split_once(" ").unwrap_or((&line, ""));
 
     if alias.is_empty() {
