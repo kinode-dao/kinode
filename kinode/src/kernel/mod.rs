@@ -86,6 +86,7 @@ async fn handle_kernel_request(
     senders: &mut Senders,
     process_handles: &mut ProcessHandles,
     process_map: &mut t::ProcessMap,
+    reverse_cap_index: &mut t::ReverseCapIndex,
     caps_oracle: t::CapMessageSender,
     engine: &Engine,
 ) {
@@ -334,7 +335,37 @@ async fn handle_kernel_request(
                     )
                 })
                 .collect();
-            entry.capabilities.extend(signed_caps);
+            entry.capabilities.extend(signed_caps.clone());
+            // add these to reverse cap index
+            for (cap, _) in &signed_caps {
+                reverse_cap_index
+                    .entry(cap.clone().issuer.process)
+                    .or_insert_with(HashMap::new)
+                    .entry(target.clone())
+                    .or_insert_with(Vec::new)
+                    .push(cap.clone());
+            }
+            let _ = persist_state(&our_name, &send_to_loop, process_map).await;
+        }
+        t::KernelCommand::DropCapabilities {
+            target,
+            capabilities,
+        } => {
+            let Some(entry) = process_map.get_mut(&target) else {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 1,
+                        content: format!(
+                            "kernel: no such process {:?} to DropCapabilities",
+                            target
+                        ),
+                    })
+                    .await;
+                return;
+            };
+            for cap in capabilities {
+                entry.capabilities.remove(&cap);
+            }
             let _ = persist_state(&our_name, &send_to_loop, process_map).await;
         }
         // send 'run' message to a process that's already been initialized
@@ -423,7 +454,14 @@ async fn handle_kernel_request(
         t::KernelCommand::KillProcess(process_id) => {
             // brutal and savage killing: aborting the task.
             // do not do this to a process if you don't want to risk
-            // dropped messages / un-replied-to-requests
+            // dropped messages / un-replied-to-requests / revoked caps
+            caps_oracle
+                .send(t::CapMessage::RevokeAll {
+                    on: process_id.clone(),
+                    responder: tokio::sync::oneshot::channel().0,
+                })
+                .await
+                .expect("event loop: fatal: sender died");
             let _ = senders.remove(&process_id);
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
@@ -622,6 +660,7 @@ pub async fn kernel(
     our: t::Identity,
     keypair: Arc<signature::Ed25519KeyPair>,
     mut process_map: t::ProcessMap,
+    mut reverse_cap_index: t::ReverseCapIndex,
     caps_oracle_sender: t::CapMessageSender,
     mut caps_oracle_receiver: t::CapMessageReceiver,
     send_to_loop: t::MessageSender,
@@ -1004,6 +1043,7 @@ pub async fn kernel(
                         &mut senders,
                         &mut process_handles,
                         &mut process_map,
+                        &mut reverse_cap_index,
                         caps_oracle_sender.clone(),
                         &engine,
                     ).await;
@@ -1060,17 +1100,28 @@ pub async fn kernel(
                                 cap.clone(),
                                 keypair.sign(&rmp_serde::to_vec(&cap).unwrap()).as_ref().to_vec()
                             )).collect();
-                        entry.capabilities.extend(signed_caps);
+                        entry.capabilities.extend(signed_caps.clone());
+                        // now we have to insert all caps into the reverse cap index
+                        for (cap, _) in &signed_caps {
+                            reverse_cap_index
+                                .entry(cap.clone().issuer.process)
+                                .or_insert_with(HashMap::new)
+                                .entry(on.clone())
+                                .or_insert_with(Vec::new)
+                                .push(cap.clone());
+                        }
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
                     },
-                    t::CapMessage::_Drop { on, cap, responder } => {
+                    t::CapMessage::Drop { on, caps, responder } => {
                         // remove cap from process map
                         let Some(entry) = process_map.get_mut(&on) else {
                             let _ = responder.send(false);
                             continue;
                         };
-                        entry.capabilities.remove(&cap);
+                        for cap in &caps {
+                            entry.capabilities.remove(&cap);
+                        }
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
                     },
@@ -1092,6 +1143,22 @@ pub async fn kernel(
                             }
                         );
                     },
+                    t::CapMessage::RevokeAll { on, responder } => {
+                        let Some(granter) = reverse_cap_index.get(&on) else {
+                            let _ = responder.send(true);
+                            continue;
+                        };
+                        for (grantee, caps) in granter {
+                            let Some(entry) = process_map.get_mut(&grantee) else {
+                                continue;
+                            };
+                            for cap in caps {
+                                entry.capabilities.remove(&cap);
+                            }
+                        }
+                        let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
+                        let _ = responder.send(true);
+                    }
                     t::CapMessage::FilterCaps { on, caps, responder } => {
                         let _ = responder.send(
                             match process_map.get(&on) {

@@ -2,7 +2,6 @@ use kinode_process_lib::{
     await_next_request_body, call_init, println, Address, ProcessId, Request,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 wit_bindgen::generate!({
     path: "wit",
@@ -12,10 +11,12 @@ wit_bindgen::generate!({
     },
 });
 
-#[derive(Serialize, Deserialize)]
-struct EditAliases {
-    alias: String,
-    process: Option<ProcessId>,
+#[derive(Debug, Serialize, Deserialize)]
+enum TerminalAction {
+    EditAlias {
+        alias: String,
+        process: Option<ProcessId>,
+    },
 }
 
 call_init!(init);
@@ -27,6 +28,12 @@ fn init(_our: Address) {
     };
 
     let line = String::from_utf8(args).unwrap_or("alias: error".into());
+    if line.is_empty() {
+        println!("Change alias for a process");
+        println!("\x1b[1mUsage:\x1b[0m alias <alias_name> <process_id>");
+        return;
+    }
+
     let (alias, process) = line.split_once(" ").unwrap_or((&line, ""));
 
     if alias.is_empty() {
@@ -38,13 +45,11 @@ fn init(_our: Address) {
         let _ = Request::new()
             .target(("our", "terminal", "terminal", "sys"))
             .body(
-                json!(EditAliases {
+                serde_json::to_vec(&TerminalAction::EditAlias {
                     alias: alias.to_string(),
-                    process: None
+                    process: None,
                 })
-                .to_string()
-                .as_bytes()
-                .to_vec(),
+                .unwrap(),
             )
             .send();
     } else {
@@ -53,13 +58,11 @@ fn init(_our: Address) {
                 let _ = Request::new()
                     .target(("our", "terminal", "terminal", "sys"))
                     .body(
-                        json!(EditAliases {
+                        serde_json::to_vec(&TerminalAction::EditAlias {
                             alias: alias.to_string(),
-                            process: Some(process)
+                            process: Some(process),
                         })
-                        .to_string()
-                        .as_bytes()
-                        .to_vec(),
+                        .unwrap(),
                     )
                     .send();
             }

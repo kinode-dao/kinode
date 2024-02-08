@@ -597,30 +597,28 @@ pub async fn make_process_loop(
         })
         .collect();
 
-    // send message to tell main kernel loop to remove handler
-    send_to_loop
-        .send(t::KernelMessage {
-            id: rand::random(),
-            source: our_kernel.clone(),
-            target: our_kernel.clone(),
-            rsvp: None,
-            message: t::Message::Request(t::Request {
-                inherit: false,
-                expects_response: None,
-                body: serde_json::to_vec(&t::KernelCommand::KillProcess(
-                    metadata.our.process.clone(),
-                ))
-                .unwrap(),
-                metadata: None,
-                capabilities: vec![],
-            }),
-            lazy_load_blob: None,
-        })
-        .await?;
-
     // fulfill the designated OnExit behavior
     match metadata.on_exit {
         t::OnExit::None => {
+            send_to_loop
+                .send(t::KernelMessage {
+                    id: rand::random(),
+                    source: our_kernel.clone(),
+                    target: our_kernel.clone(),
+                    rsvp: None,
+                    message: t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        body: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                            metadata.our.process.clone(),
+                        ))
+                        .unwrap(),
+                        metadata: None,
+                        capabilities: vec![],
+                    }),
+                    lazy_load_blob: None,
+                })
+                .await?;
             let _ = send_to_terminal
                 .send(t::Printout {
                     verbosity: 1,
@@ -630,6 +628,25 @@ pub async fn make_process_loop(
         }
         // if restart, tell ourselves to init the app again, with same capabilities
         t::OnExit::Restart => {
+            send_to_loop
+                .send(t::KernelMessage {
+                    id: rand::random(),
+                    source: our_kernel.clone(),
+                    target: our_kernel.clone(),
+                    rsvp: None,
+                    message: t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        body: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                            metadata.our.process.clone(),
+                        ))
+                        .unwrap(),
+                        metadata: None,
+                        capabilities: vec![],
+                    }),
+                    lazy_load_blob: None,
+                })
+                .await?;
             if is_error {
                 let _ = send_to_terminal
                     .send(t::Printout {
@@ -712,30 +729,36 @@ pub async fn make_process_loop(
                 .await?;
             for (address, mut request, blob) in requests {
                 request.expects_response = None;
-                let (tx, rx) = tokio::sync::oneshot::channel();
-                caps_oracle
-                    .send(t::CapMessage::Has {
-                        on: metadata.our.process.clone(),
-                        cap: t::Capability {
-                            issuer: address.clone(),
-                            params: "\"messaging\"".into(),
-                        },
-                        responder: tx,
+                send_to_loop
+                    .send(t::KernelMessage {
+                        id: rand::random(),
+                        source: metadata.our.clone(),
+                        target: address,
+                        rsvp: None,
+                        message: t::Message::Request(request),
+                        lazy_load_blob: blob,
                     })
                     .await?;
-                if let Ok(true) = rx.await {
-                    send_to_loop
-                        .send(t::KernelMessage {
-                            id: rand::random(),
-                            source: metadata.our.clone(),
-                            target: address,
-                            rsvp: None,
-                            message: t::Message::Request(request),
-                            lazy_load_blob: blob,
-                        })
-                        .await?;
-                }
             }
+            send_to_loop
+                .send(t::KernelMessage {
+                    id: rand::random(),
+                    source: our_kernel.clone(),
+                    target: our_kernel.clone(),
+                    rsvp: None,
+                    message: t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        body: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                            metadata.our.process.clone(),
+                        ))
+                        .unwrap(),
+                        metadata: None,
+                        capabilities: vec![],
+                    }),
+                    lazy_load_blob: None,
+                })
+                .await?;
         }
     }
     Ok(())

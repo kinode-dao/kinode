@@ -19,6 +19,11 @@ fn init(our: Address) {
     };
 
     let tail = String::from_utf8(args).unwrap();
+    if tail.is_empty() {
+        println!("Send a Message to another node's terminal");
+        println!("\x1b[1mUsage:\x1b[0m hi <node_id> <message>");
+        return;
+    }
 
     let (node_id, message) = match tail.split_once(" ") {
         Some((s, t)) => (s, t),

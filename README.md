@@ -18,7 +18,7 @@ If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) 
 ```bash
 # Clone the repo.
 
-git clone https://github.com/kinode-dao/kinode.git
+git clone git@github.com:kinode-dao/kinode.git
 
 # Get some stuff so we can build Wasm.
 

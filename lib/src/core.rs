@@ -928,6 +928,11 @@ pub enum KernelCommand {
         target: ProcessId,
         capabilities: Vec<Capability>,
     },
+    /// Drop capabilities. Does nothing if process doesn't have these caps
+    DropCapabilities {
+        target: ProcessId,
+        capabilities: Vec<Capability>,
+    },
     /// Tell the kernel to run a process that has already been installed.
     /// TODO: in the future, this command could be extended to allow for
     /// resource provision.
@@ -966,10 +971,10 @@ pub enum CapMessage {
         caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
-    _Drop {
-        // not used yet!
+    /// root delete: uncritically remove all `caps` from `on`
+    Drop {
         on: ProcessId,
-        cap: Capability,
+        caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
     /// does `on` have `cap` in its store?
@@ -984,6 +989,11 @@ pub enum CapMessage {
         on: ProcessId,
         responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
+    /// Remove all caps issued by `on` from every process on the entire system
+    RevokeAll {
+        on: ProcessId,
+        responder: tokio::sync::oneshot::Sender<bool>,
+    },
     /// before `on` sends a message, filter out any bogus caps it may have attached, sign any new
     /// caps it may have created, and retreive the signature for the caps in its store.
     FilterCaps {
@@ -992,6 +1002,8 @@ pub enum CapMessage {
         responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
 }
+
+pub type ReverseCapIndex = HashMap<ProcessId, HashMap<ProcessId, Vec<Capability>>>;
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 
