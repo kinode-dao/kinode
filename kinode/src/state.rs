@@ -703,7 +703,8 @@ async fn bootstrap(
                                 process
                                     .capabilities
                                     .insert(cap.clone(), sign_cap(cap.clone(), keypair.clone()));
-                                reverse_cap_index.entry(cap.clone().issuer.process)
+                                reverse_cap_index
+                                    .entry(cap.clone().issuer.process)
                                     .or_insert_with(HashMap::new)
                                     .entry(our_process_id.parse().unwrap())
                                     .or_insert_with(Vec::new)
@@ -725,10 +726,12 @@ async fn bootstrap(
                                             },
                                             params: params.to_string(),
                                         };
-                                        process
-                                            .capabilities
-                                            .insert(cap.clone(), sign_cap(cap.clone(), keypair.clone()));
-                                        reverse_cap_index.entry(cap.clone().issuer.process)
+                                        process.capabilities.insert(
+                                            cap.clone(),
+                                            sign_cap(cap.clone(), keypair.clone()),
+                                        );
+                                        reverse_cap_index
+                                            .entry(cap.clone().issuer.process)
                                             .or_insert_with(HashMap::new)
                                             .entry(our_process_id.parse().unwrap())
                                             .or_insert_with(Vec::new)
