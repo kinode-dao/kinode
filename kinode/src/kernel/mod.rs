@@ -1099,13 +1099,8 @@ pub async fn kernel(
                                     caps.into_iter().filter_map(|cap| {
                                         // if issuer is message source, then sign the cap
                                         if cap.issuer.process == on {
-                                            Some((
-                                                cap,
-                                                keypair
-                                                    .sign(&rmp_serde::to_vec(&cap).unwrap())
-                                                    .as_ref()
-                                                    .to_vec()
-                                            ))
+                                            let sig = keypair.sign(&rmp_serde::to_vec(&cap).unwrap());
+                                            Some((cap, sig.as_ref().to_vec()))
                                         // otherwise, only attach previously saved caps
                                         // NOTE we don't need to verify the sigs!
                                         } else {

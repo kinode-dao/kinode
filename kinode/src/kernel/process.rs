@@ -15,12 +15,11 @@ use wasmtime_wasi::preview2::{pipe::MemoryOutputPipe, Table, WasiCtx, WasiCtxBui
 
 const STACK_TRACE_SIZE: usize = 5000;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProcessContext {
-    // store ultimate in order to set prompting message if needed
-    pub message: Option<KernelMessage>,
+    // store predecessor in order to set prompting message when popped
+    pub prompting_message: Option<t::KernelMessage>,
     // can be empty if a request doesn't set context, but still needs to inherit
-    pub context: Option<Context>,
+    pub context: Option<t::Context>,
 }
 
 pub struct ProcessState {
@@ -36,12 +35,16 @@ pub struct ProcessState {
     pub send_to_loop: t::MessageSender,
     /// pipe for sending [`t::Printout`]s to the terminal
     pub send_to_terminal: t::PrintSender,
-    /// store the nested request, if any
-    pub nested_request: Option<t::KernelMessage>,
-    /// store the current incoming message that we've gotten from receive()
-    pub current_incoming_message: Option<t::KernelMessage>,
+    /// store the current incoming message that we've gotten from receive(), if it
+    /// is a request. if it is a response, the context map will be used to set this
+    /// as the message it was when the outgoing request for that response was made.
+    /// however, the blob stored here will **always** be the blob of the last message
+    /// received from the event loop.
+    /// the prompting_message won't have a blob, rather it is stored in last_blob.
+    pub prompting_message: Option<t::KernelMessage>,
+    pub last_blob: Option<t::LazyLoadBlob>,
     /// store the contexts and timeout task of all outstanding requests
-    pub contexts: HashMap<u64, (t::ProcessContext, JoinHandle<()>)>,
+    pub contexts: HashMap<u64, (ProcessContext, JoinHandle<()>)>,
     /// store the messages that we've gotten from event loop but haven't processed yet
     /// TODO make this an ordered map for O(1) retrieval by ID
     pub message_queue: VecDeque<Result<t::KernelMessage, t::WrappedSendError>>,
@@ -158,7 +161,7 @@ impl ProcessState {
     /// that timeout and return timeout error if it expires.
     pub async fn send_request(
         &mut self,
-        /// only used when kernel steps in to get/set state
+        // only used when kernel steps in to get/set state
         fake_source: Option<t::Address>,
         target: wit::Address,
         request: wit::Request,
@@ -168,29 +171,13 @@ impl ProcessState {
         let source = fake_source.unwrap_or(self.metadata.our.clone());
         let mut request = t::de_wit_request(request);
 
-        // if request chooses to inherit, it means to take the lazy_load_blob, if any,
-        // from the last request it ingested. if current_incoming_message is a request,
-        // it will be the inherited one. if not, we check nested_request and inherit
-        // from that if it exists.
-        // if neither exist as requests, inherit flag will be ignored.
-        let predecessor_request = match &self.current_incoming_message {
-            Some(t::KernelMessage {
-                message: t::Message::Request(request),
-                ..
-            }) => self.current_incoming_message.as_ref(),
-            _ => match &self.nested_request {
-                Some(t::KernelMessage {
-                    message: t::Message::Request(request),
-                    ..
-                }) => self.nested_request.as_ref(),
-                _ => None,
-            },
-        };
+        // if request chooses to inherit, it means to take the ID and lazy_load_blob,
+        // if any, from the last message it ingested
 
         // if request chooses to inherit, match id to precedessor
         // otherwise, id is generated randomly
-        let request_id: u64 = if request.inherit && predecessor_request.is_some() {
-            predecessor_request.unwrap().id
+        let request_id: u64 = if request.inherit && self.prompting_message.is_some() {
+            self.prompting_message.as_ref().unwrap().id
         } else {
             loop {
                 let id = rand::random();
@@ -208,9 +195,7 @@ impl ProcessState {
                 bytes: p.bytes,
             }),
             None => match request.inherit {
-                true => predecessor_request
-                    .and_then(|km| km.lazy_load_blob.clone())
-                    .or(None),
+                true => self.last_blob.clone(),
                 false => None,
             },
         };
@@ -223,13 +208,15 @@ impl ProcessState {
                         on: self.metadata.our.process.clone(),
                         caps: request
                             .capabilities
-                            .iter()
-                            .map(|cap| t::de_wit_capability(cap.clone()).0)
+                            .into_iter()
+                            .map(|(cap, _)| cap)
                             .collect(),
                         responder: tx,
                     })
-                    .await?;
-                rx.await?
+                    .await
+                    .expect("fatal: process couldn't access capabilities oracle");
+                rx.await
+                    .expect("fatal: process couldn't receive capabilities")
             };
         }
 
@@ -238,6 +225,8 @@ impl ProcessState {
         // TODO optimize this SIGNIFICANTLY: stop spawning tasks
         // and use a global clock + garbage collect step to check for timeouts
         if let Some(timeout_secs) = request.expects_response {
+            let this_request = request.clone();
+            let this_blob = blob.clone();
             let self_sender = self.self_sender.clone();
             let original_target = t::Address::de_wit(target.clone());
             let timeout_handle = tokio::spawn(async move {
@@ -249,8 +238,8 @@ impl ProcessState {
                         error: t::SendError {
                             kind: t::SendErrorKind::Timeout,
                             target: original_target,
-                            message: t::Message::Request(request.clone()),
-                            lazy_load_blob: blob.clone(),
+                            message: t::Message::Request(this_request),
+                            lazy_load_blob: this_blob,
                         },
                     }))
                     .await;
@@ -259,7 +248,7 @@ impl ProcessState {
                 request_id,
                 (
                     ProcessContext {
-                        message: predecessor_request.cloned(),
+                        prompting_message: self.prompting_message.clone(),
                         context: new_context,
                     },
                     timeout_handle,
@@ -278,7 +267,7 @@ impl ProcessState {
             rsvp: match (
                 request.expects_response,
                 request.inherit,
-                &self.current_incoming_message,
+                &self.prompting_message,
             ) {
                 (Some(_), _, _) => {
                     // this request expects response, so receives any response
@@ -309,43 +298,53 @@ impl ProcessState {
         response: wit::Response,
         blob: Option<wit::LazyLoadBlob>,
     ) {
-        let (id, target) = match self.make_response_id_target().await {
-            Some(r) => r,
-            None => {
-                let _ = self
-                    .send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 2,
-                        content: format!("kernel: dropping Response {:?}", response),
-                    })
-                    .await;
-                return;
-            }
+        let mut response = t::de_wit_response(response);
+
+        // the process requires a prompting_message in order to issue a response
+        let Some(ref prompting_message) = self.prompting_message else {
+            print(
+                &self.send_to_terminal,
+                0,
+                format!("kernel: need non-None prompting_message to handle Response {response:?}"),
+            )
+            .await;
+            return;
         };
+
+        // given the current process state, produce the id and target that
+        // a response it emits should have.
+        let (id, target) = (
+            prompting_message.id,
+            match &prompting_message.rsvp {
+                None => prompting_message.source.clone(),
+                Some(rsvp) => rsvp.clone(),
+            },
+        );
 
         let blob = match response.inherit {
             true => self.last_blob.clone(),
             false => t::de_wit_blob(blob),
         };
 
-        let mut inner_response = t::de_wit_response(response.clone());
-
-        inner_response.capabilities = {
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            let _ = self
-                .caps_oracle
-                .send(t::CapMessage::FilterCaps {
-                    on: self.metadata.our.process.clone(),
-                    caps: response
-                        .capabilities
-                        .iter()
-                        .map(|cap| t::de_wit_capability(cap.clone()).0)
-                        .collect(),
-                    responder: tx,
-                })
-                .await;
-            rx.await.expect("fatal: process couldn't get caps")
-        };
+        if !response.capabilities.is_empty() {
+            response.capabilities = {
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                self.caps_oracle
+                    .send(t::CapMessage::FilterCaps {
+                        on: self.metadata.our.process.clone(),
+                        caps: response
+                            .capabilities
+                            .into_iter()
+                            .map(|(cap, _)| cap)
+                            .collect(),
+                        responder: tx,
+                    })
+                    .await
+                    .expect("fatal: process couldn't access capabilities oracle");
+                rx.await
+                    .expect("fatal: process couldn't receive capabilities")
+            };
+        }
 
         self.send_to_loop
             .send(t::KernelMessage {
@@ -354,7 +353,7 @@ impl ProcessState {
                 target,
                 rsvp: None,
                 message: t::Message::Response((
-                    inner_response,
+                    response,
                     // the context will be set by the process receiving this Response.
                     None,
                 )),
@@ -366,32 +365,30 @@ impl ProcessState {
 
     /// Convert a message from the main event loop into a result for the process to receive.
     /// If the message is a response or error, get context if we have one.
-    /// If there exists a current message before this, if it is a Request, it will get
-    /// saved as nested_request.
     fn kernel_message_to_process_receive(
         &mut self,
-        res: Result<t::KernelMessage, t::WrappedSendError>,
+        incoming: Result<t::KernelMessage, t::WrappedSendError>,
     ) -> Result<(wit::Address, wit::Message), (wit::SendError, Option<wit::Context>)> {
-        let (context, km) = match res {
-            Ok(km) => match &km.message {
+        let (mut km, context) = match incoming {
+            Ok(mut km) => match km.message {
                 t::Message::Request(_) => {
-                    self.last_blob = km.lazy_load_blob.clone();
-                    self.current_incoming_message = Some(km.clone());
-                    (None, km)
+                    self.last_blob = km.lazy_load_blob;
+                    km.lazy_load_blob = None;
+                    self.prompting_message = Some(km.clone());
+                    (km, None)
                 }
                 t::Message::Response(_) => {
                     if let Some((context, timeout_handle)) = self.contexts.remove(&km.id) {
                         timeout_handle.abort();
-                        self.last_blob = km.lazy_load_blob.clone();
-                        self.current_incoming_message = match context.prompting_message {
-                            None => Some(km.clone()),
-                            Some(prompting_message) => Some(prompting_message),
-                        };
-                        (context.context, km)
+                        self.last_blob = km.lazy_load_blob;
+                        km.lazy_load_blob = None;
+                        self.prompting_message = context.prompting_message;
+                        (km, context.context)
                     } else {
-                        self.last_blob = km.lazy_load_blob.clone();
-                        self.current_incoming_message = Some(km.clone());
-                        (None, km)
+                        self.last_blob = km.lazy_load_blob;
+                        km.lazy_load_blob = None;
+                        self.prompting_message = Some(km.clone());
+                        (km, None)
                     }
                 }
             },
@@ -399,7 +396,7 @@ impl ProcessState {
                 None => return Err((t::en_wit_send_error(e.error), None)),
                 Some((context, timeout_handle)) => {
                     timeout_handle.abort();
-                    self.current_incoming_message = context.prompting_message;
+                    self.prompting_message = context.prompting_message;
                     return Err((t::en_wit_send_error(e.error), context.context));
                 }
             },
@@ -410,97 +407,53 @@ impl ProcessState {
             self.keypair.as_ref().public_key(),
         );
 
+        // prune any invalid capabilities before handing to process
+        // where invalid = supposedly issued by us, but not signed properly by us
+        match &mut km.message {
+            t::Message::Request(request) => {
+                request.capabilities.retain(|(cap, sig)| {
+                    // The only time we verify a cap's signature is when a foreign node
+                    // sends us a cap that we (allegedly) issued
+                    if km.source.node != self.metadata.our.node
+                        && cap.issuer.node == self.metadata.our.node
+                    {
+                        match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
+                            Ok(_) => true,
+                            Err(_) => false,
+                        }
+                    } else {
+                        return true;
+                    }
+                });
+            }
+            t::Message::Response((response, _)) => {
+                response.capabilities.retain(|(cap, sig)| {
+                    // The only time we verify a cap's signature is when a foreign node
+                    // sends us a cap that we (allegedly) issued
+                    if km.source.node != self.metadata.our.node
+                        && cap.issuer.node == self.metadata.our.node
+                    {
+                        match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
+                            Ok(_) => true,
+                            Err(_) => false,
+                        }
+                    } else {
+                        return true;
+                    }
+                });
+            }
+        };
+
         Ok((
             km.source.en_wit(),
             match km.message {
-                t::Message::Request(mut request) => {
-                    // prune any invalid caps before sending
-                    request.capabilities = request
-                        .capabilities
-                        .iter()
-                        .filter_map(|(cap, sig)| {
-                            // The only time we verify a cap's signature is when a foreign node
-                            // sends us a cap that we (allegedly) issued
-                            if km.source.node != self.metadata.our.node
-                                && cap.issuer.node == self.metadata.our.node
-                            {
-                                match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
-                                    Ok(_) => Some((cap.clone(), sig.clone())),
-                                    Err(_) => None,
-                                }
-                            } else {
-                                return Some((cap.clone(), sig.clone()));
-                            }
-                        })
-                        .collect::<Vec<(t::Capability, Vec<u8>)>>();
-                    wit::Message::Request(t::en_wit_request(request))
-                }
+                t::Message::Request(request) => wit::Message::Request(t::en_wit_request(request)),
                 // NOTE: we throw away whatever context came from the sender, that's not ours
-                t::Message::Response((mut response, _context)) => {
-                    // prune any invalid caps before sending
-                    response.capabilities = response
-                        .capabilities
-                        .iter()
-                        .filter_map(|(cap, sig)| {
-                            // The only time we verify a cap's signature is when a foreign node
-                            // sends us a cap that we (allegedly) issued
-                            if km.source.node != self.metadata.our.node
-                                && cap.issuer.node == self.metadata.our.node
-                            {
-                                match pk.verify(&rmp_serde::to_vec(&cap).unwrap_or_default(), sig) {
-                                    Ok(_) => Some((cap.clone(), sig.clone())),
-                                    Err(_) => None,
-                                }
-                            } else {
-                                return Some((cap.clone(), sig.clone()));
-                            }
-                        })
-                        .collect::<Vec<(t::Capability, Vec<u8>)>>();
+                t::Message::Response((response, _sent_context)) => {
                     wit::Message::Response((t::en_wit_response(response), context))
                 }
             },
         ))
-    }
-
-    /// Given the current process state, return the id and target that
-    /// a response it emits should have. This takes into
-    /// account the `rsvp` of the current or nested message, if any.
-    async fn make_response_id_target(&self) -> Option<(u64, t::Address)> {
-        let Some(ref current_incoming_message) = self.current_incoming_message else {
-            println!("need non-None incoming_message to handle Response\r");
-            return None;
-        };
-        match current_incoming_message.message {
-            t::Message::Request(ref request) => {
-                // if the current message is a Request, the response will always go there.
-                Some((
-                    current_incoming_message.id,
-                    match &current_incoming_message.rsvp {
-                        None => current_incoming_message.source.clone(),
-                        Some(address) => address.clone(),
-                    },
-                ))
-            }
-            t::Message::Response((ref response, ref _maybe_context)) => {
-                // if the current message is a Response, we look at the nested request
-                // to see where the response should go.
-                match &self.nested_request {
-                    None => {
-                        println!(
-                            "need non-None incoming message or nested_request to handle Response\r"
-                        );
-                        return None;
-                    }
-                    Some(ref nested) => Some((
-                        nested.id,
-                        match &nested.rsvp {
-                            None => nested.source.clone(),
-                            Some(address) => address.clone(),
-                        },
-                    )),
-                }
-            }
-        }
     }
 }
 
@@ -572,8 +525,8 @@ pub async fn make_process_loop(
                 self_sender: send_to_process,
                 send_to_loop: send_to_loop.clone(),
                 send_to_terminal: send_to_terminal.clone(),
-                nested_request: None,
-                current_incoming_message: None,
+                prompting_message: None,
+                last_blob: None,
                 contexts: HashMap::new(),
                 message_queue: VecDeque::new(),
                 caps_oracle: caps_oracle.clone(),
@@ -798,4 +751,11 @@ pub async fn make_process_loop(
         }
     }
     Ok(())
+}
+
+async fn print(sender: &t::PrintSender, verbosity: u8, content: String) {
+    let _ = sender
+        .send(t::Printout { verbosity, content })
+        .await
+        .expect("fatal: kernel terminal print pipe died!");
 }
