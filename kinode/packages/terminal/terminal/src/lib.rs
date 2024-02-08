@@ -240,7 +240,7 @@ fn handle_run(
             }
         }
     }
-    for (process, cap) in granted_caps.clone().into_iter() {
+    for (process, cap) in granted_caps.into_iter() {
         Request::new()
             .target(("our", "kernel", "distro", "sys"))
             .body(serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
