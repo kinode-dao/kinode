@@ -461,7 +461,7 @@ async fn handle_kernel_request(
                     responder: tokio::sync::oneshot::channel().0,
                 })
                 .await
-            .expect("event loop: fatal: sender died");
+                .expect("event loop: fatal: sender died");
             let _ = senders.remove(&process_id);
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
