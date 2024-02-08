@@ -169,7 +169,8 @@ fn handle_run(
     pipe: Option<(String, u64)>,
 ) -> anyhow::Result<()> {
     let wasm_path = format!("{}.wasm", process.process());
-    let drive_path = format!("/{}:{}/pkg", process.package(), process.publisher());
+    let package = format!("{}:{}", process.package(), process.publisher());
+    let drive_path = format!("/{}/pkg", package);
     let Ok(entry) = get_entry(process) else {
         return Err(anyhow::anyhow!("script not in scripts.json file"));
     };
