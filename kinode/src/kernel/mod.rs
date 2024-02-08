@@ -1156,6 +1156,7 @@ pub async fn kernel(
                                 entry.capabilities.remove(&cap);
                             }
                         }
+                        let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
                     }
                     t::CapMessage::FilterCaps { on, caps, responder } => {
