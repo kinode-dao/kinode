@@ -354,7 +354,7 @@ async fn handle_kernel_request(
             let Some(entry) = process_map.get_mut(&target) else {
                 let _ = send_to_terminal
                     .send(t::Printout {
-                        verbosity: 0,
+                        verbosity: 1,
                         content: format!(
                             "kernel: no such process {:?} to DropCapabilities",
                             target
