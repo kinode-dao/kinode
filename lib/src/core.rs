@@ -989,6 +989,11 @@ pub enum CapMessage {
         on: ProcessId,
         responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
+    /// Remove all caps issued by `on` from every process on the entire system
+    RevokeAll {
+        on: ProcessId,
+        responder: tokio::sync::oneshot::Sender<bool>,
+    },
     /// before `on` sends a message, filter out any bogus caps it may have attached, sign any new
     /// caps it may have created, and retreive the signature for the caps in its store.
     FilterCaps {
@@ -997,6 +1002,8 @@ pub enum CapMessage {
         responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
 }
+
+pub type ReverseCapIndex = HashMap<ProcessId, HashMap<ProcessId, Vec<Capability>>>;
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 

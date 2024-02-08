@@ -23,7 +23,6 @@ enum TerminalAction {
         alias: String,
         process: Option<ProcessId>,
     },
-    ProcessEnded(Vec<(ProcessId, Capability)>),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -145,12 +144,6 @@ impl Guest for Component {
                                     Err(e) => println!("terminal: {e}"),
                                 };
                             }
-                            TerminalAction::ProcessEnded(drop_caps) => {
-                                match handle_process_cleanup(drop_caps) {
-                                    Ok(()) => continue,
-                                    Err(e) => println!("terminal: {e}"),
-                                }
-                            }
                         }
                     } else {
                         println!("terminal: ignoring message from: {}", source);
@@ -261,17 +254,7 @@ fn handle_run(
             id: parsed_new_process_id.clone(),
             wasm_bytes_handle: wasm_path.clone(),
             wit_version: None,
-            on_exit: kt::OnExit::Requests(vec![(
-                kt::de_wit_address(our.clone()),
-                kt::Request {
-                    inherit: false,
-                    expects_response: None,
-                    body: serde_json::to_vec(&TerminalAction::ProcessEnded(granted_caps))?,
-                    metadata: None,
-                    capabilities: vec![],
-                },
-                None,
-            )]),
+            on_exit: kt::OnExit::None,
             initial_capabilities: HashSet::new(),
             public: entry.public,
         })?)
@@ -318,7 +301,6 @@ fn handle_run(
         }
     }
     // always give it the cap to message the terminal back
-    // NOTE a malicious script could use this to drop a ton of caps from other processes
     requested_caps.push(kt::de_wit_capability(Capability {
         issuer: our.clone(),
         params: "\"messaging\"".to_string(),
@@ -341,7 +323,7 @@ fn handle_run(
             parsed_new_process_id.clone(),
             wasm_path.clone(),
             "None",
-            kt::OnExit::None, // TODO fix this
+            kt::OnExit::None,
             entry.public,
             {
                 let mut caps_string = "[".to_string();
@@ -424,20 +406,6 @@ fn handle_alias_change(
     } else {
         Err(anyhow!("failed to serialize state!"))
     }
-}
-
-fn handle_process_cleanup(caps_to_remove: Vec<(ProcessId, Capability)>) -> anyhow::Result<()> {
-    for (process, cap) in caps_to_remove {
-        println!("terminal: cleaning up process {}, {}", process, cap);
-        Request::new()
-            .target(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::DropCapabilities {
-                target: process,
-                capabilities: vec![kt::de_wit_capability(cap)],
-            })?)
-            .send()?;
-    }
-    Ok(())
 }
 
 fn get_entry(process: &ProcessId) -> anyhow::Result<kt::DotScriptsEntry> {
