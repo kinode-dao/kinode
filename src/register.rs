@@ -100,7 +100,6 @@ pub async fn register(
     kill_rx: oneshot::Receiver<bool>,
     ip: String,
     port: u16,
-    rpc_url: String,
     keyfile: Option<Vec<u8>>,
     testnet: bool,
 ) {
@@ -134,7 +133,6 @@ pub async fn register(
     let net_keypair = warp::any().map(move || net_keypair.clone());
     let tx = warp::any().map(move || tx.clone());
     let ip = warp::any().map(move || ip.clone());
-    let rpc_url = warp::any().map(move || rpc_url.clone());
 
     let static_files = warp::path("static").and(static_dir!("src/register-ui/build/static/"));
 
@@ -199,7 +197,6 @@ pub async fn register(
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(ip.clone())
-                .and(rpc_url.clone())
                 .and(tx.clone())
                 .and_then(handle_import_keyfile),
         ))
@@ -208,7 +205,6 @@ pub async fn register(
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(ip)
-                .and(rpc_url)
                 .and(tx.clone())
                 .and(keyfile.clone())
                 .and_then(handle_login),
@@ -344,7 +340,6 @@ async fn handle_boot(
 async fn handle_import_keyfile(
     info: ImportKeyfileInfo,
     ip: String,
-    _rpc_url: String,
     sender: Arc<RegistrationSender>,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
@@ -408,7 +403,6 @@ async fn handle_import_keyfile(
 async fn handle_login(
     info: LoginInfo,
     ip: String,
-    _rpc_url: String,
     sender: Arc<RegistrationSender>,
     encoded_keyfile: Option<Vec<u8>>,
 ) -> Result<impl Reply, Rejection> {

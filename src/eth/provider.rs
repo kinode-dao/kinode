@@ -1,6 +1,5 @@
 use crate::eth::types::*;
 use crate::types::*;
-use alloy_providers::provider::TempProvider;
 use alloy_pubsub::{PubSubFrontend, RawSubscription};
 use alloy_rpc_client::ClientBuilder;
 use alloy_rpc_types::pubsub::SubscriptionResult;
@@ -17,15 +16,14 @@ use url::Url;
 /// indexing and ETH node responsibilities.
 pub async fn provider(
     our: String,
-    rpc_url: String,
+    rpc_url: Option<String>, // if None, bootstrap from router, can set settings later?
     send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
     _print_tx: PrintSender,
 ) -> Result<()> {
     let our = Arc::new(our);
-    // for now, we can only handle WebSocket RPC URLs. In the future, we should
-    // be able to handle HTTP too, at least.
-    // todo add http reqwest..
+    // make this generalizable.
+    let rpc_url = rpc_url.unwrap();
     match Url::parse(&rpc_url)?.scheme() {
         "http" | "https" => {
             return Err(anyhow::anyhow!(

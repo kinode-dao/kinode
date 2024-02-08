@@ -49,7 +49,6 @@ async fn serve_register_fe(
     home_directory_path: &str,
     our_ip: String,
     http_server_port: u16,
-    rpc_url: String,
     testnet: bool,
 ) -> (Identity, Vec<u8>, Keyfile) {
     // check if we have keys saved on disk, encrypted
@@ -71,7 +70,7 @@ async fn serve_register_fe(
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-        _ = register::register(tx, kill_rx, our_ip, http_server_port, rpc_url, disk_keyfile, testnet) => {
+        _ = register::register(tx, kill_rx, our_ip, http_server_port, disk_keyfile, testnet) => {
             panic!("registration failed")
         }
         Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
@@ -109,7 +108,8 @@ async fn main() {
         );
 
     #[cfg(not(feature = "simulation-mode"))]
-    let app = app.arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true));
+    let app =
+        app.arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(false));
 
     #[cfg(feature = "simulation-mode")]
     let app = app
@@ -141,7 +141,7 @@ async fn main() {
     };
 
     #[cfg(not(feature = "simulation-mode"))]
-    let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").unwrap(), false);
+    let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").cloned(), false);
 
     #[cfg(feature = "simulation-mode")]
     let (rpc_url, password, network_router_port, fake_node_name, is_detached) = (
@@ -252,7 +252,6 @@ async fn main() {
         home_directory_path,
         our_ip.to_string(),
         http_server_port,
-        rpc_url.clone(),
         on_testnet, // true if testnet mode
     )
     .await;
