@@ -183,7 +183,7 @@ fn handle_run(
     // build initial caps
     let process_id = format!("{}:{}", rand::random::<u64>(), package); // all scripts are given random process IDs
     let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
-        return Err(anyhow::anyhow!("app store: invalid process id!"));
+        return Err(anyhow::anyhow!("terminal: invalid process id!"));
     };
 
     let _bytes_response = Request::new()
@@ -401,12 +401,8 @@ fn handle_alias_change(
             }
         }
     }
-    if let Ok(new_state) = bincode::serialize(&state) {
-        set_state(&new_state);
-        Ok(())
-    } else {
-        Err(anyhow!("failed to serialize state!"))
-    }
+    set_state(&bincode::serialize(&state)?);
+    Ok(())
 }
 
 fn get_entry(process: &ProcessId) -> anyhow::Result<kt::DotScriptsEntry> {
