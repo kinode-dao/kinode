@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
+use std::collections::HashMap;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -445,6 +446,7 @@ async fn main() {
         our.clone(),
         networking_keypair_arc.clone(),
         kernel_process_map.clone(),
+        HashMap::new(), // TODO need to persist this
         caps_oracle_sender.clone(),
         caps_oracle_receiver,
         kernel_message_sender.clone(),
