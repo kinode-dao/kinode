@@ -5,7 +5,6 @@ use kinode_process_lib::*;
 use kinode_process_lib::{call_init, println};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::io::Read;
 use std::str::FromStr;
 
 wit_bindgen::generate!({
@@ -227,12 +226,6 @@ fn handle_remote_request(
                 }
             }
             let file_name = format!("/{}.zip", package_id);
-            if let Some(zip_bytes) = package_state.source_zip {
-                match spawn_transfer(&our, &file_name, Some(zip_bytes), 60, &source) {
-                    Ok(()) => return Resp::RemoteResponse(RemoteResponse::DownloadApproved),
-                    Err(_e) => return Resp::RemoteResponse(RemoteResponse::DownloadDenied),
-                }
-            }
             // get the .zip from VFS and attach as blob to response
             let file_path = format!("/{}/pkg/{}.zip", package_id, package_id);
             let Ok(Ok(_)) = Request::to(("our", "vfs", "distro", "sys"))
@@ -274,13 +267,14 @@ fn handle_local_request(
             let package_state = PackageState {
                 mirrored_from: Some(our.node.clone()),
                 our_version,
-                source_zip: Some(blob.bytes),
+                installed: false,
                 caps_approved: true, // TODO see if we want to auto-approve local installs
                 mirroring: *mirror,
                 auto_update: false, // can't auto-update a local package
                 metadata: None,     // TODO
             };
-            let Ok(()) = state.add_downloaded_package(package, package_state, true) else {
+            let Ok(()) = state.add_downloaded_package(package, package_state, Some(blob.bytes))
+            else {
                 return LocalResponse::NewPackageResponse(NewPackageResponse::Failure);
             };
             LocalResponse::NewPackageResponse(NewPackageResponse::Success)
@@ -447,13 +441,13 @@ fn handle_receive_download(
         PackageState {
             mirrored_from: Some(requested_package.from),
             our_version: download_hash,
-            source_zip: Some(blob.bytes),
+            installed: false,
             caps_approved: false,
             mirroring: requested_package.mirror,
             auto_update: requested_package.auto_update,
             metadata: None, // TODO
         },
-        true,
+        Some(blob.bytes),
     )
 }
 
@@ -544,13 +538,6 @@ pub fn handle_install(
             format!("/{}", entry.process_wasm_path)
         };
         let wasm_path = format!("{}{}", drive_path, wasm_path);
-        // build initial caps
-        let mut initial_capabilities: HashSet<kt::Capability> = HashSet::new();
-        if entry.request_networking {
-            initial_capabilities.insert(kt::de_wit_capability(networking_cap.clone()));
-        }
-        initial_capabilities.insert(kt::de_wit_capability(read_cap.clone()));
-        initial_capabilities.insert(kt::de_wit_capability(write_cap.clone()));
         let process_id = format!("{}:{}", entry.process_name, package_id);
         let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
             return Err(anyhow::anyhow!("app store: invalid process id!"));
@@ -568,17 +555,37 @@ pub fn handle_install(
                 action: vfs::VfsAction::Read,
             })?)
             .send_and_await_response(5)??;
+
+        Request::new()
+            .target(("our", "kernel", "distro", "sys"))
+            .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
+                id: parsed_new_process_id.clone(),
+                wasm_bytes_handle: wasm_path,
+                wit_version: None,
+                on_exit: entry.on_exit.clone(),
+                initial_capabilities: HashSet::new(),
+                public: entry.public,
+            })?)
+            .inherit(true)
+            .send_and_await_response(5)??;
+        // build initial caps
+        let mut requested_capabilities: Vec<kt::Capability> = vec![];
         for value in &entry.request_capabilities {
-            let mut capability = None;
             match value {
                 serde_json::Value::String(process_name) => {
                     if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                        capability = get_capability(
-                            &Address {
+                        requested_capabilities.push(kt::Capability {
+                            issuer: Address {
                                 node: our.node.clone(),
                                 process: parsed_process_id.clone(),
                             },
-                            "\"messaging\"".into(),
+                            params: "\"messaging\"".into(),
+                        });
+                    } else {
+                        println!(
+                            "app-store: invalid cap: {} for {} to request!",
+                            value.to_string(),
+                            package_id
                         );
                     }
                 }
@@ -590,12 +597,18 @@ pub fn handle_install(
                             .parse::<ProcessId>()
                         {
                             if let Some(params) = map.get("params") {
-                                capability = get_capability(
-                                    &Address {
+                                requested_capabilities.push(kt::Capability {
+                                    issuer: Address {
                                         node: our.node.clone(),
                                         process: parsed_process_id.clone(),
                                     },
-                                    &params.to_string(),
+                                    params: params.to_string(),
+                                });
+                            } else {
+                                println!(
+                                    "app-store: invalid cap: {} for {} to request!",
+                                    value.to_string(),
+                                    package_id
                                 );
                             }
                         }
@@ -605,27 +618,19 @@ pub fn handle_install(
                     continue;
                 }
             }
-            if let Some(cap) = capability {
-                initial_capabilities.insert(kt::de_wit_capability(cap));
-            } else {
-                println!(
-                    "app-store: no cap: {} for {} to request!",
-                    value.to_string(),
-                    package_id
-                );
-            }
         }
-        Request::to(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
-                id: parsed_new_process_id.clone(),
-                wasm_bytes_handle: wasm_path,
-                wit_version: None,
-                on_exit: entry.on_exit.clone(),
-                initial_capabilities,
-                public: entry.public,
+        if entry.request_networking {
+            requested_capabilities.push(kt::de_wit_capability(networking_cap.clone()));
+        }
+        requested_capabilities.push(kt::de_wit_capability(read_cap.clone()));
+        requested_capabilities.push(kt::de_wit_capability(write_cap.clone()));
+        Request::new()
+            .target(("our", "kernel", "distro", "sys"))
+            .body(serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                target: parsed_new_process_id.clone(),
+                capabilities: requested_capabilities,
             })?)
-            .inherit(true)
-            .send_and_await_response(5)??;
+            .send()?;
     }
     // THEN, *after* all processes have been initialized, grant caps in manifest
     // TODO for both grants and requests: make the vector of caps
@@ -693,5 +698,9 @@ pub fn handle_install(
             ))?)
             .send_and_await_response(5)??;
     }
+    // finally set the package as installed
+    state.update_downloaded_package(package_id, |package_state| {
+        package_state.installed = true;
+    });
     Ok(())
 }

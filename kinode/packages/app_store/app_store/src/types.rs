@@ -1,4 +1,3 @@
-use alloy_primitives::FixedBytes;
 use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::kernel_types as kt;
@@ -85,8 +84,7 @@ pub struct PackageState {
     pub mirrored_from: Option<NodeId>,
     /// the version of the package we have downloaded
     pub our_version: String,
-    /// if None, package already installed. if Some, the source file
-    pub source_zip: Option<Vec<u8>>,
+    pub installed: bool,
     pub caps_approved: bool,
     /// are we serving this package to others?
     pub mirroring: bool,
@@ -174,13 +172,52 @@ impl State {
         &mut self,
         package_id: &PackageId,
         package_state: PackageState,
-        save_to_vfs: bool,
+        package_bytes: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
+        if let Some(package_bytes) = package_bytes {
+            let drive_name = format!("/{package_id}/pkg");
+            let blob = LazyLoadBlob {
+                mime: Some("application/zip".to_string()),
+                bytes: package_bytes,
+            };
+
+            // create a new drive for this package in VFS
+            // this is possible because we have root access
+            Request::to(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: drive_name.clone(),
+                    action: vfs::VfsAction::CreateDrive,
+                })?)
+                .send_and_await_response(5)??;
+
+            // convert the zip to a new package drive
+            let response = Request::to(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: drive_name.clone(),
+                    action: vfs::VfsAction::AddZip,
+                })?)
+                .blob(blob.clone())
+                .send_and_await_response(5)??;
+            let vfs::VfsResponse::Ok = serde_json::from_slice::<vfs::VfsResponse>(response.body())?
+            else {
+                return Err(anyhow::anyhow!(
+                    "cannot add NewPackage: do not have capability to access vfs"
+                ));
+            };
+
+            // save the zip file itself in VFS for sharing with other nodes
+            // call it <package_id>.zip
+            let zip_path = format!("{}/{}.zip", drive_name, package_id);
+            Request::to(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: zip_path,
+                    action: vfs::VfsAction::Write,
+                })?)
+                .blob(blob)
+                .send_and_await_response(5)??;
+        }
         self.downloaded_packages
             .insert(package_id.to_owned(), package_state);
-        if save_to_vfs {
-            self.save_downloaded_package_in_vfs(package_id)?;
-        }
         crate::set_state(&bincode::serialize(self)?);
         Ok(())
     }
@@ -267,71 +304,16 @@ impl State {
                     PackageState {
                         mirrored_from: None,
                         our_version,
-                        source_zip: None,    // since it's already installed
+                        installed: true,
                         caps_approved: true, // since it's already installed this must be true
                         mirroring: false,
                         auto_update: false,
                         metadata: None,
                     },
-                    false,
+                    None,
                 )?
             }
         }
-        Ok(())
-    }
-
-    /// saves state
-    fn save_downloaded_package_in_vfs(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
-        let Some(mut package_state) = self.get_downloaded_package(package_id) else {
-            return Err(anyhow::anyhow!("no package state"));
-        };
-        let Some(zip_bytes) = package_state.source_zip else {
-            return Err(anyhow::anyhow!("no source zip"));
-        };
-        let drive_name = format!("/{package_id}/pkg");
-        let blob = LazyLoadBlob {
-            mime: Some("application/zip".to_string()),
-            bytes: zip_bytes,
-        };
-
-        // create a new drive for this package in VFS
-        // this is possible because we have root access
-        Request::to(("our", "vfs", "distro", "sys"))
-            .body(serde_json::to_vec(&vfs::VfsRequest {
-                path: drive_name.clone(),
-                action: vfs::VfsAction::CreateDrive,
-            })?)
-            .send_and_await_response(5)??;
-
-        // convert the zip to a new package drive
-        let response = Request::to(("our", "vfs", "distro", "sys"))
-            .body(serde_json::to_vec(&vfs::VfsRequest {
-                path: drive_name.clone(),
-                action: vfs::VfsAction::AddZip,
-            })?)
-            .blob(blob.clone())
-            .send_and_await_response(5)??;
-        let vfs::VfsResponse::Ok = serde_json::from_slice::<vfs::VfsResponse>(response.body())?
-        else {
-            return Err(anyhow::anyhow!(
-                "cannot add NewPackage: do not have capability to access vfs"
-            ));
-        };
-
-        // save the zip file itself in VFS for sharing with other nodes
-        // call it <package_id>.zip
-        let zip_path = format!("{}/{}.zip", drive_name, package_id);
-        Request::to(("our", "vfs", "distro", "sys"))
-            // .inherit(true) is this needed?
-            .body(serde_json::to_vec(&vfs::VfsRequest {
-                path: zip_path,
-                action: vfs::VfsAction::Write,
-            })?)
-            .blob(blob)
-            .send_and_await_response(5)??;
-
-        package_state.source_zip = None;
-        crate::set_state(&bincode::serialize(self)?);
         Ok(())
     }
 
@@ -459,7 +441,16 @@ impl State {
                         "app store: got log with no matching listing"
                     ))?;
 
-                let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
+                let metadata = match fetch_metadata(&metadata_url, &metadata_hash) {
+                    Ok(metadata) => Some(metadata),
+                    Err(e) => {
+                        crate::print_to_terminal(
+                            1,
+                            &format!("app store: failed to fetch metadata: {e:?}"),
+                        );
+                        None
+                    }
+                };
 
                 current_listing.metadata_hash = metadata_hash;
                 current_listing.metadata = metadata;
@@ -557,12 +548,14 @@ fn fetch_metadata(
         return Err(anyhow::anyhow!("no blob"));
     };
     let hash = generate_metadata_hash(&body.bytes);
-    if &hash == &metadata_hash.replace("0x", "") {
+    if &hash == metadata_hash {
         Ok(serde_json::from_slice::<OnchainPackageMetadata>(
             &body.bytes,
         )?)
     } else {
-        Err(anyhow::anyhow!("metadata hash mismatch"))
+        Err(anyhow::anyhow!(
+            "metadata hash mismatch: got {hash}, expected {metadata_hash}"
+        ))
     }
 }
 
@@ -571,7 +564,7 @@ fn generate_metadata_hash(metadata: &[u8]) -> String {
     use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
     hasher.update(metadata);
-    format!("{:x}", hasher.finalize())
+    format!("0x{:x}", hasher.finalize())
 }
 
 /// generate a Keccak-256 hash of the package name and publisher (match onchain)
