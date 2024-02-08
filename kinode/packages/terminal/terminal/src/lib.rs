@@ -180,7 +180,7 @@ fn handle_run(
     };
     let wasm_path = format!("{}{}", drive_path, wasm_path);
     // build initial caps
-    let process_id = format!("{}:terminal:sys", rand::random::<u64>()); // all scripts are given random process IDs
+    let process_id = format!("{}:{}", rand::random::<u64>(), package); // all scripts are given random process IDs
     let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
         return Err(anyhow::anyhow!("app store: invalid process id!"));
     };
