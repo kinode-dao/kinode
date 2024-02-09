@@ -3115,6 +3115,7 @@ dependencies = [
  "chrono",
  "clap",
  "crossterm",
+ "curve25519-dalek",
  "dashmap",
  "digest 0.10.7",
  "elliptic-curve",
