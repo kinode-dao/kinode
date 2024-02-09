@@ -17,45 +17,54 @@ use url::Url;
 pub async fn provider(
     our: String,
     rpc_url: Option<String>, // if None, bootstrap from router, can set settings later?
+    public: bool,            // todo, whitelists etc.
     send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
     _print_tx: PrintSender,
 ) -> Result<()> {
     let our = Arc::new(our);
-    // make this generalizable.
-    let rpc_url = rpc_url.unwrap();
-    match Url::parse(&rpc_url)?.scheme() {
-        "http" | "https" => {
-            return Err(anyhow::anyhow!(
-                "eth: you provided a `http(s)://` Ethereum RPC, but only `ws(s)://` is supported. Please try again with a `ws(s)://` provider"
-            ));
-        }
-        "ws" | "wss" => {}
-        s => {
-            return Err(anyhow::anyhow!(
-                "eth: you provided a `{s:?}` Ethereum RPC, but only `ws(s)://` is supported. Please try again with a `ws(s)://` provider"
-            ));
-        }
-    }
 
-    let connector = WsConnect {
-        url: rpc_url.clone(),
-        auth: None,
+    // Initialize the provider conditionally based on rpc_url
+    // Todo: make provider<T> support multiple transports, one direct and another passthrough.
+    let provider = if let Some(rpc_url) = rpc_url {
+        // If rpc_url is Some, proceed with URL parsing and client setup
+        match Url::parse(&rpc_url)?.scheme() {
+            "http" | "https" => {
+                return Err(anyhow::anyhow!(
+                    "eth: you provided a `http(s)://` Ethereum RPC, but only `ws(s)://` is supported. Please try again with a `ws(s)://` provider"
+                ));
+            }
+            "ws" | "wss" => {}
+            s => {
+                return Err(anyhow::anyhow!(
+                    "eth: you provided a `{s:?}` Ethereum RPC, but only `ws(s)://` is supported. Please try again with a `ws(s)://` provider"
+                ));
+            }
+        }
+
+        let connector = WsConnect {
+            url: rpc_url,
+            auth: None,
+        };
+
+        let client = ClientBuilder::default().pubsub(connector).await?;
+        Some(alloy_providers::provider::Provider::new_with_client(client))
+    } else {
+        None
     };
 
-    // note, reqwest::http is an option here, although doesn't implement .get_watcher()
-    // polling should be an option, investigating
-    // let client = ClientBuilder::default().reqwest_http(Url::from_str(&rpc_url)?);
-
-    let client = ClientBuilder::default().pubsub(connector).await?;
-
-    let provider = alloy_providers::provider::Provider::new_with_client(client);
+    let provider = Arc::new(provider);
 
     // handles of longrunning subscriptions.
     let connections: DashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>> = DashMap::new();
-
     let connections = Arc::new(connections);
-    let provider = Arc::new(provider);
+
+    // passthrough responses
+    let responses: DashMap<u64, (u64, ProcessId)> = DashMap::new();
+    let responses = Arc::new(responses);
+
+    // add whitelist, logic in provider middleware?
+    let public = Arc::new(public);
 
     while let Some(km) = recv_in_client.recv().await {
         // clone Arcs
@@ -63,6 +72,8 @@ pub async fn provider(
         let send_to_loop = send_to_loop.clone();
         let provider = provider.clone();
         let connections = connections.clone();
+        let responses = responses.clone();
+        let public = public.clone();
 
         tokio::spawn(async move {
             if let Err(e) = handle_request(
@@ -71,6 +82,8 @@ pub async fn provider(
                 &send_to_loop,
                 provider.clone(),
                 connections.clone(),
+                responses.clone(),
+                public.clone(),
             )
             .await
             {
@@ -85,8 +98,10 @@ async fn handle_request(
     our: &str,
     km: &KernelMessage,
     send_to_loop: &MessageSender,
-    provider: Arc<alloy_providers::provider::Provider<PubSubFrontend>>,
+    provider: Arc<Option<alloy_providers::provider::Provider<PubSubFrontend>>>,
     connections: Arc<DashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>>,
+    responses: Arc<DashMap<u64, (u64, ProcessId)>>,
+    public: Arc<bool>,
 ) -> Result<(), EthError> {
     let Message::Request(req) = &km.message else {
         return Err(EthError::ProviderError(
@@ -94,95 +109,127 @@ async fn handle_request(
         ));
     };
 
-    let action = serde_json::from_slice::<EthAction>(&req.body).map_err(|e| {
-        EthError::ProviderError(format!("eth: failed to deserialize request: {:?}", e))
-    })?;
+    if let Some(provider) = provider.as_ref() {
+        let action = serde_json::from_slice::<EthAction>(&req.body).map_err(|e| {
+            EthError::ProviderError(format!("eth: failed to deserialize request: {:?}", e))
+        })?;
 
-    // we might want some of these in payloads.. sub items?
-    let return_body: EthResponse = match action {
-        EthAction::SubscribeLogs {
-            sub_id,
-            kind,
-            params,
-        } => {
-            let sub_id = (km.target.process.clone(), sub_id);
-
-            let kind = serde_json::to_value(&kind).unwrap();
-            let params = serde_json::to_value(&params).unwrap();
-
-            let id = provider
-                .inner()
-                .prepare("eth_subscribe", [kind, params])
-                .await
-                .unwrap();
-
-            let target = km.source.clone(); // rsvp?
-
-            let rx = provider.inner().get_raw_subscription(id).await;
-            let handle = tokio::spawn(handle_subscription_stream(
-                our.to_string(),
-                sub_id.1.clone(),
-                rx,
-                target,
-                send_to_loop.clone(),
+        if !*public && km.source.node != our {
+            return Err(EthError::ProviderError(
+                "eth: only accepts requests from apps".to_string(),
             ));
-
-            connections.insert(sub_id, handle);
-            EthResponse::Ok
         }
-        EthAction::UnsubscribeLogs(sub_id) => {
-            let sub_id = (km.target.process.clone(), sub_id);
-            let handle = connections
-                .remove(&sub_id)
-                .ok_or(EthError::SubscriptionNotFound)?;
 
-            handle.1.abort();
-            EthResponse::Ok
-        }
-        EthAction::Request { method, params } => {
-            let method = to_static_str(&method).ok_or(EthError::ProviderError(format!(
-                "eth: method not found: {}",
-                method
-            )))?;
+        // we might want some of these in payloads.. sub items?
+        let return_body: EthResponse = match action {
+            EthAction::SubscribeLogs {
+                sub_id,
+                kind,
+                params,
+            } => {
+                let sub_id = (km.target.process.clone(), sub_id);
 
-            // throw transportErrorKinds straight back to process
-            let response: serde_json::Value =
-                provider.inner().prepare(method, params).await.unwrap();
+                let kind = serde_json::to_value(&kind).unwrap();
+                let params = serde_json::to_value(&params).unwrap();
 
-            EthResponse::Request(response)
-        }
-    };
+                let id = provider
+                    .inner()
+                    .prepare("eth_subscribe", [kind, params])
+                    .await
+                    .unwrap();
 
-    // todo: fix km.clone() and metadata.clone()
-    if let Some(target) = km.clone().rsvp.or_else(|| {
-        req.expects_response.map(|_| Address {
-            node: our.to_string(),
-            process: km.source.process.clone(),
-        })
-    }) {
-        let response = KernelMessage {
+                let target = km.rsvp.clone().unwrap_or_else(|| Address {
+                    node: our.to_string(),
+                    process: km.source.process.clone(),
+                });
+
+                let rx = provider.inner().get_raw_subscription(id).await;
+                let handle = tokio::spawn(handle_subscription_stream(
+                    our.to_string(),
+                    sub_id.1.clone(),
+                    rx,
+                    target,
+                    send_to_loop.clone(),
+                ));
+
+                connections.insert(sub_id, handle);
+                EthResponse::Ok
+            }
+            EthAction::UnsubscribeLogs(sub_id) => {
+                let sub_id = (km.target.process.clone(), sub_id);
+                let handle = connections
+                    .remove(&sub_id)
+                    .ok_or(EthError::SubscriptionNotFound)?;
+
+                handle.1.abort();
+                EthResponse::Ok
+            }
+            EthAction::Request { method, params } => {
+                let method = to_static_str(&method).ok_or(EthError::ProviderError(format!(
+                    "eth: method not found: {}",
+                    method
+                )))?;
+
+                // throw transportErrorKinds straight back to process
+                let response: serde_json::Value =
+                    provider.inner().prepare(method, params).await.unwrap();
+
+                EthResponse::Request(response)
+            }
+        };
+
+        // todo: fix km.clone() and metadata.clone()
+        if let Some(target) = km.clone().rsvp.or_else(|| {
+            req.expects_response.map(|_| Address {
+                node: our.to_string(),
+                process: km.source.process.clone(),
+            })
+        }) {
+            let response = KernelMessage {
+                id: km.id,
+                source: Address {
+                    node: our.to_string(),
+                    process: ETH_PROCESS_ID.clone(),
+                },
+                target: target.clone(),
+                rsvp: None,
+                message: Message::Response((
+                    Response {
+                        inherit: false,
+                        body: serde_json::to_vec(&return_body).unwrap(),
+                        metadata: req.metadata.clone(),
+                        capabilities: vec![],
+                    },
+                    None,
+                )),
+                lazy_load_blob: None,
+            };
+
+            // Send the response, handling potential errors appropriately
+            let _ = send_to_loop.send(response).await;
+        };
+    } else {
+        // passthrough
+        // if node == our, forward to provider
+        // hoping that rsvp can fix the rest.
+        let request = KernelMessage {
             id: km.id,
             source: Address {
                 node: our.to_string(),
-                process: VFS_PROCESS_ID.clone(),
+                process: ETH_PROCESS_ID.clone(),
             },
-            target: target.clone(),
-            rsvp: None,
-            message: Message::Response((
-                Response {
-                    inherit: false,
-                    body: serde_json::to_vec(&return_body).unwrap(),
-                    metadata: req.metadata.clone(),
-                    capabilities: vec![],
-                },
-                None,
-            )),
+            target: Address {
+                node: "jugodenaranja.os".to_string(),
+                process: ETH_PROCESS_ID.clone(),
+            },
+            rsvp: Some(km.source.clone()),
+            message: Message::Request(req.clone()),
             lazy_load_blob: None,
         };
 
-        // Send the response, handling potential errors appropriately
-        let _ = send_to_loop.send(response).await;
-    };
+        let _ = send_to_loop.send(request).await;
+    }
+
     Ok(())
 }
 

@@ -111,6 +111,12 @@ async fn main() {
     let app =
         app.arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(false));
 
+    let app = app.arg(
+        arg!(--public "If set, allow rpc passthrough")
+            .default_value("false")
+            .value_parser(value_parser!(bool)),
+    );
+
     #[cfg(feature = "simulation-mode")]
     let app = app
         .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)"))
@@ -134,6 +140,8 @@ async fn main() {
         None => (8080, false),
     };
     let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
+    let public = *matches.get_one::<bool>("public").unwrap();
+
     let contract_address = if on_testnet {
         register::KNS_SEPOLIA_ADDRESS
     } else {
@@ -501,6 +509,7 @@ async fn main() {
     tasks.spawn(eth::provider::provider(
         our.name.clone(),
         rpc_url.clone(),
+        public,
         kernel_message_sender.clone(),
         eth_provider_receiver,
         print_sender.clone(),

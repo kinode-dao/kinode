@@ -5,10 +5,30 @@ use anyhow::Result;
 use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use wasmtime::{Config, Engine, WasmBacktraceDetails};
+
+/// TEMP IMPORT, crate::net::?????
+/// Must be parsed from message pack vector.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum NetActions {
+    KnsUpdate(KnsUpdate),
+    KnsBatchUpdate(Vec<KnsUpdate>),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KnsUpdate {
+    pub name: String, // actual username / domain name
+    pub owner: String,
+    pub node: String, // hex namehash of node
+    pub public_key: String,
+    pub ip: String,
+    pub port: u16,
+    pub routers: Vec<String>,
+}
 
 /// Manipulate a single process.
 pub mod process;
@@ -782,6 +802,82 @@ pub async fn kernel(
         })
         .await
         .expect("fatal: kernel event loop died");
+    // sending hard coded routers into networking for bootstrapped rpc
+    let kns_updates = vec![
+        KnsUpdate {
+            name: "default-router-1.os".to_string(),
+            owner: "who?".to_string(),
+            node: "0x".to_string(),
+            public_key: "0xb1b1cf23c89f651aac3e5fd4decb04aa177ab0ec8ce5f1d3877b90bb6f5779db"
+                .to_string(),
+            ip: "147.135.114.167".to_string(),
+            port: 9002,
+            routers: vec![],
+        },
+        KnsUpdate {
+            name: "default-router-2.os".to_string(),
+            owner: "who?".to_string(),
+            node: "0x".to_string(),
+            public_key: "0xab9f1a996db3a4e1dbcd31d765daedeb3af9af4f570c0968463b5be3a7d1e992"
+                .to_string(),
+            ip: "147.135.114.167".to_string(),
+            port: 9003,
+            routers: vec![],
+        },
+        KnsUpdate {
+            name: "default-router-3.os".to_string(),
+            owner: "who?".to_string(),
+            node: "0x".to_string(),
+            public_key: "0x536e30785e64dd0349a697285af365b5ed7c4d300010139261cfc4dbdd5b254b"
+                .to_string(),
+            ip: "147.135.114.167".to_string(),
+            port: 9004,
+            routers: vec![],
+        },
+        // I want to use ben.eth
+        // --rpc-node ben.eth
+        // first index and then change
+        // no-rpc
+        // settings -> rpc from router-01 -> ben.eth
+        KnsUpdate {
+            name: "jugodenaranja.os".to_string(),
+            owner: "who?".to_string(),
+            node: "0x".to_string(),
+            public_key: "0xf8a3e9667756306a0a25894a8cfe053dc9e7f34e6a61b8d65e92b79f77e05dff"
+                .to_string(),
+            ip: "this should not be parsed.".to_string(),
+            port: 0,
+            routers: vec![
+                "0xb35eb347deb896bc3fb6132a07fca1601f83462385ed11e835c24c33ba4ef73d".to_string(),
+                "0xd827ae579fafa604af79fbed977e8abe048497f10885c6473dfd343a3b7b4458".to_string(),
+                "0x96e36331c8f0882f2c0c46c13b15d812def04fe8606d503bc0e2be39db26486a".to_string(),
+            ],
+        },
+    ];
+    send_to_loop
+        .send(t::KernelMessage {
+            id: rand::random(),
+            source: t::Address {
+                node: our.name.clone(),
+                process: KERNEL_PROCESS_ID.clone(),
+            },
+            target: t::Address {
+                node: our.name.clone(),
+                process: t::ProcessId::from_str("net:distro:sys").unwrap(),
+            },
+            rsvp: None,
+            message: t::Message::Request(t::Request {
+                inherit: false,
+                expects_response: None,
+                body: rmp_serde::to_vec(&NetActions::KnsBatchUpdate(kns_updates)).unwrap(),
+                metadata: None,
+                capabilities: vec![],
+            }),
+            lazy_load_blob: None,
+        })
+        .await
+        .expect("fatal: kernel event loop died");
+
     // finally, in order to trigger the kns_indexer app to find the right
     // contract, queue up a message that will send the contract address
     // to it on boot.
