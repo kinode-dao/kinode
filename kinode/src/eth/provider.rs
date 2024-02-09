@@ -1,11 +1,11 @@
-use crate::eth::types::*;
-use crate::types::*;
 use alloy_pubsub::{PubSubFrontend, RawSubscription};
 use alloy_rpc_client::ClientBuilder;
 use alloy_rpc_types::pubsub::SubscriptionResult;
 use alloy_transport_ws::WsConnect;
 use anyhow::Result;
 use dashmap::DashMap;
+use lib::types::core::*;
+use lib::types::eth::*;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use url::Url;
@@ -47,7 +47,7 @@ pub async fn provider(
             auth: None,
         };
 
-        let client = ClientBuilder::default().pubsub(connector).await?;
+        let client = ClientBuilder::default().ws(connector).await?;
         Some(alloy_providers::provider::Provider::new_with_client(client))
     } else {
         None

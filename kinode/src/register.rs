@@ -262,7 +262,7 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
             }
         }
     };
-    Ok(warp::reply::with_status(
+    return Ok(warp::reply::with_status(
         warp::reply::json(&UnencryptedIdentity {
             name,
             allowed_routers,

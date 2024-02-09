@@ -1,8 +1,6 @@
 use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
 use serde::{Deserialize, Serialize};
 
-use crate::core::ProcessId;
-
 /// The Request type that can be made to eth:distro:sys. Currently primitive, this
 /// enum will expand to support more actions in the future.
 ///
