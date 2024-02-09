@@ -1042,14 +1042,6 @@ impl std::fmt::Display for PersistedProcess {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ProcessContext {
-    // store ultimate in order to set prompting message if needed
-    pub prompting_message: Option<KernelMessage>,
-    // can be empty if a request doesn't set context, but still needs to inherit
-    pub context: Option<Context>,
-}
-
 pub type PackageVersion = (u32, u32, u32);
 
 /// the type that gets deserialized from `metadata.json` in a package
