@@ -170,6 +170,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     );
     // if contract address changed from a previous run, reset state
     if state.contract_address != contract_address {
+        println!("resetting state for some reason.");
         state = State {
             contract_address: contract_address.clone(),
             names: HashMap::new(),
@@ -177,6 +178,15 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             block: 1,
         };
     }
+
+    // shove all state into net::net
+    Request::new()
+        .target((&our.node, "net", "distro", "sys"))
+        .try_body(NetActions::KnsBatchUpdate(
+            state.nodes.values().cloned().collect::<Vec<_>>(),
+        ))?
+        .send()?;
+
     let filter = Filter::new()
         .address(contract_address.unwrap().parse::<EthAddress>().unwrap())
         .to_block(BlockNumberOrTag::Latest)
@@ -188,6 +198,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             "WsUpdate(bytes32,uint16)",
             "RoutingUpdate(bytes32,bytes32[])",
         ]);
+    // std::thread::sleep(std::time::Duration::from_secs(10));
     // if block in state is < current_block, get logs from that part.
     if state.block < get_block_number()? {
         let logs = get_logs(filter.clone())?;
@@ -202,6 +213,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             state.nodes.values().cloned().collect::<Vec<_>>(),
         ))?
         .send()?;
+
+    set_state(&bincode::serialize(&state)?);
 
     let params = Params::Logs(Box::new(filter));
     let kind = SubscriptionKind::Logs;
