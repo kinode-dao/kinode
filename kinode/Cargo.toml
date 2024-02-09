@@ -37,6 +37,7 @@ chacha20poly1305 = "0.10.1"
 chrono = "0.4.31"
 clap = { version = "4.4", features = ["derive"] }
 crossterm = { version = "0.26.1", features = ["event-stream", "bracketed-paste"] }
+curve25519-dalek = "^4.1.2"
 dashmap = "5.5.3"
 digest = "0.10"
 elliptic-curve = { version = "0.13.8", features = ["ecdh"] }
