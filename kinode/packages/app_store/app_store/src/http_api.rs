@@ -235,10 +235,12 @@ fn serve_paths(
                 }
                 Method::POST => {
                     // download an app
-                    // TODO get fields from POST body
                     let pkg_listing: &PackageListing = state
                         .get_listing(&package_id)
                         .ok_or(anyhow::anyhow!("No package"))?;
+                    // from POST body, look for download_from field and use that as the mirror
+                    let body = crate::get_blob()?.bytes;
+                    let body_json: serde_json::Value = serde_json::from_slice(&body)?;
                     let mirrors: &Vec<NodeId> = pkg_listing
                         .metadata
                         .as_ref()
@@ -246,11 +248,14 @@ fn serve_paths(
                         .mirrors
                         .as_ref()
                         .ok_or(anyhow::anyhow!("No mirrors for package {package_id}"))?;
-                    // TODO select on FE
-                    let download_from = mirrors
-                        .first()
-                        .ok_or(anyhow::anyhow!("No mirrors for package {package_id}"))?;
-                    // TODO select on FE
+                    let download_from = body_json
+                        .get("download_from")
+                        .ok_or(json!(mirrors.first().ok_or(anyhow::anyhow!(
+                            "No mirrors for package {package_id}"
+                        ))?))?
+                        .as_str()
+                        .ok_or(json!("download_from not a string"))?;
+                    // TODO select on FE? or after download but before install?
                     let mirror = false;
                     let auto_update = false;
                     let desired_version_hash = None;

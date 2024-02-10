@@ -407,7 +407,7 @@ fn handle_receive_download(
         Some(hash) => {
             if download_hash != hash {
                 return Err(anyhow::anyhow!(
-                    "app store: downloaded package is not latest version--rejecting download!"
+                    "app store: downloaded package is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
                 ));
             }
         }
@@ -422,7 +422,7 @@ fn handle_receive_download(
                 if let Some(latest_hash) = metadata.versions.clone().unwrap_or(vec![]).last() {
                     if &download_hash != latest_hash {
                         return Err(anyhow::anyhow!(
-                            "app store: downloaded package is not latest version--rejecting download!"
+                            "app store: downloaded package is not latest version--rejecting download! download hash: {download_hash}, latest hash: {latest_hash}"
                         ));
                     }
                 } else {
