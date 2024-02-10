@@ -16,6 +16,7 @@ lazy_static::lazy_static! {
     pub static ref STATE_PROCESS_ID: ProcessId = ProcessId::new(Some("state"), "distro", "sys");
     pub static ref KV_PROCESS_ID: ProcessId = ProcessId::new(Some("kv"), "distro", "sys");
     pub static ref SQLITE_PROCESS_ID: ProcessId = ProcessId::new(Some("sqlite"), "distro", "sys");
+    pub static ref GRAPHDB_PROCESS_ID: ProcessId = ProcessId::new(Some("graphdb"), "distro", "sys");
 }
 
 //
@@ -1482,6 +1483,119 @@ impl From<tokio::sync::oneshot::error::RecvError> for SqliteError {
 impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for SqliteError {
     fn from(err: tokio::sync::mpsc::error::SendError<CapMessage>) -> Self {
         SqliteError::NoCap {
+            error: err.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GraphDbRequest {
+    pub package_id: PackageId,
+    pub db: String,
+    pub action: GraphDbAction,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum DefineResourceType {
+    Namespace { name: String },
+    Database { name: String },
+    Table { name: String },
+}
+
+impl DefineResourceType {
+    pub fn query(&self) -> String {
+        match self {
+            DefineResourceType::Namespace { name } => {
+                // strip all whitespace and special characters
+                let name = name
+                    .chars()
+                    .filter(|c| c.is_alphanumeric())
+                    .collect::<String>();
+
+                format!("DEFINE NAMESPACE {};", name)
+            }
+            DefineResourceType::Database { name } => {
+                let name = name
+                    .chars()
+                    .filter(|c| c.is_alphanumeric())
+                    .collect::<String>();
+                format!("DEFINE DATABASE {};", name)
+            }
+            DefineResourceType::Table { name } => {
+                let name = name
+                    .chars()
+                    .filter(|c| c.is_alphanumeric())
+                    .collect::<String>();
+                format!("DEFINE TABLE {} SCHEMALESS;", name)
+            }
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub enum GraphDbAction {
+    Open,
+    Define { resource: DefineResourceType },
+    Write { statement: String },
+    Read { statement: String },
+    Backup,
+    RemoveDb,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum GraphDbResponse {
+    Ok,
+    Data,
+    Err { error: GraphDbError },
+}
+
+#[derive(Debug, Serialize, Deserialize, Error)]
+pub enum GraphDbError {
+    #[error("graphdb: DbDoesNotExist")]
+    NoDb,
+    #[error("graphdb: KeyNotFound")]
+    KeyNotFound,
+    #[error("graphdb: no Tx found")]
+    NoTx,
+    #[error("graphdb: No capability: {error}")]
+    NoCap { error: String },
+    #[error("sqlite: NotAWriteKeyword")]
+    NotAWriteKeyword,
+    #[error("sqlite: NotAReadKeyword")]
+    NotAReadKeyword,
+    #[error("graphdb: surrealdb internal error: {error}")]
+    SurrealDBError { action: String, error: String },
+    #[error("graphdb: input bytes/json/key error: {error}")]
+    InputError { error: String },
+    #[error("graphdb: IO error: {error}")]
+    IOError { error: String },
+}
+
+impl std::fmt::Display for GraphDbAction {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl From<tokio::sync::oneshot::error::RecvError> for GraphDbError {
+    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
+        GraphDbError::NoCap {
+            error: err.to_string(),
+        }
+    }
+}
+
+impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for GraphDbError {
+    fn from(err: tokio::sync::mpsc::error::SendError<CapMessage>) -> Self {
+        GraphDbError::NoCap {
+            error: err.to_string(),
+        }
+    }
+}
+
+impl From<std::io::Error> for GraphDbError {
+    fn from(err: std::io::Error) -> Self {
+        GraphDbError::IOError {
             error: err.to_string(),
         }
     }
