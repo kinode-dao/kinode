@@ -1042,17 +1042,25 @@ impl std::fmt::Display for PersistedProcess {
     }
 }
 
-pub type PackageVersion = (u32, u32, u32);
-
 /// the type that gets deserialized from `metadata.json` in a package
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PackageMetadata {
-    pub package: String,
-    pub publisher: String,
-    pub version: PackageVersion,
-    pub wit_version: Option<(u32, u32, u32)>,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Erc721Metadata {
+    pub name: Option<String>,
     pub description: Option<String>,
-    pub website: Option<String>,
+    pub image: Option<String>,
+    pub external_url: Option<String>,
+    pub animation_url: Option<String>,
+    pub properties: Option<Erc721Properties>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Erc721Properties {
+    pub package_name: String,
+    pub publisher: String,
+    pub current_version: String,
+    pub mirrors: Vec<NodeId>,
+    pub code_hashes: HashMap<String, String>,
+    pub wit_version: Option<(u32, u32, u32)>,
 }
 
 /// the type that gets deserialized from each entry in the array in `manifest.json`
