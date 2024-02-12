@@ -72,6 +72,7 @@ serde_urlencoded = "0.7"
 sha2 = "0.10"
 snow = { version = "0.9.3", features = ["ring-resolver"] }
 static_dir = "0.2.0"
+surrealdb = { version = "1.1.1", features = ["kv-rocksdb"] }
 thiserror = "1.0"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "signal", "sync"] }
 tokio-stream = "0.1.14"

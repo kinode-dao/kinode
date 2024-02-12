@@ -13,6 +13,7 @@ use lib::types::core::*;
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
 mod eth;
+mod graphdb;
 mod http;
 mod kernel;
 mod keygen;
@@ -36,6 +37,7 @@ const VFS_CHANNEL_CAPACITY: usize = 1_000;
 const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
+const GRAPHDB_CHANNEL_CAPACITY: usize = 1_000;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -210,6 +212,9 @@ async fn main() {
     // sqlite sender and receiver
     let (sqlite_sender, sqlite_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(SQLITE_CHANNEL_CAPACITY);
+    // graphdb sender and receiver
+    let (graphdb_sender, graphdb_receiver): (MessageSender, MessageReceiver) =
+        mpsc::channel(GRAPHDB_CHANNEL_CAPACITY);
     // http server channel w/ websockets (eyre)
     let (http_server_sender, http_server_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
@@ -421,6 +426,11 @@ async fn main() {
             sqlite_sender,
             false,
         ),
+        (
+            ProcessId::new(Some("graphdb"), "distro", "sys"),
+            graphdb_sender,
+            false,
+        ),
     ];
 
     /*
@@ -501,6 +511,14 @@ async fn main() {
         kernel_message_sender.clone(),
         print_sender.clone(),
         sqlite_receiver,
+        caps_oracle_sender.clone(),
+        home_directory_path.clone(),
+    ));
+    tasks.spawn(graphdb::gdb(
+        our.name.clone(),
+        kernel_message_sender.clone(),
+        print_sender.clone(),
+        graphdb_receiver,
         caps_oracle_sender.clone(),
         home_directory_path.clone(),
     ));
