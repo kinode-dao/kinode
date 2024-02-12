@@ -1,9 +1,16 @@
 {
-    "package": "kns_indexer",
-    "publisher": "sys",
-    "version": [
-        0,
-        1,
-        0
-    ]
+    "name": "KNS Indexer",
+    "description": "Kinode OS pki indexer",
+    "image": "",
+    "properties": {
+        "package_name": "kns_indexer",
+        "current_version": "0.1.0",
+        "publisher": "sys",
+        "mirrors": [],
+        "code_hashes": {
+            "0.1.0": ""
+        }
+    },
+    "external_url": "https://kinode.org",
+    "animation_url": ""
 }

@@ -49,22 +49,27 @@ pub struct PackageListing {
     pub name: String,
     pub publisher: NodeId,
     pub metadata_hash: String,
-    pub metadata: Option<OnchainPackageMetadata>,
+    pub metadata: Option<Erc721Metadata>,
 }
 
 /// metadata derived from metadata hash in listing event
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OnchainPackageMetadata {
+pub struct Erc721Metadata {
     pub name: Option<String>,
-    pub subtitle: Option<String>,
     pub description: Option<String>,
     pub image: Option<String>,
-    pub version: Option<String>,
-    pub license: Option<String>,
-    pub website: Option<String>,
-    pub screenshots: Option<Vec<String>>,
-    pub mirrors: Option<Vec<NodeId>>,
-    pub versions: Option<Vec<String>>,
+    pub external_url: Option<String>,
+    pub animation_url: Option<String>,
+    pub properties: Option<Erc721Properties>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Erc721Properties {
+    pub package_name: String,
+    pub publisher: String,
+    pub current_version: String,
+    pub mirrors: Vec<NodeId>,
+    pub code_hashes: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -90,7 +95,7 @@ pub struct PackageState {
     pub mirroring: bool,
     /// if we get a listing data update, will we try to download it?
     pub auto_update: bool,
-    pub metadata: Option<OnchainPackageMetadata>,
+    pub metadata: Option<Erc721Metadata>,
 }
 
 /// this process's saved state
@@ -538,10 +543,7 @@ fn dnswire_decode(wire_format_bytes: &[u8]) -> Result<String, std::string::FromU
 }
 
 /// fetch metadata from metadata_url and verify it matches metadata_hash
-fn fetch_metadata(
-    metadata_url: &str,
-    metadata_hash: &str,
-) -> anyhow::Result<OnchainPackageMetadata> {
+fn fetch_metadata(metadata_url: &str, metadata_hash: &str) -> anyhow::Result<Erc721Metadata> {
     let url = url::Url::parse(metadata_url)?;
     let _response = http::send_request_await_response(http::Method::GET, url, None, 5, vec![])?;
     let Some(body) = get_blob() else {
@@ -549,9 +551,7 @@ fn fetch_metadata(
     };
     let hash = generate_metadata_hash(&body.bytes);
     if &hash == metadata_hash {
-        Ok(serde_json::from_slice::<OnchainPackageMetadata>(
-            &body.bytes,
-        )?)
+        Ok(serde_json::from_slice::<Erc721Metadata>(&body.bytes)?)
     } else {
         Err(anyhow::anyhow!(
             "metadata hash mismatch: got {hash}, expected {metadata_hash}"

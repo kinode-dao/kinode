@@ -412,26 +412,29 @@ fn handle_receive_download(
             }
         }
         None => {
-            // check against latest from listing
+            // check against `metadata.properties.current_version`
             let Some(package_listing) = state.get_listing(&package_id) else {
                 return Err(anyhow::anyhow!(
                     "app store: downloaded package cannot be found in manager--rejecting download!"
                 ));
             };
-            if let Some(metadata) = &package_listing.metadata {
-                if let Some(latest_hash) = metadata.versions.clone().unwrap_or(vec![]).last() {
-                    if &download_hash != latest_hash {
-                        return Err(anyhow::anyhow!(
-                            "app store: downloaded package is not latest version--rejecting download!"
-                        ));
-                    }
-                } else {
-                    return Err(anyhow::anyhow!(
-                        "app store: downloaded package has no versions in manager--rejecting download!"
-                    ));
-                }
-            } else {
-                println!("app store: warning: downloaded package has no listing metadata to check validity against!")
+            let Some(metadata) = &package_listing.metadata else {
+                return Err(anyhow::anyhow!(
+                    "app store: downloaded package has no metadata to check validity against!"
+                ));
+            };
+            let Some(properties) = &metadata.properties else {
+                return Err(anyhow::anyhow!("app store: warning: downloaded package has insufficient metadata to check validity against!"));
+            };
+            let Some(latest_hash) = properties.code_hashes.get(&properties.current_version) else {
+                return Err(anyhow::anyhow!(
+                    "app store: downloaded package has no versions in manager--rejecting download!"
+                ));
+            };
+            if &download_hash != latest_hash {
+                return Err(anyhow::anyhow!(
+                    "app store: downloaded package is not latest version--rejecting download!"
+                ));
             }
         }
     }

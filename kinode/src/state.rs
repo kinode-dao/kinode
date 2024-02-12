@@ -410,16 +410,17 @@ async fn bootstrap(
             .read_to_end(&mut metadata_content)
             .unwrap();
         drop(package_metadata_zip);
+        // TODO this should just deserialize to an ERC721Metadata struct
         let package_metadata: serde_json::Value =
             serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
 
         // println!("fs: found package metadata: {:?}\r", package_metadata);
 
-        let package_name = package_metadata["package"]
+        let package_name = package_metadata["properties"]["package_name"]
             .as_str()
             .expect("fs: metadata parse error: bad package name");
 
-        let package_publisher = package_metadata["publisher"]
+        let package_publisher = package_metadata["properties"]["publisher"]
             .as_str()
             .expect("fs: metadata parse error: bad publisher name");
 
@@ -667,16 +668,16 @@ async fn bootstrap(
             .read_to_end(&mut metadata_content)
             .unwrap();
         drop(package_metadata_zip);
+        // TODO deserialize to an ERC721Metadata struct
         let package_metadata: serde_json::Value =
             serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
 
         // println!("fs: found package metadata: {:?}\r", package_metadata);
-
-        let package_name = package_metadata["package"]
+        let package_name = package_metadata["properties"]["package_name"]
             .as_str()
             .expect("fs: metadata parse error: bad package name");
 
-        let package_publisher = package_metadata["publisher"]
+        let package_publisher = package_metadata["properties"]["publisher"]
             .as_str()
             .expect("fs: metadata parse error: bad publisher name");
 
