@@ -1,6 +1,4 @@
 use aes_gcm::aead::KeyInit;
-use ethers::prelude::{abigen, namehash, Address as EthAddress, Provider, U256};
-use ethers_providers::Ws;
 use hmac::Hmac;
 use jwt::SignWithKey;
 use ring::rand::SystemRandom;
@@ -20,14 +18,6 @@ use warp::{
 
 use crate::keygen;
 use lib::types::core::*;
-
-// Human readable ABI
-abigen!(
-    KNSRegistry,
-    r"[
-    function ws(uint256 node) external view returns (bytes32,uint32,uint16,bytes32[])
-]"
-);
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
@@ -556,62 +546,4 @@ async fn success_response(
     }
 
     Ok(response)
-}
-
-async fn _networking_info_valid(rpc_url: String, ip: String, ws_port: u16, our: &Identity) -> bool {
-    // check if Identity for this username has correct networking keys,
-    // if not, prompt user to reset them.
-    let Ok(ws_rpc) = Provider::<Ws>::connect(rpc_url.clone()).await else {
-        return false;
-    };
-    let Ok(kns_address): Result<EthAddress, _> = KNS_SEPOLIA_ADDRESS.parse() else {
-        return false;
-    };
-    let contract = KNSRegistry::new(kns_address, ws_rpc.into());
-    let node_id: U256 = namehash(&our.name).as_bytes().into();
-    let Ok((chain_pubkey, chain_ip, chain_port, chain_routers)) = contract.ws(node_id).call().await
-    else {
-        return false;
-    };
-
-    // double check that routers match on-chain information
-    let namehashed_routers: Vec<[u8; 32]> = our
-        .allowed_routers
-        .clone()
-        .into_iter()
-        .map(|name| {
-            let hash = namehash(&name);
-            let mut result = [0u8; 32];
-            result.copy_from_slice(hash.as_bytes());
-            result
-        })
-        .collect();
-
-    let current_ip = match _ip_to_number(&ip) {
-        Ok(ip_num) => ip_num,
-        Err(_) => {
-            return false;
-        }
-    };
-
-    let Ok(networking_key_bytes) = _hex_string_to_u8_array(&our.networking_key) else {
-        return false;
-    };
-
-    let address_match = chain_ip == current_ip && chain_port == ws_port;
-    let routers_match = chain_routers == namehashed_routers;
-
-    let routing_match = if chain_ip == 0 {
-        routers_match
-    } else {
-        address_match
-    };
-    let pubkey_match = chain_pubkey == networking_key_bytes;
-
-    // double check that keys match on-chain information
-    if !routing_match || !pubkey_match {
-        return false;
-    }
-
-    true
 }

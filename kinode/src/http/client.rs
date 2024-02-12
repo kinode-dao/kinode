@@ -1,8 +1,8 @@
 use anyhow::Result;
 use dashmap::DashMap;
-use ethers_providers::StreamExt;
 use futures::stream::{SplitSink, SplitStream};
 use futures::SinkExt;
+use futures::StreamExt;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use std::collections::HashMap;
 use std::sync::Arc;
