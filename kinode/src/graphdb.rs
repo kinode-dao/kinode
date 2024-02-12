@@ -269,8 +269,6 @@ async fn handle_request(
                 Some(db) => db,
             };
 
-            // remove escape characters
-            let statement = statement.replace("\\", "");
             let first_word = statement
                 .split_whitespace()
                 .next()
