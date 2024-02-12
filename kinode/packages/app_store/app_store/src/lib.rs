@@ -1,4 +1,6 @@
-use kinode_process_lib::eth::{EthAction, EthAddress, EthSubEvent, SubscribeLogsRequest};
+use kinode_process_lib::eth::{
+    get_logs, Address as EthAddress, EthAction, EthMessage, Filter, Params, SubscriptionResult,
+};
 use kinode_process_lib::http::{bind_http_path, serve_ui, HttpServerRequest};
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
@@ -56,7 +58,7 @@ pub enum Req {
     RemoteRequest(RemoteRequest),
     FTWorkerCommand(FTWorkerCommand),
     FTWorkerResult(FTWorkerResult),
-    Eth(EthSubEvent),
+    Eth(EthMessage),
     Http(HttpServerRequest),
 }
 
@@ -108,13 +110,50 @@ fn init(our: Address) {
 
     let mut requested_packages: HashMap<PackageId, RequestedPackage> = HashMap::new();
 
-    // subscribe to events on the app store contract
-    SubscribeLogsRequest::new(1) // subscription id 1
+    // get past logs, subscribe to new ones. //todotimeout?errors?//future responses?
+    // // doing manual send also possible
+    let filter = Filter::new()
         .address(EthAddress::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block - 1)
-        .events(EVENTS)
+        .events(EVENTS);
+
+    let logs = get_logs(filter.clone());
+
+    if let Ok(logs) = logs {
+        for log in logs {
+            state.ingest_listings_contract_event(log);
+        }
+    }
+
+    // sub for future logs too.
+    Request::new()
+        .target((&our.node, "eth", "distro", "sys"))
+        .body(
+            serde_json::to_vec(&EthMessage {
+                id: 1,
+                action: EthAction::SubscribeLogs {
+                    kind: eth::SubscriptionKind::Logs,
+                    params: Params::Logs(Box::new(filter)),
+                },
+            })
+            .unwrap(),
+        )
         .send()
         .unwrap();
+
+    // Request::new()
+    //     .target(("our", "eth", "distro", "sys"))
+    //     .body(
+    //         serde_json::to_vec(&EthMessage {
+    //             id: 1,
+    //             action: EthAction::Request {
+    //                 method: "eth_getLogs".to_string(),
+    //                 params: serde_json::to_value((filter,)).unwrap(),
+    //             },
+    //         })
+    //         .unwrap(),
+    //     )
+    //     .send();
 
     loop {
         match await_message() {
@@ -178,7 +217,9 @@ fn handle_message(
                 if source.node() != our.node() || source.process != "eth:distro:sys" {
                     return Err(anyhow::anyhow!("eth sub event from weird addr: {source}"));
                 }
-                handle_eth_sub_event(&mut state, e)?;
+                if let EthAction::Sub { result } = e.action {
+                    handle_eth_sub_event(&mut state, result)?;
+                }
             }
             Req::Http(incoming) => {
                 if source.node() != our.node()
@@ -322,13 +363,41 @@ fn handle_local_request(
             *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
             // kill our old subscription and build a new one.
             Request::to(("our", "eth", "distro", "sys"))
-                .body(serde_json::to_vec(&EthAction::UnsubscribeLogs(1)).unwrap())
+                .body(
+                    serde_json::to_vec(&EthMessage {
+                        id: 1,
+                        action: EthAction::UnsubscribeLogs,
+                    })
+                    .unwrap(),
+                )
                 .send()
                 .unwrap();
-            SubscribeLogsRequest::new(1) // subscription id 1
+
+            let filter = Filter::new()
                 .address(EthAddress::from_str(&state.contract_address).unwrap())
                 .from_block(state.last_saved_block - 1)
-                .events(EVENTS)
+                .events(EVENTS);
+
+            let logs = get_logs(filter.clone());
+
+            if let Ok(logs) = logs {
+                for log in logs {
+                    state.ingest_listings_contract_event(log);
+                }
+            }
+
+            Request::new()
+                .target((&our.node, "eth", "distro", "sys"))
+                .body(
+                    serde_json::to_vec(&EthMessage {
+                        id: 1,
+                        action: EthAction::SubscribeLogs {
+                            kind: eth::SubscriptionKind::Logs,
+                            params: Params::Logs(Box::new(filter)),
+                        },
+                    })
+                    .unwrap(),
+                )
                 .send()
                 .unwrap();
             LocalResponse::RebuiltIndex
@@ -470,11 +539,11 @@ fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_eth_sub_event(state: &mut State, event: EthSubEvent) -> anyhow::Result<()> {
-    let EthSubEvent::Log(log) = event else {
+fn handle_eth_sub_event(state: &mut State, event: SubscriptionResult) -> anyhow::Result<()> {
+    let SubscriptionResult::Log(log) = event else {
         return Err(anyhow::anyhow!("app store: got non-log event"));
     };
-    state.ingest_listings_contract_event(log)
+    state.ingest_listings_contract_event(*log)
 }
 
 fn fetch_package_manifest(package: &PackageId) -> anyhow::Result<Vec<kt::PackageManifestEntry>> {
