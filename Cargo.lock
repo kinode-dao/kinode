@@ -3227,7 +3227,7 @@ dependencies = [
 [[package]]
 name = "kit"
 version = "0.1.0"
-source = "git+https://github.com/kinode-dao/kit?rev=25b098f#25b098fab136387065d6058162d33c727d277ab8"
+source = "git+https://github.com/kinode-dao/kit?rev=0c43430#0c434306fdce55e11d3309959fc4a0fe6ae28def"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
