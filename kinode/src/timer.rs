@@ -1,7 +1,7 @@
 use anyhow::Result;
 use lib::types::core::{
     Address, KernelMessage, Message, MessageReceiver, MessageSender, PrintSender, Printout,
-    Response, TIMER_PROCESS_ID, TimerAction,
+    Response, TimerAction, TIMER_PROCESS_ID,
 };
 use serde::{Deserialize, Serialize};
 
