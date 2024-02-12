@@ -1,24 +1,19 @@
-use alloy_primitives::Address as EthAddress;
-use alloy_rpc_types::{
-    pubsub::{Params, SubscriptionKind, SubscriptionResult},
-    BlockNumberOrTag, Filter, Log,
-};
 use alloy_sol_types::{sol, SolEvent};
 
 use kinode_process_lib::{
     await_message,
-    eth::{get_block_number, get_logs, EthResponse},
+    eth::{
+        get_block_number, get_logs, Address as EthAddress, BlockNumberOrTag, EthAction, EthMessage,
+        EthResponse, Filter, Log, Params, SubscriptionKind, SubscriptionResult,
+    },
     get_typed_state, print_to_terminal, println, set_state, Address, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
-use std::string::FromUtf8Error;
-use std::{
-    collections::{
-        hash_map::{Entry, HashMap},
-        BTreeMap,
-    },
-    str::FromStr,
+use std::collections::{
+    hash_map::{Entry, HashMap},
+    BTreeMap,
 };
+use std::string::FromUtf8Error;
 
 wit_bindgen::generate!({
     path: "wit",
@@ -27,23 +22,6 @@ wit_bindgen::generate!({
         world: Component,
     },
 });
-
-//TEMP
-#[derive(Debug, Serialize, Deserialize)]
-pub enum EthAction {
-    /// Subscribe to logs with a custom filter. ID is to be used to unsubscribe.
-    SubscribeLogs {
-        sub_id: u64,
-        kind: SubscriptionKind,
-        params: Params,
-    },
-    /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
-    UnsubscribeLogs(u64),
-    Request {
-        method: String,
-        params: serde_json::Value,
-    },
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -221,10 +199,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     Request::new()
         .target((&our.node, "eth", "distro", "sys"))
-        .body(serde_json::to_vec(&EthAction::SubscribeLogs {
-            sub_id: 8,
-            kind,
-            params,
+        .body(serde_json::to_vec(&EthMessage {
+            id: 8,
+            action: EthAction::SubscribeLogs { kind, params },
         })?)
         .send()?;
 
@@ -285,17 +262,16 @@ fn handle_eth_message(
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
     body: &[u8],
 ) -> anyhow::Result<()> {
-    let Ok(res) = serde_json::from_slice::<EthResponse>(body) else {
+    let Ok(res) = serde_json::from_slice::<EthMessage>(body) else {
         return Err(anyhow::anyhow!("kns_indexer: got invalid message"));
     };
 
-    match res {
-        EthResponse::Sub { id, result } => match result {
-            SubscriptionResult::Log(log) => {
+    match res.action {
+        EthAction::Sub { result } => {
+            if let SubscriptionResult::Log(log) = result {
                 handle_log(our, state, &log)?;
             }
-            _ => {}
-        },
+        }
         _ => {}
     }
 

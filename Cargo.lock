@@ -484,7 +484,7 @@ dependencies = [
  "alloy-sol-types 0.5.4",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.5.9 (git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=1e14a03)",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -3398,10 +3398,8 @@ name = "kinode_process_lib"
 version = "0.5.9"
 source = "git+https://github.com/kinode-dao/process_lib?tag=v0.5.9-alpha#5e705086bbd10fde89e11d3e3671f6a618a875a7"
 dependencies = [
- "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=3b1c310)",
  "anyhow",
  "bincode",
- "ethers-core",
  "http 1.0.0",
  "mime_guess",
  "rand 0.8.5",
@@ -3449,7 +3447,7 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.6.0"
-source = "git+https://github.com/kinode-dao/process_lib?rev=8d58cfb#8d58cfba0302681b6971cac26ea3f7e49d4602ec"
+source = "git+https://github.com/kinode-dao/process_lib?rev=1e14a03#1e14a03e3e274f0bc7f16a08d81c7583589b12be"
 dependencies = [
  "alloy-json-rpc",
  "alloy-primitives 0.6.2",
@@ -3500,12 +3498,11 @@ name = "kns_indexer"
 version = "0.2.0"
 dependencies = [
  "alloy-primitives 0.6.2",
- "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
  "alloy-sol-types 0.6.2",
  "anyhow",
  "bincode",
  "hex",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=8d58cfb)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=1e14a03)",
  "rmp-serde",
  "serde",
  "serde_json",

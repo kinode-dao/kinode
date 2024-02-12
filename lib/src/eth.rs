@@ -1,8 +1,17 @@
 use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
 use serde::{Deserialize, Serialize};
 
-/// The Request type that can be made to eth:distro:sys. Currently primitive, this
-/// enum will expand to support more actions in the future.
+/// The Message type that can be made to eth:distro:sys. The id is used to match the response,
+/// if you're not doing send_and_await.
+///
+/// Will be serialized and deserialized using `serde_json::to_vec` and `serde_json::from_slice`.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EthMessage {
+    pub id: u64,
+    pub action: EthAction,
+}
+
+/// The Action and Request type that can be made to eth:distro:sys.
 ///
 /// Will be serialized and deserialized using `serde_json::to_vec` and `serde_json::from_slice`.
 #[derive(Debug, Serialize, Deserialize)]
@@ -10,38 +19,44 @@ pub enum EthAction {
     /// Subscribe to logs with a custom filter. ID is to be used to unsubscribe.
     /// Logs come in as alloy_rpc_types::pubsub::SubscriptionResults
     SubscribeLogs {
-        sub_id: u64,
         kind: SubscriptionKind,
         params: Params,
     },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
-    UnsubscribeLogs(u64),
+    UnsubscribeLogs,
     /// Raw request. Used by kinode_process_lib.
     Request {
         method: String,
         params: serde_json::Value,
     },
+    /// Incoming subscription update.
+    Sub { result: SubscriptionResult },
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthResponse {
     Ok,
-    Request(serde_json::Value),
+    Response { value: serde_json::Value },
     Err(EthError),
-    Sub { id: u64, result: SubscriptionResult },
 }
 
-/// The Response type which a process will get from requesting with an [`EthAction`] will be
+/// The Response type which a process will get from requesting with an [`EthMessage`] will be
 /// of the form `Result<(), EthError>`, serialized and deserialized using `serde_json::to_vec`
 /// and `serde_json::from_slice`.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthError {
-    /// The ethers provider threw an error when trying to subscribe
-    /// (contains ProviderError serialized to debug string)
-    ProviderError(String),
-    SubscriptionClosed,
+    /// Underlying transport error
+    TransportError(String),
+    /// Subscription closed
+    SubscriptionClosed(u64),
     /// The subscription ID was not found, so we couldn't unsubscribe.
     SubscriptionNotFound,
+    /// Invalid method
+    InvalidMethod(String),
+    /// Permission denied
+    PermissionDenied(String),
+    /// Internal RPC error
+    RpcError(String),
 }
 
 //
@@ -49,7 +64,7 @@ pub enum EthError {
 //
 
 /// For static lifetimes of method strings.
-/// Hopefully replaced asap by alloy-rs network abstraction.
+/// Replaced soon by alloy-rs network abstraction.
 pub fn to_static_str(method: &str) -> Option<&'static str> {
     match method {
         "eth_getBalance" => Some("eth_getBalance"),

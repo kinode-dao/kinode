@@ -87,8 +87,10 @@ pub async fn provider(
             )
             .await
             {
-                println!("got error: {:?}", e);
-            }
+                let _ = send_to_loop
+                    .send(make_error_message(our.to_string(), km, e))
+                    .await;
+            };
         });
     }
     Err(anyhow::anyhow!("eth: fatal: message receiver closed!"))
@@ -104,30 +106,24 @@ async fn handle_request(
     public: Arc<bool>,
 ) -> Result<(), EthError> {
     let Message::Request(req) = &km.message else {
-        return Err(EthError::ProviderError(
+        return Err(EthError::InvalidMethod(
             "eth: only accepts requests".to_string(),
         ));
     };
 
     if let Some(provider) = provider.as_ref() {
-        let action = serde_json::from_slice::<EthAction>(&req.body).map_err(|e| {
-            EthError::ProviderError(format!("eth: failed to deserialize request: {:?}", e))
+        let ethmsg = serde_json::from_slice::<EthMessage>(&req.body).map_err(|e| {
+            EthError::InvalidMethod(format!("eth: failed to deserialize request: {:?}", e))
         })?;
 
         if !*public && km.source.node != our {
-            return Err(EthError::ProviderError(
-                "eth: only accepts requests from apps".to_string(),
-            ));
+            return Err(EthError::PermissionDenied("not on the list.".to_string()));
         }
 
         // we might want some of these in payloads.. sub items?
-        let return_body: EthResponse = match action {
-            EthAction::SubscribeLogs {
-                sub_id,
-                kind,
-                params,
-            } => {
-                let sub_id = (km.target.process.clone(), sub_id);
+        let return_body: EthResponse = match ethmsg.action {
+            EthAction::SubscribeLogs { kind, params } => {
+                let sub_id = (km.target.process.clone(), ethmsg.id);
 
                 let kind = serde_json::to_value(&kind).unwrap();
                 let params = serde_json::to_value(&params).unwrap();
@@ -136,7 +132,7 @@ async fn handle_request(
                     .inner()
                     .prepare("eth_subscribe", [kind, params])
                     .await
-                    .unwrap();
+                    .map_err(|e| EthError::TransportError(e.to_string()))?;
 
                 let target = km.rsvp.clone().unwrap_or_else(|| Address {
                     node: our.to_string(),
@@ -155,8 +151,8 @@ async fn handle_request(
                 connections.insert(sub_id, handle);
                 EthResponse::Ok
             }
-            EthAction::UnsubscribeLogs(sub_id) => {
-                let sub_id = (km.target.process.clone(), sub_id);
+            EthAction::UnsubscribeLogs => {
+                let sub_id = (km.target.process.clone(), ethmsg.id);
                 let handle = connections
                     .remove(&sub_id)
                     .ok_or(EthError::SubscriptionNotFound)?;
@@ -165,16 +161,20 @@ async fn handle_request(
                 EthResponse::Ok
             }
             EthAction::Request { method, params } => {
-                let method = to_static_str(&method).ok_or(EthError::ProviderError(format!(
-                    "eth: method not found: {}",
-                    method
-                )))?;
+                let method = to_static_str(&method).ok_or(EthError::InvalidMethod(method))?;
 
-                // throw transportErrorKinds straight back to process
-                let response: serde_json::Value =
-                    provider.inner().prepare(method, params).await.unwrap();
+                let response: serde_json::Value = provider
+                    .inner()
+                    .prepare(method, params)
+                    .await
+                    .map_err(|e| EthError::TransportError(e.to_string()))?;
 
-                EthResponse::Request(response)
+                EthResponse::Response { value: response }
+            }
+            EthAction::Sub { .. } => {
+                return Err(EthError::InvalidMethod(
+                    "eth: provider doesn't accept sub resultss".to_string(),
+                ))
             }
         };
 
@@ -247,11 +247,12 @@ async fn handle_subscription_stream(
         Err(e) => {
             println!("got an error from the subscription stream: {:?}", e);
             // TODO should we stop the subscription here?
-            // return Err(EthError::ProviderError(format!("{:?}", e)));
+            // return Err(EthError::TransportError??(format!("{:?}", e)));
         }
         Ok(value) => {
-            let event: SubscriptionResult = serde_json::from_str(value.get())
-                .map_err(|e| EthError::ProviderError(format!("{:?}", e)))?;
+            let event: SubscriptionResult = serde_json::from_str(value.get()).map_err(|_| {
+                EthError::RpcError("eth: failed to deserialize subscription result".to_string())
+            })?;
             send_to_loop
                 .send(KernelMessage {
                     id: rand::random(),
@@ -264,9 +265,9 @@ async fn handle_subscription_stream(
                     message: Message::Request(Request {
                         inherit: false,
                         expects_response: None,
-                        body: serde_json::to_vec(&EthResponse::Sub {
+                        body: serde_json::to_vec(&EthMessage {
                             id: sub_id,
-                            result: event,
+                            action: EthAction::Sub { result: event },
                         })
                         .unwrap(),
                         metadata: None,
@@ -278,5 +279,32 @@ async fn handle_subscription_stream(
                 .unwrap();
         }
     }
-    Err(EthError::SubscriptionClosed)
+    Err(EthError::SubscriptionClosed(sub_id))
+}
+
+// todo, always send errors or no? general runtime question for other modules too.
+fn make_error_message(our_node: String, km: KernelMessage, error: EthError) -> KernelMessage {
+    let source = km.rsvp.unwrap_or_else(|| Address {
+        node: our_node.clone(),
+        process: km.source.process.clone(),
+    });
+    KernelMessage {
+        id: km.id,
+        source: Address {
+            node: our_node,
+            process: ETH_PROCESS_ID.clone(),
+        },
+        target: source,
+        rsvp: None,
+        message: Message::Response((
+            Response {
+                inherit: false,
+                body: serde_json::to_vec(&EthResponse::Err(error)).unwrap(),
+                metadata: None,
+                capabilities: vec![],
+            },
+            None,
+        )),
+        lazy_load_blob: None,
+    }
 }
