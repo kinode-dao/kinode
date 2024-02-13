@@ -112,7 +112,7 @@ async fn handle_request(
     };
 
     if let Some(provider) = provider.as_ref() {
-        let ethmsg = serde_json::from_slice::<EthMessage>(&req.body).map_err(|e| {
+        let action = serde_json::from_slice::<EthAction>(&req.body).map_err(|e| {
             EthError::InvalidMethod(format!("eth: failed to deserialize request: {:?}", e))
         })?;
 
@@ -121,9 +121,13 @@ async fn handle_request(
         }
 
         // we might want some of these in payloads.. sub items?
-        let return_body: EthResponse = match ethmsg.action {
-            EthAction::SubscribeLogs { kind, params } => {
-                let sub_id = (km.target.process.clone(), ethmsg.id);
+        let return_body: EthResponse = match action {
+            EthAction::SubscribeLogs {
+                sub_id,
+                kind,
+                params,
+            } => {
+                let sub_id = (km.target.process.clone(), sub_id);
 
                 let kind = serde_json::to_value(&kind).unwrap();
                 let params = serde_json::to_value(&params).unwrap();
@@ -151,8 +155,8 @@ async fn handle_request(
                 connections.insert(sub_id, handle);
                 EthResponse::Ok
             }
-            EthAction::UnsubscribeLogs => {
-                let sub_id = (km.target.process.clone(), ethmsg.id);
+            EthAction::UnsubscribeLogs(sub_id) => {
+                let sub_id = (km.target.process.clone(), sub_id);
                 let handle = connections
                     .remove(&sub_id)
                     .ok_or(EthError::SubscriptionNotFound)?;
@@ -170,11 +174,6 @@ async fn handle_request(
                     .map_err(|e| EthError::TransportError(e.to_string()))?;
 
                 EthResponse::Response { value: response }
-            }
-            EthAction::Sub { .. } => {
-                return Err(EthError::InvalidMethod(
-                    "eth: provider doesn't accept sub resultss".to_string(),
-                ))
             }
         };
 
@@ -265,9 +264,9 @@ async fn handle_subscription_stream(
                     message: Message::Request(Request {
                         inherit: false,
                         expects_response: None,
-                        body: serde_json::to_vec(&EthMessage {
+                        body: serde_json::to_vec(&EthSub {
                             id: sub_id,
-                            action: EthAction::Sub { result: event },
+                            result: event,
                         })
                         .unwrap(),
                         metadata: None,

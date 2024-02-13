@@ -3,8 +3,8 @@ use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
     await_message,
     eth::{
-        get_block_number, get_logs, subscribe, Address as EthAddress, BlockNumberOrTag, EthAction,
-        EthMessage, EthResponse, Filter, Log, Params, SubscriptionKind, SubscriptionResult,
+        get_block_number, get_logs, subscribe, Address as EthAddress, BlockNumberOrTag, EthSub,
+        Filter, Log, SubscriptionResult,
     },
     get_typed_state, print_to_terminal, println, set_state, Address, Message, Request, Response,
 };
@@ -253,17 +253,12 @@ fn handle_eth_message(
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
     body: &[u8],
 ) -> anyhow::Result<()> {
-    let Ok(res) = serde_json::from_slice::<EthMessage>(body) else {
+    let Ok(res) = serde_json::from_slice::<EthSub>(body) else {
         return Err(anyhow::anyhow!("kns_indexer: got invalid message"));
     };
 
-    match res.action {
-        EthAction::Sub { result } => {
-            if let SubscriptionResult::Log(log) = result {
-                handle_log(our, state, &log)?;
-            }
-        }
-        _ => {}
+    if let SubscriptionResult::Log(log) = res.result {
+        handle_log(our, state, &log)?;
     }
 
     // check the pending_requests btreemap to see if there are any requests that

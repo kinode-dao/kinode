@@ -1,16 +1,6 @@
 use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
 use serde::{Deserialize, Serialize};
 
-/// The Message type that can be made to eth:distro:sys. The id is used to match the response,
-/// if you're not doing send_and_await.
-///
-/// Will be serialized and deserialized using `serde_json::to_vec` and `serde_json::from_slice`.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EthMessage {
-    pub id: u64,
-    pub action: EthAction,
-}
-
 /// The Action and Request type that can be made to eth:distro:sys.
 ///
 /// Will be serialized and deserialized using `serde_json::to_vec` and `serde_json::from_slice`.
@@ -19,20 +9,28 @@ pub enum EthAction {
     /// Subscribe to logs with a custom filter. ID is to be used to unsubscribe.
     /// Logs come in as alloy_rpc_types::pubsub::SubscriptionResults
     SubscribeLogs {
+        sub_id: u64,
         kind: SubscriptionKind,
         params: Params,
     },
     /// Kill a SubscribeLogs subscription of a given ID, to stop getting updates.
-    UnsubscribeLogs,
+    UnsubscribeLogs(u64),
     /// Raw request. Used by kinode_process_lib.
     Request {
         method: String,
         params: serde_json::Value,
     },
-    /// Incoming subscription update.
-    Sub { result: SubscriptionResult },
+}
+/// Incoming subscription update.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EthSub {
+    pub id: u64,
+    pub result: SubscriptionResult,
 }
 
+/// The Response type which a process will get from requesting with an [`EthAction`] will be
+/// of the form `Result<(), EthError>`, serialized and deserialized using `serde_json::to_vec`
+/// and `serde_json::from_slice`.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthResponse {
     Ok,
@@ -40,9 +38,6 @@ pub enum EthResponse {
     Err(EthError),
 }
 
-/// The Response type which a process will get from requesting with an [`EthMessage`] will be
-/// of the form `Result<(), EthError>`, serialized and deserialized using `serde_json::to_vec`
-/// and `serde_json::from_slice`.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthError {
     /// Underlying transport error

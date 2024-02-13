@@ -1,5 +1,5 @@
 use kinode_process_lib::eth::{
-    get_logs, subscribe, unsubscribe, Address as EthAddress, EthAction, EthMessage, Filter, Params,
+    get_logs, subscribe, unsubscribe, Address as EthAddress, EthAction, EthSub, Filter, Params,
     SubscriptionResult,
 };
 use kinode_process_lib::http::{bind_http_path, serve_ui, HttpServerRequest};
@@ -59,7 +59,7 @@ pub enum Req {
     RemoteRequest(RemoteRequest),
     FTWorkerCommand(FTWorkerCommand),
     FTWorkerResult(FTWorkerResult),
-    Eth(EthMessage),
+    Eth(EthSub),
     Http(HttpServerRequest),
 }
 
@@ -185,13 +185,11 @@ fn handle_message(
             Req::FTWorkerResult(r) => {
                 println!("app store: got weird ft_worker result: {r:?}");
             }
-            Req::Eth(e) => {
+            Req::Eth(sub) => {
                 if source.node() != our.node() || source.process != "eth:distro:sys" {
                     return Err(anyhow::anyhow!("eth sub event from weird addr: {source}"));
                 }
-                if let EthAction::Sub { result } = e.action {
-                    handle_eth_sub_event(&mut state, result)?;
-                }
+                handle_eth_sub_event(&mut state, sub.result)?;
             }
             Req::Http(incoming) => {
                 if source.node() != our.node()
