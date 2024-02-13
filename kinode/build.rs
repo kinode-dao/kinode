@@ -8,7 +8,10 @@ use zip::write::FileOptions;
 
 // This function is assumed to be synchronous. Adjust as needed.
 // Make sure it can be called in parallel without causing issues.
-fn build_and_zip_package(entry_path: PathBuf, parent_pkg_path: &str) -> anyhow::Result<(String, Vec<u8>)> {
+fn build_and_zip_package(
+    entry_path: PathBuf,
+    parent_pkg_path: &str,
+) -> anyhow::Result<(String, Vec<u8>)> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         kit::build::execute(&entry_path, false, false, false, true).await?;
@@ -53,7 +56,8 @@ fn main() -> anyhow::Result<()> {
         .map(|entry| entry.unwrap().path())
         .collect();
 
-    let results: Vec<anyhow::Result<(String, Vec<u8>)>> = entries.par_iter()
+    let results: Vec<anyhow::Result<(String, Vec<u8>)>> = entries
+        .par_iter()
         .map(|entry_path| {
             let parent_pkg_path = entry_path.join("pkg");
             build_and_zip_package(entry_path.clone(), parent_pkg_path.to_str().unwrap())
@@ -63,7 +67,10 @@ fn main() -> anyhow::Result<()> {
     // Process results, e.g., write to `bootstrapped_processes.rs`
     // This part remains sequential
     let mut bootstrapped_processes = vec![];
-    writeln!(bootstrapped_processes, "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &[u8])] = &[")?;
+    writeln!(
+        bootstrapped_processes,
+        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &[u8])] = &["
+    )?;
 
     for result in results {
         match result {
@@ -77,7 +84,7 @@ fn main() -> anyhow::Result<()> {
                     "    (\"{}\", include_bytes!(\"{}\")),",
                     zip_filename, zip_path,
                 )?;
-            },
+            }
             Err(e) => return Err(e),
         }
     }

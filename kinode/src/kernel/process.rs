@@ -9,9 +9,9 @@ use ring::signature::{self, KeyPair};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
+use wasmtime::component::ResourceTable as Table;
 use wasmtime::component::*;
 use wasmtime::{Engine, Store};
-use wasmtime::component::ResourceTable as Table;
 use wasmtime_wasi::preview2::{pipe::MemoryOutputPipe, WasiCtx, WasiCtxBuilder, WasiView};
 
 const STACK_TRACE_SIZE: usize = 5000;
