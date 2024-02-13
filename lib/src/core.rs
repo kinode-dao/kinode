@@ -1050,7 +1050,7 @@ pub struct Erc721Metadata {
     pub image: Option<String>,
     pub external_url: Option<String>,
     pub animation_url: Option<String>,
-    pub properties: Option<Erc721Properties>,
+    pub properties: Erc721Properties,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

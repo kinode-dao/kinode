@@ -17,13 +17,14 @@ async fn main() -> anyhow::Result<()> {
     let mut bootstrapped_processes = Vec::new();
     writeln!(
         bootstrapped_processes,
-        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &[u8])] = &[",
+        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &[u8], &[u8])] = &[",
     )
     .unwrap();
     let packages_dir = format!("{}/packages", pwd.display());
     eprintln!("{packages_dir:?}");
     for entry in std::fs::read_dir(packages_dir).unwrap() {
         let entry_path = entry.unwrap().path();
+        let metadata_path = format!("{}/metadata.json", entry_path.display());
         let parent_pkg_path = format!("{}/pkg", entry_path.display());
 
         kit::build::execute(&entry_path, false, false, false, true).await?;
@@ -72,8 +73,8 @@ async fn main() -> anyhow::Result<()> {
         // Add zip bytes to bootstrapped_processes.rs
         writeln!(
             bootstrapped_processes,
-            "    (\"{}\", include_bytes!(\"{}\")),",
-            zip_filename, zip_path,
+            "    (\"{}\", include_bytes!(\"{}\"), include_bytes!(\"{}\")),",
+            zip_filename, metadata_path, zip_path,
         )
         .unwrap();
     }
