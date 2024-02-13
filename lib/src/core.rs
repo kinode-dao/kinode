@@ -1060,6 +1060,8 @@ pub struct Erc721Properties {
     pub current_version: String,
     pub mirrors: Vec<NodeId>,
     pub code_hashes: HashMap<String, String>,
+    pub license: Option<String>,
+    pub screenshots: Option<Vec<String>>,
     pub wit_version: Option<(u32, u32, u32)>,
 }
 
