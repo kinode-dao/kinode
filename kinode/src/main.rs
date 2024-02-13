@@ -24,7 +24,7 @@ mod state;
 mod terminal;
 mod timer;
 mod vfs;
-//
+
 const EVENT_LOOP_CHANNEL_CAPACITY: usize = 10_000;
 const EVENT_LOOP_DEBUG_CHANNEL_CAPACITY: usize = 50;
 const TERMINAL_CHANNEL_CAPACITY: usize = 32;
@@ -44,6 +44,9 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// such that only their routers can ever see their physical networking details.
 #[cfg(not(feature = "simulation-mode"))]
 const REVEAL_IP: bool = true;
+
+/// default routers as a fallbac
+const DEFAULT_ROUTERS: &str = include_str!("../default_routers.json");
 
 async fn serve_register_fe(
     home_directory_path: &str,
@@ -384,6 +387,24 @@ async fn main() {
         }
     };
 
+    // read in default routers .json file
+    type KnsUpdate = crate::net::KnsUpdate;
+    let routers: Vec<KnsUpdate> =
+        match fs::read_to_string(format!("{}/.routers", home_directory_path)).await {
+            Ok(contents) => serde_json::from_str(&contents).unwrap(),
+            Err(_) => {
+                let routers: Vec<KnsUpdate> = serde_json::from_str(DEFAULT_ROUTERS).unwrap();
+                // should we dump them into a .routers file?
+                // fs::write(
+                //     format!("{}/.routers", home_directory_path),
+                //     serde_json::to_string(&routers).unwrap(),
+                // )
+                // .await
+                // .unwrap();
+                routers
+            }
+        };
+
     // the boolean flag determines whether the runtime module is *public* or not,
     // where public means that any process can always message it.
     #[allow(unused_mut)]
@@ -464,6 +485,7 @@ async fn main() {
         home_directory_path.clone(),
         contract_address.to_string(),
         runtime_extensions,
+        routers,
     ));
     #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(net::networking(
