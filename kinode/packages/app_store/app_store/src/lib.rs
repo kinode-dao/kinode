@@ -1,5 +1,6 @@
 use kinode_process_lib::eth::{
-    get_logs, Address as EthAddress, EthAction, EthMessage, Filter, Params, SubscriptionResult,
+    get_logs, subscribe, unsubscribe, Address as EthAddress, EthAction, EthMessage, Filter, Params,
+    SubscriptionResult,
 };
 use kinode_process_lib::http::{bind_http_path, serve_ui, HttpServerRequest};
 use kinode_process_lib::kernel_types as kt;
@@ -110,14 +111,13 @@ fn init(our: Address) {
 
     let mut requested_packages: HashMap<PackageId, RequestedPackage> = HashMap::new();
 
-    // get past logs, subscribe to new ones. //todotimeout?errors?//future responses?
-    // // doing manual send also possible
+    // get past logs, subscribe to new ones.
     let filter = Filter::new()
         .address(EthAddress::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block - 1)
         .events(EVENTS);
 
-    let logs = get_logs(filter.clone());
+    let logs = get_logs(&filter);
 
     if let Ok(logs) = logs {
         for log in logs {
@@ -125,35 +125,7 @@ fn init(our: Address) {
         }
     }
 
-    // sub for future logs too.
-    Request::new()
-        .target((&our.node, "eth", "distro", "sys"))
-        .body(
-            serde_json::to_vec(&EthMessage {
-                id: 1,
-                action: EthAction::SubscribeLogs {
-                    kind: eth::SubscriptionKind::Logs,
-                    params: Params::Logs(Box::new(filter)),
-                },
-            })
-            .unwrap(),
-        )
-        .send()
-        .unwrap();
-
-    // Request::new()
-    //     .target(("our", "eth", "distro", "sys"))
-    //     .body(
-    //         serde_json::to_vec(&EthMessage {
-    //             id: 1,
-    //             action: EthAction::Request {
-    //                 method: "eth_getLogs".to_string(),
-    //                 params: serde_json::to_value((filter,)).unwrap(),
-    //             },
-    //         })
-    //         .unwrap(),
-    //     )
-    //     .send();
+    subscribe(1, filter).unwrap();
 
     loop {
         match await_message() {
@@ -362,44 +334,22 @@ fn handle_local_request(
         LocalRequest::RebuildIndex => {
             *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
             // kill our old subscription and build a new one.
-            Request::to(("our", "eth", "distro", "sys"))
-                .body(
-                    serde_json::to_vec(&EthMessage {
-                        id: 1,
-                        action: EthAction::UnsubscribeLogs,
-                    })
-                    .unwrap(),
-                )
-                .send()
-                .unwrap();
+            unsubscribe(1).unwrap();
 
             let filter = Filter::new()
                 .address(EthAddress::from_str(&state.contract_address).unwrap())
                 .from_block(state.last_saved_block - 1)
                 .events(EVENTS);
 
-            let logs = get_logs(filter.clone());
+            let logs = get_logs(&filter);
 
             if let Ok(logs) = logs {
                 for log in logs {
                     state.ingest_listings_contract_event(log);
                 }
             }
+            subscribe(1, filter).unwrap();
 
-            Request::new()
-                .target((&our.node, "eth", "distro", "sys"))
-                .body(
-                    serde_json::to_vec(&EthMessage {
-                        id: 1,
-                        action: EthAction::SubscribeLogs {
-                            kind: eth::SubscriptionKind::Logs,
-                            params: Params::Logs(Box::new(filter)),
-                        },
-                    })
-                    .unwrap(),
-                )
-                .send()
-                .unwrap();
             LocalResponse::RebuiltIndex
         }
     }

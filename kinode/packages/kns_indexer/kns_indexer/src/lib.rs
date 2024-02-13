@@ -3,8 +3,8 @@ use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
     await_message,
     eth::{
-        get_block_number, get_logs, Address as EthAddress, BlockNumberOrTag, EthAction, EthMessage,
-        EthResponse, Filter, Log, Params, SubscriptionKind, SubscriptionResult,
+        get_block_number, get_logs, subscribe, Address as EthAddress, BlockNumberOrTag, EthAction,
+        EthMessage, EthResponse, Filter, Log, Params, SubscriptionKind, SubscriptionResult,
     },
     get_typed_state, print_to_terminal, println, set_state, Address, Message, Request, Response,
 };
@@ -176,10 +176,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             "WsUpdate(bytes32,uint16)",
             "RoutingUpdate(bytes32,bytes32[])",
         ]);
-    // std::thread::sleep(std::time::Duration::from_secs(10));
+
     // if block in state is < current_block, get logs from that part.
     if state.block < get_block_number()? {
-        let logs = get_logs(filter.clone())?;
+        let logs = get_logs(&filter)?;
         for log in logs {
             handle_log(&our, &mut state, &log)?;
         }
@@ -194,16 +194,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     set_state(&bincode::serialize(&state)?);
 
-    let params = Params::Logs(Box::new(filter));
-    let kind = SubscriptionKind::Logs;
-
-    Request::new()
-        .target((&our.node, "eth", "distro", "sys"))
-        .body(serde_json::to_vec(&EthMessage {
-            id: 8,
-            action: EthAction::SubscribeLogs { kind, params },
-        })?)
-        .send()?;
+    subscribe(1, filter)?;
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
