@@ -30,7 +30,7 @@ pub fn handle_http_request(
     req: &IncomingHttpRequest,
 ) -> anyhow::Result<()> {
     match serve_paths(our, state, requested_packages, req) {
-        Ok((status_code, headers, body)) => send_response(
+        Ok((status_code, _headers, body)) => send_response(
             status_code,
             Some(HashMap::from([(
                 String::from("Content-Type"),
@@ -241,10 +241,12 @@ fn serve_paths(
                         .ok_or(anyhow::anyhow!("No package"))?;
                     let mirrors: &Vec<NodeId> = pkg_listing
                         .metadata
-                        .as_ref() // Convert Option<Erc721Metadata> to Option<&Erc721Metadata>
-                        .and_then(|metadata| metadata.properties.as_ref()) // Convert Option<Erc721Properties> to Option<&Erc721Properties>
-                        .map(|properties| &properties.mirrors) // Access &Vec<NodeId>
-                        .expect("Package does not have mirrors information");
+                        .as_ref()
+                        // TODO better error handling - this will be common!
+                        .expect("Package does not have metadata")
+                        .properties
+                        .mirrors
+                        .as_ref();
                     // TODO select on FE
                     let download_from = mirrors
                         .first()

@@ -376,7 +376,7 @@ pub fn start_download(
 }
 
 fn handle_receive_download(
-    our: &Address,
+    _our: &Address,
     state: &mut State,
     package_name: &str,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
@@ -423,10 +423,11 @@ fn handle_receive_download(
                     "app store: downloaded package has no metadata to check validity against!"
                 ));
             };
-            let Some(properties) = &metadata.properties else {
-                return Err(anyhow::anyhow!("app store: warning: downloaded package has insufficient metadata to check validity against!"));
-            };
-            let Some(latest_hash) = properties.code_hashes.get(&properties.current_version) else {
+            let Some(latest_hash) = metadata
+                .properties
+                .code_hashes
+                .get(&metadata.properties.current_version)
+            else {
                 return Err(anyhow::anyhow!(
                     "app store: downloaded package has no versions in manager--rejecting download!"
                 ));

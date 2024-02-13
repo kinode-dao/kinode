@@ -34,6 +34,7 @@ pub enum LocalRequest {
     ///
     /// If requested, will return a NewPackageResponse indicating success/failure.
     /// This is used for locally installing a package.
+    /// TODO could switch this to Erc721Metadata
     NewPackage {
         package: PackageId,
         /// Sets whether we will mirror this package for others
@@ -52,6 +53,7 @@ pub enum LocalRequest {
         /// when a new version is posted to the listings contract
         auto_update: bool,
         /// The version hash we're looking for. If None, will download the latest.
+        /// TODO could switch this to more friendly version numbers e.g 1.0.1 given new metadata structure
         desired_version_hash: Option<String>,
     },
     /// Select a downloaded package and install it. Will only succeed if the
