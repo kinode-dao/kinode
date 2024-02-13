@@ -713,20 +713,23 @@ fn sign_cap(cap: Capability, keypair: Arc<signature::Ed25519KeyPair>) -> Vec<u8>
 }
 
 /// read in `include!()`ed .zip package files
-async fn get_zipped_packages() -> Vec<(Erc721Metadata, zip::ZipArchive<std::io::Cursor<&'static [u8]>>)> {
+async fn get_zipped_packages() -> Vec<(
+    Erc721Metadata,
+    zip::ZipArchive<std::io::Cursor<&'static [u8]>>,
+)> {
     // println!("fs: reading distro packages...\r");
 
     let mut packages = Vec::new();
 
     for (package_name, metadata_bytes, bytes) in BOOTSTRAPPED_PROCESSES.iter() {
         if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(*bytes)) {
-            if let Ok(metadata) = serde_json::from_slice::<Erc721Metadata>(metadata_bytes) {            
-                packages.push((
-                    metadata,
-                    zip
-                ));
+            if let Ok(metadata) = serde_json::from_slice::<Erc721Metadata>(metadata_bytes) {
+                packages.push((metadata, zip));
             } else {
-                println!("fs: metadata for package {} is not valid Erc721Metadata", package_name);
+                println!(
+                    "fs: metadata for package {} is not valid Erc721Metadata",
+                    package_name
+                );
             }
         }
     }
