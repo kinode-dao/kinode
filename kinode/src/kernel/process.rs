@@ -11,7 +11,8 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use wasmtime::component::*;
 use wasmtime::{Engine, Store};
-use wasmtime_wasi::preview2::{pipe::MemoryOutputPipe, Table, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime::component::ResourceTable as Table;
+use wasmtime_wasi::preview2::{pipe::MemoryOutputPipe, WasiCtx, WasiCtxBuilder, WasiView};
 
 const STACK_TRACE_SIZE: usize = 5000;
 
