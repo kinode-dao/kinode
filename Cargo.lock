@@ -272,7 +272,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.6.0",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=7f409e4)",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -3210,11 +3210,10 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.6.0"
+source = "git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha#4c49368e1945c041dfcabbe15734322012239d25"
 dependencies = [
- "alloy-rpc-types",
  "anyhow",
  "bincode",
- "ethers-core",
  "http 1.0.0",
  "mime_guess",
  "rand 0.8.5",
@@ -3228,10 +3227,12 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.6.0"
-source = "git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha#4c49368e1945c041dfcabbe15734322012239d25"
+source = "git+https://github.com/kinode-dao/process_lib?rev=7f409e4#7f409e4e4f72c277b5a2eddbeebe7e9719db33dc"
 dependencies = [
+ "alloy-rpc-types",
  "anyhow",
  "bincode",
+ "ethers-core",
  "http 1.0.0",
  "mime_guess",
  "rand 0.8.5",
