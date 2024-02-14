@@ -361,7 +361,8 @@ async fn handle_request(
             )
         }
         VfsAction::RemoveFile => {
-            fs::remove_file(path).await?;
+            fs::remove_file(&path).await?;
+            open_files.remove(&path);
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::RemoveDir => {

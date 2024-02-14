@@ -86,6 +86,7 @@ pub struct PackageState {
     pub our_version: String,
     pub installed: bool,
     pub caps_approved: bool,
+    pub manifest_hash: Option<String>,
     /// are we serving this package to others?
     pub mirroring: bool,
     /// if we get a listing data update, will we try to download it?
@@ -171,7 +172,7 @@ impl State {
     pub fn add_downloaded_package(
         &mut self,
         package_id: &PackageId,
-        package_state: PackageState,
+        mut package_state: PackageState,
         package_bytes: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         if let Some(package_bytes) = package_bytes {
@@ -215,6 +216,13 @@ impl State {
                 })?)
                 .blob(blob)
                 .send_and_await_response(5)??;
+
+            let manifest_file = vfs::File {
+                path: format!("/{}/pkg/manifest.json", package_id),
+            };
+            let manifest_bytes = manifest_file.read()?;
+            let manifest_hash = generate_metadata_hash(&manifest_bytes);
+            package_state.manifest_hash = Some(manifest_hash);
         }
         self.downloaded_packages
             .insert(package_id.to_owned(), package_state);
@@ -296,6 +304,10 @@ impl State {
                 // generate entry from this data
                 // for the version hash, take the SHA-256 hash of the zip file
                 let our_version = generate_version_hash(&zip_file_bytes);
+                let manifest_file = vfs::File {
+                    path: format!("/{}/pkg/manifest.json", package_id),
+                };
+                let manifest_bytes = manifest_file.read()?;
                 // the user will need to turn mirroring and auto-update back on if they
                 // have to reset the state of their app store for some reason. the apps
                 // themselves will remain on disk unless explicitly deleted.
@@ -306,6 +318,7 @@ impl State {
                         our_version,
                         installed: true,
                         caps_approved: true, // since it's already installed this must be true
+                        manifest_hash: Some(generate_metadata_hash(&manifest_bytes)),
                         mirroring: false,
                         auto_update: false,
                         metadata: None,
@@ -362,7 +375,11 @@ impl State {
     }
 
     /// only saves state if last_saved_block is more than 1000 blocks behind
-    pub fn ingest_listings_contract_event(&mut self, log: Log) -> anyhow::Result<()> {
+    pub fn ingest_listings_contract_event(
+        &mut self,
+        our: &Address,
+        log: Log,
+    ) -> anyhow::Result<()> {
         let block_number: u64 = log
             .block_number
             .ok_or(anyhow::anyhow!("app store: got log with no block number"))?
@@ -454,6 +471,33 @@ impl State {
 
                 current_listing.metadata_hash = metadata_hash;
                 current_listing.metadata = metadata;
+
+                let package_id = PackageId::new(&current_listing.name, &current_listing.publisher);
+
+                // if we have this app installed, and we have auto_update set to true,
+                // we should try to download new version from the mirrored_from node
+                // and install it if successful.
+                if let Some(package_state) = self.downloaded_packages.get(&package_id) {
+                    if package_state.auto_update {
+                        if let Some(mirrored_from) = &package_state.mirrored_from {
+                            crate::print_to_terminal(
+                                1,
+                                &format!(
+                                    "app store: auto-updating package {package_id} from {mirrored_from}"
+                                ),
+                            );
+                            Request::to(our)
+                                .body(serde_json::to_vec(&LocalRequest::Download {
+                                    package: package_id,
+                                    download_from: mirrored_from.clone(),
+                                    mirror: package_state.mirroring,
+                                    auto_update: package_state.auto_update,
+                                    desired_version_hash: None,
+                                })?)
+                                .send()?;
+                        }
+                    }
+                }
             }
             Transfer::SIGNATURE_HASH => {
                 let from = alloy_primitives::Address::from_word(log.topics[1]);

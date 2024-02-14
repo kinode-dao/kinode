@@ -1486,3 +1486,9 @@ impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for SqliteError {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TimerAction {
+    Debug,
+    SetTimer(u64),
+}
