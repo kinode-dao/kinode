@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
+use rand::seq::SliceRandom;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -111,14 +112,14 @@ async fn main() {
         );
 
     #[cfg(not(feature = "simulation-mode"))]
-    let app =
-        app.arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(false));
-
-    let app = app.arg(
-        arg!(--public "If set, allow rpc passthrough")
-            .default_value("false")
-            .value_parser(value_parser!(bool)),
-    );
+    let app = app
+        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(false))
+        .arg(arg!(--rpcnode <String> "RPC node provider must be a valid address").required(false))
+        .arg(
+            arg!(--public "If set, allow rpc passthrough")
+                .default_value("false")
+                .value_parser(value_parser!(bool)),
+        );
 
     #[cfg(feature = "simulation-mode")]
     let app = app
@@ -177,8 +178,50 @@ async fn main() {
         }
     }
 
+    // default routers
+    type KnsUpdate = crate::net::KnsUpdate;
+    let routers: Vec<KnsUpdate> =
+        match fs::read_to_string(format!("{}/.routers", home_directory_path)).await {
+            Ok(contents) => serde_json::from_str(&contents).unwrap(),
+            Err(_) => {
+                let routers: Vec<KnsUpdate> = serde_json::from_str(DEFAULT_ROUTERS).unwrap();
+                routers
+            }
+        };
+
+    println!("wtf here are the matches: {:?}", matches);
     #[cfg(not(feature = "simulation-mode"))]
     let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").cloned(), false);
+    #[cfg(not(feature = "simulation-mode"))]
+    let (rpc_node, _is_detached) = (matches.get_one::<String>("rpcnode").cloned(), false);
+
+    type ProviderInput = lib::eth::ProviderInput;
+    let eth_provider: ProviderInput;
+
+    match (rpc_url, rpc_node) {
+        (Some(url), Some(_)) => {
+            println!("passed both node and url for rpc, using url.");
+            eth_provider = ProviderInput::WS(url);
+        }
+        (Some(url), None) => {
+            eth_provider = ProviderInput::WS(url);
+        }
+        (None, Some(node)) => {
+            println!("trying to use node for rpc: {}", node);
+            eth_provider = ProviderInput::Node(node);
+        }
+        (None, None) => {
+            let random_router = routers.choose(&mut rand::thread_rng()).unwrap();
+            let default_router = random_router.name.clone();
+
+            println!(
+                "no rpc provided, using a default router: {}",
+                default_router
+            );
+
+            eth_provider = ProviderInput::Node(default_router);
+        }
+    }
 
     #[cfg(feature = "simulation-mode")]
     let (rpc_url, password, network_router_port, fake_node_name, is_detached) = (
@@ -387,17 +430,6 @@ async fn main() {
         }
     };
 
-    // read in default routers .json file
-    type KnsUpdate = crate::net::KnsUpdate;
-    let routers: Vec<KnsUpdate> =
-        match fs::read_to_string(format!("{}/.routers", home_directory_path)).await {
-            Ok(contents) => serde_json::from_str(&contents).unwrap(),
-            Err(_) => {
-                let routers: Vec<KnsUpdate> = serde_json::from_str(DEFAULT_ROUTERS).unwrap();
-                routers
-            }
-        };
-
     // the boolean flag determines whether the runtime module is *public* or not,
     // where public means that any process can always message it.
     #[allow(unused_mut)]
@@ -550,7 +582,7 @@ async fn main() {
     #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(eth::provider::provider(
         our.name.clone(),
-        rpc_url.clone(),
+        eth_provider,
         public,
         kernel_message_sender.clone(),
         eth_provider_receiver,

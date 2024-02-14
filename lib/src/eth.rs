@@ -90,3 +90,8 @@ pub fn to_static_str(method: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+
+pub enum ProviderInput {
+    WS(String),
+    Node(String),
+}

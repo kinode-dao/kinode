@@ -12,14 +12,21 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 use url::Url;
 
+/// Provider config. Can currently be a node or a ws provider instance.
+/// Future: add chainId configs, several nodes and fallbacks.
+pub enum ProviderConfig {
+    Node(String),
+    Provider(Provider<PubSubFrontend>),
+}
+
 /// The ETH provider runtime process is responsible for connecting to one or more ETH RPC providers
 /// and using them to service indexing requests from other apps. This could also be done by a wasm
 /// app, but in the future, this process will hopefully expand in scope to perform more complex
 /// indexing and ETH node responsibilities.
 pub async fn provider(
     our: String,
-    rpc_url: Option<String>, // if None, bootstrap from router, can set settings later?
-    public: bool,            // todo, whitelists etc.
+    provider_node: ProviderInput,
+    public: bool,
     send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
     _print_tx: PrintSender,
@@ -28,34 +35,32 @@ pub async fn provider(
 
     // Initialize the provider conditionally based on rpc_url
     // Todo: make provider<T> support multiple transports, one direct and another passthrough.
-    let provider = if let Some(rpc_url) = rpc_url {
-        // If rpc_url is Some, proceed with URL parsing and client setup
-        match Url::parse(&rpc_url)?.scheme() {
-            "http" | "https" => {
-                return Err(anyhow::anyhow!(
-                    "eth: you provided a `http(s)://` Ethereum RPC, but only `ws(s)://` is supported. Please try again with a `ws(s)://` provider"
-                ));
-            }
-            "ws" | "wss" => {}
-            s => {
-                return Err(anyhow::anyhow!(
-                    "eth: you provided a `{s:?}` Ethereum RPC, but only `ws(s)://` is supported. Please try again with a `ws(s)://` provider"
-                ));
+    let provider_config = match provider_node {
+        ProviderInput::WS(rpc_url) => {
+            // Validate and parse the WebSocket URL
+            match Url::parse(&rpc_url)?.scheme() {
+                "ws" | "wss" => {
+                    let connector = WsConnect {
+                        url: rpc_url,
+                        auth: None,
+                    };
+                    let client = ClientBuilder::default().ws(connector).await?;
+                    ProviderConfig::Provider(Provider::new_with_client(client))
+                }
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "Only `ws://` or `wss://` URLs are supported."
+                    ))
+                }
             }
         }
-
-        let connector = WsConnect {
-            url: rpc_url,
-            auth: None,
-        };
-
-        let client = ClientBuilder::default().ws(connector).await?;
-        Some(Provider::new_with_client(client))
-    } else {
-        None
+        ProviderInput::Node(node_id) => {
+            // Directly use the node ID
+            ProviderConfig::Node(node_id)
+        }
     };
 
-    let provider = Arc::new(provider);
+    let provider_config = Arc::new(provider_config);
 
     // handles of longrunning subscriptions.
     let connections: DashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>> = DashMap::new();
@@ -68,7 +73,7 @@ pub async fn provider(
         // clone Arcs
         let our = our.clone();
         let send_to_loop = send_to_loop.clone();
-        let provider = provider.clone();
+        let provider_config = provider_config.clone();
         let connections = connections.clone();
         let public = public.clone();
 
@@ -77,7 +82,7 @@ pub async fn provider(
                 &our,
                 &km,
                 &send_to_loop,
-                provider.clone(),
+                provider_config.clone(),
                 connections.clone(),
                 public.clone(),
             )
@@ -96,38 +101,54 @@ async fn handle_message(
     our: &str,
     km: &KernelMessage,
     send_to_loop: &MessageSender,
-    provider: Arc<Option<Provider<PubSubFrontend>>>,
+    provider_config: Arc<ProviderConfig>,
     connections: Arc<DashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>>,
     public: Arc<bool>,
 ) -> Result<(), EthError> {
     match &km.message {
         Message::Request(req) => {
-            if km.source.node == our {
-                if let Some(provider) = provider.as_ref() {
-                    handle_local_request(our, km, send_to_loop, provider, connections, public)
-                        .await?
-                } else {
-                    // we have no provider, let's send this request to someone who has one.
-                    let request = KernelMessage {
-                        id: km.id,
-                        source: Address {
-                            node: our.to_string(),
-                            process: ETH_PROCESS_ID.clone(),
-                        },
-                        target: Address {
-                            node: "jugodenaranja.os".to_string(),
-                            process: ETH_PROCESS_ID.clone(),
-                        },
-                        rsvp: Some(km.source.clone()),
-                        message: Message::Request(req.clone()),
-                        lazy_load_blob: None,
-                    };
+            match &*provider_config {
+                ProviderConfig::Node(node) => {
+                    if km.source.node == our {
+                        // we have no provider, let's send this request to someone who has one.
+                        let request = KernelMessage {
+                            id: km.id,
+                            source: Address {
+                                node: our.to_string(),
+                                process: ETH_PROCESS_ID.clone(),
+                            },
+                            target: Address {
+                                node: "jugodenaranja.os".to_string(),
+                                process: ETH_PROCESS_ID.clone(),
+                            },
+                            rsvp: Some(km.source.clone()),
+                            message: Message::Request(req.clone()),
+                            lazy_load_blob: None,
+                        };
 
-                    let _ = send_to_loop.send(request).await;
+                        let _ = send_to_loop.send(request).await;
+                    } else {
+                        // either someone asking us for rpc, or we are passing through a sub event.
+                        handle_remote_request(our, km, send_to_loop, None, connections, public)
+                            .await?
+                    }
                 }
-            } else {
-                // either someone asking us for rpc, or we are passing through a sub event.
-                handle_remote_request(our, km, send_to_loop, provider, connections, public).await?
+                ProviderConfig::Provider(provider) => {
+                    if km.source.node == our {
+                        handle_local_request(our, km, send_to_loop, &provider, connections, public)
+                            .await?
+                    } else {
+                        handle_remote_request(
+                            our,
+                            km,
+                            send_to_loop,
+                            Some(provider),
+                            connections,
+                            public,
+                        )
+                        .await?
+                    }
+                }
             }
         }
         Message::Response(_) => {
@@ -255,7 +276,7 @@ async fn handle_remote_request(
     our: &str,
     km: &KernelMessage,
     send_to_loop: &MessageSender,
-    provider: Arc<Option<Provider<PubSubFrontend>>>,
+    provider: Option<&Provider<PubSubFrontend>>,
     connections: Arc<DashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>>,
     public: Arc<bool>,
 ) -> Result<(), EthError> {
@@ -265,7 +286,7 @@ async fn handle_remote_request(
         ));
     };
 
-    if let Some(provider) = provider.as_ref() {
+    if let Some(provider) = provider {
         // we need some sort of agreement perhaps on rpc providing.
         // even with an agreement, fake ethsubevents could be sent to us.
         // light clients could verify blocks perhaps...
