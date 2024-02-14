@@ -240,7 +240,6 @@ async fn handle_local_request(
                 .prepare(method, params)
                 .await
                 .map_err(|e| EthError::TransportError(e.to_string()))?;
-            println!("got a normal request! ");
             EthResponse::Response { value: response }
         }
     };

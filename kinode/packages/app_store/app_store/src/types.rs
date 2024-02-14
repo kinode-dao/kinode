@@ -1,3 +1,4 @@
+use crate::LocalRequest;
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::eth::Log;
 use kinode_process_lib::kernel_types as kt;
