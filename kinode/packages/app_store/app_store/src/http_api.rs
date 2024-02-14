@@ -188,8 +188,38 @@ fn serve_paths(
                 }
                 Method::PUT => {
                     // update an app
-                    // TODO
-                    Ok((StatusCode::NO_CONTENT, None, format!("TODO").into_bytes()))
+                    let pkg_listing: &PackageListing = state
+                        .get_listing(&package_id)
+                        .ok_or(anyhow::anyhow!("No package"))?;
+                    let pkg_state: &PackageState = state
+                        .downloaded_packages
+                        .get(&package_id)
+                        .ok_or(anyhow::anyhow!("No package"))?;
+                    let download_from = pkg_state
+                        .mirrored_from
+                        .as_ref()
+                        .ok_or(anyhow::anyhow!("No mirror for package {package_id}"))?
+                        .to_string();
+                    match crate::start_download(
+                        our,
+                        requested_packages,
+                        &package_id,
+                        &download_from,
+                        pkg_state.mirroring,
+                        pkg_state.auto_update,
+                        &None,
+                    ) {
+                        DownloadResponse::Started => Ok((
+                            StatusCode::CREATED,
+                            None,
+                            format!("Downloading").into_bytes(),
+                        )),
+                        DownloadResponse::Failure => Ok((
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            None,
+                            format!("Failed to download").into_bytes(),
+                        )),
+                    }
                 }
                 Method::DELETE => {
                     // uninstall an app
@@ -235,10 +265,15 @@ fn serve_paths(
                 }
                 Method::POST => {
                     // download an app
-                    // TODO get fields from POST body
                     let pkg_listing: &PackageListing = state
                         .get_listing(&package_id)
                         .ok_or(anyhow::anyhow!("No package"))?;
+                    // from POST body, look for download_from field and use that as the mirror
+                    let body = crate::get_blob()
+                        .ok_or(anyhow::anyhow!("missing blob"))?
+                        .bytes;
+                    let body_json: serde_json::Value =
+                        serde_json::from_slice(&body).unwrap_or_default();
                     let mirrors: &Vec<NodeId> = pkg_listing
                         .metadata
                         .as_ref()
@@ -246,11 +281,15 @@ fn serve_paths(
                         .mirrors
                         .as_ref()
                         .ok_or(anyhow::anyhow!("No mirrors for package {package_id}"))?;
-                    // TODO select on FE
-                    let download_from = mirrors
-                        .first()
-                        .ok_or(anyhow::anyhow!("No mirrors for package {package_id}"))?;
-                    // TODO select on FE
+                    let download_from = body_json
+                        .get("download_from")
+                        .unwrap_or(&json!(mirrors
+                            .first()
+                            .ok_or(anyhow::anyhow!("No mirrors for package {package_id}"))?))
+                        .as_str()
+                        .ok_or(anyhow::anyhow!("download_from not a string"))?
+                        .to_string();
+                    // TODO select on FE? or after download but before install?
                     let mirror = false;
                     let auto_update = false;
                     let desired_version_hash = None;
@@ -258,7 +297,7 @@ fn serve_paths(
                         our,
                         requested_packages,
                         &package_id,
-                        download_from,
+                        &download_from,
                         mirror,
                         auto_update,
                         &desired_version_hash,

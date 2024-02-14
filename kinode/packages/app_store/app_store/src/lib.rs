@@ -178,7 +178,7 @@ fn handle_message(
                 if source.node() != our.node() || source.process != "eth:distro:sys" {
                     return Err(anyhow::anyhow!("eth sub event from weird addr: {source}"));
                 }
-                handle_eth_sub_event(&mut state, e)?;
+                handle_eth_sub_event(our, &mut state, e)?;
             }
             Req::Http(incoming) => {
                 if source.node() != our.node()
@@ -187,7 +187,7 @@ fn handle_message(
                     return Err(anyhow::anyhow!("http_server from non-local node"));
                 }
                 if let HttpServerRequest::Http(req) = incoming {
-                    http_api::handle_http_request(&our, &mut state, requested_packages, &req)?;
+                    http_api::handle_http_request(our, &mut state, requested_packages, &req)?;
                 }
             }
         },
@@ -269,6 +269,7 @@ fn handle_local_request(
                 our_version,
                 installed: false,
                 caps_approved: true, // TODO see if we want to auto-approve local installs
+                manifest_hash: None, // generated in the add fn
                 mirroring: *mirror,
                 auto_update: false, // can't auto-update a local package
                 metadata: None,     // TODO
@@ -407,7 +408,7 @@ fn handle_receive_download(
         Some(hash) => {
             if download_hash != hash {
                 return Err(anyhow::anyhow!(
-                    "app store: downloaded package is not latest version--rejecting download!"
+                    "app store: downloaded package is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
                 ));
             }
         }
@@ -422,7 +423,7 @@ fn handle_receive_download(
                 if let Some(latest_hash) = metadata.versions.clone().unwrap_or(vec![]).last() {
                     if &download_hash != latest_hash {
                         return Err(anyhow::anyhow!(
-                            "app store: downloaded package is not latest version--rejecting download!"
+                            "app store: downloaded package is not latest version--rejecting download! download hash: {download_hash}, latest hash: {latest_hash}"
                         ));
                     }
                 } else {
@@ -436,6 +437,14 @@ fn handle_receive_download(
         }
     }
 
+    let old_manifest_hash = match state.downloaded_packages.get(&package_id) {
+        Some(package_state) => package_state
+            .manifest_hash
+            .clone()
+            .unwrap_or("OLD".to_string()),
+        _ => "OLD".to_string(),
+    };
+
     state.add_downloaded_package(
         &package_id,
         PackageState {
@@ -443,12 +452,28 @@ fn handle_receive_download(
             our_version: download_hash,
             installed: false,
             caps_approved: false,
+            manifest_hash: None, // generated in the add fn
             mirroring: requested_package.mirror,
             auto_update: requested_package.auto_update,
             metadata: None, // TODO
         },
         Some(blob.bytes),
-    )
+    )?;
+
+    let new_manifest_hash = match state.downloaded_packages.get(&package_id) {
+        Some(package_state) => package_state
+            .manifest_hash
+            .clone()
+            .unwrap_or("NEW".to_string()),
+        _ => "NEW".to_string(),
+    };
+
+    // lastly, if auto_update is true, AND the caps_hash has NOT changed,
+    // trigger install!
+    if requested_package.auto_update && old_manifest_hash == new_manifest_hash {
+        handle_install(our, state, &package_id)?;
+    }
+    Ok(())
 }
 
 fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
@@ -470,11 +495,15 @@ fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_eth_sub_event(state: &mut State, event: EthSubEvent) -> anyhow::Result<()> {
+fn handle_eth_sub_event(
+    our: &Address,
+    state: &mut State,
+    event: EthSubEvent,
+) -> anyhow::Result<()> {
     let EthSubEvent::Log(log) = event else {
         return Err(anyhow::anyhow!("app store: got non-log event"));
     };
-    state.ingest_listings_contract_event(log)
+    state.ingest_listings_contract_event(our, log)
 }
 
 fn fetch_package_manifest(package: &PackageId) -> anyhow::Result<Vec<kt::PackageManifestEntry>> {
