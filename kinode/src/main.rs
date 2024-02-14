@@ -394,13 +394,6 @@ async fn main() {
             Ok(contents) => serde_json::from_str(&contents).unwrap(),
             Err(_) => {
                 let routers: Vec<KnsUpdate> = serde_json::from_str(DEFAULT_ROUTERS).unwrap();
-                // should we dump them into a .routers file?
-                // fs::write(
-                //     format!("{}/.routers", home_directory_path),
-                //     serde_json::to_string(&routers).unwrap(),
-                // )
-                // .await
-                // .unwrap();
                 routers
             }
         };
