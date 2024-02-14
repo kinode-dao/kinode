@@ -388,6 +388,15 @@ impl State {
 
                 let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
 
+                if let Some(metadata) = &metadata {
+                    if metadata.properties.publisher != publisher_name {
+                        return Err(anyhow::anyhow!(format!(
+                            "app store: metadata publisher name mismatch: got {}, expected {}",
+                            metadata.properties.publisher, publisher_name
+                        )));
+                    }
+                }
+
                 let listing = match self.get_listing_with_hash_mut(&package_hash) {
                     Some(current_listing) => {
                         current_listing.name = package_name;
@@ -427,7 +436,15 @@ impl State {
                     ))?;
 
                 let metadata = match fetch_metadata(&metadata_url, &metadata_hash) {
-                    Ok(metadata) => Some(metadata),
+                    Ok(metadata) => {
+                        if metadata.properties.publisher != current_listing.publisher {
+                            return Err(anyhow::anyhow!(format!(
+                                "app store: metadata publisher name mismatch: got {}, expected {}",
+                                metadata.properties.publisher, current_listing.publisher
+                            )));
+                        }
+                        Some(metadata)
+                    }
                     Err(e) => {
                         crate::print_to_terminal(
                             1,
