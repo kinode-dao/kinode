@@ -8,7 +8,7 @@ import zipfile
 def get_system_info():
     # Get OS and architecture information
     os_info = subprocess.run(["uname"], capture_output=True, text=True, check=True).stdout.strip().lower()
-    arch_info = subprocess.run(["uname", "-p"], capture_output=True, text=True, check=True).stdout.strip().lower()
+    arch_info = subprocess.run(["uname", "-m"], capture_output=True, text=True, check=True).stdout.strip().lower()
 
     if os_info == "linux":
         os_info = "unknown-linux-gnu"
