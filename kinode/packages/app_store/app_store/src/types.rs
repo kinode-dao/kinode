@@ -1,6 +1,6 @@
 use crate::LocalRequest;
-use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
+use kinode_process_lib::eth::Log;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::{println, *};
 use serde::{Deserialize, Serialize};
