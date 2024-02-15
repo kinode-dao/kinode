@@ -2578,6 +2578,7 @@ dependencies = [
  "open",
  "public-ip",
  "rand 0.8.5",
+ "regex",
  "reqwest",
  "ring 0.16.20",
  "rmp-serde",
