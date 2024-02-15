@@ -189,7 +189,7 @@ fn serve_paths(
                 }
                 Method::PUT => {
                     // update an app
-                    let pkg_listing: &PackageListing = state
+                    let _pkg_listing: &PackageListing = state
                         .get_listing(&package_id)
                         .ok_or(anyhow::anyhow!("No package"))?;
                     let pkg_state: &PackageState = state
@@ -281,9 +281,7 @@ fn serve_paths(
                         .expect("Package does not have metadata")
                         .properties
                         .mirrors
-                        .as_ref()
-                        .ok_or(anyhow::anyhow!("No mirrors for package {package_id}"))?;
-
+                        .as_ref();
                     // TODO select on FE
                     let download_from = body_json
                         .get("download_from")

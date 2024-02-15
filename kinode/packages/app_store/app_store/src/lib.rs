@@ -378,7 +378,7 @@ pub fn start_download(
 }
 
 fn handle_receive_download(
-    _our: &Address,
+    our: &Address,
     state: &mut State,
     package_name: &str,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
