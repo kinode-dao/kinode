@@ -194,7 +194,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     set_state(&bincode::serialize(&state)?);
 
-    subscribe(1, filter)?;
+    subscribe(1, filter.clone())?;
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -210,7 +210,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         };
 
         if source.process == "eth:distro:sys" {
-            handle_eth_message(&our, &mut state, &mut pending_requests, &body)?;
+            handle_eth_message(&our, &mut state, &mut pending_requests, &body, &filter)?;
         } else {
             let Ok(request) = serde_json::from_slice::<IndexerRequests>(&body) else {
                 println!("kns_indexer: got invalid message");
@@ -252,14 +252,21 @@ fn handle_eth_message(
     state: &mut State,
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
     body: &[u8],
+    filter: &Filter,
 ) -> anyhow::Result<()> {
     let Ok(eth_result) = serde_json::from_slice::<EthSubResult>(body) else {
         return Err(anyhow::anyhow!("kns_indexer: got invalid message"));
     };
 
-    if let Ok(EthSub { result, .. }) = eth_result {
-        if let SubscriptionResult::Log(log) = result {
-            handle_log(our, state, &log)?;
+    match eth_result {
+        Ok(EthSub { result, .. }) => {
+            if let SubscriptionResult::Log(log) = result {
+                handle_log(our, state, &log)?;
+            }
+        }
+        Err(e) => {
+            println!("kns_indexer: got sub error, resubscribing.. {:?}", e.error);
+            subscribe(1, filter.clone())?;
         }
     }
 

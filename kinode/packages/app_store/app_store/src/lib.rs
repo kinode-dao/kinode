@@ -191,6 +191,8 @@ fn handle_message(
                 }
                 if let Ok(EthSub { result, .. }) = eth_result {
                     handle_eth_sub_event(our, &mut state, result)?;
+                } else {
+                    println!("app store: got eth sub error: {eth_result:?}");
                 }
             }
             Req::Http(incoming) => {
