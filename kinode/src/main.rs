@@ -189,7 +189,6 @@ async fn main() {
             }
         };
 
-    println!("wtf here are the matches: {:?}", matches);
     #[cfg(not(feature = "simulation-mode"))]
     let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").cloned(), false);
     #[cfg(not(feature = "simulation-mode"))]
@@ -207,7 +206,7 @@ async fn main() {
             eth_provider = ProviderInput::WS(url);
         }
         (None, Some(node)) => {
-            println!("trying to use node for rpc: {}", node);
+            println!("trying to use remote node for rpc: {}", node);
             eth_provider = ProviderInput::Node(node);
         }
         (None, None) => {
