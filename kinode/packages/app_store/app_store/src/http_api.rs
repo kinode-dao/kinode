@@ -282,7 +282,6 @@ fn serve_paths(
                         .properties
                         .mirrors
                         .as_ref();
-                    // TODO select on FE
                     let download_from = body_json
                         .get("download_from")
                         .unwrap_or(&json!(mirrors
