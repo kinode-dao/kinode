@@ -268,6 +268,7 @@ fn handle_local_request(
                 mirrored_from: Some(our.node.clone()),
                 our_version,
                 installed: false,
+                verified: true, // side loaded apps are implicitly verified because there is no "source" to verify against
                 caps_approved: true, // TODO see if we want to auto-approve local installs
                 mirroring: *mirror,
                 auto_update: false, // can't auto-update a local package
@@ -403,12 +404,21 @@ fn handle_receive_download(
     // check the version hash for this download against requested!!
     // for now we can reject if it's not latest.
     let download_hash = generate_version_hash(&blob.bytes);
+    let mut verified = false;
     match requested_package.desired_version_hash {
         Some(hash) => {
             if download_hash != hash {
-                return Err(anyhow::anyhow!(
-                    "app store: downloaded package is not latest version--rejecting download!"
-                ));
+                if hash.is_empty() {
+                    println!(
+                        "\x1b[33mwarning: downloaded package has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
+                    );
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "downloaded package is not latest version--rejecting download!"
+                    ));
+                }
+            } else {
+                verified = true;
             }
         }
         None => {
@@ -433,9 +443,17 @@ fn handle_receive_download(
                 ));
             };
             if &download_hash != latest_hash {
-                return Err(anyhow::anyhow!(
-                    "app store: downloaded package is not latest version--rejecting download!"
-                ));
+                if latest_hash.is_empty() {
+                    println!(
+                        "\x1b[33mwarning: downloaded package has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
+                    );
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "downloaded package is not latest version--rejecting download!"
+                    ));
+                }
+            } else {
+                verified = true;
             }
         }
     }
@@ -446,6 +464,7 @@ fn handle_receive_download(
             mirrored_from: Some(requested_package.from),
             our_version: download_hash,
             installed: false,
+            verified,
             caps_approved: false,
             mirroring: requested_package.mirror,
             auto_update: requested_package.auto_update,

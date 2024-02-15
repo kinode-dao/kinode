@@ -70,6 +70,7 @@ pub struct PackageState {
     /// the version of the package we have downloaded
     pub our_version: String,
     pub installed: bool,
+    pub verified: bool,
     pub caps_approved: bool,
     /// are we serving this package to others?
     pub mirroring: bool,
@@ -290,6 +291,7 @@ impl State {
                         mirrored_from: None,
                         our_version,
                         installed: true,
+                        verified: true,      // implicity verified
                         caps_approved: true, // since it's already installed this must be true
                         mirroring: false,
                         auto_update: false,
@@ -547,14 +549,13 @@ fn fetch_metadata(metadata_url: &str, metadata_hash: &str) -> anyhow::Result<kt:
         return Err(anyhow::anyhow!("no blob"));
     };
     let hash = generate_metadata_hash(&body.bytes);
-    // TODO fix this for later
-    // if &hash == metadata_hash {
-    Ok(serde_json::from_slice::<kt::Erc721Metadata>(&body.bytes)?)
-    // } else {
-    //     Err(anyhow::anyhow!(
-    //         "metadata hash mismatch: got {hash}, expected {metadata_hash}"
-    //     ))
-    // }
+    if &hash == metadata_hash {
+        Ok(serde_json::from_slice::<kt::Erc721Metadata>(&body.bytes)?)
+    } else {
+        Err(anyhow::anyhow!(
+            "metadata hash mismatch: got {hash}, expected {metadata_hash}"
+        ))
+    }
 }
 
 /// generate a Keccak-256 hash of the metadata bytes

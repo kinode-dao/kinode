@@ -81,6 +81,7 @@ fn gen_package_info(
                 "caps_approved": state.caps_approved,
                 "mirroring": state.mirroring,
                 "auto_update": state.auto_update,
+                "verified": state.verified,
             }),
             None => json!(null),
         },
