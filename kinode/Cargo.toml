@@ -14,10 +14,10 @@ path = "src/main.rs"
 
 [build-dependencies]
 anyhow = "1.0.71"
-kit = { git = "https://github.com/kinode-dao/kit", rev = "0c43430" }
-reqwest = { version = "0.11.22", features = ["blocking"] }
+kit = { git = "https://github.com/kinode-dao/kit", rev = "f96cdaa" }
+rayon = "1.8.1"
 sha2 = "0.10"
-tokio = { version = "1.28", features = ["macros"] }
+tokio = "1.28"
 walkdir = "2.4"
 zip = "0.6"
 
@@ -82,6 +82,6 @@ tokio-tungstenite = "0.20.1"
 url = "2.4.1"
 uuid = { version = "1.1.2", features = ["serde", "v4"] }
 warp = "0.3.5"
-wasmtime = "15.0.1"
-wasmtime-wasi = "15.0.1"
+wasmtime = "17.0.1"
+wasmtime-wasi = "17.0.1"
 zip = "0.6"
