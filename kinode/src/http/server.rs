@@ -587,7 +587,11 @@ async fn http_handler(
         }
     } else {
         // otherwise, make a message to the correct app
-        let url_params: HashMap<String, String> = route.params().into_iter().map(|(key, value)| (key.to_string(), value.to_string())).collect();
+        let url_params: HashMap<String, String> = route
+            .params()
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect();
         (
             KernelMessage {
                 id,

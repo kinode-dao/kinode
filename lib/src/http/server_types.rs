@@ -29,10 +29,10 @@ pub enum HttpServerRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IncomingHttpRequest {
-    pub source_socket_addr: Option<String>,   // will parse to SocketAddr
-    pub method: String,                       // will parse to http::Method
-    pub url: String,                          // will parse to url::Url
-    pub bound_path: String,                   // the path that was originally bound
+    pub source_socket_addr: Option<String>, // will parse to SocketAddr
+    pub method: String,                     // will parse to http::Method
+    pub url: String,                        // will parse to url::Url
+    pub bound_path: String,                 // the path that was originally bound
     pub headers: HashMap<String, String>,
     pub url_params: HashMap<String, String>, // comes from route-recognizer
     pub query_params: HashMap<String, String>,
