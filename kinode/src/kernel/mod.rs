@@ -672,7 +672,7 @@ pub async fn kernel(
     home_directory_path: String,
     contract_address: String,
     runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
-    routers: Vec<crate::net::KnsUpdate>,
+    default_pki_entries: Vec<crate::net::KnsUpdate>,
 ) -> Result<()> {
     let mut config = Config::new();
     config.cache_config_load_default().unwrap();
@@ -828,7 +828,7 @@ pub async fn kernel(
         })
         .await
         .expect("fatal: kernel event loop died");
-    // sending hard coded routers into networking for bootstrapped rpc
+    // sending hard coded pki entries into networking for bootstrapped rpc
     send_to_loop
         .send(t::KernelMessage {
             id: rand::random(),
@@ -844,7 +844,10 @@ pub async fn kernel(
             message: t::Message::Request(t::Request {
                 inherit: false,
                 expects_response: None,
-                body: rmp_serde::to_vec(&crate::net::NetActions::KnsBatchUpdate(routers)).unwrap(),
+                body: rmp_serde::to_vec(&crate::net::NetActions::KnsBatchUpdate(
+                    default_pki_entries,
+                ))
+                .unwrap(),
                 metadata: None,
                 capabilities: vec![],
             }),

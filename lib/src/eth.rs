@@ -21,7 +21,8 @@ pub enum EthAction {
         params: serde_json::Value,
     },
 }
-/// Incoming subscription update.
+
+/// Incoming Request for subscription updates that processes will receive.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EthSub {
     pub id: u64,
@@ -92,6 +93,6 @@ pub fn to_static_str(method: &str) -> Option<&'static str> {
 }
 
 pub enum ProviderInput {
-    WS(String),
+    Ws(String),
     Node(String),
 }

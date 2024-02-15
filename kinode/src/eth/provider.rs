@@ -36,7 +36,7 @@ pub async fn provider(
     // Initialize the provider conditionally based on rpc_url
     // Todo: make provider<T> support multiple transports, one direct and another passthrough.
     let provider_config = match provider_node {
-        ProviderInput::WS(rpc_url) => {
+        ProviderInput::Ws(rpc_url) => {
             // Validate and parse the WebSocket URL
             match Url::parse(&rpc_url)?.scheme() {
                 "ws" | "wss" => {

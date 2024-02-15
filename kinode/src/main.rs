@@ -46,8 +46,8 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(not(feature = "simulation-mode"))]
 const REVEAL_IP: bool = true;
 
-/// default routers as a fallbac
-const DEFAULT_ROUTERS: &str = include_str!("../default_routers.json");
+/// default routers as a eth-provider fallback
+const DEFAULT_PROVIDERS: &str = include_str!("../default_providers.json");
 
 async fn serve_register_fe(
     home_directory_path: &str,
@@ -178,14 +178,14 @@ async fn main() {
         }
     }
 
-    // default routers
+    // default eth providers/routers
     type KnsUpdate = crate::net::KnsUpdate;
-    let routers: Vec<KnsUpdate> =
-        match fs::read_to_string(format!("{}/.routers", home_directory_path)).await {
+    let default_pki_entries: Vec<KnsUpdate> =
+        match fs::read_to_string(format!("{}/.default_providers", home_directory_path)).await {
             Ok(contents) => serde_json::from_str(&contents).unwrap(),
             Err(_) => {
-                let routers: Vec<KnsUpdate> = serde_json::from_str(DEFAULT_ROUTERS).unwrap();
-                routers
+                let defaults: Vec<KnsUpdate> = serde_json::from_str(DEFAULT_PROVIDERS).unwrap();
+                defaults
             }
         };
 
@@ -200,25 +200,22 @@ async fn main() {
     match (rpc_url, rpc_node) {
         (Some(url), Some(_)) => {
             println!("passed both node and url for rpc, using url.");
-            eth_provider = ProviderInput::WS(url);
+            eth_provider = ProviderInput::Ws(url);
         }
         (Some(url), None) => {
-            eth_provider = ProviderInput::WS(url);
+            eth_provider = ProviderInput::Ws(url);
         }
         (None, Some(node)) => {
             println!("trying to use remote node for rpc: {}", node);
             eth_provider = ProviderInput::Node(node);
         }
         (None, None) => {
-            let random_router = routers.choose(&mut rand::thread_rng()).unwrap();
-            let default_router = random_router.name.clone();
+            let random_provider = default_pki_entries.choose(&mut rand::thread_rng()).unwrap();
+            let default_provider = random_provider.name.clone();
 
-            println!(
-                "no rpc provided, using a default router: {}",
-                default_router
-            );
+            println!("no rpc provided, using a default: {}", default_provider);
 
-            eth_provider = ProviderInput::Node(default_router);
+            eth_provider = ProviderInput::Node(default_provider);
         }
     }
 
@@ -509,7 +506,7 @@ async fn main() {
         home_directory_path.clone(),
         contract_address.to_string(),
         runtime_extensions,
-        routers,
+        default_pki_entries,
     ));
     #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(net::networking(
