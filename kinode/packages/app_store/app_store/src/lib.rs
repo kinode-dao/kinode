@@ -283,6 +283,7 @@ fn handle_local_request(
                 mirrored_from: Some(our.node.clone()),
                 our_version,
                 installed: false,
+                verified: true, // side loaded apps are implicitly verified because there is no "source" to verify against
                 caps_approved: true, // TODO see if we want to auto-approve local installs
                 manifest_hash: None, // generated in the add fn
                 mirroring: *mirror,
@@ -425,35 +426,56 @@ fn handle_receive_download(
     // check the version hash for this download against requested!!
     // for now we can reject if it's not latest.
     let download_hash = generate_version_hash(&blob.bytes);
+    let mut verified = false;
     match requested_package.desired_version_hash {
         Some(hash) => {
             if download_hash != hash {
-                return Err(anyhow::anyhow!(
-                    "app store: downloaded package is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
-                ));
+                if hash.is_empty() {
+                    println!(
+                        "\x1b[33mwarning: downloaded package has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
+                    );
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "app store: downloaded package is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
+                    ));
+                }
+            } else {
+                verified = true;
             }
         }
         None => {
-            // check against latest from listing
+            // check against `metadata.properties.current_version`
             let Some(package_listing) = state.get_listing(&package_id) else {
                 return Err(anyhow::anyhow!(
                     "app store: downloaded package cannot be found in manager--rejecting download!"
                 ));
             };
-            if let Some(metadata) = &package_listing.metadata {
-                if let Some(latest_hash) = metadata.versions.clone().unwrap_or(vec![]).last() {
-                    if &download_hash != latest_hash {
-                        return Err(anyhow::anyhow!(
-                            "app store: downloaded package is not latest version--rejecting download! download hash: {download_hash}, latest hash: {latest_hash}"
-                        ));
-                    }
+            let Some(metadata) = &package_listing.metadata else {
+                return Err(anyhow::anyhow!(
+                    "app store: downloaded package has no metadata to check validity against!"
+                ));
+            };
+            let Some(latest_hash) = metadata
+                .properties
+                .code_hashes
+                .get(&metadata.properties.current_version)
+            else {
+                return Err(anyhow::anyhow!(
+                    "app store: downloaded package has no versions in manager--rejecting download!"
+                ));
+            };
+            if &download_hash != latest_hash {
+                if latest_hash.is_empty() {
+                    println!(
+                        "\x1b[33mwarning: downloaded package has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
+                    );
                 } else {
                     return Err(anyhow::anyhow!(
-                        "app store: downloaded package has no versions in manager--rejecting download!"
+                        "app store: downloaded package is not latest version--rejecting download! download hash: {download_hash}, latest hash: {latest_hash}"
                     ));
                 }
             } else {
-                println!("app store: warning: downloaded package has no listing metadata to check validity against!")
+                verified = true;
             }
         }
     }
@@ -472,6 +494,7 @@ fn handle_receive_download(
             mirrored_from: Some(requested_package.from),
             our_version: download_hash,
             installed: false,
+            verified,
             caps_approved: false,
             manifest_hash: None, // generated in the add fn
             mirroring: requested_package.mirror,

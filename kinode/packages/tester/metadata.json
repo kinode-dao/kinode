@@ -1,0 +1,16 @@
+{
+    "name": "Tester",
+    "description": "Package for testing other packages",
+    "image": "",
+    "properties": {
+        "package_name": "tester",
+        "current_version": "0.1.0",
+        "publisher": "sys",
+        "mirrors": [],
+        "code_hashes": {
+            "0.1.0": ""
+        }
+    },
+    "external_url": "https://kinode.org",
+    "animation_url": ""
+}

@@ -30,7 +30,7 @@ pub fn handle_http_request(
     req: &IncomingHttpRequest,
 ) -> anyhow::Result<()> {
     match serve_paths(our, state, requested_packages, req) {
-        Ok((status_code, headers, body)) => send_response(
+        Ok((status_code, _headers, body)) => send_response(
             status_code,
             Some(HashMap::from([(
                 String::from("Content-Type"),
@@ -81,6 +81,7 @@ fn gen_package_info(
                 "caps_approved": state.caps_approved,
                 "mirroring": state.mirroring,
                 "auto_update": state.auto_update,
+                "verified": state.verified,
             }),
             None => json!(null),
         },
@@ -188,7 +189,7 @@ fn serve_paths(
                 }
                 Method::PUT => {
                     // update an app
-                    let pkg_listing: &PackageListing = state
+                    let _pkg_listing: &PackageListing = state
                         .get_listing(&package_id)
                         .ok_or(anyhow::anyhow!("No package"))?;
                     let pkg_state: &PackageState = state
@@ -277,10 +278,10 @@ fn serve_paths(
                     let mirrors: &Vec<NodeId> = pkg_listing
                         .metadata
                         .as_ref()
-                        .ok_or(anyhow::anyhow!("No metadata for package {package_id}"))?
+                        .expect("Package does not have metadata")
+                        .properties
                         .mirrors
-                        .as_ref()
-                        .ok_or(anyhow::anyhow!("No mirrors for package {package_id}"))?;
+                        .as_ref();
                     let download_from = body_json
                         .get("download_from")
                         .unwrap_or(&json!(mirrors
