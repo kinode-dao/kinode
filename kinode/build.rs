@@ -6,12 +6,10 @@ use std::{
 };
 use zip::write::FileOptions;
 
-// This function is assumed to be synchronous. Adjust as needed.
-// Make sure it can be called in parallel without causing issues.
 fn build_and_zip_package(
     entry_path: PathBuf,
     parent_pkg_path: &str,
-) -> anyhow::Result<(String, Vec<u8>)> {
+) -> anyhow::Result<(String, String, Vec<u8>)> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
         kit::build::execute(&entry_path, false, false, false, true).await?;
@@ -43,7 +41,7 @@ fn build_and_zip_package(
 
         let zip_contents = writer.into_inner();
         let zip_filename = format!("{}.zip", entry_path.file_name().unwrap().to_str().unwrap());
-        Ok((zip_filename, zip_contents))
+        Ok((entry_path.display().to_string(), zip_filename, zip_contents))
     })
 }
 
@@ -56,7 +54,7 @@ fn main() -> anyhow::Result<()> {
         .map(|entry| entry.unwrap().path())
         .collect();
 
-    let results: Vec<anyhow::Result<(String, Vec<u8>)>> = entries
+    let results: Vec<anyhow::Result<(String, String, Vec<u8>)>> = entries
         .par_iter()
         .map(|entry_path| {
             let parent_pkg_path = entry_path.join("pkg");
@@ -69,20 +67,21 @@ fn main() -> anyhow::Result<()> {
     let mut bootstrapped_processes = vec![];
     writeln!(
         bootstrapped_processes,
-        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &[u8])] = &["
+        "pub static BOOTSTRAPPED_PROCESSES: &[(&str, &[u8], &[u8])] = &["
     )?;
 
     for result in results {
         match result {
-            Ok((zip_filename, zip_contents)) => {
+            Ok((entry_path, zip_filename, zip_contents)) => {
                 // Further processing, like saving ZIP files and updating bootstrapped_processes
+                let metadata_path = format!("{}/metadata.json", entry_path);
                 let zip_path = format!("{}/target/{}", parent_dir.display(), zip_filename);
                 fs::write(&zip_path, &zip_contents)?;
 
                 writeln!(
                     bootstrapped_processes,
-                    "    (\"{}\", include_bytes!(\"{}\")),",
-                    zip_filename, zip_path,
+                    "    (\"{}\", include_bytes!(\"{}\"), include_bytes!(\"{}\")),",
+                    zip_filename, metadata_path, zip_path,
                 )?;
             }
             Err(e) => return Err(e),

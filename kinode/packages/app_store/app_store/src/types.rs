@@ -50,22 +50,7 @@ pub struct PackageListing {
     pub name: String,
     pub publisher: NodeId,
     pub metadata_hash: String,
-    pub metadata: Option<OnchainPackageMetadata>,
-}
-
-/// metadata derived from metadata hash in listing event
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OnchainPackageMetadata {
-    pub name: Option<String>,
-    pub subtitle: Option<String>,
-    pub description: Option<String>,
-    pub image: Option<String>,
-    pub version: Option<String>,
-    pub license: Option<String>,
-    pub website: Option<String>,
-    pub screenshots: Option<Vec<String>>,
-    pub mirrors: Option<Vec<NodeId>>,
-    pub versions: Option<Vec<String>>,
+    pub metadata: Option<kt::Erc721Metadata>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,13 +71,14 @@ pub struct PackageState {
     /// the version of the package we have downloaded
     pub our_version: String,
     pub installed: bool,
+    pub verified: bool,
     pub caps_approved: bool,
     pub manifest_hash: Option<String>,
     /// are we serving this package to others?
     pub mirroring: bool,
     /// if we get a listing data update, will we try to download it?
     pub auto_update: bool,
-    pub metadata: Option<OnchainPackageMetadata>,
+    pub metadata: Option<kt::Erc721Metadata>,
 }
 
 /// this process's saved state
@@ -318,6 +304,7 @@ impl State {
                         mirrored_from: None,
                         our_version,
                         installed: true,
+                        verified: true,      // implicity verified
                         caps_approved: true, // since it's already installed this must be true
                         manifest_hash: Some(generate_metadata_hash(&manifest_bytes)),
                         mirroring: false,
@@ -421,6 +408,15 @@ impl State {
 
                 let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
 
+                if let Some(metadata) = &metadata {
+                    if metadata.properties.publisher != publisher_name {
+                        return Err(anyhow::anyhow!(format!(
+                            "app store: metadata publisher name mismatch: got {}, expected {}",
+                            metadata.properties.publisher, publisher_name
+                        )));
+                    }
+                }
+
                 let listing = match self.get_listing_with_hash_mut(&package_hash) {
                     Some(current_listing) => {
                         current_listing.name = package_name;
@@ -460,7 +456,15 @@ impl State {
                     ))?;
 
                 let metadata = match fetch_metadata(&metadata_url, &metadata_hash) {
-                    Ok(metadata) => Some(metadata),
+                    Ok(metadata) => {
+                        if metadata.properties.publisher != current_listing.publisher {
+                            return Err(anyhow::anyhow!(format!(
+                                "app store: metadata publisher name mismatch: got {}, expected {}",
+                                metadata.properties.publisher, current_listing.publisher
+                            )));
+                        }
+                        Some(metadata)
+                    }
                     Err(e) => {
                         crate::print_to_terminal(
                             1,
@@ -583,10 +587,7 @@ fn dnswire_decode(wire_format_bytes: &[u8]) -> Result<String, std::string::FromU
 }
 
 /// fetch metadata from metadata_url and verify it matches metadata_hash
-fn fetch_metadata(
-    metadata_url: &str,
-    metadata_hash: &str,
-) -> anyhow::Result<OnchainPackageMetadata> {
+fn fetch_metadata(metadata_url: &str, metadata_hash: &str) -> anyhow::Result<kt::Erc721Metadata> {
     let url = url::Url::parse(metadata_url)?;
     let _response = http::send_request_await_response(http::Method::GET, url, None, 5, vec![])?;
     let Some(body) = get_blob() else {
@@ -594,9 +595,7 @@ fn fetch_metadata(
     };
     let hash = generate_metadata_hash(&body.bytes);
     if &hash == metadata_hash {
-        Ok(serde_json::from_slice::<OnchainPackageMetadata>(
-            &body.bytes,
-        )?)
+        Ok(serde_json::from_slice::<kt::Erc721Metadata>(&body.bytes)?)
     } else {
         Err(anyhow::anyhow!(
             "metadata hash mismatch: got {hash}, expected {metadata_hash}"
