@@ -389,7 +389,8 @@ async fn bootstrap(
 
     let packages = get_zipped_packages().await;
 
-    for (package_name, mut package) in packages.clone() {
+    for (package_metadata, mut package) in packages.clone() {
+        let package_name = package_metadata.properties.package_name.as_str();
         // special case tester: only load it in if in simulation mode
         if package_name == "tester" {
             #[cfg(not(feature = "simulation-mode"))]
@@ -397,31 +398,7 @@ async fn bootstrap(
         }
 
         println!("fs: handling package {package_name}...\r");
-        // get and read metadata.json
-        let Ok(mut package_metadata_zip) = package.by_name("metadata.json") else {
-            println!(
-                "fs: missing metadata for package {}, skipping",
-                package_name
-            );
-            continue;
-        };
-        let mut metadata_content = Vec::new();
-        package_metadata_zip
-            .read_to_end(&mut metadata_content)
-            .unwrap();
-        drop(package_metadata_zip);
-        let package_metadata: serde_json::Value =
-            serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
-
-        // println!("fs: found package metadata: {:?}\r", package_metadata);
-
-        let package_name = package_metadata["package"]
-            .as_str()
-            .expect("fs: metadata parse error: bad package name");
-
-        let package_publisher = package_metadata["publisher"]
-            .as_str()
-            .expect("fs: metadata parse error: bad publisher name");
+        let package_publisher = package_metadata.properties.publisher.as_str();
 
         // create a new package in VFS
         let our_drive_name = [package_name, package_publisher].join(":");
@@ -630,7 +607,8 @@ async fn bootstrap(
     }
     // second loop: go and grant_capabilities to processes
     // can't do this in first loop because we need to have all processes in the map first
-    for (package_name, mut package) in packages {
+    for (package_metadata, mut package) in packages {
+        let package_name = package_metadata.properties.package_name.as_str();
         // special case tester: only load it in if in simulation mode
         if package_name == "tester" {
             #[cfg(not(feature = "simulation-mode"))]
@@ -654,31 +632,7 @@ async fn bootstrap(
         let package_manifest = serde_json::from_str::<Vec<PackageManifestEntry>>(&package_manifest)
             .expect("fs: manifest parse error");
 
-        // get and read metadata.json
-        let Ok(mut package_metadata_zip) = package.by_name("metadata.json") else {
-            println!(
-                "fs: missing metadata for package {}, skipping",
-                package_name
-            );
-            continue;
-        };
-        let mut metadata_content = Vec::new();
-        package_metadata_zip
-            .read_to_end(&mut metadata_content)
-            .unwrap();
-        drop(package_metadata_zip);
-        let package_metadata: serde_json::Value =
-            serde_json::from_slice(&metadata_content).expect("fs: metadata parse error");
-
-        // println!("fs: found package metadata: {:?}\r", package_metadata);
-
-        let package_name = package_metadata["package"]
-            .as_str()
-            .expect("fs: metadata parse error: bad package name");
-
-        let package_publisher = package_metadata["publisher"]
-            .as_str()
-            .expect("fs: metadata parse error: bad publisher name");
+        let package_publisher = package_metadata.properties.publisher.as_str();
 
         // for each process-entry in manifest.json:
         for entry in package_manifest {
@@ -759,16 +713,24 @@ fn sign_cap(cap: Capability, keypair: Arc<signature::Ed25519KeyPair>) -> Vec<u8>
 }
 
 /// read in `include!()`ed .zip package files
-async fn get_zipped_packages() -> Vec<(String, zip::ZipArchive<std::io::Cursor<&'static [u8]>>)> {
+async fn get_zipped_packages() -> Vec<(
+    Erc721Metadata,
+    zip::ZipArchive<std::io::Cursor<&'static [u8]>>,
+)> {
     // println!("fs: reading distro packages...\r");
 
     let mut packages = Vec::new();
 
-    for (package_name, bytes) in BOOTSTRAPPED_PROCESSES.iter() {
+    for (package_name, metadata_bytes, bytes) in BOOTSTRAPPED_PROCESSES.iter() {
         if let Ok(zip) = zip::ZipArchive::new(std::io::Cursor::new(*bytes)) {
-            // add to list of packages
-            // println!("fs: found package: {}\r", package_name);
-            packages.push((package_name.to_string(), zip));
+            if let Ok(metadata) = serde_json::from_slice::<Erc721Metadata>(metadata_bytes) {
+                packages.push((metadata, zip));
+            } else {
+                println!(
+                    "fs: metadata for package {} is not valid Erc721Metadata",
+                    package_name
+                );
+            }
         }
     }
 
