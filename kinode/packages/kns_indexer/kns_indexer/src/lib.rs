@@ -4,7 +4,7 @@ use kinode_process_lib::{
     await_message,
     eth::{
         get_block_number, get_logs, subscribe, Address as EthAddress, BlockNumberOrTag, EthSub,
-        Filter, Log, SubscriptionResult,
+        EthSubResult, Filter, Log, SubscriptionResult,
     },
     get_typed_state, print_to_terminal, println, set_state, Address, Message, Request, Response,
 };
@@ -253,12 +253,14 @@ fn handle_eth_message(
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
     body: &[u8],
 ) -> anyhow::Result<()> {
-    let Ok(res) = serde_json::from_slice::<EthSub>(body) else {
+    let Ok(eth_result) = serde_json::from_slice::<EthSubResult>(body) else {
         return Err(anyhow::anyhow!("kns_indexer: got invalid message"));
     };
 
-    if let SubscriptionResult::Log(log) = res.result {
-        handle_log(our, state, &log)?;
+    if let Ok(EthSub { result, .. }) = eth_result {
+        if let SubscriptionResult::Log(log) = result {
+            handle_log(our, state, &log)?;
+        }
     }
 
     // check the pending_requests btreemap to see if there are any requests that

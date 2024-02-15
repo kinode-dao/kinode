@@ -243,28 +243,29 @@ async fn handle_local_request(
             EthResponse::Response { value: response }
         }
     };
-
-    let response = KernelMessage {
-        id: km.id,
-        source: Address {
-            node: our.to_string(),
-            process: ETH_PROCESS_ID.clone(),
-        },
-        target: km.source.clone(),
-        rsvp: None,
-        message: Message::Response((
-            Response {
-                inherit: false,
-                body: serde_json::to_vec(&return_body).unwrap(),
-                metadata: req.metadata.clone(),
-                capabilities: vec![],
-            },
-            None,
-        )),
-        lazy_load_blob: None,
-    };
-
-    let _ = send_to_loop.send(response).await;
+    if let Some(_) = req.expects_response {
+        let _ = send_to_loop
+            .send(KernelMessage {
+                id: km.id,
+                source: Address {
+                    node: our.to_string(),
+                    process: ETH_PROCESS_ID.clone(),
+                },
+                target: km.source.clone(),
+                rsvp: km.rsvp.clone(),
+                message: Message::Response((
+                    Response {
+                        inherit: false,
+                        body: serde_json::to_vec(&return_body).unwrap(),
+                        metadata: req.metadata.clone(),
+                        capabilities: vec![],
+                    },
+                    None,
+                )),
+                lazy_load_blob: None,
+            })
+            .await;
+    }
 
     Ok(())
 }
@@ -407,10 +408,33 @@ async fn handle_subscription_stream(
 ) -> Result<(), EthError> {
     match rx.recv().await {
         Err(e) => {
-            return Err(EthError::SubscriptionClosed(sub_id))?;
+            let error = Err(EthError::SubscriptionClosed(sub_id))?;
+            let _ = send_to_loop
+                .send(KernelMessage {
+                    id: rand::random(),
+                    source: Address {
+                        node: our,
+                        process: ETH_PROCESS_ID.clone(),
+                    },
+                    target: target.clone(),
+                    rsvp: rsvp.clone(),
+                    message: Message::Request(Request {
+                        inherit: false,
+                        expects_response: None,
+                        body: serde_json::to_vec(&EthSubResult::Err(EthSubError {
+                            id: sub_id,
+                            error: e.to_string(),
+                        }))
+                        .unwrap(),
+                        metadata: None,
+                        capabilities: vec![],
+                    }),
+                    lazy_load_blob: None,
+                })
+                .await
+                .unwrap();
         }
         Ok(value) => {
-            // this should not return in case of one failed event?
             let event: SubscriptionResult = serde_json::from_str(value.get()).map_err(|_| {
                 EthError::RpcError("eth: failed to deserialize subscription result".to_string())
             })?;
@@ -426,10 +450,10 @@ async fn handle_subscription_stream(
                     message: Message::Request(Request {
                         inherit: false,
                         expects_response: None,
-                        body: serde_json::to_vec(&EthSub {
+                        body: serde_json::to_vec(&EthSubResult::Ok(EthSub {
                             id: sub_id,
                             result: event,
-                        })
+                        }))
                         .unwrap(),
                         metadata: None,
                         capabilities: vec![],
@@ -443,7 +467,6 @@ async fn handle_subscription_stream(
     Err(EthError::SubscriptionClosed(sub_id))
 }
 
-// todo, always send errors or no? general runtime question for other modules too.
 fn make_error_message(our_node: String, km: KernelMessage, error: EthError) -> KernelMessage {
     let source = km.rsvp.unwrap_or_else(|| Address {
         node: our_node.clone(),

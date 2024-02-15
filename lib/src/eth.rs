@@ -22,11 +22,22 @@ pub enum EthAction {
     },
 }
 
-/// Incoming Request for subscription updates that processes will receive.
+/// Incoming Result type for subscription updates or errors that processes will receive.
+pub type EthSubResult = Result<EthSub, EthSubError>;
+
+/// Incoming Request type for subscription updates.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EthSub {
     pub id: u64,
     pub result: SubscriptionResult,
+}
+
+/// Incoming Request for subscription errors that processes will receive.
+/// If your subscription is closed unexpectedly, you will receive this.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EthSubError {
+    pub id: u64,
+    pub error: String,
 }
 
 /// The Response type which a process will get from requesting with an [`EthAction`] will be
