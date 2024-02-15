@@ -41,6 +41,7 @@ type WsPathBindings = Arc<RwLock<Router<BoundWsPath>>>;
 
 struct BoundPath {
     pub app: ProcessId,
+    pub path: String,
     pub secure_subdomain: Option<String>,
     pub authenticated: bool,
     pub local_only: bool,
@@ -185,17 +186,19 @@ pub async fn http_server(
     let jwt_secret_bytes = Arc::new(jwt_secret_bytes);
     let http_response_senders: HttpResponseSenders = Arc::new(DashMap::new());
     let ws_senders: WebSocketSenders = Arc::new(DashMap::new());
+    let path = format!("/rpc:distro:sys/message");
 
     // add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
         app: ProcessId::new(Some("rpc"), "distro", "sys"),
+        path: path.clone(),
         secure_subdomain: None, // TODO maybe RPC should have subdomain?
         authenticated: false,
         local_only: true,
         static_content: None,
     };
-    bindings_map.add("/rpc:distro:sys/message", rpc_bound_path);
+    bindings_map.add(&path, rpc_bound_path);
     let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
     // ws path bindings
@@ -584,6 +587,7 @@ async fn http_handler(
         }
     } else {
         // otherwise, make a message to the correct app
+        let url_params: HashMap<String, String> = route.params().into_iter().map(|(key, value)| (key.to_string(), value.to_string())).collect();
         (
             KernelMessage {
                 id,
@@ -607,7 +611,9 @@ async fn http_handler(
                             host.unwrap_or(Authority::from_static("localhost")),
                             original_path
                         ),
+                        bound_path: bound_path.path.clone(),
                         headers: serialized_headers,
+                        url_params,
                         query_params,
                     }))
                     .unwrap(),
@@ -1138,6 +1144,7 @@ async fn handle_app_message(
                             &normalize_path(&path),
                             BoundPath {
                                 app: km.source.process.clone(),
+                                path: path.clone(),
                                 secure_subdomain: None,
                                 authenticated,
                                 local_only,
@@ -1160,6 +1167,7 @@ async fn handle_app_message(
                             &normalize_path(&path),
                             BoundPath {
                                 app: km.source.process.clone(),
+                                path: path.clone(),
                                 secure_subdomain: None,
                                 authenticated,
                                 local_only,
@@ -1183,6 +1191,7 @@ async fn handle_app_message(
                             &normalize_path(&path),
                             BoundPath {
                                 app: km.source.process.clone(),
+                                path: path.clone(),
                                 secure_subdomain: Some(subdomain),
                                 authenticated: true,
                                 local_only: false,
@@ -1205,6 +1214,7 @@ async fn handle_app_message(
                             &normalize_path(&path),
                             BoundPath {
                                 app: km.source.process.clone(),
+                                path: path.clone(),
                                 secure_subdomain: Some(subdomain),
                                 authenticated: true,
                                 local_only: false,

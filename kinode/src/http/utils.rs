@@ -69,6 +69,10 @@ pub fn auth_cookie_valid(our_node: &str, cookie: &str, jwt_secret: &[u8]) -> boo
 }
 
 pub fn normalize_path(path: &str) -> String {
+    if path.starts_with("regex") {
+        return path.strip_prefix("regex").unwrap_or("").to_string();
+    }
+
     match path.strip_suffix('/') {
         Some(new) => new.to_string(),
         None => path.to_string(),
