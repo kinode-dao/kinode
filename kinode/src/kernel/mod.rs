@@ -654,7 +654,7 @@ async fn start_process(
 }
 
 /// the OS kernel. contains event loop which handles all message-passing between
-/// all processes (WASM apps) and also runtime tasks.
+/// all processes (Wasm apps) and also runtime tasks.
 pub async fn kernel(
     our: t::Identity,
     keypair: Arc<signature::Ed25519KeyPair>,
@@ -926,7 +926,7 @@ pub async fn kernel(
                         }
                     ) {
                         // capabilities are not correct! skip this message.
-                        // TODO: some kind of error thrown back at process?
+                        throw_timeout(&our.name, &senders, &kernel_message).await;
                         let _ = send_to_terminal.send(
                             t::Printout {
                                 verbosity: 0,
@@ -982,9 +982,11 @@ pub async fn kernel(
                         && kernel_message.source.process != *VFS_PROCESS_ID
                     {
                         let Some(persisted_source) = process_map.get(&kernel_message.source.process) else {
+                            throw_timeout(&our.name, &senders, &kernel_message).await;
                             continue
                         };
                         let Some(persisted_target) = process_map.get(&kernel_message.target.process) else {
+                            throw_timeout(&our.name, &senders, &kernel_message).await;
                             continue
                         };
                         if !persisted_target.public && !persisted_source.capabilities.contains_key(&t::Capability {
@@ -995,7 +997,7 @@ pub async fn kernel(
                                 params: "\"messaging\"".into(),
                             }) {
                             // capabilities are not correct! skip this message.
-                            // TODO some kind of error thrown back at process?
+                            throw_timeout(&our.name, &senders, &kernel_message).await;
                             let _ = send_to_terminal.send(
                                 t::Printout {
                                     verbosity: 0,
@@ -1022,7 +1024,7 @@ pub async fn kernel(
                 let _ = send_to_terminal.send(
                         t::Printout {
                             verbosity: 3,
-                            content: format!("event loop: got message: {}", kernel_message)
+                            content: format!("{}", kernel_message)
                         }
                     ).await;
 
@@ -1050,26 +1052,13 @@ pub async fn kernel(
                     // pass message to appropriate runtime module or process
                     match senders.get(&kernel_message.target.process) {
                         Some(ProcessSender::Userspace(sender)) => {
-                            let target = kernel_message.target.process.clone();
-                            match sender.send(Ok(kernel_message)).await {
-                                Ok(()) => continue,
-                                Err(_e) => {
-                                    let _ = send_to_terminal
-                                        .send(t::Printout {
-                                            verbosity: 0,
-                                            content: format!(
-                                                "event loop: process {} appears to have died",
-                                                target
-                                            )
-                                        })
-                                        .await;
-                                }
-                            }
+                            let _ = sender.send(Ok(kernel_message)).await;
                         }
                         Some(ProcessSender::Runtime(sender)) => {
                             sender.send(kernel_message).await.expect("event loop: fatal: runtime module died");
                         }
                         None => {
+                            throw_timeout(&our.name, &senders, &kernel_message).await;
                             send_to_terminal
                                 .send(t::Printout {
                                     verbosity: 0,
@@ -1179,6 +1168,37 @@ pub async fn kernel(
                         );
                     },
                 }
+            }
+        }
+    }
+}
+
+async fn throw_timeout(
+    our_name: &str,
+    senders: &HashMap<t::ProcessId, ProcessSender>,
+    km: &t::KernelMessage,
+) {
+    if let t::Message::Request(req) = &km.message {
+        if req.expects_response.is_some() {
+            match senders.get(&km.source.process) {
+                Some(ProcessSender::Userspace(sender)) => {
+                    let _ = sender
+                        .send(Err(t::WrappedSendError {
+                            id: km.id,
+                            source: t::Address {
+                                node: our_name.to_string(),
+                                process: KERNEL_PROCESS_ID.clone(),
+                            },
+                            error: t::SendError {
+                                kind: t::SendErrorKind::Timeout,
+                                target: km.target.clone(),
+                                lazy_load_blob: km.lazy_load_blob.clone(),
+                                message: km.message.clone(),
+                            },
+                        }))
+                        .await;
+                }
+                _ => return,
             }
         }
     }
