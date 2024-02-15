@@ -243,7 +243,6 @@ fn serve_paths(
                     let mirrors: &Vec<NodeId> = pkg_listing
                         .metadata
                         .as_ref()
-                        // TODO better error handling - this will be common!
                         .expect("Package does not have metadata")
                         .properties
                         .mirrors
