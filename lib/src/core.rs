@@ -1042,7 +1042,15 @@ impl std::fmt::Display for PersistedProcess {
     }
 }
 
-/// the type that gets deserialized from `metadata.json` in a package
+/// Represents the metadata associated with a kinode package, which is an ERC721 compatible token.
+/// This is deserialized from the `metadata.json` file in a package.
+/// Fields:
+/// - `name`: An optional field representing the display name of the package. This does not have to be unique, and is not used for identification purposes.
+/// - `description`: An optional field providing a description of the package.
+/// - `image`: An optional field containing a URL to an image representing the package.
+/// - `external_url`: An optional field containing a URL for more information about the package. For example, a link to the github repository.
+/// - `animation_url`: An optional field containing a URL to an animation or video representing the package.
+/// - `properties`: A requried field containing important information about the package.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Erc721Metadata {
     pub name: Option<String>,
@@ -1053,6 +1061,18 @@ pub struct Erc721Metadata {
     pub properties: Erc721Properties,
 }
 
+/// Represents critical fields of a kinode package in an ERC721 compatible format.
+/// This follows the [ERC1155](https://github.com/ethereum/ercs/blob/master/ERCS/erc-1155.md#erc-1155-metadata-uri-json-schema) metadata standard.
+///
+/// Fields:
+/// - `package_name`: The unique name of the package, used in the `PackageId`, e.g. `package_name:publisher`.
+/// - `publisher`: The KNS identity of the package publisher used in the `PackageId`, e.g. `package_name:publisher`
+/// - `current_version`: A string representing the current version of the package, e.g. `1.0.0`.
+/// - `mirrors`: A list of NodeIds where the package can be found, providing redundancy.
+/// - `code_hashes`: A map from version names to their respective SHA-256 hashes.
+/// - `license`: An optional field containing the license of the package.
+/// - `screenshots`: An optional field containing a list of URLs to screenshots of the package.
+/// - `wit_version`: An optional field containing the version of the WIT standard that the package adheres to.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Erc721Properties {
     pub package_name: String,
