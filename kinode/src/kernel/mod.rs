@@ -3,6 +3,7 @@ use anyhow::Result;
 use ring::signature;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -671,6 +672,7 @@ pub async fn kernel(
     home_directory_path: String,
     contract_address: String,
     runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
+    default_pki_entries: Vec<crate::net::KnsUpdate>,
 ) -> Result<()> {
     let mut config = Config::new();
     config.cache_config_load_default().unwrap();
@@ -826,6 +828,34 @@ pub async fn kernel(
         })
         .await
         .expect("fatal: kernel event loop died");
+    // sending hard coded pki entries into networking for bootstrapped rpc
+    send_to_loop
+        .send(t::KernelMessage {
+            id: rand::random(),
+            source: t::Address {
+                node: our.name.clone(),
+                process: KERNEL_PROCESS_ID.clone(),
+            },
+            target: t::Address {
+                node: our.name.clone(),
+                process: t::ProcessId::from_str("net:distro:sys").unwrap(),
+            },
+            rsvp: None,
+            message: t::Message::Request(t::Request {
+                inherit: false,
+                expects_response: None,
+                body: rmp_serde::to_vec(&crate::net::NetActions::KnsBatchUpdate(
+                    default_pki_entries,
+                ))
+                .unwrap(),
+                metadata: None,
+                capabilities: vec![],
+            }),
+            lazy_load_blob: None,
+        })
+        .await
+        .expect("fatal: kernel event loop died");
+
     // finally, in order to trigger the kns_indexer app to find the right
     // contract, queue up a message that will send the contract address
     // to it on boot.

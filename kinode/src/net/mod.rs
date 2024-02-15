@@ -19,7 +19,7 @@ mod types;
 #[cfg(not(feature = "simulation-mode"))]
 mod utils;
 #[cfg(not(feature = "simulation-mode"))]
-use crate::net::{types::*, utils::*};
+pub use crate::net::{types::*, utils::*};
 #[cfg(not(feature = "simulation-mode"))]
 use lib::types::core::*;
 

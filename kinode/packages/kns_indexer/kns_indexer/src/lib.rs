@@ -1,16 +1,18 @@
-use alloy_rpc_types::Log;
 use alloy_sol_types::{sol, SolEvent};
-use kinode_process_lib::eth::{EthAddress, EthSubEvent, SubscribeLogsRequest};
+
 use kinode_process_lib::{
-    await_message, get_typed_state, print_to_terminal, println, set_state, Address, Message,
-    Request, Response,
+    await_message,
+    eth::{
+        get_block_number, get_logs, subscribe, Address as EthAddress, BlockNumberOrTag, EthSub,
+        EthSubResult, Filter, Log, SubscriptionResult,
+    },
+    get_typed_state, print_to_terminal, println, set_state, Address, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{
     hash_map::{Entry, HashMap},
     BTreeMap,
 };
-use std::str::FromStr;
 use std::string::FromUtf8Error;
 
 wit_bindgen::generate!({
@@ -146,12 +148,41 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     );
     // if contract address changed from a previous run, reset state
     if state.contract_address != contract_address {
+        println!("resetting state for some reason.");
         state = State {
             contract_address: contract_address.clone(),
             names: HashMap::new(),
             nodes: HashMap::new(),
             block: 1,
         };
+    }
+
+    // shove all state into net::net
+    Request::new()
+        .target((&our.node, "net", "distro", "sys"))
+        .try_body(NetActions::KnsBatchUpdate(
+            state.nodes.values().cloned().collect::<Vec<_>>(),
+        ))?
+        .send()?;
+
+    let filter = Filter::new()
+        .address(contract_address.unwrap().parse::<EthAddress>().unwrap())
+        .to_block(BlockNumberOrTag::Latest)
+        .from_block(state.block - 1)
+        .events(vec![
+            "NodeRegistered(bytes32,bytes)",
+            "KeyUpdate(bytes32,bytes32)",
+            "IpUpdate(bytes32,uint128)",
+            "WsUpdate(bytes32,uint16)",
+            "RoutingUpdate(bytes32,bytes32[])",
+        ]);
+
+    // if block in state is < current_block, get logs from that part.
+    if state.block < get_block_number()? {
+        let logs = get_logs(&filter)?;
+        for log in logs {
+            handle_log(&our, &mut state, &log)?;
+        }
     }
     // shove all state into net::net
     Request::new()
@@ -161,17 +192,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    SubscribeLogsRequest::new(1) // subscription id 1
-        .address(EthAddress::from_str(contract_address.unwrap().as_str())?)
-        .from_block(state.block - 1)
-        .events(vec![
-            "NodeRegistered(bytes32,bytes)",
-            "KeyUpdate(bytes32,bytes32)",
-            "IpUpdate(bytes32,uint128)",
-            "WsUpdate(bytes32,uint16)",
-            "RoutingUpdate(bytes32,bytes32[])",
-        ])
-        .send()?;
+    set_state(&bincode::serialize(&state)?);
+
+    subscribe(1, filter.clone())?;
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -187,7 +210,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         };
 
         if source.process == "eth:distro:sys" {
-            handle_eth_message(&our, &mut state, &mut pending_requests, &body)?;
+            handle_eth_message(&our, &mut state, &mut pending_requests, &body, &filter)?;
         } else {
             let Ok(request) = serde_json::from_slice::<IndexerRequests>(&body) else {
                 println!("kns_indexer: got invalid message");
@@ -229,90 +252,24 @@ fn handle_eth_message(
     state: &mut State,
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
     body: &[u8],
+    filter: &Filter,
 ) -> anyhow::Result<()> {
-    let Ok(msg) = serde_json::from_slice::<EthSubEvent>(body) else {
+    let Ok(eth_result) = serde_json::from_slice::<EthSubResult>(body) else {
         return Err(anyhow::anyhow!("kns_indexer: got invalid message"));
     };
 
-    match msg {
-        EthSubEvent::Log(log) => {
-            state.block = log.block_number.expect("expect").to::<u64>();
-
-            let node_id: alloy_primitives::FixedBytes<32> = log.topics[1];
-
-            let name = match state.names.entry(node_id.to_string()) {
-                Entry::Occupied(o) => o.into_mut(),
-                Entry::Vacant(v) => v.insert(get_name(&log)),
-            };
-
-            let node = state
-                .nodes
-                .entry(name.to_string())
-                .or_insert_with(|| KnsUpdate::new(name, &node_id.to_string()));
-
-            let mut send = true;
-
-            match log.topics[0] {
-                KeyUpdate::SIGNATURE_HASH => {
-                    node.public_key = KeyUpdate::abi_decode_data(&log.data, true)
-                        .unwrap()
-                        .0
-                        .to_string();
-                }
-                IpUpdate::SIGNATURE_HASH => {
-                    let ip = IpUpdate::abi_decode_data(&log.data, true).unwrap().0;
-                    node.ip = format!(
-                        "{}.{}.{}.{}",
-                        (ip >> 24) & 0xFF,
-                        (ip >> 16) & 0xFF,
-                        (ip >> 8) & 0xFF,
-                        ip & 0xFF
-                    );
-                    // when we get ip data, we should delete any router data,
-                    // since the assignment of ip indicates an direct node
-                    node.routers = vec![];
-                }
-                WsUpdate::SIGNATURE_HASH => {
-                    node.port = WsUpdate::abi_decode_data(&log.data, true).unwrap().0;
-                    // when we get port data, we should delete any router data,
-                    // since the assignment of port indicates an direct node
-                    node.routers = vec![];
-                }
-                RoutingUpdate::SIGNATURE_HASH => {
-                    node.routers = RoutingUpdate::abi_decode_data(&log.data, true)
-                        .unwrap()
-                        .0
-                        .iter()
-                        .map(|r| r.to_string())
-                        .collect::<Vec<String>>();
-                    // when we get routing data, we should delete any ws/ip data,
-                    // since the assignment of routers indicates an indirect node
-                    node.ip = "".to_string();
-                    node.port = 0;
-                }
-                _ => {
-                    send = false;
-                }
-            }
-
-            if node.public_key != ""
-                && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
-                && send
-            {
-                print_to_terminal(
-                    1,
-                    &format!(
-                        "kns_indexer: sending ID to net: {node:?} (blocknum {})",
-                        state.block
-                    ),
-                );
-                Request::new()
-                    .target((&our.node, "net", "distro", "sys"))
-                    .try_body(NetActions::KnsUpdate(node.clone()))?
-                    .send()?;
+    match eth_result {
+        Ok(EthSub { result, .. }) => {
+            if let SubscriptionResult::Log(log) = result {
+                handle_log(our, state, &log)?;
             }
         }
+        Err(e) => {
+            println!("kns_indexer: got sub error, resubscribing.. {:?}", e.error);
+            subscribe(1, filter.clone())?;
+        }
     }
+
     // check the pending_requests btreemap to see if there are any requests that
     // can be handled now that the state block has been updated
     let mut blocks_to_remove = vec![];
@@ -344,6 +301,85 @@ fn handle_eth_message(
     }
 
     set_state(&bincode::serialize(state)?);
+    Ok(())
+}
+
+fn handle_log(our: &Address, state: &mut State, log: &Log) -> anyhow::Result<()> {
+    state.block = log.block_number.expect("expect").to::<u64>();
+
+    let node_id = log.topics[1];
+
+    let name = match state.names.entry(node_id.to_string()) {
+        Entry::Occupied(o) => o.into_mut(),
+        Entry::Vacant(v) => v.insert(get_name(&log)),
+    };
+
+    let node = state
+        .nodes
+        .entry(name.to_string())
+        .or_insert_with(|| KnsUpdate::new(name, &node_id.to_string()));
+
+    let mut send = true;
+
+    match log.topics[0] {
+        KeyUpdate::SIGNATURE_HASH => {
+            node.public_key = KeyUpdate::abi_decode_data(&log.data, true)
+                .unwrap()
+                .0
+                .to_string();
+        }
+        IpUpdate::SIGNATURE_HASH => {
+            let ip = IpUpdate::abi_decode_data(&log.data, true).unwrap().0;
+            node.ip = format!(
+                "{}.{}.{}.{}",
+                (ip >> 24) & 0xFF,
+                (ip >> 16) & 0xFF,
+                (ip >> 8) & 0xFF,
+                ip & 0xFF
+            );
+            // when we get ip data, we should delete any router data,
+            // since the assignment of ip indicates an direct node
+            node.routers = vec![];
+        }
+        WsUpdate::SIGNATURE_HASH => {
+            node.port = WsUpdate::abi_decode_data(&log.data, true).unwrap().0;
+            // when we get port data, we should delete any router data,
+            // since the assignment of port indicates an direct node
+            node.routers = vec![];
+        }
+        RoutingUpdate::SIGNATURE_HASH => {
+            node.routers = RoutingUpdate::abi_decode_data(&log.data, true)
+                .unwrap()
+                .0
+                .iter()
+                .map(|r| r.to_string())
+                .collect::<Vec<String>>();
+            // when we get routing data, we should delete any ws/ip data,
+            // since the assignment of routers indicates an indirect node
+            node.ip = "".to_string();
+            node.port = 0;
+        }
+        _ => {
+            send = false;
+        }
+    }
+
+    if node.public_key != ""
+        && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
+        && send
+    {
+        print_to_terminal(
+            1,
+            &format!(
+                "kns_indexer: sending ID to net: {node:?} (blocknum {})",
+                state.block
+            ),
+        );
+        Request::new()
+            .target((&our.node, "net", "distro", "sys"))
+            .try_body(NetActions::KnsUpdate(node.clone()))?
+            .send()?;
+    }
     Ok(())
 }
 

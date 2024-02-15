@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
+use rand::seq::SliceRandom;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
@@ -45,11 +46,13 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg(not(feature = "simulation-mode"))]
 const REVEAL_IP: bool = true;
 
+/// default routers as a eth-provider fallback
+const DEFAULT_PROVIDERS: &str = include_str!("../default_providers.json");
+
 async fn serve_register_fe(
     home_directory_path: &str,
     our_ip: String,
     http_server_port: u16,
-    rpc_url: String,
     testnet: bool,
 ) -> (Identity, Vec<u8>, Keyfile) {
     // check if we have keys saved on disk, encrypted
@@ -71,7 +74,7 @@ async fn serve_register_fe(
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-        _ = register::register(tx, kill_rx, our_ip, http_server_port, rpc_url, disk_keyfile, testnet) => {
+        _ = register::register(tx, kill_rx, our_ip, http_server_port, disk_keyfile, testnet) => {
             panic!("registration failed")
         }
         Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
@@ -109,7 +112,14 @@ async fn main() {
         );
 
     #[cfg(not(feature = "simulation-mode"))]
-    let app = app.arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true));
+    let app = app
+        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(false))
+        .arg(arg!(--rpcnode <String> "RPC node provider must be a valid address").required(false))
+        .arg(
+            arg!(--public "If set, allow rpc passthrough")
+                .default_value("false")
+                .value_parser(value_parser!(bool)),
+        );
 
     #[cfg(feature = "simulation-mode")]
     let app = app
@@ -134,6 +144,8 @@ async fn main() {
         None => (8080, false),
     };
     let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
+    let public = *matches.get_one::<bool>("public").unwrap();
+
     let contract_address = if on_testnet {
         register::KNS_SEPOLIA_ADDRESS
     } else {
@@ -166,8 +178,46 @@ async fn main() {
         }
     }
 
+    // default eth providers/routers
+    type KnsUpdate = crate::net::KnsUpdate;
+    let default_pki_entries: Vec<KnsUpdate> =
+        match fs::read_to_string(format!("{}/.default_providers", home_directory_path)).await {
+            Ok(contents) => serde_json::from_str(&contents).unwrap(),
+            Err(_) => {
+                let defaults: Vec<KnsUpdate> = serde_json::from_str(DEFAULT_PROVIDERS).unwrap();
+                defaults
+            }
+        };
+
     #[cfg(not(feature = "simulation-mode"))]
-    let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").unwrap(), false);
+    let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").cloned(), false);
+    #[cfg(not(feature = "simulation-mode"))]
+    let (rpc_node, _is_detached) = (matches.get_one::<String>("rpcnode").cloned(), false);
+
+    type ProviderInput = lib::eth::ProviderInput;
+    let eth_provider: ProviderInput;
+
+    match (rpc_url, rpc_node) {
+        (Some(url), Some(_)) => {
+            println!("passed both node and url for rpc, using url.");
+            eth_provider = ProviderInput::Ws(url);
+        }
+        (Some(url), None) => {
+            eth_provider = ProviderInput::Ws(url);
+        }
+        (None, Some(node)) => {
+            println!("trying to use remote node for rpc: {}", node);
+            eth_provider = ProviderInput::Node(node);
+        }
+        (None, None) => {
+            let random_provider = default_pki_entries.choose(&mut rand::thread_rng()).unwrap();
+            let default_provider = random_provider.name.clone();
+
+            println!("no rpc provided, using a default: {}", default_provider);
+
+            eth_provider = ProviderInput::Node(default_provider);
+        }
+    }
 
     #[cfg(feature = "simulation-mode")]
     let (rpc_url, password, network_router_port, fake_node_name, is_detached) = (
@@ -278,7 +328,6 @@ async fn main() {
         home_directory_path,
         our_ip.to_string(),
         http_server_port,
-        rpc_url.clone(),
         on_testnet, // true if testnet mode
     )
     .await;
@@ -457,6 +506,7 @@ async fn main() {
         home_directory_path.clone(),
         contract_address.to_string(),
         runtime_extensions,
+        default_pki_entries,
     ));
     #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(net::networking(
@@ -528,7 +578,8 @@ async fn main() {
     #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(eth::provider::provider(
         our.name.clone(),
-        rpc_url.clone(),
+        eth_provider,
+        public,
         kernel_message_sender.clone(),
         eth_provider_receiver,
         print_sender.clone(),
