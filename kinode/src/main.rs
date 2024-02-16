@@ -203,7 +203,6 @@ async fn main() {
         matches.get_one::<bool>("detached").unwrap().clone(),
     );
 
-
     type ProviderInput = lib::eth::ProviderInput;
     let eth_provider: ProviderInput;
 
