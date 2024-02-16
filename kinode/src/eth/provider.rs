@@ -153,7 +153,7 @@ async fn handle_message(
         }
         Message::Response(_) => {
             // handle passthrough responses, send to rsvp.
-            if km.source.process == ProcessId::from_str("eth:distro:sys").unwrap() {
+            if km.source.process == "eth:distro:sys" {
                 if let Some(rsvp) = &km.rsvp {
                     let _ = send_to_loop
                         .send(KernelMessage {

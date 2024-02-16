@@ -190,7 +190,7 @@ async fn main() {
     #[cfg(not(feature = "simulation-mode"))]
     let (rpc_node, _is_detached) = (matches.get_one::<String>("rpcnode").cloned(), false);
 
-    //#[cfg(feature = "simulation-mode")]
+    #[cfg(feature = "simulation-mode")]
     let (rpc_url, rpc_node, password, network_router_port, fake_node_name, is_detached) = (
         matches.get_one::<String>("rpc"),
         matches.get_one::<String>("rpcnode"),
@@ -320,6 +320,7 @@ async fn main() {
         "login or register at http://localhost:{}\r",
         http_server_port
     );
+
     #[cfg(not(feature = "simulation-mode"))]
     let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
         home_directory_path,
@@ -328,6 +329,7 @@ async fn main() {
         on_testnet, // true if testnet mode
     )
     .await;
+
     #[cfg(feature = "simulation-mode")]
     let (our, encoded_keyfile, decoded_keyfile) = match fake_node_name {
         None => {
