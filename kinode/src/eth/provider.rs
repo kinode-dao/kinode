@@ -67,24 +67,20 @@ pub async fn provider(
     let connections = Arc::new(connections);
 
     // add whitelist, logic in provider middleware?
-    let public = Arc::new(public);
-
     while let Some(km) = recv_in_client.recv().await {
         // clone Arcs
         let our = our.clone();
         let send_to_loop = send_to_loop.clone();
         let provider_config = provider_config.clone();
         let connections = connections.clone();
-        let public = public.clone();
-
         tokio::spawn(async move {
             if let Err(e) = handle_message(
                 &our,
                 &km,
                 &send_to_loop,
-                provider_config.clone(),
-                connections.clone(),
-                public.clone(),
+                provider_config,
+                connections,
+                public,
             )
             .await
             {
@@ -103,7 +99,7 @@ async fn handle_message(
     send_to_loop: &MessageSender,
     provider_config: Arc<ProviderConfig>,
     connections: Arc<DashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>>,
-    public: Arc<bool>,
+    public: bool,
 ) -> Result<(), EthError> {
     match &km.message {
         Message::Request(req) => {
@@ -181,7 +177,7 @@ async fn handle_local_request(
     send_to_loop: &MessageSender,
     provider: &Provider<PubSubFrontend>,
     connections: Arc<DashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>>,
-    public: Arc<bool>,
+    public: bool,
 ) -> Result<(), EthError> {
     let Message::Request(req) = &km.message else {
         return Err(EthError::InvalidMethod(
@@ -278,7 +274,7 @@ async fn handle_remote_request(
     send_to_loop: &MessageSender,
     provider: Option<&Provider<PubSubFrontend>>,
     connections: Arc<DashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>>,
-    public: Arc<bool>,
+    public: bool,
 ) -> Result<(), EthError> {
     let Message::Request(req) = &km.message else {
         return Err(EthError::InvalidMethod(
@@ -290,7 +286,7 @@ async fn handle_remote_request(
         // we need some sort of agreement perhaps on rpc providing.
         // even with an agreement, fake ethsubevents could be sent to us.
         // light clients could verify blocks perhaps...
-        if !*public {
+        if !public {
             return Err(EthError::PermissionDenied("not on the list.".to_string()));
         }
 

@@ -47,7 +47,8 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const REVEAL_IP: bool = true;
 
 /// default routers as a eth-provider fallback
-const DEFAULT_PROVIDERS: &str = include_str!("../default_providers.json");
+const DEFAULT_PROVIDERS_TESTNET: &str = include_str!("../default_providers_testnet.json");
+const DEFAULT_PROVIDERS_MAINNET: &str = include_str!("../default_providers_mainnet.json");
 
 async fn serve_register_fe(
     home_directory_path: &str,
@@ -194,10 +195,10 @@ async fn main() {
     let default_pki_entries: Vec<KnsUpdate> =
         match fs::read_to_string(format!("{}/.default_providers", home_directory_path)).await {
             Ok(contents) => serde_json::from_str(&contents).unwrap(),
-            Err(_) => {
-                let defaults: Vec<KnsUpdate> = serde_json::from_str(DEFAULT_PROVIDERS).unwrap();
-                defaults
-            }
+            Err(_) => match on_testnet {
+                true => serde_json::from_str(DEFAULT_PROVIDERS_TESTNET).unwrap(),
+                false => serde_json::from_str(DEFAULT_PROVIDERS_MAINNET).unwrap(),
+            },
         };
 
     type ProviderInput = lib::eth::ProviderInput;
