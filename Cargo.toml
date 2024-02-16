@@ -18,7 +18,7 @@ members = [
     "kinode/packages/app_store/download", "kinode/packages/app_store/install", "kinode/packages/app_store/uninstall",
     "kinode/packages/chess/chess",
     "kinode/packages/homepage/homepage",
-    "kinode/packages/kns_indexer/kns_indexer",
+    "kinode/packages/kns_indexer/kns_indexer", "kinode/packages/kns_indexer/get_block",
     "kinode/packages/terminal/terminal",
     "kinode/packages/terminal/alias", "kinode/packages/terminal/cat", "kinode/packages/terminal/echo", "kinode/packages/terminal/hi", "kinode/packages/terminal/m", "kinode/packages/terminal/top",
     "kinode/packages/tester/tester", "kinode/packages/tester/test_runner",
