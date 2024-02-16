@@ -109,21 +109,17 @@ async fn main() {
             arg!(--testnet "If set, use Sepolia testnet")
                 .default_value("false")
                 .value_parser(value_parser!(bool)),
-        );
-
-    #[cfg(not(feature = "simulation-mode"))]
-    let app = app
-        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(false))
-        .arg(arg!(--rpcnode <String> "RPC node provider must be a valid address").required(false))
+        )
         .arg(
             arg!(--public "If set, allow rpc passthrough")
                 .default_value("false")
                 .value_parser(value_parser!(bool)),
-        );
+        )
+        .arg(arg!(--rpcnode <String> "RPC node provider must be a valid address").required(false))
+        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(false));
 
     #[cfg(feature = "simulation-mode")]
     let app = app
-        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)"))
         .arg(arg!(--password <PASSWORD> "Networking password"))
         .arg(arg!(--"fake-node-name" <NAME> "Name of fake node to boot"))
         .arg(
@@ -194,20 +190,34 @@ async fn main() {
     #[cfg(not(feature = "simulation-mode"))]
     let (rpc_node, _is_detached) = (matches.get_one::<String>("rpcnode").cloned(), false);
 
+    //#[cfg(feature = "simulation-mode")]
+    let (rpc_url, rpc_node, password, network_router_port, fake_node_name, is_detached) = (
+        matches.get_one::<String>("rpc"),
+        matches.get_one::<String>("rpcnode"),
+        matches.get_one::<String>("password"),
+        matches
+            .get_one::<u16>("network-router-port")
+            .unwrap()
+            .clone(),
+        matches.get_one::<String>("fake-node-name"),
+        matches.get_one::<bool>("detached").unwrap().clone(),
+    );
+
+
     type ProviderInput = lib::eth::ProviderInput;
     let eth_provider: ProviderInput;
 
     match (rpc_url, rpc_node) {
         (Some(url), Some(_)) => {
             println!("passed both node and url for rpc, using url.");
-            eth_provider = ProviderInput::Ws(url);
+            eth_provider = ProviderInput::Ws(url.clone());
         }
         (Some(url), None) => {
-            eth_provider = ProviderInput::Ws(url);
+            eth_provider = ProviderInput::Ws(url.clone());
         }
         (None, Some(node)) => {
             println!("trying to use remote node for rpc: {}", node);
-            eth_provider = ProviderInput::Node(node);
+            eth_provider = ProviderInput::Node(node.clone());
         }
         (None, None) => {
             let random_provider = default_pki_entries.choose(&mut rand::thread_rng()).unwrap();
@@ -218,18 +228,6 @@ async fn main() {
             eth_provider = ProviderInput::Node(default_provider);
         }
     }
-
-    #[cfg(feature = "simulation-mode")]
-    let (rpc_url, password, network_router_port, fake_node_name, is_detached) = (
-        matches.get_one::<String>("rpc"),
-        matches.get_one::<String>("password"),
-        matches
-            .get_one::<u16>("network-router-port")
-            .unwrap()
-            .clone(),
-        matches.get_one::<String>("fake-node-name"),
-        matches.get_one::<bool>("detached").unwrap().clone(),
-    );
 
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {:?}", e);
@@ -342,7 +340,6 @@ async fn main() {
                             &home_directory_path,
                             our_ip.to_string(),
                             http_server_port.clone(),
-                            rpc_url.clone(),
                             on_testnet, // true if testnet mode
                         )
                         .await
@@ -588,7 +585,8 @@ async fn main() {
     if let Some(rpc_url) = rpc_url {
         tasks.spawn(eth::provider::provider(
             our.name.clone(),
-            rpc_url.clone(),
+            eth_provider,
+            public,
             kernel_message_sender.clone(),
             eth_provider_receiver,
             print_sender.clone(),

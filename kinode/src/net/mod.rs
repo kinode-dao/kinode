@@ -14,12 +14,14 @@ use {
     },
 };
 
-#[cfg(not(feature = "simulation-mode"))]
+//#[cfg(not(feature = "simulation-mode"))]
 mod types;
 #[cfg(not(feature = "simulation-mode"))]
 mod utils;
+//#[cfg(not(feature = "simulation-mode"))]
+pub use crate::net::types::*;
 #[cfg(not(feature = "simulation-mode"))]
-pub use crate::net::{types::*, utils::*};
+pub use crate::net::utils::*;
 #[cfg(not(feature = "simulation-mode"))]
 use lib::types::core::*;
 
