@@ -141,6 +141,21 @@ async fn main() {
     };
     let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
     let public = *matches.get_one::<bool>("public").unwrap();
+    let rpc_url = matches.get_one::<String>("rpc").cloned();
+    let rpc_node = matches.get_one::<String>("rpcnode").cloned();
+
+    #[cfg(not(feature = "simulation-mode"))]
+    let is_detached = false;
+    #[cfg(feature = "simulation-mode")]
+    let (password, network_router_port, fake_node_name, is_detached) = (
+        matches.get_one::<String>("password"),
+        matches
+            .get_one::<u16>("network-router-port")
+            .unwrap()
+            .clone(),
+        matches.get_one::<String>("fake-node-name"),
+        *matches.get_one::<bool>("detached").unwrap(),
+    );
 
     let contract_address = if on_testnet {
         register::KNS_SEPOLIA_ADDRESS
@@ -185,36 +200,18 @@ async fn main() {
             }
         };
 
-    #[cfg(not(feature = "simulation-mode"))]
-    let (rpc_url, is_detached) = (matches.get_one::<String>("rpc").cloned(), false);
-    #[cfg(not(feature = "simulation-mode"))]
-    let (rpc_node, _is_detached) = (matches.get_one::<String>("rpcnode").cloned(), false);
-
-    #[cfg(feature = "simulation-mode")]
-    let (rpc_url, rpc_node, password, network_router_port, fake_node_name, is_detached) = (
-        matches.get_one::<String>("rpc"),
-        matches.get_one::<String>("rpcnode"),
-        matches.get_one::<String>("password"),
-        matches
-            .get_one::<u16>("network-router-port")
-            .unwrap()
-            .clone(),
-        matches.get_one::<String>("fake-node-name"),
-        matches.get_one::<bool>("detached").unwrap().clone(),
-    );
-
     type ProviderInput = lib::eth::ProviderInput;
     let eth_provider: ProviderInput;
 
-    match (rpc_url, rpc_node) {
+    match (rpc_url.clone(), rpc_node) {
         (Some(url), Some(_)) => {
             println!("passed both node and url for rpc, using url.");
-            eth_provider = ProviderInput::Ws(url.clone());
+            eth_provider = ProviderInput::Ws(url);
         }
         (Some(url), None) => {
-            eth_provider = ProviderInput::Ws(url.clone());
+            eth_provider = ProviderInput::Ws(url);
         }
-        (None, Some(node)) => {
+        (None, Some(ref node)) => {
             println!("trying to use remote node for rpc: {}", node);
             eth_provider = ProviderInput::Node(node.clone());
         }
@@ -336,7 +333,7 @@ async fn main() {
             match password {
                 None => match rpc_url {
                     None => panic!(""),
-                    Some(rpc_url) => {
+                    Some(ref rpc_url) => {
                         serve_register_fe(
                             &home_directory_path,
                             our_ip.to_string(),
@@ -583,7 +580,7 @@ async fn main() {
         print_sender.clone(),
     ));
     #[cfg(feature = "simulation-mode")]
-    if let Some(rpc_url) = rpc_url {
+    if let Some(ref rpc_url) = rpc_url {
         tasks.spawn(eth::provider::provider(
             our.name.clone(),
             eth_provider,
