@@ -2,16 +2,13 @@
 
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
-use rand::seq::SliceRandom;
+use lib::types::core::*;
+#[cfg(feature = "simulation-mode")]
+use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::{fs, time::timeout};
-
-use lib::types::core::*;
-
-#[cfg(feature = "simulation-mode")]
-use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
 mod eth;
 mod http;
@@ -110,14 +107,7 @@ async fn main() {
             arg!(--testnet "If set, use Sepolia testnet")
                 .default_value("false")
                 .value_parser(value_parser!(bool)),
-        )
-        .arg(
-            arg!(--public "If set, allow rpc passthrough")
-                .default_value("false")
-                .value_parser(value_parser!(bool)),
-        )
-        .arg(arg!(--rpcnode <String> "RPC node provider must be a valid address").required(false))
-        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(false));
+        );
 
     #[cfg(feature = "simulation-mode")]
     let app = app
@@ -141,9 +131,6 @@ async fn main() {
         None => (8080, false),
     };
     let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
-    let public = *matches.get_one::<bool>("public").unwrap();
-    let rpc_url = matches.get_one::<String>("rpc").cloned();
-    let rpc_node = matches.get_one::<String>("rpcnode").cloned();
 
     #[cfg(not(feature = "simulation-mode"))]
     let is_detached = false;
@@ -190,46 +177,23 @@ async fn main() {
         }
     }
 
+    if let Err(e) = fs::create_dir_all(home_directory_path).await {
+        panic!("failed to create home directory: {:?}", e);
+    }
+    println!("home at {}\r", home_directory_path);
+
     // default eth providers/routers
-    type KnsUpdate = crate::net::KnsUpdate;
-    let default_pki_entries: Vec<KnsUpdate> =
-        match fs::read_to_string(format!("{}/.default_providers", home_directory_path)).await {
-            Ok(contents) => serde_json::from_str(&contents).unwrap(),
+    let eth_provider_config: lib::eth::SavedConfigs =
+        match fs::read_to_string(format!("{}/.saved_providers", home_directory_path)).await {
+            Ok(contents) => {
+                println!("loaded saved providers\r");
+                serde_json::from_str(&contents).unwrap()
+            }
             Err(_) => match on_testnet {
                 true => serde_json::from_str(DEFAULT_PROVIDERS_TESTNET).unwrap(),
                 false => serde_json::from_str(DEFAULT_PROVIDERS_MAINNET).unwrap(),
             },
         };
-
-    type ProviderInput = lib::eth::ProviderInput;
-    let eth_provider: ProviderInput;
-
-    match (rpc_url.clone(), rpc_node) {
-        (Some(url), Some(_)) => {
-            println!("passed both node and url for rpc, using url.");
-            eth_provider = ProviderInput::Ws(url);
-        }
-        (Some(url), None) => {
-            eth_provider = ProviderInput::Ws(url);
-        }
-        (None, Some(ref node)) => {
-            println!("trying to use remote node for rpc: {}", node);
-            eth_provider = ProviderInput::Node(node.clone());
-        }
-        (None, None) => {
-            let random_provider = default_pki_entries.choose(&mut rand::thread_rng()).unwrap();
-            let default_provider = random_provider.name.clone();
-
-            println!("no rpc provided, using a default: {}", default_provider);
-
-            eth_provider = ProviderInput::Node(default_provider);
-        }
-    }
-
-    if let Err(e) = fs::create_dir_all(home_directory_path).await {
-        panic!("failed to create home directory: {:?}", e);
-    }
-    println!("home at {}\r", home_directory_path);
 
     // kernel receives system messages via this channel, all other modules send messages
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
@@ -502,7 +466,20 @@ async fn main() {
         home_directory_path.clone(),
         contract_address.to_string(),
         runtime_extensions,
-        default_pki_entries,
+        // from saved eth provider config, filter for node identities which will be
+        // bootstrapped into the networking module, so that this node can start
+        // getting PKI info ("bootstrap")
+        eth_provider_config
+            .clone()
+            .into_iter()
+            .filter_map(|config| {
+                if let lib::eth::NodeOrRpcUrl::Node(kns_update) = config.provider {
+                    Some(kns_update)
+                } else {
+                    None
+                }
+            })
+            .collect(),
     ));
     #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(net::networking(
@@ -574,8 +551,7 @@ async fn main() {
     #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(eth::provider::provider(
         our.name.clone(),
-        eth_provider,
-        public,
+        eth_provider_config,
         kernel_message_sender.clone(),
         eth_provider_receiver,
         print_sender.clone(),

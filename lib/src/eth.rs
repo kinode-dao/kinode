@@ -103,7 +103,19 @@ pub fn to_static_str(method: &str) -> Option<&'static str> {
     }
 }
 
-pub enum ProviderInput {
-    Ws(String),
-    Node(String),
+pub type SavedConfigs = Vec<ProviderConfig>;
+
+/// Provider config. Can currently be a node or a ws provider instance.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ProviderConfig {
+    pub chain_id: u64,
+    pub usable: bool,
+    pub trusted: bool,
+    pub provider: NodeOrRpcUrl,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum NodeOrRpcUrl {
+    Node(crate::core::KnsUpdate),
+    RpcUrl(String),
 }
