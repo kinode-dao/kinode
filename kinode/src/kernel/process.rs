@@ -563,7 +563,7 @@ pub async fn make_process_loop(
             FilePerms::all(),
             tmp_path.clone(),
         )
-        .env("TMP_DIR", tmp_path)
+        .env("TEMP_DIR", tmp_path)
         .stderr(wasi_stderr.clone())
         .build();
 
