@@ -13,8 +13,10 @@ use tokio::task::JoinHandle;
 use wasmtime::component::ResourceTable as Table;
 use wasmtime::component::*;
 use wasmtime::{Engine, Store};
+use wasmtime_wasi::preview2::{
+    pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiView,
+};
 use wasmtime_wasi::sync::Dir;
-use wasmtime_wasi::preview2::{pipe::MemoryOutputPipe, WasiCtx, WasiCtxBuilder, WasiView, DirPerms, FilePerms};
 
 const STACK_TRACE_SIZE: usize = 5000;
 
@@ -540,20 +542,30 @@ pub async fn make_process_loop(
     let table = Table::new();
     let wasi_stderr = MemoryOutputPipe::new(STACK_TRACE_SIZE);
 
-    let tmp_path = format!("{}/vfs/{}:{}/tmp", home_directory_path, metadata.our.process.package(), metadata.our.process.publisher());
+    let tmp_path = format!(
+        "{}/vfs/{}:{}/tmp",
+        home_directory_path,
+        metadata.our.process.package(),
+        metadata.our.process.publisher()
+    );
     if let Err(e) = fs::create_dir_all(&tmp_path).await {
         panic!("failed creating tmp dir! {:?}", e);
     }
-    let Ok(wasi_tempdir) = Dir::open_ambient_dir(
-        tmp_path.clone(),
-        wasmtime_wasi::sync::ambient_authority()
-    ) else {
+    let Ok(wasi_tempdir) =
+        Dir::open_ambient_dir(tmp_path.clone(), wasmtime_wasi::sync::ambient_authority())
+    else {
         panic!("failed to open ambient tmp dir!");
     };
     let wasi = WasiCtxBuilder::new()
-        .preopened_dir(wasi_tempdir, DirPerms::all(), FilePerms::all(), tmp_path.clone())
+        .preopened_dir(
+            wasi_tempdir,
+            DirPerms::all(),
+            FilePerms::all(),
+            tmp_path.clone(),
+        )
         .env("TMP_DIR", tmp_path)
-        .stderr(wasi_stderr.clone()).build();
+        .stderr(wasi_stderr.clone())
+        .build();
 
     wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
 
