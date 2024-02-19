@@ -47,6 +47,15 @@ pub fn handle_http_request(
     Ok(())
 }
 
+fn get_package_id(url_params: &HashMap<String, String>) -> anyhow::Result<PackageId> {
+    let Some(package_id) = url_params.get("id") else {
+        return Err(anyhow::anyhow!("Missing id"));
+    };
+
+    let id = package_id.parse::<PackageId>()?;
+    Ok(id)
+}
+
 fn gen_package_info(
     id: &PackageId,
     listing: Option<&PackageListing>,
@@ -94,23 +103,10 @@ fn serve_paths(
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
     req: &IncomingHttpRequest,
 ) -> anyhow::Result<(StatusCode, Option<HashMap<String, String>>, Vec<u8>)> {
-    let path = req.path()?;
     let method = req.method()?;
 
-    // TODO get rid of this workaround when we change `IncomingHttpRequest`
-    let bound_path: &str = if path.ends_with("auto-update") {
-        "/apps/:id/auto-update"
-    } else if path.ends_with("mirror") {
-        "/apps/:id/mirror"
-    } else if path.ends_with("caps") {
-        "/apps/:id/caps"
-    } else if path.starts_with("/apps/listed/") {
-        "/apps/listed/:id"
-    } else if &path == "/apps/listed" || &path == "/apps" {
-        &path
-    } else {
-        "/apps/:id"
-    };
+    let bound_path: &str = req.bound_path(Some(&our.process.to_string()));
+    let url_params = req.url_params();
 
     // print_to_terminal(0, &format!("HTTP {method} {path} {bound_path}"));
 
@@ -121,7 +117,7 @@ fn serve_paths(
                 return Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
-                    format!("Invalid method {method} for {path}").into_bytes(),
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
                 ));
             }
             let all: Vec<serde_json::Value> = state
@@ -140,7 +136,7 @@ fn serve_paths(
                 return Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
-                    format!("Invalid method {method} for {path}").into_bytes(),
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
                 ));
             }
             let all: Vec<serde_json::Value> = state
@@ -159,11 +155,14 @@ fn serve_paths(
         // update a downloaded app: PUT
         // uninstall/delete a downloaded app: DELETE
         "/apps/:id" => {
-            let package_id = path
-                .split("/")
-                .last()
-                .unwrap_or_default()
-                .parse::<PackageId>()?;
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+
             match method {
                 Method::GET => {
                     let Some(pkg) = state.downloaded_packages.get(&package_id) else {
@@ -234,18 +233,21 @@ fn serve_paths(
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
-                    format!("Invalid method {method} for {path}").into_bytes(),
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
                 )),
             }
         }
         // GET detail about a specific listed app
         // download a listed app: POST
         "/apps/listed/:id" => {
-            let package_id = path
-                .split("/")
-                .last()
-                .unwrap_or_default()
-                .parse::<PackageId>()?;
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+
             match method {
                 Method::GET => {
                     let Some(listing) = state.get_listing(&package_id) else {
@@ -318,18 +320,21 @@ fn serve_paths(
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
-                    format!("Invalid method {method} for {path}").into_bytes(),
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
                 )),
             }
         }
         // GET caps for a specific downloaded app
         // approve capabilities for a downloaded app: POST
         "/apps/:id/caps" => {
-            let package_id = path
-                .split("/")
-                .nth(2)
-                .unwrap_or_default()
-                .parse::<PackageId>()?;
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+
             match method {
                 // return the capabilities for that app
                 Method::GET => Ok(match crate::fetch_package_manifest(&package_id) {
@@ -356,18 +361,21 @@ fn serve_paths(
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
-                    format!("Invalid method {method} for {path}").into_bytes(),
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
                 )),
             }
         }
         // start mirroring a downloaded app: PUT
         // stop mirroring a downloaded app: DELETE
         "/apps/:id/mirror" => {
-            let package_id = path
-                .split("/")
-                .nth(2)
-                .unwrap_or_default()
-                .parse::<PackageId>()?;
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+
             match method {
                 // start mirroring an app
                 Method::PUT => {
@@ -382,18 +390,21 @@ fn serve_paths(
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
-                    format!("Invalid method {method} for {path}").into_bytes(),
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
                 )),
             }
         }
         // start auto-updating a downloaded app: PUT
         // stop auto-updating a downloaded app: DELETE
         "/apps/:id/auto-update" => {
-            let package_id = path
-                .split("/")
-                .nth(2)
-                .unwrap_or_default()
-                .parse::<PackageId>()?;
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+
             match method {
                 // start auto-updating an app
                 Method::PUT => {
@@ -408,14 +419,14 @@ fn serve_paths(
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
-                    format!("Invalid method {method} for {path}").into_bytes(),
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
                 )),
             }
         }
         _ => Ok((
             StatusCode::NOT_FOUND,
             None,
-            format!("Path not found: {}", path).into_bytes(),
+            format!("Path not found: {bound_path}").into_bytes(),
         )),
     }
 }
