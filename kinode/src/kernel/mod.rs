@@ -89,6 +89,7 @@ async fn handle_kernel_request(
     reverse_cap_index: &mut t::ReverseCapIndex,
     caps_oracle: t::CapMessageSender,
     engine: &Engine,
+    home_directory_path: &str,
 ) {
     let t::Message::Request(request) = km.message else {
         return;
@@ -274,6 +275,7 @@ async fn handle_kernel_request(
                     },
                     reboot: false,
                 },
+                &home_directory_path,
             )
             .await
             {
@@ -580,6 +582,7 @@ async fn start_process(
     engine: &Engine,
     caps_oracle: t::CapMessageSender,
     process_metadata: &StartProcessMetadata,
+    home_directory_path: &str,
 ) -> Result<()> {
     let (send_to_process, recv_in_process) =
         mpsc::channel::<Result<t::KernelMessage, t::WrappedSendError>>(PROCESS_CHANNEL_CAPACITY);
@@ -622,6 +625,7 @@ async fn start_process(
             km_blob_bytes,
             caps_oracle,
             engine.clone(),
+            home_directory_path.to_string(),
         )),
     );
 
@@ -786,6 +790,7 @@ pub async fn kernel(
             &engine,
             caps_oracle_sender.clone(),
             &metadata,
+            home_directory_path.as_str(),
         )
         .await
         {
@@ -1077,6 +1082,7 @@ pub async fn kernel(
                         &mut reverse_cap_index,
                         caps_oracle_sender.clone(),
                         &engine,
+                        &home_directory_path,
                     ).await;
                 } else {
                     // pass message to appropriate runtime module or process
