@@ -13,7 +13,6 @@ use lib::types::core::*;
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
-
 mod eth;
 mod http;
 mod kernel;
