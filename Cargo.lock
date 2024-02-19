@@ -956,7 +956,7 @@ dependencies = [
  "anyhow",
  "base64 0.13.1",
  "bincode",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=12bf9ee)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=3232423)",
  "pleco",
  "serde",
  "serde_json",
@@ -2679,7 +2679,7 @@ dependencies = [
 [[package]]
 name = "kit"
 version = "0.1.0"
-source = "git+https://github.com/kinode-dao/kit?rev=f96cdaa#f96cdaa022ec8d0ff675bce3b92bd436236881ea"
+source = "git+https://github.com/kinode-dao/kit?rev=83d1e86#83d1e86203f5a7d239c7d89aa0375167f1af6cdc"
 dependencies = [
  "anyhow",
  "autocontext",

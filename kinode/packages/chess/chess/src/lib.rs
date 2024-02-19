@@ -193,7 +193,7 @@ fn handle_request(our: &Address, message: &Message, state: &mut ChessState) -> a
                     }
                 }
             }
-            http::HttpServerRequest::WebSocketOpen { path, channel_id } => {
+            http::HttpServerRequest::WebSocketOpen { channel_id, .. } => {
                 // We know this is authenticated and unencrypted because we only
                 // bound one path, the root path. So we know that client
                 // frontend opened a websocket and can send updates
@@ -419,7 +419,7 @@ fn handle_http_request(
     state: &mut ChessState,
     http_request: &http::IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    if http_request.path()? != "/games" {
+    if http_request.bound_path(Some(&our.process.to_string())) != "/games" {
         http::send_response(
             http::StatusCode::NOT_FOUND,
             None,
@@ -454,6 +454,7 @@ fn handle_http_request(
                     vec![],
                 ));
             };
+
             if let Some(game) = state.games.get(game_id)
                 && !game.ended
             {
