@@ -1,5 +1,7 @@
 use clap::{Arg, Command};
-use kinode_process_lib::{await_next_request_body, call_init, println, Address, Request, Response};
+use kinode_process_lib::{
+    await_next_request_body, call_init, println, Address, Request, Response, SendErrorKind,
+};
 use regex::Regex;
 
 wit_bindgen::generate!({
@@ -81,7 +83,13 @@ fn init(_our: Address) {
                     let _ = Response::new().body(res.body()).send();
                 }
                 Err(e) => {
-                    println!("m: SendError: {:?}", e.kind);
+                    println!(
+                        "m: failed to send message {}",
+                        match e.kind {
+                            SendErrorKind::Timeout => "due to timeout",
+                            SendErrorKind::Offline => "because the target is offline",
+                        }
+                    );
                 }
             }
         }

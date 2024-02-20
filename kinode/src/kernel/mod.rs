@@ -917,8 +917,12 @@ pub async fn kernel(
                             .send(t::Printout {
                                 verbosity: 0,
                                 content: format!(
-                                    "event loop: don't have {} amongst registered processes (got net error for it)",
+                                    "event loop: {} failed to deliver a message {}; sender has already terminated",
                                     wrapped_network_error.source.process,
+                                    match wrapped_network_error.error.kind {
+                                        t::SendErrorKind::Timeout => "due to timeout",
+                                        t::SendErrorKind::Offline => "because the receiver is offline",
+                                    },
                                 )
                             })
                             .await;
@@ -977,7 +981,11 @@ pub async fn kernel(
                             .send(t::Printout {
                                 verbosity: 0,
                                 content: format!(
-                                    "event loop: don't have {} amongst registered processes (got message for it from network)",
+                                    "event loop: got {} from network for {}, but process does not exist (perhaps it terminated)",
+                                    match kernel_message.message {
+                                        t::Message::Request(_) => "Request",
+                                        t::Message::Response(_) => "Response",
+                                    },
                                     kernel_message.target.process,
                                 )
                             })
@@ -1093,7 +1101,12 @@ pub async fn kernel(
                                 .send(t::Printout {
                                     verbosity: 0,
                                     content: format!(
-                                        "event loop: don't have {:?} amongst registered processes, got message for it: {}",
+                                        "event loop: got {} from {:?} for {:?}, but target doesn't exist (perhaps it terminated): {}",
+                                        match kernel_message.message {
+                                            t::Message::Request(_) => "Request",
+                                            t::Message::Response(_) => "Response",
+                                        },
+                                        kernel_message.source.process,
                                         kernel_message.target.process,
                                         kernel_message,
                                     )
