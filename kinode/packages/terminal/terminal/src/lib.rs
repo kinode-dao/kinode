@@ -36,6 +36,9 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
         return Ok(());
     }
     let (head, args) = line.split_once(" ").unwrap_or((line, ""));
+    if head == "m" {
+        return handle_m(args);
+    }
     let process = match state.aliases.get(head) {
         Some(pid) => pid.clone(),
         None => match head.parse::<ProcessId>() {
@@ -101,10 +104,6 @@ impl Guest for Component {
                             "hi:terminal:sys".parse::<ProcessId>().unwrap(),
                         ),
                         (
-                            "m".to_string(),
-                            "m:terminal:sys".parse::<ProcessId>().unwrap(),
-                        ),
-                        (
                             "top".to_string(),
                             "top:terminal:sys".parse::<ProcessId>().unwrap(),
                         ),
@@ -120,6 +119,7 @@ impl Guest for Component {
                     continue;
                 }
             };
+            println!("GOT MESSAGE");
             match message {
                 wit::Message::Request(wit::Request { body, .. }) => {
                     if state.our == source {
@@ -151,10 +151,11 @@ impl Guest for Component {
                     }
                 }
                 wit::Message::Response((wit::Response { body, .. }, _)) => {
+                    println!("GOT RESPONSE");
                     if let Ok(txt) = std::str::from_utf8(&body) {
-                        println!("{txt}");
+                        println!("got response: {txt}");
                     } else {
-                        println!("{body:?}");
+                        println!("got response: {body:?}");
                     }
                 }
             }
@@ -426,4 +427,26 @@ fn get_entry(process: &ProcessId) -> anyhow::Result<kt::DotScriptsEntry> {
         return Err(anyhow::anyhow!("script not in scripts.json file"));
     };
     Ok(entry.clone())
+}
+
+fn handle_m(args: &str) -> anyhow::Result<()> {
+    let (target, body) = match args.split_once(" ") {
+        Some((target, body)) => match target.parse::<Address>() {
+            Ok(target) => (target, body.as_bytes().to_vec()),
+            Err(_) => return Err(anyhow!("m: invalid target")),
+        },
+        None => {
+            println!("Send a Request to a Process");
+            println!("\x1b[1mUsage:\x1b[0m m <target> <body> [-a <await_time>]");
+            return Ok(());
+        }
+    };
+
+    let _ = Request::new()
+        .target(target)
+        .body(body)
+        .expects_response(5) // TODO are we back to -a 5
+        .send()
+        .unwrap();
+    Ok(())
 }

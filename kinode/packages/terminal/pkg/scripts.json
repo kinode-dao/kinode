@@ -49,10 +49,5 @@
             "kernel:distro:sys"
         ],
         "grant_capabilities": []
-    },
-    "m.wasm": {
-        "root": true,
-        "public": true,
-        "request_networking": true
     }
 }

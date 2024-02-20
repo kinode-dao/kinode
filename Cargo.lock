@@ -2890,19 +2890,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "m"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=12bf9ee)",
- "regex",
- "serde",
- "serde_json",
- "wit-bindgen",
-]
-
-[[package]]
 name = "mach"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
