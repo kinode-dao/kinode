@@ -347,8 +347,16 @@ impl ProcessState {
             let this_blob = blob.clone();
             let self_sender = self.self_sender.clone();
             let original_target = t::Address::de_wit(target.clone());
+            let send_to_terminal = self.send_to_terminal.clone();
+            let our = self.metadata.our.clone();
             let timeout_handle = tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)).await;
+                print(
+                    &send_to_terminal,
+                    0,
+                    format!("{our}: timed out"),
+                )
+                .await;
                 let _ = self_sender
                     .send(Err(t::WrappedSendError {
                         id: request_id,
