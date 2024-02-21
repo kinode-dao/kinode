@@ -114,14 +114,14 @@ async fn main() {
         .arg(
             arg!(--public "If set, allow rpc passthrough")
                 .default_value("false")
-                .value_parser(value_parser!(bool))
+                .value_parser(value_parser!(bool)),
         )
         .arg(arg!(--rpcnode <String> "RPC node provider must be a valid address").required(false))
         .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(false))
         .arg(
             arg!(--verbosity <VERBOSITY> "Verbosity level: higher is more verbose")
-            .default_value("0")
-            .value_parser(value_parser!(u8))
+                .default_value("0")
+                .value_parser(value_parser!(u8)),
         );
 
     #[cfg(not(feature = "simulation-mode"))]

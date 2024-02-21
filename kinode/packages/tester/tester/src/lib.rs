@@ -120,15 +120,16 @@ fn init(our: Address) {
             })
             .unwrap(),
         )
-        .send_and_await_response(5) {
+        .send_and_await_response(5)
+    {
         Err(_) => {
             fail!("tester");
-        },
+        }
         Ok(r) => {
             if r.is_err() {
                 fail!("tester");
             }
-        },
+        }
     }
 
     // orchestrate tests using external scripts

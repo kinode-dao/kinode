@@ -351,12 +351,7 @@ impl ProcessState {
             let our = self.metadata.our.clone();
             let timeout_handle = tokio::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(timeout_secs)).await;
-                print(
-                    &send_to_terminal,
-                    0,
-                    format!("{our}: timed out"),
-                )
-                .await;
+                print(&send_to_terminal, 0, format!("{our}: timed out")).await;
                 let _ = self_sender
                     .send(Err(t::WrappedSendError {
                         id: request_id,
