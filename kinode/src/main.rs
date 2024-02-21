@@ -554,6 +554,7 @@ async fn main() {
         eth_provider_config,
         kernel_message_sender.clone(),
         eth_provider_receiver,
+        caps_oracle_sender.clone(),
         print_sender.clone(),
     ));
     #[cfg(feature = "simulation-mode")]

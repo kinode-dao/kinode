@@ -8,161 +8,289 @@ use dashmap::DashMap;
 use lib::types::core::*;
 use lib::types::eth::*;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use url::Url;
 
+/// mapping of chain id to ordered(TODO) list of providers
+type Providers = Arc<DashMap<u64, ActiveProviders>>;
+
+struct ActiveProviders {
+    pub urls: Vec<UrlProvider>,
+    pub nodes: Vec<NodeProvider>,
+}
+
+struct UrlProvider {
+    pub trusted: bool,
+    pub url: String,
+    pub pubsub: Option<Provider<PubSubFrontend>>,
+}
+
+struct NodeProvider {
+    pub trusted: bool,
+    pub name: String,
+}
+
+/// existing subscriptions held by local processes
+type ActiveSubscriptions = Arc<DashMap<ProcessId, HashMap<u64, ActiveSub>>>;
+
+enum ActiveSub {
+    Local(JoinHandle<Result<(), EthError>>),
+    Remote(String), // name of node providing this subscription for us
+}
+
+impl ActiveProviders {
+    fn add_provider_config(&mut self, new: ProviderConfig) {
+        match new.provider {
+            NodeOrRpcUrl::Node(update) => {
+                self.nodes.push(NodeProvider {
+                    trusted: new.trusted,
+                    name: update.name,
+                });
+            }
+            NodeOrRpcUrl::RpcUrl(url) => {
+                self.urls.push(UrlProvider {
+                    trusted: new.trusted,
+                    url,
+                    pubsub: None,
+                });
+            }
+        }
+    }
+
+    fn remove_provider(&mut self, remove: &str) {
+        self.urls.retain(|x| x.url != remove);
+        self.nodes.retain(|x| x.name != remove);
+    }
+}
+
+async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
+    match Url::parse(&provider.url)?.scheme() {
+        "ws" | "wss" => {
+            let connector = WsConnect {
+                url: provider.url.to_string(),
+                auth: None,
+            };
+            let client = ClientBuilder::default().ws(connector).await?;
+            provider.pubsub = Some(Provider::new_with_client(client));
+            Ok(())
+        }
+        _ => Err(anyhow::anyhow!(
+            "Only `ws://` or `wss://` providers are supported."
+        )),
+    }
+}
+
 /// The ETH provider runtime process is responsible for connecting to one or more ETH RPC providers
-/// and using them to service indexing requests from other apps. This could also be done by a Wasm
-/// app, but in the future, this process will hopefully expand in scope to perform more complex
-/// indexing and ETH node responsibilities.
+/// and using them to service indexing requests from other apps.
 pub async fn provider(
     our: String,
     configs: SavedConfigs,
     send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
+    caps_oracle: CapMessageSender,
     print_tx: PrintSender,
 ) -> Result<()> {
     let our = Arc::new(our);
 
-    // // Initialize the provider conditionally based on rpc_url
-    // // Todo: make provider<T> support multiple transports, one direct and another passthrough.
-    // let provider_config = match provider_node {
-    //     ProviderInput::Ws(rpc_url) => {
-    //         // Validate and parse the WebSocket URL
-    //         match Url::parse(&rpc_url)?.scheme() {
-    //             "ws" | "wss" => {
-    //                 let connector = WsConnect {
-    //                     url: rpc_url,
-    //                     auth: None,
-    //                 };
-    //                 let client = ClientBuilder::default().ws(connector).await?;
-    //                 ProviderConfig::Provider(Provider::new_with_client(client))
-    //             }
-    //             _ => {
-    //                 return Err(anyhow::anyhow!(
-    //                     "Only `ws://` or `wss://` URLs are supported."
-    //                 ))
-    //             }
-    //         }
-    //     }
-    //     ProviderInput::Node(node_id) => {
-    //         // Directly use the node ID
-    //         ProviderConfig::Node(node_id)
-    //     }
-    // };
+    let mut access_settings = AccessSettings {
+        public: false,
+        allow: HashSet::new(),
+        deny: HashSet::new(),
+    };
 
-    // let provider_config = Arc::new(provider_config);
+    // convert saved configs into data structure that we will use to route queries
+    let mut providers: Providers = Arc::new(DashMap::new());
+    for entry in configs {
+        let mut ap = providers.entry(entry.chain_id).or_insert(ActiveProviders {
+            urls: vec![],
+            nodes: vec![],
+        });
+        ap.add_provider_config(entry);
+    }
 
-    // // handles of longrunning subscriptions.
-    // let connections: DashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>> = DashMap::new();
-    // let connections = Arc::new(connections);
+    // handles of longrunning subscriptions.
+    let mut active_subscriptions: ActiveSubscriptions = Arc::new(DashMap::new());
 
-    // while let Some(km) = recv_in_client.recv().await {
-    //     // clone Arcs
-    //     let our = our.clone();
-    //     let send_to_loop = send_to_loop.clone();
-    //     let provider_config = provider_config.clone();
-    //     let connections = connections.clone();
-    //     tokio::spawn(async move {
-    //         if let Err(e) = handle_message(
-    //             &our,
-    //             &km,
-    //             &send_to_loop,
-    //             provider_config,
-    //             connections,
-    //             public,
-    //         )
-    //         .await
-    //         {
-    //             let _ = send_to_loop
-    //                 .send(make_error_message(our.to_string(), km, e))
-    //                 .await;
-    //         };
-    //     });
-    // }
+    while let Some(km) = recv_in_client.recv().await {
+        let km_id = km.id;
+        let response_target = km.rsvp.as_ref().unwrap_or(&km.source).clone();
+        if let Err(e) = handle_message(
+            &our,
+            &mut access_settings,
+            km,
+            &send_to_loop,
+            &caps_oracle,
+            &mut providers,
+            &mut active_subscriptions,
+        )
+        .await
+        {
+            send_to_loop
+                .send(make_error_message(&our, km_id, response_target, e))
+                .await
+                .expect("eth: kernel sender died!");
+        };
+    }
     Err(anyhow::anyhow!("eth: fatal: message receiver closed!"))
 }
 
-/// Handle an incoming message.
-// async fn handle_message(
-//     our: &str,
-//     km: &KernelMessage,
-//     send_to_loop: &MessageSender,
-//     provider_config: Arc<ProviderConfig>,
-//     connections: Arc<DashMap<(ProcessId, u64), JoinHandle<Result<(), EthError>>>>,
-//     public: bool,
-// ) -> Result<(), EthError> {
-//     match &km.message {
-//         Message::Request(req) => {
-//             match &*provider_config {
-//                 ProviderConfig::Node(node) => {
-//                     if km.source.node == our {
-//                         // we have no provider, let's send this request to someone who has one.
-//                         let request = KernelMessage {
-//                             id: km.id,
-//                             source: Address {
-//                                 node: our.to_string(),
-//                                 process: ETH_PROCESS_ID.clone(),
-//                             },
-//                             target: Address {
-//                                 node: "jugodenaranja.os".to_string(),
-//                                 process: ETH_PROCESS_ID.clone(),
-//                             },
-//                             rsvp: Some(km.source.clone()),
-//                             message: Message::Request(req.clone()),
-//                             lazy_load_blob: None,
-//                         };
+/// handle incoming requests, namely [`EthAction`] and [`EthConfigAction`].
+/// also handle responses that are passthroughs from remote provider nodes.
+async fn handle_message(
+    our: &str,
+    access_settings: &mut AccessSettings,
+    km: KernelMessage,
+    send_to_loop: &MessageSender,
+    caps_oracle: &CapMessageSender,
+    providers: &mut Providers,
+    active_subscriptions: &mut ActiveSubscriptions,
+) -> Result<(), EthError> {
+    match &km.message {
+        Message::Response(_) => handle_passthrough_response(our, send_to_loop, km).await,
+        Message::Request(req) => {
+            if let Ok(eth_action) = serde_json::from_slice(&req.body) {
+                // these can be from remote or local processes
+                return handle_eth_action(
+                    our,
+                    access_settings,
+                    km,
+                    eth_action,
+                    providers,
+                    active_subscriptions,
+                )
+                .await;
+            }
+            if let Ok(eth_config_action) = serde_json::from_slice(&req.body) {
+                // only local node
+                return handle_eth_config_action(
+                    our,
+                    access_settings,
+                    caps_oracle,
+                    km,
+                    eth_config_action,
+                    providers,
+                )
+                .await;
+            }
+            Err(EthError::PermissionDenied)
+        }
+    }
+}
 
-//                         let _ = send_to_loop.send(request).await;
-//                     } else {
-//                         // either someone asking us for rpc, or we are passing through a sub event.
-//                         handle_remote_request(our, km, send_to_loop, None, connections, public)
-//                             .await?
-//                     }
-//                 }
-//                 ProviderConfig::Provider(provider) => {
-//                     if km.source.node == our {
-//                         handle_local_request(our, km, send_to_loop, &provider, connections, public)
-//                             .await?
-//                     } else {
-//                         handle_remote_request(
-//                             our,
-//                             km,
-//                             send_to_loop,
-//                             Some(provider),
-//                             connections,
-//                             public,
-//                         )
-//                         .await?
-//                     }
-//                 }
-//             }
-//         }
-//         Message::Response(_) => {
-//             // handle passthrough responses, send to rsvp.
-//             if km.source.process == "eth:distro:sys" {
-//                 if let Some(rsvp) = &km.rsvp {
-//                     let _ = send_to_loop
-//                         .send(KernelMessage {
-//                             id: rand::random(),
-//                             source: Address {
-//                                 node: our.to_string(),
-//                                 process: ETH_PROCESS_ID.clone(),
-//                             },
-//                             target: rsvp.clone(),
-//                             rsvp: None,
-//                             message: km.message.clone(),
-//                             lazy_load_blob: None,
-//                         })
-//                         .await;
-//                 }
-//             }
-//         }
-//     }
-//     Ok(())
-// }
+async fn handle_passthrough_response(
+    our: &str,
+    send_to_loop: &MessageSender,
+    km: KernelMessage,
+) -> Result<(), EthError> {
+    send_to_loop
+        .send(KernelMessage {
+            id: rand::random(),
+            source: Address {
+                node: our.to_string(),
+                process: ETH_PROCESS_ID.clone(),
+            },
+            target: km.rsvp.unwrap_or(km.source),
+            rsvp: None,
+            message: km.message,
+            lazy_load_blob: None,
+        })
+        .await
+        .expect("eth: kernel sender died!");
+    Ok(())
+}
+
+async fn handle_eth_action(
+    our: &str,
+    access_settings: &mut AccessSettings,
+    km: KernelMessage,
+    eth_action: EthAction,
+    providers: &mut Providers,
+    active_subscriptions: &mut ActiveSubscriptions,
+) -> Result<(), EthError> {
+    // check our access settings if the request is from a remote node
+    if km.source.node != our {
+        if !access_settings.deny.contains(&km.source.node) {
+            if !access_settings.public {
+                if !access_settings.allow.contains(&km.source.node) {
+                    return Err(EthError::PermissionDenied);
+                }
+            }
+        } else {
+            return Err(EthError::PermissionDenied);
+        }
+    }
+
+    // for each incoming action, we need to assign a provider from our map
+    // based on the chain id. once we assign a provider, we can use it for
+    // this request. if the provider is not usable, cycle through options
+    // before returning an error.
+    match eth_action {
+        EthAction::SubscribeLogs {
+            sub_id,
+            chain_id,
+            kind,
+            params,
+        } => {
+            todo!()
+        }
+        EthAction::UnsubscribeLogs(sub_id) => {
+            active_subscriptions
+                .entry(km.source.process)
+                .and_modify(|sub_map| {
+                    sub_map.remove(&sub_id);
+                });
+            Ok(())
+        }
+        EthAction::Request {
+            chain_id,
+            method,
+            params,
+        } => {
+            todo!()
+        }
+    }
+}
+
+async fn handle_eth_config_action(
+    our: &str,
+    access_settings: &mut AccessSettings,
+    caps_oracle: &CapMessageSender,
+    km: KernelMessage,
+    eth_config_action: EthConfigAction,
+    providers: &mut Providers,
+) -> Result<(), EthError> {
+    if km.source.node != our {
+        return Err(EthError::PermissionDenied);
+    }
+    // check capabilities to ensure the sender is allowed to make this request
+    let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
+    caps_oracle
+        .send(CapMessage::Has {
+            on: km.source.process.clone(),
+            cap: Capability {
+                issuer: Address {
+                    node: our.to_string(),
+                    process: ETH_PROCESS_ID.clone(),
+                },
+                params: serde_json::to_string(&serde_json::json!({
+                    "root": true,
+                }))
+                .unwrap(),
+            },
+            responder: send_cap_bool,
+        })
+        .await
+        .expect("eth: capability oracle died!");
+    if !recv_cap_bool.await.unwrap_or(false) {
+        return Err(EthError::PermissionDenied);
+    }
+
+    // modify our providers and access settings based on config action
+    todo!()
+}
 
 /// Handle a local request.
 // async fn handle_local_request(
@@ -396,79 +524,55 @@ async fn handle_subscription_stream(
     rsvp: Option<Address>,
     send_to_loop: MessageSender,
 ) -> Result<(), EthError> {
-    match rx.recv().await {
-        Err(e) => {
-            let error = Err(EthError::SubscriptionClosed(sub_id))?;
-            let _ = send_to_loop
-                .send(KernelMessage {
-                    id: rand::random(),
-                    source: Address {
-                        node: our,
-                        process: ETH_PROCESS_ID.clone(),
-                    },
-                    target: target.clone(),
-                    rsvp: rsvp.clone(),
-                    message: Message::Request(Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&EthSubResult::Err(EthSubError {
-                            id: sub_id,
-                            error: e.to_string(),
-                        }))
-                        .unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }),
-                    lazy_load_blob: None,
-                })
-                .await
-                .unwrap();
-        }
-        Ok(value) => {
-            let event: SubscriptionResult = serde_json::from_str(value.get()).map_err(|_| {
-                EthError::RpcError("eth: failed to deserialize subscription result".to_string())
-            })?;
-            send_to_loop
-                .send(KernelMessage {
-                    id: rand::random(),
-                    source: Address {
-                        node: our,
-                        process: ETH_PROCESS_ID.clone(),
-                    },
-                    target: target.clone(),
-                    rsvp: rsvp.clone(),
-                    message: Message::Request(Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&EthSubResult::Ok(EthSub {
-                            id: sub_id,
-                            result: event,
-                        }))
-                        .unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }),
-                    lazy_load_blob: None,
-                })
-                .await
-                .unwrap();
+    loop {
+        match rx.recv().await {
+            Err(e) => {
+                return Err(EthError::SubscriptionClosed(sub_id));
+            }
+            Ok(value) => {
+                let result: SubscriptionResult =
+                    serde_json::from_str(value.get()).map_err(|_| {
+                        EthError::RpcError(
+                            "eth: failed to deserialize subscription result".to_string(),
+                        )
+                    })?;
+                send_to_loop
+                    .send(KernelMessage {
+                        id: rand::random(),
+                        source: Address {
+                            node: our.clone(),
+                            process: ETH_PROCESS_ID.clone(),
+                        },
+                        target: target.clone(),
+                        rsvp: rsvp.clone(),
+                        message: Message::Request(Request {
+                            inherit: false,
+                            expects_response: None,
+                            body: serde_json::to_vec(&EthSubResult::Ok(EthSub {
+                                id: sub_id,
+                                result,
+                            }))
+                            .unwrap(),
+                            metadata: None,
+                            capabilities: vec![],
+                        }),
+                        lazy_load_blob: None,
+                    })
+                    .await
+                    .unwrap();
+            }
         }
     }
-    Err(EthError::SubscriptionClosed(sub_id))
 }
 
-fn make_error_message(our_node: String, km: KernelMessage, error: EthError) -> KernelMessage {
-    let source = km.rsvp.unwrap_or_else(|| Address {
-        node: our_node.clone(),
-        process: km.source.process.clone(),
-    });
+fn make_error_message(our: &str, id: u64, target: Address, error: EthError) -> KernelMessage {
     KernelMessage {
-        id: km.id,
+        id,
         source: Address {
-            node: our_node,
+            node: our.to_string(),
             process: ETH_PROCESS_ID.clone(),
         },
-        target: source,
+        target,
         rsvp: None,
         message: Message::Response((
             Response {

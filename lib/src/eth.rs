@@ -1,7 +1,9 @@
 use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
-/// The Action and Request type that can be made to eth:distro:sys.
+/// The Action and Request type that can be made to eth:distro:sys. Any process with messaging
+/// capabilities can send this action to the eth provider.
 ///
 /// Will be serialized and deserialized using `serde_json::to_vec` and `serde_json::from_slice`.
 #[derive(Debug, Serialize, Deserialize)]
@@ -10,6 +12,7 @@ pub enum EthAction {
     /// Logs come in as alloy_rpc_types::pubsub::SubscriptionResults
     SubscribeLogs {
         sub_id: u64,
+        chain_id: u64,
         kind: SubscriptionKind,
         params: Params,
     },
@@ -17,22 +20,25 @@ pub enum EthAction {
     UnsubscribeLogs(u64),
     /// Raw request. Used by kinode_process_lib.
     Request {
+        chain_id: u64,
         method: String,
         params: serde_json::Value,
     },
 }
 
 /// Incoming Result type for subscription updates or errors that processes will receive.
+/// Can deserialize all incoming requests from eth:distro:sys to this type.
+///
+/// Will be serialized and deserialized using `serde_json::to_vec` and `serde_json::from_slice`.
 pub type EthSubResult = Result<EthSub, EthSubError>;
 
-/// Incoming Request type for subscription updates.
+/// Incoming Request type for successful subscription updates.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EthSub {
     pub id: u64,
     pub result: SubscriptionResult,
 }
 
-/// Incoming Request for subscription errors that processes will receive.
 /// If your subscription is closed unexpectedly, you will receive this.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EthSubError {
@@ -61,9 +67,50 @@ pub enum EthError {
     /// Invalid method
     InvalidMethod(String),
     /// Permission denied
-    PermissionDenied(String),
+    PermissionDenied,
     /// Internal RPC error
     RpcError(String),
+}
+
+/// The action type used for configuring eth:distro:sys. Only processes which have the "root"
+/// capability from eth:distro:sys can successfully send this action.
+///
+/// NOTE: changes to config will not be persisted between boots, they must be saved in .env
+/// to be reflected between boots. TODO: can change this
+#[derive(Debug, Serialize, Deserialize)]
+pub enum EthConfigAction {
+    /// Add a new provider to the list of providers.
+    AddProvider(ProviderConfig),
+    /// Remove a provider from the list of providers.
+    /// The tuple is (chain_id, node_id/rpc_url).
+    RemoveProvider((u64, String)),
+    /// make our provider public
+    SetPublic,
+    /// make our provider not-public
+    SetPrivate,
+    /// add node to whitelist on a provider
+    AllowNode(String),
+    /// remove node from whitelist on a provider
+    UnallowNode(String),
+    /// add node to blacklist on a provider
+    DenyNode(String),
+    /// remove node from blacklist on a provider
+    UndenyNode(String),
+    /// Set the list of providers to a new list.
+    /// Replaces all existing saved provider configs.
+    SetProviders(SavedConfigs),
+    /// Get the list of as a [`SavedConfigs`] object.
+    GetProviders,
+}
+
+/// Response type from an [`EthConfigAction`] request.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum EthConfigResponse {
+    Ok,
+    /// Response from a GetProviders request.
+    Providers(SavedConfigs),
+    /// Permission denied due to missing capability
+    PermissionDenied,
 }
 
 //
@@ -103,13 +150,19 @@ pub fn to_static_str(method: &str) -> Option<&'static str> {
     }
 }
 
+/// Settings for our ETH provider
+pub struct AccessSettings {
+    pub public: bool,           // whether or not other nodes can access through us
+    pub allow: HashSet<String>, // whitelist for access (only used if public == false)
+    pub deny: HashSet<String>,  // blacklist for access (always used)
+}
+
 pub type SavedConfigs = Vec<ProviderConfig>;
 
 /// Provider config. Can currently be a node or a ws provider instance.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProviderConfig {
     pub chain_id: u64,
-    pub usable: bool,
     pub trusted: bool,
     pub provider: NodeOrRpcUrl,
 }
@@ -118,4 +171,13 @@ pub struct ProviderConfig {
 pub enum NodeOrRpcUrl {
     Node(crate::core::KnsUpdate),
     RpcUrl(String),
+}
+
+impl std::cmp::PartialEq<str> for NodeOrRpcUrl {
+    fn eq(&self, other: &str) -> bool {
+        match self {
+            NodeOrRpcUrl::Node(kns) => kns.name == other,
+            NodeOrRpcUrl::RpcUrl(url) => url == other,
+        }
+    }
 }

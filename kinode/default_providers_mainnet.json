@@ -1,29 +1,66 @@
 [
     {
-        "name": "default-router-1.os",
-        "owner": "",
-        "node": "0xb35eb347deb896bc3fb6132a07fca1601f83462385ed11e835c24c33ba4ef73d",
-        "public_key": "0xb1b1cf23c89f651aac3e5fd4decb04aa177ab0ec8ce5f1d3877b90bb6f5779db",
-        "ip": "147.135.114.167",
-        "port": 9005,
-        "routers": []
+        "chain_id": 1,
+        "trusted": false,
+        "provider": {
+            "RpcUrl": "wss://ethereum.publicnode.com"
+        },
+        "public": false,
+        "allow": [],
+        "deny": []
     },
     {
-        "name": "default-router-2.os",
-        "owner": "",
-        "node": "0xd827ae579fafa604af79fbed977e8abe048497f10885c6473dfd343a3b7b4458",
-        "public_key": "0xab9f1a996db3a4e1dbcd31d765daedeb3af9af4f570c0968463b5be3a7d1e992",
-        "ip": "147.135.114.167",
-        "port": 9006,
-        "routers": []
+        "chain_id": 10,
+        "trusted": true,
+        "provider": {
+            "Node": {
+                "name": "default-router-1.os",
+                "owner": "",
+                "node": "0xb35eb347deb896bc3fb6132a07fca1601f83462385ed11e835c24c33ba4ef73d",
+                "public_key": "0xb1b1cf23c89f651aac3e5fd4decb04aa177ab0ec8ce5f1d3877b90bb6f5779db",
+                "ip": "147.135.114.167",
+                "port": 9005,
+                "routers": []
+            }
+        },
+        "public": false,
+        "allow": [],
+        "deny": []
     },
     {
-        "name": "default-router-3.os",
-        "owner": "",
-        "node": "0x96e36331c8f0882f2c0c46c13b15d812def04fe8606d503bc0e2be39db26486a",
-        "public_key": "0x536e30785e64dd0349a697285af365b5ed7c4d300010139261cfc4dbdd5b254b",
-        "ip": "147.135.114.167",
-        "port": 9007,
-        "routers": []
+        "chain_id": 10,
+        "trusted": true,
+        "provider": {
+            "Node": {
+                "name": "default-router-2.os",
+                "owner": "",
+                "node": "0xd827ae579fafa604af79fbed977e8abe048497f10885c6473dfd343a3b7b4458",
+                "public_key": "0xab9f1a996db3a4e1dbcd31d765daedeb3af9af4f570c0968463b5be3a7d1e992",
+                "ip": "147.135.114.167",
+                "port": 9006,
+                "routers": []
+            }
+        },
+        "public": false,
+        "allow": [],
+        "deny": []
+    },
+    {
+        "chain_id": 10,
+        "trusted": true,
+        "provider": {
+            "Node": {
+                "name": "default-router-3.os",
+                "owner": "",
+                "node": "0x96e36331c8f0882f2c0c46c13b15d812def04fe8606d503bc0e2be39db26486a",
+                "public_key": "0x536e30785e64dd0349a697285af365b5ed7c4d300010139261cfc4dbdd5b254b",
+                "ip": "147.135.114.167",
+                "port": 9007,
+                "routers": []
+            }
+        },
+        "public": false,
+        "allow": [],
+        "deny": []
     }
 ]
