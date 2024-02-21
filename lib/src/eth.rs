@@ -58,6 +58,8 @@ pub enum EthResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthError {
+    /// No RPC provider for the chain
+    NoRpcForChain,
     /// Underlying transport error
     TransportError(String),
     /// Subscription closed
