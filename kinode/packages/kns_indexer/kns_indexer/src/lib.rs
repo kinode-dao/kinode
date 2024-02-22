@@ -25,8 +25,9 @@ wit_bindgen::generate!({
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
+    chain_id: u64,
     // what contract this state pertains to
-    contract_address: Option<String>,
+    contract_address: String,
     // namehash to human readable name
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
@@ -104,20 +105,51 @@ impl Guest for Component {
     fn init(our: String) {
         let our: Address = our.parse().unwrap();
 
-        let mut state: State = State {
-            contract_address: None,
-            names: HashMap::new(),
-            nodes: HashMap::new(),
-            block: 1,
-        };
+        // first, await a message from the kernel which will contain the
+        // chain ID and contract address for the KNS version we want to track.
+        let chain_id: u64;
+        let contract_address: String;
+        loop {
+            let Ok(Message::Request { source, body, .. }) = await_message() else {
+                continue;
+            };
+            if source.process != "kernel:distro:sys" {
+                continue;
+            }
+            (chain_id, contract_address) = serde_json::from_slice(&body).unwrap();
+            break;
+        }
+        println!(
+            "kns_indexer: indexing on contract address {}",
+            contract_address
+        );
 
         // if we have state, load it in
-        match get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
+        let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?))
+        {
             Some(s) => {
-                state = s;
+                // if chain id or contract address changed from a previous run, reset state
+                if s.chain_id != chain_id || s.contract_address != contract_address {
+                    println!("kns_indexer: resetting state because runtime contract address or chain ID changed");
+                    State {
+                        chain_id,
+                        contract_address,
+                        names: HashMap::new(),
+                        nodes: HashMap::new(),
+                        block: 1,
+                    }
+                } else {
+                    s
+                }
             }
-            None => {}
-        }
+            None => State {
+                chain_id,
+                contract_address: contract_address.clone(),
+                names: HashMap::new(),
+                nodes: HashMap::new(),
+                block: 1,
+            },
+        };
 
         match main(our, state) {
             Ok(_) => {}
@@ -129,34 +161,6 @@ impl Guest for Component {
 }
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
-    // first, await a message from the kernel which will contain the
-    // chain ID and contract address for the KNS version we want to track.
-    let mut contract_address: Option<String> = None;
-    loop {
-        let Ok(Message::Request { source, body, .. }) = await_message() else {
-            continue;
-        };
-        if source.process != "kernel:distro:sys" {
-            continue;
-        }
-        contract_address = Some(std::str::from_utf8(&body).unwrap().to_string());
-        break;
-    }
-    println!(
-        "kns_indexer: indexing on contract address {}",
-        contract_address.as_ref().unwrap()
-    );
-    // if contract address changed from a previous run, reset state
-    if state.contract_address != contract_address {
-        println!("resetting state for some reason.");
-        state = State {
-            contract_address: contract_address.clone(),
-            names: HashMap::new(),
-            nodes: HashMap::new(),
-            block: 1,
-        };
-    }
-
     // shove all state into net::net
     Request::new()
         .target((&our.node, "net", "distro", "sys"))
@@ -166,7 +170,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         .send()?;
 
     let filter = Filter::new()
-        .address(contract_address.unwrap().parse::<EthAddress>().unwrap())
+        .address(state.contract_address.parse::<EthAddress>().unwrap())
         .to_block(BlockNumberOrTag::Latest)
         .from_block(state.block - 1)
         .events(vec![
@@ -178,8 +182,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ]);
 
     // if block in state is < current_block, get logs from that part.
-    if state.block < get_block_number()? {
-        let logs = get_logs(&filter)?;
+    if state.block < get_block_number(state.chain_id)? {
+        let logs = get_logs(state.chain_id, &filter)?;
         for log in logs {
             handle_log(&our, &mut state, &log)?;
         }
@@ -194,7 +198,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     set_state(&bincode::serialize(&state)?);
 
-    subscribe(1, filter.clone())?;
+    subscribe(1, state.chain_id, filter.clone())?;
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -266,7 +270,7 @@ fn handle_eth_message(
         }
         Err(e) => {
             println!("kns_indexer: got sub error, resubscribing.. {:?}", e.error);
-            subscribe(1, filter.clone())?;
+            subscribe(1, state.chain_id, filter.clone())?;
         }
     }
 

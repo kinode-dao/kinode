@@ -145,10 +145,10 @@ async fn main() {
         *matches.get_one::<bool>("detached").unwrap(),
     );
 
-    let contract_address = if on_testnet {
-        register::KNS_SEPOLIA_ADDRESS
+    let contract_chain_and_address: (u64, String) = if on_testnet {
+        (11155111, register::KNS_SEPOLIA_ADDRESS.to_string())
     } else {
-        register::KNS_OPTIMISM_ADDRESS
+        (10, register::KNS_OPTIMISM_ADDRESS.to_string())
     };
 
     // check .testnet file for true/false in order to enforce testnet mode on subsequent boots of this node
@@ -464,7 +464,7 @@ async fn main() {
         kernel_debug_message_receiver,
         net_message_sender.clone(),
         home_directory_path.clone(),
-        contract_address.to_string(),
+        contract_chain_and_address.clone(),
         runtime_extensions,
         // from saved eth provider config, filter for node identities which will be
         // bootstrapped into the networking module, so that this node can start
@@ -491,7 +491,7 @@ async fn main() {
         print_sender.clone(),
         net_message_sender,
         net_message_receiver,
-        contract_address.to_string(),
+        contract_chain_and_address.1,
         REVEAL_IP,
     ));
     #[cfg(feature = "simulation-mode")]

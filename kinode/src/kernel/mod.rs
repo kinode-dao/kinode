@@ -670,7 +670,7 @@ pub async fn kernel(
     mut recv_debug_in_loop: t::DebugReceiver,
     send_to_net: t::MessageSender,
     home_directory_path: String,
-    contract_address: String,
+    contract_chain_and_address: (u64, String),
     runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
     default_pki_entries: Vec<t::KnsUpdate>,
 ) -> Result<()> {
@@ -872,7 +872,7 @@ pub async fn kernel(
             message: t::Message::Request(t::Request {
                 inherit: false,
                 expects_response: None,
-                body: contract_address.as_bytes().to_vec(),
+                body: serde_json::to_vec(&contract_chain_and_address).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             }),

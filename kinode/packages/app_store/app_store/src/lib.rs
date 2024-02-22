@@ -42,7 +42,8 @@ use ft_worker_lib::{
 /// - uninstalled + deleted
 /// - set to automatically update if a new version is available
 
-const CONTRACT_ADDRESS: &str = "0x18c39eB547A0060C6034f8bEaFB947D1C16eADF1";
+const CHAIN_ID: u64 = 11155111; // sepolia
+const CONTRACT_ADDRESS: &str = "0x18c39eB547A0060C6034f8bEaFB947D1C16eADF1"; // sepolia
 
 const EVENTS: [&str; 3] = [
     "AppRegistered(uint256,string,bytes,string,bytes32)",
@@ -117,15 +118,17 @@ fn init(our: Address) {
         .from_block(state.last_saved_block - 1)
         .events(EVENTS);
 
-    let logs = get_logs(&filter);
+    let logs = get_logs(CHAIN_ID, &filter);
 
     if let Ok(logs) = logs {
         for log in logs {
-            state.ingest_listings_contract_event(&our, log);
+            if let Err(e) = state.ingest_listings_contract_event(&our, log) {
+                println!("app store: error ingesting log: {e:?}");
+            };
         }
     }
 
-    subscribe(1, filter).unwrap();
+    subscribe(1, CHAIN_ID, filter).unwrap();
 
     loop {
         match await_message() {
@@ -345,14 +348,16 @@ fn handle_local_request(
                 .from_block(state.last_saved_block - 1)
                 .events(EVENTS);
 
-            let logs = get_logs(&filter);
+            let logs = get_logs(CHAIN_ID, &filter);
 
             if let Ok(logs) = logs {
                 for log in logs {
-                    state.ingest_listings_contract_event(our, log);
+                    if let Err(e) = state.ingest_listings_contract_event(our, log) {
+                        println!("app store: error ingesting log: {e:?}");
+                    };
                 }
             }
-            subscribe(1, filter).unwrap();
+            subscribe(1, CHAIN_ID, filter).unwrap();
 
             LocalResponse::RebuiltIndex
         }
