@@ -548,7 +548,6 @@ async fn main() {
         timer_service_receiver,
         print_sender.clone(),
     ));
-    #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(eth::provider::provider(
         our.name.clone(),
         eth_provider_config,
@@ -557,17 +556,6 @@ async fn main() {
         caps_oracle_sender.clone(),
         print_sender.clone(),
     ));
-    #[cfg(feature = "simulation-mode")]
-    if let Some(ref rpc_url) = rpc_url {
-        tasks.spawn(eth::provider::provider(
-            our.name.clone(),
-            eth_provider,
-            public,
-            kernel_message_sender.clone(),
-            eth_provider_receiver,
-            print_sender.clone(),
-        ));
-    }
     tasks.spawn(vfs::vfs(
         our.name.clone(),
         kernel_message_sender.clone(),

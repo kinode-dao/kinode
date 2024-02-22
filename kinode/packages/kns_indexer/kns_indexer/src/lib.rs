@@ -130,7 +130,7 @@ impl Guest for Component {
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // first, await a message from the kernel which will contain the
-    // contract address for the KNS version we want to track.
+    // chain ID and contract address for the KNS version we want to track.
     let mut contract_address: Option<String> = None;
     loop {
         let Ok(Message::Request { source, body, .. }) = await_message() else {
