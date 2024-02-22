@@ -80,14 +80,22 @@ fn init(_our: Address) {
             println!("m: awaiting response for {}s", s);
             match req.send_and_await_response(*s).unwrap() {
                 Ok(res) => {
-                    let _ = Response::new().body(res.body()).send();
+                    // TODO piping is broken. Patching it by just printing the response
+                    // let _ = Response::new().body(res.body()).send();
+                    if let Ok(txt) = std::str::from_utf8(&res.body()) {
+                        println!("{txt}");
+                    } else {
+                        println!("{:?}", res.body());
+                    }
                 }
                 Err(e) => {
                     println!(
-                        "m: failed to send message {}",
+                        "m: {}",
                         match e.kind {
-                            SendErrorKind::Timeout => "due to timeout",
-                            SendErrorKind::Offline => "because the target is offline",
+                            SendErrorKind::Timeout =>
+                                "target did not send Response in time, try increasing the await time",
+                            SendErrorKind::Offline =>
+                                "failed to send message because the target is offline",
                         }
                     );
                 }

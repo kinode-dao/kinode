@@ -981,12 +981,17 @@ pub async fn kernel(
                             .send(t::Printout {
                                 verbosity: 0,
                                 content: format!(
-                                    "event loop: got {} from network for {}, but process does not exist (perhaps it terminated)",
+                                    "event loop: got {} from network for {}, but process does not exist{}",
                                     match kernel_message.message {
                                         t::Message::Request(_) => "Request",
                                         t::Message::Response(_) => "Response",
                                     },
                                     kernel_message.target.process,
+                                    match kernel_message.message {
+                                        t::Message::Request(_) => "",
+                                        t::Message::Response(_) =>
+                                            "\nhint: if you are using `m`, try awaiting the Response: `m --await 5 ...`",
+                                    }
                                 )
                             })
                             .await;
