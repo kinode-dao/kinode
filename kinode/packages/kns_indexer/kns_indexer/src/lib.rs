@@ -148,7 +148,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     );
     // if contract address changed from a previous run, reset state
     if state.contract_address != contract_address {
-        println!("resetting state for some reason.");
+        println!("kns_indexer: contract address changed, re-indexing");
         state = State {
             contract_address: contract_address.clone(),
             names: HashMap::new(),
