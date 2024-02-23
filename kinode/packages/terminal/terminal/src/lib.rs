@@ -46,7 +46,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
         },
     };
 
-    let re = Regex::new(r"(.*?)\|(\d+)\s*(.*)").unwrap();
+    let re = Regex::new(r"(.*?)(\|(\d*))\s*(.*)").unwrap();
     let pipe = match re.captures(args) {
         Some(caps) => {
             let parsed_args = caps
@@ -55,11 +55,11 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
                 .trim_end()
                 .to_string();
 
-            let time_str = caps.get(2).map_or("", |m| m.as_str());
-            let time: u64 = time_str.parse().unwrap_or(0);
+            let time_str = caps.get(3).map_or("", |m| m.as_str());
+            let time: u64 = time_str.parse().unwrap_or(5);
 
             let pipe = caps
-                .get(3)
+                .get(4)
                 .map_or("", |m| m.as_str())
                 .trim_start()
                 .to_string();
