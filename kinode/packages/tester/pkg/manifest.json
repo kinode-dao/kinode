@@ -5,12 +5,15 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
-            "net:distro:sys",
             "kernel:distro:sys",
+            "kv:distro:sys",
             "http_server:distro:sys",
+            "sqlite:distro:sys",
             "vfs:distro:sys"
         ],
         "grant_capabilities": [
+            "kv:distro:sys",
+            "sqlite:distro:sys",
             "vfs:distro:sys"
         ],
         "public": true
