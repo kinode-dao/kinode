@@ -52,6 +52,7 @@ pub async fn terminal(
     print_tx: PrintSender,
     mut print_rx: PrintReceiver,
     is_detached: bool,
+    mut verbose_mode: u8,
 ) -> Result<()> {
     let mut stdout = stdout();
     execute!(
@@ -139,7 +140,6 @@ pub async fn terminal(
     let mut cursor_col: u16 = prompt_len.try_into().unwrap();
     let mut line_col: usize = cursor_col as usize;
     let mut in_step_through: bool = false;
-    let mut verbose_mode: u8 = 0; // least verbose mode
     let mut search_mode: bool = false;
     let mut search_depth: usize = 0;
     let mut logging_mode: bool = false;
