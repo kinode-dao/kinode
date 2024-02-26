@@ -13,7 +13,7 @@
         "chain_id": 11155111,
         "trusted": false,
         "provider": {
-            "RpcUrl": "wss://eth-sepolia.g.alchemy.com/v2/a4bRKYnvC0uT2l1rzVDAvldH3OPKQnKm"
+            "RpcUrl": "wss://eth-sepolia.g.alchemy.com/v2/iZZorIE5O93pUSAqyB3INvdxJZ8od_ro"
         },
         "public": false,
         "allow": [],

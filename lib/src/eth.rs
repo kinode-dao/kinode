@@ -47,7 +47,7 @@ pub struct EthSubError {
 }
 
 /// The Response type which a process will get from requesting with an [`EthAction`] will be
-/// of the form `Result<(), EthError>`, serialized and deserialized using `serde_json::to_vec`
+/// of this type, serialized and deserialized using `serde_json::to_vec`
 /// and `serde_json::from_slice`.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthResponse {
@@ -68,10 +68,14 @@ pub enum EthError {
     SubscriptionNotFound,
     /// Invalid method
     InvalidMethod(String),
+    /// Invalid params
+    InvalidParams,
     /// Permission denied
     PermissionDenied,
     /// Internal RPC error
     RpcError(String),
+    /// RPC timed out
+    RpcTimeout,
 }
 
 /// The action type used for configuring eth:distro:sys. Only processes which have the "root"

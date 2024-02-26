@@ -1,10 +1,9 @@
 use alloy_sol_types::{sol, SolEvent};
-
 use kinode_process_lib::{
     await_message,
     eth::{
-        get_block_number, get_logs, subscribe, Address as EthAddress, BlockNumberOrTag, EthSub,
-        EthSubResult, Filter, Log, SubscriptionResult,
+        Address as EthAddress, BlockNumberOrTag, EthSub, EthSubResult, Filter, Log, Provider,
+        SubscriptionResult,
     },
     get_typed_state, print_to_terminal, println, set_state, Address, Message, Request, Response,
 };
@@ -100,6 +99,19 @@ sol! {
     event RoutingUpdate(bytes32 indexed node, bytes32[] routers);
 }
 
+fn subscribe_to_logs(eth_provider: &Provider, filter: Filter) {
+    loop {
+        match eth_provider.subscribe(1, filter.clone()) {
+            Ok(()) => break,
+            Err(_) => {
+                println!("kns_indexer: failed to subscribe to chain! trying again in 5s...");
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                continue;
+            }
+        }
+    }
+}
+
 struct Component;
 impl Guest for Component {
     fn init(our: String) {
@@ -173,19 +185,32 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         .address(state.contract_address.parse::<EthAddress>().unwrap())
         .to_block(BlockNumberOrTag::Latest)
         .from_block(state.block - 1)
-        .events(vec![
-            "NodeRegistered(bytes32,bytes)",
-            "KeyUpdate(bytes32,bytes32)",
-            "IpUpdate(bytes32,uint128)",
-            "WsUpdate(bytes32,uint16)",
-            "RoutingUpdate(bytes32,bytes32[])",
-        ]);
+        .event("NodeRegistered(bytes32,bytes)")
+        .event("KeyUpdate(bytes32,bytes32)")
+        .event("IpUpdate(bytes32,uint128)")
+        .event("WsUpdate(bytes32,uint16)")
+        .event("RoutingUpdate(bytes32,bytes32[])");
+
+    // 60s timeout -- these calls can take a long time
+    // if they do time out, we try them again
+    let eth_provider = Provider::new(state.chain_id, 20);
 
     // if block in state is < current_block, get logs from that part.
-    if state.block < get_block_number(state.chain_id)? {
-        let logs = get_logs(state.chain_id, &filter)?;
-        for log in logs {
-            handle_log(&our, &mut state, &log)?;
+    if state.block < eth_provider.get_block_number().unwrap_or(u64::MAX) {
+        loop {
+            match eth_provider.get_logs(&filter) {
+                Ok(logs) => {
+                    for log in logs {
+                        handle_log(&our, &mut state, &log)?;
+                    }
+                    break;
+                }
+                Err(_) => {
+                    println!("kns_indexer: failed to fetch logs! trying again in 5s...");
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    continue;
+                }
+            }
         }
     }
     // shove all state into net::net
@@ -198,7 +223,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     set_state(&bincode::serialize(&state)?);
 
-    subscribe(1, state.chain_id, filter.clone())?;
+    subscribe_to_logs(&eth_provider, filter.clone());
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -214,7 +239,14 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         };
 
         if source.process == "eth:distro:sys" {
-            handle_eth_message(&our, &mut state, &mut pending_requests, &body, &filter)?;
+            handle_eth_message(
+                &our,
+                &mut state,
+                &eth_provider,
+                &mut pending_requests,
+                &body,
+                &filter,
+            )?;
         } else {
             let Ok(request) = serde_json::from_slice::<IndexerRequests>(&body) else {
                 println!("kns_indexer: got invalid message");
@@ -254,6 +286,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 fn handle_eth_message(
     our: &Address,
     state: &mut State,
+    eth_provider: &Provider,
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
     body: &[u8],
     filter: &Filter,
@@ -270,7 +303,7 @@ fn handle_eth_message(
         }
         Err(e) => {
             println!("kns_indexer: got sub error, resubscribing.. {:?}", e.error);
-            subscribe(1, state.chain_id, filter.clone())?;
+            subscribe_to_logs(&eth_provider, filter.clone());
         }
     }
 

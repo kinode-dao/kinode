@@ -1,5 +1,5 @@
 use kinode_process_lib::{
-    await_next_request_body, call_init, eth::get_block_number, println, Address,
+    await_next_request_body, call_init, println, Address, eth,
 };
 
 wit_bindgen::generate!({
@@ -24,12 +24,15 @@ fn init(_our: Address) {
         .parse::<u64>()
         .unwrap_or(1);
 
-    match get_block_number(chain_id) {
+    // request timeout of 5s
+    let provider = eth::Provider::new(chain_id, 5);
+
+    match provider.get_block_number() {
         Ok(block_number) => {
             println!("latest block number: {block_number}");
         }
         Err(e) => {
-            println!("get_block: failed to get block number: {}", e);
+            println!("failed to get block number: {e:?}");
         }
     }
 }

@@ -79,8 +79,15 @@ async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
                 url: provider.url.to_string(),
                 auth: None,
             };
-            let client = ClientBuilder::default().ws(connector).await?;
+            println!("here1\r");
+            let client = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                ClientBuilder::default().ws(connector),
+            )
+            .await??;
+            println!("here2\r");
             provider.pubsub = Some(Provider::new_with_client(client));
+            println!("here3\r");
             Ok(())
         }
         _ => Err(anyhow::anyhow!(
@@ -160,6 +167,7 @@ async fn handle_message(
     match &km.message {
         Message::Response(_) => handle_passthrough_response(our, send_to_loop, km).await,
         Message::Request(req) => {
+            let timeout = *req.expects_response.as_ref().unwrap_or(&60); // TODO make this a config
             if let Ok(eth_action) = serde_json::from_slice(&req.body) {
                 // these can be from remote or local processes
                 return handle_eth_action(
@@ -167,6 +175,7 @@ async fn handle_message(
                     access_settings,
                     send_to_loop,
                     km,
+                    timeout,
                     eth_action,
                     providers,
                     active_subscriptions,
@@ -218,6 +227,7 @@ async fn handle_eth_action(
     access_settings: &mut AccessSettings,
     send_to_loop: &MessageSender,
     km: KernelMessage,
+    timeout: u64,
     eth_action: EthAction,
     providers: &mut Providers,
     active_subscriptions: &mut ActiveSubscriptions,
@@ -242,7 +252,21 @@ async fn handle_eth_action(
     // before returning an error.
     match eth_action {
         EthAction::SubscribeLogs { sub_id, .. } => {
-            let new_sub = ActiveSub::Local(tokio::spawn(create_new_subscription(
+            // let new_sub = ActiveSub::Local(tokio::spawn(create_new_subscription(
+            //     our.to_string(),
+            //     km.id,
+            //     km.source.clone(),
+            //     km.rsvp,
+            //     send_to_loop.clone(),
+            //     eth_action,
+            //     providers.clone(),
+            //     active_subscriptions.clone(),
+            // )));
+            // let mut subs = active_subscriptions
+            //     .entry(km.source.process)
+            //     .or_insert(HashMap::new());
+            // subs.insert(sub_id, new_sub);
+            create_new_subscription(
                 our.to_string(),
                 km.id,
                 km.source.clone(),
@@ -251,11 +275,8 @@ async fn handle_eth_action(
                 eth_action,
                 providers.clone(),
                 active_subscriptions.clone(),
-            )));
-            let mut subs = active_subscriptions
-                .entry(km.source.process)
-                .or_insert(HashMap::new());
-            subs.insert(sub_id, new_sub);
+            )
+            .await
         }
         EthAction::UnsubscribeLogs(sub_id) => {
             active_subscriptions
@@ -274,21 +295,22 @@ async fn handle_eth_action(
                 });
         }
         EthAction::Request { .. } => {
-            tokio::spawn(fulfill_request(
+            fulfill_request(
                 our.to_string(),
                 km.id,
                 km.source.clone(),
                 km.rsvp,
+                timeout,
                 send_to_loop.clone(),
                 eth_action,
                 providers.clone(),
-            ));
+            )
+            .await;
         }
     }
     Ok(())
 }
 
-/// spawned as a task
 /// cleans itself up when the subscription is closed or fails.
 async fn create_new_subscription(
     our: String,
@@ -475,6 +497,7 @@ async fn fulfill_request(
     km_id: u64,
     target: Address,
     rsvp: Option<Address>,
+    timeout: u64,
     send_to_loop: MessageSender,
     eth_action: EthAction,
     providers: Providers,
@@ -524,7 +547,34 @@ async fn fulfill_request(
                 }
             }
         };
-        let response = pubsub.inner().prepare(method, params.clone()).await;
+        println!("here5\r");
+        let connector = WsConnect {
+            url: url_provider.url.to_string(),
+            auth: None,
+        };
+        let client = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            ClientBuilder::default().ws(connector),
+        )
+        .await.unwrap().unwrap();
+        println!("here6\r");
+        let provider = Provider::new_with_client(client);
+        println!("method: {method:?}\r");
+        println!("params: {params:?}\r");
+        let response = provider.inner().prepare(method, params.clone()).await;
+        println!("res: {response:?}\r");
+        // let Ok(response) = tokio::time::timeout(
+        //     std::time::Duration::from_secs(timeout),
+        //     pubsub.inner().prepare(method, params.clone()),
+        // )
+        // .await
+        // else {
+        //     println!("what the FUCK\r");
+        //     // this provider failed and needs to be reset
+        //     url_provider.pubsub = None;
+        //     continue;
+        // };
+        println!("here6\r");
         if let Ok(value) = response {
             send_to_loop
                 .send(KernelMessage {

@@ -93,7 +93,7 @@ checksum = "0942ffc6dcaadf03badf6e6a2d0228460359d5e34b57ccdc720b7382dfbd5ec5"
 [[package]]
 name = "alloy-eips"
 version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy?rev=098ad56#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -113,12 +113,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloy-json-rpc"
+version = "0.1.0"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
+dependencies = [
+ "alloy-primitives",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "alloy-network"
 version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy?rev=098ad56#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
 dependencies = [
  "alloy-eips",
- "alloy-json-rpc",
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "alloy-primitives",
  "alloy-rlp",
  "serde",
@@ -149,14 +160,14 @@ dependencies = [
 [[package]]
 name = "alloy-providers"
 version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy?rev=098ad56#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
 dependencies = [
  "alloy-network",
  "alloy-primitives",
  "alloy-rpc-client",
  "alloy-rpc-trace-types",
- "alloy-rpc-types",
- "alloy-transport",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
+ "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "alloy-transport-http",
  "async-trait",
  "auto_impl",
@@ -168,11 +179,11 @@ dependencies = [
 [[package]]
 name = "alloy-pubsub"
 version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy?rev=098ad56#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
 dependencies = [
- "alloy-json-rpc",
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "alloy-primitives",
- "alloy-transport",
+ "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "bimap",
  "futures",
  "serde",
@@ -207,12 +218,12 @@ dependencies = [
 [[package]]
 name = "alloy-rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy?rev=098ad56#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
 dependencies = [
- "alloy-json-rpc",
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "alloy-primitives",
  "alloy-pubsub",
- "alloy-transport",
+ "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "alloy-transport-http",
  "alloy-transport-ws",
  "futures",
@@ -228,10 +239,10 @@ dependencies = [
 [[package]]
 name = "alloy-rpc-trace-types"
 version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy?rev=098ad56#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
 dependencies = [
  "alloy-primitives",
- "alloy-rpc-types",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "serde",
  "serde_json",
 ]
@@ -240,6 +251,19 @@ dependencies = [
 name = "alloy-rpc-types"
 version = "0.1.0"
 source = "git+https://github.com/alloy-rs/alloy?rev=098ad56#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
+dependencies = [
+ "alloy-primitives",
+ "alloy-rlp",
+ "itertools 0.12.1",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "alloy-rpc-types"
+version = "0.1.0"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
@@ -284,8 +308,25 @@ name = "alloy-transport"
 version = "0.1.0"
 source = "git+https://github.com/alloy-rs/alloy?rev=098ad56#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
 dependencies = [
- "alloy-json-rpc",
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
  "base64 0.21.7",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tower",
+ "url",
+ "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "alloy-transport"
+version = "0.1.0"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
+dependencies = [
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
+ "base64 0.21.7",
+ "futures-util",
  "serde",
  "serde_json",
  "thiserror",
@@ -298,10 +339,10 @@ dependencies = [
 [[package]]
 name = "alloy-transport-http"
 version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy?rev=098ad56#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
 dependencies = [
- "alloy-json-rpc",
- "alloy-transport",
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
+ "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "reqwest",
  "serde_json",
  "tower",
@@ -311,10 +352,10 @@ dependencies = [
 [[package]]
 name = "alloy-transport-ws"
 version = "0.1.0"
-source = "git+https://github.com/alloy-rs/alloy?rev=098ad56#098ad5657d55bbc5fe9469ede2a9ca79def738f2"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
 dependencies = [
  "alloy-pubsub",
- "alloy-transport",
+ "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "futures",
  "http 0.2.11",
  "serde_json",
@@ -407,7 +448,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=7b6fd6e)",
+ "kinode_process_lib 0.6.0",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -1967,7 +2008,7 @@ dependencies = [
 name = "get_block"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=7b6fd6e)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=567ba78)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2563,7 +2604,7 @@ dependencies = [
  "alloy-providers",
  "alloy-pubsub",
  "alloy-rpc-client",
- "alloy-rpc-types",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "alloy-transport-ws",
  "anyhow",
  "async-trait",
@@ -2634,6 +2675,26 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.6.0"
+dependencies = [
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
+ "alloy-primitives",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
+ "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
+ "anyhow",
+ "bincode",
+ "http 1.0.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "kinode_process_lib"
+version = "0.6.0"
 source = "git+https://github.com/kinode-dao/process_lib?rev=12bf9ee#12bf9eefeb9237db5e5165647fa91b437b05e169"
 dependencies = [
  "anyhow",
@@ -2653,10 +2714,10 @@ name = "kinode_process_lib"
 version = "0.6.0"
 source = "git+https://github.com/kinode-dao/process_lib?rev=3232423#323242399efdcdad02e7f31bb6a9cc5eec048610"
 dependencies = [
- "alloy-json-rpc",
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
  "alloy-primitives",
- "alloy-rpc-types",
- "alloy-transport",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
+ "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
  "anyhow",
  "bincode",
  "http 1.0.0",
@@ -2672,12 +2733,12 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.6.0"
-source = "git+https://github.com/kinode-dao/process_lib?rev=7b6fd6e#7b6fd6ee160299514fee30b315a2a53fbfb434d7"
+source = "git+https://github.com/kinode-dao/process_lib?rev=567ba78#567ba7830ba387625e668c61f252f98ff849d6eb"
 dependencies = [
- "alloy-json-rpc",
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
  "alloy-primitives",
- "alloy-rpc-types",
- "alloy-transport",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
+ "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=098ad56)",
  "anyhow",
  "bincode",
  "http 1.0.0",
@@ -2745,7 +2806,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "hex",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=7b6fd6e)",
+ "kinode_process_lib 0.6.0",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -2775,7 +2836,7 @@ name = "lib"
 version = "0.6.0"
 dependencies = [
  "alloy-pubsub",
- "alloy-rpc-types",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "lazy_static",
  "rand 0.8.5",
  "reqwest",
