@@ -1,6 +1,3 @@
-use kinode_process_lib::eth::{
-    Address as EthAddress, EthSub, EthSubResult, Filter, Log, SubscriptionResult,
-};
 use kinode_process_lib::http::{bind_http_path, serve_ui, HttpServerRequest};
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
@@ -59,7 +56,7 @@ pub enum Req {
     RemoteRequest(RemoteRequest),
     FTWorkerCommand(FTWorkerCommand),
     FTWorkerResult(FTWorkerResult),
-    Eth(EthSubResult),
+    Eth(eth::EthSubResult),
     Http(HttpServerRequest),
 }
 
@@ -71,7 +68,7 @@ pub enum Resp {
     FTWorkerResult(FTWorkerResult),
 }
 
-fn fetch_logs(eth_provider: &eth::Provider, filter: &Filter) -> Vec<Log> {
+fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Log> {
     loop {
         match eth_provider.get_logs(filter) {
             Ok(res) => return res,
@@ -84,7 +81,7 @@ fn fetch_logs(eth_provider: &eth::Provider, filter: &Filter) -> Vec<Log> {
     }
 }
 
-fn subscribe_to_logs(eth_provider: &eth::Provider, filter: Filter) {
+fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
     loop {
         match eth_provider.subscribe(1, filter.clone()) {
             Ok(()) => break,
@@ -142,9 +139,10 @@ fn init(our: Address) {
     let mut requested_packages: HashMap<PackageId, RequestedPackage> = HashMap::new();
 
     // get past logs, subscribe to new ones.
-    let filter = Filter::new()
-        .address(EthAddress::from_str(&state.contract_address).unwrap())
+    let filter = eth::Filter::new()
+        .address(eth::Address::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block - 1)
+        .to_block(eth::BlockNumberOrTag::Latest)
         .events(EVENTS);
 
     for log in fetch_logs(&eth_provider, &filter) {
@@ -227,7 +225,7 @@ fn handle_message(
                 if source.node() != our.node() || source.process != "eth:distro:sys" {
                     return Err(anyhow::anyhow!("eth sub event from weird addr: {source}"));
                 }
-                if let Ok(EthSub { result, .. }) = eth_result {
+                if let Ok(eth::EthSub { result, .. }) = eth_result {
                     handle_eth_sub_event(our, &mut state, result)?;
                 } else {
                     println!("app store: got eth sub error: {eth_result:?}");
@@ -381,8 +379,8 @@ fn handle_local_request(
                 .unsubscribe(1)
                 .expect("app_store: failed to unsub from eth events!");
 
-            let filter = Filter::new()
-                .address(EthAddress::from_str(&state.contract_address).unwrap())
+            let filter = eth::Filter::new()
+                .address(eth::Address::from_str(&state.contract_address).unwrap())
                 .from_block(state.last_saved_block - 1)
                 .events(EVENTS);
 
@@ -580,9 +578,9 @@ fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
 fn handle_eth_sub_event(
     our: &Address,
     state: &mut State,
-    event: SubscriptionResult,
+    event: eth::SubscriptionResult,
 ) -> anyhow::Result<()> {
-    let SubscriptionResult::Log(log) = event else {
+    let eth::SubscriptionResult::Log(log) = event else {
         return Err(anyhow::anyhow!("app store: got non-log event"));
     };
     state.ingest_listings_contract_event(our, *log)

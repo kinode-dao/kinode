@@ -1,11 +1,7 @@
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message,
-    eth::{
-        Address as EthAddress, BlockNumberOrTag, EthSub, EthSubResult, Filter, Log, Provider,
-        SubscriptionResult,
-    },
-    get_typed_state, print_to_terminal, println, set_state, Address, Message, Request, Response,
+    await_message, eth, get_typed_state, print_to_terminal, println, set_state, Address, Message,
+    Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{
@@ -99,7 +95,7 @@ sol! {
     event RoutingUpdate(bytes32 indexed node, bytes32[] routers);
 }
 
-fn subscribe_to_logs(eth_provider: &Provider, filter: Filter) {
+fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
     loop {
         match eth_provider.subscribe(1, filter.clone()) {
             Ok(()) => break,
@@ -181,10 +177,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    let filter = Filter::new()
-        .address(state.contract_address.parse::<EthAddress>().unwrap())
-        .to_block(BlockNumberOrTag::Latest)
+    let filter = eth::Filter::new()
+        .address(state.contract_address.parse::<eth::Address>().unwrap())
         .from_block(state.block - 1)
+        .to_block(eth::BlockNumberOrTag::Latest)
         .events(vec![
             "NodeRegistered(bytes32,bytes)",
             "KeyUpdate(bytes32,bytes32)",
@@ -195,7 +191,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
-    let eth_provider = Provider::new(state.chain_id, 20);
+    let eth_provider = eth::Provider::new(state.chain_id, 20);
 
     // if block in state is < current_block, get logs from that part.
     if state.block < eth_provider.get_block_number().unwrap_or(u64::MAX) {
@@ -288,18 +284,18 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 fn handle_eth_message(
     our: &Address,
     state: &mut State,
-    eth_provider: &Provider,
+    eth_provider: &eth::Provider,
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
     body: &[u8],
-    filter: &Filter,
+    filter: &eth::Filter,
 ) -> anyhow::Result<()> {
-    let Ok(eth_result) = serde_json::from_slice::<EthSubResult>(body) else {
+    let Ok(eth_result) = serde_json::from_slice::<eth::EthSubResult>(body) else {
         return Err(anyhow::anyhow!("kns_indexer: got invalid message"));
     };
 
     match eth_result {
-        Ok(EthSub { result, .. }) => {
-            if let SubscriptionResult::Log(log) = result {
+        Ok(eth::EthSub { result, .. }) => {
+            if let eth::SubscriptionResult::Log(log) = result {
                 handle_log(our, state, &log)?;
             }
         }
@@ -343,7 +339,7 @@ fn handle_eth_message(
     Ok(())
 }
 
-fn handle_log(our: &Address, state: &mut State, log: &Log) -> anyhow::Result<()> {
+fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
     state.block = log.block_number.expect("expect").to::<u64>();
 
     let node_id = log.topics[1];
@@ -422,7 +418,7 @@ fn handle_log(our: &Address, state: &mut State, log: &Log) -> anyhow::Result<()>
     Ok(())
 }
 
-fn get_name(log: &Log) -> String {
+fn get_name(log: &eth::Log) -> String {
     let decoded = NodeRegistered::abi_decode_data(&log.data, true).unwrap();
     let name = match dnswire_decode(decoded.0.clone()) {
         Ok(n) => n,

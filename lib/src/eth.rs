@@ -26,13 +26,13 @@ pub enum EthAction {
     },
 }
 
-/// Incoming Result type for subscription updates or errors that processes will receive.
+/// Incoming `Request` containing subscription updates or errors that processes will receive.
 /// Can deserialize all incoming requests from eth:distro:sys to this type.
 ///
 /// Will be serialized and deserialized using `serde_json::to_vec` and `serde_json::from_slice`.
 pub type EthSubResult = Result<EthSub, EthSubError>;
 
-/// Incoming Request type for successful subscription updates.
+/// Incoming type for successful subscription updates.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EthSub {
     pub id: u64,
@@ -49,6 +49,9 @@ pub struct EthSubError {
 /// The Response type which a process will get from requesting with an [`EthAction`] will be
 /// of this type, serialized and deserialized using `serde_json::to_vec`
 /// and `serde_json::from_slice`.
+///
+/// In the case of an [`EthAction::SubscribeLogs`] request, the response will indicate if
+/// the subscription was successfully created or not.
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthResponse {
     Ok,
@@ -58,6 +61,8 @@ pub enum EthResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthError {
+    /// provider module cannot parse message
+    MalformedRequest,
     /// No RPC provider for the chain
     NoRpcForChain,
     /// Underlying transport error
@@ -105,8 +110,10 @@ pub enum EthConfigAction {
     /// Set the list of providers to a new list.
     /// Replaces all existing saved provider configs.
     SetProviders(SavedConfigs),
-    /// Get the list of as a [`SavedConfigs`] object.
+    /// Get the list of current providers as a [`SavedConfigs`] object.
     GetProviders,
+    /// Get the current access settings.
+    GetAccessSettings,
 }
 
 /// Response type from an [`EthConfigAction`] request.
@@ -114,7 +121,11 @@ pub enum EthConfigAction {
 pub enum EthConfigResponse {
     Ok,
     /// Response from a GetProviders request.
+    /// Note the [`crate::core::KnsUpdate`] will only have the correct `name` field.
+    /// The rest of the Update is not saved in this module.
     Providers(SavedConfigs),
+    /// Response from a GetAccessSettings request.
+    AccessSettings(AccessSettings),
     /// Permission denied due to missing capability
     PermissionDenied,
 }
@@ -157,6 +168,7 @@ pub fn to_static_str(method: &str) -> Option<&'static str> {
 }
 
 /// Settings for our ETH provider
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct AccessSettings {
     pub public: bool,           // whether or not other nodes can access through us
     pub allow: HashSet<String>, // whitelist for access (only used if public == false)
