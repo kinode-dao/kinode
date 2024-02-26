@@ -69,10 +69,14 @@ pub enum EthError {
     SubscriptionClosed(u64),
     /// Invalid method
     InvalidMethod(String),
+    /// Invalid parameters
+    InvalidParams,
     /// Permission denied
     PermissionDenied,
     /// RPC timed out
     RpcTimeout,
+    /// RPC gave garbage back
+    RpcMalformedResponse,
 }
 
 /// The action type used for configuring eth:distro:sys. Only processes which have the "root"
