@@ -65,20 +65,12 @@ pub enum EthError {
     MalformedRequest,
     /// No RPC provider for the chain
     NoRpcForChain,
-    /// Underlying transport error
-    TransportError(String),
     /// Subscription closed
     SubscriptionClosed(u64),
-    /// The subscription ID was not found, so we couldn't unsubscribe.
-    SubscriptionNotFound,
     /// Invalid method
     InvalidMethod(String),
-    /// Invalid params
-    InvalidParams,
     /// Permission denied
     PermissionDenied,
-    /// Internal RPC error
-    RpcError(String),
     /// RPC timed out
     RpcTimeout,
 }
@@ -130,6 +122,39 @@ pub enum EthConfigResponse {
     PermissionDenied,
 }
 
+/// Settings for our ETH provider
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct AccessSettings {
+    pub public: bool,           // whether or not other nodes can access through us
+    pub allow: HashSet<String>, // whitelist for access (only used if public == false)
+    pub deny: HashSet<String>,  // blacklist for access (always used)
+}
+
+pub type SavedConfigs = Vec<ProviderConfig>;
+
+/// Provider config. Can currently be a node or a ws provider instance.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ProviderConfig {
+    pub chain_id: u64,
+    pub trusted: bool,
+    pub provider: NodeOrRpcUrl,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum NodeOrRpcUrl {
+    Node(crate::core::KnsUpdate),
+    RpcUrl(String),
+}
+
+impl std::cmp::PartialEq<str> for NodeOrRpcUrl {
+    fn eq(&self, other: &str) -> bool {
+        match self {
+            NodeOrRpcUrl::Node(kns) => kns.name == other,
+            NodeOrRpcUrl::RpcUrl(url) => url == other,
+        }
+    }
+}
+
 //
 // Internal types
 //
@@ -164,38 +189,5 @@ pub fn to_static_str(method: &str) -> Option<&'static str> {
         // "web3_clientVersion" => Some("web3_clientVersion"),
         // "web3_sha3" => Some("web3_sha3"),
         _ => None,
-    }
-}
-
-/// Settings for our ETH provider
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AccessSettings {
-    pub public: bool,           // whether or not other nodes can access through us
-    pub allow: HashSet<String>, // whitelist for access (only used if public == false)
-    pub deny: HashSet<String>,  // blacklist for access (always used)
-}
-
-pub type SavedConfigs = Vec<ProviderConfig>;
-
-/// Provider config. Can currently be a node or a ws provider instance.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ProviderConfig {
-    pub chain_id: u64,
-    pub trusted: bool,
-    pub provider: NodeOrRpcUrl,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum NodeOrRpcUrl {
-    Node(crate::core::KnsUpdate),
-    RpcUrl(String),
-}
-
-impl std::cmp::PartialEq<str> for NodeOrRpcUrl {
-    fn eq(&self, other: &str) -> bool {
-        match self {
-            NodeOrRpcUrl::Node(kns) => kns.name == other,
-            NodeOrRpcUrl::RpcUrl(url) => url == other,
-        }
     }
 }

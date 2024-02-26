@@ -456,9 +456,7 @@ async fn build_subscription(
         params,
     } = eth_action
     else {
-        return Err(EthError::InvalidMethod(
-            "eth: only accepts subscribe logs requests".to_string(),
-        ));
+        return Err(EthError::PermissionDenied); // will never hit
     };
     let Some(mut aps) = providers.get_mut(&chain_id) else {
         return Err(EthError::NoRpcForChain);
@@ -572,30 +570,23 @@ async fn maintain_subscription(
 ) -> Result<(), EthError> {
     println!("provider: maintain_subscription\r");
     loop {
-        match rx.recv().await {
-            Err(_e) => {
-                return Err(EthError::SubscriptionClosed(sub_id));
-            }
-            Ok(value) => {
-                let result: SubscriptionResult =
-                    serde_json::from_str(value.get()).map_err(|_| {
-                        EthError::RpcError(
-                            "eth: failed to deserialize subscription result".to_string(),
-                        )
-                    })?;
-                kernel_message(
-                    &our,
-                    rand::random(),
-                    target.clone(),
-                    rsvp.clone(),
-                    true,
-                    None,
-                    EthSubResult::Ok(EthSub { id: sub_id, result }),
-                    &send_to_loop,
-                )
-                .await;
-            }
-        }
+        let value = rx
+            .recv()
+            .await
+            .map_err(|_| EthError::SubscriptionClosed(sub_id))?;
+        let result: SubscriptionResult =
+            serde_json::from_str(value.get()).map_err(|_| EthError::SubscriptionClosed(sub_id))?;
+        kernel_message(
+            &our,
+            rand::random(),
+            target.clone(),
+            rsvp.clone(),
+            true,
+            None,
+            EthSubResult::Ok(EthSub { id: sub_id, result }),
+            &send_to_loop,
+        )
+        .await;
     }
 }
 
