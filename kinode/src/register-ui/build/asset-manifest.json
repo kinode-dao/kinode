@@ -1,12 +1,33 @@
 {
   "files": {
-    "main.css": "/static/css/main.74f501c5.css",
-    "main.js": "/static/js/main.084b4a46.js",
+    "main.css": "/static/css/main.e2ecce3d.css",
+    "main.js": "/static/js/main.726c0750.js",
+    "static/media/BarlowCondensed-ExtraBoldItalic.ttf": "/static/media/BarlowCondensed-ExtraBoldItalic.63a2e5980e187e96263a.ttf",
+    "static/media/BarlowCondensed-BlackItalic.ttf": "/static/media/BarlowCondensed-BlackItalic.a136bb87c7003bf94478.ttf",
+    "static/media/BarlowCondensed-SemiBoldItalic.ttf": "/static/media/BarlowCondensed-SemiBoldItalic.eeb8da826fd62315c0d1.ttf",
+    "static/media/BarlowCondensed-BoldItalic.ttf": "/static/media/BarlowCondensed-BoldItalic.083670d9963cbce8f1df.ttf",
+    "static/media/BarlowCondensed-Black.ttf": "/static/media/BarlowCondensed-Black.9b31ada366ff87ebfb24.ttf",
+    "static/media/BarlowCondensed-ExtraBold.ttf": "/static/media/BarlowCondensed-ExtraBold.99b1233342ff034e750d.ttf",
+    "static/media/BarlowCondensed-MediumItalic.ttf": "/static/media/BarlowCondensed-MediumItalic.d393b90f69a4da176e13.ttf",
+    "static/media/BarlowCondensed-Bold.ttf": "/static/media/BarlowCondensed-Bold.ca168dbe270fba68a7f3.ttf",
+    "static/media/BarlowCondensed-Italic.ttf": "/static/media/BarlowCondensed-Italic.3913b12756a6b1158dc5.ttf",
+    "static/media/BarlowCondensed-SemiBold.ttf": "/static/media/BarlowCondensed-SemiBold.d2b227f032d710a6870f.ttf",
+    "static/media/BarlowCondensed-LightItalic.ttf": "/static/media/BarlowCondensed-LightItalic.8739e29e6be868ae81cb.ttf",
+    "static/media/BarlowCondensed-ExtraLightItalic.ttf": "/static/media/BarlowCondensed-ExtraLightItalic.eab5d72924c8dcb8f12d.ttf",
+    "static/media/BarlowCondensed-ThinItalic.ttf": "/static/media/BarlowCondensed-ThinItalic.a3fcd6d3888f2c2998a0.ttf",
+    "static/media/BarlowCondensed-Medium.ttf": "/static/media/BarlowCondensed-Medium.2afd924bd5156ee485b9.ttf",
+    "static/media/BarlowCondensed-Regular.ttf": "/static/media/BarlowCondensed-Regular.a51441e972d57b28e7c1.ttf",
+    "static/media/BarlowCondensed-Light.ttf": "/static/media/BarlowCondensed-Light.3ba02bbdeb04e17f34bf.ttf",
+    "static/media/BarlowCondensed-ExtraLight.ttf": "/static/media/BarlowCondensed-ExtraLight.4faea5b95ff16cab1095.ttf",
+    "static/media/BarlowCondensed-Thin.ttf": "/static/media/BarlowCondensed-Thin.5ab5aa2588185da4dace.ttf",
     "static/media/unknown.png": "/static/media/unknown.880d04d4611a45ab1001.png",
-    "index.html": "/index.html"
+    "static/media/background.jpg": "/static/media/background.01d2427cfc21fb685016.jpg",
+    "static/media/kinode.svg": "/static/media/kinode.86d0c1a6a4a3ca3be41616b5989d6925.svg",
+    "index.html": "/index.html",
+    "static/media/logo.svg": "/static/media/logo.45dcb752ac5b825f5e3b9299d2210f0a.svg"
   },
   "entrypoints": [
-    "static/css/main.74f501c5.css",
-    "static/js/main.084b4a46.js"
+    "static/css/main.e2ecce3d.css",
+    "static/js/main.726c0750.js"
   ]
 }
