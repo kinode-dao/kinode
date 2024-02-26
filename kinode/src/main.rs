@@ -124,9 +124,6 @@ async fn main() {
                 .value_parser(value_parser!(u8)),
         );
 
-    #[cfg(not(feature = "simulation-mode"))]
-    let app = app.arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(true));
-
     #[cfg(feature = "simulation-mode")]
     let app = app
         .arg(arg!(--password <PASSWORD> "Networking password"))
