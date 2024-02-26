@@ -145,9 +145,7 @@ fn init(our: Address) {
     let filter = Filter::new()
         .address(EthAddress::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block - 1)
-        .event(EVENTS[0])
-        .event(EVENTS[1])
-        .event(EVENTS[2]);
+        .events(EVENTS);
 
     for log in fetch_logs(&eth_provider, &filter) {
         if let Err(e) = state.ingest_listings_contract_event(&our, log) {
@@ -386,9 +384,7 @@ fn handle_local_request(
             let filter = Filter::new()
                 .address(EthAddress::from_str(&state.contract_address).unwrap())
                 .from_block(state.last_saved_block - 1)
-                .event(EVENTS[0])
-                .event(EVENTS[1])
-                .event(EVENTS[2]);
+                .events(EVENTS);
 
             for log in fetch_logs(&eth_provider, &filter) {
                 if let Err(e) = state.ingest_listings_contract_event(our, log) {

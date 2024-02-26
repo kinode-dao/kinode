@@ -79,15 +79,12 @@ async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
                 url: provider.url.to_string(),
                 auth: None,
             };
-            println!("here1\r");
             let client = tokio::time::timeout(
                 std::time::Duration::from_secs(10),
                 ClientBuilder::default().ws(connector),
             )
             .await??;
-            println!("here2\r");
             provider.pubsub = Some(Provider::new_with_client(client));
-            println!("here3\r");
             Ok(())
         }
         _ => Err(anyhow::anyhow!(
@@ -252,21 +249,7 @@ async fn handle_eth_action(
     // before returning an error.
     match eth_action {
         EthAction::SubscribeLogs { sub_id, .. } => {
-            // let new_sub = ActiveSub::Local(tokio::spawn(create_new_subscription(
-            //     our.to_string(),
-            //     km.id,
-            //     km.source.clone(),
-            //     km.rsvp,
-            //     send_to_loop.clone(),
-            //     eth_action,
-            //     providers.clone(),
-            //     active_subscriptions.clone(),
-            // )));
-            // let mut subs = active_subscriptions
-            //     .entry(km.source.process)
-            //     .or_insert(HashMap::new());
-            // subs.insert(sub_id, new_sub);
-            create_new_subscription(
+            let new_sub = ActiveSub::Local(tokio::spawn(create_new_subscription(
                 our.to_string(),
                 km.id,
                 km.source.clone(),
@@ -275,8 +258,11 @@ async fn handle_eth_action(
                 eth_action,
                 providers.clone(),
                 active_subscriptions.clone(),
-            )
-            .await
+            )));
+            let mut subs = active_subscriptions
+                .entry(km.source.process)
+                .or_insert(HashMap::new());
+            subs.insert(sub_id, new_sub);
         }
         EthAction::UnsubscribeLogs(sub_id) => {
             active_subscriptions
@@ -295,7 +281,7 @@ async fn handle_eth_action(
                 });
         }
         EthAction::Request { .. } => {
-            fulfill_request(
+            tokio::spawn(fulfill_request(
                 our.to_string(),
                 km.id,
                 km.source.clone(),
@@ -304,8 +290,7 @@ async fn handle_eth_action(
                 send_to_loop.clone(),
                 eth_action,
                 providers.clone(),
-            )
-            .await;
+            ));
         }
     }
     Ok(())
@@ -547,34 +532,16 @@ async fn fulfill_request(
                 }
             }
         };
-        println!("here5\r");
-        let connector = WsConnect {
-            url: url_provider.url.to_string(),
-            auth: None,
-        };
-        let client = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            ClientBuilder::default().ws(connector),
+        let Ok(response) = tokio::time::timeout(
+            std::time::Duration::from_secs(timeout),
+            pubsub.inner().prepare(method, params.clone()),
         )
-        .await.unwrap().unwrap();
-        println!("here6\r");
-        let provider = Provider::new_with_client(client);
-        println!("method: {method:?}\r");
-        println!("params: {params:?}\r");
-        let response = provider.inner().prepare(method, params.clone()).await;
-        println!("res: {response:?}\r");
-        // let Ok(response) = tokio::time::timeout(
-        //     std::time::Duration::from_secs(timeout),
-        //     pubsub.inner().prepare(method, params.clone()),
-        // )
-        // .await
-        // else {
-        //     println!("what the FUCK\r");
-        //     // this provider failed and needs to be reset
-        //     url_provider.pubsub = None;
-        //     continue;
-        // };
-        println!("here6\r");
+        .await
+        else {
+            // this provider failed and needs to be reset
+            url_provider.pubsub = None;
+            continue;
+        };
         if let Ok(value) = response {
             send_to_loop
                 .send(KernelMessage {

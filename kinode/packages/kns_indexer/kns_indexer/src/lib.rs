@@ -185,11 +185,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         .address(state.contract_address.parse::<EthAddress>().unwrap())
         .to_block(BlockNumberOrTag::Latest)
         .from_block(state.block - 1)
-        .event("NodeRegistered(bytes32,bytes)")
-        .event("KeyUpdate(bytes32,bytes32)")
-        .event("IpUpdate(bytes32,uint128)")
-        .event("WsUpdate(bytes32,uint16)")
-        .event("RoutingUpdate(bytes32,bytes32[])");
+        .events(vec![
+            "NodeRegistered(bytes32,bytes)",
+            "KeyUpdate(bytes32,bytes32)",
+            "IpUpdate(bytes32,uint128)",
+            "WsUpdate(bytes32,uint16)",
+            "RoutingUpdate(bytes32,bytes32[])"
+        ]);
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
