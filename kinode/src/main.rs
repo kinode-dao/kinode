@@ -226,6 +226,8 @@ async fn main() {
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
     let (eth_provider_sender, eth_provider_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ETH_PROVIDER_CHANNEL_CAPACITY);
+    let (eth_net_error_sender, eth_net_error_receiver): (NetworkErrorSender, NetworkErrorReceiver) =
+        mpsc::channel(EVENT_LOOP_CHANNEL_CAPACITY);
     // http client performs http requests on behalf of processes
     let (http_client_sender, http_client_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CLIENT_CHANNEL_CAPACITY);
@@ -393,41 +395,49 @@ async fn main() {
         (
             ProcessId::new(Some("http_server"), "distro", "sys"),
             http_server_sender,
+            None,
             false,
         ),
         (
             ProcessId::new(Some("http_client"), "distro", "sys"),
             http_client_sender,
+            None,
             false,
         ),
         (
             ProcessId::new(Some("timer"), "distro", "sys"),
             timer_service_sender,
+            None,
             true,
         ),
         (
             ProcessId::new(Some("eth"), "distro", "sys"),
             eth_provider_sender,
+            Some(eth_net_error_sender),
             false,
         ),
         (
             ProcessId::new(Some("vfs"), "distro", "sys"),
             vfs_message_sender,
+            None,
             false,
         ),
         (
             ProcessId::new(Some("state"), "distro", "sys"),
             state_sender,
+            None,
             false,
         ),
         (
             ProcessId::new(Some("kv"), "distro", "sys"),
             kv_sender,
+            None,
             false,
         ),
         (
             ProcessId::new(Some("sqlite"), "distro", "sys"),
             sqlite_sender,
+            None,
             false,
         ),
     ];
@@ -473,7 +483,7 @@ async fn main() {
             .clone()
             .into_iter()
             .filter_map(|config| {
-                if let lib::eth::NodeOrRpcUrl::Node(kns_update) = config.provider {
+                if let lib::eth::NodeOrRpcUrl::Node { kns_update, .. } = config.provider {
                     Some(kns_update)
                 } else {
                     None
@@ -548,11 +558,12 @@ async fn main() {
         timer_service_receiver,
         print_sender.clone(),
     ));
-    tasks.spawn(eth::provider::provider(
+    tasks.spawn(eth::provider(
         our.name.clone(),
         eth_provider_config,
         kernel_message_sender.clone(),
         eth_provider_receiver,
+        eth_net_error_receiver,
         caps_oracle_sender.clone(),
         print_sender.clone(),
     ));

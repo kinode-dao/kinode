@@ -547,8 +547,8 @@ fn display_message(m: &Message, delimiter: &str) -> String {
                 format!("expects_response: {:?},", request.expects_response),
                 format!(
                     "body: {},",
-                    match serde_json::from_slice::<serde_json::Value>(&request.body) {
-                        Ok(json) => format!("{}", json),
+                    match std::str::from_utf8(&request.body) {
+                        Ok(str) => str.to_string(),
                         Err(_) => format!("{:?}", request.body),
                     }
                 ),
@@ -748,6 +748,10 @@ pub type DebugReceiver = tokio::sync::mpsc::Receiver<DebugCommand>;
 
 pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
 pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
+
+pub type ProcessMessageSender = tokio::sync::mpsc::Sender<Result<KernelMessage, WrappedSendError>>;
+pub type ProcessMessageReceiver =
+    tokio::sync::mpsc::Receiver<Result<KernelMessage, WrappedSendError>>;
 
 //
 // types used for onchain identity system

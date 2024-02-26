@@ -146,14 +146,17 @@ pub struct ProviderConfig {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum NodeOrRpcUrl {
-    Node(crate::core::KnsUpdate),
+    Node {
+        kns_update: crate::core::KnsUpdate,
+        use_as_provider: bool, // for routers inside saved config
+    },
     RpcUrl(String),
 }
 
 impl std::cmp::PartialEq<str> for NodeOrRpcUrl {
     fn eq(&self, other: &str) -> bool {
         match self {
-            NodeOrRpcUrl::Node(kns) => kns.name == other,
+            NodeOrRpcUrl::Node { kns_update, .. } => kns_update.name == other,
             NodeOrRpcUrl::RpcUrl(url) => url == other,
         }
     }

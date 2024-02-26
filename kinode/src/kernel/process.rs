@@ -1,4 +1,3 @@
-use crate::kernel::{ProcessMessageReceiver, ProcessMessageSender};
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
 use lib::types::core as t;
@@ -29,9 +28,9 @@ pub struct ProcessState {
     /// information about ourself
     pub metadata: t::ProcessMetadata,
     /// pipe from which we get messages from the main event loop
-    pub recv_in_process: ProcessMessageReceiver,
+    pub recv_in_process: t::ProcessMessageReceiver,
     /// pipe to send messages to ourself (received in `recv_in_process`)
-    pub self_sender: ProcessMessageSender,
+    pub self_sender: t::ProcessMessageSender,
     /// pipe for sending messages to the main event loop
     pub send_to_loop: t::MessageSender,
     /// pipe for sending [`t::Printout`]s to the terminal
@@ -488,8 +487,8 @@ pub async fn make_process_loop(
     metadata: t::ProcessMetadata,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
-    mut recv_in_process: ProcessMessageReceiver,
-    send_to_process: ProcessMessageSender,
+    mut recv_in_process: t::ProcessMessageReceiver,
+    send_to_process: t::ProcessMessageSender,
     wasm_bytes: Vec<u8>,
     caps_oracle: t::CapMessageSender,
     engine: Engine,

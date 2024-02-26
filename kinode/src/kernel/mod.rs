@@ -20,11 +20,6 @@ const PROCESS_CHANNEL_CAPACITY: usize = 100;
 
 const DEFAULT_WIT_VERSION: u32 = 0;
 
-type ProcessMessageSender =
-    tokio::sync::mpsc::Sender<Result<t::KernelMessage, t::WrappedSendError>>;
-type ProcessMessageReceiver =
-    tokio::sync::mpsc::Receiver<Result<t::KernelMessage, t::WrappedSendError>>;
-
 #[derive(Serialize, Deserialize)]
 struct StartProcessMetadata {
     source: t::Address,
@@ -39,8 +34,11 @@ type Senders = HashMap<t::ProcessId, ProcessSender>;
 type ProcessHandles = HashMap<t::ProcessId, JoinHandle<Result<()>>>;
 
 enum ProcessSender {
-    Runtime(t::MessageSender),
-    Userspace(ProcessMessageSender),
+    Runtime {
+        sender: t::MessageSender,
+        net_errors: Option<t::NetworkErrorSender>,
+    },
+    Userspace(t::ProcessMessageSender),
 }
 
 /// persist kernel's process_map state for next bootup
@@ -671,7 +669,12 @@ pub async fn kernel(
     send_to_net: t::MessageSender,
     home_directory_path: String,
     contract_chain_and_address: (u64, String),
-    runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
+    runtime_extensions: Vec<(
+        t::ProcessId,
+        t::MessageSender,
+        Option<t::NetworkErrorSender>,
+        bool,
+    )>,
     default_pki_entries: Vec<t::KnsUpdate>,
 ) -> Result<()> {
     let mut config = Config::new();
@@ -689,10 +692,19 @@ pub async fn kernel(
     let mut senders: Senders = HashMap::new();
     senders.insert(
         t::ProcessId::new(Some("net"), "distro", "sys"),
-        ProcessSender::Runtime(send_to_net.clone()),
+        ProcessSender::Runtime {
+            sender: send_to_net.clone(),
+            net_errors: None, // networking module does not accept net errors sent to it
+        },
     );
-    for (process_id, sender, _) in runtime_extensions {
-        senders.insert(process_id, ProcessSender::Runtime(sender));
+    for (process_id, sender, net_error_sender, _) in runtime_extensions {
+        senders.insert(
+            process_id,
+            ProcessSender::Runtime {
+                sender,
+                net_errors: net_error_sender,
+            },
+        );
     }
 
     // each running process is stored in this map
@@ -896,8 +908,8 @@ pub async fn kernel(
             Some(wrapped_network_error) = network_error_recv.recv() => {
                 let _ = send_to_terminal.send(
                     t::Printout {
-                        verbosity: 2,
-                        content: format!("event loop: got network error: {:?}", wrapped_network_error)
+                        verbosity: 3,
+                        content: format!("{wrapped_network_error:?}")
                     }
                 ).await;
                 // forward the error to the relevant process
@@ -905,10 +917,10 @@ pub async fn kernel(
                     Some(ProcessSender::Userspace(sender)) => {
                         let _ = sender.send(Err(wrapped_network_error)).await;
                     }
-                    Some(ProcessSender::Runtime(_sender)) => {
-                        // TODO should runtime modules get these? no
-                        // this will change if a runtime process ever makes
-                        // a message directed to not-our-node
+                    Some(ProcessSender::Runtime { net_errors, .. }) => {
+                        if let Some(net_errors) = net_errors {
+                            let _ = net_errors.send(wrapped_network_error).await;
+                        }
                     }
                     None => {
                         let _ = send_to_terminal
@@ -1052,7 +1064,7 @@ pub async fn kernel(
                 let _ = send_to_terminal.send(
                         t::Printout {
                             verbosity: 3,
-                            content: format!("{}", kernel_message)
+                            content: format!("{kernel_message}")
                         }
                     ).await;
 
@@ -1082,7 +1094,7 @@ pub async fn kernel(
                         Some(ProcessSender::Userspace(sender)) => {
                             let _ = sender.send(Ok(kernel_message)).await;
                         }
-                        Some(ProcessSender::Runtime(sender)) => {
+                        Some(ProcessSender::Runtime { sender, .. }) => {
                             sender.send(kernel_message).await.expect("event loop: fatal: runtime module died");
                         }
                         None => {
