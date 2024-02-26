@@ -1,6 +1,4 @@
-use kinode_process_lib::{
-    await_next_request_body, call_init, println, Address, eth,
-};
+use kinode_process_lib::{await_next_request_body, call_init, eth, println, Address};
 
 wit_bindgen::generate!({
     path: "wit",

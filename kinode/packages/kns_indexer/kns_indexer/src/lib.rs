@@ -190,7 +190,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             "KeyUpdate(bytes32,bytes32)",
             "IpUpdate(bytes32,uint128)",
             "WsUpdate(bytes32,uint16)",
-            "RoutingUpdate(bytes32,bytes32[])"
+            "RoutingUpdate(bytes32,bytes32[])",
         ]);
 
     // 60s timeout -- these calls can take a long time
