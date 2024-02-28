@@ -205,7 +205,7 @@ async fn handle_message(
             Ok(())
         }
         Message::Request(req) => {
-            let timeout = *req.expects_response.as_ref().unwrap_or(&60); // TODO make this a config
+            let timeout = *req.expects_response.as_ref().unwrap_or(&600); // TODO make this a config
             let Ok(req) = serde_json::from_slice::<IncomingReq>(&req.body) else {
                 return Err(EthError::MalformedRequest);
             };
@@ -278,16 +278,16 @@ async fn handle_eth_action(
     response_channels: &mut ResponseChannels,
 ) -> Result<(), EthError> {
     println!("provider: handle_eth_action: {eth_action:?}\r");
+    println!("access settings: {access_settings:?}\r");
     // check our access settings if the request is from a remote node
     if km.source.node != our {
-        if !access_settings.deny.contains(&km.source.node) {
-            if !access_settings.public {
-                if !access_settings.allow.contains(&km.source.node) {
-                    return Err(EthError::PermissionDenied);
-                }
-            }
-        } else {
+        if access_settings.deny.contains(&km.source.node) {
             return Err(EthError::PermissionDenied);
+        }
+        if !access_settings.public {
+            if !access_settings.allow.contains(&km.source.node) {
+                return Err(EthError::PermissionDenied);
+            }
         }
     }
 
@@ -330,7 +330,7 @@ async fn handle_eth_action(
                             },
                             None,
                             true,
-                            Some(60), // TODO
+                            Some(600), // TODO
                             serde_json::to_vec(&eth_action).unwrap(),
                             send_to_loop,
                         )
@@ -346,36 +346,36 @@ async fn handle_eth_action(
             let send_to_loop = send_to_loop.clone();
             let providers = providers.clone();
             let response_channels = response_channels.clone();
-            tokio::spawn(async move {
-                let res = tokio::time::timeout(
-                    std::time::Duration::from_secs(timeout),
-                    fulfill_request(&our, km.id, &send_to_loop, eth_action, providers, receiver),
-                )
-                .await;
-                match res {
-                    Ok(Ok(response)) => {
-                        kernel_message(
-                            &our,
-                            km.id,
-                            km.source,
-                            km.rsvp,
-                            false,
-                            None,
-                            response,
-                            &send_to_loop,
-                        )
-                        .await;
-                    }
-                    Ok(Err(e)) => {
-                        error_message(&our, km.id, km.source, e, &send_to_loop).await;
-                    }
-                    Err(_) => {
-                        error_message(&our, km.id, km.source, EthError::RpcTimeout, &send_to_loop)
-                            .await;
-                    }
+            // tokio::spawn(async move {
+            let res = tokio::time::timeout(
+                std::time::Duration::from_secs(timeout),
+                fulfill_request(&our, km.id, &send_to_loop, eth_action, providers, receiver),
+            )
+            .await;
+            match res {
+                Ok(Ok(response)) => {
+                    kernel_message(
+                        &our,
+                        km.id,
+                        km.source,
+                        km.rsvp,
+                        false,
+                        None,
+                        response,
+                        &send_to_loop,
+                    )
+                    .await;
                 }
-                response_channels.remove(&km.id);
-            });
+                Ok(Err(e)) => {
+                    error_message(&our, km.id, km.source, e, &send_to_loop).await;
+                }
+                Err(_) => {
+                    error_message(&our, km.id, km.source, EthError::RpcTimeout, &send_to_loop)
+                        .await;
+                }
+            }
+            response_channels.remove(&km.id);
+            // });
         }
     }
     Ok(())
@@ -538,7 +538,7 @@ async fn build_subscription(
             },
             None,
             true,
-            Some(60), // TODO
+            Some(600), // TODO
             serde_json::to_vec(&eth_action).unwrap(),
             &send_to_loop,
         )
@@ -664,7 +664,7 @@ async fn fulfill_request(
         return Ok(EthResponse::Response { value });
     }
     for node_provider in &mut aps.nodes {
-        if !node_provider.usable {
+        if !node_provider.usable || node_provider.name == our {
             continue;
         }
         // in order, forward the request to each node provider
@@ -678,8 +678,8 @@ async fn fulfill_request(
             },
             None,
             true,
-            Some(60), // TODO
-            serde_json::to_vec(&eth_action).unwrap(),
+            Some(600), // TODO
+            eth_action.clone(),
             &send_to_loop,
         )
         .await;
@@ -743,8 +743,10 @@ async fn handle_eth_config_action(
         .await
         .expect("eth: capability oracle died!");
     if !recv_cap_bool.await.unwrap_or(false) {
+        println!("eth: capability oracle denied request, no cap\r");
         return EthConfigResponse::PermissionDenied;
     }
+    println!("cap valid\r");
 
     // modify our providers and access settings based on config action
     match eth_config_action {
@@ -763,9 +765,11 @@ async fn handle_eth_config_action(
             }
         }
         EthConfigAction::SetPublic => {
+            println!("set public\r");
             access_settings.public = true;
         }
         EthConfigAction::SetPrivate => {
+            println!("set private\r");
             access_settings.public = false;
         }
         EthConfigAction::AllowNode(node) => {

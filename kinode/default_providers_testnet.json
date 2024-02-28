@@ -1,5 +1,15 @@
 [
     {
+        "chain_id": 1,
+        "trusted": false,
+        "provider": {
+            "RpcUrl": "wss://ethereum.publicnode.com"
+        },
+        "public": false,
+        "allow": [],
+        "deny": []
+    },
+    {
         "chain_id": 11155111,
         "trusted": true,
         "provider": {
@@ -13,9 +23,9 @@
                     "ip": "",
                     "port": 0,
                     "routers": [
-                        "default-router-1.os",
-                        "default-router-2.os",
-                        "default-router-3.os"
+                        "0xb35eb347deb896bc3fb6132a07fca1601f83462385ed11e835c24c33ba4ef73d",
+                        "0xd827ae579fafa604af79fbed977e8abe048497f10885c6473dfd343a3b7b4458",
+                        "0x96e36331c8f0882f2c0c46c13b15d812def04fe8606d503bc0e2be39db26486a"
                     ]
                 }
             }

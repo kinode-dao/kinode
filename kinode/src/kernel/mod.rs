@@ -453,13 +453,6 @@ async fn handle_kernel_request(
             // brutal and savage killing: aborting the task.
             // do not do this to a process if you don't want to risk
             // dropped messages / un-replied-to-requests / revoked caps
-            caps_oracle
-                .send(t::CapMessage::RevokeAll {
-                    on: process_id.clone(),
-                    responder: tokio::sync::oneshot::channel().0,
-                })
-                .await
-                .expect("event loop: fatal: sender died");
             let _ = senders.remove(&process_id);
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
@@ -481,7 +474,13 @@ async fn handle_kernel_request(
                 .await;
             process_handle.abort();
             process_map.remove(&process_id);
-            let _ = persist_state(&our_name, &send_to_loop, process_map).await;
+            caps_oracle
+                .send(t::CapMessage::RevokeAll {
+                    on: process_id.clone(),
+                    responder: tokio::sync::oneshot::channel().0,
+                })
+                .await
+                .expect("event loop: fatal: sender died");
             if request.expects_response.is_none() {
                 return;
             }
@@ -1116,6 +1115,12 @@ pub async fn kernel(
             },
             // capabilities oracle: handles all requests to add, drop, and check capabilities
             Some(cap_message) = caps_oracle_receiver.recv() => {
+                let _ = send_to_terminal.send(
+                    t::Printout {
+                        verbosity: 3,
+                        content: format!("{cap_message:?}")
+                    }
+                ).await;
                 match cap_message {
                     t::CapMessage::Add { on, caps, responder } => {
                         // insert cap in process map
@@ -1173,16 +1178,16 @@ pub async fn kernel(
                     },
                     t::CapMessage::RevokeAll { on, responder } => {
                         let Some(granter) = reverse_cap_index.get(&on) else {
+                            let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                             let _ = responder.send(true);
                             continue;
                         };
                         for (grantee, caps) in granter {
-                            let Some(entry) = process_map.get_mut(&grantee) else {
-                                continue;
+                            if let Some(entry) = process_map.get_mut(&grantee) {
+                                for cap in caps {
+                                    entry.capabilities.remove(&cap);
+                                }
                             };
-                            for cap in caps {
-                                entry.capabilities.remove(&cap);
-                            }
                         }
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);
