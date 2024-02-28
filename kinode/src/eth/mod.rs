@@ -297,7 +297,7 @@ async fn handle_eth_action(
     // before returning an error.
     match eth_action {
         EthAction::SubscribeLogs { sub_id, .. } => {
-            create_new_subscription(
+            tokio::spawn(create_new_subscription(
                 our.to_string(),
                 km.id,
                 km.source.clone(),
@@ -308,8 +308,7 @@ async fn handle_eth_action(
                 providers.clone(),
                 active_subscriptions.clone(),
                 response_channels.clone(),
-            )
-            .await;
+            ));
         }
         EthAction::UnsubscribeLogs(sub_id) => {
             let mut sub_map = active_subscriptions
@@ -346,36 +345,36 @@ async fn handle_eth_action(
             let send_to_loop = send_to_loop.clone();
             let providers = providers.clone();
             let response_channels = response_channels.clone();
-            // tokio::spawn(async move {
-            let res = tokio::time::timeout(
-                std::time::Duration::from_secs(timeout),
-                fulfill_request(&our, km.id, &send_to_loop, eth_action, providers, receiver),
-            )
-            .await;
-            match res {
-                Ok(Ok(response)) => {
-                    kernel_message(
-                        &our,
-                        km.id,
-                        km.source,
-                        km.rsvp,
-                        false,
-                        None,
-                        response,
-                        &send_to_loop,
-                    )
-                    .await;
-                }
-                Ok(Err(e)) => {
-                    error_message(&our, km.id, km.source, e, &send_to_loop).await;
-                }
-                Err(_) => {
-                    error_message(&our, km.id, km.source, EthError::RpcTimeout, &send_to_loop)
+            tokio::spawn(async move {
+                let res = tokio::time::timeout(
+                    std::time::Duration::from_secs(timeout),
+                    fulfill_request(&our, km.id, &send_to_loop, eth_action, providers, receiver),
+                )
+                .await;
+                match res {
+                    Ok(Ok(response)) => {
+                        kernel_message(
+                            &our,
+                            km.id,
+                            km.source,
+                            km.rsvp,
+                            false,
+                            None,
+                            response,
+                            &send_to_loop,
+                        )
                         .await;
+                    }
+                    Ok(Err(e)) => {
+                        error_message(&our, km.id, km.source, e, &send_to_loop).await;
+                    }
+                    Err(_) => {
+                        error_message(&our, km.id, km.source, EthError::RpcTimeout, &send_to_loop)
+                            .await;
+                    }
                 }
-            }
-            response_channels.remove(&km.id);
-            // });
+                response_channels.remove(&km.id);
+            });
         }
     }
     Ok(())
@@ -408,7 +407,7 @@ async fn create_new_subscription(
     .await
     {
         Ok((Some(future), None)) => {
-            // this is a local sub
+            // this is a local sub, as in, we connect to the rpc endpt
             // send a response to the target that the subscription was successful
             kernel_message(
                 &our,
@@ -539,7 +538,7 @@ async fn build_subscription(
             None,
             true,
             Some(600), // TODO
-            serde_json::to_vec(&eth_action).unwrap(),
+            eth_action,
             &send_to_loop,
         )
         .await;
@@ -563,14 +562,10 @@ async fn build_subscription(
             node_provider.usable = false;
             continue;
         }
-        if let EthResponse::Err(error) = &eth_response {
+        if let EthResponse::Err(_error) = &eth_response {
             // if we hit this, they sent an error, if it's an error that might
             // not be our fault, we can try another provider
-            match error {
-                EthError::NoRpcForChain => continue,
-                EthError::PermissionDenied => continue,
-                _ => {}
-            }
+            continue;
         }
         kernel_message(
             &our,
