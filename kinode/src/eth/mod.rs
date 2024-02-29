@@ -119,7 +119,7 @@ pub async fn provider(
     mut recv_in_client: MessageReceiver,
     mut net_error_recv: NetworkErrorReceiver,
     caps_oracle: CapMessageSender,
-    _print_tx: PrintSender,
+    print_tx: PrintSender,
 ) -> Result<()> {
     let our = Arc::new(our);
 
@@ -149,6 +149,23 @@ pub async fn provider(
     loop {
         tokio::select! {
             Some(wrapped_error) = net_error_recv.recv() => {
+                let _ = print_tx.send(
+                    Printout { verbosity: 2, content: "eth: got network error".to_string() }
+                ).await;
+                // if we hold active subscriptions for the remote node that this error refers to,
+                // close them here -- they will need to resubscribe
+                if let Some(sub_map) = active_subscriptions.get(&wrapped_error.source) {
+                    for (_sub_id, sub) in sub_map.iter() {
+                        if let ActiveSub::Local(handle) = sub {
+                            let _ = print_tx.send(
+                                Printout {
+                                    verbosity: 2,
+                                    content: "eth: closing remote sub in response to network error".to_string()
+                                }).await;
+                            handle.abort();
+                        }
+                    }
+                }
                 // we got an error from a remote node provider --
                 // forward it to response channel if it exists
                 if let Some(chan) = response_channels.get(&wrapped_error.id) {
@@ -205,7 +222,7 @@ async fn handle_message(
             Ok(())
         }
         Message::Request(req) => {
-            let timeout = *req.expects_response.as_ref().unwrap_or(&600); // TODO make this a config
+            let timeout = *req.expects_response.as_ref().unwrap_or(&60); // TODO make this a config
             let Ok(req) = serde_json::from_slice::<IncomingReq>(&req.body) else {
                 return Err(EthError::MalformedRequest);
             };
@@ -247,18 +264,36 @@ async fn handle_message(
                     Ok(())
                 }
                 IncomingReq::EthSubResult(eth_sub_result) => {
-                    // forward this to rsvp
-                    kernel_message(
-                        our,
-                        km.id,
-                        km.source.clone(),
-                        km.rsvp.clone(),
-                        true,
-                        None,
-                        eth_sub_result,
-                        send_to_loop,
-                    )
-                    .await;
+                    println!("eth: got eth_sub_result\r");
+                    // forward this to rsvp, if we have the sub id in our active subs
+                    let Some(rsvp) = km.rsvp else {
+                        return Ok(()); // no rsvp, no need to forward
+                    };
+                    let sub_id = match &eth_sub_result {
+                        Ok(EthSub { id, .. }) => id,
+                        Err(EthSubError { id, .. }) => id,
+                    };
+                    if let Some(sub_map) = active_subscriptions.get(&rsvp) {
+                        if let Some(sub) = sub_map.get(sub_id) {
+                            if let ActiveSub::Remote(node_provider) = sub {
+                                if node_provider == &km.source.node {
+                                    kernel_message(
+                                        our,
+                                        km.id,
+                                        rsvp,
+                                        None,
+                                        true,
+                                        None,
+                                        eth_sub_result,
+                                        send_to_loop,
+                                    )
+                                    .await;
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                    println!("eth: got eth_sub_result but no matching sub found\r");
                     Ok(())
                 }
             }
@@ -329,7 +364,7 @@ async fn handle_eth_action(
                             },
                             None,
                             true,
-                            Some(600), // TODO
+                            Some(60), // TODO
                             serde_json::to_vec(&eth_action).unwrap(),
                             send_to_loop,
                         )
@@ -406,7 +441,7 @@ async fn create_new_subscription(
     )
     .await
     {
-        Ok((Some(future), None)) => {
+        Ok((Some(maintain_subscription), None)) => {
             // this is a local sub, as in, we connect to the rpc endpt
             // send a response to the target that the subscription was successful
             kernel_message(
@@ -423,15 +458,14 @@ async fn create_new_subscription(
             let mut subs = active_subscriptions
                 .entry(target.clone())
                 .or_insert(HashMap::new());
-            let target2 = target.clone();
-            let active_subs = active_subscriptions.clone();
+            let active_subscriptions = active_subscriptions.clone();
             subs.insert(
                 sub_id,
                 ActiveSub::Local(tokio::spawn(async move {
                     // await the subscription error and kill it if so
-                    if let Err(e) = future.await {
-                        error_message(&our, km_id, target2.clone(), e, &send_to_loop).await;
-                        active_subs.entry(target2).and_modify(|sub_map| {
+                    if let Err(e) = maintain_subscription.await {
+                        error_message(&our, km_id, target.clone(), e, &send_to_loop).await;
+                        active_subscriptions.entry(target).and_modify(|sub_map| {
                             sub_map.remove(&km_id);
                         });
                     }
@@ -535,9 +569,9 @@ async fn build_subscription(
                 node: node_provider.name.clone(),
                 process: ETH_PROCESS_ID.clone(),
             },
-            None,
+            rsvp.clone(),
             true,
-            Some(600), // TODO
+            Some(60), // TODO
             eth_action,
             &send_to_loop,
         )
@@ -673,7 +707,7 @@ async fn fulfill_request(
             },
             None,
             true,
-            Some(600), // TODO
+            Some(60), // TODO
             eth_action.clone(),
             &send_to_loop,
         )
