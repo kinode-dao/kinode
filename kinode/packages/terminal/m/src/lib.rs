@@ -80,7 +80,7 @@ fn init(_our: Address) {
             println!("m: awaiting response for {}s", s);
             match req.send_and_await_response(*s).unwrap() {
                 Ok(res) => {
-                    let _ = Response::new().body(res.body()).send();
+                    println!("{}", String::from_utf8(res.body().to_vec()).unwrap());
                 }
                 Err(e) => {
                     println!(

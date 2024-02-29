@@ -45,5 +45,5 @@ fn init(_our: Address) {
         println!("no file found at {}", file_path);
         return;
     };
-    let _ = Response::new().body(blob.bytes).send();
+    println!("{}", String::from_utf8(blob.bytes).unwrap());
 }
