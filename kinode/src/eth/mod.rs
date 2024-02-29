@@ -222,7 +222,11 @@ async fn handle_message(
             Ok(())
         }
         Message::Request(req) => {
-            let timeout = *req.expects_response.as_ref().unwrap_or(&60); // TODO make this a config
+            let Some(timeout) = req.expects_response else {
+                // if they don't want a response, we don't need to do anything
+                // might as well throw it away
+                return Err(EthError::MalformedRequest);
+            };
             let Ok(req) = serde_json::from_slice::<IncomingReq>(&req.body) else {
                 return Err(EthError::MalformedRequest);
             };

@@ -37,12 +37,6 @@ const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// This can and should be an environment variable / setting. It configures networking
-/// such that indirect nodes always use routers, even when target is a direct node,
-/// such that only their routers can ever see their physical networking details.
-#[cfg(not(feature = "simulation-mode"))]
-const REVEAL_IP: bool = true;
-
 /// default routers as a eth-provider fallback
 const DEFAULT_PROVIDERS_TESTNET: &str = include_str!("../default_providers_testnet.json");
 const DEFAULT_PROVIDERS_MAINNET: &str = include_str!("../default_providers_mainnet.json");
@@ -112,6 +106,11 @@ async fn main() {
             arg!(--verbosity <VERBOSITY> "Verbosity level: higher is more verbose")
                 .default_value("0")
                 .value_parser(value_parser!(u8)),
+        )
+        .arg(
+            arg!(--"reveal-ip" "If set to false, as an indirect node, always use routers to connect to other nodes.")
+                .default_value("true")
+                .value_parser(value_parser!(bool)),
         );
 
     #[cfg(feature = "simulation-mode")]
@@ -190,9 +189,9 @@ async fn main() {
 
     // default eth providers/routers
     let eth_provider_config: lib::eth::SavedConfigs =
-        match fs::read_to_string(format!("{}/.saved_providers", home_directory_path)).await {
+        match fs::read_to_string(format!("{}/.eth_providers", home_directory_path)).await {
             Ok(contents) => {
-                println!("loaded saved providers\r");
+                println!("loaded saved eth providers\r");
                 serde_json::from_str(&contents).unwrap()
             }
             Err(_) => match on_testnet {
@@ -508,7 +507,7 @@ async fn main() {
         net_message_sender,
         net_message_receiver,
         contract_chain_and_address.1,
-        REVEAL_IP,
+        *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
     ));
     #[cfg(feature = "simulation-mode")]
     tasks.spawn(net::mock_client(
@@ -644,5 +643,4 @@ async fn main() {
         crossterm::terminal::SetTitle(""),
     );
     println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
-    return;
 }

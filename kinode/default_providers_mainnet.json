@@ -8,7 +8,7 @@
     },
     {
         "chain_id": 10,
-        "trusted": true,
+        "trusted": false,
         "provider": {
             "Node": {
                 "use_as_provider": true,
@@ -26,7 +26,7 @@
     },
     {
         "chain_id": 10,
-        "trusted": true,
+        "trusted": false,
         "provider": {
             "Node": {
                 "use_as_provider": true,
@@ -44,7 +44,7 @@
     },
     {
         "chain_id": 10,
-        "trusted": true,
+        "trusted": false,
         "provider": {
             "Node": {
                 "use_as_provider": true,
