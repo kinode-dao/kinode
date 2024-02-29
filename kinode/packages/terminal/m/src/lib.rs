@@ -1,5 +1,7 @@
 use clap::{Arg, Command};
-use kinode_process_lib::{await_next_request_body, call_init, println, Address, Request, Response};
+use kinode_process_lib::{
+    await_next_request_body, call_init, println, Address, Request, Response, SendErrorKind,
+};
 use regex::Regex;
 
 wit_bindgen::generate!({
@@ -78,10 +80,24 @@ fn init(_our: Address) {
             println!("m: awaiting response for {}s", s);
             match req.send_and_await_response(*s).unwrap() {
                 Ok(res) => {
-                    let _ = Response::new().body(res.body()).send();
+                    // TODO piping is broken. Patching it by just printing the response
+                    // let _ = Response::new().body(res.body()).send();
+                    if let Ok(txt) = std::str::from_utf8(&res.body()) {
+                        println!("{txt}");
+                    } else {
+                        println!("{:?}", res.body());
+                    }
                 }
                 Err(e) => {
-                    println!("m: SendError: {:?}", e.kind);
+                    println!(
+                        "m: {}",
+                        match e.kind {
+                            SendErrorKind::Timeout =>
+                                "target did not send Response in time, try increasing the await time",
+                            SendErrorKind::Offline =>
+                                "failed to send message because the target is offline",
+                        }
+                    );
                 }
             }
         }

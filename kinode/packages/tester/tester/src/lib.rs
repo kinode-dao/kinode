@@ -47,7 +47,7 @@ fn handle_message(
                     Response::new().body(body).send().unwrap();
                 }
                 tt::TesterResponse::GetFullMessage(_) => {
-                    unimplemented!()
+                    fail!("tester");
                 }
             }
             Ok(())
@@ -83,7 +83,7 @@ fn handle_message(
                             Ok(child_process_id) => child_process_id,
                             Err(e) => {
                                 println!("couldn't spawn {}: {}", child, e);
-                                panic!("couldn't spawn"); //  TODO
+                                fail!("tester");
                             }
                         };
                         Request::new()
@@ -92,12 +92,12 @@ fn handle_message(
                                 process: child_process_id,
                             })
                             .body(body)
-                            .expects_response(test_timeout)
+                            .expects_response(test_timeout * 2)
                             .send()?;
                     }
                 }
                 tt::TesterRequest::KernelMessage(_) | tt::TesterRequest::GetFullMessage(_) => {
-                    unimplemented!()
+                    fail!("tester");
                 }
             }
             Ok(())
@@ -107,11 +107,11 @@ fn handle_message(
 
 call_init!(init);
 fn init(our: Address) {
-    println!("tester: begin");
+    println!("{}: begin", our);
 
     let mut messages: Messages = IndexMap::new();
     let mut node_names: Vec<String> = Vec::new();
-    let _ = Request::new()
+    match Request::new()
         .target(make_vfs_address(&our).unwrap())
         .body(
             serde_json::to_vec(&vfs::VfsRequest {
@@ -121,12 +121,20 @@ fn init(our: Address) {
             .unwrap(),
         )
         .send_and_await_response(5)
-        .unwrap()
-        .unwrap();
+    {
+        Err(_) => {
+            fail!("tester");
+        }
+        Ok(r) => {
+            if r.is_err() {
+                fail!("tester");
+            }
+        }
+    }
 
     // orchestrate tests using external scripts
     //  -> must give drive cap to rpc
-    let _ = Request::new()
+    let sent = Request::new()
         .target(("our", "kernel", "distro", "sys"))
         .body(
             serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
@@ -145,14 +153,17 @@ fn init(our: Address) {
             })
             .unwrap(),
         )
-        .send()
-        .unwrap();
+        .send();
+    if sent.is_err() {
+        fail!("tester");
+    }
 
     loop {
         match handle_message(&our, &mut messages, &mut node_names) {
             Ok(()) => {}
             Err(e) => {
                 println!("tester: error: {:?}", e,);
+                fail!("tester");
             }
         };
     }

@@ -107,6 +107,11 @@ async fn main() {
             arg!(--testnet "If set, use Sepolia testnet")
                 .default_value("false")
                 .value_parser(value_parser!(bool)),
+        )
+        .arg(
+            arg!(--verbosity <VERBOSITY> "Verbosity level: higher is more verbose")
+                .default_value("0")
+                .value_parser(value_parser!(u8)),
         );
 
     #[cfg(feature = "simulation-mode")]
@@ -150,6 +155,7 @@ async fn main() {
     } else {
         (10, register::KNS_OPTIMISM_ADDRESS.to_string())
     };
+    let verbose_mode = *matches.get_one::<u8>("verbosity").unwrap();
 
     // check .testnet file for true/false in order to enforce testnet mode on subsequent boots of this node
     match fs::read(format!("{}/.testnet", home_directory_path)).await {
@@ -594,6 +600,7 @@ async fn main() {
             print_sender.clone(),
             print_receiver,
             is_detached,
+            verbose_mode,
         ) => {
             match quit {
                 Ok(_) => "graceful exit".into(),

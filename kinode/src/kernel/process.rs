@@ -7,11 +7,15 @@ pub use lib::Process;
 use ring::signature::{self, KeyPair};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use tokio::fs;
 use tokio::task::JoinHandle;
 use wasmtime::component::ResourceTable as Table;
 use wasmtime::component::*;
 use wasmtime::{Engine, Store};
-use wasmtime_wasi::preview2::{pipe::MemoryOutputPipe, WasiCtx, WasiCtxBuilder, WasiView};
+use wasmtime_wasi::preview2::{
+    pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiView,
+};
+use wasmtime_wasi::sync::Dir;
 
 const STACK_TRACE_SIZE: usize = 5000;
 
@@ -492,6 +496,7 @@ pub async fn make_process_loop(
     wasm_bytes: Vec<u8>,
     caps_oracle: t::CapMessageSender,
     engine: Engine,
+    home_directory_path: String,
 ) -> Result<()> {
     // before process can be instantiated, need to await 'run' message from kernel
     let mut pre_boot_queue = Vec::<Result<t::KernelMessage, t::WrappedSendError>>::new();
@@ -535,7 +540,31 @@ pub async fn make_process_loop(
 
     let table = Table::new();
     let wasi_stderr = MemoryOutputPipe::new(STACK_TRACE_SIZE);
-    let wasi = WasiCtxBuilder::new().stderr(wasi_stderr.clone()).build();
+
+    let tmp_path = format!(
+        "{}/vfs/{}:{}/tmp",
+        home_directory_path,
+        metadata.our.process.package(),
+        metadata.our.process.publisher()
+    );
+    if let Err(e) = fs::create_dir_all(&tmp_path).await {
+        panic!("failed creating tmp dir! {:?}", e);
+    }
+    let Ok(wasi_tempdir) =
+        Dir::open_ambient_dir(tmp_path.clone(), wasmtime_wasi::sync::ambient_authority())
+    else {
+        panic!("failed to open ambient tmp dir!");
+    };
+    let wasi = WasiCtxBuilder::new()
+        .preopened_dir(
+            wasi_tempdir,
+            DirPerms::all(),
+            FilePerms::all(),
+            tmp_path.clone(),
+        )
+        .env("TEMP_DIR", tmp_path)
+        .stderr(wasi_stderr.clone())
+        .build();
 
     wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
 
