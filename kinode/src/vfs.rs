@@ -554,7 +554,11 @@ async fn parse_package_and_drive(
 
     if !canon_path.starts_with(vfs_path) {
         return Err(VfsError::BadRequest {
-            error: "input path tries to escape parent vfs directory.".into(),
+            error: format!(
+                "input path tries to escape parent vfs directory: {:?}",
+                path
+            )
+            .into(),
         })?;
     }
 
@@ -562,7 +566,11 @@ async fn parse_package_and_drive(
     let path = canon_path
         .strip_prefix(vfs_path)
         .map_err(|_| VfsError::BadRequest {
-            error: "input path tries to escape parent vfs directory".into(),
+            error: format!(
+                "input path tries to escape parent vfs directory: {:?}",
+                path
+            )
+            .into(),
         })?
         .display()
         .to_string();
