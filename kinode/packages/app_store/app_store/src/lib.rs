@@ -574,7 +574,7 @@ pub fn handle_install(
     state: &mut State,
     package_id: &PackageId,
 ) -> anyhow::Result<()> {
-    let drive_path = format!("/{package_id}/pkg");
+    let drive_path = format!("{package_id}/pkg");
     let manifest = fetch_package_manifest(package_id)?;
     // always grant read/write to their drive, which we created for them
     let Some(read_cap) = get_capability(

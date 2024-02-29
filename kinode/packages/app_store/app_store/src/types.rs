@@ -319,7 +319,7 @@ impl State {
     }
 
     pub fn uninstall(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
-        let drive_path = format!("/{package_id}/pkg");
+        let drive_path = format!("{package_id}/pkg");
         Request::new()
             .target(("our", "vfs", "distro", "sys"))
             .body(serde_json::to_vec(&vfs::VfsRequest {

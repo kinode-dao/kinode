@@ -24,6 +24,8 @@ pub async fn vfs(
         panic!("failed creating vfs dir! {:?}", e);
     }
 
+    let vfs_path = fs::canonicalize(&vfs_path).await?;
+
     let open_files: Arc<DashMap<PathBuf, Arc<Mutex<fs::File>>>> = Arc::new(DashMap::new());
 
     let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
@@ -91,7 +93,7 @@ async fn handle_request(
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     send_to_caps_oracle: CapMessageSender,
-    vfs_path: String,
+    vfs_path: PathBuf,
 ) -> Result<(), VfsError> {
     let KernelMessage {
         id,
@@ -191,8 +193,8 @@ async fn handle_request(
     }
 
     // current prepend to filepaths needs to be: /package_id/drive/path
-    let (package_id, drive, rest) = parse_package_and_drive(&request.path).await?;
-    let drive = format!("/{}/{}", package_id, drive);
+    let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path).await?;
+    let drive: String = format!("{}/{}", package_id, drive);
     let path = PathBuf::from(request.path.clone());
 
     if km.source.process != *KERNEL_PROCESS_ID {
@@ -209,7 +211,8 @@ async fn handle_request(
         .await?;
     }
     // real safe path that the vfs will use
-    let path = PathBuf::from(format!("{}{}/{}", vfs_path, drive, rest));
+    let path = vfs_path.join(&drive).join(&rest);
+
     let (body, bytes) = match request.action {
         VfsAction::CreateDrive => {
             // handled in check_caps.
@@ -288,6 +291,7 @@ async fn handle_request(
         }
         VfsAction::Read => {
             let contents = fs::read(&path).await?;
+
             (
                 serde_json::to_vec(&VfsResponse::Read).unwrap(),
                 Some(contents),
@@ -374,12 +378,12 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Rename { new_path } => {
-            let new_path = format!("{}/{}", vfs_path, new_path);
+            let new_path = vfs_path.join(new_path);
             fs::rename(path, new_path).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::CopyFile { new_path } => {
-            let new_path = format!("{}/{}", vfs_path, new_path);
+            let new_path = vfs_path.join(new_path);
             fs::copy(path, new_path).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
@@ -534,7 +538,35 @@ async fn handle_request(
     Ok(())
 }
 
-async fn parse_package_and_drive(path: &str) -> Result<(PackageId, String, String), VfsError> {
+async fn parse_package_and_drive(
+    path: &str,
+    vfs_path: &PathBuf,
+) -> Result<(PackageId, String, String), VfsError> {
+    // trim leading "/" for joining
+    let path = path.trim_start_matches('/');
+
+    // sanitize path.
+    let path = PathBuf::from(path);
+
+    let full_path = vfs_path.join(&path);
+
+    let canon_path = full_path.canonicalize()?;
+
+    if !canon_path.starts_with(vfs_path) {
+        return Err(VfsError::BadRequest {
+            error: "input path tries to escape parent vfs directory.".into(),
+        })?;
+    }
+
+    // extract original path.
+    let path = canon_path
+        .strip_prefix(vfs_path)
+        .map_err(|_| VfsError::BadRequest {
+            error: "input path tries to escape parent vfs directory".into(),
+        })?
+        .display()
+        .to_string();
+
     let mut parts: Vec<&str> = path.split('/').collect();
 
     if parts[0].is_empty() {
@@ -600,7 +632,7 @@ async fn check_caps(
     path: PathBuf,
     drive: String,
     package_id: PackageId,
-    vfs_dir_path: String,
+    vfs_dir: PathBuf,
 ) -> Result<(), VfsError> {
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
 
@@ -721,7 +753,9 @@ async fn check_caps(
                 return Ok(());
             }
 
-            let (new_package_id, new_drive, _rest) = parse_package_and_drive(new_path).await?;
+            let (new_package_id, new_drive, _rest) =
+                parse_package_and_drive(new_path, &vfs_dir).await?;
+
             let new_drive = format!("/{}/{}", new_package_id, new_drive);
             // if both new and old path are within the package_id path, ok
             if (src_package_id == package_id) && (src_package_id == new_package_id) {
@@ -806,7 +840,7 @@ async fn check_caps(
             )
             .await?;
 
-            let drive_path = format!("{}{}", vfs_dir_path, drive);
+            let drive_path = vfs_dir.join(&drive);
             fs::create_dir_all(drive_path).await?;
             Ok(())
         }
