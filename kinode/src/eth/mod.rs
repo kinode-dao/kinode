@@ -189,7 +189,7 @@ pub async fn provider(
                 )
                 .await
                 {
-                    error_message(&our, km_id, response_target, e, &send_to_loop).await;
+                    error_message(&our, km_id, response_target, false, e, &send_to_loop).await;
                 };
             }
         }
@@ -405,11 +405,18 @@ async fn handle_eth_action(
                         .await;
                     }
                     Ok(Err(e)) => {
-                        error_message(&our, km.id, km.source, e, &send_to_loop).await;
+                        error_message(&our, km.id, km.source, false, e, &send_to_loop).await;
                     }
                     Err(_) => {
-                        error_message(&our, km.id, km.source, EthError::RpcTimeout, &send_to_loop)
-                            .await;
+                        error_message(
+                            &our,
+                            km.id,
+                            km.source,
+                            false,
+                            EthError::RpcTimeout,
+                            &send_to_loop,
+                        )
+                        .await;
                     }
                 }
                 response_channels.remove(&km.id);
@@ -468,7 +475,7 @@ async fn create_new_subscription(
                 ActiveSub::Local(tokio::spawn(async move {
                     // await the subscription error and kill it if so
                     if let Err(e) = maintain_subscription.await {
-                        error_message(&our, km_id, target.clone(), e, &send_to_loop).await;
+                        error_message(&our, km_id, target.clone(), true, e, &send_to_loop).await;
                         active_subscriptions.entry(target).and_modify(|sub_map| {
                             sub_map.remove(&km_id);
                         });
@@ -484,7 +491,7 @@ async fn create_new_subscription(
             subs.insert(sub_id, ActiveSub::Remote(provider_node));
         }
         Err(e) => {
-            error_message(&our, km_id, target.clone(), e, &send_to_loop).await;
+            error_message(&our, km_id, target.clone(), false, e, &send_to_loop).await;
         }
         _ => panic!(),
     }
@@ -874,6 +881,7 @@ async fn error_message(
     our: &str,
     km_id: u64,
     target: Address,
+    req: bool,
     error: EthError,
     send_to_loop: &MessageSender,
 ) {
@@ -883,7 +891,7 @@ async fn error_message(
         km_id,
         target,
         None,
-        false,
+        req,
         None,
         EthResponse::Err(error),
         send_to_loop,
