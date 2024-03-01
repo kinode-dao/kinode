@@ -59,7 +59,7 @@ pub enum EthResponse {
     Err(EthError),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub enum EthError {
     /// provider module cannot parse message
     MalformedRequest,
