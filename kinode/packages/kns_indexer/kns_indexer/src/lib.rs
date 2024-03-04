@@ -99,13 +99,13 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
         match eth_provider.subscribe(1, filter.clone().from_block(from_block)) {
             Ok(()) => break,
             Err(_) => {
-                println!("kns_indexer: failed to subscribe to chain! trying again in 5s...");
+                println!("failed to subscribe to chain! trying again in 5s...");
                 std::thread::sleep(std::time::Duration::from_secs(5));
                 continue;
             }
         }
     }
-    println!("kns_indexer: subscribed to logs successfully");
+    println!("subscribed to logs successfully");
 }
 
 struct Component;
@@ -127,10 +127,7 @@ impl Guest for Component {
             (chain_id, contract_address) = serde_json::from_slice(&body).unwrap();
             break;
         }
-        println!(
-            "kns_indexer: indexing on contract address {}",
-            contract_address
-        );
+        println!("indexing on contract address {}", contract_address);
 
         // if we have state, load it in
         let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?))
@@ -138,7 +135,9 @@ impl Guest for Component {
             Some(s) => {
                 // if chain id or contract address changed from a previous run, reset state
                 if s.chain_id != chain_id || s.contract_address != contract_address {
-                    println!("kns_indexer: resetting state because runtime contract address or chain ID changed");
+                    println!(
+                        "resetting state because runtime contract address or chain ID changed"
+                    );
                     State {
                         chain_id,
                         contract_address,
@@ -147,10 +146,7 @@ impl Guest for Component {
                         block: 1,
                     }
                 } else {
-                    println!(
-                        "kns_indexer: loading in {} persisted PKI entries",
-                        s.nodes.len()
-                    );
+                    println!("loading in {} persisted PKI entries", s.nodes.len());
                     s
                 }
             }
@@ -166,7 +162,7 @@ impl Guest for Component {
         match main(our, state) {
             Ok(_) => {}
             Err(e) => {
-                println!("kns_indexer: error: {:?}", e);
+                println!("error: {:?}", e);
             }
         }
     }
@@ -208,7 +204,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     break;
                 }
                 Err(_) => {
-                    println!("kns_indexer: failed to fetch logs! trying again in 5s...");
+                    println!("failed to fetch logs! trying again in 5s...");
                     std::thread::sleep(std::time::Duration::from_secs(5));
                     continue;
                 }
@@ -231,7 +227,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     loop {
         let Ok(message) = await_message() else {
-            println!("kns_indexer: got network error");
+            println!("got network error");
             continue;
         };
         let Message::Request { source, body, .. } = message else {
@@ -251,7 +247,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             )?;
         } else {
             let Ok(request) = serde_json::from_slice::<IndexerRequests>(&body) else {
-                println!("kns_indexer: got invalid message");
+                println!("got invalid message");
                 continue;
             };
 
@@ -294,7 +290,7 @@ fn handle_eth_message(
     filter: &eth::Filter,
 ) -> anyhow::Result<()> {
     let Ok(eth_result) = serde_json::from_slice::<eth::EthSubResult>(body) else {
-        return Err(anyhow::anyhow!("kns_indexer: got invalid message"));
+        return Err(anyhow::anyhow!("got invalid message"));
     };
 
     match eth_result {
@@ -304,7 +300,7 @@ fn handle_eth_message(
             }
         }
         Err(_e) => {
-            println!("kns_indexer: got eth subscription error");
+            println!("got eth subscription error");
             subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
         }
     }
@@ -415,7 +411,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     let block = log.block_number.expect("expect").to::<u64>();
     if block > state.block + 100 {
         println!(
-            "kns_indexer: persisting {} PKI entries at block {}",
+            "persisting {} PKI entries at block {}",
             state.nodes.len(),
             block
         );
@@ -430,7 +426,7 @@ fn get_name(log: &eth::Log) -> String {
     let name = match dnswire_decode(decoded.0.clone()) {
         Ok(n) => n,
         Err(_) => {
-            println!("kns_indexer: failed to decode name: {:?}", decoded.0);
+            println!("failed to decode name: {:?}", decoded.0);
             panic!("")
         }
     };

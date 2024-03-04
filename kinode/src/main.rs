@@ -249,9 +249,7 @@ async fn main() {
         {
             ip
         } else {
-            println!(
-                "\x1b[38;5;196mfailed to find public IPv4 address: booting as a routed node\x1b[0m"
-            );
+            println!("failed to find public IPv4 address: booting as a routed node");
             std::net::Ipv4Addr::LOCALHOST
         }
     };
@@ -586,7 +584,7 @@ async fn main() {
     let quit_msg: String = tokio::select! {
         Some(Ok(res)) = tasks.join_next() => {
             format!(
-                "\x1b[38;5;196muh oh, a kernel process crashed -- this should never happen: {:?}\x1b[0m",
+                "uh oh, a kernel process crashed -- this should never happen: {:?}",
                 res
             )
         }
@@ -641,6 +639,8 @@ async fn main() {
         stdout,
         crossterm::event::DisableBracketedPaste,
         crossterm::terminal::SetTitle(""),
+        crossterm::style::SetForegroundColor(crossterm::style::Color::Red),
+        crossterm::style::Print(format!("\r\n{quit_msg}")),
+        crossterm::style::ResetColor,
     );
-    println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
 }

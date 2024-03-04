@@ -92,7 +92,7 @@ impl Guest for Component {
             let (source, message) = match wit::receive() {
                 Ok((source, message)) => (source, message),
                 Err((error, _context)) => {
-                    println!("terminal: net error: {:?}!", error.kind);
+                    println!("net error: {:?}!", error.kind);
                     continue;
                 }
             };
@@ -104,25 +104,25 @@ impl Guest for Component {
                             std::str::from_utf8(&body).unwrap_or_default(),
                         ) {
                             Ok(()) => continue,
-                            Err(e) => println!("terminal: {e}"),
+                            Err(e) => println!("{e}"),
                         }
                     } else if state.our.node == source.node
                         && state.our.package() == source.package()
                     {
                         let Ok(action) = serde_json::from_slice::<TerminalAction>(&body) else {
-                            println!("terminal: failed to parse action from: {}", source);
+                            println!("failed to parse action from: {}", source);
                             continue;
                         };
                         match action {
                             TerminalAction::EditAlias { alias, process } => {
                                 match handle_alias_change(&mut state, alias, process) {
                                     Ok(()) => continue,
-                                    Err(e) => println!("terminal: {e}"),
+                                    Err(e) => println!("{e}"),
                                 };
                             }
                         }
                     } else {
-                        println!("terminal: ignoring message from: {}", source);
+                        println!("ignoring message from: {}", source);
                         continue;
                     }
                 }
@@ -154,7 +154,7 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
     // build initial caps
     let process_id = format!("{}:{}", rand::random::<u64>(), package); // all scripts are given random process IDs
     let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
-        return Err(anyhow::anyhow!("terminal: invalid process id!"));
+        return Err(anyhow::anyhow!("invalid process id!"));
     };
 
     let _bytes_response = Request::new()
@@ -337,18 +337,18 @@ fn handle_alias_change(
         Some(process) => {
             // first check to make sure the script is actually a script
             let Ok(_) = get_entry(&process) else {
-                return Err(anyhow!("terminal: process {} not found", process));
+                return Err(anyhow!("process {} not found", process));
             };
 
             state.aliases.insert(alias.clone(), process.clone());
-            println!("terminal: alias {} set to {}", alias, process);
+            println!("alias {} set to {}", alias, process);
         }
         None => {
             if state.aliases.contains_key(&alias) {
                 state.aliases.remove(&alias);
-                println!("terminal: alias {} removed", alias);
+                println!("alias {} removed", alias);
             } else {
-                println!("terminal: alias {} not found", alias);
+                println!("alias {} not found", alias);
             }
         }
     }
