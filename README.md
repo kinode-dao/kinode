@@ -40,13 +40,17 @@ Get an eth-sepolia-rpc API key and pass that as an argument. You can get one for
 
 Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`. The `--` here separates cargo arguments from binary arguments.
 
-TODO: document feature flags `--simulation-mode`
+TODO: document feature flags in `--simulation-mode`
 ```bash
 # OPTIONAL: --release flag
-cargo +nightly run -p kinode -- home --rpc wss://<your-api-url> --testnet
+cargo +nightly run -p kinode -- home --testnet
 ```
 
-On boot you will be prompted to navigate to `localhost:8080`. Make sure your ETH wallet is connected to the Sepolia test network. Login should be straightforward, just submit the transactions and follow the flow. If you want to register a new ID you will either need [Sepolia testnet tokens](https://www.infura.io/faucet/sepolia) or an invite code.
+On boot you will be prompted to navigate to `localhost:8080`. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need [Sepolia testnet tokens](https://www.infura.io/faucet/sepolia) or an invite code.
+
+### Configuring the ETH RPC Provider
+
+By default, a node will use the hardcoded providers for the network ([testnet](./kinode/default_providers_testnet.json)/[mainnet](./kinode/default_providers_mainnet.json)) it is booted on. A node can use a WebSockets RPC URL directly, or use another Kinode as a relay point. To adjust the providers a node uses, just create and modify the `.eth_providers` file in the node's home folder (set at boot). See the Kinode Book for more docs, and see the [default providers file here](./kinode/default_providers_testnet.json) for a template to create `.eth_providers`.
 
 ### Distro and Runtime processes
 
@@ -75,7 +79,7 @@ The distro userspace packages are:
 - `homepage:sys`
 - `kns_indexer:sys`
 - `terminal:sys`
-- `tester:sys` (only installed in if compiled with feature flag `simulation-mode`)
+- `tester:sys` (used with `kit` for running test suites)
 
 The `sys` publisher is not a real node ID, but it's also not a special case value. Packages, whether runtime or userspace, installed from disk when a node bootstraps do not have their package ID or publisher node ID validated. Packages installed (not injected locally, as is done during development) after a node has booted will have their publisher field validated.
 
