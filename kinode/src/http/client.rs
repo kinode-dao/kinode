@@ -378,7 +378,7 @@ async fn handle_http_request(
 
     let _ = print_tx
         .send(Printout {
-            verbosity: 1,
+            verbosity: 2,
             content: format!("http_client: building {req_method} request to {}", req.url),
         })
         .await;
@@ -437,7 +437,7 @@ async fn handle_http_request(
         Ok(response) => {
             let _ = print_tx
                 .send(Printout {
-                    verbosity: 1,
+                    verbosity: 2,
                     content: "http_client: executed request, got response".to_string(),
                 })
                 .await;
@@ -478,7 +478,7 @@ async fn handle_http_request(
         Err(e) => {
             let _ = print_tx
                 .send(Printout {
-                    verbosity: 1,
+                    verbosity: 2,
                     content: "http_client: executed request but got error".to_string(),
                 })
                 .await;
