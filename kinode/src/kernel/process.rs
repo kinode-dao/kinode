@@ -548,12 +548,12 @@ pub async fn make_process_loop(
         metadata.our.process.publisher()
     );
     if let Err(e) = fs::create_dir_all(&tmp_path).await {
-        panic!("failed creating tmp dir! {:?}", e);
+        panic!("failed creating tmp dir! {:?}", e); // TODO REMOVE
     }
     let Ok(wasi_tempdir) =
         Dir::open_ambient_dir(tmp_path.clone(), wasmtime_wasi::sync::ambient_authority())
     else {
-        panic!("failed to open ambient tmp dir!");
+        panic!("failed to open ambient tmp dir!"); // TODO REMOVE
     };
     let wasi = WasiCtxBuilder::new()
         .preopened_dir(

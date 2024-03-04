@@ -1,7 +1,6 @@
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message, eth, get_typed_state, print_to_terminal, println, set_state, Address, Message,
-    Request, Response,
+    await_message, eth, get_typed_state, println, set_state, Address, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{
@@ -28,7 +27,7 @@ struct State {
     // human readable name to most recent on-chain routing information as json
     // NOTE: not every namehash will have a node registered
     nodes: HashMap<String, KnsUpdate>,
-    // last block we read from
+    // last block we have an update from
     block: u64,
 }
 
@@ -95,9 +94,9 @@ sol! {
     event RoutingUpdate(bytes32 indexed node, bytes32[] routers);
 }
 
-fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
+fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth::Filter) {
     loop {
-        match eth_provider.subscribe(1, filter.clone()) {
+        match eth_provider.subscribe(1, filter.clone().from_block(from_block)) {
             Ok(()) => break,
             Err(_) => {
                 println!("kns_indexer: failed to subscribe to chain! trying again in 5s...");
@@ -147,6 +146,10 @@ impl Guest for Component {
                         block: 1,
                     }
                 } else {
+                    println!(
+                        "kns_indexer: loading in {} persisted PKI entries",
+                        s.nodes.len()
+                    );
                     s
                 }
             }
@@ -221,7 +224,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     set_state(&bincode::serialize(&state)?);
 
-    subscribe_to_logs(&eth_provider, filter.clone());
+    subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -301,7 +304,7 @@ fn handle_eth_message(
         }
         Err(e) => {
             println!("kns_indexer: got sub error, resubscribing.. {:?}", e.error);
-            subscribe_to_logs(&eth_provider, filter.clone());
+            subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
         }
     }
 
@@ -340,8 +343,6 @@ fn handle_eth_message(
 }
 
 fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
-    state.block = log.block_number.expect("expect").to::<u64>();
-
     let node_id = log.topics[1];
 
     let name = match state.names.entry(node_id.to_string()) {
@@ -403,17 +404,22 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
         && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
         && send
     {
-        print_to_terminal(
-            1,
-            &format!(
-                "kns_indexer: sending ID to net: {node:?} (blocknum {})",
-                state.block
-            ),
-        );
         Request::new()
             .target((&our.node, "net", "distro", "sys"))
             .try_body(NetActions::KnsUpdate(node.clone()))?
             .send()?;
+    }
+
+    // if new block is > 100 from last block, save state
+    let block = log.block_number.expect("expect").to::<u64>();
+    if block > state.block + 100 {
+        println!(
+            "kns_indexer: persisting {} PKI entries at block {}",
+            state.nodes.len(),
+            block
+        );
+        state.block = block;
+        set_state(&bincode::serialize(state)?);
     }
     Ok(())
 }

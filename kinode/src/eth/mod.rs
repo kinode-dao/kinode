@@ -1,11 +1,9 @@
 use alloy_providers::provider::Provider;
-use alloy_pubsub::{PubSubFrontend, RawSubscription};
+use alloy_pubsub::PubSubFrontend;
 use alloy_rpc_client::ClientBuilder;
-use alloy_rpc_types::pubsub::SubscriptionResult;
 use alloy_transport_ws::WsConnect;
 use anyhow::Result;
 use dashmap::DashMap;
-use futures::Future;
 use lib::types::core::*;
 use lib::types::eth::*;
 use serde::{Deserialize, Serialize};
@@ -13,6 +11,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::task::JoinHandle;
 use url::Url;
+
+mod subscription;
 
 /// meta-type for all incoming requests we need to handle
 #[derive(Debug, Serialize, Deserialize)]
@@ -48,17 +48,6 @@ struct NodeProvider {
     pub name: String,
 }
 
-/// existing subscriptions held by local OR remote processes
-type ActiveSubscriptions = Arc<DashMap<Address, HashMap<u64, ActiveSub>>>;
-
-type ResponseChannels = Arc<DashMap<u64, ProcessMessageSender>>;
-
-#[derive(Debug)]
-enum ActiveSub {
-    Local(JoinHandle<()>),
-    Remote(String), // name of node providing this subscription for us
-}
-
 impl ActiveProviders {
     fn add_provider_config(&mut self, new: ProviderConfig) {
         match new.provider {
@@ -85,6 +74,53 @@ impl ActiveProviders {
     fn remove_provider(&mut self, remove: &str) {
         self.urls.retain(|x| x.url != remove);
         self.nodes.retain(|x| x.name != remove);
+    }
+}
+
+/// existing subscriptions held by local OR remote processes
+type ActiveSubscriptions = Arc<DashMap<Address, HashMap<u64, ActiveSub>>>;
+
+type ResponseChannels = Arc<DashMap<u64, ProcessMessageSender>>;
+
+#[derive(Debug)]
+enum ActiveSub {
+    Local(JoinHandle<()>),
+    Remote {
+        provider_node: String,
+        handle: JoinHandle<()>,
+        sender: tokio::sync::mpsc::Sender<EthSubResult>,
+    },
+}
+
+impl ActiveSub {
+    async fn close(&self, sub_id: u64, state: &ModuleState) {
+        match self {
+            ActiveSub::Local(handle) => {
+                handle.abort();
+            }
+            ActiveSub::Remote {
+                provider_node,
+                handle,
+                ..
+            } => {
+                // tell provider node we don't need their services anymore
+                kernel_message(
+                    &state.our,
+                    rand::random(),
+                    Address {
+                        node: provider_node.clone(),
+                        process: ETH_PROCESS_ID.clone(),
+                    },
+                    None,
+                    true,
+                    None,
+                    EthAction::UnsubscribeLogs(sub_id),
+                    &state.send_to_loop,
+                )
+                .await;
+                handle.abort();
+            }
+        }
     }
 }
 
@@ -208,6 +244,7 @@ async fn handle_network_error(
     verbose_print(&print_tx, "eth: got network error").await;
     // if we hold active subscriptions for the remote node that this error refers to,
     // close them here -- they will need to resubscribe
+    // TODO is this necessary?
     if let Some(sub_map) = active_subscriptions.get(&wrapped_error.source) {
         for (_sub_id, sub) in sub_map.iter() {
             if let ActiveSub::Local(handle) = sub {
@@ -282,33 +319,40 @@ async fn handle_message(
                     let Some(rsvp) = km.rsvp else {
                         return Ok(()); // no rsvp, no need to forward
                     };
-                    let sub_id = match &eth_sub_result {
+                    let sub_id = match eth_sub_result {
                         Ok(EthSub { id, .. }) => id,
                         Err(EthSubError { id, .. }) => id,
                     };
                     if let Some(sub_map) = state.active_subscriptions.get(&rsvp) {
-                        if let Some(sub) = sub_map.get(sub_id) {
-                            if let ActiveSub::Remote(node_provider) = sub {
-                                if node_provider == &km.source.node {
-                                    kernel_message(
-                                        &state.our,
-                                        km.id,
-                                        rsvp,
-                                        None,
-                                        true,
-                                        None,
-                                        eth_sub_result,
-                                        &state.send_to_loop,
-                                    )
-                                    .await;
+                        if let Some(ActiveSub::Remote {
+                            provider_node,
+                            sender,
+                            ..
+                        }) = sub_map.get(&sub_id)
+                        {
+                            if provider_node == &km.source.node {
+                                if let Ok(()) = sender.send(eth_sub_result).await {
                                     return Ok(());
                                 }
                             }
                         }
                     }
+                    // tell the remote provider that we don't have this sub
+                    // so they can stop sending us updates
                     verbose_print(
                         &state.print_tx,
                         "eth: got eth_sub_result but no matching sub found",
+                    )
+                    .await;
+                    kernel_message(
+                        &state.our.clone(),
+                        km.id,
+                        km.source.clone(),
+                        None,
+                        true,
+                        None,
+                        EthAction::UnsubscribeLogs(sub_id),
+                        &state.send_to_loop,
                     )
                     .await;
                 }
@@ -327,14 +371,30 @@ async fn handle_eth_action(
     // check our access settings if the request is from a remote node
     if km.source.node != *state.our {
         if state.access_settings.deny.contains(&km.source.node) {
+            verbose_print(
+                &state.print_tx,
+                "eth: got eth_action from unauthorized remote source",
+            )
+            .await;
             return Err(EthError::PermissionDenied);
         }
         if !state.access_settings.public {
             if !state.access_settings.allow.contains(&km.source.node) {
+                verbose_print(
+                    &state.print_tx,
+                    "eth: got eth_action from unauthorized remote source",
+                )
+                .await;
                 return Err(EthError::PermissionDenied);
             }
         }
     }
+
+    verbose_print(
+        &state.print_tx,
+        &format!("eth: handling eth_action {eth_action:?}"),
+    )
+    .await;
 
     // for each incoming action, we need to assign a provider from our map
     // based on the chain id. once we assign a provider, we can use it for
@@ -342,7 +402,7 @@ async fn handle_eth_action(
     // before returning an error.
     match eth_action {
         EthAction::SubscribeLogs { sub_id, .. } => {
-            tokio::spawn(create_new_subscription(
+            tokio::spawn(subscription::create_new_subscription(
                 state.our.to_string(),
                 km.id,
                 km.source.clone(),
@@ -362,27 +422,7 @@ async fn handle_eth_action(
                 .entry(km.source)
                 .or_insert(HashMap::new());
             if let Some(sub) = sub_map.remove(&sub_id) {
-                match sub {
-                    ActiveSub::Local(handle) => {
-                        handle.abort();
-                    }
-                    ActiveSub::Remote(node) => {
-                        kernel_message(
-                            &state.our,
-                            rand::random(),
-                            Address {
-                                node: node.clone(),
-                                process: ETH_PROCESS_ID.clone(),
-                            },
-                            None,
-                            true,
-                            Some(60), // TODO
-                            serde_json::to_vec(&eth_action).unwrap(),
-                            &state.send_to_loop,
-                        )
-                        .await;
-                    }
-                }
+                sub.close(sub_id, state).await;
             }
         }
         EthAction::Request { .. } => {
@@ -432,230 +472,6 @@ async fn handle_eth_action(
         }
     }
     Ok(())
-}
-
-/// cleans itself up when the subscription is closed or fails.
-async fn create_new_subscription(
-    our: String,
-    km_id: u64,
-    target: Address,
-    rsvp: Option<Address>,
-    send_to_loop: MessageSender,
-    sub_id: u64,
-    eth_action: EthAction,
-    providers: Providers,
-    active_subscriptions: ActiveSubscriptions,
-    response_channels: ResponseChannels,
-    print_tx: PrintSender,
-) {
-    verbose_print(&print_tx, "eth: creating new subscription").await;
-    match build_subscription(
-        &our,
-        km_id,
-        &target,
-        &rsvp,
-        &send_to_loop,
-        &eth_action,
-        &providers,
-        &response_channels,
-        &print_tx,
-    )
-    .await
-    {
-        Ok((Some(maintain_subscription), None)) => {
-            // this is a local sub, as in, we connect to the rpc endpt
-            // send a response to the target that the subscription was successful
-            kernel_message(
-                &our,
-                km_id,
-                target.clone(),
-                rsvp.clone(),
-                false,
-                None,
-                EthResponse::Ok,
-                &send_to_loop,
-            )
-            .await;
-            let mut subs = active_subscriptions
-                .entry(target.clone())
-                .or_insert(HashMap::new());
-            let active_subscriptions = active_subscriptions.clone();
-            subs.insert(
-                sub_id,
-                ActiveSub::Local(tokio::spawn(async move {
-                    // await the subscription error and kill it if so
-                    if let Err(e) = maintain_subscription.await {
-                        kernel_message(
-                            &our,
-                            rand::random(),
-                            target.clone(),
-                            None,
-                            true,
-                            None,
-                            EthSubResult::Err(EthSubError {
-                                id: sub_id,
-                                error: e,
-                            }),
-                            &send_to_loop,
-                        )
-                        .await;
-                        active_subscriptions.entry(target).and_modify(|sub_map| {
-                            sub_map.remove(&km_id);
-                        });
-                    }
-                })),
-            );
-        }
-        Ok((None, Some(provider_node))) => {
-            // this is a remote sub
-            let mut subs = active_subscriptions
-                .entry(target.clone())
-                .or_insert(HashMap::new());
-            subs.insert(sub_id, ActiveSub::Remote(provider_node));
-        }
-        Err(e) => {
-            error_message(&our, km_id, target.clone(), e, &send_to_loop).await;
-        }
-        _ => panic!(),
-    }
-}
-
-async fn build_subscription(
-    our: &str,
-    km_id: u64,
-    target: &Address,
-    rsvp: &Option<Address>,
-    send_to_loop: &MessageSender,
-    eth_action: &EthAction,
-    providers: &Providers,
-    response_channels: &ResponseChannels,
-    print_tx: &PrintSender,
-) -> Result<
-    (
-        // this is dumb, sorry
-        Option<impl Future<Output = Result<(), String>>>,
-        Option<String>,
-    ),
-    EthError,
-> {
-    let EthAction::SubscribeLogs {
-        sub_id,
-        chain_id,
-        kind,
-        params,
-    } = eth_action
-    else {
-        return Err(EthError::PermissionDenied); // will never hit
-    };
-    let Some(mut aps) = providers.get_mut(&chain_id) else {
-        return Err(EthError::NoRpcForChain);
-    };
-    // first, try any url providers we have for this chain,
-    // then if we have none or they all fail, go to node providers.
-    // finally, if no provider works, return an error.
-    for url_provider in &mut aps.urls {
-        let pubsub = match &url_provider.pubsub {
-            Some(pubsub) => pubsub,
-            None => {
-                if let Ok(()) = activate_url_provider(url_provider).await {
-                    verbose_print(print_tx, "eth: activated a url provider").await;
-                    url_provider.pubsub.as_ref().unwrap()
-                } else {
-                    continue;
-                }
-            }
-        };
-        let kind = serde_json::to_value(&kind).unwrap();
-        let params = serde_json::to_value(&params).unwrap();
-        if let Ok(id) = pubsub
-            .inner()
-            .prepare("eth_subscribe", [kind, params])
-            .await
-        {
-            let rx = pubsub.inner().get_raw_subscription(id).await;
-            return Ok((
-                Some(maintain_subscription(
-                    our.to_string(),
-                    *sub_id,
-                    rx,
-                    target.clone(),
-                    rsvp.clone(),
-                    send_to_loop.clone(),
-                )),
-                None,
-            ));
-        }
-        // this provider failed and needs to be reset
-        url_provider.pubsub = None;
-    }
-    // now we need a response channel
-    let (sender, mut response_receiver) = tokio::sync::mpsc::channel(1);
-    response_channels.insert(km_id, sender);
-    for node_provider in &mut aps.nodes {
-        match forward_to_node_provider(
-            &our,
-            km_id,
-            rsvp.clone(),
-            node_provider,
-            eth_action.clone(),
-            &send_to_loop,
-            &mut response_receiver,
-        )
-        .await
-        {
-            EthResponse::Ok => {
-                kernel_message(
-                    &our,
-                    km_id,
-                    target.clone(),
-                    None,
-                    false,
-                    None,
-                    EthResponse::Ok,
-                    &send_to_loop,
-                )
-                .await;
-                response_channels.remove(&km_id);
-                return Ok((None, Some(node_provider.name.clone())));
-            }
-            EthResponse::Response { .. } => {
-                // the response to a SubscribeLogs request must be an 'ok'
-                node_provider.usable = false;
-            }
-            EthResponse::Err(e) => {
-                if e == EthError::RpcMalformedResponse {
-                    node_provider.usable = false;
-                }
-            }
-        }
-    }
-    return Err(EthError::NoRpcForChain);
-}
-
-async fn maintain_subscription(
-    our: String,
-    sub_id: u64,
-    mut rx: RawSubscription,
-    target: Address,
-    rsvp: Option<Address>,
-    send_to_loop: MessageSender,
-) -> Result<(), String> {
-    loop {
-        let value = rx.recv().await.map_err(|e| e.to_string())?;
-        let result: SubscriptionResult =
-            serde_json::from_str(value.get()).map_err(|e| e.to_string())?;
-        kernel_message(
-            &our,
-            rand::random(),
-            target.clone(),
-            rsvp.clone(),
-            true,
-            None,
-            EthSubResult::Ok(EthSub { id: sub_id, result }),
-            &send_to_loop,
-        )
-        .await;
-    }
 }
 
 async fn fulfill_request(
@@ -792,6 +608,12 @@ async fn handle_eth_config_action(
         .await;
         return EthConfigResponse::PermissionDenied;
     }
+
+    verbose_print(
+        &state.print_tx,
+        &format!("eth: handling eth_config_action {eth_config_action:?}"),
+    )
+    .await;
 
     // modify our providers and access settings based on config action
     match eth_config_action {
