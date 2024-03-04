@@ -46,30 +46,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
         },
     };
 
-    let re = Regex::new(r"(.*?)\|(\d+)\s*(.*)").unwrap();
-    let pipe = match re.captures(args) {
-        Some(caps) => {
-            let parsed_args = caps
-                .get(1)
-                .map_or("", |m| m.as_str())
-                .trim_end()
-                .to_string();
-
-            let time_str = caps.get(2).map_or("", |m| m.as_str());
-            let time: u64 = time_str.parse().unwrap_or(0);
-
-            let pipe = caps
-                .get(3)
-                .map_or("", |m| m.as_str())
-                .trim_start()
-                .to_string();
-
-            (parsed_args, Some((pipe, time)))
-        }
-        None => (args.to_string(), None),
-    };
-
-    match handle_run(&state.our, &process, pipe.0, pipe.1) {
+    match handle_run(&state.our, &process, args.to_string()) {
         Ok(_) => Ok(()), // TODO clean up process
         Err(e) => Err(anyhow!("failed to instantiate script: {}", e)),
     }
@@ -162,12 +139,7 @@ impl Guest for Component {
     }
 }
 
-fn handle_run(
-    our: &Address,
-    process: &ProcessId,
-    args: String,
-    pipe: Option<(String, u64)>,
-) -> anyhow::Result<()> {
+fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Result<()> {
     let wasm_path = format!("{}.wasm", process.process());
     let package = format!("{}:{}", process.package(), process.publisher());
     let drive_path = format!("/{}/pkg", package);
@@ -352,27 +324,7 @@ fn handle_run(
         .target(("our", parsed_new_process_id))
         .body(args.into_bytes());
 
-    let Some(pipe) = pipe else {
-        req.send().unwrap();
-        return Ok(());
-    };
-
-    let Ok(res) = req.clone().send_and_await_response(pipe.1).unwrap() else {
-        return Err(anyhow::anyhow!("script timed out"));
-    };
-
-    let _ = Request::new()
-        .target(our)
-        .body(
-            format!(
-                "{} {}",
-                pipe.0,
-                String::from_utf8(res.body().to_vec()).unwrap()
-            )
-            .into_bytes()
-            .to_vec(),
-        )
-        .send()?;
+    req.send().unwrap();
 
     Ok(())
 }

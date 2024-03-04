@@ -1,5 +1,5 @@
 use kinode_process_lib::{
-    await_next_request_body, call_init, println, Address, Request, SendError,
+    await_next_request_body, call_init, println, Address, Request, SendError, SendErrorKind,
 };
 
 wit_bindgen::generate!({
@@ -46,9 +46,15 @@ fn init(our: Address) {
                 println!("response from {node_id}: {:?}", msg.body());
             }
         }
-        Err(SendError { kind, .. }) => {
-            println!("hi: net error: {:?}", kind);
-            return;
-        }
+        Err(SendError { kind, .. }) => match kind {
+            SendErrorKind::Timeout => {
+                println!("hi: message to {node_id} timed out");
+                return;
+            }
+            SendErrorKind::Offline => {
+                println!("hi: {node_id} is offline or does not exist");
+                return;
+            }
+        },
     }
 }
