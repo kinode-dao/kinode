@@ -12,6 +12,12 @@
             "kernel:distro:sys",
             "vfs:distro:sys",
             "eth:distro:sys",
+            {
+                "process": "eth:distro:sys",
+                "params": {
+                    "root": true
+                }
+            },
             "sqlite:distro:sys",
             "kv:distro:sys",
             "chess:chess:sys",

@@ -1,0 +1,13 @@
+{
+    "get_block.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "eth:distro:sys"
+        ],
+        "grant_capabilities": [
+            "eth:distro:sys"
+        ]
+    }
+}

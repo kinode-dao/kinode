@@ -1,12 +1,6 @@
 use alloy_sol_types::{sol, SolEvent};
-
 use kinode_process_lib::{
-    await_message,
-    eth::{
-        get_block_number, get_logs, subscribe, Address as EthAddress, BlockNumberOrTag, EthSub,
-        EthSubResult, Filter, Log, SubscriptionResult,
-    },
-    get_typed_state, print_to_terminal, println, set_state, Address, Message, Request, Response,
+    await_message, eth, get_typed_state, println, set_state, Address, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{
@@ -25,14 +19,15 @@ wit_bindgen::generate!({
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
+    chain_id: u64,
     // what contract this state pertains to
-    contract_address: Option<String>,
+    contract_address: String,
     // namehash to human readable name
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
     // NOTE: not every namehash will have a node registered
     nodes: HashMap<String, KnsUpdate>,
-    // last block we read from
+    // last block we have an update from
     block: u64,
 }
 
@@ -99,25 +94,74 @@ sol! {
     event RoutingUpdate(bytes32 indexed node, bytes32[] routers);
 }
 
+fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth::Filter) {
+    loop {
+        match eth_provider.subscribe(1, filter.clone().from_block(from_block)) {
+            Ok(()) => break,
+            Err(_) => {
+                println!("kns_indexer: failed to subscribe to chain! trying again in 5s...");
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                continue;
+            }
+        }
+    }
+    println!("kns_indexer: subscribed to logs successfully");
+}
+
 struct Component;
 impl Guest for Component {
     fn init(our: String) {
         let our: Address = our.parse().unwrap();
 
-        let mut state: State = State {
-            contract_address: None,
-            names: HashMap::new(),
-            nodes: HashMap::new(),
-            block: 1,
-        };
+        // first, await a message from the kernel which will contain the
+        // chain ID and contract address for the KNS version we want to track.
+        let chain_id: u64;
+        let contract_address: String;
+        loop {
+            let Ok(Message::Request { source, body, .. }) = await_message() else {
+                continue;
+            };
+            if source.process != "kernel:distro:sys" {
+                continue;
+            }
+            (chain_id, contract_address) = serde_json::from_slice(&body).unwrap();
+            break;
+        }
+        println!(
+            "kns_indexer: indexing on contract address {}",
+            contract_address
+        );
 
         // if we have state, load it in
-        match get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
+        let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?))
+        {
             Some(s) => {
-                state = s;
+                // if chain id or contract address changed from a previous run, reset state
+                if s.chain_id != chain_id || s.contract_address != contract_address {
+                    println!("kns_indexer: resetting state because runtime contract address or chain ID changed");
+                    State {
+                        chain_id,
+                        contract_address,
+                        names: HashMap::new(),
+                        nodes: HashMap::new(),
+                        block: 1,
+                    }
+                } else {
+                    println!(
+                        "kns_indexer: loading in {} persisted PKI entries",
+                        s.nodes.len()
+                    );
+                    s
+                }
             }
-            None => {}
-        }
+            None => State {
+                chain_id,
+                contract_address: contract_address.clone(),
+                names: HashMap::new(),
+                nodes: HashMap::new(),
+                block: 1,
+            },
+        };
 
         match main(our, state) {
             Ok(_) => {}
@@ -129,34 +173,6 @@ impl Guest for Component {
 }
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
-    // first, await a message from the kernel which will contain the
-    // contract address for the KNS version we want to track.
-    let mut contract_address: Option<String> = None;
-    loop {
-        let Ok(Message::Request { source, body, .. }) = await_message() else {
-            continue;
-        };
-        if source.process != "kernel:distro:sys" {
-            continue;
-        }
-        contract_address = Some(std::str::from_utf8(&body).unwrap().to_string());
-        break;
-    }
-    println!(
-        "kns_indexer: indexing on contract address {}",
-        contract_address.as_ref().unwrap()
-    );
-    // if contract address changed from a previous run, reset state
-    if state.contract_address != contract_address {
-        println!("kns_indexer: contract address changed, re-indexing");
-        state = State {
-            contract_address: contract_address.clone(),
-            names: HashMap::new(),
-            nodes: HashMap::new(),
-            block: 1,
-        };
-    }
-
     // shove all state into net::net
     Request::new()
         .target((&our.node, "net", "distro", "sys"))
@@ -165,10 +181,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    let filter = Filter::new()
-        .address(contract_address.unwrap().parse::<EthAddress>().unwrap())
-        .to_block(BlockNumberOrTag::Latest)
+    let filter = eth::Filter::new()
+        .address(state.contract_address.parse::<eth::Address>().unwrap())
         .from_block(state.block - 1)
+        .to_block(eth::BlockNumberOrTag::Latest)
         .events(vec![
             "NodeRegistered(bytes32,bytes)",
             "KeyUpdate(bytes32,bytes32)",
@@ -177,11 +193,26 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             "RoutingUpdate(bytes32,bytes32[])",
         ]);
 
+    // 60s timeout -- these calls can take a long time
+    // if they do time out, we try them again
+    let eth_provider = eth::Provider::new(state.chain_id, 60);
+
     // if block in state is < current_block, get logs from that part.
-    if state.block < get_block_number()? {
-        let logs = get_logs(&filter)?;
-        for log in logs {
-            handle_log(&our, &mut state, &log)?;
+    if state.block < eth_provider.get_block_number().unwrap_or(u64::MAX) {
+        loop {
+            match eth_provider.get_logs(&filter) {
+                Ok(logs) => {
+                    for log in logs {
+                        handle_log(&our, &mut state, &log)?;
+                    }
+                    break;
+                }
+                Err(_) => {
+                    println!("kns_indexer: failed to fetch logs! trying again in 5s...");
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    continue;
+                }
+            }
         }
     }
     // shove all state into net::net
@@ -194,7 +225,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     set_state(&bincode::serialize(&state)?);
 
-    subscribe(1, filter.clone())?;
+    subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -210,7 +241,14 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         };
 
         if source.process == "eth:distro:sys" {
-            handle_eth_message(&our, &mut state, &mut pending_requests, &body, &filter)?;
+            handle_eth_message(
+                &our,
+                &mut state,
+                &eth_provider,
+                &mut pending_requests,
+                &body,
+                &filter,
+            )?;
         } else {
             let Ok(request) = serde_json::from_slice::<IndexerRequests>(&body) else {
                 println!("kns_indexer: got invalid message");
@@ -250,23 +288,24 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 fn handle_eth_message(
     our: &Address,
     state: &mut State,
+    eth_provider: &eth::Provider,
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
     body: &[u8],
-    filter: &Filter,
+    filter: &eth::Filter,
 ) -> anyhow::Result<()> {
-    let Ok(eth_result) = serde_json::from_slice::<EthSubResult>(body) else {
+    let Ok(eth_result) = serde_json::from_slice::<eth::EthSubResult>(body) else {
         return Err(anyhow::anyhow!("kns_indexer: got invalid message"));
     };
 
     match eth_result {
-        Ok(EthSub { result, .. }) => {
-            if let SubscriptionResult::Log(log) = result {
+        Ok(eth::EthSub { result, .. }) => {
+            if let eth::SubscriptionResult::Log(log) = result {
                 handle_log(our, state, &log)?;
             }
         }
-        Err(e) => {
-            println!("kns_indexer: got sub error, resubscribing.. {:?}", e.error);
-            subscribe(1, filter.clone())?;
+        Err(_e) => {
+            println!("kns_indexer: got eth subscription error");
+            subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
         }
     }
 
@@ -304,9 +343,7 @@ fn handle_eth_message(
     Ok(())
 }
 
-fn handle_log(our: &Address, state: &mut State, log: &Log) -> anyhow::Result<()> {
-    state.block = log.block_number.expect("expect").to::<u64>();
-
+fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
     let node_id = log.topics[1];
 
     let name = match state.names.entry(node_id.to_string()) {
@@ -368,22 +405,27 @@ fn handle_log(our: &Address, state: &mut State, log: &Log) -> anyhow::Result<()>
         && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
         && send
     {
-        print_to_terminal(
-            1,
-            &format!(
-                "kns_indexer: sending ID to net: {node:?} (blocknum {})",
-                state.block
-            ),
-        );
         Request::new()
             .target((&our.node, "net", "distro", "sys"))
             .try_body(NetActions::KnsUpdate(node.clone()))?
             .send()?;
     }
+
+    // if new block is > 100 from last block, save state
+    let block = log.block_number.expect("expect").to::<u64>();
+    if block > state.block + 100 {
+        println!(
+            "kns_indexer: persisting {} PKI entries at block {}",
+            state.nodes.len(),
+            block
+        );
+        state.block = block;
+        set_state(&bincode::serialize(state)?);
+    }
     Ok(())
 }
 
-fn get_name(log: &Log) -> String {
+fn get_name(log: &eth::Log) -> String {
     let decoded = NodeRegistered::abi_decode_data(&log.data, true).unwrap();
     let name = match dnswire_decode(decoded.0.clone()) {
         Ok(n) => n,

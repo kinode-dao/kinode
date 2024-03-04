@@ -46,6 +46,11 @@ fn build_and_zip_package(
 }
 
 fn main() -> anyhow::Result<()> {
+    if std::env::var("SKIP_BUILD_SCRIPT").is_ok() {
+        println!("Skipping build script");
+        return Ok(());
+    }
+
     let pwd = std::env::current_dir()?;
     let parent_dir = pwd.parent().unwrap();
     let packages_dir = pwd.join("packages");

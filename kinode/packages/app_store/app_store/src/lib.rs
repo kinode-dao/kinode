@@ -1,7 +1,3 @@
-use kinode_process_lib::eth::{
-    get_logs, subscribe, unsubscribe, Address as EthAddress, EthSub, EthSubResult, Filter,
-    SubscriptionResult,
-};
 use kinode_process_lib::http::{bind_http_path, serve_ui, HttpServerRequest};
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
@@ -42,7 +38,8 @@ use ft_worker_lib::{
 /// - uninstalled + deleted
 /// - set to automatically update if a new version is available
 
-const CONTRACT_ADDRESS: &str = "0x18c39eB547A0060C6034f8bEaFB947D1C16eADF1";
+const CHAIN_ID: u64 = 11155111; // sepolia
+const CONTRACT_ADDRESS: &str = "0x18c39eB547A0060C6034f8bEaFB947D1C16eADF1"; // sepolia
 
 const EVENTS: [&str; 3] = [
     "AppRegistered(uint256,string,bytes,string,bytes32)",
@@ -59,7 +56,7 @@ pub enum Req {
     RemoteRequest(RemoteRequest),
     FTWorkerCommand(FTWorkerCommand),
     FTWorkerResult(FTWorkerResult),
-    Eth(EthSubResult),
+    Eth(eth::EthSubResult),
     Http(HttpServerRequest),
 }
 
@@ -69,6 +66,33 @@ pub enum Resp {
     LocalResponse(LocalResponse),
     RemoteResponse(RemoteResponse),
     FTWorkerResult(FTWorkerResult),
+}
+
+fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Log> {
+    loop {
+        match eth_provider.get_logs(filter) {
+            Ok(res) => return res,
+            Err(_) => {
+                println!("app store: failed to fetch logs! trying again in 5s...");
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                continue;
+            }
+        }
+    }
+}
+
+fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
+    loop {
+        match eth_provider.subscribe(1, filter.clone()) {
+            Ok(()) => break,
+            Err(_) => {
+                println!("app store: failed to subscribe to chain! trying again in 5s...");
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                continue;
+            }
+        }
+    }
+    println!("app store: subscribed to logs successfully");
 }
 
 call_init!(init);
@@ -109,23 +133,25 @@ fn init(our: Address) {
         state.contract_address
     );
 
+    // create new provider for sepolia with request-timeout of 60s
+    // can change, log requests can take quite a long time.
+    let eth_provider = eth::Provider::new(CHAIN_ID, 60);
+
     let mut requested_packages: HashMap<PackageId, RequestedPackage> = HashMap::new();
 
     // get past logs, subscribe to new ones.
-    let filter = Filter::new()
-        .address(EthAddress::from_str(&state.contract_address).unwrap())
+    let filter = eth::Filter::new()
+        .address(eth::Address::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block - 1)
+        .to_block(eth::BlockNumberOrTag::Latest)
         .events(EVENTS);
 
-    let logs = get_logs(&filter);
-
-    if let Ok(logs) = logs {
-        for log in logs {
-            state.ingest_listings_contract_event(&our, log);
-        }
+    for log in fetch_logs(&eth_provider, &filter) {
+        if let Err(e) = state.ingest_listings_contract_event(&our, log) {
+            println!("app store: error ingesting log: {e:?}");
+        };
     }
-
-    subscribe(1, filter).unwrap();
+    subscribe_to_logs(&eth_provider, filter);
 
     loop {
         match await_message() {
@@ -134,8 +160,13 @@ fn init(our: Address) {
                 println!("app store: got network error: {send_error}");
             }
             Ok(message) => {
-                if let Err(e) = handle_message(&our, &mut state, &mut requested_packages, &message)
-                {
+                if let Err(e) = handle_message(
+                    &our,
+                    &mut state,
+                    &eth_provider,
+                    &mut requested_packages,
+                    &message,
+                ) {
                     println!("app store: error handling message: {:?}", e)
                 }
             }
@@ -150,6 +181,7 @@ fn init(our: Address) {
 fn handle_message(
     our: &Address,
     mut state: &mut State,
+    eth_provider: &eth::Provider,
     mut requested_packages: &mut HashMap<PackageId, RequestedPackage>,
     message: &Message,
 ) -> anyhow::Result<()> {
@@ -164,8 +196,13 @@ fn handle_message(
                 if our.node != source.node {
                     return Err(anyhow::anyhow!("local request from non-local node"));
                 }
-                let resp =
-                    handle_local_request(&our, &local_request, &mut state, &mut requested_packages);
+                let resp = handle_local_request(
+                    &our,
+                    &local_request,
+                    &mut state,
+                    eth_provider,
+                    &mut requested_packages,
+                );
                 if expects_response.is_some() {
                     Response::new().body(serde_json::to_vec(&resp)?).send()?;
                 }
@@ -189,10 +226,19 @@ fn handle_message(
                 if source.node() != our.node() || source.process != "eth:distro:sys" {
                     return Err(anyhow::anyhow!("eth sub event from weird addr: {source}"));
                 }
-                if let Ok(EthSub { result, .. }) = eth_result {
+                if let Ok(eth::EthSub { result, .. }) = eth_result {
                     handle_eth_sub_event(our, &mut state, result)?;
                 } else {
-                    println!("app store: got eth sub error: {eth_result:?}");
+                    println!("app store: got eth subscription error");
+                    // attempt to resubscribe
+                    subscribe_to_logs(
+                        &eth_provider,
+                        eth::Filter::new()
+                            .address(eth::Address::from_str(&state.contract_address).unwrap())
+                            .from_block(state.last_saved_block - 1)
+                            .to_block(eth::BlockNumberOrTag::Latest)
+                            .events(EVENTS),
+                    );
                 }
             }
             Req::Http(incoming) => {
@@ -269,6 +315,7 @@ fn handle_local_request(
     our: &Address,
     request: &LocalRequest,
     state: &mut State,
+    eth_provider: &eth::Provider,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
 ) -> LocalResponse {
     match request {
@@ -338,22 +385,21 @@ fn handle_local_request(
         LocalRequest::RebuildIndex => {
             *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
             // kill our old subscription and build a new one.
-            unsubscribe(1).unwrap();
+            eth_provider
+                .unsubscribe(1)
+                .expect("app_store: failed to unsub from eth events!");
 
-            let filter = Filter::new()
-                .address(EthAddress::from_str(&state.contract_address).unwrap())
+            let filter = eth::Filter::new()
+                .address(eth::Address::from_str(&state.contract_address).unwrap())
                 .from_block(state.last_saved_block - 1)
                 .events(EVENTS);
 
-            let logs = get_logs(&filter);
-
-            if let Ok(logs) = logs {
-                for log in logs {
-                    state.ingest_listings_contract_event(our, log);
-                }
+            for log in fetch_logs(&eth_provider, &filter) {
+                if let Err(e) = state.ingest_listings_contract_event(our, log) {
+                    println!("app store: error ingesting log: {e:?}");
+                };
             }
-            subscribe(1, filter).unwrap();
-
+            subscribe_to_logs(&eth_provider, filter);
             LocalResponse::RebuiltIndex
         }
     }
@@ -542,9 +588,9 @@ fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
 fn handle_eth_sub_event(
     our: &Address,
     state: &mut State,
-    event: SubscriptionResult,
+    event: eth::SubscriptionResult,
 ) -> anyhow::Result<()> {
-    let SubscriptionResult::Log(log) = event else {
+    let eth::SubscriptionResult::Log(log) = event else {
         return Err(anyhow::anyhow!("app store: got non-log event"));
     };
     state.ingest_listings_contract_event(our, *log)

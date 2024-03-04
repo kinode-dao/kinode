@@ -84,7 +84,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                             None => std::collections::HashMap::new(),
                             Some(caps_index) => {
                                 children.remove(caps_index);
-                                let file = vfs::file::open_file(&caps_file_path, false)?;
+                                let file = vfs::file::open_file(&caps_file_path, false, None)?;
                                 let file_contents = file.read()?;
                                 serde_json::from_slice(&file_contents)?
                             }
