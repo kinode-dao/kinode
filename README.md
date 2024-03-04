@@ -15,6 +15,10 @@ If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) 
 
 ### Building components
 
+On certain operating systems, you may need to install these dependencies if they are not already present:
+- openssl-sys: https://docs.rs/crate/openssl-sys/0.9.19
+- libclang 5.0: https://rust-lang.github.io/rust-bindgen/requirements.html
+
 ```bash
 # Clone the repo.
 
