@@ -1,6 +1,6 @@
 use clap::{Arg, Command};
 use kinode_process_lib::{
-    await_next_request_body, call_init, println, Address, Request, Response, SendErrorKind,
+    await_next_request_body, call_init, println, Address, Request, SendErrorKind,
 };
 use regex::Regex;
 

@@ -5,7 +5,6 @@ use kinode_process_lib::{
     get_blob, get_typed_state, our_capabilities, print_to_terminal, println, set_state, vfs,
     Address, Capability, ProcessId, Request,
 };
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 

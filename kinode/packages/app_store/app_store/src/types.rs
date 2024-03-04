@@ -206,6 +206,7 @@ impl State {
 
             let manifest_file = vfs::File {
                 path: format!("/{}/pkg/manifest.json", package_id),
+                timeout: 5,
             };
             let manifest_bytes = manifest_file.read()?;
             let manifest_hash = generate_metadata_hash(&manifest_bytes);
@@ -284,6 +285,7 @@ impl State {
             if entry.file_type == vfs::FileType::Directory {
                 let zip_file = vfs::File {
                     path: format!("/{}/pkg/{}.zip", package_id, package_id),
+                    timeout: 5,
                 };
                 let Ok(zip_file_bytes) = zip_file.read() else {
                     continue;
@@ -293,6 +295,7 @@ impl State {
                 let our_version = generate_version_hash(&zip_file_bytes);
                 let manifest_file = vfs::File {
                     path: format!("/{}/pkg/manifest.json", package_id),
+                    timeout: 5,
                 };
                 let manifest_bytes = manifest_file.read()?;
                 // the user will need to turn mirroring and auto-update back on if they

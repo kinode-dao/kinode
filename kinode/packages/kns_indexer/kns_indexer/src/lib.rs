@@ -303,7 +303,7 @@ fn handle_eth_message(
                 handle_log(our, state, &log)?;
             }
         }
-        Err(e) => {
+        Err(_e) => {
             println!("kns_indexer: got eth subscription error");
             subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
         }

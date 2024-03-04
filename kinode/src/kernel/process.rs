@@ -547,24 +547,30 @@ pub async fn make_process_loop(
         metadata.our.process.package(),
         metadata.our.process.publisher()
     );
-    if let Err(e) = fs::create_dir_all(&tmp_path).await {
-        panic!("failed creating tmp dir! {:?}", e); // TODO REMOVE
+
+    let mut wasi = WasiCtxBuilder::new();
+
+    // TODO make guarantees about this
+    if let Ok(Ok(())) = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        fs::create_dir_all(&tmp_path),
+    )
+    .await
+    {
+        if let Ok(wasi_tempdir) =
+            Dir::open_ambient_dir(tmp_path.clone(), wasmtime_wasi::sync::ambient_authority())
+        {
+            wasi.preopened_dir(
+                wasi_tempdir,
+                DirPerms::all(),
+                FilePerms::all(),
+                tmp_path.clone(),
+            )
+            .env("TEMP_DIR", tmp_path);
+        }
     }
-    let Ok(wasi_tempdir) =
-        Dir::open_ambient_dir(tmp_path.clone(), wasmtime_wasi::sync::ambient_authority())
-    else {
-        panic!("failed to open ambient tmp dir!"); // TODO REMOVE
-    };
-    let wasi = WasiCtxBuilder::new()
-        .preopened_dir(
-            wasi_tempdir,
-            DirPerms::all(),
-            FilePerms::all(),
-            tmp_path.clone(),
-        )
-        .env("TEMP_DIR", tmp_path)
-        .stderr(wasi_stderr.clone())
-        .build();
+
+    let wasi = wasi.stderr(wasi_stderr.clone()).build();
 
     wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
 
