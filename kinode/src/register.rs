@@ -1,12 +1,14 @@
 use aes_gcm::aead::KeyInit;
+use alloy_signer::Signature;
 use hmac::Hmac;
-use jwt::SignWithKey;
+use jwt::{FromBase64, SignWithKey};
 use ring::rand::SystemRandom;
 use ring::signature;
 use ring::signature::KeyPair;
 use sha2::Sha256;
 use static_dir::static_dir;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, oneshot};
 use warp::{
     http::{
@@ -231,13 +233,13 @@ pub async fn register(
 }
 
 async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Rejection> {
-    let (name, allowed_routers) = {
+    let (name, allowed_routers, salt) = {
         match keyfile {
-            Some(encoded_keyfile) => match keygen::get_username_and_routers(&encoded_keyfile) {
+            Some(encoded_keyfile) => match keygen::get_info(&encoded_keyfile) {
                 Ok(k) => k,
                 Err(_) => {
                     return Ok(warp::reply::with_status(
-                        warp::reply::json(&"Incorrect password"),
+                        warp::reply::json(&"keyfile deserialization went wrong"),
                         StatusCode::UNAUTHORIZED,
                     )
                     .into_response())
@@ -252,10 +254,12 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
             }
         }
     };
+    // do we need password salt here for the FE to hash the login password?
     return Ok(warp::reply::with_status(
         warp::reply::json(&UnencryptedIdentity {
             name,
             allowed_routers,
+            salt: base64::encode(&salt),
         }),
         StatusCode::OK,
     )
@@ -270,6 +274,7 @@ async fn handle_keyfile_vet(
     payload: KeyfileVet,
     keyfile: Option<Vec<u8>>,
 ) -> Result<impl Reply, Rejection> {
+    // additional checks?
     let encoded_keyfile = match payload.keyfile.is_empty() {
         true => keyfile.ok_or(warp::reject())?,
         false => base64::decode(payload.keyfile).map_err(|_| warp::reject())?,
@@ -302,9 +307,37 @@ async fn handle_boot(
         our.ws_routing = None;
     }
 
-    let seed = SystemRandom::new();
+    let jwt_seed = SystemRandom::new();
     let mut jwt_secret = [0u8, 32];
-    ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
+    ring::rand::SecureRandom::fill(&jwt_seed, &mut jwt_secret).unwrap();
+
+    let salt = base64::decode(&info.salt).map_err(|_| warp::reject())?;
+    let sig = Signature::from_base64(&info.signature).map_err(|_| warp::reject())?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+
+    if info.timestamp < now + 120 {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Timestamp is outdated."),
+            StatusCode::UNAUTHORIZED,
+        )
+        .into_response());
+    }
+
+    // verify eth signature
+    let sign_data = serde_json::to_vec(&serde_json::json!({
+        "password": info.password,
+        "timestamp": info.timestamp,
+    }))
+    .unwrap();
+
+    // check chain for address match...?
+    let _signer = sig
+        .recover_address_from_msg(&sign_data)
+        .map_err(|_| warp::reject())?;
 
     let decoded_keyfile = Keyfile {
         username: our.name.clone(),
@@ -312,16 +345,16 @@ async fn handle_boot(
         networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
             .unwrap(),
         jwt_secret_bytes: jwt_secret.to_vec(),
-        file_key: keygen::generate_file_key(),
+        salt,
     };
 
     let encoded_keyfile = keygen::encode_keyfile(
         info.password,
         decoded_keyfile.username.clone(),
         decoded_keyfile.routers.clone(),
-        networking_keypair.as_ref(),
-        decoded_keyfile.jwt_secret_bytes.clone(),
-        decoded_keyfile.file_key.clone(),
+        &networking_keypair,
+        &decoded_keyfile.jwt_secret_bytes,
+        &decoded_keyfile.salt,
     );
 
     success_response(sender, our, decoded_keyfile, encoded_keyfile).await
@@ -488,16 +521,16 @@ async fn confirm_change_network_keys(
         networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
             .unwrap(),
         jwt_secret_bytes: old_decoded_keyfile.jwt_secret_bytes,
-        file_key: old_decoded_keyfile.file_key,
+        salt: old_decoded_keyfile.salt,
     };
 
     let encoded_keyfile = keygen::encode_keyfile(
         info.password,
         decoded_keyfile.username.clone(),
         decoded_keyfile.routers.clone(),
-        networking_keypair.as_ref(),
-        decoded_keyfile.jwt_secret_bytes.clone(),
-        decoded_keyfile.file_key.clone(),
+        &networking_keypair,
+        &decoded_keyfile.jwt_secret_bytes,
+        &decoded_keyfile.salt,
     );
 
     success_response(sender, our.clone(), decoded_keyfile, encoded_keyfile).await

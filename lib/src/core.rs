@@ -757,20 +757,13 @@ pub type ProcessMessageReceiver =
 // types used for onchain identity system
 //
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Registration {
-    pub username: NodeId,
-    pub password: String,
-    pub direct: bool,
-}
-
 #[derive(Debug)]
 pub struct Keyfile {
     pub username: String,
     pub routers: Vec<String>,
     pub networking_keypair: signature::Ed25519KeyPair,
     pub jwt_secret_bytes: Vec<u8>,
-    pub file_key: Vec<u8>,
+    pub salt: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -792,6 +785,9 @@ pub struct BootInfo {
     pub username: String,
     pub reset: bool,
     pub direct: bool,
+    pub signature: String,
+    pub salt: String,
+    pub timestamp: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -823,6 +819,7 @@ pub struct Identity {
 pub struct UnencryptedIdentity {
     pub name: NodeId,
     pub allowed_routers: Vec<NodeId>,
+    pub salt: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
