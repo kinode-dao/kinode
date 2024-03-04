@@ -21,7 +21,7 @@ impl Guest for Component {
         match main(our) {
             Ok(_) => {}
             Err(e) => {
-                println!("homepage: ended with error: {:?}", e);
+                println!("ended with error: {:?}", e);
             }
         }
     }
@@ -61,7 +61,7 @@ fn main(our: Address) -> anyhow::Result<()> {
 
     loop {
         let Ok(ref message) = await_message() else {
-            println!("homepage: got network error??");
+            println!("got network error??");
             continue;
         };
         if let Message::Response { source, body, .. } = message
@@ -69,12 +69,12 @@ fn main(our: Address) -> anyhow::Result<()> {
         {
             match serde_json::from_slice::<Result<(), HttpServerError>>(&body) {
                 Ok(Ok(())) => continue,
-                Ok(Err(e)) => println!("homepage: got error from http_server: {e}"),
-                Err(_e) => println!("homepage: got malformed message from http_server!"),
+                Ok(Err(e)) => println!("got error from http_server: {e}"),
+                Err(_e) => println!("got malformed message from http_server!"),
             }
         } else {
-            println!("homepage: got message: {message:?}");
-            //println!("homepage: got message from {source:?}: {message:?}");
+            println!("got message: {message:?}");
+            //println!("got message from {source:?}: {message:?}");
         }
     }
 }

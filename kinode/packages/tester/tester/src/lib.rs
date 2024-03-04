@@ -59,7 +59,7 @@ fn handle_message(
                     test_timeout,
                     ..
                 } => {
-                    println!("tester: got Run");
+                    println!("got Run");
 
                     assert!(input_node_names.len() >= 1);
                     *node_names = input_node_names.clone();

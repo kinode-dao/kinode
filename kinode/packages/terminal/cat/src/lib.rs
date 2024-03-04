@@ -14,12 +14,12 @@ call_init!(init);
 
 fn init(_our: Address) {
     let Ok(args) = await_next_request_body() else {
-        println!("cat: failed to get args, aborting");
+        println!("failed to get args, aborting");
         return;
     };
 
     let Ok(file_path) = String::from_utf8(args) else {
-        println!("cat: bad args, aborting");
+        println!("bad args, aborting");
         return;
     };
 

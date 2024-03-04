@@ -108,7 +108,7 @@ impl State {
     /// To create a new state, we populate the downloaded_packages map
     /// with all packages parseable from our filesystem.
     pub fn new(contract_address: String) -> anyhow::Result<Self> {
-        crate::print_to_terminal(1, "app store: producing new state");
+        crate::print_to_terminal(1, "producing new state");
         let mut state = State {
             contract_address,
             last_saved_block: 1,
@@ -361,7 +361,7 @@ impl State {
         self.downloaded_packages.remove(package_id);
         crate::set_state(&bincode::serialize(self)?);
 
-        println!("app store: uninstalled {package_id}");
+        println!("uninstalled {package_id}");
         Ok(())
     }
 
@@ -373,7 +373,7 @@ impl State {
     ) -> anyhow::Result<()> {
         let block_number: u64 = log
             .block_number
-            .ok_or(anyhow::anyhow!("app store: got log with no block number"))?
+            .ok_or(anyhow::anyhow!("got log with no block number"))?
             .try_into()?;
 
         // let package_hash: alloy_primitives::U256 = log.topics[1].into();
@@ -398,15 +398,11 @@ impl State {
                 if generate_package_hash(&package_name, publisher_dnswire.as_slice())
                     != package_hash
                 {
-                    return Err(anyhow::anyhow!(
-                        "app store: got log with mismatched package hash"
-                    ));
+                    return Err(anyhow::anyhow!("got log with mismatched package hash"));
                 }
 
                 let Ok(publisher_name) = dnswire_decode(publisher_dnswire.as_slice()) else {
-                    return Err(anyhow::anyhow!(
-                        "app store: got log with invalid publisher name"
-                    ));
+                    return Err(anyhow::anyhow!("got log with invalid publisher name"));
                 };
 
                 let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
@@ -414,7 +410,7 @@ impl State {
                 if let Some(metadata) = &metadata {
                     if metadata.properties.publisher != publisher_name {
                         return Err(anyhow::anyhow!(format!(
-                            "app store: metadata publisher name mismatch: got {}, expected {}",
+                            "metadata publisher name mismatch: got {}, expected {}",
                             metadata.properties.publisher, publisher_name
                         )));
                     }
@@ -454,25 +450,20 @@ impl State {
 
                 let current_listing = self
                     .get_listing_with_hash_mut(&package_hash.to_string())
-                    .ok_or(anyhow::anyhow!(
-                        "app store: got log with no matching listing"
-                    ))?;
+                    .ok_or(anyhow::anyhow!("got log with no matching listing"))?;
 
                 let metadata = match fetch_metadata(&metadata_url, &metadata_hash) {
                     Ok(metadata) => {
                         if metadata.properties.publisher != current_listing.publisher {
                             return Err(anyhow::anyhow!(format!(
-                                "app store: metadata publisher name mismatch: got {}, expected {}",
+                                "metadata publisher name mismatch: got {}, expected {}",
                                 metadata.properties.publisher, current_listing.publisher
                             )));
                         }
                         Some(metadata)
                     }
                     Err(e) => {
-                        crate::print_to_terminal(
-                            1,
-                            &format!("app store: failed to fetch metadata: {e:?}"),
-                        );
+                        crate::print_to_terminal(1, &format!("failed to fetch metadata: {e:?}"));
                         None
                     }
                 };
@@ -490,9 +481,7 @@ impl State {
                         if let Some(mirrored_from) = &package_state.mirrored_from {
                             crate::print_to_terminal(
                                 1,
-                                &format!(
-                                    "app store: auto-updating package {package_id} from {mirrored_from}"
-                                ),
+                                &format!("auto-updating package {package_id} from {mirrored_from}"),
                             );
                             Request::to(our)
                                 .body(serde_json::to_vec(&LocalRequest::Download {
@@ -542,11 +531,9 @@ impl State {
                     self.delete_listing(&package_hash);
                 } else {
                     crate::print_to_terminal(1, "transferring listing");
-                    let current_listing =
-                        self.get_listing_with_hash_mut(&package_hash)
-                            .ok_or(anyhow::anyhow!(
-                                "app store: got log with no matching listing"
-                            ))?;
+                    let current_listing = self
+                        .get_listing_with_hash_mut(&package_hash)
+                        .ok_or(anyhow::anyhow!("got log with no matching listing"))?;
                     current_listing.owner = to.to_string();
                 }
             }

@@ -189,7 +189,7 @@ fn handle_request(our: &Address, message: &Message, state: &mut ChessState) -> a
                             None,
                             "Service Unavailable".to_string().as_bytes().to_vec(),
                         );
-                        Err(anyhow::anyhow!("chess: error handling http request: {e:?}"))
+                        Err(anyhow::anyhow!("error handling http request: {e:?}"))
                     }
                 }
             }
@@ -228,7 +228,7 @@ fn handle_chess_request(
     state: &mut ChessState,
     action: &ChessRequest,
 ) -> anyhow::Result<()> {
-    println!("chess: handling action from {source_node}: {action:?}");
+    println!("handling action from {source_node}: {action:?}");
 
     // For simplicity's sake, we'll just use the node we're playing with as the game id.
     // This limits us to one active game per partner.

@@ -15,12 +15,12 @@ call_init!(init);
 
 fn init(_our: Address) {
     let Ok(args) = await_next_request_body() else {
-        println!("top: failed to get args, aborting");
+        println!("failed to get args, aborting");
         return;
     };
 
     let Ok(proc_id) = String::from_utf8(args) else {
-        println!("top: failed to stringify arguments");
+        println!("failed to stringify arguments");
         return;
     };
 
@@ -41,8 +41,7 @@ fn init(_our: Address) {
                     .send();
             }
             Err(_) => {
-                println!("top: invalid process id");
-                return;
+                println!("invalid process id");
             }
         }
     }

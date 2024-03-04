@@ -14,7 +14,7 @@ call_init!(init);
 
 fn init(our: Address) {
     let Ok(args) = await_next_request_body() else {
-        println!("hi: failed to get args, aborting");
+        println!("failed to get args, aborting");
         return;
     };
 
@@ -28,7 +28,7 @@ fn init(our: Address) {
     let (node_id, message) = match tail.split_once(" ") {
         Some((s, t)) => (s, t),
         None => {
-            println!("hi: invalid command, please provide a message");
+            println!("invalid command, please provide a message");
             return;
         }
     };
@@ -48,12 +48,10 @@ fn init(our: Address) {
         }
         Err(SendError { kind, .. }) => match kind {
             SendErrorKind::Timeout => {
-                println!("hi: message to {node_id} timed out");
-                return;
+                println!("message to {node_id} timed out");
             }
             SendErrorKind::Offline => {
-                println!("hi: {node_id} is offline or does not exist");
-                return;
+                println!("{node_id} is offline or does not exist");
             }
         },
     }
