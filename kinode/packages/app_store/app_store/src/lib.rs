@@ -92,6 +92,7 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
             }
         }
     }
+    println!("app store: subscribed to logs successfully");
 }
 
 call_init!(init);
@@ -134,7 +135,7 @@ fn init(our: Address) {
 
     // create new provider for sepolia with request-timeout of 60s
     // can change, log requests can take quite a long time.
-    let eth_provider = eth::Provider::new(CHAIN_ID, 30);
+    let eth_provider = eth::Provider::new(CHAIN_ID, 60);
 
     let mut requested_packages: HashMap<PackageId, RequestedPackage> = HashMap::new();
 
@@ -228,7 +229,16 @@ fn handle_message(
                 if let Ok(eth::EthSub { result, .. }) = eth_result {
                     handle_eth_sub_event(our, &mut state, result)?;
                 } else {
-                    println!("app store: got eth sub error: {eth_result:?}");
+                    println!("app store: got eth subscription error");
+                    // attempt to resubscribe
+                    subscribe_to_logs(
+                        &eth_provider,
+                        eth::Filter::new()
+                            .address(eth::Address::from_str(&state.contract_address).unwrap())
+                            .from_block(state.last_saved_block - 1)
+                            .to_block(eth::BlockNumberOrTag::Latest)
+                            .events(EVENTS),
+                    );
                 }
             }
             Req::Http(incoming) => {

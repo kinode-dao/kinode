@@ -21,6 +21,7 @@ enum IncomingReq {
     EthAction(EthAction),
     EthConfigAction(EthConfigAction),
     EthSubResult(EthSubResult),
+    SubKeepalive(u64),
 }
 
 /// mapping of chain id to ordered lists of providers
@@ -262,6 +263,7 @@ async fn handle_network_error(
     if let Some(chan) = response_channels.get(&wrapped_error.id) {
         // can't close channel here, as response may be an error
         // and fulfill_request may wish to try other providers.
+        verbose_print(&print_tx, "eth: sent network error to response channel").await;
         let _ = chan.send(Err(wrapped_error)).await;
     }
 }
@@ -289,11 +291,7 @@ async fn handle_message(
             }
         }
         Message::Request(req) => {
-            let Some(timeout) = req.expects_response else {
-                // if they don't want a response, we don't need to do anything
-                // might as well throw it away
-                return Err(EthError::MalformedRequest);
-            };
+            let timeout = req.expects_response.unwrap_or(60);
             let Ok(req) = serde_json::from_slice::<IncomingReq>(&req.body) else {
                 return Err(EthError::MalformedRequest);
             };
@@ -355,6 +353,15 @@ async fn handle_message(
                         &state.send_to_loop,
                     )
                     .await;
+                }
+                IncomingReq::SubKeepalive(sub_id) => {
+                    // source expects that we have a local sub for them with this id
+                    // if we do, no action required, otherwise, throw them an error.
+                    if let Some(sub_map) = state.active_subscriptions.get(&km.source) {
+                        if sub_map.contains_key(&sub_id) {
+                            return Ok(());
+                        }
+                    }
                 }
             }
         }
@@ -523,7 +530,6 @@ async fn fulfill_request(
         let response = forward_to_node_provider(
             our,
             km_id,
-            None, // no rsvp needed for a discrete request
             node_provider,
             eth_action.clone(),
             send_to_loop,
@@ -545,7 +551,6 @@ async fn fulfill_request(
 async fn forward_to_node_provider(
     our: &str,
     km_id: u64,
-    rsvp: Option<Address>,
     node_provider: &NodeProvider,
     eth_action: EthAction,
     send_to_loop: &MessageSender,
@@ -563,14 +568,16 @@ async fn forward_to_node_provider(
             node: node_provider.name.clone(),
             process: ETH_PROCESS_ID.clone(),
         },
-        rsvp,
+        None,
         true,
         Some(60), // TODO
         eth_action.clone(),
         &send_to_loop,
     )
     .await;
-    let Some(Ok(response_km)) = receiver.recv().await else {
+    let Ok(Some(Ok(response_km))) =
+        tokio::time::timeout(std::time::Duration::from_secs(30), receiver.recv()).await
+    else {
         return EthResponse::Err(EthError::RpcTimeout);
     };
     let Message::Response((resp, _context)) = response_km.message else {

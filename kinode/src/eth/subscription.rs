@@ -23,7 +23,6 @@ pub async fn create_new_subscription(
         &our,
         km_id,
         &target,
-        &rsvp,
         &send_to_loop,
         &eth_action,
         &providers,
@@ -66,6 +65,11 @@ pub async fn create_new_subscription(
                             )
                             .await
                             {
+                                verbose_print(
+                                    &print_tx,
+                                    "eth: closed local subscription due to error",
+                                )
+                                .await;
                                 kernel_message(
                                     &our,
                                     rand::random(),
@@ -83,21 +87,34 @@ pub async fn create_new_subscription(
                             }
                         }))
                     }
-                    Err(provider_node) => {
+                    Err((provider_node, remote_sub_id)) => {
                         // this is a remote sub, given by a relay node
                         let (sender, rx) = tokio::sync::mpsc::channel(10);
+                        let keepalive_km_id = rand::random();
+                        let (keepalive_err_sender, keepalive_err_receiver) =
+                            tokio::sync::mpsc::channel(1);
+                        response_channels.insert(keepalive_km_id, keepalive_err_sender);
                         ActiveSub::Remote {
-                            provider_node,
+                            provider_node: provider_node.clone(),
                             handle: tokio::spawn(async move {
                                 if let Err(e) = maintain_remote_subscription(
                                     &our,
+                                    &provider_node,
+                                    remote_sub_id,
                                     sub_id,
+                                    keepalive_km_id,
                                     rx,
+                                    keepalive_err_receiver,
                                     &target,
                                     &send_to_loop,
                                 )
                                 .await
                                 {
+                                    verbose_print(
+                                        &print_tx,
+                                        "eth: closed subscription with provider node due to error",
+                                    )
+                                    .await;
                                     kernel_message(
                                         &our,
                                         rand::random(),
@@ -110,8 +127,9 @@ pub async fn create_new_subscription(
                                     )
                                     .await;
                                     active_subscriptions.entry(target).and_modify(|sub_map| {
-                                        sub_map.remove(&km_id);
+                                        sub_map.remove(&sub_id);
                                     });
+                                    response_channels.remove(&keepalive_km_id);
                                 }
                             }),
                             sender,
@@ -131,13 +149,12 @@ async fn build_subscription(
     our: &str,
     km_id: u64,
     target: &Address,
-    rsvp: &Option<Address>,
     send_to_loop: &MessageSender,
     eth_action: &EthAction,
     providers: &Providers,
     response_channels: &ResponseChannels,
     print_tx: &PrintSender,
-) -> Result<Result<RawSubscription, String>, EthError> {
+) -> Result<Result<RawSubscription, (String, u64)>, EthError> {
     let EthAction::SubscribeLogs {
         chain_id,
         kind,
@@ -181,13 +198,20 @@ async fn build_subscription(
     // now we need a response channel
     let (sender, mut response_receiver) = tokio::sync::mpsc::channel(1);
     response_channels.insert(km_id, sender);
+    // we need to create our own unique sub id because in the remote provider node,
+    // all subs will be identified under our process address.
+    let remote_sub_id = rand::random();
     for node_provider in &mut aps.nodes {
         match forward_to_node_provider(
             &our,
             km_id,
-            rsvp.clone(),
             node_provider,
-            eth_action.clone(),
+            EthAction::SubscribeLogs {
+                sub_id: remote_sub_id,
+                chain_id: chain_id.clone(),
+                kind: kind.clone(),
+                params: params.clone(),
+            },
             &send_to_loop,
             &mut response_receiver,
         )
@@ -206,7 +230,7 @@ async fn build_subscription(
                 )
                 .await;
                 response_channels.remove(&km_id);
-                return Ok(Err(node_provider.name.clone()));
+                return Ok(Err((node_provider.name.clone(), remote_sub_id)));
             }
             EthResponse::Response { .. } => {
                 // the response to a SubscribeLogs request must be an 'ok'
@@ -254,35 +278,77 @@ async fn maintain_local_subscription(
     })
 }
 
+/// handle the subscription updates from a remote provider,
+/// and also perform keepalive checks on that provider.
+/// current keepalive is 30s, this can be adjusted as desired
 async fn maintain_remote_subscription(
     our: &str,
+    provider_node: &str,
+    remote_sub_id: u64,
     sub_id: u64,
+    keepalive_km_id: u64,
     mut rx: tokio::sync::mpsc::Receiver<EthSubResult>,
+    mut net_error_rx: ProcessMessageReceiver,
     target: &Address,
     send_to_loop: &MessageSender,
 ) -> Result<(), EthSubError> {
-    while let Some(incoming) = rx.recv().await {
-        match incoming {
-            EthSubResult::Ok(_) => {
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+    loop {
+        tokio::select! {
+            incoming = rx.recv() => {
+                match incoming {
+                    Some(EthSubResult::Ok(upd)) => {
+                        kernel_message(
+                            &our,
+                            rand::random(),
+                            target.clone(),
+                            None,
+                            true,
+                            None,
+                            EthSubResult::Ok(EthSub {
+                                id: sub_id,
+                                result: upd.result,
+                            }),
+                            &send_to_loop,
+                        )
+                        .await;
+                    }
+                    Some(EthSubResult::Err(e)) => {
+                        return Err(EthSubError {
+                            id: sub_id,
+                            error: e.error,
+                        });
+                    }
+                    None => {
+                        return Err(EthSubError {
+                            id: sub_id,
+                            error: "subscription closed unexpectedly".to_string(),
+                        });
+
+                    }
+                }
+            }
+            _ = interval.tick() => {
+                // perform keepalive
                 kernel_message(
                     &our,
-                    rand::random(),
-                    target.clone(),
+                    keepalive_km_id,
+                    Address { node: provider_node.to_string(), process: ETH_PROCESS_ID.clone() },
                     None,
                     true,
-                    None,
-                    incoming,
+                    Some(30),
+                    IncomingReq::SubKeepalive(remote_sub_id),
                     &send_to_loop,
-                )
-                .await;
+                ).await;
             }
-            EthSubResult::Err(e) => {
-                return Err(e);
+            incoming = net_error_rx.recv() => {
+                if let Some(Err(_net_error)) = incoming {
+                    return Err(EthSubError {
+                        id: sub_id,
+                        error: "subscription node-provider failed keepalive".to_string(),
+                    });
+                }
             }
         }
     }
-    Err(EthSubError {
-        id: sub_id,
-        error: "subscription closed unexpectedly".to_string(),
-    })
 }

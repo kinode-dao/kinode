@@ -105,6 +105,7 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
             }
         }
     }
+    println!("kns_indexer: subscribed to logs successfully");
 }
 
 struct Component;
@@ -194,7 +195,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
-    let eth_provider = eth::Provider::new(state.chain_id, 20);
+    let eth_provider = eth::Provider::new(state.chain_id, 60);
 
     // if block in state is < current_block, get logs from that part.
     if state.block < eth_provider.get_block_number().unwrap_or(u64::MAX) {
@@ -303,7 +304,7 @@ fn handle_eth_message(
             }
         }
         Err(e) => {
-            println!("kns_indexer: got sub error, resubscribing.. {:?}", e.error);
+            println!("kns_indexer: got eth subscription error");
             subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
         }
     }
