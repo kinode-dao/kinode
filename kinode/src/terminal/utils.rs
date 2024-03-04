@@ -29,8 +29,8 @@ impl CommandHistory {
     pub fn add(&mut self, line: String) {
         self.working_line = None;
         // only add line to history if it's not exactly the same
-        // as the previous line
-        if &line != self.lines.front().unwrap_or(&"".into()) {
+        // as the previous line and also not an empty line
+        if &line != self.lines.front().unwrap_or(&"".into()) && line != "" {
             let _ = writeln!(self.history_writer, "{}", &line);
             self.lines.push_front(line);
         }
