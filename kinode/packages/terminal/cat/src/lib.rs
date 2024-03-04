@@ -1,5 +1,5 @@
 use kinode_process_lib::{
-    await_next_request_body, call_init, get_blob, println, vfs, Address, Request, Response,
+    await_next_request_body, call_init, get_blob, println, vfs, Address, Request,
 };
 
 wit_bindgen::generate!({
