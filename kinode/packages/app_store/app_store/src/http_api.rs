@@ -1,7 +1,7 @@
 use crate::{DownloadResponse, PackageListing, PackageState, RequestedPackage, State};
 use kinode_process_lib::{
     http::{send_response, IncomingHttpRequest, Method, StatusCode},
-    print_to_terminal, Address, NodeId, PackageId,
+    Address, NodeId, PackageId,
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -38,10 +38,7 @@ pub fn handle_http_request(
             )])),
             body,
         ),
-        Err(e) => {
-            print_to_terminal(1, &format!("http error: {:?}", e));
-            send_response(StatusCode::INTERNAL_SERVER_ERROR, None, vec![])
-        }
+        Err(_e) => send_response(StatusCode::INTERNAL_SERVER_ERROR, None, vec![]),
     }
 
     Ok(())
@@ -107,8 +104,6 @@ fn serve_paths(
 
     let bound_path: &str = req.bound_path(Some(&our.process.to_string()));
     let url_params = req.url_params();
-
-    // print_to_terminal(0, &format!("HTTP {method} {path} {bound_path}"));
 
     match bound_path {
         // GET all downloaded apps

@@ -107,8 +107,6 @@ fn handle_message(
 
 call_init!(init);
 fn init(our: Address) {
-    println!("{}: begin", our);
-
     let mut messages: Messages = IndexMap::new();
     let mut node_names: Vec<String> = Vec::new();
     match Request::new()

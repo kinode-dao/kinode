@@ -108,7 +108,7 @@ call_init!(initialize);
 
 fn initialize(our: Address) {
     // A little printout to show in terminal that the process has started.
-    println!("{}: started", our.package());
+    println!("started");
 
     // Serve the index.html and other UI files found in pkg/ui at the root path.
     // authenticated=true, local_only=false
@@ -133,12 +133,12 @@ fn main_loop(our: &Address, state: &mut ChessState) {
         // this and surface it to the user.
         match await_message() {
             Err(send_error) => {
-                println!("{our}: got network error: {send_error:?}");
+                println!("got network error: {send_error:?}");
                 continue;
             }
             Ok(message) => match handle_request(&our, &message, state) {
                 Ok(()) => continue,
-                Err(e) => println!("{our}: error handling request: {:?}", e),
+                Err(e) => println!("error handling request: {:?}", e),
             },
         }
     }

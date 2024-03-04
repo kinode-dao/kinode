@@ -116,10 +116,7 @@ impl State {
             listed_packages: HashMap::new(),
             downloaded_packages: HashMap::new(),
         };
-        crate::print_to_terminal(
-            1,
-            &format!("populate: {:?}", state.populate_packages_from_filesystem()),
-        );
+        state.populate_packages_from_filesystem()?;
         Ok(state)
     }
 
@@ -272,12 +269,10 @@ impl State {
             return Err(anyhow::anyhow!("vfs: bad response"));
         };
         let response = serde_json::from_slice::<vfs::VfsResponse>(&body)?;
-        crate::print_to_terminal(1, &format!("vfs response: {:?}", response));
         let vfs::VfsResponse::ReadDir(entries) = response else {
             return Err(anyhow::anyhow!("vfs: unexpected response: {:?}", response));
         };
         for entry in entries {
-            crate::print_to_terminal(1, &format!("entry: {:?}", entry));
             // ignore non-package dirs
             let Ok(package_id) = entry.path.parse::<PackageId>() else {
                 continue;
@@ -390,9 +385,9 @@ impl State {
                 crate::print_to_terminal(
                     1,
                     &format!(
-                        "app registered with publisher_dnswire {:?}, package_hash {}, package_name {}, metadata_url {}, metadata_hash {}",
-                        publisher_dnswire, package_hash, package_name, metadata_url, metadata_hash
-                    )
+                        "app registered with package_name {}, metadata_url {}, metadata_hash {}",
+                        package_name, metadata_url, metadata_hash
+                    ),
                 );
 
                 if generate_package_hash(&package_name, publisher_dnswire.as_slice())
@@ -439,14 +434,6 @@ impl State {
                 let (metadata_url, metadata_hash) =
                     AppMetadataUpdated::abi_decode_data(&log.data, false)?;
                 let metadata_hash = metadata_hash.to_string();
-
-                crate::print_to_terminal(
-                    1,
-                    &format!(
-                        "app metadata updated with package_hash {}, metadata_url {}, metadata_hash {}",
-                        package_hash, metadata_url, metadata_hash
-                    )
-                );
 
                 let current_listing = self
                     .get_listing_with_hash_mut(&package_hash.to_string())
@@ -501,16 +488,7 @@ impl State {
                 let to = alloy_primitives::Address::from_word(log.topics[2]);
                 let package_hash = log.topics[3].to_string();
 
-                crate::print_to_terminal(
-                    1,
-                    &format!(
-                        "handling transfer from {} to {} of pkghash {}",
-                        from, to, package_hash
-                    ),
-                );
-
                 if from == alloy_primitives::Address::ZERO {
-                    crate::print_to_terminal(1, "transfer from 0 address: new app listed");
                     match self.get_listing_with_hash_mut(&package_hash) {
                         Some(current_listing) => {
                             current_listing.owner = to.to_string();
@@ -527,10 +505,8 @@ impl State {
                         }
                     }
                 } else if to == alloy_primitives::Address::ZERO {
-                    crate::print_to_terminal(1, "transfer to 0 address: deleting listing");
                     self.delete_listing(&package_hash);
                 } else {
-                    crate::print_to_terminal(1, "transferring listing");
                     let current_listing = self
                         .get_listing_with_hash_mut(&package_hash)
                         .ok_or(anyhow::anyhow!("got log with no matching listing"))?;

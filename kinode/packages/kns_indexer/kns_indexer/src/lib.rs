@@ -410,10 +410,13 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     // if new block is > 100 from last block, save state
     let block = log.block_number.expect("expect").to::<u64>();
     if block > state.block + 100 {
-        println!(
-            "persisting {} PKI entries at block {}",
-            state.nodes.len(),
-            block
+        kinode_process_lib::print_to_terminal(
+            1,
+            &format!(
+                "persisting {} PKI entries at block {}",
+                state.nodes.len(),
+                block
+            ),
         );
         state.block = block;
         set_state(&bincode::serialize(state)?);

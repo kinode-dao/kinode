@@ -97,7 +97,7 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
 
 call_init!(init);
 fn init(our: Address) {
-    println!("{}: started", our.package());
+    println!("started");
 
     for path in [
         "/apps",

@@ -384,7 +384,7 @@ async fn ws_handler(
     let original_path = normalize_path(path.as_str());
     let _ = print_tx
         .send(Printout {
-            verbosity: 1,
+            verbosity: 2,
             content: format!("http_server: got ws request for {original_path}"),
         })
         .await;
@@ -400,7 +400,7 @@ async fn ws_handler(
     if let Some(ref subdomain) = bound_path.secure_subdomain {
         let _ = print_tx
             .send(Printout {
-                verbosity: 1,
+                verbosity: 2,
                 content: format!(
                     "http_server: ws request for {original_path} bound by subdomain {subdomain}"
                 ),
@@ -481,7 +481,7 @@ async fn http_handler(
     let original_path = normalize_path(path.as_str());
     let _ = print_tx
         .send(Printout {
-            verbosity: 1,
+            verbosity: 2,
             content: format!("http_server: got request for path {original_path}"),
         })
         .await;
@@ -492,7 +492,7 @@ async fn http_handler(
     let Ok(route) = path_bindings.recognize(&original_path) else {
         let _ = print_tx
             .send(Printout {
-                verbosity: 1,
+                verbosity: 2,
                 content: format!("http_server: no route found for {original_path}"),
             })
             .await;
@@ -510,7 +510,7 @@ async fn http_handler(
         // redirect to login page so they can get an auth token
         let _ = print_tx
             .send(Printout {
-                verbosity: 1,
+                verbosity: 2,
                 content: format!(
                     "http_server: redirecting request from {socket_addr:?} to login page"
                 ),
@@ -532,7 +532,7 @@ async fn http_handler(
     if let Some(ref subdomain) = bound_path.secure_subdomain {
         let _ = print_tx
             .send(Printout {
-                verbosity: 1,
+                verbosity: 2,
                 content: format!(
                     "http_server: request for {original_path} bound by subdomain {subdomain}"
                 ),
@@ -914,7 +914,7 @@ async fn maintain_websocket(
 
     let _ = print_tx
         .send(Printout {
-            verbosity: 1,
+            verbosity: 2,
             content: format!("http_server: new websocket connection to {app} with id {channel_id}"),
         })
         .await;
@@ -996,7 +996,7 @@ async fn maintain_websocket(
     }
     let _ = print_tx
         .send(Printout {
-            verbosity: 1,
+            verbosity: 2,
             content: format!("http_server: websocket connection {channel_id} closed"),
         })
         .await;
@@ -1135,7 +1135,7 @@ async fn handle_app_message(
                     }
                     let _ = print_tx
                         .send(Printout {
-                            verbosity: 1,
+                            verbosity: 2,
                             content: format!(
                                 "binding path {path} for {}, authenticated={authenticated}, local={local_only}, cached={cache}",
                                 km.source.process

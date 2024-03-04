@@ -289,7 +289,7 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
         }
     }
     print_to_terminal(
-        1,
+        2,
         &format!(
             "{}: Process {{\n    wasm_bytes_handle: {},\n    wit_version: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
             parsed_new_process_id.clone(),
