@@ -1,12 +1,22 @@
 use aes_gcm::aead::KeyInit;
+use alloy_primitives::{Address, Bytes, FixedBytes, U256};
+use alloy_providers::provider::{Provider, TempProvider};
+use alloy_pubsub::PubSubFrontend;
+use alloy_rpc_client::ClientBuilder;
+use alloy_rpc_types::request::{TransactionInput, TransactionRequest};
 use alloy_signer::Signature;
+use alloy_sol_macro::sol;
+use alloy_sol_types::{SolCall, SolValue};
+use alloy_transport_ws::WsConnect;
 use hmac::Hmac;
-use jwt::{FromBase64, SignWithKey};
+use jwt::SignWithKey;
 use ring::rand::SystemRandom;
 use ring::signature;
 use ring::signature::KeyPair;
 use sha2::Sha256;
+
 use static_dir::static_dir;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, oneshot};
@@ -23,8 +33,24 @@ use lib::types::core::*;
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
-pub const KNS_SEPOLIA_ADDRESS: &str = "0x3807fBD692Aa5c96F1D8D7c59a1346a885F40B1C";
-pub const KNS_OPTIMISM_ADDRESS: &str = "0xca5b5811c0C40aAB3295f932b1B5112Eb7bb4bD6";
+pub const KNS_SEPOLIA_ADDRESS: Address = Address::new([
+    0x38, 0x07, 0xFB, 0xD6, 0x92, 0xAa, 0x5c, 0x96, 0xF1, 0xD8, 0xD7, 0xc5, 0x9a, 0x13, 0x46, 0xa8,
+    0x85, 0xF4, 0x0B, 0x1C,
+]);
+
+pub const KNS_OPTIMISM_ADDRESS: Address = Address::new([
+    0xca, 0x5b, 0x58, 0x11, 0xc0, 0xC4, 0x0a, 0xAB, 0x32, 0x95, 0xf9, 0x32, 0xb1, 0xB5, 0x11, 0x2E,
+    0xb7, 0xbb, 0x4b, 0xD6,
+]);
+
+sol! {
+    function auth(
+        bytes32 _node,
+        address _sender
+    ) public view virtual returns (bool authed);
+
+    function nodes(bytes32) external view returns (address, uint96);
+}
 
 pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
     let octets: Vec<&str> = ip.split('.').collect();
@@ -120,6 +146,24 @@ pub async fn register(
         ],
     });
 
+    // KnsRegistrar contract address
+    let kns_address = if testnet {
+        KNS_SEPOLIA_ADDRESS
+    } else {
+        KNS_OPTIMISM_ADDRESS
+    };
+
+    // This ETH provider uses public rpc endpoints to verify registration signatures.
+    let url = if testnet {
+        "wss://ethereum-sepolia-rpc.publicnode.com".to_string()
+    } else {
+        "wss://optimism-rpc.publicnode.com".to_string()
+    };
+    let connector = WsConnect { url, auth: None };
+    let client = ClientBuilder::default().ws(connector).await.unwrap();
+
+    let provider = Arc::new(Provider::new_with_client(client));
+
     let keyfile = warp::any().map(move || keyfile.clone());
     let our_temp_id = warp::any().map(move || our_temp_id.clone());
     let net_keypair = warp::any().map(move || net_keypair.clone());
@@ -182,7 +226,18 @@ pub async fn register(
                 .and(tx.clone())
                 .and(our_temp_id.clone())
                 .and(net_keypair.clone())
-                .and_then(handle_boot),
+                .and_then(move |boot_info, tx, our_temp_id, net_keypair| {
+                    let provider = provider.clone();
+                    handle_boot(
+                        boot_info,
+                        tx,
+                        our_temp_id,
+                        net_keypair,
+                        testnet,
+                        kns_address,
+                        provider,
+                    )
+                }),
         ))
         .or(warp::path("import-keyfile").and(
             warp::post()
@@ -254,14 +309,6 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
             }
         }
     };
-    // do we need password salt here for the FE to hash the login password?
-    println!(
-        "unencrypted info return: {:?}",
-        UnencryptedIdentity {
-            name: name.clone(),
-            allowed_routers: allowed_routers.clone(),
-        }
-    );
     return Ok(warp::reply::with_status(
         warp::reply::json(&UnencryptedIdentity {
             name,
@@ -273,7 +320,6 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
 }
 
 async fn generate_networking_info(our_temp_id: Arc<Identity>) -> Result<impl Reply, Rejection> {
-    println!("temp ID {:?}", our_temp_id.as_ref());
     Ok(warp::reply::json(our_temp_id.as_ref()))
 }
 
@@ -306,10 +352,11 @@ async fn handle_boot(
     sender: Arc<RegistrationSender>,
     our: Arc<Identity>,
     networking_keypair: Arc<Vec<u8>>,
+    testnet: bool,
+    kns_address: Address,
+    provider: Arc<Provider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     let mut our = our.as_ref().clone();
-    println!("bootinfo while booting: {:?}", info.clone());
-    println!("our while booting: {:?}", our.clone());
 
     our.name = info.username;
     if info.direct {
@@ -321,33 +368,98 @@ async fn handle_boot(
     let mut jwt_secret = [0u8, 32];
     ring::rand::SecureRandom::fill(&jwt_seed, &mut jwt_secret).unwrap();
 
-    // let salt = base64::decode(&info.salt).map_err(|_| warp::reject())?;
-    //let sig = Signature::from_base64(&info.signature).map_err(|_| warp::reject())?;
-
+    // verifying owner + signature, get registrar contract, call auth()
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs();
 
-    // if info.timestamp < now + 120 {
-    //     return Ok(warp::reply::with_status(
-    //         warp::reply::json(&"Timestamp is outdated."),
-    //         StatusCode::UNAUTHORIZED,
-    //     )
-    //     .into_response());
-    // }
+    if info.timestamp < now + 120 {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Timestamp is outdated."),
+            StatusCode::UNAUTHORIZED,
+        )
+        .into_response());
+    }
 
-    // verify eth signature, fetch from eth?
-    // let sign_data = serde_json::to_vec(&serde_json::json!({
-    //     "password": info.password,
-    //     "timestamp": info.timestamp,
-    // }))
-    // .unwrap();
+    let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
+    let tld_call = nodesCall { _0: namehash }.abi_encode();
+    let tx_input = TransactionInput::new(Bytes::from(tld_call));
+    let tx = TransactionRequest {
+        to: Some(kns_address),
+        input: tx_input,
+        ..Default::default()
+    };
 
-    // check chain for address match...?
-    // let _signer = sig
-    //     .recover_address_from_msg(&sign_data)
-    //     .map_err(|_| warp::reject())?;
+    let Ok(tld) = provider.call(tx, None).await else {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Failed to fetch TLD contract for username"),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response());
+    };
+
+    let Ok((tld_address, _)) = <(Address, U256)>::abi_decode(&tld, false) else {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Failed to decode TLD contract from return bytes"),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response());
+    };
+    let owner = Address::from_str(&info.owner).map_err(|_| warp::reject())?;
+
+    let auth_call = authCall {
+        _node: namehash,
+        _sender: owner,
+    }
+    .abi_encode();
+    let tx_input = TransactionInput::new(Bytes::from(auth_call));
+    let tx = TransactionRequest {
+        to: Some(tld_address),
+        input: tx_input,
+        ..Default::default()
+    };
+
+    let Ok(authed) = provider.call(tx, None).await else {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Failed to fetch TLD contract for username"),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        )
+        .into_response());
+    };
+
+    let is_ok = bool::abi_decode(&authed, false).map_err(|_| warp::reject())?;
+
+    if !is_ok {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Address is not authorized for username!"),
+            StatusCode::UNAUTHORIZED,
+        )
+        .into_response());
+    };
+
+    // manual json creation to preserve order..
+    let sig_data_json = format!(
+        r#"{{"username":"{}","password":"{}","timestamp":{}}}"#,
+        our.name, info.password, info.timestamp
+    );
+    let sig_data = sig_data_json.as_bytes();
+
+    let sig = Signature::from_str(&info.signature).map_err(|_| warp::reject())?;
+
+    let recovered_address = sig
+        .recover_address_from_msg(sig_data)
+        .map_err(|_| warp::reject())?;
+
+    if recovered_address != owner {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Recovered address does not match owner"),
+            StatusCode::UNAUTHORIZED,
+        )
+        .into_response());
+    }
+
+    println!("success baby.");
 
     let decoded_keyfile = Keyfile {
         username: our.name.clone(),

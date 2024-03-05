@@ -784,8 +784,9 @@ pub struct BootInfo {
     pub username: String,
     pub reset: bool,
     pub direct: bool,
-    // pub signature: String,
-    // pub timestamp: u64,
+    pub owner: String,
+    pub signature: String,
+    pub timestamp: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
