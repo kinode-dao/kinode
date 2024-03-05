@@ -530,6 +530,7 @@ async fn fulfill_request(
         let response = forward_to_node_provider(
             our,
             km_id,
+            None,
             node_provider,
             eth_action.clone(),
             send_to_loop,
@@ -551,6 +552,7 @@ async fn fulfill_request(
 async fn forward_to_node_provider(
     our: &str,
     km_id: u64,
+    rsvp: Option<Address>,
     node_provider: &NodeProvider,
     eth_action: EthAction,
     send_to_loop: &MessageSender,
@@ -559,8 +561,6 @@ async fn forward_to_node_provider(
     if !node_provider.usable || node_provider.name == our {
         return EthResponse::Err(EthError::PermissionDenied);
     }
-    // in order, forward the request to each node provider
-    // until one sends back a satisfactory response
     kernel_message(
         our,
         km_id,
@@ -568,7 +568,7 @@ async fn forward_to_node_provider(
             node: node_provider.name.clone(),
             process: ETH_PROCESS_ID.clone(),
         },
-        None,
+        rsvp,
         true,
         Some(60), // TODO
         eth_action.clone(),
