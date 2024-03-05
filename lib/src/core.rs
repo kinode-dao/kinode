@@ -1532,8 +1532,9 @@ pub enum TimerAction {
 //
 
 /// Must be parsed from message pack vector.
+/// all Get actions must be sent from local process. used for debugging
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NetActions {
+pub enum NetAction {
     /// Received from a router of ours when they have a new pending passthrough for us.
     /// We should respond (if we desire) by using them to initialize a routed connection
     /// with the NodeId given.
@@ -1542,14 +1543,30 @@ pub enum NetActions {
     /// in the future could get from remote provider
     KnsUpdate(KnsUpdate),
     KnsBatchUpdate(Vec<KnsUpdate>),
+    /// get a list of peers we are connected to
+    GetPeers,
+    /// get the [`Identity`] struct for a single peer
+    GetPeer(String),
+    /// get the [`NodeId`] associated with a given namehash, if any
+    GetName(String),
+    /// get a user-readable diagnostics string containing networking inforamtion
+    GetDiagnostics,
 }
 
 /// For now, only sent in response to a ConnectionRequest.
 /// Must be parsed from message pack vector
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NetResponses {
+pub enum NetResponse {
     Accepted(NodeId),
     Rejected(NodeId),
+    /// response to [`NetAction::GetPeers`]
+    Peers(Vec<Identity>),
+    /// response to [`NetAction::GetPeer`]
+    Peer(Option<Identity>),
+    /// response to [`NetAction::GetName`]
+    Name(Option<String>),
+    /// response to [`NetAction::GetDiagnostics`]. A user-readable string.
+    Diagnostics(String),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

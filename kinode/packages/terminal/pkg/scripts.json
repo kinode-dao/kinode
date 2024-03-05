@@ -41,6 +41,55 @@
             "net:distro:sys"
         ]
     },
+    "m.wasm": {
+        "root": true,
+        "public": true,
+        "request_networking": true
+    },
+    "namehash_to_name.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "net:distro:sys"
+        ],
+        "grant_capabilities": [
+            "net:distro:sys"
+        ]
+    },
+    "net_diagnostics.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "net:distro:sys"
+        ],
+        "grant_capabilities": [
+            "net:distro:sys"
+        ]
+    },
+    "peer.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "net:distro:sys"
+        ],
+        "grant_capabilities": [
+            "net:distro:sys"
+        ]
+    },
+    "peers.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "net:distro:sys"
+        ],
+        "grant_capabilities": [
+            "net:distro:sys"
+        ]
+    },
     "top.wasm": {
         "root": false,
         "public": false,
@@ -49,10 +98,5 @@
             "kernel:distro:sys"
         ],
         "grant_capabilities": []
-    },
-    "m.wasm": {
-        "root": true,
-        "public": true,
-        "request_networking": true
     }
 }

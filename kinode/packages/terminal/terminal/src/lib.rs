@@ -62,27 +62,43 @@ impl Guest for Component {
                     aliases: HashMap::from([
                         (
                             "alias".to_string(),
-                            "alias:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("alias"), "terminal", "sys"),
                         ),
                         (
                             "cat".to_string(),
-                            "cat:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("cat"), "terminal", "sys"),
                         ),
                         (
                             "echo".to_string(),
-                            "echo:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("echo"), "terminal", "sys"),
                         ),
                         (
                             "hi".to_string(),
-                            "hi:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("hi"), "terminal", "sys"),
                         ),
                         (
                             "m".to_string(),
-                            "m:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("m"), "terminal", "sys"),
+                        ),
+                        (
+                            "namehash_to_name".to_string(),
+                            ProcessId::new(Some("namehash_to_name"), "terminal", "sys"),
+                        ),
+                        (
+                            "net_diagnostics".to_string(),
+                            ProcessId::new(Some("net_diagnostics"), "terminal", "sys"),
+                        ),
+                        (
+                            "peer".to_string(),
+                            ProcessId::new(Some("peer"), "terminal", "sys"),
+                        ),
+                        (
+                            "peers".to_string(),
+                            ProcessId::new(Some("peers"), "terminal", "sys"),
                         ),
                         (
                             "top".to_string(),
-                            "top:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("top"), "terminal", "sys"),
                         ),
                     ]),
                 },

@@ -860,7 +860,7 @@ pub async fn kernel(
             message: t::Message::Request(t::Request {
                 inherit: false,
                 expects_response: None,
-                body: rmp_serde::to_vec(&t::NetActions::KnsBatchUpdate(default_pki_entries))
+                body: rmp_serde::to_vec(&t::NetAction::KnsBatchUpdate(default_pki_entries))
                     .unwrap(),
                 metadata: None,
                 capabilities: vec![],
