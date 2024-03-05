@@ -246,7 +246,7 @@ async fn handle_network_error(
     // if we hold active subscriptions for the remote node that this error refers to,
     // close them here -- they will need to resubscribe
     // TODO is this necessary?
-    if let Some(sub_map) = active_subscriptions.get(&wrapped_error.source) {
+    if let Some(sub_map) = active_subscriptions.get(&wrapped_error.error.target) {
         for (_sub_id, sub) in sub_map.iter() {
             if let ActiveSub::Local(handle) = sub {
                 verbose_print(
