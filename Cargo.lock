@@ -3009,6 +3009,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "namehash_to_name"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "rmp-serde",
+ "serde",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "native-tls"
 version = "0.2.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3024,6 +3034,16 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "tempfile",
+]
+
+[[package]]
+name = "net_diagnostics"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "rmp-serde",
+ "serde",
+ "wit-bindgen",
 ]
 
 [[package]]
@@ -3282,6 +3302,26 @@ name = "peeking_take_while"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "19b17cddbe7ec3f8bc800887bab5e717348c95ea2ca0b1bf0837fb964dc67099"
+
+[[package]]
+name = "peer"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "rmp-serde",
+ "serde",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "peers"
+version = "0.1.0"
+dependencies = [
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "rmp-serde",
+ "serde",
+ "wit-bindgen",
+]
 
 [[package]]
 name = "percent-encoding"

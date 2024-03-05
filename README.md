@@ -103,7 +103,8 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
 - `m <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>. JSON containing spaces must be wrapped in single-quotes (`''`).
-    - Example: `m our@net:distro:sys diagnostics`
+    - Example: `m our@eth:distro:sys "SetPublic" -a 5`
+    - the '-a' flag is used to expect a response with a given timeout
     - `our` will always be interpolated by the system as your node's name
 - `hi <name> <string>`: send a text message to another node's command line.
     - Example: `hi ben.os hello world`
@@ -114,6 +115,9 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
     - Example: `cat /terminal:sys/pkg/scripts.json`
 - `echo <text>`: print `text` to the terminal
     - Example: `echo foo`
+- `net_diagnostics`: print some useful networking diagnostic data
+- `peers`: print the peers the node currently hold connections with
+- `peer <name>`: print the peer's PKI info, if it exists
 
 ### Terminal example usage
 

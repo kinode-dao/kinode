@@ -142,27 +142,6 @@ struct ModuleState {
     print_tx: PrintSender,
 }
 
-async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
-    match Url::parse(&provider.url)?.scheme() {
-        "ws" | "wss" => {
-            let connector = WsConnect {
-                url: provider.url.to_string(),
-                auth: None,
-            };
-            let client = tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                ClientBuilder::default().ws(connector),
-            )
-            .await??;
-            provider.pubsub = Some(Provider::new_with_client(client));
-            Ok(())
-        }
-        _ => Err(anyhow::anyhow!(
-            "Only `ws://` or `wss://` providers are supported."
-        )),
-    }
-}
-
 /// The ETH provider runtime process is responsible for connecting to one or more ETH RPC providers
 /// and using them to service indexing requests from other apps. This is the runtime entry point
 /// for the entire module.
@@ -674,8 +653,57 @@ async fn handle_eth_config_action(
         EthConfigAction::GetAccessSettings => {
             return EthConfigResponse::AccessSettings(state.access_settings.clone());
         }
+        EthConfigAction::GetState => {
+            return EthConfigResponse::State {
+                active_subscriptions: state
+                    .active_subscriptions
+                    .iter()
+                    .map(|e| {
+                        (
+                            e.key().clone(),
+                            e.value()
+                                .iter()
+                                .map(|(id, sub)| {
+                                    (
+                                        *id,
+                                        match sub {
+                                            ActiveSub::Local(_) => None,
+                                            ActiveSub::Remote { provider_node, .. } => {
+                                                Some(provider_node.clone())
+                                            }
+                                        },
+                                    )
+                                })
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+                outstanding_requests: state.response_channels.iter().map(|e| *e.key()).collect(),
+            };
+        }
     }
     EthConfigResponse::Ok
+}
+
+async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
+    match Url::parse(&provider.url)?.scheme() {
+        "ws" | "wss" => {
+            let connector = WsConnect {
+                url: provider.url.to_string(),
+                auth: None,
+            };
+            let client = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                ClientBuilder::default().ws(connector),
+            )
+            .await??;
+            provider.pubsub = Some(Provider::new_with_client(client));
+            Ok(())
+        }
+        _ => Err(anyhow::anyhow!(
+            "Only `ws://` or `wss://` providers are supported."
+        )),
+    }
 }
 
 fn providers_to_saved_configs(providers: &Providers) -> SavedConfigs {
