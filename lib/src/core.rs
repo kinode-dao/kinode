@@ -763,7 +763,6 @@ pub struct Keyfile {
     pub routers: Vec<String>,
     pub networking_keypair: signature::Ed25519KeyPair,
     pub jwt_secret_bytes: Vec<u8>,
-    pub salt: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -785,9 +784,8 @@ pub struct BootInfo {
     pub username: String,
     pub reset: bool,
     pub direct: bool,
-    pub signature: String,
-    pub salt: String,
-    pub timestamp: u64,
+    // pub signature: String,
+    // pub timestamp: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -819,17 +817,6 @@ pub struct Identity {
 pub struct UnencryptedIdentity {
     pub name: NodeId,
     pub allowed_routers: Vec<NodeId>,
-    pub salt: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IdentityTransaction {
-    pub from: String,
-    pub signature: Option<String>,
-    pub to: String, // contract address
-    pub town_id: u32,
-    pub calldata: Identity,
-    pub nonce: String,
 }
 
 //

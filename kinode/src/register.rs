@@ -233,9 +233,9 @@ pub async fn register(
 }
 
 async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Rejection> {
-    let (name, allowed_routers, salt) = {
+    let (name, allowed_routers) = {
         match keyfile {
-            Some(encoded_keyfile) => match keygen::get_info(&encoded_keyfile) {
+            Some(encoded_keyfile) => match keygen::get_username_and_routers(&encoded_keyfile) {
                 Ok(k) => k,
                 Err(_) => {
                     return Ok(warp::reply::with_status(
@@ -255,11 +255,17 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
         }
     };
     // do we need password salt here for the FE to hash the login password?
+    println!(
+        "unencrypted info return: {:?}",
+        UnencryptedIdentity {
+            name: name.clone(),
+            allowed_routers: allowed_routers.clone(),
+        }
+    );
     return Ok(warp::reply::with_status(
         warp::reply::json(&UnencryptedIdentity {
             name,
             allowed_routers,
-            salt: base64::encode(&salt),
         }),
         StatusCode::OK,
     )
@@ -267,6 +273,7 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
 }
 
 async fn generate_networking_info(our_temp_id: Arc<Identity>) -> Result<impl Reply, Rejection> {
+    println!("temp ID {:?}", our_temp_id.as_ref());
     Ok(warp::reply::json(our_temp_id.as_ref()))
 }
 
@@ -283,6 +290,7 @@ async fn handle_keyfile_vet(
     let decoded_keyfile =
         keygen::decode_keyfile(&encoded_keyfile, &payload.password).map_err(|_| warp::reject())?;
 
+    println!("vetted decoded keyfile: {:?}", decoded_keyfile);
     Ok(warp::reply::json(&KeyfileVetted {
         username: decoded_keyfile.username,
         networking_key: format!(
@@ -300,44 +308,46 @@ async fn handle_boot(
     networking_keypair: Arc<Vec<u8>>,
 ) -> Result<impl Reply, Rejection> {
     let mut our = our.as_ref().clone();
+    println!("bootinfo while booting: {:?}", info.clone());
+    println!("our while booting: {:?}", our.clone());
+
     our.name = info.username;
     if info.direct {
         our.allowed_routers = vec![];
     } else {
         our.ws_routing = None;
     }
-
     let jwt_seed = SystemRandom::new();
     let mut jwt_secret = [0u8, 32];
     ring::rand::SecureRandom::fill(&jwt_seed, &mut jwt_secret).unwrap();
 
-    let salt = base64::decode(&info.salt).map_err(|_| warp::reject())?;
-    let sig = Signature::from_base64(&info.signature).map_err(|_| warp::reject())?;
+    // let salt = base64::decode(&info.salt).map_err(|_| warp::reject())?;
+    //let sig = Signature::from_base64(&info.signature).map_err(|_| warp::reject())?;
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs();
 
-    if info.timestamp < now + 120 {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Timestamp is outdated."),
-            StatusCode::UNAUTHORIZED,
-        )
-        .into_response());
-    }
+    // if info.timestamp < now + 120 {
+    //     return Ok(warp::reply::with_status(
+    //         warp::reply::json(&"Timestamp is outdated."),
+    //         StatusCode::UNAUTHORIZED,
+    //     )
+    //     .into_response());
+    // }
 
-    // verify eth signature
-    let sign_data = serde_json::to_vec(&serde_json::json!({
-        "password": info.password,
-        "timestamp": info.timestamp,
-    }))
-    .unwrap();
+    // verify eth signature, fetch from eth?
+    // let sign_data = serde_json::to_vec(&serde_json::json!({
+    //     "password": info.password,
+    //     "timestamp": info.timestamp,
+    // }))
+    // .unwrap();
 
     // check chain for address match...?
-    let _signer = sig
-        .recover_address_from_msg(&sign_data)
-        .map_err(|_| warp::reject())?;
+    // let _signer = sig
+    //     .recover_address_from_msg(&sign_data)
+    //     .map_err(|_| warp::reject())?;
 
     let decoded_keyfile = Keyfile {
         username: our.name.clone(),
@@ -345,7 +355,6 @@ async fn handle_boot(
         networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
             .unwrap(),
         jwt_secret_bytes: jwt_secret.to_vec(),
-        salt,
     };
 
     let encoded_keyfile = keygen::encode_keyfile(
@@ -354,7 +363,6 @@ async fn handle_boot(
         decoded_keyfile.routers.clone(),
         &networking_keypair,
         &decoded_keyfile.jwt_secret_bytes,
-        &decoded_keyfile.salt,
     );
 
     success_response(sender, our, decoded_keyfile, encoded_keyfile).await
@@ -429,6 +437,7 @@ async fn handle_login(
     sender: Arc<RegistrationSender>,
     encoded_keyfile: Option<Vec<u8>>,
 ) -> Result<impl Reply, Rejection> {
+    println!("login info: {:?}", info);
     if encoded_keyfile.is_none() {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Keyfile not present"),
@@ -521,7 +530,6 @@ async fn confirm_change_network_keys(
         networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
             .unwrap(),
         jwt_secret_bytes: old_decoded_keyfile.jwt_secret_bytes,
-        salt: old_decoded_keyfile.salt,
     };
 
     let encoded_keyfile = keygen::encode_keyfile(
@@ -530,7 +538,6 @@ async fn confirm_change_network_keys(
         decoded_keyfile.routers.clone(),
         &networking_keypair,
         &decoded_keyfile.jwt_secret_bytes,
-        &decoded_keyfile.salt,
     );
 
     success_response(sender, our.clone(), decoded_keyfile, encoded_keyfile).await

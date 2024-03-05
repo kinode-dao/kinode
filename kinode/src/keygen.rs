@@ -25,9 +25,12 @@ pub fn encode_keyfile(
     routers: Vec<String>,
     networking_key: &[u8],
     jwt: &[u8],
-    salt: &[u8],
 ) -> Vec<u8> {
     let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
+
+    let rng = SystemRandom::new();
+    let mut salt = [0u8; 32]; // generate a unique salt
+    rng.fill(&mut salt).unwrap();
 
     pbkdf2::derive(
         PBKDF2_ALG,
@@ -93,16 +96,15 @@ pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'stati
         routers,
         networking_keypair,
         jwt_secret_bytes,
-        salt,
     })
 }
 
-pub fn get_info(keyfile: &[u8]) -> Result<(String, Vec<String>, Vec<u8>), &'static str> {
-    let (username, routers, _salt, _key_enc, _jwt_enc, password_salt) =
-        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
+pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>), &'static str> {
+    let (username, routers, _salt, _key_enc, _jwt_enc) =
+        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
             .map_err(|_| "failed to deserialize keyfile")?;
 
-    Ok((username, routers, password_salt))
+    Ok((username, routers))
 }
 
 /// # Returns
