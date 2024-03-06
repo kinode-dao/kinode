@@ -336,7 +336,6 @@ async fn handle_keyfile_vet(
     let decoded_keyfile =
         keygen::decode_keyfile(&encoded_keyfile, &payload.password).map_err(|_| warp::reject())?;
 
-    println!("vetted decoded keyfile: {:?}", decoded_keyfile);
     Ok(warp::reply::json(&KeyfileVetted {
         username: decoded_keyfile.username,
         networking_key: format!(
@@ -459,8 +458,6 @@ async fn handle_boot(
         .into_response());
     }
 
-    println!("success baby.");
-
     let decoded_keyfile = Keyfile {
         username: our.name.clone(),
         routers: our.allowed_routers.clone(),
@@ -549,7 +546,6 @@ async fn handle_login(
     sender: Arc<RegistrationSender>,
     encoded_keyfile: Option<Vec<u8>>,
 ) -> Result<impl Reply, Rejection> {
-    println!("login info: {:?}", info);
     if encoded_keyfile.is_none() {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Keyfile not present"),
