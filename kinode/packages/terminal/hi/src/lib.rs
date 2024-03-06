@@ -14,7 +14,7 @@ call_init!(init);
 
 fn init(our: Address) {
     let Ok(args) = await_next_request_body() else {
-        println!("failed to get args, aborting");
+        println!("failed to get args");
         return;
     };
 
