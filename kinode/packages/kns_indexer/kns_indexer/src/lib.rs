@@ -45,7 +45,11 @@ pub enum IndexerRequests {
     NamehashToName { hash: String, block: u64 },
     /// return the most recent on-chain routing information for a node name.
     /// returns an Option<KnsUpdate>
+    /// set block to 0 if you just want to get the current state of the indexer
     NodeInfo { name: String, block: u64 },
+    /// return the entire state of the indexer at the given block
+    /// set block to 0 if you just want to get the current state of the indexer
+    GetState { block: u64 },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -276,6 +280,16 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             .push(request);
                     }
                 }
+                IndexerRequests::GetState { block } => {
+                    if block <= state.block {
+                        Response::new().body(serde_json::to_vec(&state)?).send()?;
+                    } else {
+                        pending_requests
+                            .entry(block)
+                            .or_insert(vec![])
+                            .push(request);
+                    }
+                }
             }
         }
     }
@@ -321,6 +335,12 @@ fn handle_eth_message(
                     IndexerRequests::NodeInfo { name, .. } => {
                         Response::new()
                             .body(serde_json::to_vec(&state.nodes.get(name))?)
+                            .send()
+                            .unwrap();
+                    }
+                    IndexerRequests::GetState { .. } => {
+                        Response::new()
+                            .body(serde_json::to_vec(&state)?)
                             .send()
                             .unwrap();
                     }
