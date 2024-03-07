@@ -329,7 +329,7 @@ async fn login_handler(
         password: "secret".to_string(),
     };
 
-    match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
+    match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
         Ok(keyfile) => {
             let token = match register::generate_jwt(&keyfile.jwt_secret_bytes, our.as_ref()) {
                 Some(token) => token,

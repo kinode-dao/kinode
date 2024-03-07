@@ -1,7 +1,7 @@
 {
   "files": {
     "main.css": "/static/css/main.054f6f32.css",
-    "main.js": "/static/js/main.75ba0410.js",
+    "main.js": "/static/js/main.d89ab669.js",
     "static/media/unknown.png": "/static/media/unknown.880d04d4611a45ab1001.png",
     "static/media/background.jpg": "/static/media/background.01d2427cfc21fb685016.jpg",
     "static/media/kinode.svg": "/static/media/kinode.86d0c1a6a4a3ca3be41616b5989d6925.svg",
@@ -10,6 +10,6 @@
   },
   "entrypoints": [
     "static/css/main.054f6f32.css",
-    "static/js/main.75ba0410.js"
+    "static/js/main.d89ab669.js"
   ]
 }

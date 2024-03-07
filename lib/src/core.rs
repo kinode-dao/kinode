@@ -768,7 +768,7 @@ pub struct Keyfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyfileVet {
-    pub password: String,
+    pub password_hash: String,
     pub keyfile: String,
 }
 
@@ -781,7 +781,7 @@ pub struct KeyfileVetted {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BootInfo {
-    pub password: String,
+    pub password_hash: String,
     pub username: String,
     pub reset: bool,
     pub direct: bool,
@@ -792,18 +792,18 @@ pub struct BootInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportKeyfileInfo {
-    pub password: String,
+    pub password_hash: String,
     pub keyfile: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginInfo {
-    pub password: String,
+    pub password_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginAndResetInfo {
-    pub password: String,
+    pub password_hash: String,
     pub direct: bool,
 }
 

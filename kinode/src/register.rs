@@ -333,8 +333,8 @@ async fn handle_keyfile_vet(
         false => base64::decode(payload.keyfile).map_err(|_| warp::reject())?,
     };
 
-    let decoded_keyfile =
-        keygen::decode_keyfile(&encoded_keyfile, &payload.password).map_err(|_| warp::reject())?;
+    let decoded_keyfile = keygen::decode_keyfile(&encoded_keyfile, &payload.password_hash)
+        .map_err(|_| warp::reject())?;
 
     Ok(warp::reply::json(&KeyfileVetted {
         username: decoded_keyfile.username,
@@ -439,8 +439,8 @@ async fn handle_boot(
 
     // manual json creation to preserve order..
     let sig_data_json = format!(
-        r#"{{"username":"{}","password":"{}","timestamp":{}}}"#,
-        our.name, info.password, info.timestamp
+        r#"{{"username":"{}","password_hash":"{}","timestamp":{},"direct":{},"reset":{}}}"#,
+        our.name, info.password_hash, info.timestamp, info.direct, info.reset
     );
     let sig_data = sig_data_json.as_bytes();
 
@@ -468,7 +468,7 @@ async fn handle_boot(
     };
 
     let encoded_keyfile = keygen::encode_keyfile(
-        info.password,
+        info.password_hash,
         decoded_keyfile.username.clone(),
         decoded_keyfile.routers.clone(),
         &networking_keypair,
@@ -504,7 +504,8 @@ async fn handle_import_keyfile(
         .into_response());
     };
 
-    let (decoded_keyfile, our) = match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
+    let (decoded_keyfile, our) = match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash)
+    {
         Ok(k) => {
             let our = Identity {
                 name: k.username.clone(),
@@ -524,7 +525,7 @@ async fn handle_import_keyfile(
         }
         Err(_) => {
             return Ok(warp::reply::with_status(
-                warp::reply::json(&"Incorrect Password".to_string()),
+                warp::reply::json(&"Incorrect password_hash".to_string()),
                 StatusCode::UNAUTHORIZED,
             )
             .into_response())
@@ -565,7 +566,8 @@ async fn handle_login(
         .into_response());
     };
 
-    let (decoded_keyfile, our) = match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
+    let (decoded_keyfile, our) = match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash)
+    {
         Ok(k) => {
             let our = Identity {
                 name: k.username.clone(),
@@ -585,7 +587,7 @@ async fn handle_login(
         }
         Err(_) => {
             return Ok(warp::reply::with_status(
-                warp::reply::json(&"Incorrect Password"),
+                warp::reply::json(&"Incorrect password_hash"),
                 StatusCode::UNAUTHORIZED,
             )
             .into_response())
@@ -613,7 +615,7 @@ async fn confirm_change_network_keys(
     let mut our = our.as_ref().clone();
 
     // Get our name from our current keyfile
-    let old_decoded_keyfile = match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
+    let old_decoded_keyfile = match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
         Ok(k) => {
             our.name = k.username.clone();
             k
@@ -644,7 +646,7 @@ async fn confirm_change_network_keys(
     };
 
     let encoded_keyfile = keygen::encode_keyfile(
-        info.password,
+        info.password_hash,
         decoded_keyfile.username.clone(),
         decoded_keyfile.routers.clone(),
         &networking_keypair,
