@@ -32,7 +32,7 @@ wit_bindgen::generate!({
 const HOME_PAGE: &str = include_str!("index.html");
 
 const APP_TEMPLATE: &str = r#"
-<a class="app-link" id="${package_name}" href="/${path}/">
+<a class="app-link" id="${package_name}" href="/${path}">
   <img
     src="${base64_icon}" />
   <h6>${label}</h6>
