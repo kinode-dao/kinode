@@ -1,6 +1,6 @@
 use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// The Action and Request type that can be made to eth:distro:sys. Any process with messaging
 /// capabilities can send this action to the eth provider.
@@ -110,6 +110,8 @@ pub enum EthConfigAction {
     GetProviders,
     /// Get the current access settings.
     GetAccessSettings,
+    /// Get the state of calls and subscriptions. Used for debugging.
+    GetState,
 }
 
 /// Response type from an [`EthConfigAction`] request.
@@ -124,6 +126,11 @@ pub enum EthConfigResponse {
     AccessSettings(AccessSettings),
     /// Permission denied due to missing capability
     PermissionDenied,
+    /// Response from a GetState request
+    State {
+        active_subscriptions: HashMap<crate::core::Address, HashMap<u64, Option<String>>>, // None if local, Some(node_provider_name) if remote
+        outstanding_requests: HashSet<u64>,
+    },
 }
 
 /// Settings for our ETH provider

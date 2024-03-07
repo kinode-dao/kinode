@@ -632,7 +632,6 @@ async fn main() {
 
     // abort all remaining tasks
     tasks.shutdown().await;
-    //let _ = crossterm::terminal::disable_raw_mode().unwrap();
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
     let _ = crossterm::execute!(
@@ -640,7 +639,7 @@ async fn main() {
         crossterm::event::DisableBracketedPaste,
         crossterm::terminal::SetTitle(""),
         crossterm::style::SetForegroundColor(crossterm::style::Color::Red),
-        crossterm::style::Print(format!("\r\n{quit_msg}")),
+        crossterm::style::Print(format!("\r\n{quit_msg}\r\n")),
         crossterm::style::ResetColor,
     );
 }

@@ -142,27 +142,6 @@ struct ModuleState {
     print_tx: PrintSender,
 }
 
-async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
-    match Url::parse(&provider.url)?.scheme() {
-        "ws" | "wss" => {
-            let connector = WsConnect {
-                url: provider.url.to_string(),
-                auth: None,
-            };
-            let client = tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                ClientBuilder::default().ws(connector),
-            )
-            .await??;
-            provider.pubsub = Some(Provider::new_with_client(client));
-            Ok(())
-        }
-        _ => Err(anyhow::anyhow!(
-            "Only `ws://` or `wss://` providers are supported."
-        )),
-    }
-}
-
 /// The ETH provider runtime process is responsible for connecting to one or more ETH RPC providers
 /// and using them to service indexing requests from other apps. This is the runtime entry point
 /// for the entire module.
@@ -246,7 +225,7 @@ async fn handle_network_error(
     // if we hold active subscriptions for the remote node that this error refers to,
     // close them here -- they will need to resubscribe
     // TODO is this necessary?
-    if let Some(sub_map) = active_subscriptions.get(&wrapped_error.source) {
+    if let Some(sub_map) = active_subscriptions.get(&wrapped_error.error.target) {
         for (_sub_id, sub) in sub_map.iter() {
             if let ActiveSub::Local(handle) = sub {
                 verbose_print(
@@ -530,6 +509,7 @@ async fn fulfill_request(
         let response = forward_to_node_provider(
             our,
             km_id,
+            None,
             node_provider,
             eth_action.clone(),
             send_to_loop,
@@ -551,6 +531,7 @@ async fn fulfill_request(
 async fn forward_to_node_provider(
     our: &str,
     km_id: u64,
+    rsvp: Option<Address>,
     node_provider: &NodeProvider,
     eth_action: EthAction,
     send_to_loop: &MessageSender,
@@ -559,8 +540,6 @@ async fn forward_to_node_provider(
     if !node_provider.usable || node_provider.name == our {
         return EthResponse::Err(EthError::PermissionDenied);
     }
-    // in order, forward the request to each node provider
-    // until one sends back a satisfactory response
     kernel_message(
         our,
         km_id,
@@ -568,7 +547,7 @@ async fn forward_to_node_provider(
             node: node_provider.name.clone(),
             process: ETH_PROCESS_ID.clone(),
         },
-        None,
+        rsvp,
         true,
         Some(60), // TODO
         eth_action.clone(),
@@ -674,8 +653,57 @@ async fn handle_eth_config_action(
         EthConfigAction::GetAccessSettings => {
             return EthConfigResponse::AccessSettings(state.access_settings.clone());
         }
+        EthConfigAction::GetState => {
+            return EthConfigResponse::State {
+                active_subscriptions: state
+                    .active_subscriptions
+                    .iter()
+                    .map(|e| {
+                        (
+                            e.key().clone(),
+                            e.value()
+                                .iter()
+                                .map(|(id, sub)| {
+                                    (
+                                        *id,
+                                        match sub {
+                                            ActiveSub::Local(_) => None,
+                                            ActiveSub::Remote { provider_node, .. } => {
+                                                Some(provider_node.clone())
+                                            }
+                                        },
+                                    )
+                                })
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+                outstanding_requests: state.response_channels.iter().map(|e| *e.key()).collect(),
+            };
+        }
     }
     EthConfigResponse::Ok
+}
+
+async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
+    match Url::parse(&provider.url)?.scheme() {
+        "ws" | "wss" => {
+            let connector = WsConnect {
+                url: provider.url.to_string(),
+                auth: None,
+            };
+            let client = tokio::time::timeout(
+                std::time::Duration::from_secs(10),
+                ClientBuilder::default().ws(connector),
+            )
+            .await??;
+            provider.pubsub = Some(Provider::new_with_client(client));
+            Ok(())
+        }
+        _ => Err(anyhow::anyhow!(
+            "Only `ws://` or `wss://` providers are supported."
+        )),
+    }
 }
 
 fn providers_to_saved_configs(providers: &Providers) -> SavedConfigs {

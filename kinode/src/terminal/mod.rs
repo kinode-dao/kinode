@@ -29,10 +29,7 @@ impl RawMode {
 impl Drop for RawMode {
     fn drop(&mut self) {
         match disable_raw_mode() {
-            Ok(_) => {
-                // let is_enabled = crossterm::terminal::is_raw_mode_enabled();
-                // println!("terminal: disabled raw mode successfully: {is_enabled:?}\r");
-            }
+            Ok(_) => {}
             Err(e) => {
                 println!("terminal: failed to disable raw mode: {e:?}\r");
             }
@@ -248,7 +245,7 @@ pub async fn terminal(
                     // handle pasting of text from outside
                     Event::Paste(pasted) => {
                         current_line.insert_str(line_col, &pasted);
-                        line_col = current_line.len();
+                        line_col = line_col + pasted.len();
                         cursor_col = std::cmp::min(line_col.try_into().unwrap_or(win_cols), win_cols);
                         execute!(
                             stdout,

@@ -48,10 +48,10 @@ pub async fn create_new_subscription(
                 .entry(target.clone())
                 .or_insert(HashMap::new());
             let active_subscriptions = active_subscriptions.clone();
-            subs.insert(
-                sub_id,
-                match maybe_raw_sub {
-                    Ok(rx) => {
+            match maybe_raw_sub {
+                Ok(rx) => {
+                    subs.insert(
+                        sub_id,
                         // this is a local sub, as in, we connect to the rpc endpt
                         ActiveSub::Local(tokio::spawn(async move {
                             // await the subscription error and kill it if so
@@ -74,7 +74,7 @@ pub async fn create_new_subscription(
                                     &our,
                                     rand::random(),
                                     target.clone(),
-                                    None,
+                                    rsvp,
                                     true,
                                     None,
                                     EthSubResult::Err(e),
@@ -85,15 +85,18 @@ pub async fn create_new_subscription(
                                     sub_map.remove(&km_id);
                                 });
                             }
-                        }))
-                    }
-                    Err((provider_node, remote_sub_id)) => {
-                        // this is a remote sub, given by a relay node
-                        let (sender, rx) = tokio::sync::mpsc::channel(10);
-                        let keepalive_km_id = rand::random();
-                        let (keepalive_err_sender, keepalive_err_receiver) =
-                            tokio::sync::mpsc::channel(1);
-                        response_channels.insert(keepalive_km_id, keepalive_err_sender);
+                        })),
+                    );
+                }
+                Err((provider_node, remote_sub_id)) => {
+                    // this is a remote sub, given by a relay node
+                    let (sender, rx) = tokio::sync::mpsc::channel(10);
+                    let keepalive_km_id = rand::random();
+                    let (keepalive_err_sender, keepalive_err_receiver) =
+                        tokio::sync::mpsc::channel(1);
+                    response_channels.insert(keepalive_km_id, keepalive_err_sender);
+                    subs.insert(
+                        remote_sub_id,
                         ActiveSub::Remote {
                             provider_node: provider_node.clone(),
                             handle: tokio::spawn(async move {
@@ -133,10 +136,10 @@ pub async fn create_new_subscription(
                                 }
                             }),
                             sender,
-                        }
-                    }
-                },
-            );
+                        },
+                    );
+                }
+            }
         }
         Err(e) => {
             error_message(&our, km_id, target.clone(), e, &send_to_loop).await;
@@ -205,6 +208,7 @@ async fn build_subscription(
         match forward_to_node_provider(
             &our,
             km_id,
+            Some(target.clone()),
             node_provider,
             EthAction::SubscribeLogs {
                 sub_id: remote_sub_id,

@@ -1,0 +1,17 @@
+[package]
+name = "peer"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", tag = "v0.6.0-alpha.2" }
+rmp-serde = "1.1.2"
+serde = { version = "1.0", features = ["derive"] }
+wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "21a46c7" }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "kinode:process"

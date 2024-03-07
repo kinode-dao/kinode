@@ -49,12 +49,12 @@ pub enum IndexerRequests {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NetActions {
+pub enum NetAction {
     KnsUpdate(KnsUpdate),
     KnsBatchUpdate(Vec<KnsUpdate>),
 }
 
-impl TryInto<Vec<u8>> for NetActions {
+impl TryInto<Vec<u8>> for NetAction {
     type Error = anyhow::Error;
     fn try_into(self) -> Result<Vec<u8>, Self::Error> {
         Ok(rmp_serde::to_vec(&self)?)
@@ -172,7 +172,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // shove all state into net::net
     Request::new()
         .target((&our.node, "net", "distro", "sys"))
-        .try_body(NetActions::KnsBatchUpdate(
+        .try_body(NetAction::KnsBatchUpdate(
             state.nodes.values().cloned().collect::<Vec<_>>(),
         ))?
         .send()?;
@@ -214,7 +214,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // shove all state into net::net
     Request::new()
         .target((&our.node, "net", "distro", "sys"))
-        .try_body(NetActions::KnsBatchUpdate(
+        .try_body(NetAction::KnsBatchUpdate(
             state.nodes.values().cloned().collect::<Vec<_>>(),
         ))?
         .send()?;
@@ -403,7 +403,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     {
         Request::new()
             .target((&our.node, "net", "distro", "sys"))
-            .try_body(NetActions::KnsUpdate(node.clone()))?
+            .try_body(NetAction::KnsUpdate(node.clone()))?
             .send()?;
     }
 

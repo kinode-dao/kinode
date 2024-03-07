@@ -226,7 +226,7 @@ pub async fn create_passthrough(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: Some(5),
-                body: rmp_serde::to_vec(&NetActions::ConnectionRequest(from_id.name.clone()))?,
+                body: rmp_serde::to_vec(&NetAction::ConnectionRequest(from_id.name.clone()))?,
                 metadata: None,
                 capabilities: vec![],
             }),
