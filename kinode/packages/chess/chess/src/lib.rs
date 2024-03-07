@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 extern crate base64;
 
+const ICON: &str = include_str!("icon");
+
 //
 // Our "chess protocol" request/response format. We'll always serialize these
 // to a byte vector and send them over IPC.
@@ -109,6 +111,23 @@ call_init!(initialize);
 fn initialize(our: Address) {
     // A little printout to show in terminal that the process has started.
     println!("started");
+
+    // add ourselves to the homepage
+    Request::to(("our", "homepage", "homepage", "sys"))
+        .body(
+            serde_json::json!({
+                "Add": {
+                    "label": "Chess",
+                    "icon": ICON,
+                    "path": "/", // just our root
+                }
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
+        )
+        .send()
+        .unwrap();
 
     // Serve the index.html and other UI files found in pkg/ui at the root path.
     // authenticated=true, local_only=false
