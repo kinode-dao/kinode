@@ -788,6 +788,7 @@ pub struct BootInfo {
     pub owner: String,
     pub signature: String,
     pub timestamp: u64,
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

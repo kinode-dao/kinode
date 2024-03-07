@@ -437,10 +437,12 @@ async fn handle_boot(
         .into_response());
     };
 
+    let chain_id: u64 = if testnet { 11155111 } else { 10 };
+
     // manual json creation to preserve order..
     let sig_data_json = format!(
-        r#"{{"username":"{}","password_hash":"{}","timestamp":{},"direct":{},"reset":{}}}"#,
-        our.name, info.password_hash, info.timestamp, info.direct, info.reset
+        r#"{{"username":"{}","password_hash":"{}","timestamp":{},"direct":{},"reset":{},"chain_id":{}}}"#,
+        our.name, info.password_hash, info.timestamp, info.direct, info.reset, chain_id
     );
     let sig_data = sig_data_json.as_bytes();
 
