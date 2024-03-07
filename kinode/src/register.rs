@@ -464,6 +464,7 @@ async fn handle_boot(
         networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
             .unwrap(),
         jwt_secret_bytes: jwt_secret.to_vec(),
+        file_key: keygen::generate_file_key(),
     };
 
     let encoded_keyfile = keygen::encode_keyfile(
@@ -472,6 +473,7 @@ async fn handle_boot(
         decoded_keyfile.routers.clone(),
         &networking_keypair,
         &decoded_keyfile.jwt_secret_bytes,
+        &decoded_keyfile.file_key,
     );
 
     success_response(sender, our, decoded_keyfile, encoded_keyfile).await
@@ -638,6 +640,7 @@ async fn confirm_change_network_keys(
         networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
             .unwrap(),
         jwt_secret_bytes: old_decoded_keyfile.jwt_secret_bytes,
+        file_key: old_decoded_keyfile.file_key,
     };
 
     let encoded_keyfile = keygen::encode_keyfile(
@@ -646,6 +649,7 @@ async fn confirm_change_network_keys(
         decoded_keyfile.routers.clone(),
         &networking_keypair,
         &decoded_keyfile.jwt_secret_bytes,
+        &decoded_keyfile.file_key,
     );
 
     success_response(sender, our.clone(), decoded_keyfile, encoded_keyfile).await

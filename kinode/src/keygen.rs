@@ -2,7 +2,7 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key,
 };
-use digest::generic_array;
+use digest::generic_array::GenericArray;
 use lazy_static::__Deref;
 use ring::pbkdf2;
 use ring::pkcs8::Document;
@@ -26,6 +26,7 @@ pub fn encode_keyfile(
     routers: Vec<String>,
     networking_key: &[u8],
     jwt: &[u8],
+    file_key: &[u8],
 ) -> Vec<u8> {
     let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
 
@@ -46,9 +47,11 @@ pub fn encode_keyfile(
 
     let network_nonce = Aes256Gcm::generate_nonce(&mut OsRng); // 96-bits; unique per message
     let jwt_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    let file_nonce = Aes256Gcm::generate_nonce(&mut OsRng);
 
     let keyciphertext: Vec<u8> = cipher.encrypt(&network_nonce, networking_key).unwrap();
     let jwtciphertext: Vec<u8> = cipher.encrypt(&jwt_nonce, jwt).unwrap();
+    let fileciphertext: Vec<u8> = cipher.encrypt(&file_nonce, file_key.as_ref()).unwrap();
 
     bincode::serialize(&(
         username.clone(),
@@ -56,13 +59,14 @@ pub fn encode_keyfile(
         salt.to_vec(),
         [network_nonce.to_vec(), keyciphertext].concat(),
         [jwt_nonce.to_vec(), jwtciphertext].concat(),
+        [file_nonce.to_vec(), fileciphertext].concat(),
     ))
     .unwrap()
 }
 
 pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'static str> {
-    let (username, routers, salt, key_enc, jwt_enc) =
-        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
+    let (username, routers, salt, key_enc, jwt_enc, file_enc) =
+        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
             .map_err(|_| "failed to deserialize keyfile")?;
 
     // rederive disk key
@@ -78,8 +82,9 @@ pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'stati
     let cipher_key = Key::<Aes256Gcm>::from_slice(&disk_key);
     let cipher = Aes256Gcm::new(cipher_key);
 
-    let net_nonce = generic_array::GenericArray::from_slice(&key_enc[..12]);
-    let jwt_nonce = generic_array::GenericArray::from_slice(&jwt_enc[..12]);
+    let net_nonce = GenericArray::from_slice(&key_enc[..12]);
+    let jwt_nonce = GenericArray::from_slice(&jwt_enc[..12]);
+    let file_nonce = GenericArray::from_slice(&file_enc[..12]);
 
     let serialized_networking_keypair: Vec<u8> = cipher
         .decrypt(net_nonce, &key_enc[12..])
@@ -92,11 +97,16 @@ pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'stati
         .decrypt(jwt_nonce, &jwt_enc[12..])
         .map_err(|_| "failed to decrypt jwt secret")?;
 
+    let file_key: Vec<u8> = cipher
+        .decrypt(file_nonce, &file_enc[12..])
+        .map_err(|_| "failed to decrypt file key")?;
+
     Ok(Keyfile {
         username,
         routers,
         networking_keypair,
         jwt_secret_bytes,
+        file_key,
     })
 }
 
@@ -124,6 +134,14 @@ pub fn namehash(name: &str) -> Vec<u8> {
         node = labelhash.to_vec();
     }
     node
+}
+
+/// randomly generated key to encrypt file chunks,
+pub fn generate_file_key() -> Vec<u8> {
+    let mut key = [0u8; 32];
+    let rng = SystemRandom::new();
+    rng.fill(&mut key).unwrap();
+    key.to_vec()
 }
 
 /// # Returns

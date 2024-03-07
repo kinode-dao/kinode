@@ -763,6 +763,7 @@ pub struct Keyfile {
     pub routers: Vec<String>,
     pub networking_keypair: signature::Ed25519KeyPair,
     pub jwt_secret_bytes: Vec<u8>,
+    pub file_key: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
