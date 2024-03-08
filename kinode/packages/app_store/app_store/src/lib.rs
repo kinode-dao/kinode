@@ -38,6 +38,8 @@ use ft_worker_lib::{
 /// - uninstalled + deleted
 /// - set to automatically update if a new version is available
 
+const ICON: &str = include_str!("icon");
+
 const CHAIN_ID: u64 = 11155111; // sepolia
 const CONTRACT_ADDRESS: &str = "0x18c39eB547A0060C6034f8bEaFB947D1C16eADF1"; // sepolia
 
@@ -118,6 +120,23 @@ fn init(our: Address) {
         vec!["/", "/my-apps", "/app-details/:id", "/publish"],
     )
     .expect("failed to serve static UI");
+
+    // add ourselves to the homepage
+    Request::to(("our", "homepage", "homepage", "sys"))
+        .body(
+            serde_json::json!({
+                "Add": {
+                    "label": "App Store",
+                    "icon": ICON,
+                    "path": "/" // just our root
+                }
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
+        )
+        .send()
+        .unwrap();
 
     // load in our saved state or initalize a new one if none exists
     let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))

@@ -1,7 +1,25 @@
 #![feature(let_chains)]
 use kinode_process_lib::{
-    await_message, http::bind_http_static_path, http::HttpServerError, println, Address, Message,
+    await_message, call_init, http::bind_http_static_path, http::HttpServerError, println, Address,
+    Message, ProcessId,
 };
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// The request format to add or remove an app from the homepage. You must have messaging
+/// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
+#[derive(Serialize, Deserialize)]
+enum HomepageRequest {
+    /// the package and process name will come from request source.
+    /// the path will automatically have the process_id prepended.
+    /// the icon is a base64 encoded image.
+    Add {
+        label: String,
+        icon: String,
+        path: String,
+    },
+    Remove,
+}
 
 wit_bindgen::generate!({
     path: "wit",
@@ -11,35 +29,45 @@ wit_bindgen::generate!({
     },
 });
 
-struct Component;
+const HOME_PAGE: &str = include_str!("index.html");
 
-const HOME_PAGE: &str = include_str!("home.html");
+const APP_TEMPLATE: &str = r#"
+<a class="app-link" id="${package_name}" href="/${path}">
+  <img
+    src="${base64_icon}" />
+  <h6>${label}</h6>
+</a>"#;
 
-impl Guest for Component {
-    fn init(our: String) {
-        let our: Address = our.parse().unwrap();
-        match main(our) {
-            Ok(_) => {}
-            Err(e) => {
-                println!("ended with error: {:?}", e);
-            }
-        }
-    }
-}
+call_init!(main);
 
-fn main(our: Address) -> anyhow::Result<()> {
-    // bind to root path on http_server (we have special dispensation to do so!)
+/// bind to root path on http_server (we have special dispensation to do so!)
+fn bind_index(our: &str, apps: &HashMap<ProcessId, String>) {
     bind_http_static_path(
         "/",
         true,
         false,
         Some("text/html".to_string()),
         HOME_PAGE
-            .replace("${our}", &our.node)
+            .replace("${our}", our)
+            .replace(
+                "${apps}",
+                &apps
+                    .values()
+                    .map(String::as_str)
+                    .collect::<Vec<&str>>()
+                    .join("\n"),
+            )
             .to_string()
             .as_bytes()
             .to_vec(),
-    )?;
+    )
+    .expect("failed to bind to /");
+}
+
+fn main(our: Address) {
+    let mut apps: HashMap<ProcessId, String> = HashMap::new();
+
+    bind_index(&our.node, &apps);
 
     bind_http_static_path(
         "/our",
@@ -47,7 +75,8 @@ fn main(our: Address) -> anyhow::Result<()> {
         false,
         Some("text/html".to_string()),
         our.node.clone().as_bytes().to_vec(),
-    )?;
+    )
+    .expect("failed to bind to /our");
 
     bind_http_static_path(
         "/our.js",
@@ -57,11 +86,12 @@ fn main(our: Address) -> anyhow::Result<()> {
         format!("window.our = {{}}; window.our.node = '{}';", &our.node)
             .as_bytes()
             .to_vec(),
-    )?;
+    )
+    .expect("failed to bind to /our.js");
 
     loop {
         let Ok(ref message) = await_message() else {
-            println!("got network error??");
+            // we never send requests, so this will never happen
             continue;
         };
         if let Message::Response { source, body, .. } = message
@@ -73,8 +103,41 @@ fn main(our: Address) -> anyhow::Result<()> {
                 Err(_e) => println!("got malformed message from http_server!"),
             }
         } else {
-            println!("got message: {message:?}");
-            //println!("got message from {source:?}: {message:?}");
+            // handle messages to add or remove an app from the homepage.
+            // they must have messaging access to us in order to perform this.
+            if let Ok(request) = serde_json::from_slice::<HomepageRequest>(message.body()) {
+                match request {
+                    HomepageRequest::Add { label, icon, path } => {
+                        apps.insert(
+                            message.source().process.clone(),
+                            APP_TEMPLATE
+                                .replace(
+                                    "${package_name}",
+                                    &format!(
+                                        "{}:{}",
+                                        message.source().package(),
+                                        message.source().publisher()
+                                    ),
+                                )
+                                .replace(
+                                    "${path}",
+                                    &format!(
+                                        "{}/{}",
+                                        message.source().process,
+                                        path.strip_prefix('/').unwrap_or(&path)
+                                    ),
+                                )
+                                .replace("${label}", &label)
+                                .replace("${base64_icon}", &icon),
+                        );
+                        bind_index(&our.node, &apps);
+                    }
+                    HomepageRequest::Remove => {
+                        apps.remove(&message.source().process);
+                        bind_index(&our.node, &apps);
+                    }
+                }
+            }
         }
     }
 }
