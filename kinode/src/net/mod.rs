@@ -1030,7 +1030,7 @@ async fn handle_local_message(
                     .collect::<Vec<Identity>>(),
             )),
             NetAction::GetPeer(peer_name) => Some(NetResponse::Peer(
-                peers.get(&peer_name).map(|p| p.identity.clone()),
+                pki.get(&peer_name).map(|p| p.identity.clone()),
             )),
             NetAction::GetName(namehash) => {
                 Some(NetResponse::Name(names.get(&namehash).map(|n| n.clone())))
