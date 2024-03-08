@@ -78,7 +78,7 @@ name = "alias"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -423,7 +423,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -624,16 +624,6 @@ name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
-
-[[package]]
-name = "autocontext"
-version = "0.1.0"
-source = "git+https://github.com/hosted-fornet/autocontext?rev=ff00142#ff00142d852870f4fb4de580ddf7caa77302787f"
-dependencies = [
- "anyhow",
- "quote",
- "syn 2.0.48",
-]
 
 [[package]]
 name = "backtrace"
@@ -910,7 +900,7 @@ name = "cat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -972,7 +962,7 @@ dependencies = [
  "anyhow",
  "base64 0.13.1",
  "bincode",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "pleco",
  "serde",
  "serde_json",
@@ -1258,6 +1248,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b3855a8a784b474f333699ef2bbca9db2c4a1f6d9088a90a2d25b1eb53111eaa"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "crossbeam-channel"
+version = "0.5.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab3db02a9c5b5121e1e42fbdb1aeb65f5e02624cc58c43f2884c6ccac0b82f95"
+dependencies = [
+ "crossbeam-utils",
 ]
 
 [[package]]
@@ -1607,7 +1606,7 @@ name = "download"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -1638,7 +1637,7 @@ name = "echo"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -1838,7 +1837,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -1983,7 +1982,7 @@ dependencies = [
 name = "get_block"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2158,7 +2157,7 @@ checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 name = "hi"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2188,7 +2187,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2414,7 +2413,7 @@ name = "install"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2654,7 +2653,24 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.6.0"
-source = "git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2#f6a2bdab370da88488b210f4dc92b715b9c0e4b2"
+source = "git+https://github.com/kinode-dao/process_lib.git?rev=9d185e1#9d185e1e264c93af53d004ba32520fd5d046e7e5"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "http 1.0.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "kinode_process_lib"
+version = "0.6.0"
+source = "git+https://github.com/kinode-dao/process_lib?rev=b699c3d#b699c3d7fde99ef66dd5f8f2f4193a19956c2ae4"
 dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
@@ -2673,29 +2689,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "kinode_process_lib"
-version = "0.6.0"
-source = "git+https://github.com/kinode-dao/process_lib.git?rev=9d185e1#9d185e1e264c93af53d004ba32520fd5d046e7e5"
-dependencies = [
- "anyhow",
- "bincode",
- "http 1.0.0",
- "mime_guess",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "thiserror",
- "url",
- "wit-bindgen",
-]
-
-[[package]]
 name = "kit"
 version = "0.1.0"
-source = "git+https://github.com/kinode-dao/kit?rev=83d1e86#83d1e86203f5a7d239c7d89aa0375167f1af6cdc"
+source = "git+https://github.com/kinode-dao/kit?rev=0e39c93#0e39c93d994e2955efd5655fb3ae0831c38865d0"
 dependencies = [
  "anyhow",
- "autocontext",
  "base64 0.21.7",
  "clap",
  "dirs 5.0.1",
@@ -2714,6 +2712,9 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "toml 0.8.10",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
  "walkdir",
  "zip",
 ]
@@ -2727,7 +2728,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "hex",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -2907,7 +2908,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "regex",
  "serde",
  "serde_json",
@@ -2921,6 +2922,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b823e83b2affd8f40a9ee8c29dbc56404c1e34cd2710921f2801e2cf29527afa"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "matchers"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
+dependencies = [
+ "regex-automata 0.1.10",
 ]
 
 [[package]]
@@ -3030,7 +3040,7 @@ dependencies = [
 name = "namehash_to_name"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -3058,7 +3068,7 @@ dependencies = [
 name = "net_diagnostics"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -3098,6 +3108,16 @@ checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
 dependencies = [
  "memchr",
  "minimal-lexical",
+]
+
+[[package]]
+name = "nu-ansi-term"
+version = "0.46.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77a8165726e8236064dbb45459242600304b42a5ea24ee2948e18e023bf7ba84"
+dependencies = [
+ "overload",
+ "winapi",
 ]
 
 [[package]]
@@ -3232,6 +3252,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
+name = "overload"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
+
+[[package]]
 name = "parity-scale-codec"
 version = "3.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3325,7 +3351,7 @@ checksum = "19b17cddbe7ec3f8bc800887bab5e717348c95ea2ca0b1bf0837fb964dc67099"
 name = "peer"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -3335,7 +3361,7 @@ dependencies = [
 name = "peers"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -3554,7 +3580,7 @@ dependencies = [
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rand_xorshift 0.3.0",
- "regex-syntax",
+ "regex-syntax 0.8.2",
  "rusty-fork",
  "tempfile",
  "unarray",
@@ -3836,8 +3862,17 @@ checksum = "b62dbe01f0b06f9d8dc7d49e05a0785f153b00b2c227856282f671e0318c9b15"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata",
- "regex-syntax",
+ "regex-automata 0.4.5",
+ "regex-syntax 0.8.2",
+]
+
+[[package]]
+name = "regex-automata"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c230d73fb8d8c1b9c0b3135c5142a8acee3a0558fb8db5cf1cb65f8d7862132"
+dependencies = [
+ "regex-syntax 0.6.29",
 ]
 
 [[package]]
@@ -3848,8 +3883,14 @@ checksum = "5bb987efffd3c6d0d8f5f89510bb458559eab11e4f869acb20bf845e016259cd"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax",
+ "regex-syntax 0.8.2",
 ]
+
+[[package]]
+name = "regex-syntax"
+version = "0.6.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
 name = "regex-syntax"
@@ -4330,6 +4371,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sharded-slab"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
 name = "shellexpand"
 version = "2.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4489,7 +4539,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "state"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -4643,7 +4693,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "rand 0.8.5",
  "regex",
  "serde",
@@ -4657,7 +4707,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "thiserror",
@@ -4671,7 +4721,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "indexmap",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "thiserror",
@@ -4699,16 +4749,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "thread_local"
+version = "1.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b9ef9bad013ada3808854ceac7b46812a6465ba368859a37e2100283d2d719c"
+dependencies = [
+ "cfg-if",
+ "once_cell",
+]
+
+[[package]]
 name = "time"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8248b6521bb14bc45b4067159b9b6ad792e2d6d754d6c41fb50e29fefe38749"
 dependencies = [
  "deranged",
+ "itoa",
  "num-conv",
  "powerfmt",
  "serde",
  "time-core",
+ "time-macros",
 ]
 
 [[package]]
@@ -4716,6 +4778,16 @@ name = "time-core"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ef927ca75afb808a4d64dd374f00a2adf8d0fcff8e7b184af886c3c87ec4a3f3"
+
+[[package]]
+name = "time-macros"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ba3a3ef41e6672a2f0f001392bb5dcd3ff0a9992d618ca761a11c3121547774"
+dependencies = [
+ "num-conv",
+ "time-core",
+]
 
 [[package]]
 name = "tiny-keccak"
@@ -4889,7 +4961,7 @@ name = "top"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -4935,6 +5007,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracing-appender"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3566e8ce28cc0a3fe42519fc80e6b4c943cc4c8cef275620eb8dac2d3d4e06cf"
+dependencies = [
+ "crossbeam-channel",
+ "thiserror",
+ "time",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tracing-attributes"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4952,6 +5036,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 dependencies = [
  "once_cell",
+ "valuable",
 ]
 
 [[package]]
@@ -4964,6 +5049,48 @@ dependencies = [
  "futures-task",
  "pin-project",
  "tracing",
+]
+
+[[package]]
+name = "tracing-log"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee855f1f400bd0e5c02d150ae5de3840039a3f54b025156404e34c23c03f47c3"
+dependencies = [
+ "log",
+ "once_cell",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-serde"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc6b213177105856957181934e4920de57730fc69bf42c37ee5bb664d406d9e1"
+dependencies = [
+ "serde",
+ "tracing-core",
+]
+
+[[package]]
+name = "tracing-subscriber"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ad0f048c97dbd9faa9b7df56362b8ebcaa52adb06b498c050d2f4e32f90a7a8b"
+dependencies = [
+ "matchers",
+ "nu-ansi-term",
+ "once_cell",
+ "regex",
+ "serde",
+ "serde_json",
+ "sharded-slab",
+ "smallvec",
+ "thread_local",
+ "tracing",
+ "tracing-core",
+ "tracing-log",
+ "tracing-serde",
 ]
 
 [[package]]
@@ -5120,7 +5247,7 @@ name = "uninstall"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.6.0-alpha.2)",
+ "kinode_process_lib 0.6.0 (git+https://github.com/kinode-dao/process_lib?rev=b699c3d)",
  "serde",
  "serde_json",
  "wit-bindgen",
