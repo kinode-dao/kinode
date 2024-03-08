@@ -18,7 +18,7 @@ pub async fn load_state(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
     home_directory_path: String,
-    runtime_extensions: Vec<(ProcessId, MessageSender, bool)>,
+    runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
 ) -> Result<(ProcessMap, DB, ReverseCapIndex), StateError> {
     let state_path = format!("{}/kernel", &home_directory_path);
 
@@ -72,7 +72,7 @@ pub async fn load_state(
         &our_name,
         keypair,
         home_directory_path.clone(),
-        runtime_extensions.clone(),
+        runtime_extensions,
         &mut process_map,
         &mut reverse_cap_index,
     )
@@ -307,7 +307,7 @@ async fn bootstrap(
     our_name: &str,
     keypair: Arc<signature::Ed25519KeyPair>,
     home_directory_path: String,
-    runtime_extensions: Vec<(ProcessId, MessageSender, bool)>,
+    runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
     process_map: &mut ProcessMap,
     reverse_cap_index: &mut ReverseCapIndex,
 ) -> Result<()> {
@@ -382,7 +382,7 @@ async fn bootstrap(
                 wit_version: None,
                 on_exit: OnExit::Restart,
                 capabilities: runtime_caps.clone(),
-                public: runtime_module.2,
+                public: runtime_module.3,
             });
         current.capabilities.extend(runtime_caps.clone());
     }
@@ -391,11 +391,11 @@ async fn bootstrap(
 
     for (package_metadata, mut package) in packages.clone() {
         let package_name = package_metadata.properties.package_name.as_str();
-        // special case tester: only load it in if in simulation mode
-        if package_name == "tester" {
-            #[cfg(not(feature = "simulation-mode"))]
-            continue;
-        }
+        // // special case tester: only load it in if in simulation mode
+        // if package_name == "tester" {
+        //     #[cfg(not(feature = "simulation-mode"))]
+        //     continue;
+        // }
 
         println!("fs: handling package {package_name}...\r");
         let package_publisher = package_metadata.properties.publisher.as_str();

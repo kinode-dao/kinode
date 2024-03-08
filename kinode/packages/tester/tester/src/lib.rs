@@ -59,7 +59,7 @@ fn handle_message(
                     test_timeout,
                     ..
                 } => {
-                    println!("tester: got Run");
+                    println!("got Run");
 
                     assert!(input_node_names.len() >= 1);
                     *node_names = input_node_names.clone();
@@ -107,8 +107,6 @@ fn handle_message(
 
 call_init!(init);
 fn init(our: Address) {
-    println!("{}: begin", our);
-
     let mut messages: Messages = IndexMap::new();
     let mut node_names: Vec<String> = Vec::new();
     match Request::new()

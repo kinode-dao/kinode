@@ -5,7 +5,6 @@ use kinode_process_lib::{
     get_blob, get_typed_state, our_capabilities, print_to_terminal, println, set_state, vfs,
     Address, Capability, ProcessId, Request,
 };
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -46,30 +45,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
         },
     };
 
-    let re = Regex::new(r"(.*?)\|(\d+)\s*(.*)").unwrap();
-    let pipe = match re.captures(args) {
-        Some(caps) => {
-            let parsed_args = caps
-                .get(1)
-                .map_or("", |m| m.as_str())
-                .trim_end()
-                .to_string();
-
-            let time_str = caps.get(2).map_or("", |m| m.as_str());
-            let time: u64 = time_str.parse().unwrap_or(0);
-
-            let pipe = caps
-                .get(3)
-                .map_or("", |m| m.as_str())
-                .trim_start()
-                .to_string();
-
-            (parsed_args, Some((pipe, time)))
-        }
-        None => (args.to_string(), None),
-    };
-
-    match handle_run(&state.our, &process, pipe.0, pipe.1) {
+    match handle_run(&state.our, &process, args.to_string()) {
         Ok(_) => Ok(()), // TODO clean up process
         Err(e) => Err(anyhow!("failed to instantiate script: {}", e)),
     }
@@ -86,27 +62,43 @@ impl Guest for Component {
                     aliases: HashMap::from([
                         (
                             "alias".to_string(),
-                            "alias:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("alias"), "terminal", "sys"),
                         ),
                         (
                             "cat".to_string(),
-                            "cat:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("cat"), "terminal", "sys"),
                         ),
                         (
                             "echo".to_string(),
-                            "echo:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("echo"), "terminal", "sys"),
                         ),
                         (
                             "hi".to_string(),
-                            "hi:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("hi"), "terminal", "sys"),
                         ),
                         (
                             "m".to_string(),
-                            "m:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("m"), "terminal", "sys"),
+                        ),
+                        (
+                            "namehash_to_name".to_string(),
+                            ProcessId::new(Some("namehash_to_name"), "terminal", "sys"),
+                        ),
+                        (
+                            "net_diagnostics".to_string(),
+                            ProcessId::new(Some("net_diagnostics"), "terminal", "sys"),
+                        ),
+                        (
+                            "peer".to_string(),
+                            ProcessId::new(Some("peer"), "terminal", "sys"),
+                        ),
+                        (
+                            "peers".to_string(),
+                            ProcessId::new(Some("peers"), "terminal", "sys"),
                         ),
                         (
                             "top".to_string(),
-                            "top:terminal:sys".parse::<ProcessId>().unwrap(),
+                            ProcessId::new(Some("top"), "terminal", "sys"),
                         ),
                     ]),
                 },
@@ -116,7 +108,7 @@ impl Guest for Component {
             let (source, message) = match wit::receive() {
                 Ok((source, message)) => (source, message),
                 Err((error, _context)) => {
-                    println!("terminal: net error: {:?}!", error.kind);
+                    println!("net error: {:?}!", error.kind);
                     continue;
                 }
             };
@@ -128,25 +120,25 @@ impl Guest for Component {
                             std::str::from_utf8(&body).unwrap_or_default(),
                         ) {
                             Ok(()) => continue,
-                            Err(e) => println!("terminal: {e}"),
+                            Err(e) => println!("{e}"),
                         }
                     } else if state.our.node == source.node
                         && state.our.package() == source.package()
                     {
                         let Ok(action) = serde_json::from_slice::<TerminalAction>(&body) else {
-                            println!("terminal: failed to parse action from: {}", source);
+                            println!("failed to parse action from: {}", source);
                             continue;
                         };
                         match action {
                             TerminalAction::EditAlias { alias, process } => {
                                 match handle_alias_change(&mut state, alias, process) {
                                     Ok(()) => continue,
-                                    Err(e) => println!("terminal: {e}"),
+                                    Err(e) => println!("{e}"),
                                 };
                             }
                         }
                     } else {
-                        println!("terminal: ignoring message from: {}", source);
+                        println!("ignoring message from: {}", source);
                         continue;
                     }
                 }
@@ -162,12 +154,7 @@ impl Guest for Component {
     }
 }
 
-fn handle_run(
-    our: &Address,
-    process: &ProcessId,
-    args: String,
-    pipe: Option<(String, u64)>,
-) -> anyhow::Result<()> {
+fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Result<()> {
     let wasm_path = format!("{}.wasm", process.process());
     let package = format!("{}:{}", process.package(), process.publisher());
     let drive_path = format!("/{}/pkg", package);
@@ -183,7 +170,7 @@ fn handle_run(
     // build initial caps
     let process_id = format!("{}:{}", rand::random::<u64>(), package); // all scripts are given random process IDs
     let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
-        return Err(anyhow::anyhow!("terminal: invalid process id!"));
+        return Err(anyhow::anyhow!("invalid process id!"));
     };
 
     let _bytes_response = Request::new()
@@ -318,7 +305,7 @@ fn handle_run(
         }
     }
     print_to_terminal(
-        1,
+        2,
         &format!(
             "{}: Process {{\n    wasm_bytes_handle: {},\n    wit_version: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
             parsed_new_process_id.clone(),
@@ -352,27 +339,7 @@ fn handle_run(
         .target(("our", parsed_new_process_id))
         .body(args.into_bytes());
 
-    let Some(pipe) = pipe else {
-        req.send().unwrap();
-        return Ok(());
-    };
-
-    let Ok(res) = req.clone().send_and_await_response(pipe.1).unwrap() else {
-        return Err(anyhow::anyhow!("script timed out"));
-    };
-
-    let _ = Request::new()
-        .target(our)
-        .body(
-            format!(
-                "{} {}",
-                pipe.0,
-                String::from_utf8(res.body().to_vec()).unwrap()
-            )
-            .into_bytes()
-            .to_vec(),
-        )
-        .send()?;
+    req.send().unwrap();
 
     Ok(())
 }
@@ -386,18 +353,18 @@ fn handle_alias_change(
         Some(process) => {
             // first check to make sure the script is actually a script
             let Ok(_) = get_entry(&process) else {
-                return Err(anyhow!("terminal: process {} not found", process));
+                return Err(anyhow!("process {} not found", process));
             };
 
             state.aliases.insert(alias.clone(), process.clone());
-            println!("terminal: alias {} set to {}", alias, process);
+            println!("alias {} set to {}", alias, process);
         }
         None => {
             if state.aliases.contains_key(&alias) {
                 state.aliases.remove(&alias);
-                println!("terminal: alias {} removed", alias);
+                println!("alias {} removed", alias);
             } else {
-                println!("terminal: alias {} not found", alias);
+                println!("alias {} not found", alias);
             }
         }
     }

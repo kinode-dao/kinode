@@ -1,4 +1,4 @@
-use kinode_process_lib::{await_next_request_body, call_init, println, Address, Response};
+use kinode_process_lib::{await_next_request_body, call_init, println, Address};
 
 wit_bindgen::generate!({
     path: "wit",
@@ -12,14 +12,12 @@ call_init!(init);
 
 fn init(_our: Address) {
     let Ok(args) = await_next_request_body() else {
-        println!("echo: failed to get args, aborting");
+        println!("failed to get args");
         return;
     };
 
-    let _ = Response::new()
-        .body(format!(
-            "{}",
-            String::from_utf8(args).unwrap_or("echo: error".into())
-        ))
-        .send();
+    match String::from_utf8(args.clone()) {
+        Ok(s) => println!("{}", s),
+        Err(_) => println!("{:?}", args),
+    }
 }

@@ -1,6 +1,6 @@
 use clap::{Arg, Command};
 use kinode_process_lib::{
-    await_next_request_body, call_init, println, Address, Request, Response, SendErrorKind,
+    await_next_request_body, call_init, println, Address, Request, SendErrorKind,
 };
 use regex::Regex;
 
@@ -16,7 +16,7 @@ call_init!(init);
 
 fn init(_our: Address) {
     let Ok(body) = await_next_request_body() else {
-        println!("m: failed to get args, aborting");
+        println!("failed to get args");
         return;
     };
     let body_string = String::from_utf8(body).unwrap();
@@ -54,12 +54,12 @@ fn init(_our: Address) {
         )
         .try_get_matches_from(args)
     else {
-        println!("m: failed to parse args");
+        println!("failed to parse args");
         return;
     };
 
     let Some(target) = parsed.get_one::<String>("target") else {
-        println!("m: no target");
+        println!("no target");
         return;
     };
 
@@ -69,7 +69,7 @@ fn init(_our: Address) {
     };
 
     let Some(body) = parsed.get_one::<String>("body") else {
-        println!("m: no body");
+        println!("no body");
         return;
     };
 
@@ -77,20 +77,14 @@ fn init(_our: Address) {
 
     match parsed.get_one::<u64>("await") {
         Some(s) => {
-            println!("m: awaiting response for {}s", s);
+            println!("awaiting response for {}s", s);
             match req.send_and_await_response(*s).unwrap() {
                 Ok(res) => {
-                    // TODO piping is broken. Patching it by just printing the response
-                    // let _ = Response::new().body(res.body()).send();
-                    if let Ok(txt) = std::str::from_utf8(&res.body()) {
-                        println!("{txt}");
-                    } else {
-                        println!("{:?}", res.body());
-                    }
+                    println!("{}", String::from_utf8(res.body().to_vec()).unwrap());
                 }
                 Err(e) => {
                     println!(
-                        "m: {}",
+                        "{}",
                         match e.kind {
                             SendErrorKind::Timeout =>
                                 "target did not send Response in time, try increasing the await time",

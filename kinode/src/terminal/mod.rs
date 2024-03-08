@@ -6,7 +6,7 @@ use crossterm::{
         DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyCode, KeyEvent,
         KeyModifiers,
     },
-    execute,
+    execute, style,
     style::Print,
     terminal::{self, disable_raw_mode, enable_raw_mode, ClearType},
 };
@@ -29,10 +29,7 @@ impl RawMode {
 impl Drop for RawMode {
     fn drop(&mut self) {
         match disable_raw_mode() {
-            Ok(_) => {
-                // let is_enabled = crossterm::terminal::is_raw_mode_enabled();
-                // println!("terminal: disabled raw mode successfully: {is_enabled:?}\r");
-            }
+            Ok(_) => {}
             Err(e) => {
                 println!("terminal: failed to disable raw mode: {e:?}\r");
             }
@@ -64,9 +61,10 @@ pub async fn terminal(
     let (mut win_cols, mut win_rows) = terminal::size().unwrap();
     // print initial splash screen, large if there's room, small otherwise
     if win_cols >= 90 {
-        println!(
-            "\x1b[38;5;128m{}\x1b[0m",
-            format_args!(
+        execute!(
+            stdout,
+            style::SetForegroundColor(style::Color::Magenta),
+            Print(format!(
                 r#"
  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡠⠖⠉
  ⠁⠶⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠔⠋⠀⠀⠀888    d8P  d8b                        888
@@ -86,7 +84,7 @@ pub async fn terminal(
  ⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⠟⠀⡸⠁⠀⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
  ⠀⠀⠀⠀⠀⠀⠀⢀⠔⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
  networking public key: {}
-                "#,
+                    "#,
                 our.name,
                 if our.ws_routing.is_some() {
                     "direct"
@@ -95,12 +93,14 @@ pub async fn terminal(
                 },
                 version,
                 our.networking_key,
-            )
-        );
+            )),
+            style::ResetColor
+        )?;
     } else {
-        println!(
-            "\x1b[38;5;128m{}\x1b[0m",
-            format_args!(
+        execute!(
+            stdout,
+            style::SetForegroundColor(style::Color::Magenta),
+            Print(format!(
                 r#"
  888    d8P  d8b                        888
  888   d8P   Y8P                        888
@@ -115,7 +115,7 @@ pub async fn terminal(
  version {}
  a general purpose sovereign cloud computer
  net pubkey: {}
-                "#,
+                    "#,
                 our.name,
                 if our.ws_routing.is_some() {
                     "direct"
@@ -124,8 +124,9 @@ pub async fn terminal(
                 },
                 version,
                 our.networking_key,
-            )
-        );
+            )),
+            style::ResetColor
+        )?;
     }
 
     let _raw_mode = if is_detached {
@@ -202,24 +203,24 @@ pub async fn terminal(
                     stdout,
                     cursor::MoveTo(0, win_rows - 1),
                     terminal::Clear(ClearType::CurrentLine),
-                    Print(format!("{}{} {}/{} {:02}:{:02} ",
-                                   match printout.verbosity {
-                                       0 => "",
-                                       1 => "1️⃣  ",
-                                       2 => "2️⃣  ",
-                                       _ => "3️⃣  ",
-                                   },
+                    Print(format!("{} {:02}:{:02} ",
                                    now.weekday(),
-                                   now.month(),
-                                   now.day(),
                                    now.hour(),
                                    now.minute(),
                                  )),
                 )?;
+                let color = match printout.verbosity {
+                        0 => style::Color::Black,
+                        1 => style::Color::Green,
+                        2 => style::Color::Magenta,
+                        _ => style::Color::Red,
+                };
                 for line in printout.content.lines() {
                     execute!(
                         stdout,
-                        Print(format!("\x1b[38;5;238m{}\x1b[0m\r\n", line)),
+                        style::SetForegroundColor(color),
+                        Print(format!("{}\r\n", line)),
+                        style::ResetColor,
                     )?;
                 }
                 execute!(
@@ -244,7 +245,7 @@ pub async fn terminal(
                     // handle pasting of text from outside
                     Event::Paste(pasted) => {
                         current_line.insert_str(line_col, &pasted);
-                        line_col = current_line.len();
+                        line_col = line_col + pasted.len();
                         cursor_col = std::cmp::min(line_col.try_into().unwrap_or(win_cols), win_cols);
                         execute!(
                             stdout,

@@ -1,4 +1,3 @@
-use crate::kernel::{ProcessMessageReceiver, ProcessMessageSender};
 use crate::KERNEL_PROCESS_ID;
 use anyhow::Result;
 use lib::types::core as t;
@@ -33,9 +32,9 @@ pub struct ProcessState {
     /// information about ourself
     pub metadata: t::ProcessMetadata,
     /// pipe from which we get messages from the main event loop
-    pub recv_in_process: ProcessMessageReceiver,
+    pub recv_in_process: t::ProcessMessageReceiver,
     /// pipe to send messages to ourself (received in `recv_in_process`)
-    pub self_sender: ProcessMessageSender,
+    pub self_sender: t::ProcessMessageSender,
     /// pipe for sending messages to the main event loop
     pub send_to_loop: t::MessageSender,
     /// pipe for sending [`t::Printout`]s to the terminal
@@ -492,8 +491,8 @@ pub async fn make_process_loop(
     metadata: t::ProcessMetadata,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
-    mut recv_in_process: ProcessMessageReceiver,
-    send_to_process: ProcessMessageSender,
+    mut recv_in_process: t::ProcessMessageReceiver,
+    send_to_process: t::ProcessMessageSender,
     wasm_bytes: Vec<u8>,
     caps_oracle: t::CapMessageSender,
     engine: Engine,
@@ -548,24 +547,30 @@ pub async fn make_process_loop(
         metadata.our.process.package(),
         metadata.our.process.publisher()
     );
-    if let Err(e) = fs::create_dir_all(&tmp_path).await {
-        panic!("failed creating tmp dir! {:?}", e);
+
+    let mut wasi = WasiCtxBuilder::new();
+
+    // TODO make guarantees about this
+    if let Ok(Ok(())) = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        fs::create_dir_all(&tmp_path),
+    )
+    .await
+    {
+        if let Ok(wasi_tempdir) =
+            Dir::open_ambient_dir(tmp_path.clone(), wasmtime_wasi::sync::ambient_authority())
+        {
+            wasi.preopened_dir(
+                wasi_tempdir,
+                DirPerms::all(),
+                FilePerms::all(),
+                tmp_path.clone(),
+            )
+            .env("TEMP_DIR", tmp_path);
+        }
     }
-    let Ok(wasi_tempdir) =
-        Dir::open_ambient_dir(tmp_path.clone(), wasmtime_wasi::sync::ambient_authority())
-    else {
-        panic!("failed to open ambient tmp dir!");
-    };
-    let wasi = WasiCtxBuilder::new()
-        .preopened_dir(
-            wasi_tempdir,
-            DirPerms::all(),
-            FilePerms::all(),
-            tmp_path.clone(),
-        )
-        .env("TEMP_DIR", tmp_path)
-        .stderr(wasi_stderr.clone())
-        .build();
+
+    let wasi = wasi.stderr(wasi_stderr.clone()).build();
 
     wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
 

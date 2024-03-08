@@ -26,10 +26,20 @@ impl StandardHost for process::ProcessWasi {
     // system utils:
     //
 
+    /// Print a message to the runtime terminal. Add the name of the process to the
+    /// beginning of the string, so user can verify source.
     async fn print_to_terminal(&mut self, verbosity: u8, content: String) -> Result<()> {
         self.process
             .send_to_terminal
-            .send(t::Printout { verbosity, content })
+            .send(t::Printout {
+                verbosity,
+                content: format!(
+                    "{}:{}: {}",
+                    self.process.metadata.our.process.package(),
+                    self.process.metadata.our.process.publisher(),
+                    content
+                ),
+            })
             .await
             .map_err(|e| anyhow::anyhow!("fatal: couldn't send to terminal: {e:?}"))
     }

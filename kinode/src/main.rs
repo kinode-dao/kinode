@@ -2,16 +2,13 @@
 
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
-use rand::seq::SliceRandom;
+use lib::types::core::*;
+#[cfg(feature = "simulation-mode")]
+use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::{fs, time::timeout};
-
-use lib::types::core::*;
-
-#[cfg(feature = "simulation-mode")]
-use ring::{rand::SystemRandom, signature, signature::KeyPair};
 
 mod eth;
 mod http;
@@ -39,12 +36,6 @@ const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-/// This can and should be an environment variable / setting. It configures networking
-/// such that indirect nodes always use routers, even when target is a direct node,
-/// such that only their routers can ever see their physical networking details.
-#[cfg(not(feature = "simulation-mode"))]
-const REVEAL_IP: bool = true;
 
 /// default routers as a eth-provider fallback
 const DEFAULT_PROVIDERS_TESTNET: &str = include_str!("../default_providers_testnet.json");
@@ -112,16 +103,14 @@ async fn main() {
                 .value_parser(value_parser!(bool)),
         )
         .arg(
-            arg!(--public "If set, allow rpc passthrough")
-                .default_value("false")
-                .value_parser(value_parser!(bool)),
-        )
-        .arg(arg!(--rpcnode <String> "RPC node provider must be a valid address").required(false))
-        .arg(arg!(--rpc <WS_URL> "Ethereum RPC endpoint (must be wss://)").required(false))
-        .arg(
             arg!(--verbosity <VERBOSITY> "Verbosity level: higher is more verbose")
                 .default_value("0")
                 .value_parser(value_parser!(u8)),
+        )
+        .arg(
+            arg!(--"reveal-ip" "If set to false, as an indirect node, always use routers to connect to other nodes.")
+                .default_value("true")
+                .value_parser(value_parser!(bool)),
         );
 
     #[cfg(feature = "simulation-mode")]
@@ -146,9 +135,6 @@ async fn main() {
         None => (8080, false),
     };
     let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
-    let public = *matches.get_one::<bool>("public").unwrap();
-    let rpc_url = matches.get_one::<String>("rpc").cloned();
-    let rpc_node = matches.get_one::<String>("rpcnode").cloned();
 
     #[cfg(not(feature = "simulation-mode"))]
     let is_detached = false;
@@ -163,10 +149,10 @@ async fn main() {
         *matches.get_one::<bool>("detached").unwrap(),
     );
 
-    let contract_address = if on_testnet {
-        register::KNS_SEPOLIA_ADDRESS
+    let contract_chain_and_address: (u64, String) = if on_testnet {
+        (11155111, register::KNS_SEPOLIA_ADDRESS.to_string())
     } else {
-        register::KNS_OPTIMISM_ADDRESS
+        (10, register::KNS_OPTIMISM_ADDRESS.to_string())
     };
     let verbose_mode = *matches.get_one::<u8>("verbosity").unwrap();
 
@@ -196,46 +182,23 @@ async fn main() {
         }
     }
 
+    if let Err(e) = fs::create_dir_all(home_directory_path).await {
+        panic!("failed to create home directory: {:?}", e);
+    }
+    println!("home at {}\r", home_directory_path);
+
     // default eth providers/routers
-    type KnsUpdate = crate::net::KnsUpdate;
-    let default_pki_entries: Vec<KnsUpdate> =
-        match fs::read_to_string(format!("{}/.default_providers", home_directory_path)).await {
-            Ok(contents) => serde_json::from_str(&contents).unwrap(),
+    let eth_provider_config: lib::eth::SavedConfigs =
+        match fs::read_to_string(format!("{}/.eth_providers", home_directory_path)).await {
+            Ok(contents) => {
+                println!("loaded saved eth providers\r");
+                serde_json::from_str(&contents).unwrap()
+            }
             Err(_) => match on_testnet {
                 true => serde_json::from_str(DEFAULT_PROVIDERS_TESTNET).unwrap(),
                 false => serde_json::from_str(DEFAULT_PROVIDERS_MAINNET).unwrap(),
             },
         };
-
-    type ProviderInput = lib::eth::ProviderInput;
-    let eth_provider: ProviderInput;
-
-    match (rpc_url.clone(), rpc_node) {
-        (Some(url), Some(_)) => {
-            println!("passed both node and url for rpc, using url.");
-            eth_provider = ProviderInput::Ws(url);
-        }
-        (Some(url), None) => {
-            eth_provider = ProviderInput::Ws(url);
-        }
-        (None, Some(ref node)) => {
-            println!("trying to use remote node for rpc: {}", node);
-            eth_provider = ProviderInput::Node(node.clone());
-        }
-        (None, None) => {
-            let random_provider = default_pki_entries.choose(&mut rand::thread_rng()).unwrap();
-            let default_provider = random_provider.name.clone();
-
-            println!("no rpc provided, using a default: {}", default_provider);
-
-            eth_provider = ProviderInput::Node(default_provider);
-        }
-    }
-
-    if let Err(e) = fs::create_dir_all(home_directory_path).await {
-        panic!("failed to create home directory: {:?}", e);
-    }
-    println!("home at {}\r", home_directory_path);
 
     // kernel receives system messages via this channel, all other modules send messages
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
@@ -268,6 +231,8 @@ async fn main() {
         mpsc::channel(HTTP_CHANNEL_CAPACITY);
     let (eth_provider_sender, eth_provider_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(ETH_PROVIDER_CHANNEL_CAPACITY);
+    let (eth_net_error_sender, eth_net_error_receiver): (NetworkErrorSender, NetworkErrorReceiver) =
+        mpsc::channel(EVENT_LOOP_CHANNEL_CAPACITY);
     // http client performs http requests on behalf of processes
     let (http_client_sender, http_client_receiver): (MessageSender, MessageReceiver) =
         mpsc::channel(HTTP_CLIENT_CHANNEL_CAPACITY);
@@ -284,9 +249,7 @@ async fn main() {
         {
             ip
         } else {
-            println!(
-                "\x1b[38;5;196mfailed to find public IPv4 address: booting as a routed node\x1b[0m"
-            );
+            println!("failed to find public IPv4 address: booting as a routed node");
             std::net::Ipv4Addr::LOCALHOST
         }
     };
@@ -435,41 +398,49 @@ async fn main() {
         (
             ProcessId::new(Some("http_server"), "distro", "sys"),
             http_server_sender,
+            None,
             false,
         ),
         (
             ProcessId::new(Some("http_client"), "distro", "sys"),
             http_client_sender,
+            None,
             false,
         ),
         (
             ProcessId::new(Some("timer"), "distro", "sys"),
             timer_service_sender,
+            None,
             true,
         ),
         (
             ProcessId::new(Some("eth"), "distro", "sys"),
             eth_provider_sender,
+            Some(eth_net_error_sender),
             false,
         ),
         (
             ProcessId::new(Some("vfs"), "distro", "sys"),
             vfs_message_sender,
+            None,
             false,
         ),
         (
             ProcessId::new(Some("state"), "distro", "sys"),
             state_sender,
+            None,
             false,
         ),
         (
             ProcessId::new(Some("kv"), "distro", "sys"),
             kv_sender,
+            None,
             false,
         ),
         (
             ProcessId::new(Some("sqlite"), "distro", "sys"),
             sqlite_sender,
+            None,
             false,
         ),
     ];
@@ -506,9 +477,22 @@ async fn main() {
         kernel_debug_message_receiver,
         net_message_sender.clone(),
         home_directory_path.clone(),
-        contract_address.to_string(),
+        contract_chain_and_address.clone(),
         runtime_extensions,
-        default_pki_entries,
+        // from saved eth provider config, filter for node identities which will be
+        // bootstrapped into the networking module, so that this node can start
+        // getting PKI info ("bootstrap")
+        eth_provider_config
+            .clone()
+            .into_iter()
+            .filter_map(|config| {
+                if let lib::eth::NodeOrRpcUrl::Node { kns_update, .. } = config.provider {
+                    Some(kns_update)
+                } else {
+                    None
+                }
+            })
+            .collect(),
     ));
     #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(net::networking(
@@ -520,8 +504,8 @@ async fn main() {
         print_sender.clone(),
         net_message_sender,
         net_message_receiver,
-        contract_address.to_string(),
-        REVEAL_IP,
+        contract_chain_and_address.1,
+        *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
     ));
     #[cfg(feature = "simulation-mode")]
     tasks.spawn(net::mock_client(
@@ -577,26 +561,15 @@ async fn main() {
         timer_service_receiver,
         print_sender.clone(),
     ));
-    #[cfg(not(feature = "simulation-mode"))]
-    tasks.spawn(eth::provider::provider(
+    tasks.spawn(eth::provider(
         our.name.clone(),
-        eth_provider,
-        public,
+        eth_provider_config,
         kernel_message_sender.clone(),
         eth_provider_receiver,
+        eth_net_error_receiver,
+        caps_oracle_sender.clone(),
         print_sender.clone(),
     ));
-    #[cfg(feature = "simulation-mode")]
-    if let Some(ref rpc_url) = rpc_url {
-        tasks.spawn(eth::provider::provider(
-            our.name.clone(),
-            eth_provider,
-            public,
-            kernel_message_sender.clone(),
-            eth_provider_receiver,
-            print_sender.clone(),
-        ));
-    }
     tasks.spawn(vfs::vfs(
         our.name.clone(),
         kernel_message_sender.clone(),
@@ -611,7 +584,7 @@ async fn main() {
     let quit_msg: String = tokio::select! {
         Some(Ok(res)) = tasks.join_next() => {
             format!(
-                "\x1b[38;5;196muh oh, a kernel process crashed -- this should never happen: {:?}\x1b[0m",
+                "uh oh, a kernel process crashed -- this should never happen: {:?}",
                 res
             )
         }
@@ -659,14 +632,14 @@ async fn main() {
 
     // abort all remaining tasks
     tasks.shutdown().await;
-    //let _ = crossterm::terminal::disable_raw_mode().unwrap();
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
     let _ = crossterm::execute!(
         stdout,
         crossterm::event::DisableBracketedPaste,
         crossterm::terminal::SetTitle(""),
+        crossterm::style::SetForegroundColor(crossterm::style::Color::Red),
+        crossterm::style::Print(format!("\r\n{quit_msg}\r\n")),
+        crossterm::style::ResetColor,
     );
-    println!("\r\n\x1b[38;5;196m{}\x1b[0m", quit_msg);
-    return;
 }

@@ -90,6 +90,8 @@ pub enum HttpServerAction {
         /// lazy_load_blob bytes and serve them as the response to any request to this path.
         cache: bool,
     },
+    /// Unbind a previously-bound HTTP path
+    Unbind { path: String },
     /// Bind a path to receive incoming WebSocket connections.
     /// Doesn't need a cache since does not serve assets.
     WebSocketBind {
@@ -107,6 +109,8 @@ pub enum HttpServerAction {
         encrypted: bool,
         extension: bool,
     },
+    /// Unbind a previously-bound WebSocket path
+    WebSocketUnbind { path: String },
     /// Processes will RECEIVE this kind of request when a client connects to them.
     /// If a process does not want this websocket open, they should issue a *request*
     /// containing a [`type@HttpServerAction::WebSocketClose`] message and this channel ID.

@@ -20,11 +20,6 @@ const PROCESS_CHANNEL_CAPACITY: usize = 100;
 
 const DEFAULT_WIT_VERSION: u32 = 0;
 
-type ProcessMessageSender =
-    tokio::sync::mpsc::Sender<Result<t::KernelMessage, t::WrappedSendError>>;
-type ProcessMessageReceiver =
-    tokio::sync::mpsc::Receiver<Result<t::KernelMessage, t::WrappedSendError>>;
-
 #[derive(Serialize, Deserialize)]
 struct StartProcessMetadata {
     source: t::Address,
@@ -39,8 +34,11 @@ type Senders = HashMap<t::ProcessId, ProcessSender>;
 type ProcessHandles = HashMap<t::ProcessId, JoinHandle<Result<()>>>;
 
 enum ProcessSender {
-    Runtime(t::MessageSender),
-    Userspace(ProcessMessageSender),
+    Runtime {
+        sender: t::MessageSender,
+        net_errors: Option<t::NetworkErrorSender>,
+    },
+    Userspace(t::ProcessMessageSender),
 }
 
 /// persist kernel's process_map state for next bootup
@@ -457,13 +455,6 @@ async fn handle_kernel_request(
             // brutal and savage killing: aborting the task.
             // do not do this to a process if you don't want to risk
             // dropped messages / un-replied-to-requests / revoked caps
-            caps_oracle
-                .send(t::CapMessage::RevokeAll {
-                    on: process_id.clone(),
-                    responder: tokio::sync::oneshot::channel().0,
-                })
-                .await
-                .expect("event loop: fatal: sender died");
             let _ = senders.remove(&process_id);
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
@@ -485,7 +476,13 @@ async fn handle_kernel_request(
                 .await;
             process_handle.abort();
             process_map.remove(&process_id);
-            let _ = persist_state(&our_name, &send_to_loop, process_map).await;
+            caps_oracle
+                .send(t::CapMessage::RevokeAll {
+                    on: process_id.clone(),
+                    responder: tokio::sync::oneshot::channel().0,
+                })
+                .await
+                .expect("event loop: fatal: sender died");
             if request.expects_response.is_none() {
                 return;
             }
@@ -674,9 +671,14 @@ pub async fn kernel(
     mut recv_debug_in_loop: t::DebugReceiver,
     send_to_net: t::MessageSender,
     home_directory_path: String,
-    contract_address: String,
-    runtime_extensions: Vec<(t::ProcessId, t::MessageSender, bool)>,
-    default_pki_entries: Vec<crate::net::KnsUpdate>,
+    contract_chain_and_address: (u64, String),
+    runtime_extensions: Vec<(
+        t::ProcessId,
+        t::MessageSender,
+        Option<t::NetworkErrorSender>,
+        bool,
+    )>,
+    default_pki_entries: Vec<t::KnsUpdate>,
 ) -> Result<()> {
     let mut config = Config::new();
     config.cache_config_load_default().unwrap();
@@ -693,10 +695,19 @@ pub async fn kernel(
     let mut senders: Senders = HashMap::new();
     senders.insert(
         t::ProcessId::new(Some("net"), "distro", "sys"),
-        ProcessSender::Runtime(send_to_net.clone()),
+        ProcessSender::Runtime {
+            sender: send_to_net.clone(),
+            net_errors: None, // networking module does not accept net errors sent to it
+        },
     );
-    for (process_id, sender, _) in runtime_extensions {
-        senders.insert(process_id, ProcessSender::Runtime(sender));
+    for (process_id, sender, net_error_sender, _) in runtime_extensions {
+        senders.insert(
+            process_id,
+            ProcessSender::Runtime {
+                sender,
+                net_errors: net_error_sender,
+            },
+        );
     }
 
     // each running process is stored in this map
@@ -849,10 +860,8 @@ pub async fn kernel(
             message: t::Message::Request(t::Request {
                 inherit: false,
                 expects_response: None,
-                body: rmp_serde::to_vec(&crate::net::NetActions::KnsBatchUpdate(
-                    default_pki_entries,
-                ))
-                .unwrap(),
+                body: rmp_serde::to_vec(&t::NetAction::KnsBatchUpdate(default_pki_entries))
+                    .unwrap(),
                 metadata: None,
                 capabilities: vec![],
             }),
@@ -879,7 +888,7 @@ pub async fn kernel(
             message: t::Message::Request(t::Request {
                 inherit: false,
                 expects_response: None,
-                body: contract_address.as_bytes().to_vec(),
+                body: serde_json::to_vec(&contract_chain_and_address).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             }),
@@ -903,8 +912,8 @@ pub async fn kernel(
             Some(wrapped_network_error) = network_error_recv.recv() => {
                 let _ = send_to_terminal.send(
                     t::Printout {
-                        verbosity: 2,
-                        content: format!("event loop: got network error: {:?}", wrapped_network_error)
+                        verbosity: 3,
+                        content: format!("{wrapped_network_error:?}")
                     }
                 ).await;
                 // forward the error to the relevant process
@@ -912,10 +921,10 @@ pub async fn kernel(
                     Some(ProcessSender::Userspace(sender)) => {
                         let _ = sender.send(Err(wrapped_network_error)).await;
                     }
-                    Some(ProcessSender::Runtime(_sender)) => {
-                        // TODO should runtime modules get these? no
-                        // this will change if a runtime process ever makes
-                        // a message directed to not-our-node
+                    Some(ProcessSender::Runtime { net_errors, .. }) => {
+                        if let Some(net_errors) = net_errors {
+                            let _ = net_errors.send(wrapped_network_error).await;
+                        }
                     }
                     None => {
                         let _ = send_to_terminal
@@ -1072,7 +1081,7 @@ pub async fn kernel(
                 let _ = send_to_terminal.send(
                         t::Printout {
                             verbosity: 3,
-                            content: format!("{}", kernel_message)
+                            content: format!("{kernel_message}")
                         }
                     ).await;
 
@@ -1103,7 +1112,7 @@ pub async fn kernel(
                         Some(ProcessSender::Userspace(sender)) => {
                             let _ = sender.send(Ok(kernel_message)).await;
                         }
-                        Some(ProcessSender::Runtime(sender)) => {
+                        Some(ProcessSender::Runtime { sender, .. }) => {
                             sender.send(kernel_message).await.expect("event loop: fatal: runtime module died");
                         }
                         None => {
@@ -1130,6 +1139,12 @@ pub async fn kernel(
             },
             // capabilities oracle: handles all requests to add, drop, and check capabilities
             Some(cap_message) = caps_oracle_receiver.recv() => {
+                let _ = send_to_terminal.send(
+                    t::Printout {
+                        verbosity: 3,
+                        content: format!("{cap_message:?}")
+                    }
+                ).await;
                 match cap_message {
                     t::CapMessage::Add { on, caps, responder } => {
                         // insert cap in process map
@@ -1187,16 +1202,16 @@ pub async fn kernel(
                     },
                     t::CapMessage::RevokeAll { on, responder } => {
                         let Some(granter) = reverse_cap_index.get(&on) else {
+                            let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                             let _ = responder.send(true);
                             continue;
                         };
                         for (grantee, caps) in granter {
-                            let Some(entry) = process_map.get_mut(&grantee) else {
-                                continue;
+                            if let Some(entry) = process_map.get_mut(&grantee) {
+                                for cap in caps {
+                                    entry.capabilities.remove(&cap);
+                                }
                             };
-                            for cap in caps {
-                                entry.capabilities.remove(&cap);
-                            }
                         }
                         let _ = persist_state(&our.name, &send_to_loop, &process_map).await;
                         let _ = responder.send(true);

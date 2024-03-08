@@ -1,5 +1,5 @@
 use kinode_process_lib::{
-    await_next_request_body, call_init, get_blob, println, vfs, Address, Request, Response,
+    await_next_request_body, call_init, get_blob, println, vfs, Address, Request,
 };
 
 wit_bindgen::generate!({
@@ -14,12 +14,12 @@ call_init!(init);
 
 fn init(_our: Address) {
     let Ok(args) = await_next_request_body() else {
-        println!("cat: failed to get args, aborting");
+        println!("failed to get args");
         return;
     };
 
     let Ok(file_path) = String::from_utf8(args) else {
-        println!("cat: bad args, aborting");
+        println!("argument must be a single string");
         return;
     };
 
@@ -45,5 +45,5 @@ fn init(_our: Address) {
         println!("no file found at {}", file_path);
         return;
     };
-    let _ = Response::new().body(blob.bytes).send();
+    println!("{}", String::from_utf8(blob.bytes).unwrap());
 }
