@@ -408,24 +408,23 @@ impl StandardHost for process::ProcessWasi {
         Ok(())
     }
 
-    // TODO 0.6.0
-    // async fn drop_capabilities(&mut self, caps: Vec<wit::Capability>) -> Result<()> {
-    //     let (tx, rx) = tokio::sync::oneshot::channel();
-    //     let _ = self
-    //         .process
-    //         .caps_oracle
-    //         .send(t::CapMessage::Drop {
-    //             on: self.process.metadata.our.process.clone(),
-    //             caps: caps
-    //                 .iter()
-    //                 .map(|cap| t::de_wit_capability(cap.clone()).0)
-    //                 .collect(),
-    //             responder: tx,
-    //         })
-    //         .await?;
-    //     let _ = rx.await?;
-    //     Ok(())
-    // }
+    async fn drop_capabilities(&mut self, caps: Vec<wit::Capability>) -> Result<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Drop {
+                on: self.process.metadata.our.process.clone(),
+                caps: caps
+                    .iter()
+                    .map(|cap| t::de_wit_capability(cap.clone()).0)
+                    .collect(),
+                responder: tx,
+            })
+            .await?;
+        let _ = rx.await?;
+        Ok(())
+    }
 
     async fn our_capabilities(&mut self) -> Result<Vec<wit::Capability>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
