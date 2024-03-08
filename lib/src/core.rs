@@ -757,13 +757,6 @@ pub type ProcessMessageReceiver =
 // types used for onchain identity system
 //
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Registration {
-    pub username: NodeId,
-    pub password: String,
-    pub direct: bool,
-}
-
 #[derive(Debug)]
 pub struct Keyfile {
     pub username: String,
@@ -775,7 +768,7 @@ pub struct Keyfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyfileVet {
-    pub password: String,
+    pub password_hash: String,
     pub keyfile: String,
 }
 
@@ -788,26 +781,30 @@ pub struct KeyfileVetted {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BootInfo {
-    pub password: String,
+    pub password_hash: String,
     pub username: String,
     pub reset: bool,
     pub direct: bool,
+    pub owner: String,
+    pub signature: String,
+    pub timestamp: u64,
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportKeyfileInfo {
-    pub password: String,
+    pub password_hash: String,
     pub keyfile: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginInfo {
-    pub password: String,
+    pub password_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginAndResetInfo {
-    pub password: String,
+    pub password_hash: String,
     pub direct: bool,
 }
 
@@ -823,16 +820,6 @@ pub struct Identity {
 pub struct UnencryptedIdentity {
     pub name: NodeId,
     pub allowed_routers: Vec<NodeId>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IdentityTransaction {
-    pub from: String,
-    pub signature: Option<String>,
-    pub to: String, // contract address
-    pub town_id: u32,
-    pub calldata: Identity,
-    pub nonce: String,
 }
 
 //
