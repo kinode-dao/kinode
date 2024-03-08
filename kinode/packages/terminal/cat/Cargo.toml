@@ -6,7 +6,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
-kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", tag = "v0.6.0-alpha.4" }
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", tag = "v0.6.0" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 wit-bindgen = { git = "https://github.com/bytecodealliance/wit-bindgen", rev = "21a46c7" }

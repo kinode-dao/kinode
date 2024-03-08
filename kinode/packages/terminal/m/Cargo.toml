@@ -7,7 +7,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0"
 clap = "4.4.18"
-kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", tag = "v0.6.0-alpha.4" }
+kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", tag = "v0.6.0" }
 regex = "1.10.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
