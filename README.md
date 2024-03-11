@@ -13,8 +13,6 @@ If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) 
 
 ## Setup
 
-### Building components
-
 On certain operating systems, you may need to install these dependencies if they are not already present:
 - openssl-sys: https://docs.rs/crate/openssl-sys/0.9.19
 - libclang 5.0: https://rust-lang.github.io/rust-bindgen/requirements.html
@@ -39,7 +37,11 @@ cargo install cargo-wasi
 cargo +nightly build -p kinode
 ```
 
-### Boot
+## Security Status
+
+No security audits of this crate have ever been performed. This software is under active development and should be **used at your own risk**.
+
+## Boot
 Get an eth-sepolia-rpc API key and pass that as an argument. You can get one for free at `alchemy.com`.
 
 Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`. The `--` here separates cargo arguments from binary arguments.
@@ -52,7 +54,7 @@ cargo +nightly run -p kinode -- home --testnet
 
 On boot you will be prompted to navigate to `localhost:8080`. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need [Sepolia testnet tokens](https://www.infura.io/faucet/sepolia) or an invite code.
 
-### Configuring the ETH RPC Provider
+## Configuring the ETH RPC Provider
 
 By default, a node will use the hardcoded providers for the network ([testnet](./kinode/default_providers_testnet.json)/[mainnet](./kinode/default_providers_mainnet.json)) it is booted on. A node can use a WebSockets RPC URL directly, or use another Kinode as a relay point. To adjust the providers a node uses, just create and modify the `.eth_providers` file in the node's home folder (set at boot). See the Kinode Book for more docs, and see the [default providers file here](./kinode/default_providers_testnet.json) for a template to create `.eth_providers`.
 
@@ -62,7 +64,7 @@ m our@eth:distro:sys '{"AddProvider": {"chain_id": <SOME_CHAIN_ID>, "trusted": t
 ```
 We will soon add a settings GUI for this.
 
-### Distro and Runtime processes
+## Distro and Runtime processes
 
 The base OS install comes with certain runtime modules. These are interacted with in the same way as userspace processes, but are deeply ingrained to the system and the APIs they present at their Process IDs are assumed to be available by userspace processes. All of these are identified in the `distro:sys` package.
 
@@ -93,7 +95,7 @@ The distro userspace packages are:
 
 The `sys` publisher is not a real node ID, but it's also not a special case value. Packages, whether runtime or userspace, installed from disk when a node bootstraps do not have their package ID or publisher node ID validated. Packages installed (not injected locally, as is done during development) after a node has booted will have their publisher field validated.
 
-### Terminal syntax
+## Terminal syntax
 
 - CTRL+C or CTRL+D to gracefully shutdown node
 - CTRL+V to toggle through verbose modes (0-3, 0 is default and lowest verbosity)
