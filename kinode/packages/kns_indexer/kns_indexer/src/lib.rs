@@ -99,6 +99,7 @@ sol! {
 }
 
 fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth::Filter) {
+    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.subscribe(1, filter.clone().from_block(from_block)) {
             Ok(()) => break,
@@ -109,6 +110,7 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
             }
         }
     }
+    #[cfg(not(feature = "simulation-mode"))]
     println!("subscribed to logs successfully");
 }
 
