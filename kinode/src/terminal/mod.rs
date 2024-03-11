@@ -210,7 +210,7 @@ pub async fn terminal(
                                  )),
                 )?;
                 let color = match printout.verbosity {
-                        0 => style::Color::Black,
+                        0 => style::Color::Reset,
                         1 => style::Color::Green,
                         2 => style::Color::Magenta,
                         _ => style::Color::Red,
