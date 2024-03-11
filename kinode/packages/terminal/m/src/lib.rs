@@ -77,7 +77,7 @@ fn init(_our: Address) {
 
     match parsed.get_one::<u64>("await") {
         Some(s) => {
-            println!("awaiting response for {}s", s);
+            println!("awaiting response for {s}s");
             match req.send_and_await_response(*s).unwrap() {
                 Ok(res) => {
                     println!("{}", String::from_utf8(res.body().to_vec()).unwrap());
@@ -96,7 +96,9 @@ fn init(_our: Address) {
             }
         }
         None => {
-            let _ = req.send().unwrap();
+            // still wait for a response, but don't do anything with it
+            // do this so caps checks don't fail
+            let _ = req.send_and_await_response(5).unwrap();
         }
     }
 }

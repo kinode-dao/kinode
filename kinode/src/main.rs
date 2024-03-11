@@ -38,8 +38,8 @@ const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// default routers as a eth-provider fallback
-const DEFAULT_PROVIDERS_TESTNET: &str = include_str!("../default_providers_testnet.json");
-const DEFAULT_PROVIDERS_MAINNET: &str = include_str!("../default_providers_mainnet.json");
+const DEFAULT_PROVIDERS_TESTNET: &str = include_str!("eth/default_providers_testnet.json");
+const DEFAULT_PROVIDERS_MAINNET: &str = include_str!("eth/default_providers_mainnet.json");
 
 async fn serve_register_fe(
     home_directory_path: &str,
@@ -563,6 +563,7 @@ async fn main() {
     ));
     tasks.spawn(eth::provider(
         our.name.clone(),
+        home_directory_path.clone(),
         eth_provider_config,
         kernel_message_sender.clone(),
         eth_provider_receiver,

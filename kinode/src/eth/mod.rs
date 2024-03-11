@@ -128,6 +128,8 @@ impl ActiveSub {
 struct ModuleState {
     /// the name of this node
     our: Arc<String>,
+    /// the home directory path
+    home_directory_path: String,
     /// the access settings for this provider
     access_settings: AccessSettings,
     /// the set of providers we have available for all chains
@@ -147,6 +149,7 @@ struct ModuleState {
 /// for the entire module.
 pub async fn provider(
     our: String,
+    home_directory_path: String,
     configs: SavedConfigs,
     send_to_loop: MessageSender,
     mut recv_in_client: MessageReceiver,
@@ -154,13 +157,36 @@ pub async fn provider(
     caps_oracle: CapMessageSender,
     print_tx: PrintSender,
 ) -> Result<()> {
+    // load access settings if they've been saved
+    let access_settings: AccessSettings =
+        match tokio::fs::read_to_string(format!("{}/.eth_access_settings", home_directory_path))
+            .await
+        {
+            Ok(contents) => serde_json::from_str(&contents).unwrap(),
+            Err(_) => {
+                let access_settings = AccessSettings {
+                    public: false,
+                    allow: HashSet::new(),
+                    deny: HashSet::new(),
+                };
+                let _ = tokio::fs::write(
+                    format!("{}/.eth_access_settings", home_directory_path),
+                    serde_json::to_string(&access_settings).unwrap(),
+                )
+                .await;
+                access_settings
+            }
+        };
+    verbose_print(
+        &print_tx,
+        &format!("eth: access settings loaded: {access_settings:?}"),
+    )
+    .await;
+
     let mut state = ModuleState {
         our: Arc::new(our),
-        access_settings: AccessSettings {
-            public: false,
-            allow: HashSet::new(),
-            deny: HashSet::new(),
-        },
+        home_directory_path,
+        access_settings,
         providers: Arc::new(DashMap::new()),
         active_subscriptions: Arc::new(DashMap::new()),
         response_channels: Arc::new(DashMap::new()),
@@ -601,6 +627,8 @@ async fn handle_eth_config_action(
     )
     .await;
 
+    let mut save_providers = false;
+
     // modify our providers and access settings based on config action
     match eth_config_action {
         EthConfigAction::AddProvider(provider) => {
@@ -612,10 +640,12 @@ async fn handle_eth_config_action(
                     nodes: vec![],
                 });
             aps.add_provider_config(provider);
+            save_providers = true;
         }
         EthConfigAction::RemoveProvider((chain_id, remove)) => {
             if let Some(mut aps) = state.providers.get_mut(&chain_id) {
                 aps.remove_provider(&remove);
+                save_providers = true;
             }
         }
         EthConfigAction::SetPublic => {
@@ -646,6 +676,7 @@ async fn handle_eth_config_action(
                 aps.add_provider_config(entry);
             }
             state.providers = Arc::new(new_map);
+            save_providers = true;
         }
         EthConfigAction::GetProviders => {
             return EthConfigResponse::Providers(providers_to_saved_configs(&state.providers));
@@ -681,6 +712,21 @@ async fn handle_eth_config_action(
                 outstanding_requests: state.response_channels.iter().map(|e| *e.key()).collect(),
             };
         }
+    }
+    // save providers and access settings to disk
+    let _ = tokio::fs::write(
+        format!("{}/.eth_access_settings", state.home_directory_path),
+        serde_json::to_string(&state.access_settings).unwrap(),
+    )
+    .await;
+    verbose_print(&state.print_tx, "eth: saved new access settings").await;
+    if save_providers {
+        let _ = tokio::fs::write(
+            format!("{}/.eth_providers", state.home_directory_path),
+            serde_json::to_string(&providers_to_saved_configs(&state.providers)).unwrap(),
+        )
+        .await;
+        verbose_print(&state.print_tx, "eth: saved new provider settings").await;
     }
     EthConfigResponse::Ok
 }
