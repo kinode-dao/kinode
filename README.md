@@ -56,6 +56,12 @@ On boot you will be prompted to navigate to `localhost:8080`. Make sure your bro
 
 By default, a node will use the hardcoded providers for the network ([testnet](./kinode/default_providers_testnet.json)/[mainnet](./kinode/default_providers_mainnet.json)) it is booted on. A node can use a WebSockets RPC URL directly, or use another Kinode as a relay point. To adjust the providers a node uses, just create and modify the `.eth_providers` file in the node's home folder (set at boot). See the Kinode Book for more docs, and see the [default providers file here](./kinode/default_providers_testnet.json) for a template to create `.eth_providers`.
 
+You may also add a RPC provider or otherwise modify your configuration by sending messages from the terminal to the `eth:distro:sys` process. Use this message format to add a provider -- this will make your node's performance better when accessing a blockchain:
+```
+m our@eth:distro:sys '{"AddProvider": {"chain_id": <SOME_CHAIN_ID>, "trusted": true, "provider": {"RpcUrl": "<WS_RPC_URL>"}}}'
+```
+We will soon add a settings GUI for this.
+
 ### Distro and Runtime processes
 
 The base OS install comes with certain runtime modules. These are interacted with in the same way as userspace processes, but are deeply ingrained to the system and the APIs they present at their Process IDs are assumed to be available by userspace processes. All of these are identified in the `distro:sys` package.
