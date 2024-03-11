@@ -16,7 +16,7 @@
                     "name": "default-router-1.os",
                     "owner": "",
                     "node": "0xb35eb347deb896bc3fb6132a07fca1601f83462385ed11e835c24c33ba4ef73d",
-                    "public_key": "0xb1b1cf23c89f651aac3e5fd4decb04aa177ab0ec8ce5f1d3877b90bb6f5779db",
+                    "public_key": "0xd9ccb8404e23a8db6bf709044a2882b65aae6aca3d34d5a0cedf5a12bf597867",
                     "ip": "147.135.114.167",
                     "port": 9002,
                     "routers": []
@@ -34,7 +34,7 @@
                     "name": "default-router-2.os",
                     "owner": "",
                     "node": "0xd827ae579fafa604af79fbed977e8abe048497f10885c6473dfd343a3b7b4458",
-                    "public_key": "0xab9f1a996db3a4e1dbcd31d765daedeb3af9af4f570c0968463b5be3a7d1e992",
+                    "public_key": "0x612fff0a1ab72ec97f81995d52a5e7516fe31800e3d05850b5b62ed47b2620bd",
                     "ip": "147.135.114.167",
                     "port": 9003,
                     "routers": []
@@ -52,7 +52,25 @@
                     "name": "default-router-3.os",
                     "owner": "",
                     "node": "0x96e36331c8f0882f2c0c46c13b15d812def04fe8606d503bc0e2be39db26486a",
-                    "public_key": "0x536e30785e64dd0349a697285af365b5ed7c4d300010139261cfc4dbdd5b254b",
+                    "public_key": "0x310f22ebaf414241c272b42179634a8696020faaf979a9fc4c6958f44121a3bf",
+                    "ip": "147.135.114.167",
+                    "port": 9004,
+                    "routers": []
+                }
+            }
+        }
+    },
+    {
+        "chain_id": 10,
+        "trusted": false,
+        "provider": {
+            "Node": {
+                "use_as_provider": true,
+                "kns_update": {
+                    "name": "default-router-3.os",
+                    "owner": "",
+                    "node": "0x96e36331c8f0882f2c0c46c13b15d812def04fe8606d503bc0e2be39db26486a",
+                    "public_key": "0x310f22ebaf414241c272b42179634a8696020faaf979a9fc4c6958f44121a3bf",
                     "ip": "147.135.114.167",
                     "port": 9004,
                     "routers": []
