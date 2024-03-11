@@ -1,8 +1,6 @@
 use crate::eth::*;
 use alloy_pubsub::RawSubscription;
 use alloy_rpc_types::pubsub::SubscriptionResult;
-use anyhow::Result;
-use std::collections::HashMap;
 
 /// cleans itself up when the subscription is closed or fails.
 pub async fn create_new_subscription(
