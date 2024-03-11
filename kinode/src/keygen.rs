@@ -19,7 +19,7 @@ pub const ITERATIONS: u32 = 1_000_000;
 pub static PBKDF2_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256; // TODO maybe look into Argon2
 
 pub fn encode_keyfile(
-    password: String,
+    password_hash: String,
     username: String,
     routers: Vec<String>,
     networking_key: &[u8],
@@ -36,7 +36,7 @@ pub fn encode_keyfile(
         PBKDF2_ALG,
         NonZeroU32::new(ITERATIONS).unwrap(),
         &salt,
-        password.as_bytes(),
+        password_hash.as_bytes(),
         &mut disk_key,
     );
 

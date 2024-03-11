@@ -326,7 +326,7 @@ async fn login_handler(
 ) -> Result<impl warp::Reply, warp::Rejection> {
     #[cfg(feature = "simulation-mode")]
     let info = LoginInfo {
-        password: "secret".to_string(),
+        password_hash: "secret".to_string(),
     };
 
     match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {

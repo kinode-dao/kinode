@@ -1,5 +1,6 @@
+use crate::keygen;
 use aes_gcm::aead::KeyInit;
-use alloy_primitives::{Address, Bytes, FixedBytes, U256};
+use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
 use alloy_providers::provider::{Provider, TempProvider};
 use alloy_pubsub::PubSubFrontend;
 use alloy_rpc_client::ClientBuilder;
@@ -10,11 +11,11 @@ use alloy_sol_types::{SolCall, SolValue};
 use alloy_transport_ws::WsConnect;
 use hmac::Hmac;
 use jwt::SignWithKey;
+use lib::types::core::*;
 use ring::rand::SystemRandom;
 use ring::signature;
 use ring::signature::KeyPair;
 use sha2::Sha256;
-
 use static_dir::static_dir;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -28,17 +29,14 @@ use warp::{
     Filter, Rejection, Reply,
 };
 
-use crate::keygen;
-use lib::types::core::*;
-
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
-pub const KNS_SEPOLIA_ADDRESS: Address = Address::new([
+pub const KNS_SEPOLIA_ADDRESS: EthAddress = EthAddress::new([
     0x38, 0x07, 0xFB, 0xD6, 0x92, 0xAa, 0x5c, 0x96, 0xF1, 0xD8, 0xD7, 0xc5, 0x9a, 0x13, 0x46, 0xa8,
     0x85, 0xF4, 0x0B, 0x1C,
 ]);
 
-pub const KNS_OPTIMISM_ADDRESS: Address = Address::new([
+pub const KNS_OPTIMISM_ADDRESS: EthAddress = EthAddress::new([
     0xca, 0x5b, 0x58, 0x11, 0xc0, 0xC4, 0x0a, 0xAB, 0x32, 0x95, 0xf9, 0x32, 0xb1, 0xB5, 0x11, 0x2E,
     0xb7, 0xbb, 0x4b, 0xD6,
 ]);
@@ -352,7 +350,7 @@ async fn handle_boot(
     our: Arc<Identity>,
     networking_keypair: Arc<Vec<u8>>,
     testnet: bool,
-    kns_address: Address,
+    kns_address: EthAddress,
     provider: Arc<Provider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     let mut our = our.as_ref().clone();
@@ -398,14 +396,14 @@ async fn handle_boot(
         .into_response());
     };
 
-    let Ok((tld_address, _)) = <(Address, U256)>::abi_decode(&tld, false) else {
+    let Ok((tld_address, _)) = <(EthAddress, U256)>::abi_decode(&tld, false) else {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Failed to decode TLD contract from return bytes"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
     };
-    let owner = Address::from_str(&info.owner).map_err(|_| warp::reject())?;
+    let owner = EthAddress::from_str(&info.owner).map_err(|_| warp::reject())?;
 
     let auth_call = authCall {
         _node: namehash,

@@ -111,7 +111,8 @@ async fn main() {
             arg!(--"reveal-ip" "If set to false, as an indirect node, always use routers to connect to other nodes.")
                 .default_value("true")
                 .value_parser(value_parser!(bool)),
-        );
+        )
+        .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"));
 
     #[cfg(feature = "simulation-mode")]
     let app = app
@@ -188,7 +189,7 @@ async fn main() {
     println!("home at {}\r", home_directory_path);
 
     // default eth providers/routers
-    let eth_provider_config: lib::eth::SavedConfigs =
+    let mut eth_provider_config: lib::eth::SavedConfigs =
         match fs::read_to_string(format!("{}/.eth_providers", home_directory_path)).await {
             Ok(contents) => {
                 println!("loaded saved eth providers\r");
@@ -199,6 +200,13 @@ async fn main() {
                 false => serde_json::from_str(DEFAULT_PROVIDERS_MAINNET).unwrap(),
             },
         };
+    if let Some(rpc) = matches.get_one::<String>("rpc") {
+        eth_provider_config.push(lib::eth::ProviderConfig {
+            chain_id: if on_testnet { 11155111 } else { 10 },
+            trusted: true,
+            provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
+        });
+    }
 
     // kernel receives system messages via this channel, all other modules send messages
     let (kernel_message_sender, kernel_message_receiver): (MessageSender, MessageReceiver) =
@@ -301,18 +309,15 @@ async fn main() {
     let (our, encoded_keyfile, decoded_keyfile) = match fake_node_name {
         None => {
             match password {
-                None => match rpc_url {
-                    None => panic!(""),
-                    Some(ref rpc_url) => {
-                        serve_register_fe(
-                            &home_directory_path,
-                            our_ip.to_string(),
-                            http_server_port.clone(),
-                            on_testnet, // true if testnet mode
-                        )
-                        .await
-                    }
-                },
+                None => {
+                    serve_register_fe(
+                        &home_directory_path,
+                        our_ip.to_string(),
+                        http_server_port.clone(),
+                        on_testnet, // true if testnet mode
+                    )
+                    .await
+                }
                 Some(password) => {
                     match fs::read(format!("{}/.keys", home_directory_path)).await {
                         Err(e) => panic!("could not read keyfile: {}", e),
@@ -343,8 +348,8 @@ async fn main() {
             }
         }
         Some(name) => {
-            let password = match password {
-                None => "123".to_string(),
+            let password_hash = match password {
+                None => "secret".to_string(),
                 Some(password) => password.to_string(),
             };
             let (pubkey, networking_keypair) = keygen::generate_networking_key();
@@ -372,12 +377,12 @@ async fn main() {
             };
 
             let encoded_keyfile = keygen::encode_keyfile(
-                password,
+                password_hash,
                 name.clone(),
                 decoded_keyfile.routers.clone(),
                 networking_keypair.as_ref(),
-                decoded_keyfile.jwt_secret_bytes.clone(),
-                decoded_keyfile.file_key.clone(),
+                &decoded_keyfile.jwt_secret_bytes,
+                &decoded_keyfile.file_key,
             );
 
             fs::write(
