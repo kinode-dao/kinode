@@ -1,4 +1,3 @@
-use kinode_process_lib::eth::{EthAction, EthAddress, EthSubEvent, SubscribeLogsRequest};
 use kinode_process_lib::http::{bind_http_path, serve_ui, HttpServerRequest};
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
@@ -39,7 +38,10 @@ use ft_worker_lib::{
 /// - uninstalled + deleted
 /// - set to automatically update if a new version is available
 
-const CONTRACT_ADDRESS: &str = "0x18c39eB547A0060C6034f8bEaFB947D1C16eADF1";
+const ICON: &str = include_str!("icon");
+
+const CHAIN_ID: u64 = 11155111; // sepolia
+const CONTRACT_ADDRESS: &str = "0x18c39eB547A0060C6034f8bEaFB947D1C16eADF1"; // sepolia
 
 const EVENTS: [&str; 3] = [
     "AppRegistered(uint256,string,bytes,string,bytes32)",
@@ -56,7 +58,7 @@ pub enum Req {
     RemoteRequest(RemoteRequest),
     FTWorkerCommand(FTWorkerCommand),
     FTWorkerResult(FTWorkerResult),
-    Eth(EthSubEvent),
+    Eth(eth::EthSubResult),
     Http(HttpServerRequest),
 }
 
@@ -68,9 +70,36 @@ pub enum Resp {
     FTWorkerResult(FTWorkerResult),
 }
 
+fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Log> {
+    loop {
+        match eth_provider.get_logs(filter) {
+            Ok(res) => return res,
+            Err(_) => {
+                println!("failed to fetch logs! trying again in 5s...");
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                continue;
+            }
+        }
+    }
+}
+
+fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
+    loop {
+        match eth_provider.subscribe(1, filter.clone()) {
+            Ok(()) => break,
+            Err(_) => {
+                println!("failed to subscribe to chain! trying again in 5s...");
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                continue;
+            }
+        }
+    }
+    println!("subscribed to logs successfully");
+}
+
 call_init!(init);
 fn init(our: Address) {
-    println!("{}: started", our.package());
+    println!("started");
 
     for path in [
         "/apps",
@@ -92,40 +121,69 @@ fn init(our: Address) {
     )
     .expect("failed to serve static UI");
 
+    // add ourselves to the homepage
+    Request::to(("our", "homepage", "homepage", "sys"))
+        .body(
+            serde_json::json!({
+                "Add": {
+                    "label": "App Store",
+                    "icon": ICON,
+                    "path": "/" // just our root
+                }
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
+        )
+        .send()
+        .unwrap();
+
     // load in our saved state or initalize a new one if none exists
     let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))
         .unwrap_or(State::new(CONTRACT_ADDRESS.to_string()).unwrap());
 
     if state.contract_address != CONTRACT_ADDRESS {
-        println!("app store: warning: contract address mismatch--overwriting saved state");
+        println!("warning: contract address mismatch--overwriting saved state");
         state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
     }
 
-    println!(
-        "app store: indexing on contract address {}",
-        state.contract_address
-    );
+    println!("indexing on contract address {}", state.contract_address);
+
+    // create new provider for sepolia with request-timeout of 60s
+    // can change, log requests can take quite a long time.
+    let eth_provider = eth::Provider::new(CHAIN_ID, 60);
 
     let mut requested_packages: HashMap<PackageId, RequestedPackage> = HashMap::new();
 
-    // subscribe to events on the app store contract
-    SubscribeLogsRequest::new(1) // subscription id 1
-        .address(EthAddress::from_str(&state.contract_address).unwrap())
+    // get past logs, subscribe to new ones.
+    let filter = eth::Filter::new()
+        .address(eth::Address::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block - 1)
-        .events(EVENTS)
-        .send()
-        .unwrap();
+        .to_block(eth::BlockNumberOrTag::Latest)
+        .events(EVENTS);
+
+    for log in fetch_logs(&eth_provider, &filter) {
+        if let Err(e) = state.ingest_listings_contract_event(&our, log) {
+            println!("error ingesting log: {e:?}");
+        };
+    }
+    subscribe_to_logs(&eth_provider, filter);
 
     loop {
         match await_message() {
             Err(send_error) => {
                 // TODO handle these based on what they are triggered by
-                println!("app store: got network error: {send_error}");
+                println!("got network error: {send_error}");
             }
             Ok(message) => {
-                if let Err(e) = handle_message(&our, &mut state, &mut requested_packages, &message)
-                {
-                    println!("app store: error handling message: {:?}", e)
+                if let Err(e) = handle_message(
+                    &our,
+                    &mut state,
+                    &eth_provider,
+                    &mut requested_packages,
+                    &message,
+                ) {
+                    println!("error handling message: {:?}", e)
                 }
             }
         }
@@ -139,6 +197,7 @@ fn init(our: Address) {
 fn handle_message(
     our: &Address,
     mut state: &mut State,
+    eth_provider: &eth::Provider,
     mut requested_packages: &mut HashMap<PackageId, RequestedPackage>,
     message: &Message,
 ) -> anyhow::Result<()> {
@@ -153,8 +212,13 @@ fn handle_message(
                 if our.node != source.node {
                     return Err(anyhow::anyhow!("local request from non-local node"));
                 }
-                let resp =
-                    handle_local_request(&our, &local_request, &mut state, &mut requested_packages);
+                let resp = handle_local_request(
+                    &our,
+                    &local_request,
+                    &mut state,
+                    eth_provider,
+                    &mut requested_packages,
+                );
                 if expects_response.is_some() {
                     Response::new().body(serde_json::to_vec(&resp)?).send()?;
                 }
@@ -172,13 +236,26 @@ fn handle_message(
                 spawn_receive_transfer(&our, &body)?;
             }
             Req::FTWorkerResult(r) => {
-                println!("app store: got weird ft_worker result: {r:?}");
+                println!("got weird ft_worker result: {r:?}");
             }
-            Req::Eth(e) => {
+            Req::Eth(eth_result) => {
                 if source.node() != our.node() || source.process != "eth:distro:sys" {
                     return Err(anyhow::anyhow!("eth sub event from weird addr: {source}"));
                 }
-                handle_eth_sub_event(&mut state, e)?;
+                if let Ok(eth::EthSub { result, .. }) = eth_result {
+                    handle_eth_sub_event(our, &mut state, result)?;
+                } else {
+                    println!("got eth subscription error");
+                    // attempt to resubscribe
+                    subscribe_to_logs(
+                        &eth_provider,
+                        eth::Filter::new()
+                            .address(eth::Address::from_str(&state.contract_address).unwrap())
+                            .from_block(state.last_saved_block - 1)
+                            .to_block(eth::BlockNumberOrTag::Latest)
+                            .events(EVENTS),
+                    );
+                }
             }
             Req::Http(incoming) => {
                 if source.node() != our.node()
@@ -187,14 +264,14 @@ fn handle_message(
                     return Err(anyhow::anyhow!("http_server from non-local node"));
                 }
                 if let HttpServerRequest::Http(req) = incoming {
-                    http_api::handle_http_request(&our, &mut state, requested_packages, &req)?;
+                    http_api::handle_http_request(our, &mut state, requested_packages, &req)?;
                 }
             }
         },
         Message::Response { body, context, .. } => {
             // the only kind of response we care to handle here!
             let Some(context) = context else {
-                return Err(anyhow::anyhow!("app store: missing context"));
+                return Err(anyhow::anyhow!("missing context"));
             };
             handle_ft_worker_result(body, context)?;
         }
@@ -254,6 +331,7 @@ fn handle_local_request(
     our: &Address,
     request: &LocalRequest,
     state: &mut State,
+    eth_provider: &eth::Provider,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
 ) -> LocalResponse {
     match request {
@@ -268,7 +346,9 @@ fn handle_local_request(
                 mirrored_from: Some(our.node.clone()),
                 our_version,
                 installed: false,
+                verified: true, // side loaded apps are implicitly verified because there is no "source" to verify against
                 caps_approved: true, // TODO see if we want to auto-approve local installs
+                manifest_hash: None, // generated in the add fn
                 mirroring: *mirror,
                 auto_update: false, // can't auto-update a local package
                 metadata: None,     // TODO
@@ -321,16 +401,21 @@ fn handle_local_request(
         LocalRequest::RebuildIndex => {
             *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
             // kill our old subscription and build a new one.
-            Request::to(("our", "eth", "distro", "sys"))
-                .body(serde_json::to_vec(&EthAction::UnsubscribeLogs(1)).unwrap())
-                .send()
-                .unwrap();
-            SubscribeLogsRequest::new(1) // subscription id 1
-                .address(EthAddress::from_str(&state.contract_address).unwrap())
+            eth_provider
+                .unsubscribe(1)
+                .expect("app_store: failed to unsub from eth events!");
+
+            let filter = eth::Filter::new()
+                .address(eth::Address::from_str(&state.contract_address).unwrap())
                 .from_block(state.last_saved_block - 1)
-                .events(EVENTS)
-                .send()
-                .unwrap();
+                .events(EVENTS);
+
+            for log in fetch_logs(&eth_provider, &filter) {
+                if let Err(e) = state.ingest_listings_contract_event(our, log) {
+                    println!("error ingesting log: {e:?}");
+                };
+            }
+            subscribe_to_logs(&eth_provider, filter);
             LocalResponse::RebuiltIndex
         }
     }
@@ -385,56 +470,81 @@ fn handle_receive_download(
     let package_name = package_name[1..].trim_end_matches(".zip");
     let Ok(package_id) = package_name.parse::<PackageId>() else {
         return Err(anyhow::anyhow!(
-            "app store: bad package filename fron download: {package_name}"
+            "bad package filename fron download: {package_name}"
         ));
     };
-    println!("app store: successfully received {}", package_id);
+    println!("successfully received {}", package_id);
     // only save the package if we actually requested it
     let Some(requested_package) = requested_packages.remove(&package_id) else {
-        return Err(anyhow::anyhow!(
-            "app store: received unrequested package--rejecting!"
-        ));
+        return Err(anyhow::anyhow!("received unrequested package--rejecting!"));
     };
     let Some(blob) = get_blob() else {
-        return Err(anyhow::anyhow!(
-            "app store: received download but found no blob"
-        ));
+        return Err(anyhow::anyhow!("received download but found no blob"));
     };
     // check the version hash for this download against requested!!
     // for now we can reject if it's not latest.
     let download_hash = generate_version_hash(&blob.bytes);
+    let mut verified = false;
     match requested_package.desired_version_hash {
         Some(hash) => {
             if download_hash != hash {
-                return Err(anyhow::anyhow!(
-                    "app store: downloaded package is not latest version--rejecting download!"
-                ));
-            }
-        }
-        None => {
-            // check against latest from listing
-            let Some(package_listing) = state.get_listing(&package_id) else {
-                return Err(anyhow::anyhow!(
-                    "app store: downloaded package cannot be found in manager--rejecting download!"
-                ));
-            };
-            if let Some(metadata) = &package_listing.metadata {
-                if let Some(latest_hash) = metadata.versions.clone().unwrap_or(vec![]).last() {
-                    if &download_hash != latest_hash {
-                        return Err(anyhow::anyhow!(
-                            "app store: downloaded package is not latest version--rejecting download!"
-                        ));
-                    }
+                if hash.is_empty() {
+                    println!(
+                        "\x1b[33mwarning: downloaded package has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
+                    );
                 } else {
                     return Err(anyhow::anyhow!(
-                        "app store: downloaded package has no versions in manager--rejecting download!"
+                        "downloaded package is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
                     ));
                 }
             } else {
-                println!("app store: warning: downloaded package has no listing metadata to check validity against!")
+                verified = true;
+            }
+        }
+        None => {
+            // check against `metadata.properties.current_version`
+            let Some(package_listing) = state.get_listing(&package_id) else {
+                return Err(anyhow::anyhow!(
+                    "downloaded package cannot be found in manager--rejecting download!"
+                ));
+            };
+            let Some(metadata) = &package_listing.metadata else {
+                return Err(anyhow::anyhow!(
+                    "downloaded package has no metadata to check validity against!"
+                ));
+            };
+            let Some(latest_hash) = metadata
+                .properties
+                .code_hashes
+                .get(&metadata.properties.current_version)
+            else {
+                return Err(anyhow::anyhow!(
+                    "downloaded package has no versions in manager--rejecting download!"
+                ));
+            };
+            if &download_hash != latest_hash {
+                if latest_hash.is_empty() {
+                    println!(
+                        "\x1b[33mwarning: downloaded package has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
+                    );
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "downloaded package is not latest version--rejecting download! download hash: {download_hash}, latest hash: {latest_hash}"
+                    ));
+                }
+            } else {
+                verified = true;
             }
         }
     }
+
+    let old_manifest_hash = match state.downloaded_packages.get(&package_id) {
+        Some(package_state) => package_state
+            .manifest_hash
+            .clone()
+            .unwrap_or("OLD".to_string()),
+        _ => "OLD".to_string(),
+    };
 
     state.add_downloaded_package(
         &package_id,
@@ -442,13 +552,30 @@ fn handle_receive_download(
             mirrored_from: Some(requested_package.from),
             our_version: download_hash,
             installed: false,
+            verified,
             caps_approved: false,
+            manifest_hash: None, // generated in the add fn
             mirroring: requested_package.mirror,
             auto_update: requested_package.auto_update,
             metadata: None, // TODO
         },
         Some(blob.bytes),
-    )
+    )?;
+
+    let new_manifest_hash = match state.downloaded_packages.get(&package_id) {
+        Some(package_state) => package_state
+            .manifest_hash
+            .clone()
+            .unwrap_or("NEW".to_string()),
+        _ => "NEW".to_string(),
+    };
+
+    // lastly, if auto_update is true, AND the caps_hash has NOT changed,
+    // trigger install!
+    if requested_package.auto_update && old_manifest_hash == new_manifest_hash {
+        handle_install(our, state, &package_id)?;
+    }
+    Ok(())
 }
 
 fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
@@ -456,7 +583,7 @@ fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
         let context = serde_json::from_slice::<FileTransferContext>(context)?;
         if let FTWorkerResult::SendSuccess = ft_worker_result {
             println!(
-                "app store: successfully shared {} in {:.4}s",
+                "successfully shared {} in {:.4}s",
                 context.file_name,
                 std::time::SystemTime::now()
                     .duration_since(context.start_time)
@@ -464,17 +591,21 @@ fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
                     .as_secs_f64(),
             );
         } else {
-            return Err(anyhow::anyhow!("app store: failed to share app"));
+            return Err(anyhow::anyhow!("failed to share app"));
         }
     }
     Ok(())
 }
 
-fn handle_eth_sub_event(state: &mut State, event: EthSubEvent) -> anyhow::Result<()> {
-    let EthSubEvent::Log(log) = event else {
-        return Err(anyhow::anyhow!("app store: got non-log event"));
+fn handle_eth_sub_event(
+    our: &Address,
+    state: &mut State,
+    event: eth::SubscriptionResult,
+) -> anyhow::Result<()> {
+    let eth::SubscriptionResult::Log(log) = event else {
+        return Err(anyhow::anyhow!("got non-log event"));
     };
-    state.ingest_listings_contract_event(log)
+    state.ingest_listings_contract_event(our, *log)
 }
 
 fn fetch_package_manifest(package: &PackageId) -> anyhow::Result<Vec<kt::PackageManifestEntry>> {
@@ -511,7 +642,7 @@ pub fn handle_install(
             "drive": drive_path,
         }))?,
     ) else {
-        return Err(anyhow::anyhow!("app store: no read cap"));
+        return Err(anyhow::anyhow!("no read cap"));
     };
     let Some(write_cap) = get_capability(
         &Address::new(&our.node, ("vfs", "distro", "sys")),
@@ -520,13 +651,13 @@ pub fn handle_install(
             "drive": drive_path,
         }))?,
     ) else {
-        return Err(anyhow::anyhow!("app store: no write cap"));
+        return Err(anyhow::anyhow!("no write cap"));
     };
     let Some(networking_cap) = get_capability(
         &Address::new(&our.node, ("kernel", "distro", "sys")),
         &"\"network\"".to_string(),
     ) else {
-        return Err(anyhow::anyhow!("app store: no net cap"));
+        return Err(anyhow::anyhow!("no net cap"));
     };
     // first, for each process in manifest, initialize it
     // then, once all have been initialized, grant them requested caps
@@ -540,7 +671,7 @@ pub fn handle_install(
         let wasm_path = format!("{}{}", drive_path, wasm_path);
         let process_id = format!("{}:{}", entry.process_name, package_id);
         let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
-            return Err(anyhow::anyhow!("app store: invalid process id!"));
+            return Err(anyhow::anyhow!("invalid process id!"));
         };
         // kill process if it already exists
         Request::to(("our", "kernel", "distro", "sys"))
@@ -638,7 +769,7 @@ pub fn handle_install(
     for entry in &manifest {
         let process_id = format!("{}:{}", entry.process_name, package_id);
         let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
-            return Err(anyhow::anyhow!("app store: invalid process id!"));
+            return Err(anyhow::anyhow!("invalid process id!"));
         };
         for value in &entry.grant_capabilities {
             match value {

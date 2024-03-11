@@ -14,12 +14,14 @@ use {
     },
 };
 
-#[cfg(not(feature = "simulation-mode"))]
+//#[cfg(not(feature = "simulation-mode"))]
 mod types;
 #[cfg(not(feature = "simulation-mode"))]
 mod utils;
+//#[cfg(not(feature = "simulation-mode"))]
+pub use crate::net::types::*;
 #[cfg(not(feature = "simulation-mode"))]
-use crate::net::{types::*, utils::*};
+pub use crate::net::utils::*;
 #[cfg(not(feature = "simulation-mode"))]
 use lib::types::core::*;
 
@@ -887,19 +889,20 @@ async fn handle_local_message(
         Message::Response((response, _context)) => {
             // these are received as a router, when we send ConnectionRequests
             // to a node we do routing for.
-            match rmp_serde::from_slice::<NetResponses>(&response.body) {
-                Ok(NetResponses::Accepted(_)) => {
+            match rmp_serde::from_slice::<NetResponse>(&response.body) {
+                Ok(NetResponse::Accepted(_)) => {
                     // TODO anything here?
                 }
-                Ok(NetResponses::Rejected(to)) => {
+                Ok(NetResponse::Rejected(to)) => {
                     // drop from our pending map
                     // this will drop the socket, causing initiator to see it as failed
                     pending_passthroughs
                         .ok_or(anyhow!("got net response as non-router"))?
                         .remove(&(to, km.source.node));
                 }
-                Err(_) => {
-                    // this is usually the "delivered" response to a raw message
+                _ => {
+                    // this is the "delivered" response to a raw message,
+                    // or a response to a Get that was somehow given.. ignore
                 }
             }
             return Ok(());
@@ -907,16 +910,16 @@ async fn handle_local_message(
     };
 
     if km.source.node != our.name {
-        if let Ok(act) = rmp_serde::from_slice::<NetActions>(body) {
+        if let Ok(act) = rmp_serde::from_slice::<NetAction>(body) {
             match act {
-                NetActions::KnsBatchUpdate(_) | NetActions::KnsUpdate(_) => {
+                NetAction::KnsBatchUpdate(_) | NetAction::KnsUpdate(_) => {
                     // for now, we don't get these from remote.
                 }
-                NetActions::ConnectionRequest(from) => {
+                NetAction::ConnectionRequest(from) => {
                     // someone wants to open a passthrough with us through a router!
                     // if we are an indirect node, and source is one of our routers,
                     // respond by attempting to init a matching passthrough.
-                    let res: Result<NetResponses> = if our.allowed_routers.contains(&km.source.node)
+                    let res: Result<NetResponse> = if our.allowed_routers.contains(&km.source.node)
                     {
                         let router_id = peers
                             .get(&km.source.node)
@@ -940,9 +943,9 @@ async fn handle_local_message(
                             print_tx,
                         )
                         .await;
-                        Ok(NetResponses::Accepted(from.clone()))
+                        Ok(NetResponse::Accepted(from.clone()))
                     } else {
-                        Ok(NetResponses::Rejected(from.clone()))
+                        Ok(NetResponse::Rejected(from.clone()))
                     };
                     kernel_message_tx
                         .send(KernelMessage {
@@ -957,7 +960,7 @@ async fn handle_local_message(
                                 Response {
                                     inherit: false,
                                     body: rmp_serde::to_vec(
-                                        &res.unwrap_or(NetResponses::Rejected(from)),
+                                        &res.unwrap_or(NetResponse::Rejected(from)),
                                     )?,
                                     metadata: None,
                                     capabilities: vec![],
@@ -968,6 +971,9 @@ async fn handle_local_message(
                         })
                         .await?;
                 }
+                _ => {
+                    // we don't accept any other actions from remote
+                }
             }
             return Ok(());
         };
@@ -976,14 +982,12 @@ async fn handle_local_message(
         parse_hello_message(our, &km, body, kernel_message_tx, print_tx).await?;
         Ok(())
     } else {
-        // available commands: "peers", "pki", "names", "diagnostics"
-        // first parse as raw string, then deserialize to NetActions object
-        let mut printout = String::new();
-        match rmp_serde::from_slice::<NetActions>(body) {
-            Ok(NetActions::ConnectionRequest(_)) => {
+        let maybe_response = match rmp_serde::from_slice::<NetAction>(body)? {
+            NetAction::ConnectionRequest(_) => {
                 // we shouldn't receive these from ourselves.
+                None
             }
-            Ok(NetActions::KnsUpdate(log)) => {
+            NetAction::KnsUpdate(log) => {
                 pki.insert(
                     log.name.clone(),
                     Identity {
@@ -998,8 +1002,9 @@ async fn handle_local_message(
                     },
                 );
                 names.insert(log.node, log.name);
+                None
             }
-            Ok(NetActions::KnsBatchUpdate(log_list)) => {
+            NetAction::KnsBatchUpdate(log_list) => {
                 for log in log_list {
                     pki.insert(
                         log.name.clone(),
@@ -1016,96 +1021,70 @@ async fn handle_local_message(
                     );
                     names.insert(log.node, log.name);
                 }
+                None
             }
-            _ => match std::str::from_utf8(body) {
-                Ok("peers") => {
+            NetAction::GetPeers => Some(NetResponse::Peers(
+                peers
+                    .iter()
+                    .map(|p| p.identity.clone())
+                    .collect::<Vec<Identity>>(),
+            )),
+            NetAction::GetPeer(peer_name) => {
+                Some(NetResponse::Peer(pki.get(&peer_name).map(|p| p.clone())))
+            }
+            NetAction::GetName(namehash) => {
+                Some(NetResponse::Name(names.get(&namehash).map(|n| n.clone())))
+            }
+            NetAction::GetDiagnostics => {
+                let mut printout = String::new();
+                printout.push_str(&format!(
+                    "indexing from contract address {}\r\n",
+                    contract_address
+                ));
+                printout.push_str(&format!("our Identity: {:#?}\r\n", our));
+                printout.push_str("we have connections with peers:\r\n");
+                for peer in peers.iter() {
                     printout.push_str(&format!(
-                        "{:#?}",
-                        peers
-                            .iter()
-                            .map(|p| p.identity.name.clone())
-                            .collect::<Vec<_>>()
+                        "    {}, routing_for={}\r\n",
+                        peer.identity.name, peer.routing_for,
                     ));
                 }
-                Ok("pki") => {
-                    printout.push_str(&format!("{:#?}", pki));
-                }
-                Ok("names") => {
-                    printout.push_str(&format!("{:#?}", names));
-                }
-                Ok("diagnostics") => {
+                printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
+                if pending_passthroughs.is_some() {
                     printout.push_str(&format!(
-                        "indexing from contract address {}\r\n",
-                        contract_address
+                        "we have {} pending passthrough connections\r\n",
+                        pending_passthroughs.unwrap().len()
                     ));
-                    printout.push_str(&format!("our Identity: {:#?}\r\n", our));
-                    printout.push_str("we have connections with peers:\r\n");
-                    for peer in peers.iter() {
-                        printout.push_str(&format!(
-                            "    {}, routing_for={}\r\n",
-                            peer.identity.name, peer.routing_for,
-                        ));
-                    }
-                    printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
-                    if pending_passthroughs.is_some() {
-                        printout.push_str(&format!(
-                            "we have {} pending passthrough connections\r\n",
-                            pending_passthroughs.unwrap().len()
-                        ));
-                    }
-                    if forwarding_connections.is_some() {
-                        printout.push_str(&format!(
-                            "we have {} open passthrough connections\r\n",
-                            forwarding_connections.unwrap().len()
-                        ));
-                    }
                 }
-                Ok(other) => {
-                    // parse non-commands as a request to fetch networking data
-                    // about a specific node name
-                    printout.push_str(&format!("net: printing known identity for {}\r\n", other));
-                    match pki.get(other) {
-                        Some(id) => {
-                            printout.push_str(&format!("{:#?}", *id));
-                        }
-                        None => {
-                            printout.push_str("no such identity known!");
-                        }
-                    }
+                if forwarding_connections.is_some() {
+                    printout.push_str(&format!(
+                        "we have {} open passthrough connections\r\n",
+                        forwarding_connections.unwrap().len()
+                    ));
                 }
-                _ => {}
-            },
-        }
-        if !printout.is_empty() {
-            if let Message::Request(req) = km.message {
-                if req.expects_response.is_some() {
-                    kernel_message_tx
-                        .send(KernelMessage {
-                            id: km.id,
-                            source: Address {
-                                node: our.name.clone(),
-                                process: ProcessId::new(Some("net"), "distro", "sys"),
-                            },
-                            target: km.rsvp.unwrap_or(km.source),
-                            rsvp: None,
-                            message: Message::Response((
-                                Response {
-                                    inherit: false,
-                                    body: printout.clone().into_bytes(),
-                                    metadata: None,
-                                    capabilities: vec![],
-                                },
-                                None,
-                            )),
-                            lazy_load_blob: None,
-                        })
-                        .await?;
-                }
+                Some(NetResponse::Diagnostics(printout))
             }
-            print_tx
-                .send(Printout {
-                    verbosity: 0,
-                    content: printout,
+        };
+        if let Some(response_body) = maybe_response {
+            kernel_message_tx
+                .send(KernelMessage {
+                    id: km.id,
+                    source: Address {
+                        node: our.name.clone(),
+                        process: ProcessId::new(Some("net"), "distro", "sys"),
+                    },
+                    target: km.rsvp.unwrap_or(km.source),
+                    rsvp: None,
+                    message: Message::Response((
+                        Response {
+                            inherit: false,
+                            body: rmp_serde::to_vec(&response_body)?,
+                            metadata: None,
+                            capabilities: vec![],
+                        },
+                        None,
+                    )),
+                    lazy_load_blob: None,
                 })
                 .await?;
         }

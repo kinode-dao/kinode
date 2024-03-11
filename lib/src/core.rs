@@ -547,8 +547,8 @@ fn display_message(m: &Message, delimiter: &str) -> String {
                 format!("expects_response: {:?},", request.expects_response),
                 format!(
                     "body: {},",
-                    match serde_json::from_slice::<serde_json::Value>(&request.body) {
-                        Ok(json) => format!("{}", json),
+                    match std::str::from_utf8(&request.body) {
+                        Ok(str) => str.to_string(),
                         Err(_) => format!("{:?}", request.body),
                     }
                 ),
@@ -749,16 +749,13 @@ pub type DebugReceiver = tokio::sync::mpsc::Receiver<DebugCommand>;
 pub type CapMessageSender = tokio::sync::mpsc::Sender<CapMessage>;
 pub type CapMessageReceiver = tokio::sync::mpsc::Receiver<CapMessage>;
 
+pub type ProcessMessageSender = tokio::sync::mpsc::Sender<Result<KernelMessage, WrappedSendError>>;
+pub type ProcessMessageReceiver =
+    tokio::sync::mpsc::Receiver<Result<KernelMessage, WrappedSendError>>;
+
 //
 // types used for onchain identity system
 //
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Registration {
-    pub username: NodeId,
-    pub password: String,
-    pub direct: bool,
-}
 
 #[derive(Debug)]
 pub struct Keyfile {
@@ -771,7 +768,7 @@ pub struct Keyfile {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyfileVet {
-    pub password: String,
+    pub password_hash: String,
     pub keyfile: String,
 }
 
@@ -784,26 +781,30 @@ pub struct KeyfileVetted {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BootInfo {
-    pub password: String,
+    pub password_hash: String,
     pub username: String,
     pub reset: bool,
     pub direct: bool,
+    pub owner: String,
+    pub signature: String,
+    pub timestamp: u64,
+    pub chain_id: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportKeyfileInfo {
-    pub password: String,
+    pub password_hash: String,
     pub keyfile: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginInfo {
-    pub password: String,
+    pub password_hash: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginAndResetInfo {
-    pub password: String,
+    pub password_hash: String,
     pub direct: bool,
 }
 
@@ -819,16 +820,6 @@ pub struct Identity {
 pub struct UnencryptedIdentity {
     pub name: NodeId,
     pub allowed_routers: Vec<NodeId>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IdentityTransaction {
-    pub from: String,
-    pub signature: Option<String>,
-    pub to: String, // contract address
-    pub town_id: u32,
-    pub calldata: Identity,
-    pub nonce: String,
 }
 
 //
@@ -928,6 +919,11 @@ pub enum KernelCommand {
         target: ProcessId,
         capabilities: Vec<Capability>,
     },
+    /// Drop capabilities. Does nothing if process doesn't have these caps
+    DropCapabilities {
+        target: ProcessId,
+        capabilities: Vec<Capability>,
+    },
     /// Tell the kernel to run a process that has already been installed.
     /// TODO: in the future, this command could be extended to allow for
     /// resource provision.
@@ -966,10 +962,10 @@ pub enum CapMessage {
         caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
-    _Drop {
-        // not used yet!
+    /// root delete: uncritically remove all `caps` from `on`
+    Drop {
         on: ProcessId,
-        cap: Capability,
+        caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<bool>,
     },
     /// does `on` have `cap` in its store?
@@ -984,6 +980,11 @@ pub enum CapMessage {
         on: ProcessId,
         responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
+    /// Remove all caps issued by `on` from every process on the entire system
+    RevokeAll {
+        on: ProcessId,
+        responder: tokio::sync::oneshot::Sender<bool>,
+    },
     /// before `on` sends a message, filter out any bogus caps it may have attached, sign any new
     /// caps it may have created, and retreive the signature for the caps in its store.
     FilterCaps {
@@ -992,6 +993,8 @@ pub enum CapMessage {
         responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
 }
+
+pub type ReverseCapIndex = HashMap<ProcessId, HashMap<ProcessId, Vec<Capability>>>;
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
 
@@ -1030,25 +1033,47 @@ impl std::fmt::Display for PersistedProcess {
     }
 }
 
+/// Represents the metadata associated with a kinode package, which is an ERC721 compatible token.
+/// This is deserialized from the `metadata.json` file in a package.
+/// Fields:
+/// - `name`: An optional field representing the display name of the package. This does not have to be unique, and is not used for identification purposes.
+/// - `description`: An optional field providing a description of the package.
+/// - `image`: An optional field containing a URL to an image representing the package.
+/// - `external_url`: An optional field containing a URL for more information about the package. For example, a link to the github repository.
+/// - `animation_url`: An optional field containing a URL to an animation or video representing the package.
+/// - `properties`: A requried field containing important information about the package.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ProcessContext {
-    // store ultimate in order to set prompting message if needed
-    pub prompting_message: Option<KernelMessage>,
-    // can be empty if a request doesn't set context, but still needs to inherit
-    pub context: Option<Context>,
+pub struct Erc721Metadata {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub image: Option<String>,
+    pub external_url: Option<String>,
+    pub animation_url: Option<String>,
+    pub properties: Erc721Properties,
 }
 
-pub type PackageVersion = (u32, u32, u32);
-
-/// the type that gets deserialized from `metadata.json` in a package
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PackageMetadata {
-    pub package: String,
+/// Represents critical fields of a kinode package in an ERC721 compatible format.
+/// This follows the [ERC1155](https://github.com/ethereum/ercs/blob/master/ERCS/erc-1155.md#erc-1155-metadata-uri-json-schema) metadata standard.
+///
+/// Fields:
+/// - `package_name`: The unique name of the package, used in the `PackageId`, e.g. `package_name:publisher`.
+/// - `publisher`: The KNS identity of the package publisher used in the `PackageId`, e.g. `package_name:publisher`
+/// - `current_version`: A string representing the current version of the package, e.g. `1.0.0`.
+/// - `mirrors`: A list of NodeIds where the package can be found, providing redundancy.
+/// - `code_hashes`: A map from version names to their respective SHA-256 hashes.
+/// - `license`: An optional field containing the license of the package.
+/// - `screenshots`: An optional field containing a list of URLs to screenshots of the package.
+/// - `wit_version`: An optional field containing the version of the WIT standard that the package adheres to.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Erc721Properties {
+    pub package_name: String,
     pub publisher: String,
-    pub version: PackageVersion,
+    pub current_version: String,
+    pub mirrors: Vec<NodeId>,
+    pub code_hashes: HashMap<String, String>,
+    pub license: Option<String>,
+    pub screenshots: Option<Vec<String>>,
     pub wit_version: Option<(u32, u32, u32)>,
-    pub description: Option<String>,
-    pub website: Option<String>,
 }
 
 /// the type that gets deserialized from each entry in the array in `manifest.json`
@@ -1481,4 +1506,63 @@ impl From<tokio::sync::mpsc::error::SendError<CapMessage>> for SqliteError {
             error: err.to_string(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TimerAction {
+    Debug,
+    SetTimer(u64),
+}
+
+//
+// networking protocol types
+//
+
+/// Must be parsed from message pack vector.
+/// all Get actions must be sent from local process. used for debugging
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum NetAction {
+    /// Received from a router of ours when they have a new pending passthrough for us.
+    /// We should respond (if we desire) by using them to initialize a routed connection
+    /// with the NodeId given.
+    ConnectionRequest(NodeId),
+    /// can only receive from trusted source, for now just ourselves locally,
+    /// in the future could get from remote provider
+    KnsUpdate(KnsUpdate),
+    KnsBatchUpdate(Vec<KnsUpdate>),
+    /// get a list of peers we are connected to
+    GetPeers,
+    /// get the [`Identity`] struct for a single peer
+    GetPeer(String),
+    /// get the [`NodeId`] associated with a given namehash, if any
+    GetName(String),
+    /// get a user-readable diagnostics string containing networking inforamtion
+    GetDiagnostics,
+}
+
+/// For now, only sent in response to a ConnectionRequest.
+/// Must be parsed from message pack vector
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum NetResponse {
+    Accepted(NodeId),
+    Rejected(NodeId),
+    /// response to [`NetAction::GetPeers`]
+    Peers(Vec<Identity>),
+    /// response to [`NetAction::GetPeer`]
+    Peer(Option<Identity>),
+    /// response to [`NetAction::GetName`]
+    Name(Option<String>),
+    /// response to [`NetAction::GetDiagnostics`]. A user-readable string.
+    Diagnostics(String),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct KnsUpdate {
+    pub name: String, // actual username / domain name
+    pub owner: String,
+    pub node: String, // hex namehash of node
+    pub public_key: String,
+    pub ip: String,
+    pub port: u16,
+    pub routers: Vec<String>,
 }

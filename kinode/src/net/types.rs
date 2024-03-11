@@ -1,13 +1,12 @@
 use dashmap::DashMap;
 use futures::stream::{SplitSink, SplitStream};
+use lib::types::core::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::{tungstenite, MaybeTlsStream, WebSocketStream};
-
-use lib::types::core::*;
 
 /// Sent to a node when you want to connect directly to them.
 /// Sent in the 'e, ee, s, es' and 's, se' phases of XX noise protocol pattern.
@@ -85,36 +84,4 @@ pub struct Peer {
     /// associated with them. We can send them prompts to establish Passthroughs.
     pub routing_for: bool,
     pub sender: UnboundedSender<KernelMessage>,
-}
-
-/// Must be parsed from message pack vector.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NetActions {
-    /// Received from a router of ours when they have a new pending passthrough for us.
-    /// We should respond (if we desire) by using them to initialize a routed connection
-    /// with the NodeId given.
-    ConnectionRequest(NodeId),
-    /// can only receive from trusted source, for now just ourselves locally,
-    /// in the future could get from remote provider
-    KnsUpdate(KnsUpdate),
-    KnsBatchUpdate(Vec<KnsUpdate>),
-}
-
-/// For now, only sent in response to a ConnectionRequest.
-/// Must be parsed from message pack vector
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NetResponses {
-    Accepted(NodeId),
-    Rejected(NodeId),
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct KnsUpdate {
-    pub name: String, // actual username / domain name
-    pub owner: String,
-    pub node: String, // hex namehash of node
-    pub public_key: String,
-    pub ip: String,
-    pub port: u16,
-    pub routers: Vec<String>,
 }

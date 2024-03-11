@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 extern crate base64;
 
+const ICON: &str = include_str!("icon");
+
 //
 // Our "chess protocol" request/response format. We'll always serialize these
 // to a byte vector and send them over IPC.
@@ -108,7 +110,24 @@ call_init!(initialize);
 
 fn initialize(our: Address) {
     // A little printout to show in terminal that the process has started.
-    println!("{}: started", our.package());
+    println!("started");
+
+    // add ourselves to the homepage
+    Request::to(("our", "homepage", "homepage", "sys"))
+        .body(
+            serde_json::json!({
+                "Add": {
+                    "label": "Chess",
+                    "icon": ICON,
+                    "path": "/", // just our root
+                }
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
+        )
+        .send()
+        .unwrap();
 
     // Serve the index.html and other UI files found in pkg/ui at the root path.
     // authenticated=true, local_only=false
@@ -133,12 +152,12 @@ fn main_loop(our: &Address, state: &mut ChessState) {
         // this and surface it to the user.
         match await_message() {
             Err(send_error) => {
-                println!("{our}: got network error: {send_error:?}");
+                println!("got network error: {send_error:?}");
                 continue;
             }
             Ok(message) => match handle_request(&our, &message, state) {
                 Ok(()) => continue,
-                Err(e) => println!("{our}: error handling request: {:?}", e),
+                Err(e) => println!("error handling request: {:?}", e),
             },
         }
     }
@@ -189,11 +208,11 @@ fn handle_request(our: &Address, message: &Message, state: &mut ChessState) -> a
                             None,
                             "Service Unavailable".to_string().as_bytes().to_vec(),
                         );
-                        Err(anyhow::anyhow!("chess: error handling http request: {e:?}"))
+                        Err(anyhow::anyhow!("error handling http request: {e:?}"))
                     }
                 }
             }
-            http::HttpServerRequest::WebSocketOpen { path, channel_id } => {
+            http::HttpServerRequest::WebSocketOpen { channel_id, .. } => {
                 // We know this is authenticated and unencrypted because we only
                 // bound one path, the root path. So we know that client
                 // frontend opened a websocket and can send updates
@@ -228,7 +247,7 @@ fn handle_chess_request(
     state: &mut ChessState,
     action: &ChessRequest,
 ) -> anyhow::Result<()> {
-    println!("chess: handling action from {source_node}: {action:?}");
+    println!("handling action from {source_node}: {action:?}");
 
     // For simplicity's sake, we'll just use the node we're playing with as the game id.
     // This limits us to one active game per partner.
@@ -419,7 +438,7 @@ fn handle_http_request(
     state: &mut ChessState,
     http_request: &http::IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    if http_request.path()? != "/games" {
+    if http_request.bound_path(Some(&our.process.to_string())) != "/games" {
         http::send_response(
             http::StatusCode::NOT_FOUND,
             None,
@@ -454,6 +473,7 @@ fn handle_http_request(
                     vec![],
                 ));
             };
+
             if let Some(game) = state.games.get(game_id)
                 && !game.ended
             {

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use kinode_process_lib::{
-    await_message, our_capabilities, println, spawn, vfs,
+    await_message, call_init, our_capabilities, println, spawn, vfs,
     vfs::{DirEntry, FileType},
     Address, Message, OnExit, ProcessId, Request, Response,
 };
@@ -48,11 +48,10 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                             path: dir_prefix.into(),
                             action: vfs::VfsAction::ReadDir,
                         })?)
-                        .send_and_await_response(test_timeout)?
-                        .unwrap();
+                        .send_and_await_response(test_timeout)??;
 
                     let Message::Response { body: vfs_body, .. } = response else {
-                        panic!("")
+                        fail!("test_runner");
                     };
                     let vfs::VfsResponse::ReadDir(mut children) =
                         serde_json::from_slice(&vfs_body)?
@@ -61,7 +60,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                             "{:?}",
                             serde_json::from_slice::<serde_json::Value>(&vfs_body)?
                         );
-                        panic!("")
+                        fail!("test_runner");
                     };
 
                     for test_name in test_names {
@@ -85,7 +84,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                             None => std::collections::HashMap::new(),
                             Some(caps_index) => {
                                 children.remove(caps_index);
-                                let file = vfs::file::open_file(&caps_file_path, false)?;
+                                let file = vfs::file::open_file(&caps_file_path, false, None)?;
                                 let file_contents = file.read()?;
                                 serde_json::from_slice(&file_contents)?
                             }
@@ -116,7 +115,7 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                             Ok(child_process_id) => child_process_id,
                             Err(e) => {
                                 println!("couldn't spawn {}: {}", test_path, e);
-                                panic!("couldn't spawn"); //  TODO
+                                fail!("test_runner");
                             }
                         };
 
@@ -126,11 +125,10 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                                 process: child_process_id,
                             })
                             .body(body.clone())
-                            .send_and_await_response(test_timeout)?
-                            .unwrap();
+                            .send_and_await_response(test_timeout)??;
 
                         let Message::Response { body, .. } = response else {
-                            panic!("")
+                            fail!("test_runner");
                         };
                         match serde_json::from_slice(&body)? {
                             tt::TesterResponse::Pass => {}
@@ -149,12 +147,11 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
                     println!("test_runner: done running {:?}", children);
 
                     Response::new()
-                        .body(serde_json::to_vec(&tt::TesterResponse::Pass).unwrap())
-                        .send()
-                        .unwrap();
+                        .body(serde_json::to_vec(&tt::TesterResponse::Pass)?)
+                        .send()?;
                 }
                 tt::TesterRequest::KernelMessage(_) | tt::TesterRequest::GetFullMessage(_) => {
-                    unimplemented!()
+                    fail!("test_runner");
                 }
             }
             Ok(())
@@ -162,21 +159,17 @@ fn handle_message(our: &Address) -> anyhow::Result<()> {
     }
 }
 
-struct Component;
-impl Guest for Component {
-    fn init(our: String) {
-        println!("{:?}@test_runner: begin", our);
+call_init!(init);
+fn init(our: Address) {
+    println!("{}: begin", our);
 
-        let our: Address = our.parse().unwrap();
-
-        loop {
-            match handle_message(&our) {
-                Ok(()) => {}
-                Err(e) => {
-                    println!("test_runner: error: {:?}", e);
-                    fail!("test_runner");
-                }
-            };
-        }
+    loop {
+        match handle_message(&our) {
+            Ok(()) => {}
+            Err(e) => {
+                println!("test_runner: error: {:?}", e);
+                fail!("test_runner");
+            }
+        };
     }
 }

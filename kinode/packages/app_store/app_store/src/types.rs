@@ -1,5 +1,6 @@
-use alloy_rpc_types::Log;
+use crate::LocalRequest;
 use alloy_sol_types::{sol, SolEvent};
+use kinode_process_lib::eth::Log;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::{println, *};
 use serde::{Deserialize, Serialize};
@@ -49,22 +50,7 @@ pub struct PackageListing {
     pub name: String,
     pub publisher: NodeId,
     pub metadata_hash: String,
-    pub metadata: Option<OnchainPackageMetadata>,
-}
-
-/// metadata derived from metadata hash in listing event
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct OnchainPackageMetadata {
-    pub name: Option<String>,
-    pub subtitle: Option<String>,
-    pub description: Option<String>,
-    pub image: Option<String>,
-    pub version: Option<String>,
-    pub license: Option<String>,
-    pub website: Option<String>,
-    pub screenshots: Option<Vec<String>>,
-    pub mirrors: Option<Vec<NodeId>>,
-    pub versions: Option<Vec<String>>,
+    pub metadata: Option<kt::Erc721Metadata>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -85,12 +71,14 @@ pub struct PackageState {
     /// the version of the package we have downloaded
     pub our_version: String,
     pub installed: bool,
+    pub verified: bool,
     pub caps_approved: bool,
+    pub manifest_hash: Option<String>,
     /// are we serving this package to others?
     pub mirroring: bool,
     /// if we get a listing data update, will we try to download it?
     pub auto_update: bool,
-    pub metadata: Option<OnchainPackageMetadata>,
+    pub metadata: Option<kt::Erc721Metadata>,
 }
 
 /// this process's saved state
@@ -120,7 +108,7 @@ impl State {
     /// To create a new state, we populate the downloaded_packages map
     /// with all packages parseable from our filesystem.
     pub fn new(contract_address: String) -> anyhow::Result<Self> {
-        crate::print_to_terminal(1, "app store: producing new state");
+        crate::print_to_terminal(1, "producing new state");
         let mut state = State {
             contract_address,
             last_saved_block: 1,
@@ -128,10 +116,7 @@ impl State {
             listed_packages: HashMap::new(),
             downloaded_packages: HashMap::new(),
         };
-        crate::print_to_terminal(
-            1,
-            &format!("populate: {:?}", state.populate_packages_from_filesystem()),
-        );
+        state.populate_packages_from_filesystem()?;
         Ok(state)
     }
 
@@ -171,7 +156,7 @@ impl State {
     pub fn add_downloaded_package(
         &mut self,
         package_id: &PackageId,
-        package_state: PackageState,
+        mut package_state: PackageState,
         package_bytes: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         if let Some(package_bytes) = package_bytes {
@@ -215,6 +200,14 @@ impl State {
                 })?)
                 .blob(blob)
                 .send_and_await_response(5)??;
+
+            let manifest_file = vfs::File {
+                path: format!("/{}/pkg/manifest.json", package_id),
+                timeout: 5,
+            };
+            let manifest_bytes = manifest_file.read()?;
+            let manifest_hash = generate_metadata_hash(&manifest_bytes);
+            package_state.manifest_hash = Some(manifest_hash);
         }
         self.downloaded_packages
             .insert(package_id.to_owned(), package_state);
@@ -276,12 +269,10 @@ impl State {
             return Err(anyhow::anyhow!("vfs: bad response"));
         };
         let response = serde_json::from_slice::<vfs::VfsResponse>(&body)?;
-        crate::print_to_terminal(1, &format!("vfs response: {:?}", response));
         let vfs::VfsResponse::ReadDir(entries) = response else {
             return Err(anyhow::anyhow!("vfs: unexpected response: {:?}", response));
         };
         for entry in entries {
-            crate::print_to_terminal(1, &format!("entry: {:?}", entry));
             // ignore non-package dirs
             let Ok(package_id) = entry.path.parse::<PackageId>() else {
                 continue;
@@ -289,6 +280,7 @@ impl State {
             if entry.file_type == vfs::FileType::Directory {
                 let zip_file = vfs::File {
                     path: format!("/{}/pkg/{}.zip", package_id, package_id),
+                    timeout: 5,
                 };
                 let Ok(zip_file_bytes) = zip_file.read() else {
                     continue;
@@ -296,6 +288,11 @@ impl State {
                 // generate entry from this data
                 // for the version hash, take the SHA-256 hash of the zip file
                 let our_version = generate_version_hash(&zip_file_bytes);
+                let manifest_file = vfs::File {
+                    path: format!("/{}/pkg/manifest.json", package_id),
+                    timeout: 5,
+                };
+                let manifest_bytes = manifest_file.read()?;
                 // the user will need to turn mirroring and auto-update back on if they
                 // have to reset the state of their app store for some reason. the apps
                 // themselves will remain on disk unless explicitly deleted.
@@ -305,7 +302,9 @@ impl State {
                         mirrored_from: None,
                         our_version,
                         installed: true,
+                        verified: true,      // implicity verified
                         caps_approved: true, // since it's already installed this must be true
+                        manifest_hash: Some(generate_metadata_hash(&manifest_bytes)),
                         mirroring: false,
                         auto_update: false,
                         metadata: None,
@@ -357,15 +356,19 @@ impl State {
         self.downloaded_packages.remove(package_id);
         crate::set_state(&bincode::serialize(self)?);
 
-        println!("app store: uninstalled {package_id}");
+        println!("uninstalled {package_id}");
         Ok(())
     }
 
     /// only saves state if last_saved_block is more than 1000 blocks behind
-    pub fn ingest_listings_contract_event(&mut self, log: Log) -> anyhow::Result<()> {
+    pub fn ingest_listings_contract_event(
+        &mut self,
+        our: &Address,
+        log: Log,
+    ) -> anyhow::Result<()> {
         let block_number: u64 = log
             .block_number
-            .ok_or(anyhow::anyhow!("app store: got log with no block number"))?
+            .ok_or(anyhow::anyhow!("got log with no block number"))?
             .try_into()?;
 
         // let package_hash: alloy_primitives::U256 = log.topics[1].into();
@@ -382,26 +385,31 @@ impl State {
                 crate::print_to_terminal(
                     1,
                     &format!(
-                        "app registered with publisher_dnswire {:?}, package_hash {}, package_name {}, metadata_url {}, metadata_hash {}",
-                        publisher_dnswire, package_hash, package_name, metadata_url, metadata_hash
-                    )
+                        "app registered with package_name {}, metadata_url {}, metadata_hash {}",
+                        package_name, metadata_url, metadata_hash
+                    ),
                 );
 
                 if generate_package_hash(&package_name, publisher_dnswire.as_slice())
                     != package_hash
                 {
-                    return Err(anyhow::anyhow!(
-                        "app store: got log with mismatched package hash"
-                    ));
+                    return Err(anyhow::anyhow!("got log with mismatched package hash"));
                 }
 
                 let Ok(publisher_name) = dnswire_decode(publisher_dnswire.as_slice()) else {
-                    return Err(anyhow::anyhow!(
-                        "app store: got log with invalid publisher name"
-                    ));
+                    return Err(anyhow::anyhow!("got log with invalid publisher name"));
                 };
 
                 let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
+
+                if let Some(metadata) = &metadata {
+                    if metadata.properties.publisher != publisher_name {
+                        return Err(anyhow::anyhow!(format!(
+                            "metadata publisher name mismatch: got {}, expected {}",
+                            metadata.properties.publisher, publisher_name
+                        )));
+                    }
+                }
 
                 let listing = match self.get_listing_with_hash_mut(&package_hash) {
                     Some(current_listing) => {
@@ -427,49 +435,60 @@ impl State {
                     AppMetadataUpdated::abi_decode_data(&log.data, false)?;
                 let metadata_hash = metadata_hash.to_string();
 
-                crate::print_to_terminal(
-                    1,
-                    &format!(
-                        "app metadata updated with package_hash {}, metadata_url {}, metadata_hash {}",
-                        package_hash, metadata_url, metadata_hash
-                    )
-                );
-
                 let current_listing = self
                     .get_listing_with_hash_mut(&package_hash.to_string())
-                    .ok_or(anyhow::anyhow!(
-                        "app store: got log with no matching listing"
-                    ))?;
+                    .ok_or(anyhow::anyhow!("got log with no matching listing"))?;
 
                 let metadata = match fetch_metadata(&metadata_url, &metadata_hash) {
-                    Ok(metadata) => Some(metadata),
+                    Ok(metadata) => {
+                        if metadata.properties.publisher != current_listing.publisher {
+                            return Err(anyhow::anyhow!(format!(
+                                "metadata publisher name mismatch: got {}, expected {}",
+                                metadata.properties.publisher, current_listing.publisher
+                            )));
+                        }
+                        Some(metadata)
+                    }
                     Err(e) => {
-                        crate::print_to_terminal(
-                            1,
-                            &format!("app store: failed to fetch metadata: {e:?}"),
-                        );
+                        crate::print_to_terminal(1, &format!("failed to fetch metadata: {e:?}"));
                         None
                     }
                 };
 
                 current_listing.metadata_hash = metadata_hash;
                 current_listing.metadata = metadata;
+
+                let package_id = PackageId::new(&current_listing.name, &current_listing.publisher);
+
+                // if we have this app installed, and we have auto_update set to true,
+                // we should try to download new version from the mirrored_from node
+                // and install it if successful.
+                if let Some(package_state) = self.downloaded_packages.get(&package_id) {
+                    if package_state.auto_update {
+                        if let Some(mirrored_from) = &package_state.mirrored_from {
+                            crate::print_to_terminal(
+                                1,
+                                &format!("auto-updating package {package_id} from {mirrored_from}"),
+                            );
+                            Request::to(our)
+                                .body(serde_json::to_vec(&LocalRequest::Download {
+                                    package: package_id,
+                                    download_from: mirrored_from.clone(),
+                                    mirror: package_state.mirroring,
+                                    auto_update: package_state.auto_update,
+                                    desired_version_hash: None,
+                                })?)
+                                .send()?;
+                        }
+                    }
+                }
             }
             Transfer::SIGNATURE_HASH => {
                 let from = alloy_primitives::Address::from_word(log.topics[1]);
                 let to = alloy_primitives::Address::from_word(log.topics[2]);
                 let package_hash = log.topics[3].to_string();
 
-                crate::print_to_terminal(
-                    1,
-                    &format!(
-                        "handling transfer from {} to {} of pkghash {}",
-                        from, to, package_hash
-                    ),
-                );
-
                 if from == alloy_primitives::Address::ZERO {
-                    crate::print_to_terminal(1, "transfer from 0 address: new app listed");
                     match self.get_listing_with_hash_mut(&package_hash) {
                         Some(current_listing) => {
                             current_listing.owner = to.to_string();
@@ -486,15 +505,11 @@ impl State {
                         }
                     }
                 } else if to == alloy_primitives::Address::ZERO {
-                    crate::print_to_terminal(1, "transfer to 0 address: deleting listing");
                     self.delete_listing(&package_hash);
                 } else {
-                    crate::print_to_terminal(1, "transferring listing");
-                    let current_listing =
-                        self.get_listing_with_hash_mut(&package_hash)
-                            .ok_or(anyhow::anyhow!(
-                                "app store: got log with no matching listing"
-                            ))?;
+                    let current_listing = self
+                        .get_listing_with_hash_mut(&package_hash)
+                        .ok_or(anyhow::anyhow!("got log with no matching listing"))?;
                     current_listing.owner = to.to_string();
                 }
             }
@@ -538,10 +553,7 @@ fn dnswire_decode(wire_format_bytes: &[u8]) -> Result<String, std::string::FromU
 }
 
 /// fetch metadata from metadata_url and verify it matches metadata_hash
-fn fetch_metadata(
-    metadata_url: &str,
-    metadata_hash: &str,
-) -> anyhow::Result<OnchainPackageMetadata> {
+fn fetch_metadata(metadata_url: &str, metadata_hash: &str) -> anyhow::Result<kt::Erc721Metadata> {
     let url = url::Url::parse(metadata_url)?;
     let _response = http::send_request_await_response(http::Method::GET, url, None, 5, vec![])?;
     let Some(body) = get_blob() else {
@@ -549,9 +561,7 @@ fn fetch_metadata(
     };
     let hash = generate_metadata_hash(&body.bytes);
     if &hash == metadata_hash {
-        Ok(serde_json::from_slice::<OnchainPackageMetadata>(
-            &body.bytes,
-        )?)
+        Ok(serde_json::from_slice::<kt::Erc721Metadata>(&body.bytes)?)
     } else {
         Err(anyhow::anyhow!(
             "metadata hash mismatch: got {hash}, expected {metadata_hash}"

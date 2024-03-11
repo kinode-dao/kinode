@@ -40,7 +40,8 @@ type PathBindings = Arc<RwLock<Router<BoundPath>>>;
 type WsPathBindings = Arc<RwLock<Router<BoundWsPath>>>;
 
 struct BoundPath {
-    pub app: ProcessId,
+    pub app: Option<ProcessId>, // if None, path has been unbound
+    pub path: String,
     pub secure_subdomain: Option<String>,
     pub authenticated: bool,
     pub local_only: bool,
@@ -48,7 +49,7 @@ struct BoundPath {
 }
 
 struct BoundWsPath {
-    pub app: ProcessId,
+    pub app: Option<ProcessId>, // if None, path has been unbound
     pub secure_subdomain: Option<String>,
     pub authenticated: bool,
     pub encrypted: bool, // TODO use
@@ -185,17 +186,19 @@ pub async fn http_server(
     let jwt_secret_bytes = Arc::new(jwt_secret_bytes);
     let http_response_senders: HttpResponseSenders = Arc::new(DashMap::new());
     let ws_senders: WebSocketSenders = Arc::new(DashMap::new());
+    let path = format!("/rpc:distro:sys/message");
 
     // add RPC path
     let mut bindings_map: Router<BoundPath> = Router::new();
     let rpc_bound_path = BoundPath {
-        app: ProcessId::new(Some("rpc"), "distro", "sys"),
+        app: Some(ProcessId::new(Some("rpc"), "distro", "sys")),
+        path: path.clone(),
         secure_subdomain: None, // TODO maybe RPC should have subdomain?
         authenticated: false,
         local_only: true,
         static_content: None,
     };
-    bindings_map.add("/rpc:distro:sys/message", rpc_bound_path);
+    bindings_map.add(&path, rpc_bound_path);
     let path_bindings: PathBindings = Arc::new(RwLock::new(bindings_map));
 
     // ws path bindings
@@ -326,7 +329,7 @@ async fn login_handler(
         password: "secret".to_string(),
     };
 
-    match keygen::decode_keyfile(&encoded_keyfile, &info.password) {
+    match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
         Ok(keyfile) => {
             let token = match register::generate_jwt(&keyfile.jwt_secret_bytes, our.as_ref()) {
                 Some(token) => token,
@@ -381,7 +384,7 @@ async fn ws_handler(
     let original_path = normalize_path(path.as_str());
     let _ = print_tx
         .send(Printout {
-            verbosity: 1,
+            verbosity: 2,
             content: format!("http_server: got ws request for {original_path}"),
         })
         .await;
@@ -394,10 +397,14 @@ async fn ws_handler(
     };
 
     let bound_path = route.handler();
+    let Some(app) = bound_path.app.clone() else {
+        return Err(warp::reject::not_found());
+    };
+
     if let Some(ref subdomain) = bound_path.secure_subdomain {
         let _ = print_tx
             .send(Printout {
-                verbosity: 1,
+                verbosity: 2,
                 content: format!(
                     "http_server: ws request for {original_path} bound by subdomain {subdomain}"
                 ),
@@ -432,7 +439,6 @@ async fn ws_handler(
         return Err(warp::reject::reject());
     }
 
-    let app = bound_path.app.clone();
     let extension = bound_path.extension;
 
     drop(ws_path_bindings);
@@ -478,7 +484,7 @@ async fn http_handler(
     let original_path = normalize_path(path.as_str());
     let _ = print_tx
         .send(Printout {
-            verbosity: 1,
+            verbosity: 2,
             content: format!("http_server: got request for path {original_path}"),
         })
         .await;
@@ -489,13 +495,17 @@ async fn http_handler(
     let Ok(route) = path_bindings.recognize(&original_path) else {
         let _ = print_tx
             .send(Printout {
-                verbosity: 1,
+                verbosity: 2,
                 content: format!("http_server: no route found for {original_path}"),
             })
             .await;
         return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
     };
     let bound_path = route.handler();
+
+    let Some(app) = &bound_path.app else {
+        return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
+    };
 
     if bound_path.authenticated
         && !auth_cookie_valid(
@@ -507,7 +517,7 @@ async fn http_handler(
         // redirect to login page so they can get an auth token
         let _ = print_tx
             .send(Printout {
-                verbosity: 1,
+                verbosity: 2,
                 content: format!(
                     "http_server: redirecting request from {socket_addr:?} to login page"
                 ),
@@ -529,7 +539,7 @@ async fn http_handler(
     if let Some(ref subdomain) = bound_path.secure_subdomain {
         let _ = print_tx
             .send(Printout {
-                verbosity: 1,
+                verbosity: 2,
                 content: format!(
                     "http_server: request for {original_path} bound by subdomain {subdomain}"
                 ),
@@ -575,7 +585,7 @@ async fn http_handler(
     // RPC functionality: if path is /rpc:distro:sys/message,
     // we extract message from base64 encoded bytes in data
     // and send it to the correct app.
-    let (message, is_fire_and_forget) = if bound_path.app == "rpc:distro:sys" {
+    let (message, is_fire_and_forget) = if app == &"rpc:distro:sys" {
         match handle_rpc_message(our, id, body, print_tx).await {
             Ok((message, is_fire_and_forget)) => (message, is_fire_and_forget),
             Err(e) => {
@@ -584,6 +594,11 @@ async fn http_handler(
         }
     } else {
         // otherwise, make a message to the correct app
+        let url_params: HashMap<String, String> = route
+            .params()
+            .into_iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect();
         (
             KernelMessage {
                 id,
@@ -593,7 +608,7 @@ async fn http_handler(
                 },
                 target: Address {
                     node: our.to_string(),
-                    process: bound_path.app.clone(),
+                    process: app.clone(),
                 },
                 rsvp: None,
                 message: Message::Request(Request {
@@ -607,7 +622,9 @@ async fn http_handler(
                             host.unwrap_or(Authority::from_static("localhost")),
                             original_path
                         ),
+                        bound_path: bound_path.path.clone(),
                         headers: serialized_headers,
+                        url_params,
                         query_params,
                     }))
                     .unwrap(),
@@ -904,7 +921,7 @@ async fn maintain_websocket(
 
     let _ = print_tx
         .send(Printout {
-            verbosity: 1,
+            verbosity: 2,
             content: format!("http_server: new websocket connection to {app} with id {channel_id}"),
         })
         .await;
@@ -986,7 +1003,7 @@ async fn maintain_websocket(
     }
     let _ = print_tx
         .send(Printout {
-            verbosity: 1,
+            verbosity: 2,
             content: format!("http_server: websocket connection {channel_id} closed"),
         })
         .await;
@@ -1125,7 +1142,7 @@ async fn handle_app_message(
                     }
                     let _ = print_tx
                         .send(Printout {
-                            verbosity: 1,
+                            verbosity: 2,
                             content: format!(
                                 "binding path {path} for {}, authenticated={authenticated}, local={local_only}, cached={cache}",
                                 km.source.process
@@ -1137,7 +1154,8 @@ async fn handle_app_message(
                         path_bindings.add(
                             &normalize_path(&path),
                             BoundPath {
-                                app: km.source.process.clone(),
+                                app: Some(km.source.process.clone()),
+                                path: path.clone(),
                                 secure_subdomain: None,
                                 authenticated,
                                 local_only,
@@ -1159,7 +1177,8 @@ async fn handle_app_message(
                         path_bindings.add(
                             &normalize_path(&path),
                             BoundPath {
-                                app: km.source.process.clone(),
+                                app: Some(km.source.process.clone()),
+                                path: path.clone(),
                                 secure_subdomain: None,
                                 authenticated,
                                 local_only,
@@ -1182,7 +1201,8 @@ async fn handle_app_message(
                         path_bindings.add(
                             &normalize_path(&path),
                             BoundPath {
-                                app: km.source.process.clone(),
+                                app: Some(km.source.process.clone()),
+                                path: path.clone(),
                                 secure_subdomain: Some(subdomain),
                                 authenticated: true,
                                 local_only: false,
@@ -1204,7 +1224,8 @@ async fn handle_app_message(
                         path_bindings.add(
                             &normalize_path(&path),
                             BoundPath {
-                                app: km.source.process.clone(),
+                                app: Some(km.source.process.clone()),
+                                path: path.clone(),
                                 secure_subdomain: Some(subdomain),
                                 authenticated: true,
                                 local_only: false,
@@ -1212,6 +1233,27 @@ async fn handle_app_message(
                             },
                         );
                     }
+                }
+                HttpServerAction::Unbind { mut path } => {
+                    let mut path_bindings = path_bindings.write().await;
+                    if km.source.process != "homepage:homepage:sys" {
+                        path = if path.starts_with('/') {
+                            format!("/{}{}", km.source.process, path)
+                        } else {
+                            format!("/{}/{}", km.source.process, path)
+                        };
+                    }
+                    path_bindings.add(
+                        &normalize_path(&path),
+                        BoundPath {
+                            app: None,
+                            path: path.clone(),
+                            secure_subdomain: None,
+                            authenticated: false,
+                            local_only: false,
+                            static_content: None,
+                        },
+                    );
                 }
                 HttpServerAction::WebSocketBind {
                     mut path,
@@ -1228,7 +1270,7 @@ async fn handle_app_message(
                     ws_path_bindings.add(
                         &normalize_path(&path),
                         BoundWsPath {
-                            app: km.source.process.clone(),
+                            app: Some(km.source.process.clone()),
                             secure_subdomain: None,
                             authenticated,
                             encrypted,
@@ -1253,11 +1295,29 @@ async fn handle_app_message(
                     ws_path_bindings.add(
                         &normalize_path(&path),
                         BoundWsPath {
-                            app: km.source.process.clone(),
+                            app: Some(km.source.process.clone()),
                             secure_subdomain: Some(subdomain),
                             authenticated: true,
                             encrypted,
                             extension,
+                        },
+                    );
+                }
+                HttpServerAction::WebSocketUnbind { mut path } => {
+                    let mut ws_path_bindings = ws_path_bindings.write().await;
+                    path = if path.starts_with('/') {
+                        format!("/{}{}", km.source.process, path)
+                    } else {
+                        format!("/{}/{}", km.source.process, path)
+                    };
+                    ws_path_bindings.add(
+                        &normalize_path(&path),
+                        BoundWsPath {
+                            app: None,
+                            secure_subdomain: None,
+                            authenticated: false,
+                            encrypted: false,
+                            extension: false,
                         },
                     );
                 }

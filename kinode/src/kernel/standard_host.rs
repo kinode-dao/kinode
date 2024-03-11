@@ -1,6 +1,4 @@
 use crate::kernel::process;
-//use crate::kernel::process::kinode::process::standard as wit;
-//use crate::kernel::process::StandardHost;
 use crate::KERNEL_PROCESS_ID;
 use crate::VFS_PROCESS_ID;
 use anyhow::Result;
@@ -27,10 +25,21 @@ impl StandardHost for process::ProcessWasi {
     //
     // system utils:
     //
+
+    /// Print a message to the runtime terminal. Add the name of the process to the
+    /// beginning of the string, so user can verify source.
     async fn print_to_terminal(&mut self, verbosity: u8, content: String) -> Result<()> {
         self.process
             .send_to_terminal
-            .send(t::Printout { verbosity, content })
+            .send(t::Printout {
+                verbosity,
+                content: format!(
+                    "{}:{}: {}",
+                    self.process.metadata.our.process.package(),
+                    self.process.metadata.our.process.publisher(),
+                    content
+                ),
+            })
             .await
             .map_err(|e| anyhow::anyhow!("fatal: couldn't send to terminal: {e:?}"))
     }
@@ -376,6 +385,7 @@ impl StandardHost for process::ProcessWasi {
         print_debug(&self.process, "spawned a new process").await;
         Ok(Ok(new_process_id.en_wit().to_owned()))
     }
+
     //
     // capabilities management
     //
@@ -386,6 +396,24 @@ impl StandardHost for process::ProcessWasi {
             .process
             .caps_oracle
             .send(t::CapMessage::Add {
+                on: self.process.metadata.our.process.clone(),
+                caps: caps
+                    .iter()
+                    .map(|cap| t::de_wit_capability(cap.clone()).0)
+                    .collect(),
+                responder: tx,
+            })
+            .await?;
+        let _ = rx.await?;
+        Ok(())
+    }
+
+    async fn drop_capabilities(&mut self, caps: Vec<wit::Capability>) -> Result<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let _ = self
+            .process
+            .caps_oracle
+            .send(t::CapMessage::Drop {
                 on: self.process.metadata.our.process.clone(),
                 caps: caps
                     .iter()

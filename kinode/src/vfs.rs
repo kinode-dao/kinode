@@ -1,7 +1,7 @@
 use dashmap::DashMap;
 use std::collections::{HashMap, VecDeque};
 use std::io::prelude::*;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::fs::OpenOptions;
@@ -23,6 +23,7 @@ pub async fn vfs(
     if let Err(e) = fs::create_dir_all(&vfs_path).await {
         panic!("failed creating vfs dir! {:?}", e);
     }
+    let vfs_path = fs::canonicalize(&vfs_path).await?;
 
     let open_files: Arc<DashMap<PathBuf, Arc<Mutex<fs::File>>>> = Arc::new(DashMap::new());
 
@@ -91,7 +92,7 @@ async fn handle_request(
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     send_to_caps_oracle: CapMessageSender,
-    vfs_path: String,
+    vfs_path: PathBuf,
 ) -> Result<(), VfsError> {
     let KernelMessage {
         id,
@@ -191,7 +192,7 @@ async fn handle_request(
     }
 
     // current prepend to filepaths needs to be: /package_id/drive/path
-    let (package_id, drive, rest) = parse_package_and_drive(&request.path).await?;
+    let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path).await?;
     let drive = format!("/{}/{}", package_id, drive);
     let path = PathBuf::from(request.path.clone());
 
@@ -209,7 +210,9 @@ async fn handle_request(
         .await?;
     }
     // real safe path that the vfs will use
-    let path = PathBuf::from(format!("{}{}/{}", vfs_path, drive, rest));
+    let base_drive = join_paths_safely(&vfs_path, &drive);
+    let path = join_paths_safely(&base_drive, &rest);
+
     let (body, bytes) = match request.action {
         VfsAction::CreateDrive => {
             // handled in check_caps.
@@ -288,6 +291,7 @@ async fn handle_request(
         }
         VfsAction::Read => {
             let contents = fs::read(&path).await?;
+
             (
                 serde_json::to_vec(&VfsResponse::Read).unwrap(),
                 Some(contents),
@@ -361,7 +365,8 @@ async fn handle_request(
             )
         }
         VfsAction::RemoveFile => {
-            fs::remove_file(path).await?;
+            fs::remove_file(&path).await?;
+            open_files.remove(&path);
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::RemoveDir => {
@@ -373,12 +378,12 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Rename { new_path } => {
-            let new_path = format!("{}/{}", vfs_path, new_path);
+            let new_path = join_paths_safely(&vfs_path, &new_path);
             fs::rename(path, new_path).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::CopyFile { new_path } => {
-            let new_path = format!("{}/{}", vfs_path, new_path);
+            let new_path = join_paths_safely(&vfs_path, &new_path);
             fs::copy(path, new_path).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
@@ -533,7 +538,37 @@ async fn handle_request(
     Ok(())
 }
 
-async fn parse_package_and_drive(path: &str) -> Result<(PackageId, String, String), VfsError> {
+async fn parse_package_and_drive(
+    path: &str,
+    vfs_path: &PathBuf,
+) -> Result<(PackageId, String, String), VfsError> {
+    let joined_path = join_paths_safely(&vfs_path, path);
+
+    // sanitize path..
+    let normalized_path = normalize_path(&joined_path);
+    if !normalized_path.starts_with(vfs_path) {
+        return Err(VfsError::BadRequest {
+            error: format!(
+                "input path tries to escape parent vfs directory: {:?}",
+                path
+            )
+            .into(),
+        })?;
+    }
+
+    // extract original path.
+    let path = normalized_path
+        .strip_prefix(vfs_path)
+        .map_err(|_| VfsError::BadRequest {
+            error: format!(
+                "input path tries to escape parent vfs directory: {:?}",
+                path
+            )
+            .into(),
+        })?
+        .display()
+        .to_string();
+
     let mut parts: Vec<&str> = path.split('/').collect();
 
     if parts[0].is_empty() {
@@ -599,7 +634,7 @@ async fn check_caps(
     path: PathBuf,
     drive: String,
     package_id: PackageId,
-    vfs_dir_path: String,
+    vfs_dir: PathBuf,
 ) -> Result<(), VfsError> {
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
 
@@ -720,7 +755,9 @@ async fn check_caps(
                 return Ok(());
             }
 
-            let (new_package_id, new_drive, _rest) = parse_package_and_drive(new_path).await?;
+            let (new_package_id, new_drive, _rest) =
+                parse_package_and_drive(new_path, &vfs_dir).await?;
+
             let new_drive = format!("/{}/{}", new_package_id, new_drive);
             // if both new and old path are within the package_id path, ok
             if (src_package_id == package_id) && (src_package_id == new_package_id) {
@@ -805,7 +842,7 @@ async fn check_caps(
             )
             .await?;
 
-            let drive_path = format!("{}{}", vfs_dir_path, drive);
+            let drive_path = join_paths_safely(&vfs_dir, &drive);
             fs::create_dir_all(drive_path).await?;
             Ok(())
         }
@@ -849,6 +886,45 @@ fn get_file_type(metadata: &std::fs::Metadata) -> FileType {
     } else {
         FileType::Other
     }
+}
+
+/// from rust/cargo/src/cargo/util/paths.rs
+/// to avoid using std::fs::canonicalize, which fails on non-existent paths.
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut components = path.components().peekable();
+    let mut ret = if let Some(c @ Component::Prefix(..)) = components.peek().cloned() {
+        components.next();
+        PathBuf::from(c.as_os_str())
+    } else {
+        PathBuf::new()
+    };
+
+    for component in components {
+        match component {
+            Component::Prefix(..) => unreachable!(),
+            Component::RootDir => {
+                ret.push(component.as_os_str());
+            }
+            Component::CurDir => {}
+            Component::ParentDir => {
+                ret.pop();
+            }
+            Component::Normal(c) => {
+                ret.push(c);
+            }
+        }
+    }
+    ret
+}
+
+fn join_paths_safely(base: &PathBuf, extension: &str) -> PathBuf {
+    let extension_str = Path::new(extension)
+        .to_str()
+        .unwrap_or("")
+        .trim_start_matches('/');
+
+    let extension_path = Path::new(extension_str);
+    base.join(extension_path)
 }
 
 fn make_error_message(

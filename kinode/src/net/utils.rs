@@ -226,7 +226,7 @@ pub async fn create_passthrough(
             message: Message::Request(Request {
                 inherit: false,
                 expects_response: Some(5),
-                body: rmp_serde::to_vec(&NetActions::ConnectionRequest(from_id.name.clone()))?,
+                body: rmp_serde::to_vec(&NetAction::ConnectionRequest(from_id.name.clone()))?,
                 metadata: None,
                 capabilities: vec![],
             }),
@@ -273,10 +273,12 @@ pub fn validate_routing_request(
         &signature::ED25519,
         hex::decode(strip_0x(&their_id.networking_key))?,
     );
-    their_networking_key.verify(
-        [&routing_request.target, our_name].concat().as_bytes(),
-        &routing_request.signature,
-    )?;
+    their_networking_key
+        .verify(
+            [&routing_request.target, our_name].concat().as_bytes(),
+            &routing_request.signature,
+        )
+        .map_err(|e| anyhow!("their_networking_key.verify failed: {:?}", e))?;
     if routing_request.target == routing_request.source {
         return Err(anyhow!("can't route to self"));
     }
@@ -296,7 +298,9 @@ pub fn validate_handshake(
         &signature::ED25519,
         hex::decode(strip_0x(&their_id.networking_key))?,
     );
-    their_networking_key.verify(their_static_key, &handshake.signature)?;
+    their_networking_key
+        .verify(their_static_key, &handshake.signature)
+        .map_err(|e| anyhow!("their_networking_key.verify handshake failed: {:?}", e))?;
     Ok(())
 }
 
