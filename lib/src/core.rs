@@ -483,6 +483,14 @@ impl OnExit {
         }
     }
 
+    pub fn is_none(&self) -> bool {
+        match self {
+            OnExit::None => true,
+            OnExit::Restart => false,
+            OnExit::Requests(_) => false,
+        }
+    }
+
     pub fn en_wit(&self) -> wit::OnExit {
         match self {
             OnExit::None => wit::OnExit::None,
