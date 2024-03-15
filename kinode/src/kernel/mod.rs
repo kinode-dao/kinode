@@ -468,12 +468,6 @@ async fn handle_kernel_request(
                     return;
                 }
             };
-            let _ = send_to_terminal
-                .send(t::Printout {
-                    verbosity: 2,
-                    content: format!("killing process {process_id}"),
-                })
-                .await;
             process_handle.abort();
             process_map.remove(&process_id);
             caps_oracle
@@ -484,6 +478,12 @@ async fn handle_kernel_request(
                 .await
                 .expect("event loop: fatal: sender died");
             if request.expects_response.is_none() {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 2,
+                        content: format!("killing process {process_id}"),
+                    })
+                    .await;
                 return;
             }
             let _ = send_to_terminal
