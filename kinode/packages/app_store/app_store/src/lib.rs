@@ -82,8 +82,11 @@ fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Lo
             }
         }
     }
+    #[cfg(feature = "simulation-mode")]
+    vec![]
 }
 
+#[allow(unused_variables)]
 fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
     #[cfg(not(feature = "simulation-mode"))]
     loop {
