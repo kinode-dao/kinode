@@ -10,9 +10,10 @@ fn get_features() -> String {
     let mut features = "".to_string();
     for (key, _) in std::env::vars() {
         if key.starts_with("CARGO_FEATURE_") {
-            let feature = key.trim_start_matches("CARGO_FEATURE_")
-                             .to_lowercase()
-                             .replace("_", "-");
+            let feature = key
+                .trim_start_matches("CARGO_FEATURE_")
+                .to_lowercase()
+                .replace("_", "-");
             features.push_str(&feature);
             //println!("cargo:rustc-cfg=feature=\"{}\"", feature);
             //println!("- {}", feature);
@@ -81,7 +82,11 @@ fn main() -> anyhow::Result<()> {
         .par_iter()
         .map(|entry_path| {
             let parent_pkg_path = entry_path.join("pkg");
-            build_and_zip_package(entry_path.clone(), parent_pkg_path.to_str().unwrap(), &features)
+            build_and_zip_package(
+                entry_path.clone(),
+                parent_pkg_path.to_str().unwrap(),
+                &features,
+            )
         })
         .collect();
 
