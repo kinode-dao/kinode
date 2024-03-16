@@ -3,6 +3,8 @@ name = "peers"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+simulation-mode = []
 
 [dependencies]
 kinode_process_lib = { git = "https://github.com/kinode-dao/process_lib", tag = "v0.6.0" }

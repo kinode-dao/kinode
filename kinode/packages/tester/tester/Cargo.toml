@@ -3,6 +3,8 @@ name = "tester"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+simulation-mode = []
 
 [dependencies]
 anyhow = "1.0"
