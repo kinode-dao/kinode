@@ -1,7 +1,7 @@
 [package]
 name = "kinode"
 authors = ["KinodeDAO"]
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "A general-purpose sovereign cloud computing platform"
 homepage = "https://kinode.org"
