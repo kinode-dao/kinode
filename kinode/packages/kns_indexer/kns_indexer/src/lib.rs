@@ -200,6 +200,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     let eth_provider = eth::Provider::new(state.chain_id, 60);
 
     // if block in state is < current_block, get logs from that part.
+    #[cfg(not(feature = "simulation-mode"))]
     if state.block < eth_provider.get_block_number().unwrap_or(u64::MAX) {
         loop {
             match eth_provider.get_logs(&filter) {

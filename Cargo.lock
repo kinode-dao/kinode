@@ -2572,7 +2572,7 @@ dependencies = [
 
 [[package]]
 name = "kinode"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aes-gcm",
  "alloy-primitives",
@@ -2645,7 +2645,7 @@ dependencies = [
 
 [[package]]
 name = "kinode_lib"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "lib",
 ]
@@ -2653,7 +2653,7 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.6.0"
-source = "git+https://github.com/kinode-dao/process_lib.git?tag=v0.6.0#ccf9db2493ec1e112f9146994f852b7bb119dbb6"
+source = "git+https://github.com/kinode-dao/process_lib?tag=v0.6.0#ccf9db2493ec1e112f9146994f852b7bb119dbb6"
 dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
@@ -2674,6 +2674,7 @@ dependencies = [
 [[package]]
 name = "kit"
 version = "0.2.0"
+source = "git+https://github.com/kinode-dao/kit?rev=1bd7bec#1bd7bec195f4d6878d553a8568b0f2fa1240168a"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -2737,7 +2738,7 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
 name = "lib"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "alloy-rpc-types",
  "lazy_static",
