@@ -3,6 +3,8 @@ name = "app_store"
 version = "0.3.0"
 edition = "2021"
 
+[features]
+simulation-mode = []
 
 [dependencies]
 alloy-primitives = "0.6.2"
