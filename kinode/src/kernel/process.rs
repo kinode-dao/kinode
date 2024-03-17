@@ -646,6 +646,9 @@ pub async fn make_process_loop(
     // the process has completed, time to perform cleanup
     //
 
+    // update metadata to what was mutated by process in store
+    let metadata = store.data().process.metadata.to_owned();
+
     let our_kernel = t::Address {
         node: metadata.our.node.clone(),
         process: KERNEL_PROCESS_ID.clone(),

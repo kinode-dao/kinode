@@ -71,7 +71,6 @@ pub enum Resp {
 }
 
 fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Log> {
-    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.get_logs(filter) {
             Ok(res) => return res,
@@ -88,7 +87,6 @@ fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Lo
 
 #[allow(unused_variables)]
 fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
-    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.subscribe(1, filter.clone()) {
             Ok(()) => break,
@@ -99,7 +97,6 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
             }
         }
     }
-    #[cfg(not(feature = "simulation-mode"))]
     println!("subscribed to logs successfully");
 }
 

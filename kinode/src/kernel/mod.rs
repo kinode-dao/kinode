@@ -468,12 +468,6 @@ async fn handle_kernel_request(
                     return;
                 }
             };
-            let _ = send_to_terminal
-                .send(t::Printout {
-                    verbosity: 2,
-                    content: format!("killing process {process_id}"),
-                })
-                .await;
             process_handle.abort();
             process_map.remove(&process_id);
             caps_oracle
@@ -484,6 +478,12 @@ async fn handle_kernel_request(
                 .await
                 .expect("event loop: fatal: sender died");
             if request.expects_response.is_none() {
+                let _ = send_to_terminal
+                    .send(t::Printout {
+                        verbosity: 2,
+                        content: format!("killing process {process_id}"),
+                    })
+                    .await;
                 return;
             }
             let _ = send_to_terminal
@@ -716,18 +716,19 @@ pub async fn kernel(
     let mut is_debug: bool = false;
     let mut reboot_processes: Vec<(t::ProcessId, StartProcessMetadata, Vec<u8>)> = vec![];
 
+    // filter out OnExit::None processes from process_map
+    process_map.retain(|_, persisted| !persisted.on_exit.is_none());
+
     for (process_id, persisted) in &process_map {
         // runtime extensions will have a bytes_handle of "", because they have no
         // WASM code saved in filesystem.
-        if persisted.on_exit.is_restart() && !persisted.wasm_bytes_handle.is_empty() {
-            // read wasm bytes directly from vfs
-            // start process.
-            let wasm_bytes = match tokio::fs::read(format!(
-                "{}/{}",
-                vfs_path, persisted.wasm_bytes_handle
-            ))
-            .await
-            {
+        if persisted.wasm_bytes_handle.is_empty() {
+            continue;
+        }
+        // read wasm bytes directly from vfs
+        // start process.
+        let wasm_bytes =
+            match tokio::fs::read(format!("{}/{}", vfs_path, persisted.wasm_bytes_handle)).await {
                 Ok(bytes) => bytes,
                 Err(e) => {
                     let _ = send_to_terminal
@@ -742,20 +743,19 @@ pub async fn kernel(
                     continue;
                 }
             };
-            reboot_processes.push((
-                process_id.clone(),
-                StartProcessMetadata {
-                    source: t::Address {
-                        node: our.name.clone(),
-                        process: KERNEL_PROCESS_ID.clone(),
-                    },
-                    process_id: process_id.clone(),
-                    persisted: persisted.clone(),
-                    reboot: true,
+        reboot_processes.push((
+            process_id.clone(),
+            StartProcessMetadata {
+                source: t::Address {
+                    node: our.name.clone(),
+                    process: KERNEL_PROCESS_ID.clone(),
                 },
-                wasm_bytes,
-            ));
-        }
+                process_id: process_id.clone(),
+                persisted: persisted.clone(),
+                reboot: true,
+            },
+            wasm_bytes,
+        ));
         if let t::OnExit::Requests(requests) = &persisted.on_exit {
             // if a persisted process had on-death-requests, we should perform them now
             // even in death, a process can only message processes it has capabilities for
