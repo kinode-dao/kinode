@@ -44,6 +44,7 @@ const DEFAULT_PROVIDERS_MAINNET: &str = include_str!("eth/default_providers_main
 async fn serve_register_fe(
     home_directory_path: &str,
     our_ip: String,
+    ws_networking_port: Option<u16>,
     http_server_port: u16,
     testnet: bool,
 ) -> (Identity, Vec<u8>, Keyfile) {
@@ -66,7 +67,7 @@ async fn serve_register_fe(
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-        _ = register::register(tx, kill_rx, our_ip, http_server_port, disk_keyfile, testnet) => {
+        _ = register::register(tx, kill_rx, our_ip, ws_networking_port, http_server_port, disk_keyfile, testnet) => {
             panic!("registration failed")
         }
         Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
@@ -98,6 +99,10 @@ async fn main() {
                 .value_parser(value_parser!(u16)),
         )
         .arg(
+            arg!(--"ws-port" <PORT> "Kinode internal WebSockets protocol port [default: first unbound at or above 9000]")
+                .value_parser(value_parser!(u16)),
+        )
+        .arg(
             arg!(--testnet "If set, use Sepolia testnet")
                 .default_value("false")
                 .value_parser(value_parser!(bool)),
@@ -119,11 +124,6 @@ async fn main() {
         .arg(arg!(--password <PASSWORD> "Networking password"))
         .arg(arg!(--"fake-node-name" <NAME> "Name of fake node to boot"))
         .arg(
-            arg!(--"network-router-port" <PORT> "Network router port")
-                .default_value("9001")
-                .value_parser(value_parser!(u16)),
-        )
-        .arg(
             arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
                 .action(clap::ArgAction::SetTrue),
         );
@@ -131,21 +131,16 @@ async fn main() {
     let matches = app.get_matches();
 
     let home_directory_path = matches.get_one::<String>("home").unwrap();
-    let (port, port_flag_used) = match matches.get_one::<u16>("port") {
-        Some(port) => (*port, true),
-        None => (8080, false),
-    };
     let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
+
+    let http_port = matches.get_one::<u16>("port");
+    let ws_networking_port = matches.get_one::<u16>("ws-port");
 
     #[cfg(not(feature = "simulation-mode"))]
     let is_detached = false;
     #[cfg(feature = "simulation-mode")]
-    let (password, network_router_port, fake_node_name, is_detached) = (
+    let (password, fake_node_name, is_detached) = (
         matches.get_one::<String>("password"),
-        matches
-            .get_one::<u16>("network-router-port")
-            .unwrap()
-            .clone(),
         matches.get_one::<String>("fake-node-name"),
         *matches.get_one::<bool>("detached").unwrap(),
     );
@@ -262,15 +257,15 @@ async fn main() {
         }
     };
 
-    let http_server_port = if port_flag_used {
-        match http::utils::find_open_port(port, port + 1).await {
+    let http_server_port = if let Some(port) = http_port {
+        match http::utils::find_open_port(*port, port + 1).await {
             Some(port) => port,
             None => {
                 println!(
                     "error: couldn't bind {}; first available port found was {}. \
                     Set an available port with `--port` and try again.",
                     port,
-                    http::utils::find_open_port(port, port + 1000)
+                    http::utils::find_open_port(*port, port + 1000)
                         .await
                         .expect("no ports found in range"),
                 );
@@ -278,13 +273,12 @@ async fn main() {
             }
         }
     } else {
-        match http::utils::find_open_port(port, port + 1000).await {
+        match http::utils::find_open_port(8080, 8999).await {
             Some(port) => port,
             None => {
                 println!(
-                    "error: couldn't bind any ports between {port} and {}. \
-                    Set an available port with `--port` and try again.",
-                    port + 1000,
+                    "error: couldn't bind any ports between 8080 and 8999. \
+                    Set an available port with `--port` and try again."
                 );
                 panic!();
             }
@@ -300,6 +294,7 @@ async fn main() {
     let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
         home_directory_path,
         our_ip.to_string(),
+        ws_networking_port.copied(),
         http_server_port,
         on_testnet, // true if testnet mode
     )
@@ -313,7 +308,8 @@ async fn main() {
                     serve_register_fe(
                         &home_directory_path,
                         our_ip.to_string(),
-                        http_server_port.clone(),
+                        ws_networking_port.copied(),
+                        http_server_port,
                         on_testnet, // true if testnet mode
                     )
                     .await
