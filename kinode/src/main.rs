@@ -100,6 +100,7 @@ async fn main() {
         )
         .arg(
             arg!(--"ws-port" <PORT> "Kinode internal WebSockets protocol port [default: first unbound at or above 9000]")
+                .alias("network-router-port")
                 .value_parser(value_parser!(u16)),
         )
         .arg(
@@ -510,7 +511,7 @@ async fn main() {
     ));
     #[cfg(feature = "simulation-mode")]
     tasks.spawn(net::mock_client(
-        network_router_port,
+        *ws_networking_port.unwrap_or(&9000),
         our.name.clone(),
         kernel_message_sender.clone(),
         net_message_receiver,
