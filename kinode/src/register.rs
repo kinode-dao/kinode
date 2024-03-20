@@ -414,7 +414,25 @@ async fn handle_boot(
         ..Default::default()
     };
 
-    let Ok(tld) = provider.call(tx, None).await else {
+    // this call can fail if the indexer has not caught up to the transaction
+    // that just got confirmed on our frontend. for this reason, we retry
+    // the call a few times before giving up.
+
+    let mut attempts = 0;
+    let mut tld_result = Err(());
+    while attempts < 5 {
+        match provider.call(tx.clone(), None).await {
+            Ok(tld) => {
+                tld_result = Ok(tld);
+                break;
+            }
+            Err(_) => {
+                attempts += 1;
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            }
+        }
+    }
+    let Ok(tld) = tld_result else {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Failed to fetch TLD contract for username"),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -445,13 +463,13 @@ async fn handle_boot(
 
     let Ok(authed) = provider.call(tx, None).await else {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to fetch TLD contract for username"),
+            warp::reply::json(&"Failed to fetch associated address for username"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
     };
 
-    let is_ok = bool::abi_decode(&authed, false).map_err(|_| warp::reject())?;
+    let is_ok = bool::abi_decode(&authed, false).unwrap_or(false);
 
     if !is_ok {
         return Ok(warp::reply::with_status(
