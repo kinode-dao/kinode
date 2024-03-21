@@ -7,12 +7,12 @@
 
   --medium-gray: 7E7E7E;
   --gray-button: rgba(253, 245, 220, 0.25);
-  --input-background: rgba(243, 84, 34, 0.25); /* orange-medium */
+  --input-background: rgba(243, 84, 34, 0.25);
+  /* orange-medium */
 }
 
 body {
   margin: 0;
-  padding: 2em;
   font-size: 16px;
   background-color: var(--gray-button);
   color: var(--text-light);
@@ -21,10 +21,19 @@ body {
   background-size: cover;
   height: 100vh;
   width: 100vw;
-  overflow-y: scroll;
 }
 
-body, h1, h2, h3, h4, h5, h6, p, a, button, input {
+body,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+a,
+button,
+input {
   font-family: 'Barlow Condensed', sans-serif;
 }
 
@@ -42,18 +51,23 @@ h6 {
 h1 {
   font-size: 64px;
 }
+
 h2 {
   font-size: 48px;
 }
+
 h3 {
   font-size: 36px;
 }
+
 h4 {
   font-size: 24px;
 }
+
 h5 {
   font-size: 20px;
 }
+
 h6 {
   font-size: 16px;
 }
@@ -73,6 +87,7 @@ h6 {
 input {
   all: unset;
 }
+
 input[type="text"],
 input[type="password"],
 input[type="checkbox"] {
@@ -84,18 +99,22 @@ input[type="checkbox"] {
   background-color: var(--input-background);
   color: var(--text-light);
 }
+
 input[type="text"],
 input[type="password"] {
   width: 100%;
 }
+
 input[type="checkbox"] {
   padding: 0.25em 0.8em;
   cursor: pointer;
   height: 28px;
 }
+
 input[type="checkbox"]:checked {
   background-color: var(--orange-medium);
 }
+
 .checkmark {
   position: absolute;
   left: 4px;
@@ -103,18 +122,23 @@ input[type="checkbox"]:checked {
   top: -1px;
   cursor: pointer;
 }
+
 ::placeholder {
   color: var(--text-light);
 }
+
 ::-webkit-input-placeholder::placeholder {
   color: var(--text-light);
 }
+
 ::-moz-placeholder::placeholder {
   color: var(--text-light);
 }
+
 ::-ms-input-placeholder {
   color: var(--text-light);
 }
+
 label {
   font-size: 20px;
 }
@@ -158,19 +182,11 @@ button:disabled {
   cursor: not-allowed;
 }
 
-
-
-
-
-
-
-
-
 #signup-page {
   flex: 1;
   display: flex;
   justify-content: center;
-  padding-bottom: 2em;
+  height: 100vh;
 }
 
 .key-err {
@@ -242,6 +258,7 @@ button:disabled {
   font-weight: 500;
   font-size: 1rem;
 }
+
 .tooltip-content.left {
   right: 0;
   left: unset;
@@ -325,6 +342,7 @@ button:disabled {
   height: 48px;
   margin-top: 16px;
 }
+
 #loader div {
   box-sizing: border-box;
   display: block;
@@ -337,19 +355,24 @@ button:disabled {
   animation: loader 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
   border-color: #fff transparent transparent transparent;
 }
+
 #loader div:nth-child(1) {
   animation-delay: -0.45s;
 }
+
 #loader div:nth-child(2) {
   animation-delay: -0.3s;
 }
+
 #loader div:nth-child(3) {
   animation-delay: -0.15s;
 }
+
 @keyframes loader {
   0% {
     transform: rotate(0deg);
   }
+
   100% {
     transform: rotate(360deg);
   }
@@ -358,7 +381,7 @@ button:disabled {
 .connect-modal {
   display: flex;
   justify-content: center;
-  align-items:center;
+  align-items: center;
 }
 
 .connect-modal-content {

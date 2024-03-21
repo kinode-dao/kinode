@@ -15,12 +15,15 @@
   flex-direction: row;
   align-items: center;
 }
+
 .row.center {
   justify-content: center;
 }
+
 .row.between {
   justify-content: space-between;
 }
+
 .row.around {
   justify-content: space-around;
 }
@@ -30,6 +33,7 @@
   flex-direction: column;
   align-items: flex-start;
 }
+
 .col.center {
   align-items: center;
 }
@@ -61,7 +65,7 @@ button.small {
   text-align: left;
 }
 
-.searchbar > input {
+.searchbar>input {
   border: none;
   height: 1.5em;
   margin-left: 0.5em;
@@ -75,6 +79,7 @@ button.connect-wallet {
 .my-pkg-btn {
   margin-left: 1em;
 }
+
 .my-pkg-btn.selected {
   background-color: var(--bg-gray-medium);
 }
@@ -94,31 +99,32 @@ button.connect-wallet {
   cursor: default;
 }
 
-.app-header.small > img {
+.app-header.small>img {
   height: 3em;
   margin-right: 1em;
   border-radius: 0.375em;
 }
 
-.app-header > img {
+.app-header>img {
   height: 3em;
   margin-right: 1em;
   border-radius: 0.375em;
 }
 
-.app-header.large > img {
+.app-header.large>img {
   height: 5em;
   margin-right: 1em;
   border-radius: 0.5em;
 }
+
 .app-header.large .app-name {
   font-size: 1.5em;
 }
 
 .app-entry {
-  padding: 0.125em;
   width: 100%;
 }
+
 .app-actions {
   margin-right: 0.5em;
 }
@@ -127,7 +133,8 @@ button.connect-wallet {
   cursor: pointer;
   position: relative;
 }
-.dropdown > ul {
+
+.dropdown>ul {
   background-color: var(--orange-medium);
   padding: 0.5em 1em;
   border-radius: 0.5em;
@@ -137,9 +144,11 @@ button.connect-wallet {
   display: flex;
   flex-direction: column;
 }
+
 .dropdown .dropdown-header {
   align-self: flex-end;
 }
+
 .dropdown .dropdown-list {
   position: absolute;
   top: 1em;
@@ -149,6 +158,7 @@ button.connect-wallet {
 .page-selector {
   margin: 0.25em 0.5em;
 }
+
 .page-selector.selected {
   font-weight: 900;
 }
@@ -163,30 +173,36 @@ button.connect-wallet {
   margin-top: 0.5em;
   align-items: flex-start;
 }
+
 .app-details .title {
   width: 8em;
   text-align: left;
 }
+
 .app-details .value {
   margin-bottom: 0.5em;
   text-align: left;
   max-width: calc(100% - 8em);
 }
+
 .app-details .value.underline {
   text-decoration: underline;
 }
+
 .app-details .value.permission {
   background-color: var(--bg-gray-medium);
   border-radius: 2em;
   padding: 0.25em 0.5em;
   margin-bottom: 0.5em;
 }
+
 .app-screenshots {
   margin-top: 0.5em;
   overflow-x: scroll;
   max-width: 100%;
 }
-.app-screenshots > img {
+
+.app-screenshots>img {
   margin-right: 1em;
   max-height: 10em;
   max-width: 100%;
@@ -215,6 +231,7 @@ button.connect-wallet {
   height: 48px;
   margin-top: 16px;
 }
+
 #loader div {
   box-sizing: border-box;
   display: block;
@@ -227,19 +244,24 @@ button.connect-wallet {
   animation: loader 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
   border-color: #fff transparent transparent transparent;
 }
+
 #loader div:nth-child(1) {
   animation-delay: -0.45s;
 }
+
 #loader div:nth-child(2) {
   animation-delay: -0.3s;
 }
+
 #loader div:nth-child(3) {
   animation-delay: -0.15s;
 }
+
 @keyframes loader {
   0% {
     transform: rotate(0deg);
   }
+
   100% {
     transform: rotate(360deg);
   }
@@ -279,7 +301,7 @@ button.connect-wallet {
   width: calc(100% - 6em);
 }
 
-.title > div {
+.title>div {
   max-width: 100%;
 }
 
@@ -298,6 +320,7 @@ button.connect-wallet {
   min-height: 10em;
   min-width: 20em;
 }
+
 .modal-backdrop .close {
   position: absolute;
   top: 0.5em;
@@ -307,6 +330,7 @@ button.connect-wallet {
   cursor: pointer;
   transform: rotate(45deg);
 }
+
 .modal {
   position: relative;
   background-color: var(--dark-background);
@@ -318,10 +342,12 @@ button.connect-wallet {
   min-width: 300px;
   color: var(--text-light);
 }
+
 .modal .modal-title {
   margin-top: 0;
   margin-bottom: 0.5em;
 }
+
 .modal .modal-content {
   align-items: center;
   width: 100%;
@@ -331,6 +357,7 @@ button.connect-wallet {
 form.new {
   gap: 1em;
 }
+
 form.metadata {
   gap: 0.5em;
   align-items: center;
@@ -343,6 +370,7 @@ form.metadata input {
 form.metadata .row {
   margin-top: 1em;
 }
+
 form.metadata .col.label {
   width: 80%;
 }

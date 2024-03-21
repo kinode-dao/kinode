@@ -8,7 +8,7 @@ import SearchHeader from "../components/SearchHeader";
 import { PageProps } from "../types/Page";
 import { appId } from "../utils/app";
 
-interface StorePageProps extends PageProps {}
+interface StorePageProps extends PageProps { }
 
 export default function StorePage(props: StorePageProps) {
   // eslint-disable-line
@@ -150,7 +150,7 @@ export default function StorePage(props: StorePageProps) {
           <option>Recently updated</option>
         </select>
       </div>
-      <div className="new card col" style={{ flex: 1, overflowY: "scroll", gap: "1em" }}>
+      <div className="new card col" style={{ flex: 1, overflowY: "auto", gap: "1em" }}>
         {displayedApps.map((app) => (
           <AppEntry
             key={appId(app) + (app.state?.our_version || "")}

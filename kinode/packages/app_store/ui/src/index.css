@@ -13,12 +13,12 @@
   --medium-gray: #7E7E7E;
   --gray-button: rgba(253, 245, 220, 0.25);
   --dark-background: rgb(130, 59, 28);
-  --input-background: rgba(243, 84, 34, 0.25); /* orange-medium */
+  --input-background: rgba(243, 84, 34, 0.25);
+  /* orange-medium */
 }
 
 body {
   margin: 0;
-  padding: 2em;
   font-size: 16px;
   color: var(--text-light);
   font-weight: 400;
@@ -27,10 +27,19 @@ body {
   background-color: var(--dark-background);
   height: 100vh;
   width: 100vw;
-  overflow-y: scroll;
 }
 
-body, h1, h2, h3, h4, h5, h6, p, a, button, input {
+body,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+a,
+button,
+input {
   font-family: 'Barlow Condensed', sans-serif;
 }
 
@@ -48,18 +57,23 @@ h6 {
 h1 {
   font-size: 64px;
 }
+
 h2 {
   font-size: 48px;
 }
+
 h3 {
   font-size: 36px;
 }
+
 h4 {
   font-size: 24px;
 }
+
 h5 {
   font-size: 20px;
 }
+
 h6 {
   font-size: 16px;
 }
@@ -75,9 +89,11 @@ h6 {
   align-items: center;
 }
 
-input, button {
+input,
+button {
   all: unset;
 }
+
 input[type="text"],
 input[type="password"],
 input[type="checkbox"] {
@@ -90,17 +106,21 @@ input[type="checkbox"] {
   color: var(--text-light);
   text-align: left;
 }
+
 input[type="text"],
 input[type="password"] {
   width: 100%;
 }
+
 input[type="checkbox"] {
   padding: 0.25em 0.8em;
   cursor: pointer;
 }
+
 input[type="checkbox"]:checked {
   background-color: var(--orange-medium);
 }
+
 .checkmark {
   position: absolute;
   left: 4px;
@@ -108,23 +128,31 @@ input[type="checkbox"]:checked {
   top: -5px;
   cursor: pointer;
 }
+
 ::placeholder {
   color: var(--text-light);
 }
+
 ::-webkit-input-placeholder::placeholder {
   color: var(--text-light);
 }
+
 ::-moz-placeholder::placeholder {
   color: var(--text-light);
 }
+
 ::-ms-input-placeholder {
   color: var(--text-light);
 }
+
 label {
   font-size: 20px;
 }
 
-button, [type='button'], [type='reset'], [type='submit'] {
+button,
+[type='button'],
+[type='reset'],
+[type='submit'] {
   padding: 0.75em 1em;
   margin: 0;
   font-weight: 500;
@@ -162,7 +190,8 @@ button:disabled {
   cursor: not-allowed;
 }
 
-ul, li {
+ul,
+li {
   all: unset;
 }
 
@@ -177,41 +206,17 @@ select {
   /* Use a custom chevron image */
   background-image: url('./assets/select-chevron.svg');
   background-repeat: no-repeat;
-  background-position: right 8px center; /* Adjust the horizontal position to control padding */
-  background-size: 16px; /* Adjust size of the chevron */
-  padding-right: 2em; /* Adjust the padding to make room for the chevron */
+  background-position: right 8px center;
+  /* Adjust the horizontal position to control padding */
+  background-size: 16px;
+  /* Adjust size of the chevron */
+  padding-right: 2em;
+  /* Adjust the padding to make room for the chevron */
 
-  -webkit-appearance: none; /* Removes default styling on WebKit browsers like Safari */
-  -moz-appearance: none; /* Removes default styling on Firefox */
-  appearance: none; /* Standard property, currently not fully supported */
+  -webkit-appearance: none;
+  /* Removes default styling on WebKit browsers like Safari */
+  -moz-appearance: none;
+  /* Removes default styling on Firefox */
+  appearance: none;
+  /* Standard property, currently not fully supported */
 }
-
-
-/* @media (prefers-color-scheme: light) {
-  :root {
-    color: var(--bg-black);
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    color: var(--bg-black);
-    background-color: var(--bg-gray-medium);
-  }
-  button:hover {
-    background-color: var(--bg-gray-light);
-  }
-  input:focus-visible {
-    outline: -webkit-focus-ring-color auto 1px;
-  }
-
-  select {
-    border: 1px solid var(--bg-gray-solid);
-    border-radius: 0.25em;
-  }
-
-  input:focus-visible {
-    outline: var(--text-dark) auto 1px;
-  }
-} */
