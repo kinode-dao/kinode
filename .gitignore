@@ -13,6 +13,7 @@ wit/
 packages/**/pkg/*.wasm
 packages/**/wit
 kinode/packages/**/pkg/ui
+*/**/node_modules
 .env
 kinode/src/bootstrapped_processes.rs
 kinode/packages/**/wasi_snapshot_preview1.wasm

@@ -1,0 +1,464 @@
+:root {
+  --text-light: #FFF5D9;
+  --text-dark: #22211F;
+  --text-orange: #FF7533;
+  --orange-light: #F36822;
+  --orange-medium: #F35422;
+
+  --medium-gray: 7E7E7E;
+  --gray-button: rgba(253, 245, 220, 0.25);
+  --input-background: rgba(243, 84, 34, 0.25); /* orange-medium */
+}
+
+body {
+  margin: 0;
+  padding: 2em;
+  font-size: 16px;
+  background-color: var(--gray-button);
+  color: var(--text-light);
+  font-weight: 400;
+  background: url('./assets/background.jpg') no-repeat center center fixed;
+  background-size: cover;
+  height: 100vh;
+  width: 100vw;
+  overflow-y: scroll;
+}
+
+body, h1, h2, h3, h4, h5, h6, p, a, button, input {
+  font-family: 'Barlow Condensed', sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  line-height: 1.5em;
+  font-weight: 500;
+  margin: 0;
+}
+
+h1 {
+  font-size: 64px;
+}
+h2 {
+  font-size: 48px;
+}
+h3 {
+  font-size: 36px;
+}
+h4 {
+  font-size: 24px;
+}
+h5 {
+  font-size: 20px;
+}
+h6 {
+  font-size: 16px;
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+}
+
+input {
+  all: unset;
+}
+input[type="text"],
+input[type="password"],
+input[type="checkbox"] {
+  padding: 1em;
+  border: 1px solid var(--orange-medium);
+  border-radius: 8px;
+  box-sizing: border-box;
+  font-size: 1em;
+  background-color: var(--input-background);
+  color: var(--text-light);
+}
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+}
+input[type="checkbox"] {
+  padding: 0.25em 0.8em;
+  cursor: pointer;
+  height: 28px;
+}
+input[type="checkbox"]:checked {
+  background-color: var(--orange-medium);
+}
+.checkmark {
+  position: absolute;
+  left: 4px;
+  font-size: 24px;
+  top: -1px;
+  cursor: pointer;
+}
+::placeholder {
+  color: var(--text-light);
+}
+::-webkit-input-placeholder::placeholder {
+  color: var(--text-light);
+}
+::-moz-placeholder::placeholder {
+  color: var(--text-light);
+}
+::-ms-input-placeholder {
+  color: var(--text-light);
+}
+label {
+  font-size: 20px;
+}
+
+button {
+  width: 100%;
+  padding: 0.75em 1em;
+  margin: 0;
+  font-weight: 500;
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--orange-medium);
+  /* border-image: linear-gradient(to right, var(--orange-medium), var(--orange-light)); */
+  border-radius: 8px;
+  background: var(--orange-medium);
+  box-sizing: border-box;
+  cursor: pointer;
+  font-size: 1.125em;
+  transition: all 0.1s;
+  box-shadow: 0 1px 2px var(--orange-light);
+  color: var(--text-light);
+}
+
+button.alt {
+  background-color: var(--text-light);
+  color: var(--text-dark);
+  border-color: var(--text-light);
+  box-shadow: 0 1px 2px var(--text-light);
+}
+
+button:hover {
+  opacity: 0.9;
+  box-shadow: none;
+}
+
+button:disabled {
+  background-color: var(--medium-gray);
+  border: 1px solid var(--medium-gray);
+  box-shadow: 0 1px 2px var(--medium-gray);
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+
+
+
+
+
+
+
+
+#signup-page {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 2em;
+}
+
+.key-err {
+  margin-top: 0.5em;
+  font-size: 20px;
+  color: red;
+  word-break: break-all;
+  text-align: center;
+}
+
+.login-row {
+  align-self: flex-start;
+}
+
+.label-row {
+  margin: 0.5em 0;
+  align-self: flex-start;
+}
+
+.tooltip-container {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.tooltip-button {
+  border: 2px solid white;
+  border-radius: 50%;
+  height: 1em;
+  width: 1em;
+  text-align: center;
+  font-size: 16px;
+  line-height: 0.5em;
+  margin-left: 0.5em;
+  padding: 4px 2px 0;
+}
+
+.tooltip-button.chain {
+  border: 2px solid white;
+  border-radius: 50%;
+  height: 1.5em;
+  width: 1.5em;
+  margin: 0;
+  padding: 0;
+  margin-left: 1em;
+}
+
+.tooltip-button.chain img {
+  width: 100%;
+  height: 100%;
+}
+
+.tooltip-content {
+  visibility: hidden;
+  background-color: #555;
+  color: #fff;
+  text-align: center;
+  border-radius: 6px;
+  padding: 0.5em;
+  position: absolute;
+  z-index: 1;
+  top: 125%;
+  left: 50%;
+  margin-left: -60px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  line-height: 1.5em;
+  min-width: 200px;
+  font-weight: 500;
+  font-size: 1rem;
+}
+.tooltip-content.left {
+  right: 0;
+  left: unset;
+}
+
+.tooltip-content::after {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 30%;
+  margin-left: -5px;
+  border-width: 5px;
+  border-style: solid;
+  border-color: transparent transparent #555 transparent;
+}
+
+.tooltip-container:hover .tooltip-content {
+  visibility: visible;
+  opacity: 1;
+}
+
+.sepolia {
+  filter: grayscale(100%);
+}
+
+#signup-form {
+  width: calc(420px + 2em);
+  max-width: calc(100vw - 2em);
+  padding: 1em;
+  gap: 32px;
+}
+
+#signup-form-header {
+  margin-bottom: 1em;
+}
+
+#signup-form-header button {
+  width: calc(420px + 2em);
+  max-width: calc(100vw - 2em);
+}
+
+#current-address {
+  margin-left: 1em;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 1.25em;
+  font-weight: 600;
+}
+
+.current-username {
+  cursor: pointer;
+  padding: 0.5em;
+  border: 1px solid white;
+  border-radius: 4px;
+  margin: 1em 0;
+}
+
+.current-username:hover {
+  border: 1px solid white;
+  color: #027;
+  background-color: white;
+}
+
+#connect-wallet {
+  max-width: 420px;
+}
+
+#wallet-required-message {
+  max-width: 500px;
+  text-align: center;
+  line-height: 1.5em;
+}
+
+#loading h3 {
+  text-align: center;
+}
+
+#loader {
+  display: inline-block;
+  position: relative;
+  width: 48px;
+  height: 48px;
+  margin-top: 16px;
+}
+#loader div {
+  box-sizing: border-box;
+  display: block;
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  margin: 6px;
+  border: 6px solid #fff;
+  border-radius: 50%;
+  animation: loader 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+  border-color: #fff transparent transparent transparent;
+}
+#loader div:nth-child(1) {
+  animation-delay: -0.45s;
+}
+#loader div:nth-child(2) {
+  animation-delay: -0.3s;
+}
+#loader div:nth-child(3) {
+  animation-delay: -0.15s;
+}
+@keyframes loader {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.connect-modal {
+  display: flex;
+  justify-content: center;
+  align-items:center;
+}
+
+.connect-modal-content {
+  width: 400px;
+  height: 200px;
+  background: #027;
+  padding: 20px;
+  position: fixed;
+  top: 120px;
+  border-radius: 15px;
+}
+
+.overlay-modal {
+  background-color: rgba(255, 255, 255, 0.25);
+  position: fixed;
+  inset: 0px;
+}
+
+.signup-form {
+  width: 50vw;
+  max-width: 400px;
+}
+
+.direct-node-message {
+  line-height: 1.5em;
+  margin-left: 2em;
+}
+
+.name-validity {
+  color: red;
+}
+
+.more-info-direct {
+  margin: 0 1em;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.more-info-direct:hover {
+  color: var(--orange-light);
+}
+
+a {
+  color: var(--orange-medium);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--orange-light);
+}
+
+.reset-networking {
+  margin-top: 1em;
+  cursor: pointer;
+  text-decoration: underline;
+  width: 100%;
+  margin-left: 0.5em;
+  font-size: 1.25em;
+}
+
+.reset-networking:hover {
+  color: var(--orange-light);
+}
+
+.name-err {
+  color: red;
+  line-height: 1.5em;
+  margin-bottom: 1em;
+}
+
+.chain-button {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-weight: 300;
+  background-color: var(--gray-button);
+  border: none;
+  box-shadow: none;
+  color: var(--text-light);
+  padding: 0.4em 0.25em;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  border-radius: 2.5em;
+}
+
+.chain-button:hover {
+  opacity: 0.9;
+}
+
+.chain-button.monospace {
+  font-family: "Courier New", Courier, monospace;
+}
+
+.network-icon {
+  width: 1.5em;
+  height: 1.5em;
+  margin-right: 0.5em;
+}
+
+.os {
+  margin-left: 0.2em;
+}
