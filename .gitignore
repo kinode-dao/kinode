@@ -12,6 +12,7 @@ wit/
 /home
 packages/**/pkg/*.wasm
 packages/**/wit
+packages/**/pkg/ui
 .env
 kinode/src/bootstrapped_processes.rs
 kinode/packages/**/wasi_snapshot_preview1.wasm
