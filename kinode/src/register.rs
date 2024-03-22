@@ -127,24 +127,26 @@ pub async fn register(
     let net_keypair = Arc::new(serialized_networking_keypair.as_ref().to_vec());
     let tx = Arc::new(tx);
 
-    // TODO: if IP is localhost, don't allow registration as direct
-    let ws_port = if let Some(port) = ws_networking_port {
-        crate::http::utils::find_open_port(port, port + 1)
-            .await
-            .expect(&format!(
-                "error: couldn't bind {}; first available port found was {}. \
+    let (ws_port, flag_used) = if let Some(port) = ws_networking_port {
+        (
+            crate::http::utils::find_open_port(port, port + 1)
+                .await
+                .expect(&format!(
+                    "error: couldn't bind {}; first available port found was {}. \
                 Set an available port with `--ws-port` and try again.",
-                port,
-                crate::http::utils::find_open_port(port, port + 1000)
-                    .await
-                    .expect("no ports found in range"),
-            ))
+                    port,
+                    crate::http::utils::find_open_port(port, port + 1000)
+                        .await
+                        .expect("no ports found in range"),
+                )),
+            true,
+        )
     } else {
-        crate::http::utils::find_open_port(9000, 65535)
+        (crate::http::utils::find_open_port(9000, 65535)
             .await
             .expect(
             "Unable to find free port between 9000 and 65535 for a new websocket, are you kidding?",
-        )
+        ), false)
     };
 
     // This is a temporary identity, passed to the UI. If it is confirmed through a /boot or /confirm-change-network-keys, then it will be used to replace the current identity
@@ -213,7 +215,25 @@ pub async fn register(
             } else {
                 warp::reply::json(&"0xa")
             }
-        }));
+        }))
+        .or(warp::path("our").and(warp::get()).and(keyfile.clone()).map(
+            move |keyfile: Option<Vec<u8>>| {
+                if let Some(keyfile) = keyfile {
+                    if let Ok((username, _, _, _, _, _)) = bincode::deserialize::<(
+                        String,
+                        Vec<String>,
+                        Vec<u8>,
+                        Vec<u8>,
+                        Vec<u8>,
+                        Vec<u8>,
+                    )>(keyfile.as_ref())
+                    {
+                        return warp::reply::json(&username);
+                    }
+                }
+                warp::reply::json(&"")
+            },
+        ));
 
     let boot_provider = provider.clone();
     let login_provider = provider.clone();
@@ -262,10 +282,11 @@ pub async fn register(
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(ip.clone())
+                .and(warp::any().map(move || if flag_used { Some(ws_port) } else { None }))
                 .and(tx.clone())
-                .and_then(move |boot_info, ip, tx| {
+                .and_then(move |boot_info, ip, ws_port, tx| {
                     let import_provider = import_provider.clone();
-                    handle_import_keyfile(boot_info, ip, tx, kns_address, import_provider)
+                    handle_import_keyfile(boot_info, ip, ws_port, tx, kns_address, import_provider)
                 }),
         ))
         .or(warp::path("login").and(
@@ -273,11 +294,20 @@ pub async fn register(
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(ip)
+                .and(warp::any().map(move || if flag_used { Some(ws_port) } else { None }))
                 .and(tx.clone())
                 .and(keyfile.clone())
-                .and_then(move |boot_info, ip, tx, keyfile| {
+                .and_then(move |boot_info, ip, ws_port, tx, keyfile| {
                     let login_provider = login_provider.clone();
-                    handle_login(boot_info, ip, tx, keyfile, kns_address, login_provider)
+                    handle_login(
+                        boot_info,
+                        ip,
+                        ws_port,
+                        tx,
+                        keyfile,
+                        kns_address,
+                        login_provider,
+                    )
                 }),
         ))
         .or(warp::path("confirm-change-network-keys").and(
@@ -290,6 +320,31 @@ pub async fn register(
                 .and(keyfile)
                 .and_then(confirm_change_network_keys),
         ));
+    // .or(
+    //     warp::path("our").and(warp::get().and(keyfile.clone()).and_then(move |keyfile| {
+    //         if let Some(keyfile) = keyfile {
+    //             if let Ok((username, _, _, _, _, _)) = bincode::deserialize::<(
+    //                 String,
+    //                 Vec<String>,
+    //                 Vec<u8>,
+    //                 Vec<u8>,
+    //                 Vec<u8>,
+    //                 Vec<u8>,
+    //             )>(&keyfile)
+    //             {
+    //                 return Ok(warp::reply::with_status(
+    //                     warp::reply::json(&username),
+    //                     StatusCode::OK,
+    //                 )
+    //                 .into_response());
+    //             }
+    //         }
+    //         Ok(
+    //             warp::reply::with_status(warp::reply::json(&""), StatusCode::OK)
+    //                 .into_response(),
+    //         )
+    //     })),
+    // );
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -526,6 +581,7 @@ async fn handle_boot(
 async fn handle_import_keyfile(
     info: ImportKeyfileInfo,
     ip: String,
+    ws_networking_port: Option<u16>,
     sender: Arc<RegistrationSender>,
     kns_address: EthAddress,
     provider: Arc<Provider<PubSubFrontend>>,
@@ -570,7 +626,7 @@ async fn handle_import_keyfile(
             }
         };
 
-    if let Err(e) = assign_ws_routing(&mut our, kns_address, provider).await {
+    if let Err(e) = assign_ws_routing(&mut our, kns_address, provider, ws_networking_port).await {
         return Ok(warp::reply::with_status(
             warp::reply::json(&e.to_string()),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -583,6 +639,7 @@ async fn handle_import_keyfile(
 async fn handle_login(
     info: LoginInfo,
     ip: String,
+    ws_networking_port: Option<u16>,
     sender: Arc<RegistrationSender>,
     encoded_keyfile: Option<Vec<u8>>,
     kns_address: EthAddress,
@@ -625,7 +682,7 @@ async fn handle_login(
             }
         };
 
-    if let Err(e) = assign_ws_routing(&mut our, kns_address, provider).await {
+    if let Err(e) = assign_ws_routing(&mut our, kns_address, provider, ws_networking_port).await {
         return Ok(warp::reply::with_status(
             warp::reply::json(&e.to_string()),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -699,6 +756,7 @@ async fn assign_ws_routing(
     our: &mut Identity,
     kns_address: EthAddress,
     provider: Arc<Provider<PubSubFrontend>>,
+    ws_networking_port: Option<u16>,
 ) -> anyhow::Result<()> {
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
     let ip_call = ipCall { _0: namehash }.abi_encode();
@@ -728,6 +786,15 @@ async fn assign_ws_routing(
 
     if node_ip != *"0.0.0.0" || ws != 0 {
         // direct node
+        if let Some(chosen_port) = ws_networking_port {
+            if chosen_port != ws {
+                return Err(anyhow::anyhow!(
+                    "Binary used --ws-port flag to set port to {}, but node is using port {} onchain.",
+                    chosen_port,
+                    ws
+                ));
+            }
+        }
         our.ws_routing = Some((node_ip, ws));
     }
     Ok(())
