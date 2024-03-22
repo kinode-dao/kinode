@@ -44,7 +44,7 @@ const DEFAULT_PROVIDERS_MAINNET: &str = include_str!("eth/default_providers_main
 async fn serve_register_fe(
     home_directory_path: &str,
     our_ip: String,
-    ws_networking_port: Option<u16>,
+    ws_networking: (tokio::net::TcpListener, bool),
     http_server_port: u16,
     testnet: bool,
 ) -> (Identity, Vec<u8>, Keyfile) {
@@ -67,7 +67,7 @@ async fn serve_register_fe(
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-        _ = register::register(tx, kill_rx, our_ip, ws_networking_port, http_server_port, disk_keyfile, testnet) => {
+        _ = register::register(tx, kill_rx, our_ip, ws_networking, http_server_port, disk_keyfile, testnet) => {
             panic!("registration failed")
         }
         Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
@@ -260,7 +260,7 @@ async fn main() {
 
     let http_server_port = if let Some(port) = http_port {
         match http::utils::find_open_port(*port, port + 1).await {
-            Some(port) => port,
+            Some(bound) => bound.local_addr().unwrap().port(),
             None => {
                 println!(
                     "error: couldn't bind {}; first available port found was {}. \
@@ -268,14 +268,17 @@ async fn main() {
                     port,
                     http::utils::find_open_port(*port, port + 1000)
                         .await
-                        .expect("no ports found in range"),
+                        .expect("no ports found in range")
+                        .local_addr()
+                        .unwrap()
+                        .port(),
                 );
                 panic!();
             }
         }
     } else {
         match http::utils::find_open_port(8080, 8999).await {
-            Some(port) => port,
+            Some(bound) => bound.local_addr().unwrap().port(),
             None => {
                 println!(
                     "error: couldn't bind any ports between 8080 and 8999. \
@@ -284,6 +287,28 @@ async fn main() {
                 panic!();
             }
         }
+    };
+
+    // if the --ws-port flag is used, bind to that port right away.
+    // if the flag is not used, find the first available port between 9000 and 65535.
+    // NOTE: if the node has a different port specified in its onchain (direct) id,
+    // booting will fail if the flag was used to select a different port.
+    // if the flag was not used, the bound port will be dropped in favor of the onchain port.
+
+    let (ws_tcp_handle, flag_used) = if let Some(port) = ws_networking_port {
+        (
+            http::utils::find_open_port(*port, port + 1)
+                .await
+                .expect("ws-port selected with flag could not be bound"),
+            true,
+        )
+    } else {
+        (
+            http::utils::find_open_port(9000, 65535)
+                .await
+                .expect("no ports found in range 9000-65535 for websocket server"),
+            false,
+        )
     };
 
     println!(
@@ -295,7 +320,7 @@ async fn main() {
     let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
         home_directory_path,
         our_ip.to_string(),
-        ws_networking_port.copied(),
+        (ws_tcp_handle, flag_used),
         http_server_port,
         on_testnet, // true if testnet mode
     )
@@ -309,7 +334,7 @@ async fn main() {
                     serve_register_fe(
                         &home_directory_path,
                         our_ip.to_string(),
-                        ws_networking_port.copied(),
+                        (ws_tcp_handle, flag_used),
                         http_server_port,
                         on_testnet, // true if testnet mode
                     )
