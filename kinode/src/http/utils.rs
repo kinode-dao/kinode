@@ -100,18 +100,18 @@ pub fn deserialize_headers(hashmap: HashMap<String, String>) -> HeaderMap {
     header_map
 }
 
-pub async fn find_open_port(start_at: u16, end_at: u16) -> Option<u16> {
+pub async fn find_open_port(start_at: u16, end_at: u16) -> Option<TcpListener> {
     for port in start_at..end_at {
         let bind_addr = format!("0.0.0.0:{}", port);
-        if is_port_available(&bind_addr).await {
-            return Some(port);
+        if let Some(bound) = is_port_available(&bind_addr).await {
+            return Some(bound);
         }
     }
     None
 }
 
-pub async fn is_port_available(bind_addr: &str) -> bool {
-    TcpListener::bind(bind_addr).await.is_ok()
+pub async fn is_port_available(bind_addr: &str) -> Option<TcpListener> {
+    TcpListener::bind(bind_addr).await.ok()
 }
 
 pub fn _binary_encoded_string_to_bytes(s: &str) -> Vec<u8> {

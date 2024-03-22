@@ -117,7 +117,7 @@ pub async fn register(
     tx: RegistrationSender,
     kill_rx: oneshot::Receiver<bool>,
     ip: String,
-    ws_networking_port: Option<u16>,
+    ws_networking: (tokio::net::TcpListener, bool),
     http_port: u16,
     keyfile: Option<Vec<u8>>,
     testnet: bool,
@@ -127,29 +127,12 @@ pub async fn register(
     let net_keypair = Arc::new(serialized_networking_keypair.as_ref().to_vec());
     let tx = Arc::new(tx);
 
-    let (ws_port, flag_used) = if let Some(port) = ws_networking_port {
-        (
-            crate::http::utils::find_open_port(port, port + 1)
-                .await
-                .expect(&format!(
-                    "error: couldn't bind {}; first available port found was {}. \
-                Set an available port with `--ws-port` and try again.",
-                    port,
-                    crate::http::utils::find_open_port(port, port + 1000)
-                        .await
-                        .expect("no ports found in range"),
-                )),
-            true,
-        )
-    } else {
-        (crate::http::utils::find_open_port(9000, 65535)
-            .await
-            .expect(
-            "Unable to find free port between 9000 and 65535 for a new websocket, are you kidding?",
-        ), false)
-    };
+    let ws_port = ws_networking.0.local_addr().unwrap().port();
+    let ws_flag_used = ws_networking.1;
 
-    // This is a temporary identity, passed to the UI. If it is confirmed through a /boot or /confirm-change-network-keys, then it will be used to replace the current identity
+    // This is a **temporary** identity, passed to the UI.
+    // If it is confirmed through a /boot or /confirm-change-network-keys,
+    // then it will be used to replace the current identity.
     let our_temp_id = Arc::new(Identity {
         networking_key: format!("0x{}", public_key),
         name: "".to_string(),
@@ -185,6 +168,7 @@ pub async fn register(
     let net_keypair = warp::any().map(move || net_keypair.clone());
     let tx = warp::any().map(move || tx.clone());
     let ip = warp::any().map(move || ip.clone());
+    let ws_port = warp::any().map(move || if ws_flag_used { Some(ws_port) } else { None });
 
     let static_files = warp::path("static").and(static_dir!("src/register-ui/build/static/"));
 
@@ -228,10 +212,10 @@ pub async fn register(
                         Vec<u8>,
                     )>(keyfile.as_ref())
                     {
-                        return warp::reply::json(&username);
+                        return warp::reply::html(username);
                     }
                 }
-                warp::reply::json(&"")
+                warp::reply::html(String::new())
             },
         ));
 
@@ -282,7 +266,7 @@ pub async fn register(
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(ip.clone())
-                .and(warp::any().map(move || if flag_used { Some(ws_port) } else { None }))
+                .and(ws_port.clone())
                 .and(tx.clone())
                 .and_then(move |boot_info, ip, ws_port, tx| {
                     let import_provider = import_provider.clone();
@@ -294,7 +278,7 @@ pub async fn register(
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(ip)
-                .and(warp::any().map(move || if flag_used { Some(ws_port) } else { None }))
+                .and(ws_port.clone())
                 .and(tx.clone())
                 .and(keyfile.clone())
                 .and_then(move |boot_info, ip, ws_port, tx, keyfile| {
@@ -320,31 +304,6 @@ pub async fn register(
                 .and(keyfile)
                 .and_then(confirm_change_network_keys),
         ));
-    // .or(
-    //     warp::path("our").and(warp::get().and(keyfile.clone()).and_then(move |keyfile| {
-    //         if let Some(keyfile) = keyfile {
-    //             if let Ok((username, _, _, _, _, _)) = bincode::deserialize::<(
-    //                 String,
-    //                 Vec<String>,
-    //                 Vec<u8>,
-    //                 Vec<u8>,
-    //                 Vec<u8>,
-    //                 Vec<u8>,
-    //             )>(&keyfile)
-    //             {
-    //                 return Ok(warp::reply::with_status(
-    //                     warp::reply::json(&username),
-    //                     StatusCode::OK,
-    //                 )
-    //                 .into_response());
-    //             }
-    //         }
-    //         Ok(
-    //             warp::reply::with_status(warp::reply::json(&""), StatusCode::OK)
-    //                 .into_response(),
-    //         )
-    //     })),
-    // );
 
     let mut headers = HeaderMap::new();
     headers.insert(
