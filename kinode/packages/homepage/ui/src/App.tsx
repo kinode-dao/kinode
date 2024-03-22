@@ -228,27 +228,23 @@ function App() {
 
   return (
     <>
-      {
-        <>
-          <ConnectWallet {...props} />
-          <Router>
-            <Routes>
-              <Route path="/" element={navigateToLogin
-                ? <Navigate to="/login" replace />
-                : <OsHome {...props} />
-              } />
-              <Route path="/claim-invite" element={<ClaimOsInvite {...props} />} />
-              <Route path="/register-name" element={<RegisterOsName  {...props} />} />
-              <Route path="/register-eth-name" element={<RegisterEthName {...props} />} />
-              <Route path="/set-password" element={<SetPassword {...props} />} />
-              <Route path="/reset" element={<Reset {...props} />} />
-              <Route path="/reset-node" element={<ResetNode {...props} />} />
-              <Route path="/import-keyfile" element={<ImportKeyfile {...props} />} />
-              <Route path="/login" element={<Login {...props} />} />
-            </Routes>
-          </Router>
-        </>
-      }
+      <ConnectWallet {...props} />
+      <Router>
+        <Routes>
+          <Route path="/" element={navigateToLogin
+            ? <Navigate to="/login" replace />
+            : <OsHome {...props} />
+          } />
+          <Route path="/claim-invite" element={<ClaimOsInvite {...props} />} />
+          <Route path="/register-name" element={<RegisterOsName  {...props} />} />
+          <Route path="/register-eth-name" element={<RegisterEthName {...props} />} />
+          <Route path="/set-password" element={<SetPassword {...props} />} />
+          <Route path="/reset" element={<Reset {...props} />} />
+          <Route path="/reset-node" element={<ResetNode {...props} />} />
+          <Route path="/import-keyfile" element={<ImportKeyfile {...props} />} />
+          <Route path="/login" element={<Login {...props} />} />
+        </Routes>
+      </Router>
     </>
   )
 }

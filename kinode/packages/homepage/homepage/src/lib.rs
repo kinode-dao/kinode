@@ -1,10 +1,16 @@
 #![feature(let_chains)]
 use kinode_process_lib::{
-    await_message, call_init, http::bind_http_static_path, http::HttpServerError, println, Address,
-    Message, ProcessId,
+    await_message, call_init, get_blob,
+    http::{
+        bind_http_path, bind_http_static_path, get_mime_type, serve_index_html, serve_ui,
+        HttpServerError,
+    },
+    println,
+    vfs::{FileType, VfsAction, VfsRequest, VfsResponse},
+    Address, LazyLoadBlob as KiBlob, Message, ProcessId, Request as KiRequest,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 /// The request format to add or remove an app from the homepage. You must have messaging
 /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
@@ -29,7 +35,7 @@ wit_bindgen::generate!({
     },
 });
 
-const HOME_PAGE: &str = include_str!("index.html");
+const HOME_PAGE: &str = include_str!("../../pkg/ui/index.html");
 
 const APP_TEMPLATE: &str = r#"
 <a class="app-link" id="${package_name}" href="/${path}">
@@ -38,36 +44,97 @@ const APP_TEMPLATE: &str = r#"
   <h6>${label}</h6>
 </a>"#;
 
-call_init!(main);
+call_init!(init);
 
-/// bind to root path on http_server (we have special dispensation to do so!)
-fn bind_index(our: &str, apps: &HashMap<ProcessId, String>) {
-    bind_http_static_path(
-        "/",
-        true,
-        false,
-        Some("text/html".to_string()),
-        HOME_PAGE
-            .replace("${our}", our)
-            .replace(
-                "${apps}",
-                &apps
-                    .values()
-                    .map(String::as_str)
-                    .collect::<Vec<&str>>()
-                    .join("\n"),
-            )
-            .to_string()
-            .as_bytes()
-            .to_vec(),
-    )
-    .expect("failed to bind to /");
+// Copied in from process_lib serve_ui. see https://github.com/kinode-dao/process_lib/blob/main/src/http.rs
+fn static_serve_dir(
+    our: &Address,
+    directory: &str,
+    authenticated: bool,
+    local_only: bool,
+    paths: Vec<&str>,
+) -> anyhow::Result<()> {
+    serve_index_html(our, directory, authenticated, local_only, paths)?;
+
+    let initial_path = format!("{}/pkg/{}", our.package_id(), directory);
+    println!("initial path: {}", initial_path);
+
+    let mut queue = VecDeque::new();
+    queue.push_back(initial_path.clone());
+
+    while let Some(path) = queue.pop_front() {
+        let Ok(directory_response) = KiRequest::to(("our", "vfs", "distro", "sys"))
+            .body(serde_json::to_vec(&VfsRequest {
+                path,
+                action: VfsAction::ReadDir,
+            })?)
+            .send_and_await_response(5)?
+        else {
+            return Err(anyhow::anyhow!(
+                "serve_ui: no response for path: {}",
+                initial_path
+            ));
+        };
+
+        let directory_body = serde_json::from_slice::<VfsResponse>(directory_response.body())?;
+
+        // Determine if it's a file or a directory and handle appropriately
+        match directory_body {
+            VfsResponse::ReadDir(directory_info) => {
+                for entry in directory_info {
+                    match entry.file_type {
+                        // If it's a file, serve it statically
+                        FileType::File => {
+                            KiRequest::to(("our", "vfs", "distro", "sys"))
+                                .body(serde_json::to_vec(&VfsRequest {
+                                    path: entry.path.clone(),
+                                    action: VfsAction::Read,
+                                })?)
+                                .send_and_await_response(5)??;
+
+                            let Some(blob) = get_blob() else {
+                                return Err(anyhow::anyhow!(
+                                    "serve_ui: no blob for {}",
+                                    entry.path
+                                ));
+                            };
+
+                            let content_type = get_mime_type(&entry.path);
+
+                            println!("binding {}", entry.path.replace(&initial_path, ""));
+
+                            bind_http_static_path(
+                                entry.path.replace(&initial_path, ""),
+                                authenticated, // Must be authenticated
+                                local_only,    // Is not local-only
+                                Some(content_type),
+                                blob.bytes,
+                            )?;
+                        }
+                        FileType::Directory => {
+                            // Push the directory onto the queue
+                            queue.push_back(entry.path);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "serve_ui: unexpected response for path: {:?}",
+                    directory_body
+                ))
+            }
+        };
+    }
+
+    Ok(())
 }
 
-fn main(our: Address) {
+fn init(our: Address) {
     let mut apps: HashMap<ProcessId, String> = HashMap::new();
 
-    bind_index(&our.node, &apps);
+    static_serve_dir(&our, "ui", true, false, vec!["/", "/login"]);
 
     bind_http_static_path(
         "/our",
@@ -130,11 +197,11 @@ fn main(our: Address) {
                                 .replace("${label}", &label)
                                 .replace("${base64_icon}", &icon),
                         );
-                        bind_index(&our.node, &apps);
+                        // bind_index(&our.node, &apps);
                     }
                     HomepageRequest::Remove => {
                         apps.remove(&message.source().process);
-                        bind_index(&our.node, &apps);
+                        // bind_index(&our.node, &apps);
                     }
                 }
             }
