@@ -47,6 +47,7 @@ async fn serve_register_fe(
     ws_networking: (tokio::net::TcpListener, bool),
     http_server_port: u16,
     testnet: bool,
+    maybe_rpc: Option<String>,
 ) -> (Identity, Vec<u8>, Keyfile) {
     // check if we have keys saved on disk, encrypted
     // if so, prompt user for "password" to decrypt with
@@ -67,7 +68,15 @@ async fn serve_register_fe(
 
     let (tx, mut rx) = mpsc::channel::<(Identity, Keyfile, Vec<u8>)>(1);
     let (our, decoded_keyfile, encoded_keyfile) = tokio::select! {
-        _ = register::register(tx, kill_rx, our_ip, ws_networking, http_server_port, disk_keyfile, testnet) => {
+        _ = register::register(
+                tx,
+                kill_rx,
+                our_ip,
+                ws_networking,
+                http_server_port,
+                disk_keyfile,
+                testnet,
+                maybe_rpc) => {
             panic!("registration failed")
         }
         Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
@@ -323,6 +332,7 @@ async fn main() {
         (ws_tcp_handle, flag_used),
         http_server_port,
         on_testnet, // true if testnet mode
+        matches.get_one::<String>("rpc").cloned(),
     )
     .await;
 
@@ -331,14 +341,7 @@ async fn main() {
         None => {
             match password {
                 None => {
-                    serve_register_fe(
-                        &home_directory_path,
-                        our_ip.to_string(),
-                        (ws_tcp_handle, flag_used),
-                        http_server_port,
-                        on_testnet, // true if testnet mode
-                    )
-                    .await
+                    panic!("Fake node must be booted with either a --fake-node-name, --password, or both.");
                 }
                 Some(password) => {
                     match fs::read(format!("{}/.keys", home_directory_path)).await {
