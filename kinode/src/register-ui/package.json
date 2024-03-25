@@ -38,8 +38,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "GENERATE_SOURCEMAP=false react-scripts build",
-    "build:copy": "npm run build && npm run copy",
-    "copy": "mkdir -p ../../../src/register-ui/build && rm -rf ../../../src/register-ui/build/* && cp -r build/* ../../../src/register-ui/build/",
+    "build:copy": "npm run build",
     "inline": "node ./add-inline-tags.js && cd build && inline-source ./index.html > ./inline-index.html && cd ..",
     "build-inline": "npm run build && npm run inline",
     "test": "react-scripts test",
