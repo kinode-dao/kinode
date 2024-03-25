@@ -304,6 +304,7 @@ async fn main() {
     // booting will fail if the flag was used to select a different port.
     // if the flag was not used, the bound port will be dropped in favor of the onchain port.
 
+    #[cfg(not(feature = "simulation-mode"))]
     let (ws_tcp_handle, flag_used) = if let Some(port) = ws_networking_port {
         (
             http::utils::find_open_port(*port, port + 1)
