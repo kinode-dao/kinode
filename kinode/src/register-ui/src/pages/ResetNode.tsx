@@ -12,11 +12,13 @@ import { toAscii } from "idna-uts46-hx";
 import { hash } from "eth-ens-namehash";
 import isValidDomain from "is-valid-domain";
 import Loader from "../components/Loader";
-import OsHeader from "../components/KnsHeader";
+import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import { getNetworkName, setChain } from "../utils/chain";
 import { ReactComponent as NameLogo } from "../assets/kinode.svg"
+import { Tooltip } from "../components/Tooltip";
+import { DirectTooltip } from "../components/DirectTooltip";
 
 const { useAccounts, useProvider } = hooks;
 
@@ -144,7 +146,7 @@ function ResetNode({
 
     return (
         <>
-            <OsHeader header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
+            <KinodeHeader header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
                 Reset
                 <NameLogo style={{ height: 28, width: "auto", margin: "0 16px -3px" }} />
                 Name
@@ -187,16 +189,7 @@ function ResetNode({
                                 <label htmlFor="direct" className="direct-node-message">
                                     Register as a direct node. If you are unsure leave unchecked.
                                 </label>
-                                <div className="tooltip-container">
-                                    <div className="tooltip-button">&#8505;</div>
-                                    <div className="tooltip-content">
-                                        A direct node publishes its own networking information
-                                        on-chain: IP, port, so on. An indirect node relies on the
-                                        service of routers, which are themselves direct nodes. Only
-                                        register a direct node if you know what you’re doing and
-                                        have a public, static IP address.
-                                    </div>
-                                </div>
+                                <DirectTooltip />
                             </div>
 
                             <button type="submit"> Reset Node </button>

@@ -15,9 +15,9 @@ const root = ReactDOM.createRoot(
 root.render(
   <React.StrictMode>
     <Web3ReactProvider connectors={connectors}>
-        <div id="signup-page" className="col">
-          <App />
-        </div>
+      <div id="signup-page" className="flex flex-col place-items-center place-content-center h-screen w-screen">
+        <App />
+      </div>
     </Web3ReactProvider>
   </React.StrictMode>
 );

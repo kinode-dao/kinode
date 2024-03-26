@@ -1,5 +1,5 @@
 import React, { useState, useEffect, FormEvent, useCallback } from "react";
-import OsHeader from "../components/KnsHeader";
+import KinodeHeader from "../components/KnsHeader";
 import Loader from "../components/Loader";
 import { utils, providers } from "ethers";
 import { downloadKeyfile } from "../utils/download-keyfile";
@@ -110,7 +110,7 @@ function SetPassword({
 
   return (
     <>
-      <OsHeader
+      <KinodeHeader
         header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
           Set
           <NameLogo style={{ height: 28, width: "auto", margin: "0 16px -3px" }} />

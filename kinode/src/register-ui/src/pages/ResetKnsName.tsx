@@ -12,11 +12,15 @@ import { toAscii } from "idna-uts46-hx";
 import { hash } from "eth-ens-namehash";
 import isValidDomain from "is-valid-domain";
 import Loader from "../components/Loader";
-import OsHeader from "../components/KnsHeader";
+import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import { getNetworkName, setChain } from "../utils/chain";
 import { ReactComponent as NameLogo } from "../assets/kinode.svg"
+import { Tooltip } from "../components/Tooltip";
+import { DirectTooltip } from "../components/DirectTooltip";
+import DirectCheckbox from "../components/DirectCheckbox";
+import EnterOsName from "../components/EnterKnsName";
 
 const NAME_INVALID_PUNY = "Unsupported punycode character";
 const NAME_NOT_OWNER = "Name does not belong to this wallet";
@@ -51,6 +55,7 @@ function Reset({
   const chainName = getNetworkName(nodeChainId);
   const [name, setName] = useState<string>(knsName.slice(0, -3));
   const [nameVets, setNameVets] = useState<string[]>([]);
+  const [nameValidities, setNameValidities] = useState<string[]>([])
   const [loading, setLoading] = useState<string>("");
 
   const [triggerNameCheck, setTriggerNameCheck] = useState<boolean>(false);
@@ -209,93 +214,30 @@ function Reset({
 
   return (
     <>
-      <OsHeader header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
-        Reset
-        <NameLogo style={{ height: 28, width: "auto", margin: "0 16px -3px" }} />
-        Name
-      </h3>}
+      <KinodeHeader header={<h1 className="flex place-content-center place-items-center mb-4">
+        Reset Kinode Name
+      </h1>}
         openConnect={openConnect}
         closeConnect={closeConnect}
         nodeChainId={nodeChainId}
       />
       {Boolean(provider) && (
-        <form id="signup-form" className="col" onSubmit={handleResetRecords}>
+        <form id="signup-form" className="flex flex-col" onSubmit={handleResetRecords}>
           {loading ? (
             <Loader msg={loading} />
           ) : (
             <>
-              <div className="col" style={{ width: "100%" }}>
-                <h5 className="login-row row" style={{ marginBottom: 8 }}>
-                  Enter .os Name
-                  <div className="tooltip-container">
-                    <div className="tooltip-button">&#8505;</div>
-                    <div className="tooltip-content" style={{ fontSize: 16 }}>
-                      Kinodes use a .os name in order to identify themselves to
-                      other nodes in the network
-                    </div>
-                  </div>
-                </h5>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    width: "100%",
-                    marginBottom: "0.5em",
-                  }}
-                >
-                  <input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    type="text"
-                    required
-                    name="dot-os-name"
-                    placeholder="e.g. myname"
-                    style={{ width: "100%", marginRight: 8 }}
-                  />
-                  .os
-                </div>
-                {nameVets.map((x, i) => (
-                  <span key={i} className="name-err">
-                    {x}
-                  </span>
-                ))}
-              </div>
-
-              <div className="row">
-                <div style={{ position: "relative" }}>
-                  <input
-                    type="checkbox"
-                    id="direct"
-                    name="direct"
-                    checked={direct}
-                    onChange={(e) => setDirect(e.target.checked)}
-                    autoFocus
-                  />
-                  {direct && (
-                    <span
-                      onClick={() => setDirect(false)}
-                      className="checkmark"
-                    >
-                      &#10003;
-                    </span>
-                  )}
-                </div>
-                <label htmlFor="direct" className="direct-node-message">
-                  Register as a direct node. If you are unsure leave unchecked.
+              <h3 className="flex flex-col w-full place-items-center my-8">
+                <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2">
+                  Choose a name for your kinode
+                  <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
                 </label>
-                <div className="tooltip-container">
-                  <div className="tooltip-button">&#8505;</div>
-                  <div className="tooltip-content">
-                    A direct node publishes its own networking information
-                    on-chain: IP, port, so on. An indirect node relies on the
-                    service of routers, which are themselves direct nodes. Only
-                    register a direct node if you know what you’re doing and
-                    have a public, static IP address.
-                  </div>
-                </div>
-              </div>
+                <EnterOsName {...{ name, setName, nameVets, dotOs, triggerNameCheck, nameValidities, setNameValidities }} />
+              </h3>
 
-              <button type="submit"> Reset Node </button>
+              <DirectCheckbox {...{ direct, setDirect }} />
+
+              <button type="submit" className="mt-2"> Reset Node </button>
             </>
           )}
         </form>

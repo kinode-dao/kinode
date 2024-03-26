@@ -2,14 +2,13 @@ import React, { FormEvent, useCallback, useEffect, useState } from "react";
 import { namehash } from "ethers/lib/utils";
 import { BytesLike, utils } from "ethers";
 
-import OsHeader from "../components/KnsHeader";
+import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
 import { hooks } from "../connectors/metamask";
 import { ipToNumber } from "../utils/ipToNumber";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import DirectCheckbox from "../components/DirectCheckbox";
-import { ReactComponent as NameLogo } from "../assets/kinode.svg"
 import { useNavigate } from "react-router-dom";
 
 const { useProvider } = hooks;
@@ -186,11 +185,8 @@ function Login({
 
   return (
     <>
-      <OsHeader
-        header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
-          Login to
-          <NameLogo style={{ height: 28, width: "auto", margin: "0 0 -3px 16px" }} />
-        </h3>}
+      <KinodeHeader
+        header={<h1>Login to Kinode</h1>}
         openConnect={openConnect}
         closeConnect={closeConnect}
         hideConnect={!showReset}

@@ -90,8 +90,8 @@ function EnterOsName({
     && setName(e.target.value)
 
   return (
-    <div className="col" style={{ width: '100%' }}>
-      <div className="row" style={{ width: '100%' }}>
+    <div className="flex flex-col w-full place-items-center place-content-center">
+      <div className="flex w-full place-items-center">
         <input
           value={name}
           onChange={noDots}
@@ -99,10 +99,11 @@ function EnterOsName({
           required
           name="dot-os-name"
           placeholder="e.g. myname"
+          className="grow"
         />
-        <div className="os">.os</div>
+        <div className="ml-2 text-lg">.os</div>
       </div>
-      {nameValidities.map((x, i) => <div key={i}><br /><span className="name-validity">{x}</span></div>)}
+      {nameValidities.map((x, i) => <div key={i}><br /><span className="text-red-500">{x}</span></div>)}
     </div>
   )
 

@@ -8,6 +8,7 @@ import { OPTIMISM_OPT_HEX, SEPOLIA_OPT_HEX } from "../constants/chainId";
 
 import sepoliaLogo from "../assets/sepolia.png";
 import optimismLogo from "../assets/optimism.png";
+import { Tooltip } from "./Tooltip";
 
 const { useIsActivating, useChainId } = hooks;
 
@@ -20,7 +21,7 @@ type OsHeaderProps = {
   hideConnect?: boolean;
 };
 
-function OsHeader({
+function KinodeHeader({
   header,
   openConnect,
   nameLogo = false,
@@ -40,7 +41,7 @@ function OsHeader({
 
   const connectWallet = useCallback(async () => {
     closeConnect();
-    await metaMask.activate().catch(() => {});
+    await metaMask.activate().catch(() => { });
 
     try {
       setChain(nodeChainId);
@@ -71,61 +72,36 @@ function OsHeader({
     alert("You can change your connected account in your wallet.");
   }, []);
 
-  // <div style={{ textAlign: 'center', lineHeight: 1.5 }}> Connected as {account?.slice(0,6) + '...' + account?.slice(account.length - 6)}</div>
   return (
     <>
-      <div id="signup-form-header" className="col">
+      <div id="signup-form-header" className="flex flex-col">
         {(nodeChainId === SEPOLIA_OPT_HEX ||
           nodeChainId === OPTIMISM_OPT_HEX) && (
-          <div
-            className="tooltip-container"
-            style={{ position: "absolute", top: 32, right: 32 }}
-          >
-            <div className="tooltip-button chain">
-              {nodeChainId === SEPOLIA_OPT_HEX ? (
-                <img alt="sepolia" src={sepoliaLogo} className="sepolia" />
+            <Tooltip
+              button={nodeChainId === SEPOLIA_OPT_HEX ? (
+                <img
+                  alt="sepolia"
+                  src={sepoliaLogo}
+                />
               ) : nodeChainId === OPTIMISM_OPT_HEX ? (
-                <img alt="optimism" src={optimismLogo} />
+                <img
+                  alt="optimism"
+                  src={optimismLogo}
+                />
               ) : null}
-            </div>
-            <div className="tooltip-content left">
-              {nodeChainId === SEPOLIA_OPT_HEX ? (
-                <div
-                  style={{
-                    textAlign: "center",
-                    lineHeight: "1.5em",
-                    maxWidth: 450,
-                  }}
-                >
-                  Your Kinode is currently pointed at Sepolia. To point at
-                  Optimism, boot without the "--testnet" flag.
-                </div>
-              ) : nodeChainId === OPTIMISM_OPT_HEX ? (
-                <div
-                  style={{
-                    textAlign: "center",
-                    lineHeight: "1.5em",
-                    maxWidth: 450,
-                  }}
-                >
-                  Your Kinode is currently pointed at Optimism. To point at
-                  Sepolia, boot with the "--testnet" flag.
-                </div>
-              ) : null}
-            </div>
-          </div>
-        )}
-        <div className="col" style={{ gap: 16, marginBottom: 32 }}>
+              text={nodeChainId === SEPOLIA_OPT_HEX
+                ? `Your Kinode is currently pointed at Sepolia. To point at Optimism, boot without the "--testnet" flag.`
+                : nodeChainId === OPTIMISM_OPT_HEX
+                  ? `Your Kinode is currently pointed at Optimism. To point at Sepolia, boot with the "--testnet" flag.`
+                  : ''}
+            />
+          )}
+        <div className="flex flex-col gap-4">
           {header}
         </div>
         {!hideConnect && (
           <div
-            style={{
-              minWidth: "50vw",
-              width: 400,
-              justifyContent: "center",
-              display: "flex",
-            }}
+            className="flex place-items-center place-content-center max-w-[50vw]"
           >
             {isActive && account ? (
               <ChainInfo
@@ -135,11 +111,10 @@ function OsHeader({
                 changeConnectedAccount={changeConnectedAccount}
               />
             ) : (
-              <div className="col" style={{ gap: 32, marginTop: 16 }}>
-                <h5 style={{ textAlign: "center", lineHeight: "1.5em" }}>
+              <div className="flex flex-col gap-8 mt-4">
+                <h5 className="text-center max-w-[450px] leading-6">
                   You must connect to a browser wallet to continue
                 </h5>
-                {/* <div style={{ textAlign: 'center', lineHeight: '1.5em' }}>We recommend <a href="https://metamask.io/download.html" target="_blank" rel="noreferrer">MetaMask</a></div> */}
                 {isActivating ? (
                   <Loader msg="Approve connection in your wallet" />
                 ) : (
@@ -147,11 +122,7 @@ function OsHeader({
                 )}
                 {nodeChainId === SEPOLIA_OPT_HEX && (
                   <h5
-                    style={{
-                      textAlign: "center",
-                      lineHeight: "1.5em",
-                      maxWidth: 450,
-                    }}
+                    className="text-center max-w-[450px] leading-6"
                   >
                     Kinode is currently on the Sepolia Testnet, if you need
                     testnet ETH, you can get some from the{" "}
@@ -173,4 +144,4 @@ function OsHeader({
   );
 }
 
-export default OsHeader;
+export default KinodeHeader;

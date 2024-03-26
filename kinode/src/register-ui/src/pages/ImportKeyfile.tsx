@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { utils } from "ethers";
-import OsHeader from "../components/KnsHeader";
+import KinodeHeader from "../components/KnsHeader";
 import { PageProps } from "../lib/types";
 import Loader from "../components/Loader";
 
@@ -185,8 +185,8 @@ function ImportKeyfile({
 
   return (
     <>
-      <OsHeader
-        header={<h3>Import Keyfile</h3>}
+      <KinodeHeader
+        header={<h1>Import Keyfile</h1>}
         openConnect={openConnect}
         closeConnect={closeConnect}
         hideConnect
@@ -195,22 +195,16 @@ function ImportKeyfile({
       {loading ? (
         <Loader msg="Setting up node..." />
       ) : (
-        <form id="signup-form" className="col" onSubmit={handleImportKeyfile}>
+        <form id="signup-form" className="flex flex-col max-w-[450px]" onSubmit={handleImportKeyfile}>
           <div
-            style={{
-              alignSelf: "flex-start",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-              width: "100%",
-            }}
+            className="flex flex-col self-start place-content-center w-full"
           >
-            <h4 className="login-row row" style={{ marginBottom: "0.5em" }}>
+            <h4 className="my-2 flex">
               {" "}
               1. Upload Keyfile{" "}
             </h4>
             {Boolean(localKeyFileName) && (
-              <h5 style={{ textDecoration: "underline", marginBottom: "0.5em" }}>
+              <h5 className="underline mb-2">
                 {" "}
                 {localKeyFileName ? localKeyFileName : ".keyfile"}{" "}
               </h5>
@@ -220,20 +214,19 @@ function ImportKeyfile({
             </button>
             <input
               ref={keyfileInputRef}
-              style={{ display: "none" }}
+              className="hidden"
               type="file"
               onChange={handleKeyfile}
             />
           </div>
 
-          <div className="col" style={{ width: "100%" }}>
-            <h4 className="login-row row" style={{ marginBottom: "0.5em" }}>
+          <div className="flex flex-col w-full">
+            <h4 className="my-2 flex">
               {" "}
               2. Enter Password{" "}
             </h4>
 
             <input
-              style={{ width: "100%" }}
               type="password"
               id="password"
               required
@@ -242,23 +235,24 @@ function ImportKeyfile({
               placeholder="Min 6 characters"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
+              className="mb-1"
             />
 
             {pwErr && (
-              <div className="row">
+              <div className="flex">
                 {" "}
-                <p style={{ color: "red" }}> {pwErr} </p>{" "}
+                <p className="text-red-500"> {pwErr} </p>{" "}
               </div>
             )}
             {pwDebounced && !pwVet && 6 <= pw.length && (
-              <div className="row">
+              <div className="flex">
                 {" "}
-                <p style={{ color: "red" }}> Password is incorrect </p>{" "}
+                <p className="text-red-500"> Password is incorrect </p>{" "}
               </div>
             )}
           </div>
 
-          <div className="col" style={{ width: "100%" }}>
+          <div className="flex flex-col w-full mb-2">
             {keyErrs.map((x, i) => (
               <span key={i} className="key-err">
                 {x}
@@ -266,7 +260,7 @@ function ImportKeyfile({
             ))}
             <button type="submit"> Import Keyfile </button>
           </div>
-          <p style={{ lineHeight: "1.25em", fontFamily: "Helvetica" }}>
+          <p className="text-sm">
             Please note: if the original node was booted as a direct node
             (static IP), then you must run this node from the same IP. If not,
             you will have networking issues. If you need to change the network

@@ -5,12 +5,13 @@ import { toDNSWireFormat } from "../utils/dnsWire";
 import { BytesLike, utils } from 'ethers';
 import EnterOsName from "../components/EnterKnsName";
 import Loader from "../components/Loader";
-import OsHeader from "../components/KnsHeader";
+import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import { getNetworkName, setChain } from "../utils/chain";
 import { ReactComponent as NameLogo } from "../assets/kinode.svg"
 import DirectCheckbox from "../components/DirectCheckbox";
+import { Tooltip } from "../components/Tooltip";
 
 const {
   useAccounts,
@@ -110,31 +111,44 @@ function RegisterOsName({
 
   return (
     <>
-      <OsHeader header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
-        Register
-        <NameLogo style={{ height: 28, width: "auto", margin: "0 16px -3px" }} />
-        Name
-      </h3>} openConnect={openConnect} closeConnect={closeConnect} nodeChainId={nodeChainId} />
-      {Boolean(provider) && <form id="signup-form" className="col" onSubmit={handleRegister}>
+      <KinodeHeader header={<h1
+        className="flex place-content-center place-items-center mb-4"
+      >
+        Register Kinode Name
+      </h1>}
+        openConnect={openConnect}
+        closeConnect={closeConnect}
+        nodeChainId={nodeChainId}
+      />
+      {Boolean(provider) && <form
+        id="signup-form"
+        className="flex flex-col w-full max-w-[450px]"
+        onSubmit={handleRegister}
+      >
         {loading ? (
           <Loader msg={loading} />
         ) : (
           <>
-            <div style={{ width: '100%' }}>
-              <label className="login-row row" style={{ lineHeight: 1.5 }}>
-                Set up your Kinode with a .os name
-                <div className="tooltip-container" style={{ marginTop: -4 }}>
-                  <div className="tooltip-button">&#8505;</div>
-                  <div className="tooltip-content">Kinodes use a .os name in order to identify themselves to other nodes in the network</div>
-                </div>
+            <h3 className="flex flex-col w-full place-items-center my-8">
+              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2">
+                Choose a name for your kinode
+                <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
               </label>
               <EnterOsName {...enterOsNameProps} />
-            </div>
+            </h3>
             <DirectCheckbox {...{ direct, setDirect }} />
-            <button disabled={nameValidities.length !== 0} type="submit">
+            <button
+              disabled={nameValidities.length !== 0}
+              type="submit"
+              className="mt-2"
+            >
               Register .os name
             </button>
-            <Link to="/reset">already have an dot-os-name?</Link>
+            <Link to="/reset" className="flex self-stretch mt-2">
+              <button className="clear grow">
+                already have a dot-os-name?
+              </button>
+            </Link>
           </>
         )}
       </form>}

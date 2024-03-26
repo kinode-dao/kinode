@@ -5,7 +5,7 @@ import { toDNSWireFormat } from "../utils/dnsWire";
 import { BytesLike, utils } from "ethers";
 import EnterEthName from "../components/EnterEthName";
 import Loader from "../components/Loader";
-import OsHeader from "../components/KnsHeader";
+import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import { getNetworkName, setChain } from "../utils/chain";
@@ -177,7 +177,7 @@ function RegisterEthName({
 
   return (
     <>
-      <OsHeader
+      <KinodeHeader
         header={
           <h3
             className="row"

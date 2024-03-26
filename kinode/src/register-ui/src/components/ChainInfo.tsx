@@ -69,28 +69,35 @@ function ChainInfo({
   }, [chainId, networkName])
 
   return (
-    <div style={{ display: "flex", gap: 10, maxWidth: 500 }}>
+    <div
+      className='flex gap-4'
+    >
       {/* TODO: prompt to change address */}
       <button
         onClick={changeConnectedAccount}
-        className="chain-button monospace"
+        className="font-mono alt flex place-items-center max-w-1/3"
       >
         <Jazzicon
           address={account || ""}
           diameter={24}
-          style={{ marginRight: "0.5em" }}
+          className='mr-4'
         />{" "}
         {formatAddress(account || "")}
       </button>
       <button
         onClick={changeToNodeChain}
-        className="chain-button"
-        style={{ maxWidth: "27%" }}
+        className="alt max-w-1/3"
       >
-        {generateNetworkIcon(networkName)} {networkName}
+        {generateNetworkIcon(networkName)}
+        <div className='ml-2'>
+          {networkName}
+        </div>
       </button>
       {/* TODO: show KNS contract ID in modal */}
-      <button onClick={showKnsAddress} className="chain-button" style={{ maxWidth: "27%" }}>
+      <button
+        onClick={showKnsAddress}
+        className="alt max-w-1/3"
+      >
         KNS Contract
       </button>
     </div>

@@ -3,7 +3,7 @@ import { hooks } from "../connectors/metamask";
 import { Link, useNavigate } from "react-router-dom";
 import EnterOsName from "../components/EnterKnsName";
 import Loader from "../components/Loader";
-import OsHeader from "../components/KnsHeader";
+import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import DirectCheckbox from "../components/DirectCheckbox";
@@ -168,7 +168,7 @@ function ClaimOsInvite({
 
   return (
     <>
-      <OsHeader
+      <KinodeHeader
         header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
           Claim
           <NameLogo style={{ height: 28, width: "auto", margin: "0 16px -3px" }} />

@@ -32,7 +32,7 @@ import ClaimOsInvite from "./pages/ClaimKnsInvite";
 import SetPassword from "./pages/SetPassword";
 import Login from './pages/Login'
 import Reset from './pages/ResetKnsName'
-import OsHome from "./pages/KinodeHome"
+import KinodeHome from "./pages/KinodeHome"
 import ResetNode from "./pages/ResetNode";
 import ImportKeyfile from "./pages/ImportKeyfile";
 import { UnencryptedIdentity } from "./lib/types";
@@ -233,7 +233,7 @@ function App() {
         <Routes>
           <Route path="/" element={navigateToLogin
             ? <Navigate to="/login" replace />
-            : <OsHome {...props} />
+            : <KinodeHome {...props} />
           } />
           <Route path="/claim-invite" element={<ClaimOsInvite {...props} />} />
           <Route path="/register-name" element={<RegisterOsName  {...props} />} />
