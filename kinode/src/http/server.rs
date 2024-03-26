@@ -706,9 +706,8 @@ async fn http_handler(
                     }
                 }
             }
-        } else {
-            existing_headers.insert(header_name.to_owned(), header_value.to_owned());
         }
+        existing_headers.insert(header_name.to_owned(), header_value.to_owned());
     }
     Ok(response)
 }
