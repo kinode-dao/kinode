@@ -121,6 +121,7 @@ pub async fn register(
     http_port: u16,
     keyfile: Option<Vec<u8>>,
     testnet: bool,
+    maybe_rpc: Option<String>,
 ) {
     // Networking info is generated and passed to the UI, but not used until confirmed
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
@@ -153,13 +154,22 @@ pub async fn register(
     };
 
     // This ETH provider uses public rpc endpoints to verify registration signatures.
-    let url = if testnet {
+    let url = if let Some(rpc_url) = maybe_rpc {
+        rpc_url
+    } else if testnet {
         "wss://ethereum-sepolia-rpc.publicnode.com".to_string()
     } else {
         "wss://optimism-rpc.publicnode.com".to_string()
     };
     let connector = WsConnect { url, auth: None };
-    let client = ClientBuilder::default().ws(connector).await.unwrap();
+    let Ok(client) = ClientBuilder::default().ws(connector).await else {
+        panic!(
+            "Error: runtime could not connect to ETH RPC.\n\
+            This is necessary in order to verify node identity onchain.\n\
+            Please make sure you are using a valid WebSockets URL if using \
+            the --rpc flag, and you are connected to the internet."
+        );
+    };
 
     let provider = Arc::new(Provider::new_with_client(client));
 
