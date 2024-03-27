@@ -2,6 +2,7 @@
   "name": "register",
   "version": "0.1.0",
   "private": true,
+  "proxy": "http://localhost:8080",
   "dependencies": {
     "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
     "@ethersproject/hash": "^5.7.0",

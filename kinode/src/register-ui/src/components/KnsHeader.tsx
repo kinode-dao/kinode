@@ -78,14 +78,18 @@ function KinodeHeader({
         {(nodeChainId === SEPOLIA_OPT_HEX ||
           nodeChainId === OPTIMISM_OPT_HEX) && (
             <Tooltip
+              position="left"
+              className="!absolute top-8 right-8"
               button={nodeChainId === SEPOLIA_OPT_HEX ? (
                 <img
                   alt="sepolia"
+                  className="network-icon"
                   src={sepoliaLogo}
                 />
               ) : nodeChainId === OPTIMISM_OPT_HEX ? (
                 <img
                   alt="optimism"
+                  className="network-icon"
                   src={optimismLogo}
                 />
               ) : null}
@@ -96,12 +100,9 @@ function KinodeHeader({
                   : ''}
             />
           )}
-        <div className="flex flex-col gap-4">
-          {header}
-        </div>
         {!hideConnect && (
           <div
-            className="flex place-items-center place-content-center max-w-[50vw]"
+            className="flex c max-w-[50vw] mb-8"
           >
             {isActive && account ? (
               <ChainInfo
@@ -111,27 +112,28 @@ function KinodeHeader({
                 changeConnectedAccount={changeConnectedAccount}
               />
             ) : (
-              <div className="flex flex-col gap-8 mt-4">
-                <h5 className="text-center max-w-[450px] leading-6">
-                  You must connect to a browser wallet to continue
+              <div className="flex flex-col gap-8 my-4">
+                <h5 className="flex c">
+                  {!isActivating && 'You must connect to a browser wallet to continue.'}
+
+                  {isActivating ? (
+                    <Loader msg="Approve connection in your wallet" />
+                  ) : (
+                    <button onClick={connectWallet} className="ml-2"> Connect Wallet </button>
+                  )}
                 </h5>
-                {isActivating ? (
-                  <Loader msg="Approve connection in your wallet" />
-                ) : (
-                  <button onClick={connectWallet}> Connect Wallet </button>
-                )}
                 {nodeChainId === SEPOLIA_OPT_HEX && (
                   <h5
-                    className="text-center max-w-[450px] leading-6"
+                    className="text-center max-w-[450px] leading-6 flex c"
                   >
-                    Kinode is currently on the Sepolia Testnet, if you need
-                    testnet ETH, you can get some from the{" "}
+                    Kinode is currently on the Sepolia Testnet.
                     <a
                       href="https://sepoliafaucet.com/"
                       target="_blank"
                       rel="noreferrer"
+                      className="button alt ml-2"
                     >
-                      Sepolia Faucet
+                      Get Testnet ETH
                     </a>
                   </h5>
                 )}
@@ -139,6 +141,9 @@ function KinodeHeader({
             )}
           </div>
         )}
+        <div className="flex flex-col gap-4 c">
+          {header}
+        </div>
       </div>
     </>
   );

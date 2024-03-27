@@ -142,5 +142,9 @@ button:disabled {
 }
 
 .network-icon {
-  @apply h-8 w-8;
+  @apply h-8 w-8 filter grayscale-[1];
+}
+
+.c {
+  @apply place-items-center place-content-center;
 }

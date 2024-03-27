@@ -10,6 +10,7 @@ import { ipToNumber } from "../utils/ipToNumber";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { useNavigate } from "react-router-dom";
+import { Tooltip } from "../components/Tooltip";
 
 const { useProvider } = hooks;
 
@@ -186,7 +187,7 @@ function Login({
   return (
     <>
       <KinodeHeader
-        header={<h1>Login to Kinode</h1>}
+        header={<h1 className="mb-8">Login to Kinode</h1>}
         openConnect={openConnect}
         closeConnect={closeConnect}
         hideConnect={!showReset}
@@ -195,78 +196,68 @@ function Login({
       {loading ? (
         <Loader msg={loading} />
       ) : (
-        <form id="signup-form" className="col" onSubmit={handleLogin}>
-          <div style={{ width: "100%" }}>
-            <div className="login-row row" style={{ fontSize: 20, marginBottom: "1em" }}>
-              {" "}
-              Login as {knsName}{" "}
+        <form
+          id="signup-form"
+          className="flex flex-col w-full max-w-[450px]"
+          onSubmit={handleLogin}
+        >
+          <div className="self-stretch mb-2 flex flex-col">
+            <div className="flex text-lg mb-2 place-items-center place-content-center">
+              <span className="font-bold ml-2">
+                {knsName}
+              </span>
+              <span className="ml-2 mt-1 text-sm">
+                ({isDirect ? "direct" : "indirect"} node)
+              </span>
             </div>
-            <label className="login-row row" style={{ marginBottom: "1em" }}>
-              {" "}
-              Enter Password{" "}
-            </label>
             <input
-              style={{ width: "100%" }}
               type="password"
               id="password"
               required
               minLength={6}
               name="password"
-              placeholder="Min 6 characters"
+              placeholder="Password"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
               autoFocus
+              className="self-stretch"
             />
           </div>
 
-          <div className="col" style={{ width: "100%", lineHeight: 1.5 }}>
+          {keyErrs.length > 0 && <div className="flex flex-col w-full leading-6 mb-2">
             {keyErrs.map((x, i) => (
-              <div key={i} className="key-err">
+              <div key={i} className="text-red-500">
                 {x}
               </div>
             ))}
-          </div>
+          </div>}
 
-          <div className="col" style={{ width: "100%", lineHeight: 1.5 }}>
-            <button type="submit"> {reset ? "Reset & " : ""} Login </button>
-            {/* <button onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                navigate('/?initial=false', { replace: true });
-              }}>Main Menu</button> */}
-            <div
-              className="login-row col"
-              style={{
-                marginLeft: "0.2em",
-                lineHeight: 1.5,
-              }}
-            >
-              Registered as {isDirect ? "a direct" : "an indirect"} node
-            </div>
-            <div
-              className="reset-networking"
+          <button type="submit" className="w-full mb-2"> {reset ? "Reset & " : ""} Login </button>
+
+          <div className="flex flex-col w-full self-stretch place-content-center place-items-center">
+            <button
+              className="clear self-stretch mb-1"
               onClick={() => {
                 setShowReset(!showReset);
                 setReset(!showReset);
               }}
             >
               Reset Networking Info
-            </div>
-            <div
-              className="reset-networking"
+            </button>
+            <button
+              className="clear self-stretch"
               onClick={() => {
                 navigate('/reset-node')
               }}
             >
               Reset Node & Password
-            </div>
+            </button>
             {showReset && (
               <div
-                className="col"
-                style={{ width: "100%", gap: 16, marginTop: 16 }}
+                className="flex flex-col w-full gap-2 mt-4"
               >
-                <div className="row" style={{ width: "100%" }}>
-                  <div style={{ position: "relative" }}>
+                <div className="flex w-full place-items-center">
+                  <div className="relative flex">
                     <input
                       type="checkbox"
                       id="reset"
@@ -274,6 +265,7 @@ function Login({
                       checked={reset}
                       onChange={(e) => setReset(e.target.checked)}
                       autoFocus
+                      className="mr-2"
                     />
                     {reset && (
                       <span
@@ -287,13 +279,7 @@ function Login({
                   <label htmlFor="reset" className="direct-node-message">
                     Reset networking keys and publish on-chain
                   </label>
-                  <div className="tooltip-container">
-                    <div className="tooltip-button">&#8505;</div>
-                    <div className="tooltip-content">
-                      This will update your networking keys and publish the new
-                      info on-chain
-                    </div>
-                  </div>
+                  <Tooltip text={`This will update your networking keys and publish the new info on-chain`} />
                 </div>
                 <DirectCheckbox {...{ direct, setDirect }} />
               </div>

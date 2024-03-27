@@ -49,7 +49,6 @@ function ChainInfo({
             className="network-icon"
             src={sepoliaLogo}
             alt={networkName}
-            style={{ filter: "grayscale(100%)" }}
           />
         );
       default:
@@ -58,7 +57,6 @@ function ChainInfo({
             className="network-icon"
             src={unknownLogo}
             alt={networkName}
-            style={{ filter: "grayscale(100%)" }}
           />
         );
     }
@@ -75,7 +73,7 @@ function ChainInfo({
       {/* TODO: prompt to change address */}
       <button
         onClick={changeConnectedAccount}
-        className="font-mono alt flex place-items-center max-w-1/3"
+        className="font-mono clear flex place-items-center max-w-1/3"
       >
         <Jazzicon
           address={account || ""}
@@ -86,7 +84,7 @@ function ChainInfo({
       </button>
       <button
         onClick={changeToNodeChain}
-        className="alt max-w-1/3"
+        className="clear max-w-1/3"
       >
         {generateNetworkIcon(networkName)}
         <div className='ml-2'>
@@ -96,7 +94,7 @@ function ChainInfo({
       {/* TODO: show KNS contract ID in modal */}
       <button
         onClick={showKnsAddress}
-        className="alt max-w-1/3"
+        className="clear max-w-1/3"
       >
         KNS Contract
       </button>

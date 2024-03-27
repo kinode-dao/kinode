@@ -6,7 +6,7 @@ import React, {
     useState,
 } from "react";
 import { hooks } from "../connectors/metamask";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { namehash } from "ethers/lib/utils";
 import { toAscii } from "idna-uts46-hx";
 import { hash } from "eth-ens-namehash";
@@ -19,6 +19,7 @@ import { getNetworkName, setChain } from "../utils/chain";
 import { ReactComponent as NameLogo } from "../assets/kinode.svg"
 import { Tooltip } from "../components/Tooltip";
 import { DirectTooltip } from "../components/DirectTooltip";
+import DirectCheckbox from "../components/DirectCheckbox";
 
 const { useAccounts, useProvider } = hooks;
 
@@ -146,53 +147,31 @@ function ResetNode({
 
     return (
         <>
-            <KinodeHeader header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
-                Reset
-                <NameLogo style={{ height: 28, width: "auto", margin: "0 16px -3px" }} />
-                Name
-            </h3>}
+            <KinodeHeader header={<h1 className="flex c mb-8">
+                Reset Kinode Name
+            </h1>}
                 openConnect={openConnect}
                 closeConnect={closeConnect}
                 nodeChainId={nodeChainId}
             />
             {Boolean(provider) && (
-                <form id="signup-form" className="col" onSubmit={handleResetRecords}>
+                <form
+                    id="signup-form"
+                    className="flex flex-col"
+                    onSubmit={handleResetRecords}
+                >
                     {loading ? (
                         <Loader msg={loading} />
                     ) : (
                         <>
-                            <div className="col" style={{ width: "100%" }}>
-                                <h5 className="login-row row" style={{ marginBottom: 8 }}>
-                                    {knsName}
-                                </h5>
-                            </div>
+                            <DirectCheckbox {...{ direct, setDirect }} />
 
-                            <div className="row">
-                                <div style={{ position: "relative" }}>
-                                    <input
-                                        type="checkbox"
-                                        id="direct"
-                                        name="direct"
-                                        checked={direct}
-                                        onChange={(e) => setDirect(e.target.checked)}
-                                        autoFocus
-                                    />
-                                    {direct && (
-                                        <span
-                                            onClick={() => setDirect(false)}
-                                            className="checkmark"
-                                        >
-                                            &#10003;
-                                        </span>
-                                    )}
-                                </div>
-                                <label htmlFor="direct" className="direct-node-message">
-                                    Register as a direct node. If you are unsure leave unchecked.
-                                </label>
-                                <DirectTooltip />
-                            </div>
-
-                            <button type="submit"> Reset Node </button>
+                            <button type="submit" className="self-stretch mt-2 text-2xl">
+                                Reset {knsName}
+                            </button>
+                            <Link to="/" className="button alt mt-2">
+                                Back
+                            </Link>
                         </>
                     )}
                 </form>

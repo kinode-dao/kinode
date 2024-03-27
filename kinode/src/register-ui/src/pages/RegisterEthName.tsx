@@ -179,29 +179,22 @@ function RegisterEthName({
     <>
       <KinodeHeader
         header={
-          <h3
-            className="row"
-            style={{ justifyContent: "center", alignItems: "center" }}
-          >
-            Register
-            <NameLogo
-              style={{ height: 28, width: "auto", margin: "0 16px -3px" }}
-            />
-            Name
-          </h3>
+          <h1>
+            Register Kinode Name
+          </h1>
         }
         openConnect={openConnect}
         closeConnect={closeConnect}
         nodeChainId={nodeChainId === OPTIMISM_OPT_HEX ? MAINNET_OPT_HEX : nodeChainId}
       />
       {Boolean(provider) && (
-        <form id="signup-form" className="col" onSubmit={handleRegister}>
+        <form id="signup-form" className="flex flex-col" onSubmit={handleRegister}>
           {loading ? (
             <Loader msg={loading} />
           ) : (
             <>
-              <div style={{ width: "100%" }}>
-                <label className="login-row row" style={{ lineHeight: 1.5 }}>
+              <div className="w-full">
+                <label className="flex leading-6">
                   Set up your Kinode with a .eth name
                 </label>
                 <EnterEthName {...enterEthNameProps} />
