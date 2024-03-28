@@ -1,16 +1,14 @@
 #![feature(let_chains)]
 use kinode_process_lib::{
-    await_message, call_init, get_blob,
+    await_message, call_init,
     http::{
-        bind_http_path, bind_http_static_path, get_mime_type, send_response, serve_index_html,
-        serve_ui, HttpServerError, HttpServerRequest, IncomingHttpRequest, StatusCode,
+        bind_http_path, bind_http_static_path, send_response, HttpServerError, HttpServerRequest,
+        StatusCode,
     },
-    println,
-    vfs::{FileType, VfsAction, VfsRequest, VfsResponse},
-    Address, LazyLoadBlob as KiBlob, Message, ProcessId, Request as KiRequest,
+    println, Address, Message, ProcessId,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 /// The request format to add or remove an app from the homepage. You must have messaging
 /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
