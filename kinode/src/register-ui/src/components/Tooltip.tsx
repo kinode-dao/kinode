@@ -1,6 +1,6 @@
 import { useState } from "react"
 import classNames from 'classnames'
-import { FaQuestion } from 'react-icons/fa6'
+import { FaQuestion, FaX } from 'react-icons/fa6'
 
 interface TooltipProps {
   text: string
@@ -30,5 +30,10 @@ export const Tooltip: React.FC<TooltipProps> = ({ text, button, className, posit
       })}>
       {text}
     </div>
+    <button className={classNames("absolute bg-black icon right-1 top-1", {
+      "hidden": !showTooltip,
+    })} onClick={() => setShowTooltip(false)}>
+      <FaX />
+    </button>
   </div>
 }

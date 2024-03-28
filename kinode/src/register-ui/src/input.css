@@ -141,10 +141,6 @@ button:disabled {
   @apply rounded-lg p-4 bg-orange/25;
 }
 
-.network-icon {
-  @apply h-8 w-8 filter grayscale-[1];
-}
-
 .c {
   @apply place-items-center place-content-center;
 }
