@@ -188,7 +188,7 @@ function Login({
   return (
     <>
       <KinodeHeader
-        header={<KinodeTitle prefix={'Login'} />}
+        header={<KinodeTitle prefix='Login to' showLogo />}
         openConnect={openConnect}
         closeConnect={closeConnect}
         hideConnect={!showReset}
@@ -204,9 +204,9 @@ function Login({
         >
           <div className="self-stretch mb-2 flex flex-col">
             <div className="flex text-lg mb-2 place-items-center place-content-center">
-              <span className="font-bold ml-2">
+              <h3 className="font-bold">
                 {knsName}
-              </span>
+              </h3>
               <span className="ml-2 mt-1 text-sm">
                 ({isDirect ? "direct" : "indirect"} node)
               </span>
