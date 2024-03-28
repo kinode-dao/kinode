@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: 'Futura';
+  src: url('./assets/fonts/Futura-Heavy.ttf');
+}
+
+@font-face {
+  font-family: 'OpenSans';
+  src: url('./assets/fonts/OpenSans-CondBold.ttf');
+}
+
+@font-face {
+  font-family: 'Barlow';
+  src: url('./assets/fonts/BarlowCondensed-Black.ttf');
+}
+
+@layer components {
+  .heading {
+    font-family: OpenSans;
+    letter-spacing: -0.01em;
+    @apply leading-6 m-0;
+  }
+
+  .display {
+    font-family: Futura;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply heading;
+  }
+
+  h1 {
+    @apply text-3xl;
+  }
+
+  h2 {
+    @apply text-2xl;
+  }
+
+  h3 {
+    @apply text-xl;
+  }
+
+  h4 {
+    @apply text-lg;
+  }
+
+  h6 {
+    @apply text-sm;
+  }
+
+  .button {
+    @apply flex m-0 py-2 px-6 rounded border-orange bg-orange border-2 cursor-pointer place-items-center place-content-center text-center rounded-lg heading transition ease-in-out duration-100 hover:bg-black hover:text-white;
+  }
+
+  button {
+    @apply button;
+  }
+
+  .clear {
+    @apply bg-transparent border-transparent font-bold hover:bg-white/25 font-['Barlow'];
+  }
+
+  .alt {
+    @apply bg-white text-black border-white;
+  }
+
+  .thin {
+    @apply px-0 border-none;
+  }
+
+  .icon {
+    @apply flex items-center place-content-center bg-transparent w-11 p-3 text-[14px] rounded-full border-white/25;
+  }
+
+  .icon.alt {
+    @apply border-black/25 hover:border-white/25
+  }
+}
+
+body {
+  @apply bg-[url('./assets/background.jpg')] bg-cover bg-no-repeat bg-center bg-fixed text-white;
+}
+
+input {
+  all: unset;
+}
+
+select,
+input[type="text"],
+input[type="password"],
+input[type="checkbox"] {
+  @apply px-4 py-2 rounded-lg bg-orange bg-opacity-25 text-white border border-orange border-2;
+}
+
+input[type="checkbox"] {
+  @apply w-2 h-2 cursor-pointer p-2;
+}
+
+input[type="checkbox"]:checked {
+  @apply bg-orange;
+}
+
+.checkmark {
+  @apply absolute left-1 text-xl -top-1 cursor-pointer;
+}
+
+::placeholder,
+::-webkit-input-placeholder::placeholder,
+::-moz-placeholder::placeholder,
+::-ms-input-placeholder {
+  @apply !text-white;
+}
+
+select {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="%23ffffff" d="M7.41 8.58L12 13.17l4.59-4.59L18 10l-6 6-6-6z"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 1.25rem center;
+  @apply appearance-none pr-16;
+}
+
+button:hover {
+  @apply opacity-90 shadow-none;
+}
+
+button:disabled {
+  @apply opacity-70 cursor-not-allowed bg-gray border-gray;
+}
+
+.obox {
+  @apply rounded-lg p-4 bg-orange/25;
+}
+
+.c {
+  @apply place-items-center place-content-center;
+}
+
+.network-icon {
+  @apply w-12 h-12 filter grayscale;
+}
