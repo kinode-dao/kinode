@@ -3,7 +3,7 @@ import { hooks } from "../connectors/metamask";
 import { Link, useNavigate } from "react-router-dom";
 import { toDNSWireFormat } from "../utils/dnsWire";
 import { BytesLike, utils } from 'ethers';
-import EnterOsName from "../components/EnterKnsName";
+import EnterKnsName from "../components/EnterKnsName";
 import Loader from "../components/Loader";
 import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
@@ -114,7 +114,7 @@ function RegisterOsName({
       <KinodeHeader header={<h1
         className="flex place-content-center place-items-center mb-4"
       >
-        Register Kinode Name
+        Register Kinode Name (KNS)
       </h1>}
         openConnect={openConnect}
         closeConnect={closeConnect}
@@ -134,7 +134,7 @@ function RegisterOsName({
                 Choose a name for your kinode
                 <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
               </label>
-              <EnterOsName {...enterOsNameProps} />
+              <EnterKnsName {...enterOsNameProps} />
             </h3>
             <DirectCheckbox {...{ direct, setDirect }} />
             <button

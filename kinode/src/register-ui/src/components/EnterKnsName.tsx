@@ -21,7 +21,7 @@ type ClaimOsNameProps = {
   triggerNameCheck: boolean
 }
 
-function EnterOsName({
+function EnterKnsName({
   name,
   setName,
   nameValidities,
@@ -109,4 +109,4 @@ function EnterOsName({
 
 }
 
-export default EnterOsName;
+export default EnterKnsName;

@@ -30,7 +30,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ text, button, className, posit
       })}>
       {text}
     </div>
-    <button className={classNames("absolute bg-black icon right-1 top-1", {
+    <button className={classNames("absolute bg-black icon right-0 top-0", {
       "hidden": !showTooltip,
     })} onClick={() => setShowTooltip(false)}>
       <FaX />

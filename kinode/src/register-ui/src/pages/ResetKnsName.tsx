@@ -20,7 +20,8 @@ import { ReactComponent as NameLogo } from "../assets/kinode.svg"
 import { Tooltip } from "../components/Tooltip";
 import { DirectTooltip } from "../components/DirectTooltip";
 import DirectCheckbox from "../components/DirectCheckbox";
-import EnterOsName from "../components/EnterKnsName";
+import EnterKnsName from "../components/EnterKnsName";
+import { KinodeTitle } from "../components/KinodeTitle";
 
 const NAME_INVALID_PUNY = "Unsupported punycode character";
 const NAME_NOT_OWNER = "Name does not belong to this wallet";
@@ -214,9 +215,7 @@ function Reset({
 
   return (
     <>
-      <KinodeHeader header={<h1 className="flex place-content-center place-items-center mb-4">
-        Reset Kinode Name
-      </h1>}
+      <KinodeHeader header={<KinodeTitle prefix="Reset KNS Name" />}
         openConnect={openConnect}
         closeConnect={closeConnect}
         nodeChainId={nodeChainId}
@@ -227,12 +226,12 @@ function Reset({
             <Loader msg={loading} />
           ) : (
             <>
-              <h3 className="flex flex-col w-full place-items-center my-8">
+              <h3 className="flex flex-col w-full place-items-center mb-2">
                 <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2">
                   Choose a name for your kinode
                   <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
                 </label>
-                <EnterOsName {...{ name, setName, nameVets, dotOs, triggerNameCheck, nameValidities, setNameValidities }} />
+                <EnterKnsName {...{ name, setName, nameVets, dotOs, triggerNameCheck, nameValidities, setNameValidities }} />
               </h3>
 
               <DirectCheckbox {...{ direct, setDirect }} />

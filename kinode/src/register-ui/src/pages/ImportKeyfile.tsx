@@ -235,7 +235,7 @@ function ImportKeyfile({
               placeholder="Min 6 characters"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
-              className="mb-1"
+              className="mb-2"
             />
 
             {pwErr && (

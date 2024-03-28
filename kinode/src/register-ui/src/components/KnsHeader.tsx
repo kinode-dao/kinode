@@ -100,9 +100,12 @@ function KinodeHeader({
                   : ''}
             />
           )}
+        <div className="flex flex-col gap-4 c">
+          {header}
+        </div>
         {!hideConnect && (
           <div
-            className="flex c max-w-[50vw] mb-8"
+            className="flex c max-w-[50vw] mb-8 absolute top-2 left-2"
           >
             {isActive && account ? (
               <ChainInfo
@@ -141,9 +144,6 @@ function KinodeHeader({
             )}
           </div>
         )}
-        <div className="flex flex-col gap-4 c">
-          {header}
-        </div>
       </div>
     </>
   );

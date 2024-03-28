@@ -144,3 +144,7 @@ button:disabled {
 .c {
   @apply place-items-center place-content-center;
 }
+
+.network-icon {
+  @apply w-12 h-12 filter grayscale;
+}

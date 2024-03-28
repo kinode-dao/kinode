@@ -13,6 +13,7 @@ import { hash } from "eth-ens-namehash";
 import { ReactComponent as NameLogo } from "../assets/kinode.svg";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { MAINNET_OPT_HEX, OPTIMISM_OPT_HEX } from "../constants/chainId";
+import { KinodeTitle } from "../components/KinodeTitle";
 
 const { useAccounts } = hooks;
 
@@ -178,11 +179,7 @@ function RegisterEthName({
   return (
     <>
       <KinodeHeader
-        header={
-          <h1>
-            Register Kinode Name
-          </h1>
-        }
+        header={<KinodeTitle prefix="Register via ENS" />}
         openConnect={openConnect}
         closeConnect={closeConnect}
         nodeChainId={nodeChainId === OPTIMISM_OPT_HEX ? MAINNET_OPT_HEX : nodeChainId}
@@ -193,14 +190,18 @@ function RegisterEthName({
             <Loader msg={loading} />
           ) : (
             <>
-              <div className="w-full">
-                <label className="flex leading-6">
+              <h3 className="w-full flex flex-col c mb-2">
+                <label className="flex leading-6 mb-2">
                   Set up your Kinode with a .eth name
                 </label>
                 <EnterEthName {...enterEthNameProps} />
-              </div>
+              </h3>
               <DirectCheckbox {...{ direct, setDirect }} />
-              <button disabled={nameValidities.length !== 0} type="submit">
+              <button
+                disabled={nameValidities.length !== 0}
+                type="submit"
+                className="mt-2"
+              >
                 Register .eth name
               </button>
             </>

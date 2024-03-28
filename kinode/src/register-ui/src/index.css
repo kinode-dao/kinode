@@ -690,12 +690,12 @@ button:hover {
   position: static;
 }
 
-.absolute {
-  position: absolute;
-}
-
 .\!absolute {
   position: absolute !important;
+}
+
+.absolute {
+  position: absolute;
 }
 
 .relative {
@@ -706,28 +706,48 @@ button:hover {
   bottom: 0.5rem;
 }
 
-.top-16 {
-  top: 4rem;
+.bottom-8 {
+  bottom: 2rem;
+}
+
+.left-8 {
+  left: 2rem;
+}
+
+.right-1 {
+  right: 0.25rem;
 }
 
 .right-8 {
   right: 2rem;
 }
 
+.top-1 {
+  top: 0.25rem;
+}
+
 .top-8 {
   top: 2rem;
 }
 
-.bottom-16 {
-  bottom: 4rem;
+.right-0 {
+  right: 0px;
 }
 
-.left-16 {
-  left: 4rem;
+.top-0 {
+  top: 0px;
 }
 
-.right-16 {
-  right: 4rem;
+.left-0 {
+  left: 0px;
+}
+
+.left-2 {
+  left: 0.5rem;
+}
+
+.top-2 {
+  top: 0.5rem;
 }
 
 .z-10 {
@@ -752,6 +772,11 @@ button:hover {
 .my-8 {
   margin-top: 2rem;
   margin-bottom: 2rem;
+}
+
+.my-10 {
+  margin-top: 2.5rem;
+  margin-bottom: 2.5rem;
 }
 
 .mb-1 {
@@ -802,6 +827,10 @@ button:hover {
   margin-top: 2rem;
 }
 
+.mt-10 {
+  margin-top: 2.5rem;
+}
+
 .block {
   display: block;
 }
@@ -814,8 +843,20 @@ button:hover {
   display: none;
 }
 
+.h-16 {
+  height: 4rem;
+}
+
 .h-screen {
   height: 100vh;
+}
+
+.h-32 {
+  height: 8rem;
+}
+
+.w-16 {
+  width: 4rem;
 }
 
 .w-full {
@@ -824,6 +865,10 @@ button:hover {
 
 .w-screen {
   width: 100vw;
+}
+
+.w-32 {
+  width: 8rem;
 }
 
 .min-w-\[200px\] {
@@ -907,6 +952,11 @@ button:hover {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
+.text-2xl {
+  font-size: 1.5rem;
+  line-height: 2rem;
+}
+
 .text-6xl {
   font-size: 3.75rem;
   line-height: 1;
@@ -926,9 +976,19 @@ button:hover {
   line-height: 1.25rem;
 }
 
-.text-2xl {
-  font-size: 1.5rem;
-  line-height: 2rem;
+.text-3xl {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+}
+
+.text-5xl {
+  font-size: 3rem;
+  line-height: 1;
+}
+
+.text-xs {
+  font-size: 0.75rem;
+  line-height: 1rem;
 }
 
 .font-bold {
@@ -946,15 +1006,6 @@ button:hover {
 
 .underline {
   text-decoration-line: underline;
-}
-
-.grayscale {
-  --tw-grayscale: grayscale(100%);
-  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
-}
-
-.filter {
-  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
 }
 
 @font-face {
@@ -1067,14 +1118,14 @@ button:disabled {
   padding: 1rem;
 }
 
-.network-icon {
-  height: 2rem;
-  width: 2rem;
-  --tw-grayscale: grayscale(1);
-  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
-}
-
 .c {
   place-content: center;
   place-items: center;
+}
+
+.network-icon {
+  height: 3rem;
+  width: 3rem;
+  --tw-grayscale: grayscale(100%);
+  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
 }

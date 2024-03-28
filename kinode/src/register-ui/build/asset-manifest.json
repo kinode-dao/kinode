@@ -1,7 +1,7 @@
 {
   "files": {
-    "main.css": "/static/css/main.72c02557.css",
-    "main.js": "/static/js/main.6d54da2b.js",
+    "main.css": "/static/css/main.6c087b1c.css",
+    "main.js": "/static/js/main.965c1d1a.js",
     "static/media/OpenSans-CondBold.ttf": "/static/media/OpenSans-CondBold.6293057f8484b6c0da03.ttf",
     "static/media/BarlowCondensed-Black.ttf": "/static/media/BarlowCondensed-Black.3ba02bbdeb04e17f34bf.ttf",
     "static/media/Futura-Heavy.ttf": "/static/media/Futura-Heavy.af72c25a6945b0f48abb.ttf",
@@ -11,7 +11,7 @@
     "static/media/kinode.svg": "/static/media/kinode.6b178bc9164b31d90099844a82d04497.svg"
   },
   "entrypoints": [
-    "static/css/main.72c02557.css",
-    "static/js/main.6d54da2b.js"
+    "static/css/main.6c087b1c.css",
+    "static/js/main.965c1d1a.js"
   ]
 }

@@ -1,13 +1,15 @@
 import React, { useState, useEffect, FormEvent } from "react";
 import { hooks } from "../connectors/metamask";
 import { Link, useNavigate } from "react-router-dom";
-import EnterOsName from "../components/EnterKnsName";
+import EnterKnsName from "../components/EnterKnsName";
 import Loader from "../components/Loader";
 import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { ReactComponent as NameLogo } from "../assets/kinode.svg"
+import { KinodeTitle } from "../components/KinodeTitle";
+import { Tooltip } from "../components/Tooltip";
 
 global.Buffer = global.Buffer || require("buffer").Buffer;
 
@@ -169,33 +171,23 @@ function ClaimOsInvite({
   return (
     <>
       <KinodeHeader
-        header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
-          Claim
-          <NameLogo style={{ height: 28, width: "auto", margin: "0 16px -3px" }} />
-          Invite
-        </h3>}
+        header={<KinodeTitle prefix="Claim Invite" />}
         openConnect={openConnect}
         closeConnect={closeConnect}
         nodeChainId={nodeChainId}
       />
       {Boolean(provider) && (
-        <form id="signup-form" className="col" onSubmit={handleRegister}>
+        <form id="signup-form" className="flex flex-col" onSubmit={handleRegister}>
           {isLoading ? (
             <Loader msg={loaderMsg} />
           ) : (
             <>
-              <div className="row" style={{ alignSelf: "flex-start" }}>
+              <div className="flex c mb-2">
                 <h5>Set up your Kinode with a .os name</h5>
-                <div className="tooltip-container">
-                  <div className="tooltip-button">&#8505;</div>
-                  <div className="tooltip-content">
-                    Kinodes use a .os name in order to identify themselves to
-                    other nodes in the network
-                  </div>
-                </div>
+                <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
               </div>
 
-              <div className="row" style={{ width: "100%" }}>
+              <div className="flex flex-col mb-2">
                 <input
                   value={invite}
                   onChange={(e) => setInvite(e.target.value)}
@@ -203,30 +195,35 @@ function ClaimOsInvite({
                   required
                   name="nec-invite"
                   placeholder="invite code"
+                  className="self-stretch"
                 />
                 {inviteValidity !== "" && (
                   <div className="invite-validity">{inviteValidity}</div>
                 )}
               </div>
 
-              <EnterOsName {...enterOsNameProps} />
+              <h3 className="mb-2">
+                <EnterKnsName {...enterOsNameProps} />
+              </h3>
 
               <DirectCheckbox {...{ direct, setDirect }} />
 
               <button
                 disabled={nameValidities.length !== 0 || inviteValidity !== ""}
                 type="submit"
+                className="self-stretch mt-2"
               >
                 Register .os name
               </button>
 
-              <Link to="/reset" style={{ color: "white", marginTop: "1em" }}>
-                already have an dot-os-name?
+              <Link to="/reset" className="button clear">
+                already have a .os?
               </Link>
             </>
           )}
-        </form>
-      )}
+        </form >
+      )
+      }
     </>
   );
 }

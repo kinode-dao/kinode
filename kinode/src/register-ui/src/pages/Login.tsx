@@ -1,7 +1,7 @@
 import React, { FormEvent, useCallback, useEffect, useState } from "react";
 import { namehash } from "ethers/lib/utils";
 import { BytesLike, utils } from "ethers";
-
+import kinodeLogo from "../assets/kinode.svg";
 import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
@@ -11,6 +11,7 @@ import { downloadKeyfile } from "../utils/download-keyfile";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { useNavigate } from "react-router-dom";
 import { Tooltip } from "../components/Tooltip";
+import { KinodeTitle } from "../components/KinodeTitle";
 
 const { useProvider } = hooks;
 
@@ -187,7 +188,7 @@ function Login({
   return (
     <>
       <KinodeHeader
-        header={<h1 className="mb-8">Login to Kinode</h1>}
+        header={<KinodeTitle prefix={'Login'} />}
         openConnect={openConnect}
         closeConnect={closeConnect}
         hideConnect={!showReset}
