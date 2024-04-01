@@ -693,7 +693,7 @@ pub fn handle_install(
                     action: vfs::VfsAction::Read,
                 })?)
                 .send_and_await_response(5)??
-                .body()
+                .body(),
         ) {
             return Err(anyhow::anyhow!("failed to read process file"));
         };
@@ -711,7 +711,7 @@ pub fn handle_install(
                 })?)
                 .inherit(true)
                 .send_and_await_response(5)??
-                .body()
+                .body(),
         ) else {
             return Err(anyhow::anyhow!("failed to initialize process"));
         };
@@ -845,7 +845,7 @@ pub fn handle_install(
                     parsed_new_process_id,
                 ))?)
                 .send_and_await_response(5)??
-                .body()
+                .body(),
         ) else {
             return Err(anyhow::anyhow!("failed to start process"));
         };
