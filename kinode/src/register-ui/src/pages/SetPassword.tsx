@@ -4,6 +4,8 @@ import Loader from "../components/Loader";
 import { utils, providers } from "ethers";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import { ReactComponent as NameLogo } from "../assets/kinode.svg"
+import { Tooltip } from "../components/Tooltip";
+import { KinodeTitle } from "../components/KinodeTitle";
 
 type SetPasswordProps = {
   direct: boolean;
@@ -111,11 +113,7 @@ function SetPassword({
   return (
     <>
       <KinodeHeader
-        header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
-          Set
-          <NameLogo style={{ height: 28, width: "auto", margin: "0 16px -3px" }} />
-          Password
-        </h3>}
+        header={<KinodeTitle prefix="Set Password" showLogo />}
         openConnect={() => { }}
         closeConnect={closeConnect}
         nodeChainId={nodeChainId}
@@ -123,17 +121,11 @@ function SetPassword({
       {loading ? (
         <Loader msg="Setting up node..." />
       ) : (
-        <form id="signup-form" className="col" onSubmit={handleSubmit}>
-          <div style={{ width: "100%" }}>
-            <div className="row label-row">
+        <form id="signup-form" className="flex flex-col max-w-[450px] w-full" onSubmit={handleSubmit}>
+          <div className="w-full flex flex-col">
+            <div className="flex self-stretch mb-2 place-items-center">
               <label htmlFor="password">New Password</label>
-              <div className="tooltip-container">
-                <div className="tooltip-button">&#8505;</div>
-                <div className="tooltip-content">
-                  This password will be used to log in if you restart your node
-                  or switch browsers.
-                </div>
-              </div>
+              <Tooltip text="This password will be used to log in if you restart your node or switch browsers." />
             </div>
             <input
               type="password"
@@ -145,10 +137,11 @@ function SetPassword({
               value={pw}
               onChange={(e) => setPw(e.target.value)}
               autoFocus
+              className="mb-2 self-stretch"
             />
           </div>
-          <div style={{ width: "100%" }}>
-            <div className="row label-row">
+          <div className="w-full flex flex-col mb-2">
+            <div className="flex">
               <label htmlFor="confirm-password">Confirm Password</label>
             </div>
             <input
@@ -160,6 +153,7 @@ function SetPassword({
               placeholder="Min 6 characters"
               value={pw2}
               onChange={(e) => setPw2(e.target.value)}
+              className="mb-2 self-stretch"
             />
             {Boolean(error) && <p style={{ color: "red" }}>{error}</p>}
           </div>
