@@ -84,7 +84,7 @@ function ChainInfo({
       </button>
       <button
         onClick={changeToNodeChain}
-        className="clear max-w-1/3"
+        className="clear max-w-1/3 z-10"
       >
         {generateNetworkIcon(networkName)}
         <div className='ml-2'>
