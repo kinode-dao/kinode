@@ -1,0 +1,22 @@
+{
+  "name": "Chat Template",
+  "subtitle": "The chat template from kit",
+  "description": "The kit chat template is the default app when starting a new kit project. This app is the basic version of that, packaged for the app store.",
+  "image": "https://st4.depositphotos.com/7662228/30134/v/450/depositphotos_301343880-stock-illustration-best-chat-speech-bubble-icon.jpg",
+  "version": "0.1.2",
+  "license": "MIT",
+  "website": "https://kinode.org",
+  "screenshots": [
+    "https://pongo-uploads.s3.us-east-2.amazonaws.com/Screenshot+2024-01-30+at+10.01.46+PM.png",
+    "https://pongo-uploads.s3.us-east-2.amazonaws.com/Screenshot+2024-01-30+at+10.01.52+PM.png"
+  ],
+  "mirrors": [
+    "odinsbadeye.os"
+  ],
+  "versions": [
+    "a2c584bf63a730efdc79ec0a3c93bc97eba4e8745c633e3abe090b4f7e270e92",
+    "c13f7ae39fa7f652164cfc1db305cd864cc1dc5f33827a2d74f7dde70ef36662",
+    "09d24205d8e1f3634448e881db200b88ad691bbdaabbccb885b225147ba4a93e",
+    "733be24324802a35944a73f355595f781de65d9d6e393bdabe879edcb77dfb62"
+  ]
+}
