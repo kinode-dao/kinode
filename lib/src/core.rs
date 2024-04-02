@@ -1557,7 +1557,7 @@ pub enum NetAction {
     Verify {
         from: Address,
         signature: Vec<u8>,
-    }
+    },
 }
 
 /// For now, only sent in response to a ConnectionRequest.
