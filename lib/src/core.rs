@@ -1546,6 +1546,18 @@ pub enum NetAction {
     GetName(String),
     /// get a user-readable diagnostics string containing networking inforamtion
     GetDiagnostics,
+    /// sign the attached blob payload, sign with our node's networking key.
+    /// **only accepted from our own node**
+    /// **the source [`Address`] will always be prepended to the payload**
+    Sign,
+    /// given a message in blob payload, verify the message is signed by
+    /// the given source. if the signer is not in our representation of
+    /// the PKI, will not verify.
+    /// **the `from` [`Address`] will always be prepended to the payload**
+    Verify {
+        from: Address,
+        signature: Vec<u8>,
+    }
 }
 
 /// For now, only sent in response to a ConnectionRequest.
@@ -1560,8 +1572,15 @@ pub enum NetResponse {
     Peer(Option<Identity>),
     /// response to [`NetAction::GetName`]
     Name(Option<String>),
-    /// response to [`NetAction::GetDiagnostics`]. A user-readable string.
+    /// response to [`NetAction::GetDiagnostics`]. a user-readable string.
     Diagnostics(String),
+    /// response to [`NetAction::Sign`]. contains the signature in blob
+    Signed,
+    /// response to [`NetAction::Verify`]. boolean indicates whether
+    /// the signature was valid or not. note that if the signer node
+    /// cannot be found in our representation of PKI, this will return false,
+    /// because we cannot find the networking public key to verify with.
+    Verified(bool),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

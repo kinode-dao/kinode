@@ -982,30 +982,13 @@ async fn handle_local_message(
         parse_hello_message(our, &km, body, kernel_message_tx, print_tx).await?;
         Ok(())
     } else {
-        let maybe_response = match rmp_serde::from_slice::<NetAction>(body)? {
-            NetAction::ConnectionRequest(_) => {
-                // we shouldn't receive these from ourselves.
-                None
-            }
-            NetAction::KnsUpdate(log) => {
-                pki.insert(
-                    log.name.clone(),
-                    Identity {
-                        name: log.name.clone(),
-                        networking_key: log.public_key,
-                        ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
-                            None
-                        } else {
-                            Some((log.ip, log.port))
-                        },
-                        allowed_routers: log.routers,
-                    },
-                );
-                names.insert(log.node, log.name);
-                None
-            }
-            NetAction::KnsBatchUpdate(log_list) => {
-                for log in log_list {
+        if let Some((response_body, lazy_load_blob)) =
+            match rmp_serde::from_slice::<NetAction>(body)? {
+                NetAction::ConnectionRequest(_) => {
+                    // we shouldn't receive these from ourselves.
+                    None
+                }
+                NetAction::KnsUpdate(log) => {
                     pki.insert(
                         log.name.clone(),
                         Identity {
@@ -1020,52 +1003,114 @@ async fn handle_local_message(
                         },
                     );
                     names.insert(log.node, log.name);
+                    None
                 }
-                None
-            }
-            NetAction::GetPeers => Some(NetResponse::Peers(
-                peers
-                    .iter()
-                    .map(|p| p.identity.clone())
-                    .collect::<Vec<Identity>>(),
-            )),
-            NetAction::GetPeer(peer_name) => {
-                Some(NetResponse::Peer(pki.get(&peer_name).map(|p| p.clone())))
-            }
-            NetAction::GetName(namehash) => {
-                Some(NetResponse::Name(names.get(&namehash).map(|n| n.clone())))
-            }
-            NetAction::GetDiagnostics => {
-                let mut printout = String::new();
-                printout.push_str(&format!(
-                    "indexing from contract address {}\r\n",
-                    contract_address
-                ));
-                printout.push_str(&format!("our Identity: {:#?}\r\n", our));
-                printout.push_str("we have connections with peers:\r\n");
-                for peer in peers.iter() {
+                NetAction::KnsBatchUpdate(log_list) => {
+                    for log in log_list {
+                        pki.insert(
+                            log.name.clone(),
+                            Identity {
+                                name: log.name.clone(),
+                                networking_key: log.public_key,
+                                ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
+                                    None
+                                } else {
+                                    Some((log.ip, log.port))
+                                },
+                                allowed_routers: log.routers,
+                            },
+                        );
+                        names.insert(log.node, log.name);
+                    }
+                    None
+                }
+                NetAction::GetPeers => Some((
+                    NetResponse::Peers(
+                        peers
+                            .iter()
+                            .map(|p| p.identity.clone())
+                            .collect::<Vec<Identity>>(),
+                    ),
+                    None,
+                )),
+                NetAction::GetPeer(peer_name) => Some((
+                    NetResponse::Peer(pki.get(&peer_name).map(|p| p.clone())),
+                    None,
+                )),
+                NetAction::GetName(namehash) => Some((
+                    NetResponse::Name(names.get(&namehash).map(|n| n.clone())),
+                    None,
+                )),
+                NetAction::GetDiagnostics => {
+                    let mut printout = String::new();
                     printout.push_str(&format!(
-                        "    {}, routing_for={}\r\n",
-                        peer.identity.name, peer.routing_for,
+                        "indexing from contract address {}\r\n",
+                        contract_address
                     ));
+                    printout.push_str(&format!("our Identity: {:#?}\r\n", our));
+                    printout.push_str("we have connections with peers:\r\n");
+                    for peer in peers.iter() {
+                        printout.push_str(&format!(
+                            "    {}, routing_for={}\r\n",
+                            peer.identity.name, peer.routing_for,
+                        ));
+                    }
+                    printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
+                    if pending_passthroughs.is_some() {
+                        printout.push_str(&format!(
+                            "we have {} pending passthrough connections\r\n",
+                            pending_passthroughs.unwrap().len()
+                        ));
+                    }
+                    if forwarding_connections.is_some() {
+                        printout.push_str(&format!(
+                            "we have {} open passthrough connections\r\n",
+                            forwarding_connections.unwrap().len()
+                        ));
+                    }
+                    Some((NetResponse::Diagnostics(printout), None))
                 }
-                printout.push_str(&format!("we have {} entries in the PKI\r\n", pki.len()));
-                if pending_passthroughs.is_some() {
-                    printout.push_str(&format!(
-                        "we have {} pending passthrough connections\r\n",
-                        pending_passthroughs.unwrap().len()
-                    ));
+                NetAction::Sign => Some((
+                    NetResponse::Signed,
+                    Some(LazyLoadBlob {
+                        mime: None,
+                        bytes: keypair
+                            .sign(
+                                &[
+                                    km.source.to_string().as_bytes(),
+                                    &km.lazy_load_blob
+                                        .unwrap_or(LazyLoadBlob {
+                                            mime: None,
+                                            bytes: vec![],
+                                        })
+                                        .bytes,
+                                ]
+                                .concat(),
+                            )
+                            .as_ref()
+                            .to_vec(),
+                    }),
+                )),
+                NetAction::Verify { from, signature } => {
+                    let message = [
+                        from.to_string().as_bytes(),
+                        &km.lazy_load_blob
+                            .unwrap_or(LazyLoadBlob {
+                                mime: None,
+                                bytes: vec![],
+                            })
+                            .bytes,
+                    ]
+                    .concat();
+                    Some((
+                        NetResponse::Verified(validate_signature(
+                            &from.node, &signature, &message, &pki,
+                        )),
+                        None,
+                    ))
                 }
-                if forwarding_connections.is_some() {
-                    printout.push_str(&format!(
-                        "we have {} open passthrough connections\r\n",
-                        forwarding_connections.unwrap().len()
-                    ));
-                }
-                Some(NetResponse::Diagnostics(printout))
             }
-        };
-        if let Some(response_body) = maybe_response {
+        {
             kernel_message_tx
                 .send(KernelMessage {
                     id: km.id,
@@ -1084,7 +1129,7 @@ async fn handle_local_message(
                         },
                         None,
                     )),
-                    lazy_load_blob: None,
+                    lazy_load_blob,
                 })
                 .await?;
         }
