@@ -36,8 +36,7 @@ pub async fn timer_service(
             Some(km) = timer_message_receiver.recv() => {
                 // ignore Requests sent from other nodes
                 if km.source.node != our { continue };
-                // we only handle Requests which contain a little-endian u64 as IPC,
-                // except for a special "debug" message, which prints the current state
+                // we only handle Requests
                 let Message::Request(req) = km.message else { continue };
                 let Ok(timer_action) = serde_json::from_slice::<TimerAction>(&req.body) else {
                     let _ = print_tx.send(Printout {

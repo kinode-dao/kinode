@@ -48,6 +48,8 @@ sol! {
     ) public view virtual returns (bool authed);
 
     function nodes(bytes32) external view returns (address, uint96);
+
+    function ip(bytes32) external view returns (uint128, uint16, uint16, uint16, uint16);
 }
 
 pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
@@ -115,23 +117,23 @@ pub async fn register(
     tx: RegistrationSender,
     kill_rx: oneshot::Receiver<bool>,
     ip: String,
-    port: u16,
+    ws_networking: (tokio::net::TcpListener, bool),
+    http_port: u16,
     keyfile: Option<Vec<u8>>,
     testnet: bool,
+    maybe_rpc: Option<String>,
 ) {
     // Networking info is generated and passed to the UI, but not used until confirmed
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
     let net_keypair = Arc::new(serialized_networking_keypair.as_ref().to_vec());
     let tx = Arc::new(tx);
 
-    // TODO: if IP is localhost, don't allow registration as direct
-    let ws_port = crate::http::utils::find_open_port(9000, 65535)
-        .await
-        .expect(
-            "Unable to find free port between 9000 and 65535 for a new websocket, are you kidding?",
-        );
+    let ws_port = ws_networking.0.local_addr().unwrap().port();
+    let ws_flag_used = ws_networking.1;
 
-    // This is a temporary identity, passed to the UI. If it is confirmed through a /boot or /confirm-change-network-keys, then it will be used to replace the current identity
+    // This is a **temporary** identity, passed to the UI.
+    // If it is confirmed through a /boot or /confirm-change-network-keys,
+    // then it will be used to replace the current identity.
     let our_temp_id = Arc::new(Identity {
         networking_key: format!("0x{}", public_key),
         name: "".to_string(),
@@ -152,13 +154,22 @@ pub async fn register(
     };
 
     // This ETH provider uses public rpc endpoints to verify registration signatures.
-    let url = if testnet {
+    let url = if let Some(rpc_url) = maybe_rpc {
+        rpc_url
+    } else if testnet {
         "wss://ethereum-sepolia-rpc.publicnode.com".to_string()
     } else {
         "wss://optimism-rpc.publicnode.com".to_string()
     };
     let connector = WsConnect { url, auth: None };
-    let client = ClientBuilder::default().ws(connector).await.unwrap();
+    let Ok(client) = ClientBuilder::default().ws(connector).await else {
+        panic!(
+            "Error: runtime could not connect to ETH RPC.\n\
+            This is necessary in order to verify node identity onchain.\n\
+            Please make sure you are using a valid WebSockets URL if using \
+            the --rpc flag, and you are connected to the internet."
+        );
+    };
 
     let provider = Arc::new(Provider::new_with_client(client));
 
@@ -167,6 +178,7 @@ pub async fn register(
     let net_keypair = warp::any().map(move || net_keypair.clone());
     let tx = warp::any().map(move || tx.clone());
     let ip = warp::any().map(move || ip.clone());
+    let ws_port = warp::any().map(move || if ws_flag_used { Some(ws_port) } else { None });
 
     let static_files = warp::path("static").and(static_dir!("src/register-ui/build/static/"));
 
@@ -197,7 +209,29 @@ pub async fn register(
             } else {
                 warp::reply::json(&"0xa")
             }
-        }));
+        }))
+        .or(warp::path("our").and(warp::get()).and(keyfile.clone()).map(
+            move |keyfile: Option<Vec<u8>>| {
+                if let Some(keyfile) = keyfile {
+                    if let Ok((username, _, _, _, _, _)) = bincode::deserialize::<(
+                        String,
+                        Vec<String>,
+                        Vec<u8>,
+                        Vec<u8>,
+                        Vec<u8>,
+                        Vec<u8>,
+                    )>(keyfile.as_ref())
+                    {
+                        return warp::reply::html(username);
+                    }
+                }
+                warp::reply::html(String::new())
+            },
+        ));
+
+    let boot_provider = provider.clone();
+    let login_provider = provider.clone();
+    let import_provider = provider.clone();
 
     let api = warp::path("info")
         .and(
@@ -225,7 +259,7 @@ pub async fn register(
                 .and(our_temp_id.clone())
                 .and(net_keypair.clone())
                 .and_then(move |boot_info, tx, our_temp_id, net_keypair| {
-                    let provider = provider.clone();
+                    let boot_provider = boot_provider.clone();
                     handle_boot(
                         boot_info,
                         tx,
@@ -233,7 +267,7 @@ pub async fn register(
                         net_keypair,
                         testnet,
                         kns_address,
-                        provider,
+                        boot_provider,
                     )
                 }),
         ))
@@ -242,17 +276,33 @@ pub async fn register(
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(ip.clone())
+                .and(ws_port.clone())
                 .and(tx.clone())
-                .and_then(handle_import_keyfile),
+                .and_then(move |boot_info, ip, ws_port, tx| {
+                    let import_provider = import_provider.clone();
+                    handle_import_keyfile(boot_info, ip, ws_port, tx, kns_address, import_provider)
+                }),
         ))
         .or(warp::path("login").and(
             warp::post()
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
                 .and(ip)
+                .and(ws_port.clone())
                 .and(tx.clone())
                 .and(keyfile.clone())
-                .and_then(handle_login),
+                .and_then(move |boot_info, ip, ws_port, tx, keyfile| {
+                    let login_provider = login_provider.clone();
+                    handle_login(
+                        boot_info,
+                        ip,
+                        ws_port,
+                        tx,
+                        keyfile,
+                        kns_address,
+                        login_provider,
+                    )
+                }),
         ))
         .or(warp::path("confirm-change-network-keys").and(
             warp::post()
@@ -276,9 +326,9 @@ pub async fn register(
         .or(api)
         .with(warp::reply::with::headers(headers));
 
-    let _ = open::that(format!("http://localhost:{}/", port));
+    let _ = open::that(format!("http://localhost:{}/", http_port));
     warp::serve(routes)
-        .bind_with_graceful_shutdown(([0, 0, 0, 0], port), async {
+        .bind_with_graceful_shutdown(([0, 0, 0, 0], http_port), async {
             kill_rx.await.ok();
         })
         .1
@@ -388,7 +438,25 @@ async fn handle_boot(
         ..Default::default()
     };
 
-    let Ok(tld) = provider.call(tx, None).await else {
+    // this call can fail if the indexer has not caught up to the transaction
+    // that just got confirmed on our frontend. for this reason, we retry
+    // the call a few times before giving up.
+
+    let mut attempts = 0;
+    let mut tld_result = Err(());
+    while attempts < 5 {
+        match provider.call(tx.clone(), None).await {
+            Ok(tld) => {
+                tld_result = Ok(tld);
+                break;
+            }
+            Err(_) => {
+                attempts += 1;
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+            }
+        }
+    }
+    let Ok(tld) = tld_result else {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Failed to fetch TLD contract for username"),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -419,13 +487,13 @@ async fn handle_boot(
 
     let Ok(authed) = provider.call(tx, None).await else {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to fetch TLD contract for username"),
+            warp::reply::json(&"Failed to fetch associated address for username"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
     };
 
-    let is_ok = bool::abi_decode(&authed, false).map_err(|_| warp::reject())?;
+    let is_ok = bool::abi_decode(&authed, false).unwrap_or(false);
 
     if !is_ok {
         return Ok(warp::reply::with_status(
@@ -482,7 +550,10 @@ async fn handle_boot(
 async fn handle_import_keyfile(
     info: ImportKeyfileInfo,
     ip: String,
+    ws_networking_port: Option<u16>,
     sender: Arc<RegistrationSender>,
+    kns_address: EthAddress,
+    provider: Arc<Provider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
     let encoded_keyfile = match base64::decode(info.keyfile.clone()) {
@@ -496,58 +567,52 @@ async fn handle_import_keyfile(
         }
     };
 
-    let Some(ws_port) = crate::http::utils::find_open_port(9000, 9999).await else {
+    let (decoded_keyfile, mut our) =
+        match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
+            Ok(k) => {
+                let our = Identity {
+                    name: k.username.clone(),
+                    networking_key: format!(
+                        "0x{}",
+                        hex::encode(k.networking_keypair.public_key().as_ref())
+                    ),
+                    ws_routing: if k.routers.is_empty() {
+                        Some((ip, 9000))
+                    } else {
+                        None
+                    },
+                    allowed_routers: k.routers.clone(),
+                };
+
+                (k, our)
+            }
+            Err(_) => {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&"Incorrect password_hash".to_string()),
+                    StatusCode::UNAUTHORIZED,
+                )
+                .into_response())
+            }
+        };
+
+    if let Err(e) = assign_ws_routing(&mut our, kns_address, provider, ws_networking_port).await {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Unable to find free port"),
+            warp::reply::json(&e.to_string()),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
-    };
-
-    let (decoded_keyfile, our) = match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash)
-    {
-        Ok(k) => {
-            let our = Identity {
-                name: k.username.clone(),
-                networking_key: format!(
-                    "0x{}",
-                    hex::encode(k.networking_keypair.public_key().as_ref())
-                ),
-                ws_routing: if k.routers.is_empty() {
-                    Some((ip, ws_port))
-                } else {
-                    None
-                },
-                allowed_routers: k.routers.clone(),
-            };
-
-            (k, our)
-        }
-        Err(_) => {
-            return Ok(warp::reply::with_status(
-                warp::reply::json(&"Incorrect password_hash".to_string()),
-                StatusCode::UNAUTHORIZED,
-            )
-            .into_response())
-        }
-    };
-
-    // if !networking_info_valid(rpc_url, ip, ws_port, &our).await {
-    //     return Ok(warp::reply::with_status(
-    //         warp::reply::json(&"Networking info invalid".to_string()),
-    //         StatusCode::UNAUTHORIZED,
-    //     )
-    //     .into_response());
-    // }
-
+    }
     success_response(sender, our, decoded_keyfile, encoded_keyfile).await
 }
 
 async fn handle_login(
     info: LoginInfo,
     ip: String,
+    ws_networking_port: Option<u16>,
     sender: Arc<RegistrationSender>,
     encoded_keyfile: Option<Vec<u8>>,
+    kns_address: EthAddress,
+    provider: Arc<Provider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     if encoded_keyfile.is_none() {
         return Ok(warp::reply::with_status(
@@ -558,42 +623,41 @@ async fn handle_login(
     }
     let encoded_keyfile = encoded_keyfile.unwrap();
 
-    let Some(ws_port) = crate::http::utils::find_open_port(9000, 65535).await else {
+    let (decoded_keyfile, mut our) =
+        match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
+            Ok(k) => {
+                let our = Identity {
+                    name: k.username.clone(),
+                    networking_key: format!(
+                        "0x{}",
+                        hex::encode(k.networking_keypair.public_key().as_ref())
+                    ),
+                    ws_routing: if k.routers.is_empty() {
+                        Some((ip, 9000))
+                    } else {
+                        None
+                    },
+                    allowed_routers: k.routers.clone(),
+                };
+
+                (k, our)
+            }
+            Err(_) => {
+                return Ok(warp::reply::with_status(
+                    warp::reply::json(&"Incorrect password_hash"),
+                    StatusCode::UNAUTHORIZED,
+                )
+                .into_response())
+            }
+        };
+
+    if let Err(e) = assign_ws_routing(&mut our, kns_address, provider, ws_networking_port).await {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Unable to find free port"),
+            warp::reply::json(&e.to_string()),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
-    };
-
-    let (decoded_keyfile, our) = match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash)
-    {
-        Ok(k) => {
-            let our = Identity {
-                name: k.username.clone(),
-                networking_key: format!(
-                    "0x{}",
-                    hex::encode(k.networking_keypair.public_key().as_ref())
-                ),
-                ws_routing: if k.routers.is_empty() {
-                    Some((ip, ws_port))
-                } else {
-                    None
-                },
-                allowed_routers: k.routers.clone(),
-            };
-
-            (k, our)
-        }
-        Err(_) => {
-            return Ok(warp::reply::with_status(
-                warp::reply::json(&"Incorrect password_hash"),
-                StatusCode::UNAUTHORIZED,
-            )
-            .into_response())
-        }
-    };
-
+    }
     success_response(sender, our, decoded_keyfile, encoded_keyfile).await
 }
 
@@ -655,6 +719,54 @@ async fn confirm_change_network_keys(
     );
 
     success_response(sender, our.clone(), decoded_keyfile, encoded_keyfile).await
+}
+
+async fn assign_ws_routing(
+    our: &mut Identity,
+    kns_address: EthAddress,
+    provider: Arc<Provider<PubSubFrontend>>,
+    ws_networking_port: Option<u16>,
+) -> anyhow::Result<()> {
+    let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
+    let ip_call = ipCall { _0: namehash }.abi_encode();
+    let tx_input = TransactionInput::new(Bytes::from(ip_call));
+    let tx = TransactionRequest {
+        to: Some(kns_address),
+        input: tx_input,
+        ..Default::default()
+    };
+
+    let Ok(ip_data) = provider.call(tx, None).await else {
+        return Err(anyhow::anyhow!("Failed to fetch node IP data from PKI"));
+    };
+
+    let Ok((ip, ws, _wt, _tcp, _udp)) = <(u128, u16, u16, u16, u16)>::abi_decode(&ip_data, false)
+    else {
+        return Err(anyhow::anyhow!("Failed to decode node IP data from PKI"));
+    };
+
+    let node_ip = format!(
+        "{}.{}.{}.{}",
+        (ip >> 24) & 0xFF,
+        (ip >> 16) & 0xFF,
+        (ip >> 8) & 0xFF,
+        ip & 0xFF
+    );
+
+    if node_ip != *"0.0.0.0" || ws != 0 {
+        // direct node
+        if let Some(chosen_port) = ws_networking_port {
+            if chosen_port != ws {
+                return Err(anyhow::anyhow!(
+                    "Binary used --ws-port flag to set port to {}, but node is using port {} onchain.",
+                    chosen_port,
+                    ws
+                ));
+            }
+        }
+        our.ws_routing = Some((node_ip, ws));
+    }
+    Ok(())
 }
 
 async fn success_response(

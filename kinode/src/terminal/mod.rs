@@ -244,6 +244,8 @@ pub async fn terminal(
                     },
                     // handle pasting of text from outside
                     Event::Paste(pasted) => {
+                        // strip out control characters and newlines
+                        let pasted = pasted.chars().filter(|c| !c.is_control() && !c.is_ascii_control()).collect::<String>();
                         current_line.insert_str(line_col, &pasted);
                         line_col = line_col + pasted.len();
                         cursor_col = std::cmp::min(line_col.try_into().unwrap_or(win_cols), win_cols);
