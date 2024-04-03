@@ -9,9 +9,6 @@ use std::str::FromStr;
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
 
 mod api;

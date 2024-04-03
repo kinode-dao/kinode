@@ -12,10 +12,10 @@ use tokio::task::JoinHandle;
 use wasmtime::component::ResourceTable as Table;
 use wasmtime::component::*;
 use wasmtime::{Engine, Store};
-use wasmtime_wasi::preview2::{
+use wasmtime_wasi::{
     pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiView,
 };
-use wasmtime_wasi::sync::Dir;
+use wasi_common::sync::Dir;
 
 const STACK_TRACE_SIZE: usize = 5000;
 
@@ -63,16 +63,10 @@ pub struct ProcessWasi {
 }
 
 impl WasiView for ProcessWasi {
-    fn table(&self) -> &Table {
-        &self.table
-    }
-    fn table_mut(&mut self) -> &mut Table {
+    fn table(&mut self) -> &mut Table {
         &mut self.table
     }
-    fn ctx(&self) -> &WasiCtx {
-        &self.wasi
-    }
-    fn ctx_mut(&mut self) -> &mut WasiCtx {
+    fn ctx(&mut self) -> &mut WasiCtx {
         &mut self.wasi
     }
 }
@@ -558,7 +552,7 @@ pub async fn make_process_loop(
     .await
     {
         if let Ok(wasi_tempdir) =
-            Dir::open_ambient_dir(tmp_path.clone(), wasmtime_wasi::sync::ambient_authority())
+            Dir::open_ambient_dir(tmp_path.clone(), wasi_common::sync::ambient_authority())
         {
             wasi.preopened_dir(
                 wasi_tempdir,
@@ -572,7 +566,7 @@ pub async fn make_process_loop(
 
     let wasi = wasi.stderr(wasi_stderr.clone()).build();
 
-    wasmtime_wasi::preview2::command::add_to_linker(&mut linker).unwrap();
+    wasmtime_wasi::command::add_to_linker(&mut linker).unwrap();
 
     let mut store = Store::new(
         &engine,

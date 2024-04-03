@@ -48,7 +48,9 @@ fn build_and_zip_package(
 ) -> anyhow::Result<(String, String, Vec<u8>)> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        kit::build::execute(&entry_path, true, false, true, features).await?;
+        kit::build::execute(&entry_path, true, false, true, features)
+            .await
+            .map_err(|e| anyhow::anyhow!("{:?}", e))?;
 
         let mut writer = Cursor::new(Vec::new());
         let options = FileOptions::default()
