@@ -2,8 +2,8 @@ use anyhow::anyhow;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::kinode::process::standard as wit;
 use kinode_process_lib::{
-    call_init, get_blob, get_typed_state, our_capabilities, print_to_terminal, println, set_state, vfs,
-    Address, Capability, ProcessId, Request,
+    call_init, get_blob, get_typed_state, our_capabilities, print_to_terminal, println, set_state,
+    vfs, Address, Capability, ProcessId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -50,55 +50,54 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
 
 call_init!(init);
 fn init(our: Address) {
-    let mut state: TerminalState =
-        match get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
-            Some(s) => s,
-            None => TerminalState {
-                our,
-                aliases: HashMap::from([
-                    (
-                        "alias".to_string(),
-                        ProcessId::new(Some("alias"), "terminal", "sys"),
-                    ),
-                    (
-                        "cat".to_string(),
-                        ProcessId::new(Some("cat"), "terminal", "sys"),
-                    ),
-                    (
-                        "echo".to_string(),
-                        ProcessId::new(Some("echo"), "terminal", "sys"),
-                    ),
-                    (
-                        "hi".to_string(),
-                        ProcessId::new(Some("hi"), "terminal", "sys"),
-                    ),
-                    (
-                        "m".to_string(),
-                        ProcessId::new(Some("m"), "terminal", "sys"),
-                    ),
-                    (
-                        "namehash_to_name".to_string(),
-                        ProcessId::new(Some("namehash_to_name"), "terminal", "sys"),
-                    ),
-                    (
-                        "net_diagnostics".to_string(),
-                        ProcessId::new(Some("net_diagnostics"), "terminal", "sys"),
-                    ),
-                    (
-                        "peer".to_string(),
-                        ProcessId::new(Some("peer"), "terminal", "sys"),
-                    ),
-                    (
-                        "peers".to_string(),
-                        ProcessId::new(Some("peers"), "terminal", "sys"),
-                    ),
-                    (
-                        "top".to_string(),
-                        ProcessId::new(Some("top"), "terminal", "sys"),
-                    ),
-                ]),
-            },
-        };
+    let mut state: TerminalState = match get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
+        Some(s) => s,
+        None => TerminalState {
+            our,
+            aliases: HashMap::from([
+                (
+                    "alias".to_string(),
+                    ProcessId::new(Some("alias"), "terminal", "sys"),
+                ),
+                (
+                    "cat".to_string(),
+                    ProcessId::new(Some("cat"), "terminal", "sys"),
+                ),
+                (
+                    "echo".to_string(),
+                    ProcessId::new(Some("echo"), "terminal", "sys"),
+                ),
+                (
+                    "hi".to_string(),
+                    ProcessId::new(Some("hi"), "terminal", "sys"),
+                ),
+                (
+                    "m".to_string(),
+                    ProcessId::new(Some("m"), "terminal", "sys"),
+                ),
+                (
+                    "namehash_to_name".to_string(),
+                    ProcessId::new(Some("namehash_to_name"), "terminal", "sys"),
+                ),
+                (
+                    "net_diagnostics".to_string(),
+                    ProcessId::new(Some("net_diagnostics"), "terminal", "sys"),
+                ),
+                (
+                    "peer".to_string(),
+                    ProcessId::new(Some("peer"), "terminal", "sys"),
+                ),
+                (
+                    "peers".to_string(),
+                    ProcessId::new(Some("peers"), "terminal", "sys"),
+                ),
+                (
+                    "top".to_string(),
+                    ProcessId::new(Some("top"), "terminal", "sys"),
+                ),
+            ]),
+        },
+    };
 
     loop {
         let (source, message) = match wit::receive() {
@@ -111,16 +110,12 @@ fn init(our: Address) {
         match message {
             wit::Message::Request(wit::Request { body, .. }) => {
                 if state.our == source {
-                    match parse_command(
-                        &mut state,
-                        std::str::from_utf8(&body).unwrap_or_default(),
-                    ) {
+                    match parse_command(&mut state, std::str::from_utf8(&body).unwrap_or_default())
+                    {
                         Ok(()) => continue,
                         Err(e) => println!("{e}"),
                     }
-                } else if state.our.node == source.node
-                    && state.our.package() == source.package()
-                {
+                } else if state.our.node == source.node && state.our.package() == source.package() {
                     let Ok(action) = serde_json::from_slice::<TerminalAction>(&body) else {
                         println!("failed to parse action from: {}", source);
                         continue;

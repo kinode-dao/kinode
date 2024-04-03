@@ -9,13 +9,13 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::fs;
 use tokio::task::JoinHandle;
+use wasi_common::sync::Dir;
 use wasmtime::component::ResourceTable as Table;
 use wasmtime::component::*;
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::{
     pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiView,
 };
-use wasi_common::sync::Dir;
 
 const STACK_TRACE_SIZE: usize = 5000;
 

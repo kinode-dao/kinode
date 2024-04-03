@@ -1,6 +1,7 @@
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message, call_init, eth, get_typed_state, println, set_state, Address, Message, Request, Response,
+    await_message, call_init, eth, get_typed_state, println, set_state, Address, Message, Request,
+    Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{
@@ -130,14 +131,11 @@ fn init(our: Address) {
     println!("indexing on contract address {}", contract_address);
 
     // if we have state, load it in
-    let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?))
-    {
+    let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
         Some(s) => {
             // if chain id or contract address changed from a previous run, reset state
             if s.chain_id != chain_id || s.contract_address != contract_address {
-                println!(
-                    "resetting state because runtime contract address or chain ID changed"
-                );
+                println!("resetting state because runtime contract address or chain ID changed");
                 State {
                     chain_id,
                     contract_address,
