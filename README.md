@@ -134,3 +134,25 @@ Download and install an app:
 m our@main:app_store:sys '{"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}'
 m our@main:app_store:sys '{"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}'
 ```
+
+## Running as a Docker container
+
+This image expects a volume mounted at `/kinode`. This volume may be empty or may contain another Kinode's data. It will be used as the home directory of your Kinode.
+
+The image includes EXPOSE directives for TCP port `8080` and TCP port `9000`. Port `8080` is used for serving the Kinode web dashboard over HTTP, and it may be mapped to a different port on the host. Port `9000` is optional and is only required for a direct node.
+
+If you are running a direct node, you must map port `9000` to the same port on the host and on your router. Otherwise, your Kinode will not be able to connect to the rest of the network as connection info is written to the chain, and this information is based on the view from inside the Docker container.
+
+To build a local Docker image, run the following command in this project root.
+```
+docker build -t 0xlynett/kinode .
+```
+
+For example:
+```
+docker volume create kinode-volume
+
+docker run -d -p 8080:8080 -it --name my-kinode \
+    --mount type=volume,source=kinode-volume,destination=/kinode \
+    0xlynett/kinode
+```
