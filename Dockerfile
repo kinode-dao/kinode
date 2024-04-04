@@ -26,7 +26,7 @@ COPY --from=builder /tmp/source/target/release/kinode /bin/kinode
 ENV LD_LIBRARY_PATH=/lib
 ENV RUST_BACKTRACE=full
 ENTRYPOINT [ "/bin/kinode" ]
-CMD [ "/kinode" ]
+CMD [ "/kinode-home" ]
 
 EXPOSE 8080
 EXPOSE 9000

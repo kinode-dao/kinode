@@ -137,7 +137,7 @@ m our@main:app_store:sys '{"Install": {"package_name": "<pkg>", "publisher_node"
 
 ## Running as a Docker container
 
-This image expects a volume mounted at `/kinode`. This volume may be empty or may contain another Kinode's data. It will be used as the home directory of your Kinode.
+This image expects a volume mounted at `/kinode-home`. This volume may be empty or may contain another Kinode's data. It will be used as the home directory of your Kinode.
 
 The image includes EXPOSE directives for TCP port `8080` and TCP port `9000`. Port `8080` is used for serving the Kinode web dashboard over HTTP, and it may be mapped to a different port on the host. Port `9000` is optional and is only required for a direct node.
 
@@ -153,6 +153,6 @@ For example:
 docker volume create kinode-volume
 
 docker run -d -p 8080:8080 -it --name my-kinode \
-    --mount type=volume,source=kinode-volume,destination=/kinode \
+    --mount type=volume,source=kinode-volume,destination=/kinode-home \
     0xlynett/kinode
 ```
