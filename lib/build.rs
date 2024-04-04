@@ -9,9 +9,7 @@ fn main() -> anyhow::Result<()> {
 
     let pwd = std::env::current_dir()?;
 
-    let wit_file = pwd
-        .join("wit")
-        .join("kinode.wit");
+    let wit_file = pwd.join("wit").join("kinode.wit");
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
