@@ -1,23 +1,23 @@
-use std::{fs, io::copy};
+const KINODE_WIT_URL: &str =
+    "https://raw.githubusercontent.com/kinode-dao/kinode-wit/aa2c8b11c9171b949d1991c32f58591c0e881f85/kinode.wit";
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     if std::env::var("SKIP_BUILD_SCRIPT").is_ok() {
         println!("Skipping build script");
-        return;
+        return Ok(());
     }
 
-    let pwd = std::env::current_dir().unwrap();
+    let pwd = std::env::current_dir()?;
 
-    // Pull wit from git repo
-    let wit_dir = pwd.join("wit");
-    fs::create_dir_all(&wit_dir).unwrap();
-    let wit_file = wit_dir.join("kinode.wit");
-    if !wit_file.exists() {
-        // TODO: cache in better way
-        let mut wit_file = fs::File::create(&wit_file).unwrap();
-        let kinode_wit_url =
-            "https://raw.githubusercontent.com/kinode-dao/kinode-wit/master/kinode.wit";
-        let mut response = reqwest::blocking::get(kinode_wit_url).unwrap();
-        copy(&mut response, &mut wit_file).unwrap();
-    }
+    let wit_file = pwd
+        .join("wit")
+        .join("kinode.wit");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        kit::build::download_file(KINODE_WIT_URL, &wit_file)
+            .await
+            .map_err(|e| anyhow::anyhow!("{:?}", e))?;
+        Ok(())
+    })
 }
