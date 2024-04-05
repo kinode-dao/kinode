@@ -16,9 +16,7 @@ import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import { getNetworkName, setChain } from "../utils/chain";
-import { ReactComponent as NameLogo } from "../assets/kinode.svg"
 import { Tooltip } from "../components/Tooltip";
-import { DirectTooltip } from "../components/DirectTooltip";
 import DirectCheckbox from "../components/DirectCheckbox";
 import EnterKnsName from "../components/EnterKnsName";
 import { KinodeTitle } from "../components/KinodeTitle";
@@ -231,7 +229,7 @@ function Reset({
                   Choose a name for your kinode
                   <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
                 </label>
-                <EnterKnsName {...{ name, setName, nameVets, dotOs, triggerNameCheck, nameValidities, setNameValidities }} />
+                <EnterKnsName {...{ name, setName, nameVets, dotOs, triggerNameCheck, nameValidities, setNameValidities, isReset: true }} />
               </h3>
 
               <DirectCheckbox {...{ direct, setDirect }} />

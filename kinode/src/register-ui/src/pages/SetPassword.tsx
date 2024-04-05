@@ -4,6 +4,7 @@ import Loader from "../components/Loader";
 import { utils, providers } from "ethers";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import { ReactComponent as NameLogo } from "../assets/kinode.svg"
+import { Tooltip } from "../components/Tooltip";
 
 type SetPasswordProps = {
   direct: boolean;
@@ -95,6 +96,7 @@ function SetPassword({
               res.status < 300 &&
               Number(res.headers.get("content-length")) !== appSizeOnLoad
             ) {
+              console.log("WE GOOD, ROUTING")
               clearInterval(interval);
               window.location.replace("/");
             }
@@ -111,11 +113,11 @@ function SetPassword({
   return (
     <>
       <KinodeHeader
-        header={<h3 className="row" style={{ justifyContent: "center", alignItems: "center" }}>
-          Set
-          <NameLogo style={{ height: 28, width: "auto", margin: "0 16px -3px" }} />
-          Password
-        </h3>}
+        header={<h1
+          className="flex place-content-center place-items-center mb-4"
+        >
+          Set Password
+        </h1>}
         openConnect={() => { }}
         closeConnect={closeConnect}
         nodeChainId={nodeChainId}
@@ -123,44 +125,44 @@ function SetPassword({
       {loading ? (
         <Loader msg="Setting up node..." />
       ) : (
-        <form id="signup-form" className="col" onSubmit={handleSubmit}>
-          <div style={{ width: "100%" }}>
-            <div className="row label-row">
-              <label htmlFor="password">New Password</label>
-              <div className="tooltip-container">
-                <div className="tooltip-button">&#8505;</div>
-                <div className="tooltip-content">
-                  This password will be used to log in if you restart your node
-                  or switch browsers.
-                </div>
-              </div>
+        <form id="signup-form" className="flex flex-col w-full max-w-[450px] gap-4" onSubmit={handleSubmit}>
+          <div className="flex flex-col w-full place-items-center place-content-center">
+            <div className="flex w-full place-items-center mb-2">
+              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2" style={{fontSize: 20}} htmlFor="password">New Password</label>
+              <Tooltip text={`This password will be used to log in if you restart your node or switch browsers.`} />
             </div>
-            <input
-              type="password"
-              id="password"
-              required
-              minLength={6}
-              name="password"
-              placeholder="Min 6 characters"
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              autoFocus
-            />
+            <div className="flex w-full place-items-center">
+              <input
+                className="grow"
+                type="password"
+                id="password"
+                required
+                minLength={6}
+                name="password"
+                placeholder="Min 6 characters"
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                autoFocus
+              />
+            </div>
           </div>
-          <div style={{ width: "100%" }}>
-            <div className="row label-row">
-              <label htmlFor="confirm-password">Confirm Password</label>
+          <div className="flex flex-col w-full place-items-center place-content-center">
+            <div className="flex w-full place-items-center">
+              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-4" style={{fontSize: 20}} htmlFor="confirm-password">Confirm Password</label>
             </div>
-            <input
-              type="password"
-              id="confirm-password"
-              required
-              minLength={6}
-              name="confirm-password"
-              placeholder="Min 6 characters"
-              value={pw2}
-              onChange={(e) => setPw2(e.target.value)}
-            />
+            <div className="flex w-full place-items-center">
+              <input
+                className="grow"
+                type="password"
+                id="confirm-password"
+                required
+                minLength={6}
+                name="confirm-password"
+                placeholder="Min 6 characters"
+                value={pw2}
+                onChange={(e) => setPw2(e.target.value)}
+              />
+            </div>
             {Boolean(error) && <p style={{ color: "red" }}>{error}</p>}
           </div>
           <button type="submit">Submit</button>
