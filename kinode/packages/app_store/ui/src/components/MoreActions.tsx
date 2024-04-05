@@ -9,72 +9,71 @@ import useAppsStore from "../store/apps-store";
 
 interface MoreActionsProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
+  className?: string;
 }
 
-export default function MoreActions({ app }: MoreActionsProps) {
+export default function MoreActions({ app, className }: MoreActionsProps) {
   const { uninstallApp, setMirroring, setAutoUpdate } = useAppsStore();
   const navigate = useNavigate();
 
   const downloaded = Boolean(app.state);
 
   if (!downloaded) {
-    if (!app.metadata) return <div style={{ width: 38 }} />;
+    if (!app.metadata) return <></>;
 
     return (
-      <Dropdown>
-        {app.metadata?.description && (
-          <MenuItem
-            className="action-entry"
-            onClick={() => navigate(`/app-details/${appId(app)}`)}
-          >
-            View Details
-          </MenuItem>
-        )}
-        {app.metadata?.external_url && (
-          <MenuItem>
+      <Dropdown className={className}>
+        <div className="flex flex-col card">
+          {app.metadata?.description && (
+            <button
+              className="my-1 whitespace-nowrap clear"
+              onClick={() => navigate(`/app-details/${appId(app)}`)}
+            >
+              View Details
+            </button>
+          )}
+          {app.metadata?.external_url && (
             <a
-              style={{
-                color: "inherit",
-                whiteSpace: "nowrap",
-                cursor: "pointer",
-                marginTop: "0.25em",
-              }}
               target="_blank"
               href={app.metadata?.external_url}
+              className="mb-1 whitespace-nowrap button clear"
             >
               View Site
             </a>
-          </MenuItem>
-        )}
+          )}
+        </div>
       </Dropdown>
     );
   }
 
   return (
     <Dropdown>
-      <MenuItem
-        className="action-entry"
+      <button
+        className="my-1 whitespace-nowrap clear"
         onClick={() => navigate(`/app-details/${appId(app)}`)}
       >
         View Details
-      </MenuItem>
+      </button>
       {app.installed && (
         <>
-          <MenuItem className="action-entry" onClick={() => uninstallApp(app)}>
+          <button
+            className="mb-1 whitespace-nowrap clear"
+            onClick={() => uninstallApp(app)}
+          >
             Uninstall
-          </MenuItem>
-          <MenuItem
-            className="action-entry"
+          </button>
+          <button
+            className="mb-1 whitespace-nowrap clear"
             onClick={() => setMirroring(app, !app.state?.mirroring)}
           >
             {app.state?.mirroring ? "Stop" : "Start"} Mirroring
-          </MenuItem>
-          <MenuItem
-            className="action-entry"
+          </button>
+          <button
+            className="mb-1 whitespace-nowrap clear"
             onClick={() => setAutoUpdate(app, !app.state?.auto_update)}
           >
             {app.state?.auto_update ? "Disable" : "Enable"} Auto Update
-          </MenuItem>
+          </button>
         </>
       )}
     </Dropdown>

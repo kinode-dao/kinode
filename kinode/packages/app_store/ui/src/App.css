@@ -1,4 +1,4 @@
-#root {
+/* #root {
   max-width: 700px;
   margin: 0 auto;
   padding: 2rem 0;
@@ -8,7 +8,6 @@
   min-height: calc(100vh - 64px);
 }
 
-/* General */
 
 .row {
   display: flex;
@@ -54,7 +53,6 @@ button.small {
   height: auto;
 }
 
-/* Specific */
 
 .searchbar {
   height: 2.25em;
@@ -267,22 +265,6 @@ button.connect-wallet {
   }
 }
 
-.action-entry {
-  margin-bottom: 0.25em;
-  color: inherit;
-  white-space: nowrap;
-  cursor: pointer;
-  padding: 0.25em;
-}
-
-.action-entry:hover {
-  transform: scale(1.05);
-}
-
-.action-entry:first-child {
-  margin-top: 0.25em;
-}
-
 .my-apps-list {
   flex: 1;
   height: 100%;
@@ -378,4 +360,4 @@ form.metadata .col.label {
 .page-title {
   align-items: center;
   margin: 1em 0;
-}
+} */

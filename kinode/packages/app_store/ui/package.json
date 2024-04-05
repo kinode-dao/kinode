@@ -27,12 +27,14 @@
     "@web3-react/walletconnect": "^8.2.3",
     "@web3-react/walletconnect-connector": "^6.2.13",
     "@web3-react/walletconnect-v2": "^8.5.1",
+    "classnames": "^2.5.1",
     "ethers": "^5.7.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^5.0.1",
     "react-router-dom": "^6.21.3",
     "tailwindcss": "^3.4.3",
+    "unocss": "^0.59.0-beta.1",
     "zustand": "^4.4.7"
   },
   "devDependencies": {
