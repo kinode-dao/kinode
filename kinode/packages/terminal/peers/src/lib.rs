@@ -4,9 +4,6 @@ use serde::{Deserialize, Serialize};
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
 
 // types copied from runtime networking core
@@ -50,7 +47,6 @@ pub enum NetResponse {
 }
 
 call_init!(init);
-
 fn init(_our: Address) {
     let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
         .body(rmp_serde::to_vec(&NetAction::GetPeers).unwrap())

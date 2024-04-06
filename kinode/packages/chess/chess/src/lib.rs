@@ -100,14 +100,10 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
 // After generating bindings, use this macro to define the Component struct
 // and its init() function, which the kernel will look for on startup.
 call_init!(initialize);
-
 fn initialize(our: Address) {
     // A little printout to show in terminal that the process has started.
     println!("started");
