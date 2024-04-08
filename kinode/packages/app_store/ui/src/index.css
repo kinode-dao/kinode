@@ -58,12 +58,13 @@ h6 {
 }
 
 button,
-button[type="submit"] {
+button[type="submit"],
+.button {
   @apply flex m-0 py-2 px-6 rounded border-orange bg-orange border-2 cursor-pointer place-items-center place-content-center text-center rounded-lg heading transition ease-in-out duration-100 hover:bg-black text-white font-[OpenSans];
 }
 
 .clear {
-  @apply bg-transparent border-transparent font-bold hover:bg-white/25;
+  @apply bg-transparent border-transparent font-bold font-[Barlow] hover:bg-white/25;
 }
 
 .alt {
@@ -106,16 +107,11 @@ input[type="checkbox"]:checked {
   @apply bg-orange;
 }
 
-.checkmark {
-  @apply absolute left-1 text-xl -top-1 cursor-pointer;
-}
-
 select {
   /* arrow image */
   background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="%23ffffff" d="M7.41 8.58L12 13.17l4.59-4.59L18 10l-6 6-6-6z"/></svg>');
   background-repeat: no-repeat;
   background-position: right 1.25rem center;
-  hoopus: boopus;
   @apply appearance-none pr-16;
 }
 

@@ -1,6 +1,5 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { MenuItem } from "@szhsin/react-menu";
 
 import Dropdown from "./Dropdown";
 import { AppInfo } from "../types/Apps";
@@ -23,7 +22,7 @@ export default function MoreActions({ app, className }: MoreActionsProps) {
 
     return (
       <Dropdown className={className}>
-        <div className="flex flex-col card">
+        <div className="flex flex-col bg-black/50 p-2 rounded-lg">
           {app.metadata?.description && (
             <button
               className="my-1 whitespace-nowrap clear"
@@ -47,35 +46,37 @@ export default function MoreActions({ app, className }: MoreActionsProps) {
   }
 
   return (
-    <Dropdown>
-      <button
-        className="my-1 whitespace-nowrap clear"
-        onClick={() => navigate(`/app-details/${appId(app)}`)}
-      >
-        View Details
-      </button>
-      {app.installed && (
-        <>
-          <button
-            className="mb-1 whitespace-nowrap clear"
-            onClick={() => uninstallApp(app)}
-          >
-            Uninstall
-          </button>
-          <button
-            className="mb-1 whitespace-nowrap clear"
-            onClick={() => setMirroring(app, !app.state?.mirroring)}
-          >
-            {app.state?.mirroring ? "Stop" : "Start"} Mirroring
-          </button>
-          <button
-            className="mb-1 whitespace-nowrap clear"
-            onClick={() => setAutoUpdate(app, !app.state?.auto_update)}
-          >
-            {app.state?.auto_update ? "Disable" : "Enable"} Auto Update
-          </button>
-        </>
-      )}
+    <Dropdown className={className}>
+      <div className="flex flex-col bg-black/50 p-2 rounded-lg">
+        <button
+          className="my-1 whitespace-nowrap clear"
+          onClick={() => navigate(`/app-details/${appId(app)}`)}
+        >
+          View Details
+        </button>
+        {app.installed && (
+          <>
+            <button
+              className="mb-1 whitespace-nowrap clear"
+              onClick={() => uninstallApp(app)}
+            >
+              Uninstall
+            </button>
+            <button
+              className="mb-1 whitespace-nowrap clear"
+              onClick={() => setMirroring(app, !app.state?.mirroring)}
+            >
+              {app.state?.mirroring ? "Stop" : "Start"} Mirroring
+            </button>
+            <button
+              className="mb-1 whitespace-nowrap clear"
+              onClick={() => setAutoUpdate(app, !app.state?.auto_update)}
+            >
+              {app.state?.auto_update ? "Disable" : "Enable"} Auto Update
+            </button>
+          </>
+        )}
+      </div>
     </Dropdown>
   );
 }

@@ -14,6 +14,8 @@ import useAppsStore from "../store/apps-store";
 import MetadataForm from "../components/MetadataForm";
 import { AppInfo } from "../types/Apps";
 import Checkbox from "../components/Checkbox";
+import Jazzicon from "../components/Jazzicon";
+import { Tooltip } from "../components/Tooltip";
 
 const { useIsActivating } = hooks;
 
@@ -174,13 +176,11 @@ export default function PublishPage({
       <SearchHeader hideSearch onBack={showMetadataForm ? () => setShowMetadataForm(false) : undefined} />
       <div className="flex justify-between items-center my-2">
         <h4>Publish Package</h4>
-        {Boolean(account) && (
-          <div className="leading-6">
-            {" "}
-            Connected as{" "}
-            {account?.slice(0, 6) + "..." + account?.slice(account.length - 6)}
-          </div>
-        )}
+        {Boolean(account) && <div className="card flex items-center">
+          <span>Publishing as:</span>
+          <Jazzicon address={account!} className="mx-2" />
+          <span className="font-mono">{account?.slice(0, 4)}...{account?.slice(-4)}</span>
+        </div>}
       </div>
 
       {loading ? (
@@ -220,15 +220,17 @@ export default function PublishPage({
           onSubmit={publishPackage}
         >
           <div
-            className="flex justify-between cursor-pointer p-2 -mb-2"
+            className="flex cursor-pointer p-2 -mb-2"
             onClick={() => setIsUpdate(!isUpdate)}
           >
-            <Checkbox checked={isUpdate} readOnly />
+            <Checkbox
+              checked={isUpdate} readOnly
+            />
             <label htmlFor="update" className="cursor-pointer ml-4">
               Update existing package
             </label>
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col mb-2">
             <label htmlFor="package-name">Package Name</label>
             <input
               id="package-name"
@@ -238,10 +240,9 @@ export default function PublishPage({
               value={packageName}
               onChange={(e) => setPackageName(e.target.value)}
               onBlur={checkIfUpdate}
-              className="w-3/4"
             />
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col mb-2">
             <label htmlFor="publisher-id">Publisher ID</label>
             <input
               id="publisher-id"
@@ -250,10 +251,9 @@ export default function PublishPage({
               value={publisherId}
               onChange={(e) => setPublisherId(e.target.value)}
               onBlur={checkIfUpdate}
-              className="w-3/4"
             />
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col mb-2">
             <label htmlFor="metadata-url">
               Metadata URL
             </label>
@@ -265,7 +265,6 @@ export default function PublishPage({
               onChange={(e) => setMetadataUrl(e.target.value)}
               onBlur={calculateMetadataHash}
               placeholder="https://github/my-org/my-repo/metadata.json"
-              className="w-3/4"
             />
             <div className="mt-2">
               Metadata is a JSON file that describes your package.
@@ -278,7 +277,7 @@ export default function PublishPage({
               .
             </div>
           </div>
-          <div className="flex flex-col">
+          <div className="flex flex-col mb-2">
             <label htmlFor="metadata-hash">Metadata Hash</label>
             <input
               readOnly
@@ -287,7 +286,6 @@ export default function PublishPage({
               value={metadataHash}
               onChange={(e) => setMetadataHash(e.target.value)}
               placeholder="Calculated automatically from metadata URL"
-              className="w-3/4"
             />
           </div>
           <button type="submit">

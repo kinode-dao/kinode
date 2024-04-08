@@ -16,6 +16,7 @@
   "dependencies": {
     "@ethersproject/hash": "^5.7.0",
     "@kinode/client-api": "^0.1.0",
+    "@metamask/jazzicon": "^2.0.0",
     "@szhsin/react-menu": "^4.1.0",
     "@web3-react/coinbase-wallet": "^8.2.3",
     "@web3-react/core": "^8.2.2",

@@ -53,7 +53,7 @@ export default function SearchHeader({
         </button>
       )}
       {!hideSearch && (
-        <div className="flex px-2 py-1 flex-1 rounded-md">
+        <div className="flex mx-2 flex-1 rounded-md">
           <button
             className="icon"
             type="button"
@@ -69,12 +69,12 @@ export default function SearchHeader({
             placeholder="Search for apps..."
             className="w-full ml-2"
           />
-          {value.length > 0 && (
-            <FaX
-              className="cursor-pointer font-lg my-0 -ml-1 mr-1"
-              onClick={() => onChange("")}
-            />
-          )}
+          {value.length > 0 && <button
+            className="icon ml-2"
+            onClick={() => onChange("")}
+          >
+            <FaX />
+          </button>}
         </div>
       )}
       <div className="flex">

@@ -112,7 +112,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
   };
 
   return (
-    <form className="flex flex-col card mt-2 gap-2" style={{ gap: "0.5em" }}>
+    <form className="flex flex-col card mt-2 gap-2">
       <h4>Fill out metadata</h4>
       <div className="flex flex-col w-3/4">
         <label className="metadata-label">Name</label>

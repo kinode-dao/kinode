@@ -9,7 +9,7 @@ import { PageProps } from "../types/Page";
 import { useNavigate } from "react-router-dom";
 import { appId } from "../utils/app";
 
-interface MyAppsPageProps extends PageProps {}
+interface MyAppsPageProps extends PageProps { }
 
 export default function MyAppsPage(props: MyAppsPageProps) { // eslint-disable-line
   const { myApps, getMyApps } = useAppsStore()
@@ -53,27 +53,25 @@ export default function MyAppsPage(props: MyAppsPageProps) { // eslint-disable-l
   }, [myApps]);
 
   return (
-    <div style={{ width: "100%", height: '100%' }}>
+    <div className="flex flex-col w-full max-w-[900px]">
       <SearchHeader value={searchQuery} onChange={searchMyApps} />
-      <div className="row between page-title">
-        <h4 style={{ marginBottom: "0.5em" }}>My Packages</h4>
-        <button className="row" onClick={() => navigate('/publish')}>
-          <FaUpload style={{ marginRight: "0.5em" }} />
+      <div className="flex justify-between items-center mt-2">
+        <h4 className="mb-2">My Packages</h4>
+        <button onClick={() => navigate('/publish')}>
+          <FaUpload className="mr-2" />
           Publish Package
         </button>
       </div>
 
-      <div className="my-apps-list">
-        <div className="new card col" style={{ gap: "1em" }}>
-          <h4>Downloaded</h4>
-          {(displayedApps.downloaded || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
-          <h4>Installed</h4>
-          {(displayedApps.installed || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
-          <h4>Local</h4>
-          {(displayedApps.local || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
-          <h4>System</h4>
-          {(displayedApps.system || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
-        </div>
+      <div className="flex flex-col card gap-2 mt-2">
+        <h4>Downloaded</h4>
+        {(displayedApps.downloaded || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
+        <h4>Installed</h4>
+        {(displayedApps.installed || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
+        <h4>Local</h4>
+        {(displayedApps.local || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
+        <h4>System</h4>
+        {(displayedApps.system || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
       </div>
     </div>
   );
