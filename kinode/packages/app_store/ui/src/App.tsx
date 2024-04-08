@@ -12,7 +12,6 @@ import { MY_APPS_PATH } from "./constants/path";
 import { ChainId, PACKAGE_STORE_ADDRESSES } from "./constants/chain";
 import PublishPage from "./pages/PublishPage";
 import { hooks as metaMaskHooks, metaMask } from './utils/metamask'
-import "./App.css";
 
 const connectors: [MetaMask, Web3ReactHooks][] = [
   [metaMask, metaMaskHooks],
