@@ -295,14 +295,23 @@ fn handle_remote_request(
             desired_version_hash,
         } => {
             let Some(package_state) = state.get_downloaded_package(package_id) else {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
+                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::NoPackage,
+                ));
             };
             if !package_state.mirroring {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
+                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::NotMirroring,
+                ));
             }
             if let Some(hash) = desired_version_hash {
                 if &package_state.our_version != hash {
-                    return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
+                    return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                        ReasonDenied::HashMismatch {
+                            requested: hash.clone(),
+                            have: package_state.our_version.clone(),
+                        },
+                    ));
                 }
             }
             let file_name = format!("/{}.zip", package_id);
@@ -318,12 +327,16 @@ fn handle_remote_request(
                 )
                 .send_and_await_response(5)
             else {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
+                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::FileNotFound,
+                ));
             };
             // transfer will *inherit* the blob bytes we receive from VFS
             match spawn_transfer(&our, &file_name, None, 60, &source) {
                 Ok(()) => Resp::RemoteResponse(RemoteResponse::DownloadApproved),
-                Err(_e) => Resp::RemoteResponse(RemoteResponse::DownloadDenied),
+                Err(_e) => Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::WorkerSpawnFailed,
+                )),
             }
         }
     }
