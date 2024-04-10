@@ -1,4 +1,6 @@
-use kinode_process_lib::http::{bind_http_path, serve_ui, HttpServerRequest};
+use kinode_process_lib::http::{
+    bind_http_path, bind_ws_path, send_ws_push, serve_ui, HttpServerRequest, WsMessageType,
+};
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
 use kinode_process_lib::{call_init, println};
@@ -124,6 +126,8 @@ fn init(our: Address) {
     )
     .expect("failed to serve static UI");
 
+    bind_ws_path("/", true, true).expect("failed to bind ws path");
+
     // add ourselves to the homepage
     Request::to(("our", "homepage", "homepage", "sys"))
         .body(
@@ -172,6 +176,9 @@ fn init(our: Address) {
     }
     subscribe_to_logs(&eth_provider, filter);
 
+    // websocket channel to send errors/updates to UI
+    let channel_id: u32 = 154869;
+
     loop {
         match await_message() {
             Err(send_error) => {
@@ -186,7 +193,21 @@ fn init(our: Address) {
                     &mut requested_packages,
                     &message,
                 ) {
-                    println!("error handling message: {:?}", e)
+                    println!("error handling message: {:?}", e);
+                    send_ws_push(
+                        channel_id,
+                        WsMessageType::Text,
+                        LazyLoadBlob {
+                            mime: Some("application/json".to_string()),
+                            bytes: serde_json::json!({
+                                "kind": "error",
+                                "data": e.to_string(),
+                            })
+                            .to_string()
+                            .as_bytes()
+                            .to_vec(),
+                        },
+                    )
                 }
             }
         }
