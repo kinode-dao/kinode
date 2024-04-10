@@ -1,5 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import UnoCSS from 'unocss/vite'
+import { transformerDirectives } from 'unocss'
+import presetIcons from '@unocss/preset-icons'
+import presetUno from '@unocss/preset-uno'
+import presetWind from '@unocss/preset-wind'
 
 /*
 If you are developing a UI outside of a Kinode project,
@@ -22,7 +27,39 @@ const PROXY_URL = (process.env.VITE_NODE_URL || 'http://127.0.0.1:8080').replace
 console.log('process.env.VITE_NODE_URL', process.env.VITE_NODE_URL, PROXY_URL);
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    UnoCSS({
+      presets: [presetUno(), presetWind(), presetIcons()],
+      shortcuts: [
+        {
+          'flex-center': 'flex justify-center items-center',
+          'flex-col-center': 'flex flex-col justify-center items-center',
+        },
+      ],
+      rules: [
+      ],
+      theme: {
+        colors: {
+          'white': '#FFF5D9',
+          'black': '#22211F',
+          'orange': '#F35422',
+          'transparent': 'transparent',
+          'gray': '#7E7E7E',
+        },
+        font: {
+          'sans': ['Barlow', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', '"Noto Sans"', 'sans-serif', '"Apple Color Emoji"', '"Segoe UI Emoji"', '"Segoe UI Symbol"', '"Noto Color Emoji"'],
+          'serif': ['ui-serif', 'Georgia', 'Cambria', '"Times New Roman"', 'Times', 'serif'],
+          'mono': ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', '"Courier New"', 'monospace'],
+          'heading': ['OpenSans', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', '"Noto Sans"', 'sans-serif', '"Apple Color Emoji"', '"Segoe UI Emoji"', '"Segoe UI Symbol"', '"Noto Color Emoji"'],
+          'display': ['Futura', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', '"Noto Sans"', 'sans-serif', '"Apple Color Emoji"', '"Segoe UI Emoji"', '"Segoe UI Symbol"', '"Noto Color Emoji"'],
+        },
+      },
+      transformers: [
+        transformerDirectives()
+      ],
+    }),
+    react(),
+  ],
   base: BASE_URL,
   build: {
     rollupOptions: {

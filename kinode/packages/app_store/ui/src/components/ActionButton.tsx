@@ -4,6 +4,7 @@ import useAppsStore from "../store/apps-store";
 import Modal from "./Modal";
 import { getAppName } from "../utils/app";
 import Loader from "./Loader";
+import classNames from "classnames";
 
 interface ActionButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
@@ -136,22 +137,22 @@ export default function ActionButton({ app, ...props }: ActionButtonProps) {
       <button
         {...props}
         type="button"
-        className={`small action-btn ${props.className || ""}`}
+        className={classNames("text-sm min-w-[100px] px-2 py-1 self-start", props.className)}
         onClick={onClick}
       >
         {installed && updatable
           ? "Update"
           : installed
-          ? "Installed"
-          : downloaded
-          ? "Install"
-          : "Download"}
+            ? "Installed"
+            : downloaded
+              ? "Install"
+              : "Download"}
       </button>
       <Modal show={showModal} hide={() => setShowModal(false)}>
         {loading ? (
           <Loader msg={loading} />
         ) : clean ? (
-          <form className="col" style={{alignItems: "center", gap: "1em"}} onSubmit={download}>
+          <form className="flex flex-col items-center gap-2" onSubmit={download}>
             <h4>Download '{appName}'</h4>
             <h5 style={{ margin: 0 }}>Select Mirror</h5>
             <select value={mirror} onChange={(e) => setMirror(e.target.value)}>
@@ -167,7 +168,7 @@ export default function ActionButton({ app, ...props }: ActionButtonProps) {
                 value={customMirror}
                 onChange={(e) => setCustomMirror(e.target.value)}
                 placeholder="Mirror, i.e. 'template.os'"
-                style={{ padding: "0.5em", maxWidth: 240, width: "100%" }}
+                className="p-1 max-w-[240px] w-full"
                 required
                 autoFocus
               />
@@ -179,10 +180,10 @@ export default function ActionButton({ app, ...props }: ActionButtonProps) {
         ) : downloaded ? (
           <>
             <h4>Approve App Permissions</h4>
-            <h5 style={{ margin: 0 }}>
+            <h5 className="m-0">
               {getAppName(app)} needs the following permissions:
             </h5>
-            <ul className="col" style={{ alignItems: "flex-start" }}>
+            <ul className="flex flex-col items-start">
               {caps.map((cap) => (
                 <li key={cap}>{cap}</li>
               ))}
@@ -194,12 +195,12 @@ export default function ActionButton({ app, ...props }: ActionButtonProps) {
         ) : (
           <>
             <h4>Approve App Permissions</h4>
-            <h5 style={{ margin: 0 }}>
+            <h5 className="m-0">
               {getAppName(app)} needs the following permissions:
             </h5>
             {/* <h5>Send Messages:</h5> */}
             <br />
-            <ul className="col" style={{ alignItems: "flex-start" }}>
+            <ul className="flex flex-col items-start">
               {caps.map((cap) => (
                 <li key={cap}>{cap}</li>
               ))}

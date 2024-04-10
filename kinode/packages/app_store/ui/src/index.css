@@ -2,45 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --text-light: #FFF5D9;
-  --text-dark: #22211F;
-  --text-orange: #FF7533;
-  --orange-light: #F36822;
-  --orange-medium: #F35422;
-  --orange-burnt: #E25F35;
+@font-face {
+  font-family: 'Futura';
+  src: url('./fonts/Futura-Heavy.ttf');
+}
 
-  --medium-gray: #7E7E7E;
-  --gray-button: rgba(253, 245, 220, 0.25);
-  --dark-background: rgb(130, 59, 28);
-  --input-background: rgba(243, 84, 34, 0.25);
-  /* orange-medium */
+@font-face {
+  font-family: 'OpenSans';
+  src: url('./fonts/OpenSans-CondBold.ttf');
+}
+
+@font-face {
+  font-family: 'Barlow';
+  src: url('./fonts/BarlowCondensed-Black.ttf');
 }
 
 body {
-  margin: 0;
-  font-size: 16px;
-  color: var(--text-light);
-  font-weight: 400;
-  background: url('./assets/background.jpg') no-repeat center center fixed;
-  background-size: cover;
-  background-color: var(--dark-background);
-  height: 100vh;
-  width: 100vw;
-}
-
-body,
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-p,
-a,
-button,
-input {
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Barlow', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', '"Noto Sans"', 'sans-serif', '"Apple Color Emoji"', '"Segoe UI Emoji"', '"Segoe UI Symbol"', '"Noto Color Emoji"';
 }
 
 h1,
@@ -49,174 +27,107 @@ h3,
 h4,
 h5,
 h6 {
-  line-height: 1.5em;
-  font-weight: 500;
-  margin: 0;
+  letter-spacing: -0.01em;
+  @apply leading-6 m-0 font-[OpenSans]
+}
+
+h1.display {
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  @apply font-[Futura] text-3xl font-normal;
 }
 
 h1 {
-  font-size: 64px;
+  @apply text-3xl;
 }
 
 h2 {
-  font-size: 48px;
+  @apply text-2xl;
 }
 
 h3 {
-  font-size: 36px;
+  @apply text-xl;
 }
 
 h4 {
-  font-size: 24px;
-}
-
-h5 {
-  font-size: 20px;
+  @apply text-lg;
 }
 
 h6 {
-  font-size: 16px;
-}
-
-.col {
-  display: flex;
-  flex-direction: column;
-}
-
-.row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-}
-
-input,
-button {
-  all: unset;
-}
-
-input[type="text"],
-input[type="password"],
-input[type="checkbox"] {
-  padding: 1em;
-  border: 1px solid var(--orange-medium);
-  border-radius: 8px;
-  box-sizing: border-box;
-  font-size: 1em;
-  background-color: var(--input-background);
-  color: var(--text-light);
-  text-align: left;
-}
-
-input[type="text"],
-input[type="password"] {
-  width: 100%;
-}
-
-input[type="checkbox"] {
-  padding: 0.25em 0.8em;
-  cursor: pointer;
-}
-
-input[type="checkbox"]:checked {
-  background-color: var(--orange-medium);
-}
-
-.checkmark {
-  position: absolute;
-  left: 4px;
-  font-size: 24px;
-  top: -5px;
-  cursor: pointer;
-}
-
-::placeholder {
-  color: var(--text-light);
-}
-
-::-webkit-input-placeholder::placeholder {
-  color: var(--text-light);
-}
-
-::-moz-placeholder::placeholder {
-  color: var(--text-light);
-}
-
-::-ms-input-placeholder {
-  color: var(--text-light);
-}
-
-label {
-  font-size: 20px;
+  @apply text-sm;
 }
 
 button,
-[type='button'],
-[type='reset'],
-[type='submit'] {
-  padding: 0.75em 1em;
-  margin: 0;
-  font-weight: 500;
-  border-width: 1px;
-  border-style: solid;
-  border-color: var(--orange-medium);
-  /* border-image: linear-gradient(to right, var(--orange-medium), var(--orange-light)); */
-  border-radius: 8px;
-  background: var(--orange-medium);
-  box-sizing: border-box;
-  cursor: pointer;
-  font-size: 1.125em;
-  transition: all 0.1s;
-  box-shadow: 0 1px 2px var(--orange-light);
-  color: var(--text-light);
+button[type="submit"],
+.button {
+  @apply flex m-0 py-2 px-6 rounded border-orange bg-orange border-2 cursor-pointer place-items-center place-content-center text-center rounded-lg heading transition ease-in-out duration-100 hover:bg-black text-white font-[OpenSans];
 }
 
-button.alt {
-  background-color: var(--text-light);
-  color: var(--text-dark);
-  border-color: var(--text-light);
-  box-shadow: 0 1px 2px var(--text-light);
+.clear {
+  @apply bg-transparent border-transparent font-bold font-[Barlow] hover:bg-white/25;
 }
 
-button:hover {
-  opacity: 0.9;
-  box-shadow: none;
+.alt {
+  @apply bg-white text-black border-white hover:text-white;
 }
 
-button:disabled {
-  background-color: var(--medium-gray);
-  border: 1px solid var(--medium-gray);
-  box-shadow: 0 1px 2px var(--medium-gray);
-  opacity: 0.7;
-  cursor: not-allowed;
+.thin {
+  @apply px-0 border-none;
 }
 
-ul,
-li {
+.icon {
+  @apply flex items-center place-content-center bg-transparent w-11 p-3 text-[14px] rounded-full border-white/25;
+}
+
+.icon.alt {
+  @apply border-black/25 hover:border-white/25
+}
+
+body {
+  @apply bg-[url('./background.jpg')] bg-cover bg-no-repeat bg-center bg-fixed text-white;
+}
+
+input {
   all: unset;
 }
 
+select,
+textarea,
+input[type="text"],
+input[type="password"],
+input[type="checkbox"] {
+  @apply px-4 py-2 rounded-lg bg-orange bg-opacity-25 text-white border border-orange border-2;
+}
+
+input[type="checkbox"] {
+  @apply w-2 h-2 cursor-pointer p-2;
+}
+
+input[type="checkbox"]:checked {
+  @apply bg-orange;
+}
+
 select {
-  padding: 0.25em 0.5em;
-  font-size: 0.9rem;
-  border: 1px solid var(--orange-medium);
-  background-color: var(--input-background);
-  color: var(--text-light);
-  border-radius: 8px;
-
-  /* Use a custom chevron image */
-  background-image: url('./assets/select-chevron.svg');
+  /* arrow image */
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="%23ffffff" d="M7.41 8.58L12 13.17l4.59-4.59L18 10l-6 6-6-6z"/></svg>');
   background-repeat: no-repeat;
-  background-position: right 8px center;
-  /* Adjust the horizontal position to control padding */
-  background-size: 16px;
-  /* Adjust size of the chevron */
-  padding-right: 2em;
-  /* Adjust the padding to make room for the chevron */
+  background-position: right 1.25rem center;
+  @apply appearance-none pr-16;
+}
 
-  -webkit-appearance: none;
-  /* Removes default styling on WebKit browsers like Safari */
-  -moz-appearance: none;
-  /* Removes default styling on Firefox */
-  appearance: none;
-  /* Standard property, currently not fully supported */
+button:hover {
+  @apply opacity-90 shadow-none;
+}
+
+button:disabled {
+  @apply opacity-70 cursor-not-allowed bg-gray border-gray;
+}
+
+.obox,
+.card {
+  @apply rounded-lg p-4 bg-orange/25;
+}
+
+.c {
+  @apply place-items-center place-content-center;
 }

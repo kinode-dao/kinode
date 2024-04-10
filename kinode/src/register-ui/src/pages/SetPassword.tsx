@@ -5,6 +5,7 @@ import { utils, providers } from "ethers";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import { ReactComponent as NameLogo } from "../assets/kinode.svg"
 import { Tooltip } from "../components/Tooltip";
+import { KinodeTitle } from "../components/KinodeTitle";
 
 type SetPasswordProps = {
   direct: boolean;
@@ -113,11 +114,7 @@ function SetPassword({
   return (
     <>
       <KinodeHeader
-        header={<h1
-          className="flex place-content-center place-items-center mb-4"
-        >
-          Set Password
-        </h1>}
+        header={<KinodeTitle prefix="Set Password" showLogo />}
         openConnect={() => { }}
         closeConnect={closeConnect}
         nodeChainId={nodeChainId}
@@ -128,7 +125,7 @@ function SetPassword({
         <form id="signup-form" className="flex flex-col w-full max-w-[450px] gap-4" onSubmit={handleSubmit}>
           <div className="flex flex-col w-full place-items-center place-content-center">
             <div className="flex w-full place-items-center mb-2">
-              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2" style={{fontSize: 20}} htmlFor="password">New Password</label>
+              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2" style={{ fontSize: 20 }} htmlFor="password">New Password</label>
               <Tooltip text={`This password will be used to log in if you restart your node or switch browsers.`} />
             </div>
             <div className="flex w-full place-items-center">
@@ -148,7 +145,7 @@ function SetPassword({
           </div>
           <div className="flex flex-col w-full place-items-center place-content-center">
             <div className="flex w-full place-items-center">
-              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-4" style={{fontSize: 20}} htmlFor="confirm-password">Confirm Password</label>
+              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-4" style={{ fontSize: 20 }} htmlFor="confirm-password">Confirm Password</label>
             </div>
             <div className="flex w-full place-items-center">
               <input

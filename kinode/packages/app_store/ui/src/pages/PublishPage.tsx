@@ -14,10 +14,12 @@ import useAppsStore from "../store/apps-store";
 import MetadataForm from "../components/MetadataForm";
 import { AppInfo } from "../types/Apps";
 import Checkbox from "../components/Checkbox";
+import Jazzicon from "../components/Jazzicon";
+import { Tooltip } from "../components/Tooltip";
 
 const { useIsActivating } = hooks;
 
-interface PublishPageProps extends PageProps {}
+interface PublishPageProps extends PageProps { }
 
 export default function PublishPage({
   provider,
@@ -53,7 +55,7 @@ export default function PublishPage({
   }, [state])
 
   const connectWallet = useCallback(async () => {
-    await metaMask.activate().catch(() => {});
+    await metaMask.activate().catch(() => { });
 
     try {
       setChain(SEPOLIA_OPT_HEX);
@@ -104,21 +106,21 @@ export default function PublishPage({
 
         const tx = await (isUpdate
           ? packageAbi.updateMetadata(
-              BigNumber.from(
-                utils.solidityKeccak256(
-                  ["string", "bytes"],
-                  [packageName, publisherIdDnsWireFormat]
-                )
-              ),
-              metadataUrl,
-              metadata
-            )
+            BigNumber.from(
+              utils.solidityKeccak256(
+                ["string", "bytes"],
+                [packageName, publisherIdDnsWireFormat]
+              )
+            ),
+            metadataUrl,
+            metadata
+          )
           : packageAbi.registerApp(
-              packageName,
-              publisherIdDnsWireFormat,
-              metadataUrl,
-              metadata
-            ));
+            packageName,
+            publisherIdDnsWireFormat,
+            metadataUrl,
+            metadata
+          ));
 
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -170,42 +172,39 @@ export default function PublishPage({
   }, [listedApps, packageName, publisherId, isUpdate, setIsUpdate]);
 
   return (
-    <div style={{ width: "100%" }}>
+    <div className="max-w-[900px] w-full">
       <SearchHeader hideSearch onBack={showMetadataForm ? () => setShowMetadataForm(false) : undefined} />
-      <div className="row between page-title">
+      <div className="flex justify-between items-center my-2">
         <h4>Publish Package</h4>
-        {Boolean(account) && (
-          <div style={{ textAlign: "right", lineHeight: 1.5 }}>
-            {" "}
-            Connected as{" "}
-            {account?.slice(0, 6) + "..." + account?.slice(account.length - 6)}
-          </div>
-        )}
+        {Boolean(account) && <div className="card flex items-center">
+          <span>Publishing as:</span>
+          <Jazzicon address={account!} className="mx-2" />
+          <span className="font-mono">{account?.slice(0, 4)}...{account?.slice(-4)}</span>
+        </div>}
       </div>
 
       {loading ? (
-        <div className="col center">
+        <div className="flex flex-col items-center">
           <Loader msg={loading} />
         </div>
       ) : publishSuccess ? (
-        <div className="col center">
-          <h4 style={{ marginBottom: "0.5em" }}>Package Published!</h4>
-          <div style={{ marginBottom: "0.5em" }}>
+        <div className="flex flex-col items-center">
+          <h4 className="mb-2">Package Published!</h4>
+          <div className="mb-2">
             <strong>Package Name:</strong> {publishSuccess.packageName}
           </div>
-          <div style={{ marginBottom: "0.5em" }}>
+          <div className="mb-2">
             <strong>Publisher ID:</strong> {publishSuccess.publisherId}
           </div>
           <button
-            className={`my-pkg-btn row`}
-            style={{ marginTop: "1em" }}
+            className={`flex ml-2 mt-2`}
             onClick={() => setPublishSuccess(undefined)}
           >
             Publish Another Package
           </button>
         </div>
       ) : showMetadataForm ? (
-        <MetadataForm {...{packageName, publisherId, app: state?.app}} goBack={() => setShowMetadataForm(false)} />
+        <MetadataForm {...{ packageName, publisherId, app: state?.app }} goBack={() => setShowMetadataForm(false)} />
       ) : !account || !isActive ? (
         <>
           <h4 style={{}}>Please connect your wallet to publish a package</h4>
@@ -217,28 +216,23 @@ export default function PublishPage({
         <Loader msg="Approve connection in your wallet" />
       ) : (
         <form
-          className="new card col"
-          style={{ flex: 1, overflowY: "scroll" }}
+          className="flex flex-col flex-1 overflow-y-auto"
           onSubmit={publishPackage}
         >
           <div
-            className="row between"
-            style={{
-              cursor: "pointer",
-              padding: "0.5em",
-              margin: "0 0 0 -0.5em",
-            }}
+            className="flex cursor-pointer p-2 -mb-2"
             onClick={() => setIsUpdate(!isUpdate)}
           >
-            <Checkbox checked={isUpdate} readOnly />
-            <label htmlFor="update" style={{ cursor: "pointer", marginLeft: 8 }}>
+            <Checkbox
+              checked={isUpdate} readOnly
+            />
+            <label htmlFor="update" className="cursor-pointer ml-4">
               Update existing package
             </label>
           </div>
-          <div className="col f-width">
+          <div className="flex flex-col mb-2">
             <label htmlFor="package-name">Package Name</label>
             <input
-              style={{ minWidth: "80%" }}
               id="package-name"
               type="text"
               required
@@ -248,10 +242,9 @@ export default function PublishPage({
               onBlur={checkIfUpdate}
             />
           </div>
-          <div className="col f-width">
+          <div className="flex flex-col mb-2">
             <label htmlFor="publisher-id">Publisher ID</label>
             <input
-              style={{ minWidth: "80%" }}
               id="publisher-id"
               type="text"
               required
@@ -260,12 +253,11 @@ export default function PublishPage({
               onBlur={checkIfUpdate}
             />
           </div>
-          <div className="col f-width">
+          <div className="flex flex-col mb-2">
             <label htmlFor="metadata-url">
               Metadata URL
             </label>
             <input
-              style={{ minWidth: "80%" }}
               id="metadata-url"
               type="text"
               required
@@ -274,19 +266,20 @@ export default function PublishPage({
               onBlur={calculateMetadataHash}
               placeholder="https://github/my-org/my-repo/metadata.json"
             />
-            <div style={{ textAlign: "left", margin: "0.5em 0 0" }}>
-                Metadata is a JSON file that describes your package.
-                <br /> You can{" "}
-                <a onClick={() => setShowMetadataForm(true)} style={{ cursor: "pointer", textDecoration: "underline" }}>
-                  fill out a template here
-                </a>
-                .
-              </div>
+            <div className="mt-2">
+              Metadata is a JSON file that describes your package.
+              <br /> You can{" "}
+              <a onClick={() => setShowMetadataForm(true)}
+                className="underline cursor-pointer"
+              >
+                fill out a template here
+              </a>
+              .
+            </div>
           </div>
-          <div className="col f-width">
+          <div className="flex flex-col mb-2">
             <label htmlFor="metadata-hash">Metadata Hash</label>
             <input
-              style={{ minWidth: "80%" }}
               readOnly
               id="metadata-hash"
               type="text"
@@ -295,7 +288,7 @@ export default function PublishPage({
               placeholder="Calculated automatically from metadata URL"
             />
           </div>
-          <button type="submit" className="primary">
+          <button type="submit">
             Publish
           </button>
         </form>

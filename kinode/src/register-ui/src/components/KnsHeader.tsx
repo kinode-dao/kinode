@@ -79,7 +79,7 @@ function KinodeHeader({
           nodeChainId === OPTIMISM_OPT_HEX) && (
             <Tooltip
               position="left"
-              className="!absolute top-8 right-8"
+              className="!absolute top-8 right-8 z-10"
               button={nodeChainId === SEPOLIA_OPT_HEX ? (
                 <img
                   alt="sepolia"
@@ -105,7 +105,7 @@ function KinodeHeader({
         </div>
         {!hideConnect && (
           <div
-            className="flex c max-w-[50vw] mb-8 absolute top-2 left-2"
+            className="flex c w-[99vw] mb-8 absolute top-2 left-2"
           >
             {isActive && account ? (
               <ChainInfo

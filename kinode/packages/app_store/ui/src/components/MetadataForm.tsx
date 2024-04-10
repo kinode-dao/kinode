@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AppInfo } from "../types/Apps";
+import { FaX } from "react-icons/fa6";
 
 interface Props {
   app?: AppInfo;
@@ -111,9 +112,9 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
   };
 
   return (
-    <form className="col card metadata" style={{ gap: "0.5em" }}>
+    <form className="flex flex-col card mt-2 gap-2">
       <h4>Fill out metadata</h4>
-      <div className="col label">
+      <div className="flex flex-col w-3/4">
         <label className="metadata-label">Name</label>
         <input
           type="text"
@@ -122,7 +123,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
           onChange={(e) => handleFieldChange("name", e.target.value)}
         />
       </div>
-      <div className="col label">
+      <div className="flex flex-col w-3/4">
         <label className="metadata-label">Description</label>
         <input
           type="text"
@@ -131,7 +132,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
           onChange={(e) => handleFieldChange("description", e.target.value)}
         />
       </div>
-      <div className="col label">
+      <div className="flex flex-col w-3/4">
         <label className="metadata-label">Image URL</label>
         <input
           type="text"
@@ -140,7 +141,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
           onChange={(e) => handleFieldChange("image", e.target.value)}
         />
       </div>
-      <div className="col label">
+      <div className="flex flex-col w-3/4">
         <label className="metadata-label">External URL</label>
         <input
           type="text"
@@ -149,7 +150,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
           onChange={(e) => handleFieldChange("external_url", e.target.value)}
         />
       </div>
-      <div className="col label">
+      <div className="flex flex-col w-3/4">
         <label className="metadata-label">Animation URL</label>
         <input
           type="text"
@@ -158,7 +159,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
           onChange={(e) => handleFieldChange("animation_url", e.target.value)}
         />
       </div>
-      <div className="col label">
+      <div className="flex flex-col w-3/4">
         <label className="metadata-label">Package Name</label>
         <input
           type="text"
@@ -167,7 +168,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
           onChange={(e) => handleFieldChange("package_name", e.target.value)}
         />
       </div>
-      <div className="col label">
+      <div className="flex flex-col w-3/4">
         <label className="metadata-label">Current Version</label>
         <input
           type="text"
@@ -176,7 +177,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
           onChange={(e) => handleFieldChange("current_version", e.target.value)}
         />
       </div>
-      <div className="col label">
+      <div className="flex flex-col w-3/4">
         <label className="metadata-label">Publisher</label>
         <input
           type="text"
@@ -185,7 +186,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
           onChange={(e) => handleFieldChange("publisher", e.target.value)}
         />
       </div>
-      <div className="col label">
+      <div className="flex flex-col w-3/4">
         <label className="metadata-label">Mirrors (separated by commas)</label>
         <input
           type="text"
@@ -200,25 +201,16 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
         />
       </div>
       <div
-        className="col label"
-        style={{
-          gap: "0.5em",
-        }}
+        className="flex flex-col w-3/4 gap-2"
       >
         <div
-          className="row"
-          style={{
-            gap: "0.5em",
-            marginTop: 0,
-            justifyContent: "space-between",
-            width: "100%",
-          }}
+          className="flex gap-2 mt-0 justify-between w-full"
         >
-          <h5 style={{ margin: 0 }}>Code Hashes</h5>
+          <h5 className="m-0">Code Hashes</h5>
           <button
             type="button"
             onClick={() => setCodeHashes([...codeHashes, ["", ""]])}
-            className="small"
+            className="clear"
           >
             Add code hash
           </button>
@@ -227,8 +219,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
         {codeHashes.map(([version, hash], ind, arr) => (
           <div
             key={ind + "_code_hash"}
-            className="row"
-            style={{ gap: "0.5em", marginTop: 0, width: "100%" }}
+            className="flex gap-2 mt-0 w-full"
           >
             <input
               type="text"
@@ -241,7 +232,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
                   return newHashes;
                 })
               }
-              style={{ flex: 1 }}
+              className="flex-1"
             />
             <input
               type="text"
@@ -254,7 +245,7 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
                   return newHashes;
                 })
               }
-              style={{ flex: 5 }}
+              className="flex-5"
             />
             {arr.length > 1 && (
               <button
@@ -262,24 +253,19 @@ const MetadataForm = ({ app, packageName, publisherId, goBack }: Props) => {
                 onClick={() =>
                   setCodeHashes((prev) => prev.filter((_, i) => i !== ind))
                 }
-                style={{
-                  fontSize: "2em",
-                  height: 32,
-                  lineHeight: "1em",
-                  padding: "0 0.2em",
-                }}
+                className="icon"
               >
-                &times;
+                <FaX />
               </button>
             )}
           </div>
         ))}
       </div>
-      <div className="row" style={{ gap: "0.5em", margin: "1em 0" }}>
-        <button type="button" onClick={handleSubmit}>
+      <div className="flex gap-2 my-4">
+        <button type="button" onClick={handleSubmit} className="alt">
           Download JSON
         </button>
-        <button type="button" onClick={handleClearForm}>
+        <button type="button" onClick={handleClearForm} className="clear">
           Clear Form
         </button>
         <button type="button" onClick={goBack}>

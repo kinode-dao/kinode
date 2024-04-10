@@ -7,6 +7,7 @@ import AppEntry from "../components/AppEntry";
 import SearchHeader from "../components/SearchHeader";
 import { PageProps } from "../types/Page";
 import { appId } from "../utils/app";
+import classNames from 'classnames';
 
 interface StorePageProps extends PageProps { }
 
@@ -108,7 +109,7 @@ export default function StorePage(props: StorePageProps) {
   );
 
   return (
-    <div style={{ width: "100%" }}>
+    <div className="max-w-[900px] w-full">
       {/* <div style={{ position: "absolute", top: 4, left: 8 }}>
         ID: <strong>{window.our?.node}</strong>
       </div> */}
@@ -134,7 +135,7 @@ export default function StorePage(props: StorePageProps) {
           </div>
         ))}
       </div> */}
-      <div className="row between page-title">
+      <div className="flex justify-between items-center my-2 mx-0">
         <h4>New</h4>
 
         <select
@@ -150,7 +151,7 @@ export default function StorePage(props: StorePageProps) {
           <option>Recently updated</option>
         </select>
       </div>
-      <div className="new card col" style={{ flex: 1, overflowY: "auto", gap: "1em" }}>
+      <div className="flex flex-col flex-1 overflow-y-auto gap-2">
         {displayedApps.map((app) => (
           <AppEntry
             key={appId(app) + (app.state?.our_version || "")}
@@ -158,14 +159,14 @@ export default function StorePage(props: StorePageProps) {
           />
         ))}
         {pages.length > 1 && (
-          <div className="row" style={{ alignSelf: "center" }}>
+          <div className="flex self-center">
             {page !== pages[0] && (
               <FaChevronLeft onClick={() => setPage(page - 1)} />
             )}
             {pages.map((p) => (
               <div
                 key={`page-${p}`}
-                className={`page-selector ${p === page ? "selected" : ""}`}
+                className={classNames('my-1 mx-2', { "font-bold": p === page })}
                 onClick={() => setPage(p)}
               >
                 {p}

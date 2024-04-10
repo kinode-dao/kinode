@@ -702,52 +702,36 @@ button:hover {
   position: relative;
 }
 
-.bottom-2 {
-  bottom: 0.5rem;
-}
-
 .bottom-8 {
   bottom: 2rem;
-}
-
-.left-8 {
-  left: 2rem;
-}
-
-.right-1 {
-  right: 0.25rem;
-}
-
-.right-8 {
-  right: 2rem;
-}
-
-.top-1 {
-  top: 0.25rem;
-}
-
-.top-8 {
-  top: 2rem;
-}
-
-.right-0 {
-  right: 0px;
-}
-
-.top-0 {
-  top: 0px;
-}
-
-.left-0 {
-  left: 0px;
 }
 
 .left-2 {
   left: 0.5rem;
 }
 
+.left-8 {
+  left: 2rem;
+}
+
+.right-0 {
+  right: 0px;
+}
+
+.right-8 {
+  right: 2rem;
+}
+
+.top-0 {
+  top: 0px;
+}
+
 .top-2 {
   top: 0.5rem;
+}
+
+.top-8 {
+  top: 2rem;
 }
 
 .z-10 {
@@ -772,11 +756,6 @@ button:hover {
 .my-8 {
   margin-top: 2rem;
   margin-bottom: 2rem;
-}
-
-.my-10 {
-  margin-top: 2.5rem;
-  margin-bottom: 2.5rem;
 }
 
 .mb-1 {
@@ -815,6 +794,10 @@ button:hover {
   margin-top: 0.25rem;
 }
 
+.mt-10 {
+  margin-top: 2.5rem;
+}
+
 .mt-2 {
   margin-top: 0.5rem;
 }
@@ -825,10 +808,6 @@ button:hover {
 
 .mt-8 {
   margin-top: 2rem;
-}
-
-.mt-10 {
-  margin-top: 2.5rem;
 }
 
 .block {
@@ -843,20 +822,20 @@ button:hover {
   display: none;
 }
 
-.h-16 {
-  height: 4rem;
+.h-32 {
+  height: 8rem;
 }
 
 .h-screen {
   height: 100vh;
 }
 
-.h-32 {
-  height: 8rem;
+.w-32 {
+  width: 8rem;
 }
 
-.w-16 {
-  width: 4rem;
+.w-\[95vw\] {
+  width: 95vw;
 }
 
 .w-full {
@@ -867,8 +846,8 @@ button:hover {
   width: 100vw;
 }
 
-.w-32 {
-  width: 8rem;
+.w-\[99vw\] {
+  width: 99vw;
 }
 
 .min-w-\[200px\] {
@@ -883,8 +862,8 @@ button:hover {
   max-width: 460px;
 }
 
-.max-w-\[50vw\] {
-  max-width: 50vw;
+.max-w-\[450vw\] {
+  max-width: 450vw;
 }
 
 .shrink {
@@ -957,13 +936,9 @@ button:hover {
   line-height: 2rem;
 }
 
-.text-6xl {
-  font-size: 3.75rem;
+.text-5xl {
+  font-size: 3rem;
   line-height: 1;
-}
-
-.text-\[8px\] {
-  font-size: 8px;
 }
 
 .text-lg {
@@ -974,16 +949,6 @@ button:hover {
 .text-sm {
   font-size: 0.875rem;
   line-height: 1.25rem;
-}
-
-.text-3xl {
-  font-size: 1.875rem;
-  line-height: 2.25rem;
-}
-
-.text-5xl {
-  font-size: 3rem;
-  line-height: 1;
 }
 
 .text-xs {
