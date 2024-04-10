@@ -5,9 +5,6 @@ use std::collections::HashMap;
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
 
 /// From main kns_indexer process
@@ -37,7 +34,6 @@ pub struct KnsUpdate {
 }
 
 call_init!(init);
-
 fn init(_our: Address) {
     let Ok(Message::Response { body, .. }) =
         Request::to(("our", "kns_indexer", "kns_indexer", "sys"))

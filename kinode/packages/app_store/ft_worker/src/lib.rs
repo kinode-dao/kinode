@@ -8,9 +8,6 @@ use ft_worker_lib::*;
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
 
 /// internal worker protocol
@@ -21,7 +18,6 @@ pub enum FTWorkerProtocol {
 }
 
 call_init!(init);
-
 fn init(our: Address) {
     let Ok(Message::Request {
         source: parent_process,

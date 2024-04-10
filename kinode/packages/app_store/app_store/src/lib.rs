@@ -9,9 +9,6 @@ use std::str::FromStr;
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
 
 mod api;
@@ -686,25 +683,35 @@ pub fn handle_install(
             ))?)
             .send()?;
 
-        let _bytes_response = Request::to(("our", "vfs", "distro", "sys"))
-            .body(serde_json::to_vec(&vfs::VfsRequest {
-                path: wasm_path.clone(),
-                action: vfs::VfsAction::Read,
-            })?)
-            .send_and_await_response(5)??;
+        if let Ok(vfs::VfsResponse::Err(_)) = serde_json::from_slice(
+            Request::to(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: wasm_path.clone(),
+                    action: vfs::VfsAction::Read,
+                })?)
+                .send_and_await_response(5)??
+                .body(),
+        ) {
+            return Err(anyhow::anyhow!("failed to read process file"));
+        };
 
-        Request::new()
-            .target(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
-                id: parsed_new_process_id.clone(),
-                wasm_bytes_handle: wasm_path,
-                wit_version: None,
-                on_exit: entry.on_exit.clone(),
-                initial_capabilities: HashSet::new(),
-                public: entry.public,
-            })?)
-            .inherit(true)
-            .send_and_await_response(5)??;
+        let Ok(kt::KernelResponse::InitializedProcess) = serde_json::from_slice(
+            Request::new()
+                .target(("our", "kernel", "distro", "sys"))
+                .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
+                    id: parsed_new_process_id.clone(),
+                    wasm_bytes_handle: wasm_path,
+                    wit_version: None,
+                    on_exit: entry.on_exit.clone(),
+                    initial_capabilities: HashSet::new(),
+                    public: entry.public,
+                })?)
+                .inherit(true)
+                .send_and_await_response(5)??
+                .body(),
+        ) else {
+            return Err(anyhow::anyhow!("failed to initialize process"));
+        };
         // build initial caps
         let mut requested_capabilities: Vec<kt::Capability> = vec![];
         for value in &entry.request_capabilities {
@@ -829,11 +836,16 @@ pub fn handle_install(
                 }
             }
         }
-        Request::to(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
-                parsed_new_process_id,
-            ))?)
-            .send_and_await_response(5)??;
+        let Ok(kt::KernelResponse::StartedProcess) = serde_json::from_slice(
+            Request::to(("our", "kernel", "distro", "sys"))
+                .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
+                    parsed_new_process_id,
+                ))?)
+                .send_and_await_response(5)??
+                .body(),
+        ) else {
+            return Err(anyhow::anyhow!("failed to start process"));
+        };
     }
     // finally set the package as installed
     state.update_downloaded_package(package_id, |package_state| {

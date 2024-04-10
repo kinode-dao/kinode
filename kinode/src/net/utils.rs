@@ -260,6 +260,18 @@ pub async fn create_passthrough(
     ))
 }
 
+pub fn validate_signature(from: &str, signature: &[u8], message: &[u8], pki: &OnchainPKI) -> bool {
+    if let Some(peer_id) = pki.get(from) {
+        let their_networking_key = signature::UnparsedPublicKey::new(
+            &signature::ED25519,
+            hex::decode(strip_0x(&peer_id.networking_key)).unwrap_or_default(),
+        );
+        their_networking_key.verify(message, signature).is_ok()
+    } else {
+        false
+    }
+}
+
 pub fn validate_routing_request(
     our_name: &str,
     buf: &[u8],

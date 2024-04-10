@@ -36,9 +36,6 @@ struct HomepageApp {
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
 
 const HOME_PAGE: &str = include_str!("index.html");
@@ -49,8 +46,6 @@ const APP_TEMPLATE: &str = r#"
     src="${base64_icon}" />
   <h6>${label}</h6>
 </a>"#;
-
-call_init!(init);
 
 /// bind to root path on http_server (we have special dispensation to do so!)
 fn bind_index(our: &str, apps: &HashMap<ProcessId, String>) {
@@ -161,6 +156,7 @@ fn bind_index(our: &str, apps: &HashMap<ProcessId, String>) {
 //     Ok(())
 // }
 
+call_init!(init);
 fn init(our: Address) {
     let mut apps: HashMap<ProcessId, String> = HashMap::new();
     let mut app_data: HashMap<ProcessId, HomepageApp> = HashMap::new();

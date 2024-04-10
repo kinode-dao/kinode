@@ -1,17 +1,13 @@
-use kinode_process_lib::{await_next_request_body, call_init, eth, println, Address};
+use kinode_process_lib::{await_next_message_body, call_init, eth, println, Address};
 
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
 
 call_init!(init);
-
 fn init(_our: Address) {
-    let Ok(args) = await_next_request_body() else {
+    let Ok(args) = await_next_message_body() else {
         println!("failed to get args");
         return;
     };
