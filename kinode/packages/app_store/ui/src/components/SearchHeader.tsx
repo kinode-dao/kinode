@@ -3,12 +3,13 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   FaArrowLeft,
   FaDownload,
-  FaRegTimesCircle,
-  FaSearch,
+  FaMagnifyingGlass,
   FaUpload,
-} from "react-icons/fa";
+  FaX,
+} from "react-icons/fa6";
 
 import { MY_APPS_PATH } from "../constants/path";
+import classNames from "classnames";
 
 interface SearchHeaderProps {
   value?: string;
@@ -32,9 +33,9 @@ export default function SearchHeader({
   const isMyAppsPage = location.pathname === MY_APPS_PATH;
 
   return (
-    <div className="search-header row between">
+    <div className="flex justify-between">
       {location.pathname !== '/' ? (
-        <button className="back-btn col center" onClick={() => {
+        <button className="flex flex-col c mr-1 icon" onClick={() => {
           if (onBack) {
             onBack()
           } else {
@@ -45,40 +46,44 @@ export default function SearchHeader({
         </button>
       ) : (
         <button
-          className="back-btn col center"
+          className="flex flex-col c mr-1 alt"
           onClick={() => navigate("/publish")}
         >
           <FaUpload />
         </button>
       )}
       {!hideSearch && (
-        <div className="searchbar row">
-          <FaSearch
-            className="search-icon"
+        <div className="flex mx-2 flex-1 rounded-md">
+          <button
+            className="icon"
+            type="button"
             onClick={() => inputRef.current?.focus()}
-          />
+          >
+            <FaMagnifyingGlass />
+          </button>
           <input
+            type="text"
             ref={inputRef}
             onChange={(event) => onChange(event.target.value)}
             value={value}
             placeholder="Search for apps..."
+            className="w-full ml-2"
           />
-          {value.length > 0 && (
-            <FaRegTimesCircle
-              className="search-icon"
-              style={{ margin: "0 -0.25em 0 0.25em" }}
-              onClick={() => onChange("")}
-            />
-          )}
+          {value.length > 0 && <button
+            className="icon ml-2"
+            onClick={() => onChange("")}
+          >
+            <FaX />
+          </button>}
         </div>
       )}
-      <div className="row">
+      <div className="flex">
         <button
-          className={`my-pkg-btn row ${isMyAppsPage ? "selected" : ""}`}
+          className={classNames("flex ml-1 alt")}
           onClick={() => (isMyAppsPage ? navigate(-1) : navigate(MY_APPS_PATH))}
         >
-          <FaDownload style={{ marginRight: "0.5em" }} />
-          My Packages
+          <FaDownload className="mr-1" />
+          My Apps
         </button>
       </div>
     </div>

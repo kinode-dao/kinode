@@ -12,7 +12,6 @@ import { MY_APPS_PATH } from "./constants/path";
 import { ChainId, PACKAGE_STORE_ADDRESSES } from "./constants/chain";
 import PublishPage from "./pages/PublishPage";
 import { hooks as metaMaskHooks, metaMask } from './utils/metamask'
-import "./App.css";
 
 const connectors: [MetaMask, Web3ReactHooks][] = [
   [metaMask, metaMaskHooks],
@@ -43,9 +42,8 @@ const RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL;
 const BASE_URL = import.meta.env.BASE_URL;
 if (window.our) window.our.process = BASE_URL?.replace("/", "");
 
-const PROXY_TARGET = `${
-  import.meta.env.VITE_NODE_URL || "http://localhost:8080"
-}${BASE_URL}`;
+const PROXY_TARGET = `${import.meta.env.VITE_NODE_URL || "http://localhost:8080"
+  }${BASE_URL}`;
 
 // This env also has BASE_URL which should match the process + package name
 const WEBSOCKET_URL = import.meta.env.DEV // eslint-disable-line
@@ -96,7 +94,7 @@ function App() {
 
   if (!nodeConnected) {
     return (
-      <div className="node-not-connected">
+      <div className="flex flex-col c">
         <h2 style={{ color: "red" }}>Node not connected</h2>
         <h4>
           You need to start a node at {PROXY_TARGET} before you can use this UI
@@ -109,16 +107,18 @@ function App() {
   const props = { provider, packageAbi };
 
   return (
-    <Web3ReactProvider connectors={connectors}>
-      <Router basename={BASE_URL}>
-        <Routes>
-          <Route path="/" element={<StorePage {...props} />} />
-          <Route path={MY_APPS_PATH} element={<MyAppsPage {...props} />} />
-          <Route path="/app-details/:id" element={<AppPage {...props} />} />
-          <Route path="/publish" element={<PublishPage {...props} />} />
-        </Routes>
-      </Router>
-    </Web3ReactProvider>
+    <div className="flex flex-col c h-screen w-screen">
+      <Web3ReactProvider connectors={connectors}>
+        <Router basename={BASE_URL}>
+          <Routes>
+            <Route path="/" element={<StorePage {...props} />} />
+            <Route path={MY_APPS_PATH} element={<MyAppsPage {...props} />} />
+            <Route path="/app-details/:id" element={<AppPage {...props} />} />
+            <Route path="/publish" element={<PublishPage {...props} />} />
+          </Routes>
+        </Router>
+      </Web3ReactProvider>
+    </div>
   );
 }
 

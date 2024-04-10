@@ -1,15 +1,21 @@
 import React from 'react';
 import { FaEllipsisH } from 'react-icons/fa';
 import { Menu, MenuButton } from '@szhsin/react-menu';
+import classNames from 'classnames';
 
 interface DropdownProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export default function Dropdown({ ...props }: DropdownProps) {
   return (
-    <Menu {...props} className={"dropdown " + props.className} menuButton={<MenuButton className="small">
-      <FaEllipsisH style={{ marginBottom: '-0.125em' }} />
-    </MenuButton>}>
+    <Menu
+      {...props}
+      unmountOnClose={true}
+      className={classNames("relative", props.className)}
+      menuButton={<MenuButton className="small">
+        <FaEllipsisH className='-mb-1' />
+      </MenuButton>}
+    >
       {props.children}
     </Menu>
   )
