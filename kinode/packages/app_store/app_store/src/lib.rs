@@ -39,8 +39,8 @@ use ft_worker_lib::{
 
 const ICON: &str = include_str!("icon");
 
-const CHAIN_ID: u64 = 11155111; // sepolia
-const CONTRACT_ADDRESS: &str = "0x18c39eB547A0060C6034f8bEaFB947D1C16eADF1"; // sepolia
+const CHAIN_ID: u64 = 10; // optimism
+const CONTRACT_ADDRESS: &str = "0x52185B6a6017E6f079B994452F234f7C2533787B"; // optimism
 
 const EVENTS: [&str; 3] = [
     "AppRegistered(uint256,string,bytes,string,bytes32)",
@@ -81,7 +81,7 @@ fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Lo
             }
         }
     }
-    #[cfg(feature = "simulation-mode")]
+    #[cfg(feature = "simulation-mode")] // TODO use local testnet
     vec![]
 }
 

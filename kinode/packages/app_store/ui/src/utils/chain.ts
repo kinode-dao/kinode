@@ -40,21 +40,21 @@ export const CHAIN_DETAILS: { [key: string]: Chain } = {
 
 export const getNetworkName = (networkId: string) => {
   switch (networkId) {
-      case '1':
-      case '0x1':
-          return 'Ethereum'; // Ethereum Mainnet
-      case '10':
-      case 'a':
-      case '0xa':
-          return 'Optimism'; // Optimism
-      case '42161':
-          return 'Arbitrum'; // Arbitrum One
-      case '11155111':
-      case 'aa36a7':
-      case '0xaa36a7':
-          return 'Sepolia'; // Sepolia Testnet
-      default:
-          return 'Unknown';
+    case '1':
+    case '0x1':
+      return 'Ethereum'; // Ethereum Mainnet
+    case '10':
+    case 'a':
+    case '0xa':
+      return 'Optimism'; // Optimism
+    case '42161':
+      return 'Arbitrum'; // Arbitrum One
+    case '11155111':
+    case 'aa36a7':
+    case '0xaa36a7':
+      return 'Sepolia'; // Sepolia Testnet
+    default:
+      return 'Unknown';
   }
 };
 
