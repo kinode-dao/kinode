@@ -671,7 +671,6 @@ pub async fn kernel(
     mut recv_debug_in_loop: t::DebugReceiver,
     send_to_net: t::MessageSender,
     home_directory_path: String,
-    contract_chain_and_address: (u64, String),
     runtime_extensions: Vec<(
         t::ProcessId,
         t::MessageSender,
@@ -862,33 +861,6 @@ pub async fn kernel(
                 expects_response: None,
                 body: rmp_serde::to_vec(&t::NetAction::KnsBatchUpdate(default_pki_entries))
                     .unwrap(),
-                metadata: None,
-                capabilities: vec![],
-            }),
-            lazy_load_blob: None,
-        })
-        .await
-        .expect("fatal: kernel event loop died");
-
-    // finally, in order to trigger the kns_indexer app to find the right
-    // contract, queue up a message that will send the contract address
-    // to it on boot.
-    send_to_loop
-        .send(t::KernelMessage {
-            id: rand::random(),
-            source: t::Address {
-                node: our.name.clone(),
-                process: KERNEL_PROCESS_ID.clone(),
-            },
-            target: t::Address {
-                node: our.name.clone(),
-                process: t::ProcessId::new(Some("kns_indexer"), "kns_indexer", "sys"),
-            },
-            rsvp: None,
-            message: t::Message::Request(t::Request {
-                inherit: false,
-                expects_response: None,
-                body: serde_json::to_vec(&contract_chain_and_address).unwrap(),
                 metadata: None,
                 capabilities: vec![],
             }),

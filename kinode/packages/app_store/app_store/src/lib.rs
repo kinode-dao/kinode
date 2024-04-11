@@ -81,7 +81,7 @@ fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Lo
             }
         }
     }
-    #[cfg(feature = "simulation-mode")] // TODO use local testnet
+    #[cfg(feature = "simulation-mode")] // TODO use local testnet, provider_chainId: 31337
     vec![]
 }
 

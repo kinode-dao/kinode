@@ -15,6 +15,10 @@ wit_bindgen::generate!({
     world: "process",
 });
 
+// perhaps a constant in process_lib?
+const KNS_OPTIMISM_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
+const _KNS_FAKENET_ADDRESS: &'static str = "0x0000000000000000000000000000000000000001";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
     chain_id: u64,
@@ -114,20 +118,13 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
 
 call_init!(init);
 fn init(our: Address) {
-    // first, await a message from the kernel which will contain the
-    // chain ID and contract address for the KNS version we want to track.
-    let chain_id: u64;
-    let contract_address: String;
-    loop {
-        let Ok(Message::Request { source, body, .. }) = await_message() else {
-            continue;
-        };
-        if source.process != "kernel:distro:sys" {
-            continue;
-        }
-        (chain_id, contract_address) = serde_json::from_slice(&body).unwrap();
-        break;
-    }
+    // first, depending on if we're a fakenode or not,
+    // set chain_id and contract address.
+    // #[cfg(feature = "simulation-mode")]
+    // let (chain_id, contract_address) = (31337, _KNS_FAKENET_ADDRESS.to_string());
+    // #[cfg(not(feature = "simulation-mode"))]
+    let (chain_id, contract_address) = (10, KNS_OPTIMISM_ADDRESS.to_string());
+
     println!("indexing on contract address {}", contract_address);
 
     // if we have state, load it in
