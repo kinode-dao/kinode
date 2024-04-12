@@ -151,33 +151,17 @@ async fn main() {
     );
 
     let verbose_mode = *matches.get_one::<u8>("verbosity").unwrap();
-    //pkz
+
     // check .testnet file for true/false in order to enforce testnet mode on subsequent boots of this node
-    // TODO, should we keep this so testnet nodes can/cannot boot?
-    // match fs::read(format!("{}/.testnet", home_directory_path)).await {
-    //     Ok(contents) => {
-    //         if contents == b"true" {
-    //             if !on_testnet {
-    //                 println!("\x1b[38;5;196mfatal: this is a testnet node, and must be booted with the --testnet flag. exiting.\x1b[0m");
-    //                 return;
-    //             }
-    //         } else if contents == b"false" {
-    //             if on_testnet {
-    //                 println!("\x1b[38;5;196mfatal: this is a mainnet node, and must be booted without the --testnet flag. exiting.\x1b[0m");
-    //                 return;
-    //             }
-    //         } else {
-    //             panic!("invalid contents of .testnet file");
-    //         }
-    //     }
-    //     Err(_) => {
-    //         let _ = fs::write(
-    //             format!("{}/.testnet", home_directory_path),
-    //             format!("{}", on_testnet),
-    //         )
-    //         .await;
-    //     }
-    // }
+    match fs::read(format!("{}/.testnet", home_directory_path)).await {
+        Ok(contents) => {
+            if contents == b"true" {
+                println!("\x1b[38;5;196mfatal: this is a deprecated testnet node, either boot a fakenode or a real one. exiting.\x1b[0m");
+                return;
+            }
+        }
+        _ => {}
+    }
 
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
         panic!("failed to create home directory: {:?}", e);

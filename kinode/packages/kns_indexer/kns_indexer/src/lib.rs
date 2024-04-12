@@ -17,7 +17,6 @@ wit_bindgen::generate!({
 
 // perhaps a constant in process_lib?
 const KNS_OPTIMISM_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
-const _KNS_FAKENET_ADDRESS: &'static str = "0x0000000000000000000000000000000000000001";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
