@@ -330,7 +330,7 @@ export default function PublishPage({
         </form>
       )}
 
-      <div className="flex flex-col my-2">
+      <div className="flex flex-col my-2 mt-4">
         <h4>Packages You Own</h4>
         {myPublishedApps.length > 0 ? (
           <div className="flex flex-col">
