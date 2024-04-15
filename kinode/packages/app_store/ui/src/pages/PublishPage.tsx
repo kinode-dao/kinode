@@ -44,6 +44,7 @@ export default function PublishPage({
   const [metadataUrl, setMetadataUrl] = useState<string>("");
   const [metadataHash, setMetadataHash] = useState<string>(""); // BytesLike
   const [isUpdate, setIsUpdate] = useState<boolean>(false);
+  const [myPublishedApps, setMyPublishedApps] = useState<AppInfo[]>([]);
 
   useEffect(() => {
     const app: AppInfo | undefined = state?.app;
@@ -53,6 +54,12 @@ export default function PublishPage({
       setIsUpdate(true);
     }
   }, [state])
+
+  useEffect(() => {
+    setMyPublishedApps(
+      listedApps.filter((app) => app.owner?.toLowerCase() === account?.toLowerCase())
+    );
+  }, [listedApps, account])
 
   const connectWallet = useCallback(async () => {
     await metaMask.activate().catch(() => { });
@@ -157,6 +164,35 @@ export default function PublishPage({
     ]
   );
 
+  const unpublishPackage = useCallback(
+    async (packageName: string, publisherName: string) => {
+      try {
+        await setChain(OPTIMISM_OPT_HEX);
+
+        const tx = await
+          packageAbi.unlistPacakge(
+            utils.keccak256(utils.solidityPack(
+              ["string", "bytes"],
+              [packageName, toDNSWireFormat(publisherName)]
+            ))
+          );
+
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        setLoading("Unlisting package...");
+        await tx.wait();
+      } catch (error) {
+        console.error(error);
+        window.alert(
+          "Error unlisting package"
+        );
+      } finally {
+        setLoading("");
+      }
+    },
+    [packageAbi, setLoading]
+  );
+
   const checkIfUpdate = useCallback(async () => {
     if (isUpdate) return;
 
@@ -173,9 +209,10 @@ export default function PublishPage({
 
   return (
     <div className="max-w-[900px] w-full">
+      <h1>fOOOO</h1>
       <SearchHeader hideSearch onBack={showMetadataForm ? () => setShowMetadataForm(false) : undefined} />
       <div className="flex justify-between items-center my-2">
-        <h4>Publish Package</h4>
+        <h4>Publish Packages</h4>
         {Boolean(account) && <div className="card flex items-center">
           <span>Publishing as:</span>
           <Jazzicon address={account!} className="mx-2" />
@@ -293,6 +330,31 @@ export default function PublishPage({
           </button>
         </form>
       )}
+
+      <div className="flex flex-col my-2">
+        <h4>Packages You Own</h4>
+        {myPublishedApps.length > 0 ? (
+          <div className="flex flex-col">
+            {myPublishedApps.map((app) => (
+              <div key={`${app.package}${app.publisher}`} className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <Jazzicon address={app.publisher} className="mr-2" />
+                  <span>{app.package}</span>
+                </div>
+                {/* <Tooltip content="View Package"> */}
+                <button className="flex items-center" onClick={() => unpublishPackage(app.package, app.publisher)}>
+                  <span>Unpublish</span>
+                </button>
+                {/* </Tooltip> */}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex items-center">
+            <span>No packages published</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
