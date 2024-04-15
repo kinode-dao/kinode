@@ -209,10 +209,9 @@ export default function PublishPage({
 
   return (
     <div className="max-w-[900px] w-full">
-      <h1>fOOOO</h1>
       <SearchHeader hideSearch onBack={showMetadataForm ? () => setShowMetadataForm(false) : undefined} />
       <div className="flex justify-between items-center my-2">
-        <h4>Publish Packages</h4>
+        <h4>Publish Package</h4>
         {Boolean(account) && <div className="card flex items-center">
           <span>Publishing as:</span>
           <Jazzicon address={account!} className="mx-2" />
