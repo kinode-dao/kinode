@@ -38,7 +38,6 @@ const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// default routers as a eth-provider fallback
-const DEFAULT_PROVIDERS_TESTNET: &str = include_str!("eth/default_providers_testnet.json");
 const DEFAULT_PROVIDERS_MAINNET: &str = include_str!("eth/default_providers_mainnet.json");
 
 async fn serve_register_fe(
@@ -113,11 +112,6 @@ async fn main() {
                 .value_parser(value_parser!(u16)),
         )
         .arg(
-            arg!(--testnet "If set, use Sepolia testnet")
-                .default_value("false")
-                .value_parser(value_parser!(bool)),
-        )
-        .arg(
             arg!(--verbosity <VERBOSITY> "Verbosity level: higher is more verbose")
                 .default_value("0")
                 .value_parser(value_parser!(u8)),
@@ -137,11 +131,12 @@ async fn main() {
             arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
                 .action(clap::ArgAction::SetTrue),
         );
+    // add arg for fakechain bootup w/ kit?
+    let fakenode = cfg!(feature = "simulation-mode");
 
     let matches = app.get_matches();
 
     let home_directory_path = matches.get_one::<String>("home").unwrap();
-    let on_testnet = *matches.get_one::<bool>("testnet").unwrap();
 
     let http_port = matches.get_one::<u16>("port");
     let ws_networking_port = matches.get_one::<u16>("ws-port");
@@ -155,37 +150,17 @@ async fn main() {
         *matches.get_one::<bool>("detached").unwrap(),
     );
 
-    let contract_chain_and_address: (u64, String) = if on_testnet {
-        (11155111, register::KNS_SEPOLIA_ADDRESS.to_string())
-    } else {
-        (10, register::KNS_OPTIMISM_ADDRESS.to_string())
-    };
     let verbose_mode = *matches.get_one::<u8>("verbosity").unwrap();
 
     // check .testnet file for true/false in order to enforce testnet mode on subsequent boots of this node
     match fs::read(format!("{}/.testnet", home_directory_path)).await {
         Ok(contents) => {
             if contents == b"true" {
-                if !on_testnet {
-                    println!("\x1b[38;5;196mfatal: this is a testnet node, and must be booted with the --testnet flag. exiting.\x1b[0m");
-                    return;
-                }
-            } else if contents == b"false" {
-                if on_testnet {
-                    println!("\x1b[38;5;196mfatal: this is a mainnet node, and must be booted without the --testnet flag. exiting.\x1b[0m");
-                    return;
-                }
-            } else {
-                panic!("invalid contents of .testnet file");
+                println!("\x1b[38;5;196mfatal: this is a deprecated testnet node, either boot a fakenode or a real one. exiting.\x1b[0m");
+                return;
             }
         }
-        Err(_) => {
-            let _ = fs::write(
-                format!("{}/.testnet", home_directory_path),
-                format!("{}", on_testnet),
-            )
-            .await;
-        }
+        _ => {}
     }
 
     if let Err(e) = fs::create_dir_all(home_directory_path).await {
@@ -200,14 +175,11 @@ async fn main() {
                 println!("loaded saved eth providers\r");
                 serde_json::from_str(&contents).unwrap()
             }
-            Err(_) => match on_testnet {
-                true => serde_json::from_str(DEFAULT_PROVIDERS_TESTNET).unwrap(),
-                false => serde_json::from_str(DEFAULT_PROVIDERS_MAINNET).unwrap(),
-            },
+            Err(_) => serde_json::from_str(DEFAULT_PROVIDERS_MAINNET).unwrap(),
         };
     if let Some(rpc) = matches.get_one::<String>("rpc") {
         eth_provider_config.push(lib::eth::ProviderConfig {
-            chain_id: if on_testnet { 11155111 } else { 10 },
+            chain_id: if fakenode { 31337 } else { 10 },
             trusted: true,
             provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
         });
@@ -332,7 +304,7 @@ async fn main() {
         our_ip.to_string(),
         (ws_tcp_handle, flag_used),
         http_server_port,
-        on_testnet, // true if testnet mode
+        fakenode, // true if fakenode
         matches.get_one::<String>("rpc").cloned(),
     )
     .await;
@@ -508,7 +480,6 @@ async fn main() {
         kernel_debug_message_receiver,
         net_message_sender.clone(),
         home_directory_path.clone(),
-        contract_chain_and_address.clone(),
         runtime_extensions,
         // from saved eth provider config, filter for node identities which will be
         // bootstrapped into the networking module, so that this node can start
@@ -535,7 +506,7 @@ async fn main() {
         print_sender.clone(),
         net_message_sender,
         net_message_receiver,
-        contract_chain_and_address.1,
+        register::KNS_OPTIMISM_ADDRESS.to_string(),
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
     ));
     #[cfg(feature = "simulation-mode")]

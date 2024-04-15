@@ -20,6 +20,7 @@ const connectors: [MetaMask, Web3ReactHooks][] = [
 declare global {
   interface ImportMeta {
     env: {
+      VITE_OPTIMISM_RPC_URL: string;
       VITE_SEPOLIA_RPC_URL: string;
       BASE_URL: string;
       VITE_NODE_URL?: string;
@@ -38,7 +39,7 @@ const {
   useProvider,
 } = metaMaskHooks;
 
-const RPC_URL = import.meta.env.VITE_SEPOLIA_RPC_URL;
+const RPC_URL = import.meta.env.VITE_OPTIMISM_RPC_URL;
 const BASE_URL = import.meta.env.BASE_URL;
 if (window.our) window.our.process = BASE_URL?.replace("/", "");
 
@@ -56,15 +57,15 @@ function App() {
 
   const [packageAbi, setPackageAbi] = useState<PackageStore>(
     PackageStore__factory.connect(
-      PACKAGE_STORE_ADDRESSES[ChainId.SEPOLIA],
+      PACKAGE_STORE_ADDRESSES[ChainId.OPTIMISM],
       new ethers.providers.JsonRpcProvider(RPC_URL)) // TODO: get the RPC URL from the wallet
   );
 
   useEffect(() => {
     provider?.getNetwork().then(network => {
-      if (network.chainId === ChainId.SEPOLIA) {
+      if (network.chainId === ChainId.OPTIMISM) {
         setPackageAbi(PackageStore__factory.connect(
-          PACKAGE_STORE_ADDRESSES[ChainId.SEPOLIA],
+          PACKAGE_STORE_ADDRESSES[ChainId.OPTIMISM],
           provider!.getSigner())
         )
       }

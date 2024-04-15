@@ -6,7 +6,7 @@ import { useWeb3React } from "@web3-react/core";
 import SearchHeader from "../components/SearchHeader";
 import { PageProps } from "../types/Page";
 import { setChain } from "../utils/chain";
-import { SEPOLIA_OPT_HEX } from "../constants/chain";
+import { OPTIMISM_OPT_HEX } from "../constants/chain";
 import { hooks, metaMask } from "../utils/metamask";
 import Loader from "../components/Loader";
 import { toDNSWireFormat } from "../utils/dnsWire";
@@ -58,7 +58,7 @@ export default function PublishPage({
     await metaMask.activate().catch(() => { });
 
     try {
-      setChain(SEPOLIA_OPT_HEX);
+      setChain(OPTIMISM_OPT_HEX);
     } catch (error) {
       console.error(error);
     }
@@ -100,7 +100,7 @@ export default function PublishPage({
 
         setLoading("Please confirm the transaction in your wallet");
         const publisherIdDnsWireFormat = toDNSWireFormat(publisherId);
-        await setChain(SEPOLIA_OPT_HEX);
+        await setChain(OPTIMISM_OPT_HEX);
 
         // TODO: have a checkbox to show if it's an update of an existing package
 
