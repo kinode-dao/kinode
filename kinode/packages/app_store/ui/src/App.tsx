@@ -63,6 +63,7 @@ function App() {
 
   useEffect(() => {
     provider?.getNetwork().then(network => {
+      // TODO: don't have this fire 20 times on load
       if (network.chainId === ChainId.OPTIMISM) {
         setPackageAbi(PackageStore__factory.connect(
           PACKAGE_STORE_ADDRESSES[ChainId.OPTIMISM],
