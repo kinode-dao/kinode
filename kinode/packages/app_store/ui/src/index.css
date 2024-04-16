@@ -4,17 +4,17 @@
 
 @font-face {
   font-family: 'Futura';
-  src: url('./fonts/Futura-Heavy.ttf');
+  src: url('/main:app_store:sys/assets/fonts/Futura-Heavy.ttf');
 }
 
 @font-face {
   font-family: 'OpenSans';
-  src: url('./fonts/OpenSans-CondBold.ttf');
+  src: url('/main:app_store:sys/assets/fonts/OpenSans-CondBold.ttf');
 }
 
 @font-face {
   font-family: 'Barlow';
-  src: url('./fonts/BarlowCondensed-Black.ttf');
+  src: url('/main:app_store:sys/assets/fonts/BarlowCondensed-Black.ttf');
 }
 
 body {
@@ -84,7 +84,7 @@ button[type="submit"],
 }
 
 body {
-  @apply bg-[url('./background.jpg')] bg-cover bg-no-repeat bg-center bg-fixed text-white;
+  @apply bg-[url('/main:app_store:sys/assets/background.jpg')] bg-cover bg-no-repeat bg-center bg-fixed text-white;
 }
 
 input {
