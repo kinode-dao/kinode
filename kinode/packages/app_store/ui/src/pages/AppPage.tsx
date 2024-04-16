@@ -11,7 +11,7 @@ import { appId } from "../utils/app";
 
 interface AppPageProps extends PageProps { }
 
-export default function AppPage(props: AppPageProps) {
+export default function AppPage() {
   // eslint-disable-line
   const { myApps, listedApps, getListedApp } = useAppsStore();
   const navigate = useNavigate();
