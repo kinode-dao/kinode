@@ -55,22 +55,24 @@ function App() {
   const provider = useProvider();
   const [nodeConnected, setNodeConnected] = useState(true); // eslint-disable-line
 
-  const [packageAbi, setPackageAbi] = useState<PackageStore>(
-    PackageStore__factory.connect(
-      PACKAGE_STORE_ADDRESSES[ChainId.OPTIMISM],
-      new ethers.providers.JsonRpcProvider(RPC_URL)) // TODO: get the RPC URL from the wallet
-  );
+  const [packageAbi, setPackageAbi] = useState<PackageStore | undefined>(undefined);
+
 
   useEffect(() => {
-    provider?.getNetwork().then(network => {
-      // TODO: don't have this fire 20 times on load
+    if (!provider) return;
+
+    const updatePackageAbi = async () => {
+      const network = await provider.getNetwork();
       if (network.chainId === ChainId.OPTIMISM) {
         setPackageAbi(PackageStore__factory.connect(
           PACKAGE_STORE_ADDRESSES[ChainId.OPTIMISM],
-          provider!.getSigner())
-        )
+          provider.getSigner())
+        );
       }
-    })
+    };
+
+    updatePackageAbi();
+
   }, [provider])
 
   useEffect(() => {
@@ -113,9 +115,9 @@ function App() {
       <Web3ReactProvider connectors={connectors}>
         <Router basename={BASE_URL}>
           <Routes>
-            <Route path="/" element={<StorePage {...props} />} />
-            <Route path={MY_APPS_PATH} element={<MyAppsPage {...props} />} />
-            <Route path="/app-details/:id" element={<AppPage {...props} />} />
+            <Route path="/" element={<StorePage />} />
+            <Route path={MY_APPS_PATH} element={<MyAppsPage />} />
+            <Route path="/app-details/:id" element={<AppPage />} />
             <Route path="/publish" element={<PublishPage {...props} />} />
           </Routes>
         </Router>

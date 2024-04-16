@@ -112,7 +112,7 @@ export default function PublishPage({
         // TODO: have a checkbox to show if it's an update of an existing package
 
         const tx = await (isUpdate
-          ? packageAbi.updateMetadata(
+          ? packageAbi?.updateMetadata(
             BigNumber.from(
               utils.solidityKeccak256(
                 ["string", "bytes"],
@@ -122,7 +122,7 @@ export default function PublishPage({
             metadataUrl,
             metadata
           )
-          : packageAbi.registerApp(
+          : packageAbi?.registerApp(
             packageName,
             publisherIdDnsWireFormat,
             metadataUrl,
@@ -132,7 +132,7 @@ export default function PublishPage({
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
         setLoading("Publishing package...");
-        await tx.wait();
+        await tx?.wait();
         setPublishSuccess({ packageName, publisherId });
         setPackageName("");
         setPublisherId(window.our?.node || publisherId);
@@ -170,7 +170,7 @@ export default function PublishPage({
         await setChain(OPTIMISM_OPT_HEX);
 
         const tx = await
-          packageAbi.unlistPacakge(
+          packageAbi?.unlistPacakge(
             utils.keccak256(utils.solidityPack(
               ["string", "bytes"],
               [packageName, toDNSWireFormat(publisherName)]
@@ -180,7 +180,7 @@ export default function PublishPage({
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
         setLoading("Unlisting package...");
-        await tx.wait();
+        await tx?.wait();
       } catch (error) {
         console.error(error);
         window.alert(

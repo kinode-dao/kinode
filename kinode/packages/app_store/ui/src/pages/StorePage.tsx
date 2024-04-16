@@ -11,7 +11,7 @@ import classNames from 'classnames';
 
 interface StorePageProps extends PageProps { }
 
-export default function StorePage(props: StorePageProps) {
+export default function StorePage() {
   // eslint-disable-line
   const { listedApps, getListedApps } = useAppsStore();
 
