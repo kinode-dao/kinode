@@ -110,31 +110,7 @@ export default function StorePage() {
 
   return (
     <div className="max-w-[900px] w-full">
-      {/* <div style={{ position: "absolute", top: 4, left: 8 }}>
-        ID: <strong>{window.our?.node}</strong>
-      </div> */}
       <SearchHeader value={searchQuery} onChange={searchApps} />
-      {/* <h3 style={{ marginBottom: "0.5em" }}>Featured</h3>
-      <div className="featured row">
-        {featuredApps.map((app, i) => (
-          <div
-            key={app.name + app.metadata_hash}
-            className="card col"
-            style={{
-              marginLeft: i === 1 ? "1em" : 0,
-              flex: 1,
-              cursor: "pointer",
-            }}
-            onClick={viewDetails(app)}
-          >
-            <AppHeader app={app} />
-            <div style={{ marginTop: "0.25em" }}>
-              {app.metadata?.description || "No description provided."}
-            </div>
-            <ActionButton style={{ marginTop: "0.5em" }} />
-          </div>
-        ))}
-      </div> */}
       <div className="flex justify-between items-center my-2 mx-0">
         <h4>New</h4>
 
@@ -151,7 +127,7 @@ export default function StorePage() {
           <option>Recently updated</option>
         </select>
       </div>
-      <div className="flex flex-col flex-1 overflow-y-auto gap-2">
+      <div className="flex flex-col flex-1 overflow-y-auto gap-2 max-h-[80vh]">
         {displayedApps.map((app) => (
           <AppEntry
             key={appId(app) + (app.state?.our_version || "")}
