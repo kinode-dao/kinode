@@ -49,14 +49,14 @@ Make sure not to use the same home directory for two nodes at once! You can use 
 TODO: document feature flags in `--simulation-mode`
 ```bash
 # OPTIONAL: --release flag
-cargo +nightly run -p kinode -- home --testnet
+cargo +nightly run -p kinode -- home
 ```
 
-On boot you will be prompted to navigate to `localhost:8080`. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need [Sepolia testnet tokens](https://www.infura.io/faucet/sepolia) or an invite code.
+On boot you will be prompted to navigate to `localhost:8080`. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need Optimism ETH or an invite code.
 
 ## Configuring the ETH RPC Provider
 
-By default, a node will use the hardcoded providers for the network ([testnet](./kinode/default_providers_testnet.json)/[mainnet](./kinode/default_providers_mainnet.json)) it is booted on. A node can use a WebSockets RPC URL directly, or use another Kinode as a relay point. To adjust the providers a node uses, just create and modify the `.eth_providers` file in the node's home folder (set at boot). See the Kinode Book for more docs, and see the [default providers file here](./kinode/default_providers_testnet.json) for a template to create `.eth_providers`.
+By default, a node will use the [hardcoded providers](./kinode/default_providers_mainnet.json) for the network it is booted on. A node can use a WebSockets RPC URL directly, or use another Kinode as a relay point. To adjust the providers a node uses, just create and modify the `.eth_providers` file in the node's home folder (set at boot). See the Kinode Book for more docs, and see the [default providers file here](./kinode/default_providers_mainnet.json) for a template to create `.eth_providers`.
 
 You may also add a RPC provider or otherwise modify your configuration by sending messages from the terminal to the `eth:distro:sys` process. Use this message format to add a provider -- this will make your node's performance better when accessing a blockchain:
 ```

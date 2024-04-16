@@ -45,7 +45,6 @@ async fn serve_register_fe(
     our_ip: String,
     ws_networking: (tokio::net::TcpListener, bool),
     http_server_port: u16,
-    testnet: bool,
     maybe_rpc: Option<String>,
 ) -> (Identity, Vec<u8>, Keyfile) {
     // check if we have keys saved on disk, encrypted
@@ -74,7 +73,6 @@ async fn serve_register_fe(
                 ws_networking,
                 http_server_port,
                 disk_keyfile,
-                testnet,
                 maybe_rpc) => {
             panic!("registration failed")
         }
@@ -304,7 +302,6 @@ async fn main() {
         our_ip.to_string(),
         (ws_tcp_handle, flag_used),
         http_server_port,
-        fakenode, // true if fakenode
         matches.get_one::<String>("rpc").cloned(),
     )
     .await;
