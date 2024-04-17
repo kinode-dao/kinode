@@ -117,11 +117,6 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
 
 call_init!(init);
 fn init(our: Address) {
-    // first, depending on if we're a fakenode or not,
-    // set chain_id and contract address.
-    // #[cfg(feature = "simulation-mode")]
-    // let (chain_id, contract_address) = (31337, _KNS_FAKENET_ADDRESS.to_string());
-    // #[cfg(not(feature = "simulation-mode"))]
     let (chain_id, contract_address) = (10, KNS_OPTIMISM_ADDRESS.to_string());
 
     println!("indexing on contract address {}", contract_address);
