@@ -1,5 +1,6 @@
 use rayon::prelude::*;
 use std::{
+    collections::HashSet,
     fs::{self, File},
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
@@ -22,6 +23,24 @@ fn get_features() -> String {
     features
 }
 
+fn output_reruns(dir: &Path, rerun_files: &HashSet<String>) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if path.is_dir() {
+                // If the entry is a directory, recursively walk it
+                output_reruns(&path, rerun_files);
+            } else if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                // Check if the current file is in our list of interesting files
+                if rerun_files.contains(filename) {
+                    // If so, print a `cargo:rerun-if-changed=PATH` line for it
+                    println!("cargo:rerun-if-changed={}", path.display());
+                }
+            }
+        }
+    }
+}
+
 fn build_and_zip_package(
     entry_path: PathBuf,
     parent_pkg_path: &str,
@@ -29,7 +48,9 @@ fn build_and_zip_package(
 ) -> anyhow::Result<(String, String, Vec<u8>)> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        kit::build::execute(&entry_path, true, false, true, features).await?;
+        kit::build::execute(&entry_path, true, false, true, features)
+            .await
+            .map_err(|e| anyhow::anyhow!("{:?}", e))?;
 
         let mut writer = Cursor::new(Vec::new());
         let options = FileOptions::default()
@@ -75,6 +96,13 @@ fn main() -> anyhow::Result<()> {
     let entries: Vec<_> = fs::read_dir(packages_dir)?
         .map(|entry| entry.unwrap().path())
         .collect();
+
+    let rerun_files: HashSet<String> = HashSet::from([
+        "Cargo.lock".to_string(),
+        "Cargo.toml".to_string(),
+        "src/".to_string(),
+    ]);
+    output_reruns(&parent_dir, &rerun_files);
 
     let features = get_features();
 

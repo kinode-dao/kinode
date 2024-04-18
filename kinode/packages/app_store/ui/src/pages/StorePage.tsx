@@ -7,10 +7,11 @@ import AppEntry from "../components/AppEntry";
 import SearchHeader from "../components/SearchHeader";
 import { PageProps } from "../types/Page";
 import { appId } from "../utils/app";
+import classNames from 'classnames';
 
 interface StorePageProps extends PageProps { }
 
-export default function StorePage(props: StorePageProps) {
+export default function StorePage() {
   // eslint-disable-line
   const { listedApps, getListedApps } = useAppsStore();
 
@@ -108,33 +109,9 @@ export default function StorePage(props: StorePageProps) {
   );
 
   return (
-    <div style={{ width: "100%" }}>
-      {/* <div style={{ position: "absolute", top: 4, left: 8 }}>
-        ID: <strong>{window.our?.node}</strong>
-      </div> */}
+    <div className="max-w-[900px] w-full">
       <SearchHeader value={searchQuery} onChange={searchApps} />
-      {/* <h3 style={{ marginBottom: "0.5em" }}>Featured</h3>
-      <div className="featured row">
-        {featuredApps.map((app, i) => (
-          <div
-            key={app.name + app.metadata_hash}
-            className="card col"
-            style={{
-              marginLeft: i === 1 ? "1em" : 0,
-              flex: 1,
-              cursor: "pointer",
-            }}
-            onClick={viewDetails(app)}
-          >
-            <AppHeader app={app} />
-            <div style={{ marginTop: "0.25em" }}>
-              {app.metadata?.description || "No description provided."}
-            </div>
-            <ActionButton style={{ marginTop: "0.5em" }} />
-          </div>
-        ))}
-      </div> */}
-      <div className="row between page-title">
+      <div className="flex justify-between items-center my-2 mx-0">
         <h4>New</h4>
 
         <select
@@ -150,7 +127,7 @@ export default function StorePage(props: StorePageProps) {
           <option>Recently updated</option>
         </select>
       </div>
-      <div className="new card col" style={{ flex: 1, overflowY: "auto", gap: "1em" }}>
+      <div className="flex flex-col flex-1 overflow-y-auto gap-2 max-h-[80vh]">
         {displayedApps.map((app) => (
           <AppEntry
             key={appId(app) + (app.state?.our_version || "")}
@@ -158,14 +135,14 @@ export default function StorePage(props: StorePageProps) {
           />
         ))}
         {pages.length > 1 && (
-          <div className="row" style={{ alignSelf: "center" }}>
+          <div className="flex self-center">
             {page !== pages[0] && (
               <FaChevronLeft onClick={() => setPage(page - 1)} />
             )}
             {pages.map((p) => (
               <div
                 key={`page-${p}`}
-                className={`page-selector ${p === page ? "selected" : ""}`}
+                className={classNames('my-1 mx-2', { "font-bold": p === page })}
                 onClick={() => setPage(p)}
               >
                 {p}

@@ -97,6 +97,7 @@ function SetPassword({
               res.status < 300 &&
               Number(res.headers.get("content-length")) !== appSizeOnLoad
             ) {
+              console.log("WE GOOD, ROUTING")
               clearInterval(interval);
               window.location.replace("/");
             }
@@ -121,40 +122,44 @@ function SetPassword({
       {loading ? (
         <Loader msg="Setting up node..." />
       ) : (
-        <form id="signup-form" className="flex flex-col max-w-[450px] w-full" onSubmit={handleSubmit}>
-          <div className="w-full flex flex-col">
-            <div className="flex self-stretch mb-2 place-items-center">
-              <label htmlFor="password">New Password</label>
-              <Tooltip text="This password will be used to log in if you restart your node or switch browsers." />
+        <form id="signup-form" className="flex flex-col w-full max-w-[450px] gap-4" onSubmit={handleSubmit}>
+          <div className="flex flex-col w-full place-items-center place-content-center">
+            <div className="flex w-full place-items-center mb-2">
+              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2" style={{ fontSize: 20 }} htmlFor="password">New Password</label>
+              <Tooltip text={`This password will be used to log in if you restart your node or switch browsers.`} />
             </div>
-            <input
-              type="password"
-              id="password"
-              required
-              minLength={6}
-              name="password"
-              placeholder="Min 6 characters"
-              value={pw}
-              onChange={(e) => setPw(e.target.value)}
-              autoFocus
-              className="mb-2 self-stretch"
-            />
+            <div className="flex w-full place-items-center">
+              <input
+                className="grow"
+                type="password"
+                id="password"
+                required
+                minLength={6}
+                name="password"
+                placeholder="Min 6 characters"
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                autoFocus
+              />
+            </div>
           </div>
-          <div className="w-full flex flex-col mb-2">
-            <div className="flex">
-              <label htmlFor="confirm-password">Confirm Password</label>
+          <div className="flex flex-col w-full place-items-center place-content-center">
+            <div className="flex w-full place-items-center">
+              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-4" style={{ fontSize: 20 }} htmlFor="confirm-password">Confirm Password</label>
             </div>
-            <input
-              type="password"
-              id="confirm-password"
-              required
-              minLength={6}
-              name="confirm-password"
-              placeholder="Min 6 characters"
-              value={pw2}
-              onChange={(e) => setPw2(e.target.value)}
-              className="mb-2 self-stretch"
-            />
+            <div className="flex w-full place-items-center">
+              <input
+                className="grow"
+                type="password"
+                id="confirm-password"
+                required
+                minLength={6}
+                name="confirm-password"
+                placeholder="Min 6 characters"
+                value={pw2}
+                onChange={(e) => setPw2(e.target.value)}
+              />
+            </div>
             {Boolean(error) && <p style={{ color: "red" }}>{error}</p>}
           </div>
           <button type="submit">Submit</button>

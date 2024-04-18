@@ -31,10 +31,10 @@ use warp::{
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
-pub const KNS_SEPOLIA_ADDRESS: EthAddress = EthAddress::new([
-    0x38, 0x07, 0xFB, 0xD6, 0x92, 0xAa, 0x5c, 0x96, 0xF1, 0xD8, 0xD7, 0xc5, 0x9a, 0x13, 0x46, 0xa8,
-    0x85, 0xF4, 0x0B, 0x1C,
-]);
+// pub const KNS_SEPOLIA_ADDRESS: EthAddress = EthAddress::new([
+//     0x38, 0x07, 0xFB, 0xD6, 0x92, 0xAa, 0x5c, 0x96, 0xF1, 0xD8, 0xD7, 0xc5, 0x9a, 0x13, 0x46, 0xa8,
+//     0x85, 0xF4, 0x0B, 0x1C,
+// ]);
 
 pub const KNS_OPTIMISM_ADDRESS: EthAddress = EthAddress::new([
     0xca, 0x5b, 0x58, 0x11, 0xc0, 0xC4, 0x0a, 0xAB, 0x32, 0x95, 0xf9, 0x32, 0xb1, 0xB5, 0x11, 0x2E,
@@ -120,7 +120,6 @@ pub async fn register(
     ws_networking: (tokio::net::TcpListener, bool),
     http_port: u16,
     keyfile: Option<Vec<u8>>,
-    testnet: bool,
     maybe_rpc: Option<String>,
 ) {
     // Networking info is generated and passed to the UI, but not used until confirmed
@@ -147,17 +146,11 @@ pub async fn register(
     });
 
     // KnsRegistrar contract address
-    let kns_address = if testnet {
-        KNS_SEPOLIA_ADDRESS
-    } else {
-        KNS_OPTIMISM_ADDRESS
-    };
+    let kns_address = KNS_OPTIMISM_ADDRESS;
 
     // This ETH provider uses public rpc endpoints to verify registration signatures.
     let url = if let Some(rpc_url) = maybe_rpc {
         rpc_url
-    } else if testnet {
-        "wss://ethereum-sepolia-rpc.publicnode.com".to_string()
     } else {
         "wss://optimism-rpc.publicnode.com".to_string()
     };
@@ -203,13 +196,9 @@ pub async fn register(
         .or(warp::path("set-password")
             .and(warp::get())
             .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("current-chain").and(warp::get()).map(move || {
-            if testnet {
-                warp::reply::json(&"0xaa36a7")
-            } else {
-                warp::reply::json(&"0xa")
-            }
-        }))
+        .or(warp::path("current-chain")
+            .and(warp::get())
+            .map(move || warp::reply::json(&"0xa")))
         .or(warp::path("our").and(warp::get()).and(keyfile.clone()).map(
             move |keyfile: Option<Vec<u8>>| {
                 if let Some(keyfile) = keyfile {
@@ -265,7 +254,6 @@ pub async fn register(
                         tx,
                         our_temp_id,
                         net_keypair,
-                        testnet,
                         kns_address,
                         boot_provider,
                     )
@@ -399,7 +387,6 @@ async fn handle_boot(
     sender: Arc<RegistrationSender>,
     our: Arc<Identity>,
     networking_keypair: Arc<Vec<u8>>,
-    testnet: bool,
     kns_address: EthAddress,
     provider: Arc<Provider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
@@ -503,7 +490,7 @@ async fn handle_boot(
         .into_response());
     };
 
-    let chain_id: u64 = if testnet { 11155111 } else { 10 };
+    let chain_id: u64 = 10;
 
     // manual json creation to preserve order..
     let sig_data_json = format!(

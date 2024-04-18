@@ -1,4 +1,5 @@
 import React from "react";
+import { FaCheck } from "react-icons/fa6";
 
 export default function Checkbox({
   readOnly = false,
@@ -10,7 +11,7 @@ export default function Checkbox({
   setChecked?: (checked: boolean) => void;
 }) {
   return (
-    <div style={{ position: "relative" }}>
+    <div className="relative">
       <input
         type="checkbox"
         id="checked"
@@ -21,9 +22,10 @@ export default function Checkbox({
         readOnly={readOnly}
       />
       {checked && (
-        <span onClick={() => setChecked && setChecked(false)} className="checkmark">
-          &#10003;
-        </span>
+        <FaCheck
+          className="absolute left-1 top-1 cursor-pointer"
+          onClick={() => setChecked && setChecked(false)}
+        />
       )}
     </div>
   );

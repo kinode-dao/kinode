@@ -23,8 +23,17 @@ pub enum RemoteRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RemoteResponse {
     DownloadApproved,
-    DownloadDenied, // TODO expand on why
+    DownloadDenied(ReasonDenied),
     Metadata,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ReasonDenied {
+    NoPackage,
+    NotMirroring,
+    HashMismatch { requested: String, have: String },
+    FileNotFound,
+    WorkerSpawnFailed,
 }
 
 /// Local requests sent to the app store take this form.

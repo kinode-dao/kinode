@@ -1,13 +1,10 @@
-use kinode_process_lib::{call_init, println, Address, Message, Request};
+use kinode_process_lib::{call_init, net, println, Address, Message, Request};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
 
 /// From main kns_indexer process
@@ -20,24 +17,12 @@ struct State {
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
     // NOTE: not every namehash will have a node registered
-    nodes: HashMap<String, KnsUpdate>,
+    nodes: HashMap<String, net::KnsUpdate>,
     // last block we have an update from
     block: u64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct KnsUpdate {
-    pub name: String, // actual username / domain name
-    pub owner: String,
-    pub node: String, // hex namehash of node
-    pub public_key: String,
-    pub ip: String,
-    pub port: u16,
-    pub routers: Vec<String>,
-}
-
 call_init!(init);
-
 fn init(_our: Address) {
     let Ok(Message::Response { body, .. }) =
         Request::to(("our", "kns_indexer", "kns_indexer", "sys"))

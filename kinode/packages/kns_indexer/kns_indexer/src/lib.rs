@@ -1,6 +1,7 @@
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message, eth, get_typed_state, println, set_state, Address, Message, Request, Response,
+    await_message, call_init, eth, get_typed_state, println, set_state, Address, Message, Request,
+    Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{
@@ -12,10 +13,10 @@ use std::string::FromUtf8Error;
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
+
+// perhaps a constant in process_lib?
+const KNS_OPTIMISM_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -114,62 +115,43 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
     println!("subscribed to logs successfully");
 }
 
-struct Component;
-impl Guest for Component {
-    fn init(our: String) {
-        let our: Address = our.parse().unwrap();
+call_init!(init);
+fn init(our: Address) {
+    let (chain_id, contract_address) = (10, KNS_OPTIMISM_ADDRESS.to_string());
 
-        // first, await a message from the kernel which will contain the
-        // chain ID and contract address for the KNS version we want to track.
-        let chain_id: u64;
-        let contract_address: String;
-        loop {
-            let Ok(Message::Request { source, body, .. }) = await_message() else {
-                continue;
-            };
-            if source.process != "kernel:distro:sys" {
-                continue;
-            }
-            (chain_id, contract_address) = serde_json::from_slice(&body).unwrap();
-            break;
-        }
-        println!("indexing on contract address {}", contract_address);
+    println!("indexing on contract address {}", contract_address);
 
-        // if we have state, load it in
-        let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?))
-        {
-            Some(s) => {
-                // if chain id or contract address changed from a previous run, reset state
-                if s.chain_id != chain_id || s.contract_address != contract_address {
-                    println!(
-                        "resetting state because runtime contract address or chain ID changed"
-                    );
-                    State {
-                        chain_id,
-                        contract_address,
-                        names: HashMap::new(),
-                        nodes: HashMap::new(),
-                        block: 1,
-                    }
-                } else {
-                    println!("loading in {} persisted PKI entries", s.nodes.len());
-                    s
+    // if we have state, load it in
+    let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
+        Some(s) => {
+            // if chain id or contract address changed from a previous run, reset state
+            if s.chain_id != chain_id || s.contract_address != contract_address {
+                println!("resetting state because runtime contract address or chain ID changed");
+                State {
+                    chain_id,
+                    contract_address,
+                    names: HashMap::new(),
+                    nodes: HashMap::new(),
+                    block: 1,
                 }
+            } else {
+                println!("loading in {} persisted PKI entries", s.nodes.len());
+                s
             }
-            None => State {
-                chain_id,
-                contract_address: contract_address.clone(),
-                names: HashMap::new(),
-                nodes: HashMap::new(),
-                block: 1,
-            },
-        };
+        }
+        None => State {
+            chain_id,
+            contract_address: contract_address.clone(),
+            names: HashMap::new(),
+            nodes: HashMap::new(),
+            block: 1,
+        },
+    };
 
-        match main(our, state) {
-            Ok(_) => {}
-            Err(e) => {
-                println!("error: {:?}", e);
-            }
+    match main(our, state) {
+        Ok(_) => {}
+        Err(e) => {
+            println!("error: {:?}", e);
         }
     }
 }

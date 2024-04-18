@@ -1,4 +1,6 @@
-use kinode_process_lib::http::{bind_http_path, serve_ui, HttpServerRequest};
+use kinode_process_lib::http::{
+    bind_http_path, bind_ws_path, send_ws_push, serve_ui, HttpServerRequest, WsMessageType,
+};
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
 use kinode_process_lib::{call_init, println};
@@ -9,9 +11,6 @@ use std::str::FromStr;
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
-    exports: {
-        world: Component,
-    },
 });
 
 mod api;
@@ -40,8 +39,8 @@ use ft_worker_lib::{
 
 const ICON: &str = include_str!("icon");
 
-const CHAIN_ID: u64 = 11155111; // sepolia
-const CONTRACT_ADDRESS: &str = "0x18c39eB547A0060C6034f8bEaFB947D1C16eADF1"; // sepolia
+const CHAIN_ID: u64 = 10; // optimism
+const CONTRACT_ADDRESS: &str = "0x52185B6a6017E6f079B994452F234f7C2533787B"; // optimism
 
 const EVENTS: [&str; 3] = [
     "AppRegistered(uint256,string,bytes,string,bytes32)",
@@ -82,7 +81,7 @@ fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Lo
             }
         }
     }
-    #[cfg(feature = "simulation-mode")]
+    #[cfg(feature = "simulation-mode")] // TODO use local testnet, provider_chainId: 31337
     vec![]
 }
 
@@ -126,6 +125,8 @@ fn init(our: Address) {
         vec!["/", "/my-apps", "/app-details/:id", "/publish"],
     )
     .expect("failed to serve static UI");
+
+    bind_ws_path("/", true, true).expect("failed to bind ws path");
 
     // add ourselves to the homepage
     Request::to(("our", "homepage", "homepage", "sys"))
@@ -175,6 +176,9 @@ fn init(our: Address) {
     }
     subscribe_to_logs(&eth_provider, filter);
 
+    // websocket channel to send errors/updates to UI
+    let channel_id: u32 = 154869;
+
     loop {
         match await_message() {
             Err(send_error) => {
@@ -189,7 +193,21 @@ fn init(our: Address) {
                     &mut requested_packages,
                     &message,
                 ) {
-                    println!("error handling message: {:?}", e)
+                    println!("error handling message: {:?}", e);
+                    send_ws_push(
+                        channel_id,
+                        WsMessageType::Text,
+                        LazyLoadBlob {
+                            mime: Some("application/json".to_string()),
+                            bytes: serde_json::json!({
+                                "kind": "error",
+                                "data": e.to_string(),
+                            })
+                            .to_string()
+                            .as_bytes()
+                            .to_vec(),
+                        },
+                    )
                 }
             }
         }
@@ -298,14 +316,23 @@ fn handle_remote_request(
             desired_version_hash,
         } => {
             let Some(package_state) = state.get_downloaded_package(package_id) else {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
+                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::NoPackage,
+                ));
             };
             if !package_state.mirroring {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
+                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::NotMirroring,
+                ));
             }
             if let Some(hash) = desired_version_hash {
                 if &package_state.our_version != hash {
-                    return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
+                    return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                        ReasonDenied::HashMismatch {
+                            requested: hash.clone(),
+                            have: package_state.our_version.clone(),
+                        },
+                    ));
                 }
             }
             let file_name = format!("/{}.zip", package_id);
@@ -321,12 +348,16 @@ fn handle_remote_request(
                 )
                 .send_and_await_response(5)
             else {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied);
+                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::FileNotFound,
+                ));
             };
             // transfer will *inherit* the blob bytes we receive from VFS
             match spawn_transfer(&our, &file_name, None, 60, &source) {
                 Ok(()) => Resp::RemoteResponse(RemoteResponse::DownloadApproved),
-                Err(_e) => Resp::RemoteResponse(RemoteResponse::DownloadDenied),
+                Err(_e) => Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::WorkerSpawnFailed,
+                )),
             }
         }
     }
@@ -686,25 +717,35 @@ pub fn handle_install(
             ))?)
             .send()?;
 
-        let _bytes_response = Request::to(("our", "vfs", "distro", "sys"))
-            .body(serde_json::to_vec(&vfs::VfsRequest {
-                path: wasm_path.clone(),
-                action: vfs::VfsAction::Read,
-            })?)
-            .send_and_await_response(5)??;
+        if let Ok(vfs::VfsResponse::Err(_)) = serde_json::from_slice(
+            Request::to(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: wasm_path.clone(),
+                    action: vfs::VfsAction::Read,
+                })?)
+                .send_and_await_response(5)??
+                .body(),
+        ) {
+            return Err(anyhow::anyhow!("failed to read process file"));
+        };
 
-        Request::new()
-            .target(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
-                id: parsed_new_process_id.clone(),
-                wasm_bytes_handle: wasm_path,
-                wit_version: None,
-                on_exit: entry.on_exit.clone(),
-                initial_capabilities: HashSet::new(),
-                public: entry.public,
-            })?)
-            .inherit(true)
-            .send_and_await_response(5)??;
+        let Ok(kt::KernelResponse::InitializedProcess) = serde_json::from_slice(
+            Request::new()
+                .target(("our", "kernel", "distro", "sys"))
+                .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
+                    id: parsed_new_process_id.clone(),
+                    wasm_bytes_handle: wasm_path,
+                    wit_version: None,
+                    on_exit: entry.on_exit.clone(),
+                    initial_capabilities: HashSet::new(),
+                    public: entry.public,
+                })?)
+                .inherit(true)
+                .send_and_await_response(5)??
+                .body(),
+        ) else {
+            return Err(anyhow::anyhow!("failed to initialize process"));
+        };
         // build initial caps
         let mut requested_capabilities: Vec<kt::Capability> = vec![];
         for value in &entry.request_capabilities {
@@ -829,11 +870,16 @@ pub fn handle_install(
                 }
             }
         }
-        Request::to(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
-                parsed_new_process_id,
-            ))?)
-            .send_and_await_response(5)??;
+        let Ok(kt::KernelResponse::StartedProcess) = serde_json::from_slice(
+            Request::to(("our", "kernel", "distro", "sys"))
+                .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
+                    parsed_new_process_id,
+                ))?)
+                .send_and_await_response(5)??
+                .body(),
+        ) else {
+            return Err(anyhow::anyhow!("failed to start process"));
+        };
     }
     // finally set the package as installed
     state.update_downloaded_package(package_id, |package_state| {
