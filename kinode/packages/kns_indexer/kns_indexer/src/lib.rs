@@ -349,7 +349,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
 
     let name = match state.names.entry(node_id.to_string()) {
         Entry::Occupied(o) => o.into_mut(),
-        Entry::Vacant(v) => v.insert(get_name(&log)),
+        Entry::Vacant(v) => v.insert(get_name(&log)?),
     };
 
     let node = state
@@ -429,16 +429,10 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     Ok(())
 }
 
-fn get_name(log: &eth::Log) -> String {
-    let decoded = NodeRegistered::abi_decode_data(&log.data, true).unwrap();
-    let name = match dnswire_decode(decoded.0.clone()) {
-        Ok(n) => n,
-        Err(_) => {
-            println!("failed to decode name: {:?}", decoded.0);
-            panic!("")
-        }
-    };
-    name
+fn get_name(log: &eth::Log) -> anyhow::Result<String> {
+    let decoded =
+        NodeRegistered::abi_decode_data(&log.data, true).map_err(|e| anyhow::anyhow!(e))?;
+    dnswire_decode(decoded.0.clone()).map_err(|e| anyhow::anyhow!(e))
 }
 
 fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {
