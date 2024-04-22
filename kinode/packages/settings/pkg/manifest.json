@@ -1,0 +1,16 @@
+[
+    {
+        "process_name": "settings",
+        "process_wasm_path": "/settings.wasm",
+        "on_exit": "Restart",
+        "request_networking": false,
+        "request_capabilities": [
+            "homepage:homepage:sys",
+            "http_server:distro:sys",
+            "net:distro:sys",
+            "vfs:distro:sys"
+        ],
+        "grant_capabilities": [],
+        "public": false
+    }
+]
