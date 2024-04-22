@@ -1,4 +1,5 @@
 use anyhow::Result;
+use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use dashmap::DashMap;
 use rusqlite::Connection;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -201,7 +202,9 @@ async fn handle_request(
                                 serde_json::Number::from_f64(real).unwrap(),
                             ),
                             SqlValue::Text(text) => serde_json::Value::String(text),
-                            SqlValue::Blob(blob) => serde_json::Value::String(base64::encode(blob)), // or another representation if you prefer
+                            SqlValue::Blob(blob) => {
+                                serde_json::Value::String(base64_standard.encode(blob))
+                            } // or another representation if you prefer
                             _ => serde_json::Value::Null,
                         };
                         map.insert(column_name.clone(), value_json);
@@ -511,7 +514,7 @@ fn json_to_sqlite(value: &serde_json::Value) -> Result<SqlValue, SqliteError> {
             }
         }
         serde_json::Value::String(s) => {
-            match base64::decode(s) {
+            match base64_standard.decode(s) {
                 Ok(decoded_bytes) => {
                     // convert to SQLite Blob if it's a valid base64 string
                     Ok(SqlValue::Blob(decoded_bytes))
