@@ -9,6 +9,7 @@ use alloy_signer::Signature;
 use alloy_sol_macro::sol;
 use alloy_sol_types::{SolCall, SolValue};
 use alloy_transport_ws::WsConnect;
+use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use hmac::Hmac;
 use jwt::SignWithKey;
 use lib::types::core::*;
@@ -366,7 +367,9 @@ async fn handle_keyfile_vet(
     // additional checks?
     let encoded_keyfile = match payload.keyfile.is_empty() {
         true => keyfile.ok_or(warp::reject())?,
-        false => base64::decode(payload.keyfile).map_err(|_| warp::reject())?,
+        false => base64_standard
+            .decode(payload.keyfile)
+            .map_err(|_| warp::reject())?,
     };
 
     let decoded_keyfile = keygen::decode_keyfile(&encoded_keyfile, &payload.password_hash)
@@ -543,7 +546,7 @@ async fn handle_import_keyfile(
     provider: Arc<Provider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
-    let encoded_keyfile = match base64::decode(info.keyfile.clone()) {
+    let encoded_keyfile = match base64_standard.decode(info.keyfile.clone()) {
         Ok(k) => k,
         Err(_) => {
             return Ok(warp::reply::with_status(
@@ -762,7 +765,7 @@ async fn success_response(
     decoded_keyfile: Keyfile,
     encoded_keyfile: Vec<u8>,
 ) -> Result<warp::reply::Response, Rejection> {
-    let encoded_keyfile_str = base64::encode(&encoded_keyfile);
+    let encoded_keyfile_str = base64_standard.encode(&encoded_keyfile);
     let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, &our.name) {
         Some(token) => token,
         None => {

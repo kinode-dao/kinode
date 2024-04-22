@@ -2,6 +2,7 @@ use crate::http::server_types::*;
 use crate::http::utils::*;
 use crate::{keygen, register};
 use anyhow::Result;
+use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use http::uri::Authority;
@@ -343,14 +344,14 @@ async fn login_handler(
             };
 
             let mut response = warp::reply::with_status(
-                warp::reply::json(&base64::encode(encoded_keyfile.to_vec())),
+                warp::reply::json(&base64_standard.encode(encoded_keyfile.to_vec())),
                 StatusCode::OK,
             )
             .into_response();
 
             match HeaderValue::from_str(&format!("kinode-auth_{}={};", our.as_ref(), &token)) {
                 Ok(v) => {
-                    response.headers_mut().append(http::header::SET_COOKIE, v);
+                    response.headers_mut().append("set-cookie", v);
                     Ok(response)
                 }
                 Err(_) => Ok(warp::reply::with_status(
@@ -372,7 +373,7 @@ async fn ws_handler(
     ws_connection: Ws,
     socket_addr: Option<SocketAddr>,
     path: warp::path::FullPath,
-    host: Option<Authority>,
+    host: Option<warp::host::Authority>,
     headers: warp::http::HeaderMap,
     our: Arc<String>,
     jwt_secret_bytes: Arc<Vec<u8>>,
@@ -468,7 +469,7 @@ async fn ws_handler(
 async fn http_handler(
     method: warp::http::Method,
     socket_addr: Option<SocketAddr>,
-    host: Option<Authority>,
+    host: Option<warp::host::Authority>,
     path: warp::path::FullPath,
     query_params: HashMap<String, String>,
     headers: warp::http::HeaderMap,
@@ -529,7 +530,7 @@ async fn http_handler(
                 "Location",
                 format!(
                     "http://{}/login",
-                    host.unwrap_or(Authority::from_static("localhost"))
+                    host.unwrap_or(warp::host::Authority::from_static("localhost"))
                 ),
             )
             .body(vec![])
@@ -619,7 +620,7 @@ async fn http_handler(
                         method: method.to_string(),
                         url: format!(
                             "http://{}{}",
-                            host.unwrap_or(Authority::from_static("localhost")),
+                            host.unwrap_or(warp::host::Authority::from_static("localhost")),
                             original_path
                         ),
                         bound_path: bound_path.path.clone(),
@@ -735,7 +736,7 @@ async fn handle_rpc_message(
 
     let blob: Option<LazyLoadBlob> = match rpc_message.data {
         None => None,
-        Some(b64_bytes) => match base64::decode(b64_bytes) {
+        Some(b64_bytes) => match base64_standard.decode(b64_bytes) {
             Ok(bytes) => Some(LazyLoadBlob {
                 mime: rpc_message.mime,
                 bytes,
@@ -1069,7 +1070,7 @@ async fn handle_app_message(
             if path == "/rpc:distro:sys/message" {
                 let blob = km.lazy_load_blob.map(|p| LazyLoadBlob {
                     mime: p.mime,
-                    bytes: base64::encode(p.bytes).into_bytes(),
+                    bytes: base64_standard.encode(p.bytes).into_bytes(),
                 });
 
                 let mut default_headers = HashMap::new();
