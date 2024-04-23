@@ -177,11 +177,6 @@ pub async fn provider(
                     allow: HashSet::new(),
                     deny: HashSet::new(),
                 };
-                let _ = tokio::fs::write(
-                    format!("{}/.eth_access_settings", home_directory_path),
-                    serde_json::to_string(&access_settings).unwrap(),
-                )
-                .await;
                 access_settings
             }
         };
@@ -556,10 +551,13 @@ async fn fulfill_request(
     let Some(mut aps) = providers.get_mut(&chain_id) else {
         return EthResponse::Err(EthError::NoRpcForChain);
     };
+
     // first, try any url providers we have for this chain,
     // then if we have none or they all fail, go to node provider.
     // finally, if no provider works, return an error.
-    for url_provider in &mut aps.urls {
+
+    // bump the successful provider to the front of the list for future requests
+    for (index, url_provider) in aps.urls.iter_mut().enumerate() {
         let pubsub = match &url_provider.pubsub {
             Some(pubsub) => pubsub,
             None => {
@@ -571,16 +569,34 @@ async fn fulfill_request(
                     .await;
                     url_provider.pubsub.as_ref().unwrap()
                 } else {
+                    verbose_print(
+                        print_tx,
+                        &format!("eth: could not activate url provider {}", url_provider.url),
+                    )
+                    .await;
                     continue;
                 }
             }
         };
-        let Ok(value) = pubsub.inner().prepare(method, params.clone()).await else {
-            // this provider failed and needs to be reset
-            url_provider.pubsub = None;
-            continue;
-        };
-        return EthResponse::Response { value };
+        match pubsub.inner().prepare(method, params.clone()).await {
+            Ok(value) => {
+                let successful_provider = aps.urls.remove(index);
+                aps.urls.insert(0, successful_provider);
+                return EthResponse::Response { value };
+            }
+            Err(rpc_error) => {
+                verbose_print(
+                    print_tx,
+                    &format!(
+                        "eth: got error from url provider {}: {}",
+                        url_provider.url, rpc_error
+                    ),
+                )
+                .await;
+                // this provider failed and needs to be reset
+                url_provider.pubsub = None;
+            }
+        }
     }
     for node_provider in &mut aps.nodes {
         let response = forward_to_node_provider(
