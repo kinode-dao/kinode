@@ -1,3 +1,4 @@
+#![feature(async_closure)]
 #![feature(btree_extract_if)]
 
 use anyhow::Result;

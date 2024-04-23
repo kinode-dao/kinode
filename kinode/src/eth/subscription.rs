@@ -50,7 +50,7 @@ pub async fn create_new_subscription(
                 Ok(rx) => {
                     subs.insert(
                         sub_id,
-                        // this is a local sub, as in, we connect to the rpc endpt
+                        // this is a local sub, as in, we connect to the rpc endpoint
                         ActiveSub::Local(tokio::spawn(async move {
                             // await the subscription error and kill it if so
                             if let Err(e) = maintain_local_subscription(
@@ -232,7 +232,7 @@ async fn build_subscription(
                 )
                 .await;
                 response_channels.remove(&km_id);
-                return Ok(Err((node_provider.name.clone(), remote_sub_id)));
+                return Ok(Err((node_provider.kns_update.name.clone(), remote_sub_id)));
             }
             EthResponse::Response { .. } => {
                 // the response to a SubscribeLogs request must be an 'ok'

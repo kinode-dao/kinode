@@ -18,9 +18,13 @@ mod subscription;
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 enum IncomingReq {
+    /// requests for an RPC action that can come from processes on this node or others
     EthAction(EthAction),
+    /// requests that must come from this node to modify provider settings / fetch them
     EthConfigAction(EthConfigAction),
+    /// subscription updates coming in from a remote provider
     EthSubResult(EthSubResult),
+    /// a remote node who uses our provider keeping their subscription alive
     SubKeepalive(u64),
 }
 
@@ -46,7 +50,9 @@ struct NodeProvider {
     /// semi-temporary flag to mark if this provider is currently usable
     /// future updates will make this more dynamic
     pub usable: bool,
-    pub name: String,
+    /// the KNS update that describes this node provider
+    /// kept so we can re-serialize to SavedConfigs
+    pub kns_update: KnsUpdate,
 }
 
 impl ActiveProviders {
@@ -59,7 +65,7 @@ impl ActiveProviders {
                 self.nodes.push(NodeProvider {
                     trusted: new.trusted,
                     usable: use_as_provider,
-                    name: kns_update.name,
+                    kns_update,
                 });
             }
             NodeOrRpcUrl::RpcUrl(url) => {
@@ -74,7 +80,7 @@ impl ActiveProviders {
 
     fn remove_provider(&mut self, remove: &str) {
         self.urls.retain(|x| x.url != remove);
-        self.nodes.retain(|x| x.name != remove);
+        self.nodes.retain(|x| x.kns_update.name != remove);
     }
 }
 
@@ -157,7 +163,9 @@ pub async fn provider(
     caps_oracle: CapMessageSender,
     print_tx: PrintSender,
 ) -> Result<()> {
-    // load access settings if they've been saved
+    // load access settings if they've been persisted to disk
+    // this merely describes whether our provider is available to other nodes
+    // and if so, which nodes are allowed to access it (public/whitelist/blacklist)
     let access_settings: AccessSettings =
         match tokio::fs::read_to_string(format!("{}/.eth_access_settings", home_directory_path))
             .await
@@ -183,6 +191,9 @@ pub async fn provider(
     )
     .await;
 
+    // initialize module state
+    // fill out providers based on saved configs (possibly persisted, given to us)
+    // this can be a mix of node providers and rpc providers
     let mut state = ModuleState {
         our: Arc::new(our),
         home_directory_path,
@@ -208,14 +219,13 @@ pub async fn provider(
 
     verbose_print(&state.print_tx, "eth: provider initialized").await;
 
+    // main loop: handle incoming network errors and incoming kernel messages
     loop {
         tokio::select! {
             Some(wrapped_error) = net_error_recv.recv() => {
                 handle_network_error(
                     wrapped_error,
-                    &state.active_subscriptions,
-                    &state.response_channels,
-                    &state.print_tx
+                    &state,
                 ).await;
             }
             Some(km) = recv_in_client.recv() => {
@@ -241,40 +251,54 @@ pub async fn provider(
     }
 }
 
-async fn handle_network_error(
-    wrapped_error: WrappedSendError,
-    active_subscriptions: &ActiveSubscriptions,
-    response_channels: &ResponseChannels,
-    print_tx: &PrintSender,
-) {
-    verbose_print(&print_tx, "eth: got network error").await;
-    // if we hold active subscriptions for the remote node that this error refers to,
-    // close them here -- they will need to resubscribe
-    // TODO is this necessary?
-    if let Some((_who, sub_map)) = active_subscriptions.remove(&wrapped_error.error.target) {
-        for (_sub_id, sub) in sub_map.iter() {
-            if let ActiveSub::Local(handle) = sub {
-                verbose_print(
-                    &print_tx,
-                    "eth: closing local sub in response to network error",
-                )
-                .await;
-                handle.abort();
-            }
+/// network errors only come from remote provider nodes we tried to access,
+/// or from remote nodes that are using us as a provider.
+///
+/// if we tried to access them, we will have a response channel to send the error to.
+/// if they are using us as a provider, close the subscription associated with the target.
+async fn handle_network_error(wrapped_error: WrappedSendError, state: &ModuleState) {
+    verbose_print(
+        &state.print_tx,
+        &format!(
+            "eth: got network error from {}",
+            &wrapped_error.error.target
+        ),
+    )
+    .await;
+
+    // close all subscriptions held by the process that we (possibly) tried to send an update to
+    if let Some((_who, sub_map)) = state
+        .active_subscriptions
+        .remove(&wrapped_error.error.target)
+    {
+        for (sub_id, sub) in sub_map.iter() {
+            verbose_print(
+                &state.print_tx,
+                &format!(
+                    "eth: closed subscription {} in response to network error",
+                    sub_id
+                ),
+            )
+            .await;
+            sub.close(*sub_id, state).await;
         }
     }
-    // we got an error from a remote node provider --
-    // forward it to response channel if it exists
-    if let Some(chan) = response_channels.get(&wrapped_error.id) {
-        // can't close channel here, as response may be an error
-        // and fulfill_request may wish to try other providers.
-        verbose_print(&print_tx, "eth: sent network error to response channel").await;
+
+    // forward error to response channel if it exists
+    if let Some(chan) = state.response_channels.get(&wrapped_error.id) {
+        // don't close channel here, as channel holder will wish to try other providers.
+        verbose_print(
+            &state.print_tx,
+            "eth: forwarded network error to response channel",
+        )
+        .await;
         let _ = chan.send(Err(wrapped_error)).await;
     }
 }
 
-/// handle incoming requests, namely [`EthAction`] and [`EthConfigAction`].
-/// also handle responses that are passthroughs from remote provider nodes.
+/// handle incoming requests and responses.
+/// requests must be one of types in [`IncomingReq`].
+/// responses are passthroughs from remote provider nodes.
 async fn handle_message(
     state: &mut ModuleState,
     km: KernelMessage,
@@ -335,6 +359,8 @@ async fn handle_message(
                         {
                             if provider_node == &km.source.node {
                                 if let Ok(()) = sender.send(eth_sub_result).await {
+                                    // successfully sent a subscription update from a
+                                    // remote provider to one of our processes
                                     return Ok(());
                                 }
                             }
@@ -367,6 +393,26 @@ async fn handle_message(
                             return Ok(());
                         }
                     }
+                    verbose_print(
+                        &state.print_tx,
+                        "eth: got sub_keepalive but no matching sub found",
+                    )
+                    .await;
+                    // send a response with an EthSubError
+                    kernel_message(
+                        &state.our.clone(),
+                        km.id,
+                        km.source.clone(),
+                        None,
+                        false,
+                        None,
+                        EthSubResult::Err(EthSubError {
+                            id: sub_id,
+                            error: "Subscription not found".to_string(),
+                        }),
+                        &state.send_to_loop,
+                    )
+                    .await;
                 }
             }
         }
@@ -382,7 +428,10 @@ async fn handle_eth_action(
 ) -> Result<(), EthError> {
     // check our access settings if the request is from a remote node
     if km.source.node != *state.our {
-        if state.access_settings.deny.contains(&km.source.node) {
+        if state.access_settings.deny.contains(&km.source.node)
+            || (!state.access_settings.public
+                && !state.access_settings.allow.contains(&km.source.node))
+        {
             verbose_print(
                 &state.print_tx,
                 "eth: got eth_action from unauthorized remote source",
@@ -390,21 +439,19 @@ async fn handle_eth_action(
             .await;
             return Err(EthError::PermissionDenied);
         }
-        if !state.access_settings.public {
-            if !state.access_settings.allow.contains(&km.source.node) {
-                verbose_print(
-                    &state.print_tx,
-                    "eth: got eth_action from unauthorized remote source",
-                )
-                .await;
-                return Err(EthError::PermissionDenied);
-            }
-        }
     }
 
     verbose_print(
         &state.print_tx,
-        &format!("eth: handling eth_action {eth_action:?}"),
+        &format!(
+            "eth: handling {} from {}",
+            match &eth_action {
+                EthAction::SubscribeLogs { .. } => "subscribe",
+                EthAction::UnsubscribeLogs(_) => "unsubscribe",
+                EthAction::Request { .. } => "request",
+            },
+            km.source
+        ),
     )
     .await;
 
@@ -517,7 +564,11 @@ async fn fulfill_request(
             Some(pubsub) => pubsub,
             None => {
                 if let Ok(()) = activate_url_provider(url_provider).await {
-                    verbose_print(print_tx, "eth: activated a url provider").await;
+                    verbose_print(
+                        print_tx,
+                        &format!("eth: activated url provider {}", url_provider.url),
+                    )
+                    .await;
                     url_provider.pubsub.as_ref().unwrap()
                 } else {
                     continue;
@@ -563,14 +614,14 @@ async fn forward_to_node_provider(
     send_to_loop: &MessageSender,
     receiver: &mut ProcessMessageReceiver,
 ) -> EthResponse {
-    if !node_provider.usable || node_provider.name == our {
+    if !node_provider.usable || node_provider.kns_update.name == our {
         return EthResponse::Err(EthError::PermissionDenied);
     }
     kernel_message(
         our,
         km_id,
         Address {
-            node: node_provider.name.clone(),
+            node: node_provider.kns_update.name.clone(),
             process: ETH_PROCESS_ID.clone(),
         },
         rsvp,
@@ -627,6 +678,7 @@ async fn handle_eth_config_action(
     )
     .await;
 
+    let mut save_settings = false;
     let mut save_providers = false;
 
     // modify our providers and access settings based on config action
@@ -650,21 +702,27 @@ async fn handle_eth_config_action(
         }
         EthConfigAction::SetPublic => {
             state.access_settings.public = true;
+            save_settings = true;
         }
         EthConfigAction::SetPrivate => {
             state.access_settings.public = false;
+            save_settings = true;
         }
         EthConfigAction::AllowNode(node) => {
             state.access_settings.allow.insert(node);
+            save_settings = true;
         }
         EthConfigAction::UnallowNode(node) => {
             state.access_settings.allow.remove(&node);
+            save_settings = true;
         }
         EthConfigAction::DenyNode(node) => {
             state.access_settings.deny.insert(node);
+            save_settings = true;
         }
         EthConfigAction::UndenyNode(node) => {
             state.access_settings.deny.remove(&node);
+            save_settings = true;
         }
         EthConfigAction::SetProviders(new_providers) => {
             let new_map = DashMap::new();
@@ -713,20 +771,26 @@ async fn handle_eth_config_action(
             };
         }
     }
-    // save providers and access settings to disk
-    let _ = tokio::fs::write(
-        format!("{}/.eth_access_settings", state.home_directory_path),
-        serde_json::to_string(&state.access_settings).unwrap(),
-    )
-    .await;
-    verbose_print(&state.print_tx, "eth: saved new access settings").await;
+    // save providers and/or access settings, depending on necessity, to disk
+    if save_settings {
+        if let Ok(()) = tokio::fs::write(
+            format!("{}/.eth_access_settings", state.home_directory_path),
+            serde_json::to_string(&state.access_settings).unwrap(),
+        )
+        .await
+        {
+            verbose_print(&state.print_tx, "eth: saved new access settings").await;
+        };
+    }
     if save_providers {
-        let _ = tokio::fs::write(
+        if let Ok(()) = tokio::fs::write(
             format!("{}/.eth_providers", state.home_directory_path),
             serde_json::to_string(&providers_to_saved_configs(&state.providers)).unwrap(),
         )
-        .await;
-        verbose_print(&state.print_tx, "eth: saved new provider settings").await;
+        .await
+        {
+            verbose_print(&state.print_tx, "eth: saved new provider settings").await;
+        };
     }
     EthConfigResponse::Ok
 }
@@ -767,15 +831,7 @@ fn providers_to_saved_configs(providers: &Providers) -> SavedConfigs {
                 .chain(entry.nodes.iter().map(|node_provider| ProviderConfig {
                     chain_id: *entry.key(),
                     provider: NodeOrRpcUrl::Node {
-                        kns_update: KnsUpdate {
-                            name: node_provider.name.clone(),
-                            owner: "".to_string(),
-                            node: "".to_string(),
-                            public_key: "".to_string(),
-                            ip: "".to_string(),
-                            port: 0,
-                            routers: vec![],
-                        },
+                        kns_update: node_provider.kns_update.clone(),
                         use_as_provider: node_provider.usable,
                     },
                     trusted: node_provider.trusted,
