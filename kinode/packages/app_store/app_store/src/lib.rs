@@ -41,6 +41,7 @@ const ICON: &str = include_str!("icon");
 
 const CHAIN_ID: u64 = 10; // optimism
 const CONTRACT_ADDRESS: &str = "0x52185B6a6017E6f079B994452F234f7C2533787B"; // optimism
+const CONTRACT_FIRST_BLOCK: u64 = 118_590_088;
 
 const EVENTS: [&str; 3] = [
     "AppRegistered(uint256,string,bytes,string,bytes32)",

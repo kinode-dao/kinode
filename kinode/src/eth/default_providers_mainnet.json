@@ -1,16 +1,16 @@
 [
     {
-        "chain_id": 1,
-        "trusted": false,
-        "provider": {
-            "RpcUrl": "wss://ethereum.publicnode.com"
-        }
-    },
-    {
         "chain_id": 31337,
         "trusted": true,
         "provider": {
             "RpcUrl": "wss://localhost:8545"
+        }
+    },
+    {
+        "chain_id": 1,
+        "trusted": false,
+        "provider": {
+            "RpcUrl": "wss://ethereum.publicnode.com"
         }
     },
     {
@@ -21,18 +21,18 @@
         }
     },
     {
-        "chain_id": 10,
+        "chain_id": 1,
         "trusted": false,
         "provider": {
             "Node": {
                 "use_as_provider": true,
                 "kns_update": {
-                    "name": "default-router-1.os",
+                    "name": "providerfren.os",
                     "owner": "",
-                    "node": "0xb35eb347deb896bc3fb6132a07fca1601f83462385ed11e835c24c33ba4ef73d",
-                    "public_key": "0xe1f7a266eafe46c79494d4dcce4222d81e5767511b295f1ed26c37221aecb80b",
+                    "node": "",
+                    "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
                     "ip": "147.135.114.167",
-                    "port": 9000,
+                    "port": 9999,
                     "routers": []
                 }
             }
@@ -45,30 +45,12 @@
             "Node": {
                 "use_as_provider": true,
                 "kns_update": {
-                    "name": "default-router-2.os",
+                    "name": "providerfren.os",
                     "owner": "",
-                    "node": "0xd827ae579fafa604af79fbed977e8abe048497f10885c6473dfd343a3b7b4458",
-                    "public_key": "0xcc2752e30ba865ab6baa1b819b0291b71f1136245234274b274df5950c3abcc4",
+                    "node": "",
+                    "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
                     "ip": "147.135.114.167",
-                    "port": 9001,
-                    "routers": []
-                }
-            }
-        }
-    },
-    {
-        "chain_id": 10,
-        "trusted": false,
-        "provider": {
-            "Node": {
-                "use_as_provider": true,
-                "kns_update": {
-                    "name": "default-router-3.os",
-                    "owner": "",
-                    "node": "0x96e36331c8f0882f2c0c46c13b15d812def04fe8606d503bc0e2be39db26486a",
-                    "public_key": "0xe992841b17212206a3929b4cc065ad2854875d48fc7177e260005b9eb8d4f123",
-                    "ip": "147.135.114.167",
-                    "port": 9005,
+                    "port": 9999,
                     "routers": []
                 }
             }
@@ -81,48 +63,12 @@
             "Node": {
                 "use_as_provider": true,
                 "kns_update": {
-                    "name": "default-router-3.os",
+                    "name": "providerfren.os",
                     "owner": "",
-                    "node": "0x96e36331c8f0882f2c0c46c13b15d812def04fe8606d503bc0e2be39db26486a",
-                    "public_key": "0xe992841b17212206a3929b4cc065ad2854875d48fc7177e260005b9eb8d4f123",
+                    "node": "",
+                    "public_key": "0x54f5a8a4c625d5925e63ed3f0203b63e007e3f822d7858bd98b1fd9704c99451",
                     "ip": "147.135.114.167",
-                    "port": 9005,
-                    "routers": []
-                }
-            }
-        }
-    },
-    {
-        "chain_id": 11155111,
-        "trusted": false,
-        "provider": {
-            "Node": {
-                "use_as_provider": true,
-                "kns_update": {
-                    "name": "default-router-2.os",
-                    "owner": "",
-                    "node": "0xd827ae579fafa604af79fbed977e8abe048497f10885c6473dfd343a3b7b4458",
-                    "public_key": "0xcc2752e30ba865ab6baa1b819b0291b71f1136245234274b274df5950c3abcc4",
-                    "ip": "147.135.114.167",
-                    "port": 9001,
-                    "routers": []
-                }
-            }
-        }
-    },
-    {
-        "chain_id": 11155111,
-        "trusted": false,
-        "provider": {
-            "Node": {
-                "use_as_provider": true,
-                "kns_update": {
-                    "name": "default-router-1.os",
-                    "owner": "",
-                    "node": "0xb35eb347deb896bc3fb6132a07fca1601f83462385ed11e835c24c33ba4ef73d",
-                    "public_key": "0xe1f7a266eafe46c79494d4dcce4222d81e5767511b295f1ed26c37221aecb80b",
-                    "ip": "147.135.114.167",
-                    "port": 9000,
+                    "port": 9999,
                     "routers": []
                 }
             }

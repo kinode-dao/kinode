@@ -1144,8 +1144,14 @@ async fn handle_app_message(
                         .send(Printout {
                             verbosity: 2,
                             content: format!(
-                                "binding path {path} for {}, authenticated={authenticated}, local={local_only}, cached={cache}",
-                                km.source.process
+                                "http: binding {path}, {}, {}, {}",
+                                if authenticated {
+                                    "authenticated"
+                                } else {
+                                    "unauthenticated"
+                                },
+                                if local_only { "local only" } else { "open" },
+                                if cache { "cached" } else { "dynamic" },
                             ),
                         })
                         .await;

@@ -155,7 +155,7 @@ pub struct ProviderConfig {
 pub enum NodeOrRpcUrl {
     Node {
         kns_update: crate::core::KnsUpdate,
-        use_as_provider: bool, // for routers inside saved config
+        use_as_provider: bool, // false for just-routers inside saved config
     },
     RpcUrl(String),
 }
