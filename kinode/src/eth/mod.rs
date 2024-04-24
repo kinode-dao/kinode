@@ -456,19 +456,15 @@ async fn handle_eth_action(
     // before returning an error.
     match eth_action {
         EthAction::SubscribeLogs { sub_id, .. } => {
-            tokio::spawn(subscription::create_new_subscription(
-                state.our.to_string(),
+            subscription::create_new_subscription(
+                state,
                 km.id,
                 km.source.clone(),
                 km.rsvp,
-                state.send_to_loop.clone(),
                 sub_id,
                 eth_action,
-                state.providers.clone(),
-                state.active_subscriptions.clone(),
-                state.response_channels.clone(),
-                state.print_tx.clone(),
-            ));
+            )
+            .await;
         }
         EthAction::UnsubscribeLogs(sub_id) => {
             let mut sub_map = state
@@ -553,7 +549,7 @@ async fn fulfill_request(
     };
 
     // first, try any url providers we have for this chain,
-    // then if we have none or they all fail, go to node provider.
+    // then if we have none or they all fail, go to node providers.
     // finally, if no provider works, return an error.
 
     // bump the successful provider to the front of the list for future requests
@@ -652,15 +648,13 @@ async fn forward_to_node_provider(
     else {
         return EthResponse::Err(EthError::RpcTimeout);
     };
-    let Message::Response((resp, _context)) = response_km.message else {
-        // if we hit this, they spoofed a request with same id, ignore and possibly punish
-        return EthResponse::Err(EthError::RpcMalformedResponse);
-    };
-    let Ok(eth_response) = serde_json::from_slice::<EthResponse>(&resp.body) else {
-        // if we hit this, they sent a malformed response, ignore and possibly punish
-        return EthResponse::Err(EthError::RpcMalformedResponse);
-    };
-    eth_response
+    if let Message::Response((resp, _context)) = response_km.message {
+        if let Ok(eth_response) = serde_json::from_slice::<EthResponse>(&resp.body) {
+            return eth_response;
+        }
+    }
+    // if we hit this, they sent a malformed response, ignore and possibly punish
+    EthResponse::Err(EthError::RpcMalformedResponse)
 }
 
 async fn handle_eth_config_action(
