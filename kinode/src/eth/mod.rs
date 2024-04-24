@@ -46,6 +46,7 @@ struct UrlProvider {
 
 #[derive(Debug)]
 struct NodeProvider {
+    /// NOT CURRENTLY USED
     pub trusted: bool,
     /// semi-temporary flag to mark if this provider is currently usable
     /// future updates will make this more dynamic
@@ -365,7 +366,7 @@ async fn handle_message(
                     // so they can stop sending us updates
                     verbose_print(
                         &state.print_tx,
-                        "eth: got eth_sub_result but no matching sub found",
+                        "eth: got eth_sub_result but no matching sub found, unsubscribing",
                     )
                     .await;
                     kernel_message(
@@ -595,6 +596,14 @@ async fn fulfill_request(
         }
     }
     for node_provider in &mut aps.nodes {
+        verbose_print(
+            print_tx,
+            &format!(
+                "eth: attempting to fulfill via {}",
+                node_provider.kns_update.name
+            ),
+        )
+        .await;
         let response = forward_to_node_provider(
             our,
             km_id,
