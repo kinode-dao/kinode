@@ -301,7 +301,12 @@ fn handle_eth_message(
     match eth_result {
         Ok(eth::EthSub { result, .. }) => {
             if let eth::SubscriptionResult::Log(log) = result {
-                handle_log(our, state, &log)?;
+                match handle_log(our, state, &log) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("log-handling error! {e:?}");
+                    }
+                }
             }
         }
         Err(_e) => {

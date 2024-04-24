@@ -11,7 +11,6 @@ pub async fn create_new_subscription(
     sub_id: u64,
     eth_action: EthAction,
 ) {
-    verbose_print(&state.print_tx, "eth: creating new subscription").await;
     match build_subscription(
         &state.our,
         km_id,
