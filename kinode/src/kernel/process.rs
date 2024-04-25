@@ -607,7 +607,7 @@ pub async fn make_process_loop(
         };
 
     // the process will run until it returns from init() or crashes
-    let is_error = match bindings
+    match bindings
         .call_init(&mut store, &metadata.our.to_string())
         .await
     {
@@ -618,7 +618,6 @@ pub async fn make_process_loop(
                     content: format!("process {} returned without error", metadata.our.process),
                 })
                 .await;
-            false
         }
         Err(_) => {
             let stderr = wasi_stderr.contents().into();
@@ -632,7 +631,6 @@ pub async fn make_process_loop(
                     ),
                 })
                 .await;
-            true
         }
     };
 
@@ -715,17 +713,6 @@ pub async fn make_process_loop(
                     lazy_load_blob: None,
                 })
                 .await?;
-            if is_error {
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: format!(
-                            "skipping OnExit::Restart for process {} due to crash",
-                            metadata.our.process
-                        ),
-                    })
-                    .await;
-            } else {
                 let _ = send_to_terminal
                     .send(t::Printout {
                         verbosity: 1,
@@ -781,7 +768,6 @@ pub async fn make_process_loop(
                         lazy_load_blob: None,
                     })
                     .await?;
-            }
         }
         // if requests, fire them
         // even in death, a process can only message processes it has capabilities for
