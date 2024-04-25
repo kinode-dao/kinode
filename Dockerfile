@@ -1,30 +1,20 @@
-# syntax=docker/dockerfile:1
-FROM rust AS builder
+FROM debian:12-slim AS downloader
 
-COPY . /tmp/source
-
-WORKDIR /tmp/source
+WORKDIR /tmp/download
 
 RUN apt-get update
-RUN apt-get install clang -y
+RUN apt-get install wget curl openssl jq unzip -y
 
-RUN cargo install wasm-tools && \
-    rustup install nightly && \
-    rustup target add wasm32-wasi && \
-    rustup target add wasm32-wasi --toolchain nightly && \
-    cargo install cargo-wasi
-
-RUN cargo +nightly build -p kinode --release
+RUN wget "https://github.com/kinode-dao/kinode/releases/download/$(curl https://api.github.com/repos/kinode-dao/kinode/releases | jq -r '.[0].tag_name')/kinode-x86_64-unknown-linux-gnu.zip"
+RUN unzip kinode-x86_64-unknown-linux-gnu.zip
 
 FROM debian:12-slim
 
 RUN apt-get update
 RUN apt-get install openssl -y
 
-COPY --from=builder /tmp/source/target/release/kinode /bin/kinode
+COPY --from=downloader /tmp/download/kinode /bin/kinode
 
-ENV LD_LIBRARY_PATH=/lib
-ENV RUST_BACKTRACE=full
 ENTRYPOINT [ "/bin/kinode" ]
 CMD [ "/kinode-home" ]
 
