@@ -1,5 +1,4 @@
 use crate::keygen;
-use aes_gcm::aead::KeyInit;
 use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
 use alloy_providers::provider::{Provider, TempProvider};
 use alloy_pubsub::PubSubFrontend;
@@ -10,13 +9,10 @@ use alloy_sol_macro::sol;
 use alloy_sol_types::{SolCall, SolValue};
 use alloy_transport_ws::WsConnect;
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
-use hmac::Hmac;
-use jwt::SignWithKey;
 use lib::types::core::*;
 use ring::rand::SystemRandom;
 use ring::signature;
 use ring::signature::KeyPair;
-use sha2::Sha256;
 use static_dir::static_dir;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -94,23 +90,6 @@ fn _hex_string_to_u8_array(hex_str: &str) -> Result<[u8; 32], &'static str> {
     }
 
     Ok(bytes)
-}
-
-pub fn generate_jwt(jwt_secret_bytes: &[u8], username: &str) -> Option<String> {
-    let jwt_secret: Hmac<Sha256> = match Hmac::new_from_slice(jwt_secret_bytes) {
-        Ok(secret) => secret,
-        Err(_) => return None,
-    };
-
-    let claims = crate::http::server_types::JwtClaims {
-        username: username.to_string(),
-        expiration: 0,
-    };
-
-    match claims.sign_with_key(&jwt_secret) {
-        Ok(token) => Some(token),
-        Err(_) => None,
-    }
 }
 
 /// Serve the registration page and receive POSTs and PUTs from it
@@ -766,7 +745,7 @@ async fn success_response(
     encoded_keyfile: Vec<u8>,
 ) -> Result<warp::reply::Response, Rejection> {
     let encoded_keyfile_str = base64_standard.encode(&encoded_keyfile);
-    let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, &our.name) {
+    let token = match keygen::generate_jwt(&decoded_keyfile.jwt_secret_bytes, &our.name) {
         Some(token) => token,
         None => {
             return Ok(warp::reply::with_status(

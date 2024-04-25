@@ -1,11 +1,12 @@
 use crate::http::server_types::*;
 use crate::http::utils::*;
-use crate::{keygen, register};
+use crate::keygen;
 use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use dashmap::DashMap;
 use futures::{SinkExt, StreamExt};
 use http::uri::Authority;
+use lib::types::core::*;
 use route_recognizer::Router;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -15,8 +16,6 @@ use tokio::sync::RwLock;
 use warp::http::{header::HeaderValue, StatusCode};
 use warp::ws::{WebSocket, Ws};
 use warp::{Filter, Reply};
-
-use lib::types::core::*;
 
 #[cfg(not(feature = "simulation-mode"))]
 const HTTP_SELF_IMPOSED_TIMEOUT: u64 = 15;
@@ -332,7 +331,7 @@ async fn login_handler(
 
     match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
         Ok(keyfile) => {
-            let token = match register::generate_jwt(&keyfile.jwt_secret_bytes, our.as_ref()) {
+            let token = match keygen::generate_jwt(&keyfile.jwt_secret_bytes, our.as_ref()) {
                 Some(token) => token,
                 None => {
                     return Ok(warp::reply::with_status(
