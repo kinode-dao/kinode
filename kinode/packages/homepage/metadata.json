@@ -4,11 +4,11 @@
     "image": "",
     "properties": {
         "package_name": "homepage",
-        "current_version": "0.1.0",
+        "current_version": "0.1.1",
         "publisher": "sys",
         "mirrors": [],
         "code_hashes": {
-            "0.1.0": ""
+            "0.1.1": ""
         }
     },
     "external_url": "https://kinode.org",

@@ -391,11 +391,11 @@ async fn bootstrap(
 
     for (package_metadata, mut package) in packages.clone() {
         let package_name = package_metadata.properties.package_name.as_str();
-        // // special case tester: only load it in if in simulation mode
-        // if package_name == "tester" {
-        //     #[cfg(not(feature = "simulation-mode"))]
-        //     continue;
-        // }
+        // special case tester: only load it in if in simulation mode
+        #[cfg(not(feature = "simulation-mode"))]
+        if package_name == "tester" {
+            continue;
+        }
 
         println!("fs: handling package {package_name}...\r");
         let package_publisher = package_metadata.properties.publisher.as_str();
@@ -610,8 +610,8 @@ async fn bootstrap(
     for (package_metadata, mut package) in packages {
         let package_name = package_metadata.properties.package_name.as_str();
         // special case tester: only load it in if in simulation mode
+        #[cfg(not(feature = "simulation-mode"))]
         if package_name == "tester" {
-            #[cfg(not(feature = "simulation-mode"))]
             continue;
         }
 

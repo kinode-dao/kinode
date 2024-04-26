@@ -3,13 +3,17 @@ use aes_gcm::{
     Aes256Gcm, Key,
 };
 use alloy_primitives::keccak256;
+use anyhow::Result;
 use digest::generic_array::GenericArray;
+use hmac::Hmac;
+use jwt::SignWithKey;
 use lib::types::core::Keyfile;
 use ring::pbkdf2;
 use ring::pkcs8::Document;
 use ring::rand::SystemRandom;
 use ring::signature::{self, KeyPair};
 use ring::{digest as ring_digest, rand::SecureRandom};
+use sha2::Sha256;
 use std::num::NonZeroU32;
 
 type DiskKey = [u8; CREDENTIAL_LEN];
@@ -106,6 +110,23 @@ pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'stati
         jwt_secret_bytes,
         file_key,
     })
+}
+
+pub fn generate_jwt(jwt_secret_bytes: &[u8], username: &str) -> Option<String> {
+    let jwt_secret: Hmac<Sha256> = match Hmac::new_from_slice(jwt_secret_bytes) {
+        Ok(secret) => secret,
+        Err(_) => return None,
+    };
+
+    let claims = crate::http::server_types::JwtClaims {
+        username: username.to_string(),
+        expiration: 0,
+    };
+
+    match claims.sign_with_key(&jwt_secret) {
+        Ok(token) => Some(token),
+        Err(_) => None,
+    }
 }
 
 pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>), &'static str> {

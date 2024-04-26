@@ -1,15 +1,14 @@
-use crate::net::{types::*, MESSAGE_MAX_SIZE, TIMEOUT};
+use crate::net::{types::*, ws::MESSAGE_MAX_SIZE, ws::TIMEOUT};
 use anyhow::{anyhow, Result};
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
+use lib::types::core::*;
 use ring::signature::{self, Ed25519KeyPair};
 use snow::params::NoiseParams;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use tokio::time::timeout;
 use tokio_tungstenite::{connect_async, tungstenite, MaybeTlsStream, WebSocketStream};
-
-use lib::types::core::*;
 
 lazy_static::lazy_static! {
     static ref PARAMS: NoiseParams = "Noise_XX_25519_ChaChaPoly_BLAKE2s"
@@ -264,7 +263,7 @@ pub fn validate_signature(from: &str, signature: &[u8], message: &[u8], pki: &On
     if let Some(peer_id) = pki.get(from) {
         let their_networking_key = signature::UnparsedPublicKey::new(
             &signature::ED25519,
-            hex::decode(strip_0x(&peer_id.networking_key)).unwrap_or_default(),
+            net_key_string_to_hex(&peer_id.networking_key),
         );
         their_networking_key.verify(message, signature).is_ok()
     } else {
@@ -283,7 +282,7 @@ pub fn validate_routing_request(
         .ok_or(anyhow!("unknown KNS name"))?;
     let their_networking_key = signature::UnparsedPublicKey::new(
         &signature::ED25519,
-        hex::decode(strip_0x(&their_id.networking_key))?,
+        net_key_string_to_hex(&their_id.networking_key),
     );
     their_networking_key
         .verify(
@@ -308,7 +307,7 @@ pub fn validate_handshake(
     // verify their signature of their static key
     let their_networking_key = signature::UnparsedPublicKey::new(
         &signature::ED25519,
-        hex::decode(strip_0x(&their_id.networking_key))?,
+        net_key_string_to_hex(&their_id.networking_key),
     );
     their_networking_key
         .verify(their_static_key, &handshake.signature)
@@ -342,10 +341,10 @@ pub async fn recv_protocol_message(conn: &mut PeerConnection) -> Result<KernelMe
         &ws_recv(&mut conn.read_stream, &mut conn.write_stream).await?,
         &mut conn.buf,
     )?;
+
     if outer_len < 4 {
         return Err(anyhow!("protocol message too small!"));
     }
-
     let length_bytes = [conn.buf[0], conn.buf[1], conn.buf[2], conn.buf[3]];
     let msg_len = u32::from_be_bytes(length_bytes);
     if msg_len > MESSAGE_MAX_SIZE {
@@ -444,7 +443,7 @@ pub fn build_initiator() -> (snow::HandshakeState, Vec<u8>) {
         builder
             .local_private_key(&keypair.private)
             .build_initiator()
-            .expect("net: couldn't build responder?"),
+            .expect("net: couldn't build initiator?"),
         keypair.public,
     )
 }
@@ -473,11 +472,8 @@ pub async fn error_offline(km: KernelMessage, network_error_tx: &NetworkErrorSen
     Ok(())
 }
 
-fn strip_0x(s: &str) -> String {
-    if let Some(stripped) = s.strip_prefix("0x") {
-        return stripped.to_string();
-    }
-    s.to_string()
+fn net_key_string_to_hex(s: &str) -> Vec<u8> {
+    hex::decode(s.strip_prefix("0x").unwrap_or(s)).unwrap_or_default()
 }
 
 pub async fn parse_hello_message(

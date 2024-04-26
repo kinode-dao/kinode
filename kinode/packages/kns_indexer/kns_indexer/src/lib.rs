@@ -18,6 +18,7 @@ wit_bindgen::generate!({
 // perhaps a constant in process_lib?
 const KNS_OPTIMISM_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
 const KNS_LOCAL_ADDRESS: &'static str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+const KNS_FIRST_BLOCK: u64 = 114_923_786;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -133,7 +134,7 @@ fn init(our: Address) {
                     contract_address,
                     names: HashMap::new(),
                     nodes: HashMap::new(),
-                    block: 1,
+                    block: KNS_FIRST_BLOCK,
                 }
             } else {
                 println!("loading in {} persisted PKI entries", s.nodes.len());
@@ -145,7 +146,7 @@ fn init(our: Address) {
             contract_address: contract_address.clone(),
             names: HashMap::new(),
             nodes: HashMap::new(),
-            block: 1,
+            block: KNS_FIRST_BLOCK,
         },
     };
 
@@ -188,7 +189,12 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             match eth_provider.get_logs(&filter) {
                 Ok(logs) => {
                     for log in logs {
-                        handle_log(&our, &mut state, &log)?;
+                        match handle_log(&our, &mut state, &log) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                println!("log-handling error! {e:?}");
+                            }
+                        }
                     }
                     break;
                 }
@@ -295,7 +301,12 @@ fn handle_eth_message(
     match eth_result {
         Ok(eth::EthSub { result, .. }) => {
             if let eth::SubscriptionResult::Log(log) = result {
-                handle_log(our, state, &log)?;
+                match handle_log(our, state, &log) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        println!("log-handling error! {e:?}");
+                    }
+                }
             }
         }
         Err(_e) => {
@@ -345,11 +356,11 @@ fn handle_eth_message(
 }
 
 fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
-    let node_id = log.topics[1];
+    let node_id = log.topics()[1];
 
     let name = match state.names.entry(node_id.to_string()) {
         Entry::Occupied(o) => o.into_mut(),
-        Entry::Vacant(v) => v.insert(get_name(&log)),
+        Entry::Vacant(v) => v.insert(get_name(&log)?),
     };
 
     let node = state
@@ -359,15 +370,15 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
 
     let mut send = true;
 
-    match log.topics[0] {
+    match log.topics()[0] {
         KeyUpdate::SIGNATURE_HASH => {
-            node.public_key = KeyUpdate::abi_decode_data(&log.data, true)
+            node.public_key = KeyUpdate::decode_log_data(log.data(), true)
                 .unwrap()
-                .0
+                .key
                 .to_string();
         }
         IpUpdate::SIGNATURE_HASH => {
-            let ip = IpUpdate::abi_decode_data(&log.data, true).unwrap().0;
+            let ip = IpUpdate::decode_log_data(log.data(), true).unwrap().ip;
             node.ip = format!(
                 "{}.{}.{}.{}",
                 (ip >> 24) & 0xFF,
@@ -380,15 +391,15 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             node.routers = vec![];
         }
         WsUpdate::SIGNATURE_HASH => {
-            node.port = WsUpdate::abi_decode_data(&log.data, true).unwrap().0;
+            node.port = WsUpdate::decode_log_data(log.data(), true).unwrap().port;
             // when we get port data, we should delete any router data,
             // since the assignment of port indicates an direct node
             node.routers = vec![];
         }
         RoutingUpdate::SIGNATURE_HASH => {
-            node.routers = RoutingUpdate::abi_decode_data(&log.data, true)
+            node.routers = RoutingUpdate::decode_log_data(log.data(), true)
                 .unwrap()
-                .0
+                .routers
                 .iter()
                 .map(|r| r.to_string())
                 .collect::<Vec<String>>();
@@ -413,7 +424,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     }
 
     // if new block is > 100 from last block, save state
-    let block = log.block_number.expect("expect").to::<u64>();
+    let block = log.block_number.expect("expect");
     if block > state.block + 100 {
         kinode_process_lib::print_to_terminal(
             1,
@@ -429,16 +440,13 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     Ok(())
 }
 
-fn get_name(log: &eth::Log) -> String {
-    let decoded = NodeRegistered::abi_decode_data(&log.data, true).unwrap();
-    let name = match dnswire_decode(decoded.0.clone()) {
-        Ok(n) => n,
-        Err(_) => {
-            println!("failed to decode name: {:?}", decoded.0);
-            panic!("")
-        }
-    };
-    name
+fn get_name(log: &eth::Log) -> anyhow::Result<String> {
+    let decoded = NodeRegistered::decode_log_data(log.data(), false).map_err(|_e| {
+        anyhow::anyhow!(
+            "got event other than NodeRegistered without knowing about existing node name"
+        )
+    })?;
+    dnswire_decode(decoded.name.to_vec()).map_err(|e| anyhow::anyhow!(e))
 }
 
 fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {

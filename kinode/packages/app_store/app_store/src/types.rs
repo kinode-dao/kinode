@@ -111,7 +111,7 @@ impl State {
         crate::print_to_terminal(1, "producing new state");
         let mut state = State {
             contract_address,
-            last_saved_block: 1,
+            last_saved_block: crate::CONTRACT_FIRST_BLOCK,
             package_hashes: HashMap::new(),
             listed_packages: HashMap::new(),
             downloaded_packages: HashMap::new(),
@@ -371,14 +371,16 @@ impl State {
             .ok_or(anyhow::anyhow!("got log with no block number"))?
             .try_into()?;
 
-        // let package_hash: alloy_primitives::U256 = log.topics[1].into();
-        // let package_hash = package_hash.to_string();
-
-        match log.topics[0] {
+        match log.topics()[0] {
             AppRegistered::SIGNATURE_HASH => {
-                let package_hash = log.topics[1];
-                let (package_name, publisher_dnswire, metadata_url, metadata_hash) =
-                    AppRegistered::abi_decode_data(&log.data, true)?;
+                let package_hash = log.topics()[1];
+
+                let app = AppRegistered::decode_log_data(log.data(), false)?;
+                let package_name = app.packageName;
+                let publisher_dnswire = app.publisherName;
+                let metadata_url = app.metadataUrl;
+                let metadata_hash = app.metadataHash;
+
                 let package_hash = package_hash.to_string();
                 let metadata_hash = metadata_hash.to_string();
 
@@ -390,13 +392,14 @@ impl State {
                     ),
                 );
 
-                if generate_package_hash(&package_name, publisher_dnswire.as_slice())
+                if generate_package_hash(&package_name, publisher_dnswire.to_vec().as_slice())
                     != package_hash
                 {
                     return Err(anyhow::anyhow!("got log with mismatched package hash"));
                 }
 
-                let Ok(publisher_name) = dnswire_decode(publisher_dnswire.as_slice()) else {
+                let Ok(publisher_name) = dnswire_decode(publisher_dnswire.to_vec().as_slice())
+                else {
                     return Err(anyhow::anyhow!("got log with invalid publisher name"));
                 };
 
@@ -430,9 +433,12 @@ impl State {
                 self.insert_listing(package_hash, listing);
             }
             AppMetadataUpdated::SIGNATURE_HASH => {
-                let package_hash = log.topics[1].to_string();
-                let (metadata_url, metadata_hash) =
-                    AppMetadataUpdated::abi_decode_data(&log.data, false)?;
+                let package_hash = log.topics()[1].to_string();
+
+                let upd = AppMetadataUpdated::decode_log_data(log.data(), false)?;
+                let metadata_url = upd.metadataUrl;
+                let metadata_hash = upd.metadataHash;
+
                 let metadata_hash = metadata_hash.to_string();
 
                 let current_listing = self
@@ -484,9 +490,9 @@ impl State {
                 }
             }
             Transfer::SIGNATURE_HASH => {
-                let from = alloy_primitives::Address::from_word(log.topics[1]);
-                let to = alloy_primitives::Address::from_word(log.topics[2]);
-                let package_hash = log.topics[3].to_string();
+                let from = alloy_primitives::Address::from_word(log.topics()[1]);
+                let to = alloy_primitives::Address::from_word(log.topics()[2]);
+                let package_hash = log.topics()[3].to_string();
 
                 if from == alloy_primitives::Address::ZERO {
                     match self.get_listing_with_hash_mut(&package_hash) {
