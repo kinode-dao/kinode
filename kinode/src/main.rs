@@ -125,6 +125,7 @@ async fn main() {
     let app = app
         .arg(arg!(--password <PASSWORD> "Networking password"))
         .arg(arg!(--"fake-node-name" <NAME> "Name of fake node to boot"))
+        .arg(arg!(--"networking-pk" <NETPK> "Fake networking private key"))
         .arg(
             arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
                 .action(clap::ArgAction::SetTrue),
@@ -142,10 +143,11 @@ async fn main() {
     #[cfg(not(feature = "simulation-mode"))]
     let is_detached = false;
     #[cfg(feature = "simulation-mode")]
-    let (password, fake_node_name, is_detached) = (
+    let (password, fake_node_name, is_detached, net_pk) = (
         matches.get_one::<String>("password"),
         matches.get_one::<String>("fake-node-name"),
         *matches.get_one::<bool>("detached").unwrap(),
+        matches.get_one::<String>("networking-pk"),
     );
 
     let verbose_mode = *matches.get_one::<u8>("verbosity").unwrap();
@@ -347,26 +349,27 @@ async fn main() {
                 None => "secret".to_string(),
                 Some(password) => password.to_string(),
             };
-            let (pubkey, networking_keypair) = keygen::generate_networking_key();
 
             let seed = SystemRandom::new();
             let mut jwt_secret = [0u8, 32];
             ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
 
+            let net_pk_bytes = hex::decode(net_pk.unwrap()).unwrap();
+
+            let networking_keypair = signature::Ed25519KeyPair::from_pkcs8(
+                &net_pk_bytes,
+            ).expect("failed to parse networking private key");
+
             let our = Identity {
                 name: name.clone(),
-                networking_key: pubkey,
+                networking_key: format!("0x{}", hex::encode(networking_keypair.public_key().as_ref())),
                 ws_routing: None,
                 allowed_routers: vec![],
             };
-
             let decoded_keyfile = Keyfile {
                 username: name.clone(),
                 routers: vec![],
-                networking_keypair: signature::Ed25519KeyPair::from_pkcs8(
-                    networking_keypair.as_ref(),
-                )
-                .unwrap(),
+                networking_keypair,
                 jwt_secret_bytes: jwt_secret.to_vec(),
                 file_key: keygen::generate_file_key(),
             };
@@ -375,7 +378,7 @@ async fn main() {
                 password_hash,
                 name.clone(),
                 decoded_keyfile.routers.clone(),
-                networking_keypair.as_ref(),
+                &net_pk_bytes,
                 &decoded_keyfile.jwt_secret_bytes,
                 &decoded_keyfile.file_key,
             );
@@ -493,7 +496,6 @@ async fn main() {
             })
             .collect(),
     ));
-    #[cfg(not(feature = "simulation-mode"))]
     tasks.spawn(net::networking(
         our.clone(),
         our_ip.to_string(),
@@ -505,15 +507,6 @@ async fn main() {
         net_message_receiver,
         register::KNS_OPTIMISM_ADDRESS.to_string(),
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
-    ));
-    #[cfg(feature = "simulation-mode")]
-    tasks.spawn(net::mock_client(
-        *ws_networking_port.unwrap_or(&9000),
-        our.name.clone(),
-        kernel_message_sender.clone(),
-        net_message_receiver,
-        print_sender.clone(),
-        network_error_sender,
     ));
     tasks.spawn(state::state_sender(
         our.name.clone(),

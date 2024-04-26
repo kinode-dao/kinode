@@ -17,6 +17,7 @@ wit_bindgen::generate!({
 
 // perhaps a constant in process_lib?
 const KNS_OPTIMISM_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
+const KNS_LOCAL_ADDRESS: &'static str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -100,7 +101,6 @@ sol! {
 }
 
 fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth::Filter) {
-    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.subscribe(1, filter.clone().from_block(from_block)) {
             Ok(()) => break,
@@ -111,14 +111,15 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
             }
         }
     }
-    #[cfg(not(feature = "simulation-mode"))]
     println!("subscribed to logs successfully");
 }
 
 call_init!(init);
 fn init(our: Address) {
+    #[cfg(feature = "simulation-mode")]
+    let (chain_id, contract_address) = (31337, KNS_LOCAL_ADDRESS.to_string());
+    #[cfg(not(feature = "simulation-mode"))]
     let (chain_id, contract_address) = (10, KNS_OPTIMISM_ADDRESS.to_string());
-
     println!("indexing on contract address {}", contract_address);
 
     // if we have state, load it in
@@ -182,7 +183,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     let eth_provider = eth::Provider::new(state.chain_id, 60);
 
     // if block in state is < current_block, get logs from that part.
-    #[cfg(not(feature = "simulation-mode"))]
     if state.block < eth_provider.get_block_number().unwrap_or(u64::MAX) {
         loop {
             match eth_provider.get_logs(&filter) {
