@@ -130,7 +130,6 @@ async fn main() {
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
 
     let our_ip = find_public_ip().await;
-    let (wc_tcp_handle, flag_used) = setup_ws_networking(ws_networking_port.cloned()).await;
 
     #[cfg(feature = "simulation-mode")]
     let (our, encoded_keyfile, decoded_keyfile) = simulate_node(
@@ -141,6 +140,9 @@ async fn main() {
         http_server_port,
     )
     .await;
+
+    #[cfg(not(feature = "simulation-mode"))]
+    let (wc_tcp_handle, flag_used) = setup_ws_networking(ws_networking_port.cloned()).await;
     #[cfg(not(feature = "simulation-mode"))]
     let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
         &home_directory_path,
@@ -479,7 +481,7 @@ pub async fn simulate_node(
                             "0x{}",
                             hex::encode(decoded.networking_keypair.public_key().as_ref())
                         ),
-                        ws_routing: None,
+                        ws_routing: Some(("127.0.0.1".to_string(), node_port)),
                         allowed_routers: decoded.routers.clone(),
                     };
                     (identity, keyfile, decoded)
@@ -502,7 +504,7 @@ pub async fn simulate_node(
             let identity = Identity {
                 name: name.clone(),
                 networking_key: pubkey,
-                ws_routing: None,
+                ws_routing: Some(("127.0.0.1".to_string(), node_port)),
                 allowed_routers: vec![],
             };
 
