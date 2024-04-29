@@ -26,11 +26,14 @@ simulation-mode = []
 
 [dependencies]
 aes-gcm = "0.10.3"
+alloy-contract = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
+alloy-consensus = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
 alloy-pubsub = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
 alloy-rpc-types = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
 alloy-rpc-client = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4", features = ["ws"]}
 alloy-transport-ws = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
 alloy-providers = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
+alloy-network = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
 alloy-primitives = "0.6.2"
 alloy-sol-macro = "0.6.2"
 alloy-sol-types = "0.6.2"
@@ -88,3 +91,4 @@ wasi-common = "19.0.1"
 wasmtime = "19.0.1"
 wasmtime-wasi = "19.0.1"
 zip = "1.1.1"
+sha3 = "0.10.8"
