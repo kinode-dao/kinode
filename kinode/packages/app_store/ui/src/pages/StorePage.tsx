@@ -8,12 +8,13 @@ import SearchHeader from "../components/SearchHeader";
 import { PageProps } from "../types/Page";
 import { appId } from "../utils/app";
 import classNames from 'classnames';
+import { FaArrowRotateRight } from "react-icons/fa6";
 
 interface StorePageProps extends PageProps { }
 
 export default function StorePage() {
   // eslint-disable-line
-  const { listedApps, getListedApps } = useAppsStore();
+  const { listedApps, getListedApps, rebuildIndex } = useAppsStore();
 
   const [resultsSort, setResultsSort] = useState<string>("Recently published");
 
@@ -108,11 +109,28 @@ export default function StorePage() {
     [listedApps]
   );
 
+  const tryRebuildIndex = useCallback(async () => {
+    try {
+      await rebuildIndex();
+      alert("Index rebuilt successfully.");
+      await getListedApps();
+    } catch (error) {
+      console.error(error);
+    }
+  }, [rebuildIndex]);
+
   return (
     <div className="max-w-[900px] w-full">
       <SearchHeader value={searchQuery} onChange={searchApps} />
       <div className="flex justify-between items-center my-2 mx-0">
         <h4>New</h4>
+        <button
+          className="flex flex-col c mr-auto ml-1 icon"
+          onClick={tryRebuildIndex}
+          title="Rebuild index"
+        >
+          <FaArrowRotateRight />
+        </button>
 
         <select
           value={resultsSort}
