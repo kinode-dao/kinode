@@ -115,6 +115,7 @@ fn init(our: Address) {
         "/apps/:id/caps",
         "/apps/:id/mirror",
         "/apps/:id/auto-update",
+        "/apps/rebuild-index",
     ] {
         bind_http_path(path, true, false).expect("failed to bind http path");
     }
@@ -289,7 +290,13 @@ fn handle_message(
                     return Err(anyhow::anyhow!("http_server from non-local node"));
                 }
                 if let HttpServerRequest::Http(req) = incoming {
-                    http_api::handle_http_request(our, &mut state, requested_packages, &req)?;
+                    http_api::handle_http_request(
+                        our,
+                        &mut state,
+                        eth_provider,
+                        requested_packages,
+                        &req,
+                    )?;
                 }
             }
         },
@@ -436,27 +443,33 @@ fn handle_local_request(
             true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
             false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
         },
-        LocalRequest::RebuildIndex => {
-            *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
-            // kill our old subscription and build a new one.
-            eth_provider
-                .unsubscribe(1)
-                .expect("app_store: failed to unsub from eth events!");
-
-            let filter = eth::Filter::new()
-                .address(eth::Address::from_str(&state.contract_address).unwrap())
-                .from_block(state.last_saved_block - 1)
-                .events(EVENTS);
-
-            for log in fetch_logs(&eth_provider, &filter) {
-                if let Err(e) = state.ingest_listings_contract_event(our, log) {
-                    println!("error ingesting log: {e:?}");
-                };
-            }
-            subscribe_to_logs(&eth_provider, filter);
-            LocalResponse::RebuiltIndex
-        }
+        LocalRequest::RebuildIndex => rebuild_index(our, state, eth_provider),
     }
+}
+
+pub fn rebuild_index(
+    our: &Address,
+    state: &mut State,
+    eth_provider: &eth::Provider,
+) -> LocalResponse {
+    *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
+    // kill our old subscription and build a new one.
+    eth_provider
+        .unsubscribe(1)
+        .expect("app_store: failed to unsub from eth events!");
+
+    let filter = eth::Filter::new()
+        .address(eth::Address::from_str(&state.contract_address).unwrap())
+        .from_block(state.last_saved_block - 1)
+        .events(EVENTS);
+
+    for log in fetch_logs(&eth_provider, &filter) {
+        if let Err(e) = state.ingest_listings_contract_event(our, log) {
+            println!("error ingesting log: {e:?}");
+        };
+    }
+    subscribe_to_logs(&eth_provider, filter);
+    LocalResponse::RebuiltIndex
 }
 
 pub fn start_download(
