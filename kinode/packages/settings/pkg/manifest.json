@@ -5,12 +5,17 @@
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [
+            "eth:distro:sys",
             "homepage:homepage:sys",
             "http_server:distro:sys",
             "net:distro:sys",
             "vfs:distro:sys"
         ],
-        "grant_capabilities": [],
+        "grant_capabilities": [
+            "eth:distro:sys",
+            "http_server:distro:sys",
+            "net:distro:sys"
+        ],
         "public": false
     }
 ]

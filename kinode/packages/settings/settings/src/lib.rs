@@ -62,6 +62,7 @@ impl SettingsState {
     /// - get ETH RPC access settings from eth:distro:sys
     /// - get running processes from kernel:distro:sys
     fn fetch(&mut self) -> anyhow::Result<()> {
+        // identity
         let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
             .body(rmp_serde::to_vec(&net::NetAction::GetDiagnostics).unwrap())
             .send_and_await_response(5)
@@ -72,6 +73,31 @@ impl SettingsState {
             return Err(anyhow::anyhow!("got malformed response from net"));
         };
         self.identity = Some(identity);
+        // eth rpc providers
+        let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "eth", "distro", "sys"))
+            .body(serde_json::to_vec(&eth::EthConfigAction::GetProviders).unwrap())
+            .send_and_await_response(5)
+        else {
+            return Err(anyhow::anyhow!("failed to get providers from eth"));
+        };
+        let Ok(eth::EthConfigResponse::Providers(providers)) = serde_json::from_slice(&body) else {
+            return Err(anyhow::anyhow!("got malformed response from eth"));
+        };
+        self.eth_rpc_providers = Some(providers);
+        // eth rpc access settings
+        let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "eth", "distro", "sys"))
+            .body(serde_json::to_vec(&eth::EthConfigAction::GetAccessSettings).unwrap())
+            .send_and_await_response(5)
+        else {
+            return Err(anyhow::anyhow!("failed to get access settings from eth"));
+        };
+        let Ok(eth::EthConfigResponse::AccessSettings(access_settings)) =
+            serde_json::from_slice(&body)
+        else {
+            return Err(anyhow::anyhow!("got malformed response from eth"));
+        };
+        self.eth_rpc_access_settings = Some(access_settings);
+        // TODO: running processes
         Ok(())
     }
 }
@@ -107,6 +133,12 @@ fn initialize(our: Address) {
 
     // Grab our state, then enter the main event loop.
     let mut state: SettingsState = SettingsState::new(our);
+    match state.fetch() {
+        Ok(()) => {}
+        Err(e) => {
+            println!("failed to fetch initial state: {e}");
+        }
+    }
     main_loop(&mut state);
 }
 
