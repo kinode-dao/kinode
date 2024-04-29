@@ -86,7 +86,7 @@ pub async fn terminal(
  networking public key: {}
                     "#,
                 our.name,
-                if our.ws_routing.is_some() {
+                if our.is_direct() {
                     "direct"
                 } else {
                     "indirect"
@@ -117,7 +117,7 @@ pub async fn terminal(
  net pubkey: {}
                     "#,
                 our.name,
-                if our.ws_routing.is_some() {
+                if our.is_direct() {
                     "direct"
                 } else {
                     "indirect"

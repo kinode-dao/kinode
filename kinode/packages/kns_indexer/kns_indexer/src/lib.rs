@@ -1,7 +1,7 @@
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message, call_init, eth, get_typed_state, println, set_state, Address, Message, Request,
-    Response,
+    await_message, call_init, eth, get_typed_state, net::KnsUpdate, println, set_state, Address,
+    Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{
@@ -64,27 +64,6 @@ impl TryInto<Vec<u8>> for NetAction {
     type Error = anyhow::Error;
     fn try_into(self) -> Result<Vec<u8>, Self::Error> {
         Ok(rmp_serde::to_vec(&self)?)
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct KnsUpdate {
-    pub name: String, // actual username / domain name
-    pub owner: String,
-    pub node: String, // hex namehash of node
-    pub public_key: String,
-    pub ip: String,
-    pub port: u16,
-    pub routers: Vec<String>,
-}
-
-impl KnsUpdate {
-    pub fn new(name: &String, node: &String) -> Self {
-        Self {
-            name: name.clone(),
-            node: node.clone(),
-            ..Default::default()
-        }
     }
 }
 
@@ -366,7 +345,15 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     let node = state
         .nodes
         .entry(name.to_string())
-        .or_insert_with(|| KnsUpdate::new(name, &node_id.to_string()));
+        .or_insert_with(|| KnsUpdate {
+            name: name.to_string(),
+            owner: "".to_string(),
+            node: node_id.to_string(),
+            public_key: "".to_string(),
+            ip: "".to_string(),
+            port: 0,
+            routers: vec![],
+        });
 
     let mut send = true;
 

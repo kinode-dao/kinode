@@ -820,8 +820,73 @@ pub struct LoginAndResetInfo {
 pub struct Identity {
     pub name: NodeId,
     pub networking_key: String,
-    pub ws_routing: Option<(String, u16)>,
-    pub allowed_routers: Vec<NodeId>,
+    pub routing: NodeRouting,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum NodeRouting {
+    Routers(Vec<NodeId>),
+    Direct {
+        ip: String,
+        ws_port: u16,
+        tcp_port: u16,
+    },
+    /// currently only used for initial registration...
+    Both {
+        ip: String,
+        ws_port: u16,
+        tcp_port: u16,
+        routers: Vec<NodeId>,
+    },
+}
+
+impl Identity {
+    pub fn is_direct(&self) -> bool {
+        match &self.routing {
+            NodeRouting::Direct { .. } => true,
+            _ => false,
+        }
+    }
+    pub fn ws_routing(&self) -> Option<(&str, &u16)> {
+        match &self.routing {
+            NodeRouting::Routers(_) => None,
+            NodeRouting::Direct { ip, ws_port, .. } => Some((ip, ws_port)),
+            NodeRouting::Both { ip, ws_port, .. } => Some((ip, ws_port)),
+        }
+    }
+    pub fn routers(&self) -> Option<&Vec<NodeId>> {
+        match &self.routing {
+            NodeRouting::Routers(routers) => Some(routers),
+            NodeRouting::Direct { .. } => None,
+            NodeRouting::Both { routers, .. } => Some(routers),
+        }
+    }
+    pub fn both_to_direct(&mut self) {
+        if let NodeRouting::Both {
+            ip,
+            ws_port,
+            tcp_port,
+            routers: _,
+        } = self.routing.clone()
+        {
+            self.routing = NodeRouting::Direct {
+                ip,
+                ws_port,
+                tcp_port,
+            };
+        }
+    }
+    pub fn both_to_routers(&mut self) {
+        if let NodeRouting::Both {
+            ip: _,
+            ws_port: _,
+            tcp_port: _,
+            routers,
+        } = self.routing.clone()
+        {
+            self.routing = NodeRouting::Routers(routers);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1589,7 +1654,13 @@ pub struct KnsUpdate {
     pub owner: String,
     pub node: String, // hex namehash of node
     pub public_key: String,
-    pub ip: String,
-    pub port: u16,
+    pub ips: Vec<String>,
+    pub ports: HashMap<String, u16>,
     pub routers: Vec<String>,
+}
+
+impl KnsUpdate {
+    pub fn get_protocol_port(&self, protocol: &str) -> u16 {
+        self.ports.get(protocol).cloned().unwrap_or(0)
+    }
 }
