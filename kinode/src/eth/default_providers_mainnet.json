@@ -3,7 +3,7 @@
         "chain_id": 31337,
         "trusted": true,
         "provider": {
-            "RpcUrl": "wss://localhost:8545"
+            "RpcUrl": "ws://localhost:8545"
         }
     },
     {

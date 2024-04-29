@@ -18,7 +18,6 @@ wit_bindgen::generate!({
 // perhaps a constant in process_lib?
 const KNS_OPTIMISM_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
 const KNS_LOCAL_ADDRESS: &'static str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
-const KNS_FIRST_BLOCK: u64 = 114_923_786;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -123,6 +122,11 @@ fn init(our: Address) {
     let (chain_id, contract_address) = (10, KNS_OPTIMISM_ADDRESS.to_string());
     println!("indexing on contract address {}", contract_address);
 
+    #[cfg(feature = "simulation-mode")]
+    let kns_first_block: u64 = 1;
+    #[cfg(not(feature = "simulation-mode"))]
+    let kns_first_block: u64 = 114_923_786;
+
     // if we have state, load it in
     let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
         Some(s) => {
@@ -134,7 +138,7 @@ fn init(our: Address) {
                     contract_address,
                     names: HashMap::new(),
                     nodes: HashMap::new(),
-                    block: KNS_FIRST_BLOCK,
+                    block: kns_first_block,
                 }
             } else {
                 println!("loading in {} persisted PKI entries", s.nodes.len());
@@ -146,7 +150,7 @@ fn init(our: Address) {
             contract_address: contract_address.clone(),
             names: HashMap::new(),
             nodes: HashMap::new(),
-            block: KNS_FIRST_BLOCK,
+            block: kns_first_block,
         },
     };
 
@@ -183,6 +187,11 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // if they do time out, we try them again
     let eth_provider = eth::Provider::new(state.chain_id, 60);
 
+    println!(
+        "subscribing, state.block: {}, chain_id: {}",
+        state.block, state.chain_id
+    );
+
     // if block in state is < current_block, get logs from that part.
     if state.block < eth_provider.get_block_number().unwrap_or(u64::MAX) {
         loop {
@@ -198,7 +207,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     }
                     break;
                 }
-                Err(_) => {
+                Err(e) => {
+                    println!("got some kind of error: {:?}", e);
                     println!("failed to fetch logs! trying again in 5s...");
                     std::thread::sleep(std::time::Duration::from_secs(5));
                     continue;

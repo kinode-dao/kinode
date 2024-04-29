@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 mod eth;
+mod fakenet;
 mod http;
 mod kernel;
 mod keygen;
@@ -136,6 +137,8 @@ async fn main() {
         fake_node_name.cloned(),
         password.cloned(),
         home_directory_path,
+        ws_networking_port.cloned(),
+        http_server_port,
     )
     .await;
     #[cfg(not(feature = "simulation-mode"))]
@@ -450,11 +453,13 @@ async fn setup_ws_networking(ws_networking_port: Option<u16>) -> (tokio::net::Tc
     }
 }
 
-/// TODO: writeup.
+/// On simulation mode, we either boot from existing keys, or generate and post keys to chain.
 pub async fn simulate_node(
     fake_node_name: Option<String>,
     password: Option<String>,
     home_directory_path: &str,
+    router_port: Option<u16>,
+    node_port: u16,
 ) -> (Identity, Vec<u8>, Keyfile) {
     match fake_node_name {
         None => {
@@ -474,7 +479,7 @@ pub async fn simulate_node(
                             "0x{}",
                             hex::encode(decoded.networking_keypair.public_key().as_ref())
                         ),
-                        ws_routing: None, // TODO: Define WebSocket routing logic
+                        ws_routing: None,
                         allowed_routers: decoded.routers.clone(),
                     };
                     (identity, keyfile, decoded)
@@ -487,6 +492,12 @@ pub async fn simulate_node(
             let seed = SystemRandom::new();
             let mut jwt_secret = [0u8; 32];
             ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
+
+            let router_port = router_port.unwrap_or(8545);
+
+            fakenet::register_local(&name, node_port, &pubkey, router_port)
+                .await
+                .unwrap();
 
             let identity = Identity {
                 name: name.clone(),
