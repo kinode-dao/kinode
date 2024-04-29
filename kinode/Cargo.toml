@@ -25,7 +25,7 @@ zip = "0.6"
 simulation-mode = []
 
 [dependencies]
-aes-gcm = "0.10.2"
+aes-gcm = "0.10.3"
 alloy-pubsub = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
 alloy-rpc-types = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
 alloy-rpc-client = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4", features = ["ws"]}
@@ -76,7 +76,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_urlencoded = "0.7"
 sha2 = "0.10"
-snow = { version = "0.9.3", features = ["ring-resolver"] }
+snow = { version = "0.9.5", features = ["ring-resolver"] }
 static_dir = "0.2.0"
 thiserror = "1.0"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "signal", "sync"] }
