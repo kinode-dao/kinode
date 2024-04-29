@@ -3,55 +3,77 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 extern crate base64;
 
-const ICON: &str = ""; // include_str!("icon");
+const ICON: &str = include_str!("icon");
 
 #[derive(Debug, Serialize, Deserialize)]
 enum SettingsRequest {}
 
+type SettingsResponse = Result<(), SettingsError>;
+
+#[derive(Debug, Serialize, Deserialize)]
+enum SettingsError {
+    MalformedRequest,
+}
+
+/// never gets persisted
 #[derive(Debug, Serialize, Deserialize)]
 struct SettingsState {
-    pub settings: HashMap<String, String>,
-    pub clients: HashSet<u32>, // doesn't get persisted
+    pub our: Address,
+    pub ws_clients: HashSet<u32>,
+    pub identity: Option<net::Identity>,
+    pub eth_rpc_providers: Option<eth::SavedConfigs>,
+    pub eth_rpc_access_settings: Option<eth::AccessSettings>,
 }
 
-fn save_state(state: &SettingsState) {
-    set_state(&bincode::serialize(&state.settings).unwrap());
-}
-
-fn load_state() -> SettingsState {
-    match get_typed_state(|bytes| Ok(bincode::deserialize::<HashMap<String, String>>(bytes)?)) {
-        Some(settings) => SettingsState {
-            settings,
-            clients: HashSet::new(),
-        },
-        None => SettingsState {
-            settings: HashMap::new(),
-            clients: HashSet::new(),
-        },
+impl SettingsState {
+    fn new(our: Address) -> Self {
+        Self {
+            our,
+            ws_clients: HashSet::new(),
+            identity: None,
+            eth_rpc_providers: None,
+            eth_rpc_access_settings: None,
+        }
     }
-}
 
-fn send_ws_update(
-    our: &Address,
-    open_channels: &HashSet<u32>,
-    update: Vec<u8>,
-) -> anyhow::Result<()> {
-    for channel in open_channels {
-        Request::new()
-            .target((&our.node, "http_server", "distro", "sys"))
-            .body(serde_json::to_vec(
-                &http::HttpServerAction::WebSocketPush {
-                    channel_id: *channel,
-                    message_type: http::WsMessageType::Binary,
-                },
-            )?)
-            .blob(LazyLoadBlob {
-                mime: Some("application/json".to_string()),
-                bytes: update.clone(),
-            })
-            .send()?;
+    fn ws_update(&mut self, update: Vec<u8>) {
+        for channel in &self.ws_clients {
+            Request::new()
+                .target((&self.our.node, "http_server", "distro", "sys"))
+                .body(
+                    serde_json::to_vec(&http::HttpServerAction::WebSocketPush {
+                        channel_id: *channel,
+                        message_type: http::WsMessageType::Binary,
+                    })
+                    .unwrap(),
+                )
+                .blob(LazyLoadBlob {
+                    mime: Some("application/json".to_string()),
+                    bytes: update.clone(),
+                })
+                .send()
+                .unwrap();
+        }
     }
-    Ok(())
+
+    /// get data that the settings page presents to user
+    /// - get Identity struct from net:distro:sys
+    /// - get ETH RPC providers from eth:distro:sys
+    /// - get ETH RPC access settings from eth:distro:sys
+    /// - get running processes from kernel:distro:sys
+    fn fetch(&mut self) -> anyhow::Result<()> {
+        let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
+            .body(rmp_serde::to_vec(&net::NetAction::GetDiagnostics).unwrap())
+            .send_and_await_response(5)
+        else {
+            return Err(anyhow::anyhow!("failed to get identity from net"));
+        };
+        let Ok(net::NetResponse::Peer(Some(identity))) = rmp_serde::from_slice(&body) else {
+            return Err(anyhow::anyhow!("got malformed response from net"));
+        };
+        self.identity = Some(identity);
+        Ok(())
+    }
 }
 
 wit_bindgen::generate!({
@@ -84,57 +106,64 @@ fn initialize(our: Address) {
     http::bind_ws_path("/", true, false).unwrap();
 
     // Grab our state, then enter the main event loop.
-    let mut state: SettingsState = load_state();
-    main_loop(&our, &mut state);
+    let mut state: SettingsState = SettingsState::new(our);
+    main_loop(&mut state);
 }
 
-fn main_loop(our: &Address, state: &mut SettingsState) {
+fn main_loop(state: &mut SettingsState) {
     loop {
         match await_message() {
             Err(send_error) => {
                 println!("got send error: {send_error:?}");
                 continue;
             }
-            Ok(message) => match handle_request(&our, &message, state) {
-                Ok(()) => continue,
-                Err(e) => println!("error handling request: {:?}", e),
-            },
+            Ok(Message::Request {
+                source,
+                body,
+                expects_response,
+                ..
+            }) => {
+                let response = handle_request(&source, &body, state);
+                if expects_response.is_some() {
+                    Response::new()
+                        .body(serde_json::to_vec(&response).unwrap())
+                        .send()
+                        .unwrap();
+                }
+            }
+            _ => continue, // ignore responses
         }
     }
 }
 
-fn handle_request(
-    our: &Address,
-    message: &Message,
-    state: &mut SettingsState,
-) -> anyhow::Result<()> {
-    if !message.is_request() {
-        return Ok(());
-    }
+fn handle_request(source: &Address, body: &[u8], state: &mut SettingsState) -> SettingsResponse {
     // source node is ALWAYS ourselves since networking is disabled
-    if message.source().process == "http_server:distro:sys" {
+    if source.process == "http_server:distro:sys" {
         // receive HTTP requests and websocket connection messages from our server
-        match serde_json::from_slice::<http::HttpServerRequest>(message.body())? {
+        match serde_json::from_slice::<http::HttpServerRequest>(body)
+            .map_err(|_| SettingsError::MalformedRequest)?
+        {
             http::HttpServerRequest::Http(ref incoming) => {
-                match handle_http_request(our, state, incoming) {
+                match handle_http_request(state, incoming) {
                     Ok(()) => Ok(()),
                     Err(e) => {
+                        println!("error handling HTTP request: {e}");
                         http::send_response(
-                            http::StatusCode::SERVICE_UNAVAILABLE,
+                            http::StatusCode::INTERNAL_SERVER_ERROR,
                             None,
                             "Service Unavailable".to_string().as_bytes().to_vec(),
                         );
-                        Err(anyhow::anyhow!("error handling http request: {e:?}"))
+                        Ok(())
                     }
                 }
             }
             http::HttpServerRequest::WebSocketOpen { channel_id, .. } => {
-                state.clients.insert(channel_id);
+                state.ws_clients.insert(channel_id);
                 Ok(())
             }
             http::HttpServerRequest::WebSocketClose(channel_id) => {
                 // client frontend closed a websocket
-                state.clients.remove(&channel_id);
+                state.ws_clients.remove(&channel_id);
                 Ok(())
             }
             http::HttpServerRequest::WebSocketPush { .. } => {
@@ -144,34 +173,17 @@ fn handle_request(
             }
         }
     } else {
-        let settings_request = serde_json::from_slice::<SettingsRequest>(message.body())?;
-        handle_settings_request(our, state, &settings_request)
+        let settings_request = serde_json::from_slice::<SettingsRequest>(body)
+            .map_err(|_| SettingsError::MalformedRequest)?;
+        handle_settings_request(state, &settings_request)
     }
-}
-
-/// Handle chess protocol messages from other nodes.
-fn handle_settings_request(
-    our: &Address,
-    state: &mut SettingsState,
-    request: &SettingsRequest,
-) -> anyhow::Result<()> {
-    todo!()
 }
 
 /// Handle HTTP requests from our own frontend.
 fn handle_http_request(
-    our: &Address,
     state: &mut SettingsState,
     http_request: &http::IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    if http_request.bound_path(Some(&our.process.to_string())) != "/games" {
-        http::send_response(
-            http::StatusCode::NOT_FOUND,
-            None,
-            "Not Found".to_string().as_bytes().to_vec(),
-        );
-        return Ok(());
-    }
     match http_request.method()?.as_str() {
         "GET" => Ok(http::send_response(
             http::StatusCode::OK,
@@ -179,7 +191,7 @@ fn handle_http_request(
                 String::from("Content-Type"),
                 String::from("application/json"),
             )])),
-            serde_json::to_vec(&state.settings)?,
+            serde_json::to_vec(&state)?,
         )),
         "POST" => {
             let Some(blob) = get_blob() else {
@@ -211,4 +223,11 @@ fn handle_http_request(
             vec![],
         )),
     }
+}
+
+fn handle_settings_request(
+    state: &mut SettingsState,
+    request: &SettingsRequest,
+) -> SettingsResponse {
+    todo!()
 }
