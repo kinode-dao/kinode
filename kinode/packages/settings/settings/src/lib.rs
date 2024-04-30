@@ -6,13 +6,26 @@ extern crate base64;
 const ICON: &str = include_str!("icon");
 
 #[derive(Debug, Serialize, Deserialize)]
-enum SettingsRequest {}
+enum SettingsRequest {
+    Hi {
+        node: NodeId,
+        content: String,
+        timeout: u64,
+    },
+    EthConfig(eth::EthConfigAction),
+    Shutdown,
+    KillProcess(ProcessId),
+}
 
 type SettingsResponse = Result<(), SettingsError>;
 
 #[derive(Debug, Serialize, Deserialize)]
 enum SettingsError {
+    HiTimeout,
+    HiOffline,
+    KernelNonresponsive,
     MalformedRequest,
+    StateFetchFailed,
 }
 
 /// never gets persisted
@@ -36,23 +49,16 @@ impl SettingsState {
         }
     }
 
-    fn ws_update(&mut self, update: Vec<u8>) {
+    fn ws_update(&self) {
         for channel in &self.ws_clients {
-            Request::new()
-                .target((&self.our.node, "http_server", "distro", "sys"))
-                .body(
-                    serde_json::to_vec(&http::HttpServerAction::WebSocketPush {
-                        channel_id: *channel,
-                        message_type: http::WsMessageType::Binary,
-                    })
-                    .unwrap(),
-                )
-                .blob(LazyLoadBlob {
+            http::send_ws_push(
+                *channel,
+                http::WsMessageType::Text,
+                LazyLoadBlob {
                     mime: Some("application/json".to_string()),
-                    bytes: update.clone(),
-                })
-                .send()
-                .unwrap();
+                    bytes: serde_json::to_vec(self).unwrap(),
+                },
+            );
         }
     }
 
@@ -64,7 +70,7 @@ impl SettingsState {
     fn fetch(&mut self) -> anyhow::Result<()> {
         // identity
         let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
-            .body(rmp_serde::to_vec(&net::NetAction::GetDiagnostics).unwrap())
+            .body(rmp_serde::to_vec(&net::NetAction::GetPeer(self.our.node.clone())).unwrap())
             .send_and_await_response(5)
         else {
             return Err(anyhow::anyhow!("failed to get identity from net"));
@@ -73,6 +79,7 @@ impl SettingsState {
             return Err(anyhow::anyhow!("got malformed response from net"));
         };
         self.identity = Some(identity);
+
         // eth rpc providers
         let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "eth", "distro", "sys"))
             .body(serde_json::to_vec(&eth::EthConfigAction::GetProviders).unwrap())
@@ -84,6 +91,7 @@ impl SettingsState {
             return Err(anyhow::anyhow!("got malformed response from eth"));
         };
         self.eth_rpc_providers = Some(providers);
+
         // eth rpc access settings
         let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "eth", "distro", "sys"))
             .body(serde_json::to_vec(&eth::EthConfigAction::GetAccessSettings).unwrap())
@@ -97,6 +105,7 @@ impl SettingsState {
             return Err(anyhow::anyhow!("got malformed response from eth"));
         };
         self.eth_rpc_access_settings = Some(access_settings);
+
         // TODO: running processes
         Ok(())
     }
@@ -207,7 +216,7 @@ fn handle_request(source: &Address, body: &[u8], state: &mut SettingsState) -> S
     } else {
         let settings_request = serde_json::from_slice::<SettingsRequest>(body)
             .map_err(|_| SettingsError::MalformedRequest)?;
-        handle_settings_request(state, &settings_request)
+        handle_settings_request(state, settings_request)
     }
 }
 
@@ -233,20 +242,14 @@ fn handle_http_request(
                     vec![],
                 ));
             };
-            let blob_json = serde_json::from_slice::<serde_json::Value>(&blob.bytes)?;
-
-            todo!()
-        }
-        "PUT" => {
-            let Some(blob) = get_blob() else {
-                return Ok(http::send_response(
-                    http::StatusCode::BAD_REQUEST,
-                    None,
-                    vec![],
-                ));
-            };
-            let blob_json = serde_json::from_slice::<serde_json::Value>(&blob.bytes)?;
-            todo!()
+            let request = serde_json::from_slice::<SettingsRequest>(&blob.bytes)?;
+            let response = handle_settings_request(state, request);
+            state.ws_update();
+            Ok(http::send_response(
+                http::StatusCode::OK,
+                None,
+                serde_json::to_vec(&response)?,
+            ))
         }
         // Any other method will be rejected.
         _ => Ok(http::send_response(
@@ -259,7 +262,73 @@ fn handle_http_request(
 
 fn handle_settings_request(
     state: &mut SettingsState,
-    request: &SettingsRequest,
+    request: SettingsRequest,
 ) -> SettingsResponse {
-    todo!()
+    match request {
+        SettingsRequest::Hi {
+            node,
+            content,
+            timeout,
+        } => {
+            if let Err(SendError { kind, .. }) = Request::to((&node, "net", "distro", "sys"))
+                .body(content.into_bytes())
+                .send_and_await_response(timeout)
+                .unwrap()
+            {
+                match kind {
+                    SendErrorKind::Timeout => {
+                        println!("message to {node} timed out");
+                        return Err(SettingsError::HiTimeout);
+                    }
+                    SendErrorKind::Offline => {
+                        println!("{node} is offline or does not exist");
+                        return Err(SettingsError::HiOffline);
+                    }
+                }
+            }
+        }
+        SettingsRequest::EthConfig(action) => {
+            match Request::to(("our", "eth", "distro", "sys"))
+                .body(serde_json::to_vec(&action).unwrap())
+                .send_and_await_response(30)
+                .unwrap()
+            {
+                Ok(msg) => match serde_json::from_slice::<eth::EthConfigResponse>(msg.body()) {
+                    Ok(eth::EthConfigResponse::PermissionDenied) => {
+                        return Err(SettingsError::KernelNonresponsive);
+                    }
+                    Ok(other) => {
+                        println!("eth config action succeeded: {other:?}");
+                    }
+                    Err(_) => {
+                        return Err(SettingsError::KernelNonresponsive);
+                    }
+                },
+                Err(_) => {
+                    return Err(SettingsError::KernelNonresponsive);
+                }
+            }
+        }
+        SettingsRequest::Shutdown => {
+            // shutdown the node IMMEDIATELY
+            Request::to(("our", "kernel", "distro", "sys"))
+                .body(serde_json::to_vec(&kernel_types::KernelCommand::Shutdown).unwrap())
+                .send()
+                .unwrap();
+        }
+        SettingsRequest::KillProcess(pid) => {
+            // kill a process
+            if let Err(_) = Request::to(("our", "kernel", "distro", "sys"))
+                .body(serde_json::to_vec(&kernel_types::KernelCommand::KillProcess(pid)).unwrap())
+                .send_and_await_response(30)
+                .unwrap()
+            {
+                return SettingsResponse::Err(SettingsError::KernelNonresponsive);
+            }
+        }
+    }
+
+    state.fetch().map_err(|_| SettingsError::StateFetchFailed)?;
+    state.ws_update();
+    SettingsResponse::Ok(())
 }

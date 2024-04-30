@@ -5,10 +5,10 @@ use kinode_process_lib::{
         bind_http_path, bind_http_static_path, send_response, HttpServerError, HttpServerRequest,
         StatusCode,
     },
-    println, Address, Message, ProcessId,
+    println, Address, Message,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// The request format to add or remove an app from the homepage. You must have messaging
 /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
@@ -48,7 +48,7 @@ const APP_TEMPLATE: &str = r#"
 </a>"#;
 
 /// bind to root path on http_server (we have special dispensation to do so!)
-fn bind_index(our: &str, apps: &HashMap<ProcessId, String>) {
+fn bind_index(our: &str, apps: &BTreeMap<String, String>) {
     bind_http_static_path(
         "/",
         true,
@@ -158,8 +158,8 @@ fn bind_index(our: &str, apps: &HashMap<ProcessId, String>) {
 
 call_init!(init);
 fn init(our: Address) {
-    let mut apps: HashMap<ProcessId, String> = HashMap::new();
-    let mut app_data: HashMap<ProcessId, HomepageApp> = HashMap::new();
+    let mut apps: BTreeMap<String, String> = BTreeMap::new();
+    let mut app_data: BTreeMap<String, HomepageApp> = BTreeMap::new();
 
     // static_serve_dir(&our, "index.html", true, false, vec!["/"]);
     bind_index(&our.node, &apps);
@@ -206,7 +206,7 @@ fn init(our: Address) {
                 match request {
                     HomepageRequest::Add { label, icon, path } => {
                         app_data.insert(
-                            message.source().process.clone(),
+                            message.source().process.to_string(),
                             HomepageApp {
                                 package_name: message.source().clone().package().to_string(),
                                 path: path.clone(),
@@ -215,7 +215,7 @@ fn init(our: Address) {
                             },
                         );
                         apps.insert(
-                            message.source().process.clone(),
+                            message.source().process.to_string(),
                             APP_TEMPLATE
                                 .replace(
                                     "${package_name}",
@@ -239,7 +239,7 @@ fn init(our: Address) {
                         bind_index(&our.node, &apps);
                     }
                     HomepageRequest::Remove => {
-                        apps.remove(&message.source().process);
+                        apps.remove(&message.source().process.to_string());
                         bind_index(&our.node, &apps);
                     }
                 }
@@ -252,7 +252,7 @@ fn init(our: Address) {
                         if path == "/apps" {
                             send_response(
                                 StatusCode::OK,
-                                Some(HashMap::from([(
+                                Some(std::collections::HashMap::from([(
                                     "Content-Type".to_string(),
                                     "application/json".to_string(),
                                 )])),
@@ -267,7 +267,7 @@ fn init(our: Address) {
                         }
                         send_response(
                             StatusCode::OK,
-                            Some(HashMap::new()),
+                            Some(std::collections::HashMap::new()),
                             "hello".as_bytes().to_vec(),
                         );
                     }

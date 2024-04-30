@@ -6,6 +6,12 @@
         "request_networking": false,
         "request_capabilities": [
             "eth:distro:sys",
+            {
+                "process": "eth:distro:sys",
+                "params": {
+                    "root": true
+                }
+            },
             "homepage:homepage:sys",
             "http_server:distro:sys",
             "net:distro:sys",
