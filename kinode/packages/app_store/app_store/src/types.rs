@@ -95,13 +95,13 @@ pub struct State {
     /// we keep the full state of the package manager here, calculated from
     /// the listings contract logs. in the future, we'll offload this and
     /// only track a certain number of packages...
-    pub package_hashes: HashMap<PackageId, PackageHash>, // TODO migrate to sqlite db
-    pub listed_packages: HashMap<PackageHash, PackageListing>, // TODO migrate to sqlite db
+    pub package_hashes: HashMap<PackageId, PackageHash>,
+    pub listed_packages: HashMap<PackageHash, PackageListing>,
     /// we keep the full state of the packages we have downloaded here.
     /// in order to keep this synchronized with our filesystem, we will
     /// ingest apps on disk if we have to rebuild our state. this is also
     /// updated every time we download, create, or uninstall a package.
-    pub downloaded_packages: HashMap<PackageId, PackageState>, // TODO migrate to sqlite db
+    pub downloaded_packages: HashMap<PackageId, PackageState>,
 }
 
 impl State {
