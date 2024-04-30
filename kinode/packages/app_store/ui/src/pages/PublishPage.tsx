@@ -209,7 +209,11 @@ export default function PublishPage({
 
   return (
     <div className="max-w-[900px] w-full">
-      <SearchHeader hideSearch onBack={showMetadataForm ? () => setShowMetadataForm(false) : undefined} />
+      <SearchHeader
+        hideSearch
+        hidePublish
+        onBack={showMetadataForm ? () => setShowMetadataForm(false) : undefined}
+      />
       <div className="flex justify-between items-center my-2">
         <h4>Publish Package</h4>
         {Boolean(account) && <div className="card flex items-center">
