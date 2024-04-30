@@ -1,6 +1,6 @@
 use alloy_consensus::TxLegacy;
 use alloy_network::{Transaction, TxKind};
-use alloy_primitives::{Address, U256, B256};
+use alloy_primitives::{Address, B256, U256};
 use alloy_providers::provider::{Provider, TempProvider};
 use alloy_rpc_client::ClientBuilder;
 use alloy_rpc_types::request::{TransactionInput, TransactionRequest};
@@ -38,7 +38,7 @@ pub async fn register_local(
 
     let fqdn = dns_encode_fqdn(name);
     let namehash = encode_namehash(name);
-    // todo: find a better way? 
+    // todo: find a better way?
     let namehash_bint: B256 = namehash.into();
     let namehash_uint: U256 = namehash_bint.into();
 
@@ -61,14 +61,13 @@ pub async fn register_local(
     .abi_encode();
 
     let exists_call = ownerOfCall {
-        node: namehash_uint, 
+        node: namehash_uint,
     }
     .abi_encode();
 
     let exists_tx = TransactionRequest::default()
         .to(Some(dotdev))
         .input(TransactionInput::new(exists_call.into()));
-
 
     let exists = provider.call(exists_tx, None).await;
 
@@ -81,7 +80,7 @@ pub async fn register_local(
                 _data: vec![set_ip.into(), set_key.into()],
             }
             .abi_encode();
-            
+
             (register, dotdev)
         }
         Ok(_owner) => {
@@ -101,7 +100,8 @@ pub async fn register_local(
 
             let multicall = multicallCall {
                 data: vec![set_ip.abi_encode(), set_key.abi_encode()],
-            }.abi_encode();
+            }
+            .abi_encode();
 
             (multicall, kns)
         }
