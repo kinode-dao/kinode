@@ -1,5 +1,6 @@
 use crate::{DownloadResponse, PackageListing, PackageState, RequestedPackage, State};
 use kinode_process_lib::{
+    eth,
     http::{send_response, IncomingHttpRequest, Method, StatusCode},
     Address, NodeId, PackageId,
 };
@@ -23,13 +24,16 @@ use std::collections::HashMap;
 /// - stop mirroring a downloaded app: DELETE /apps/:id/mirror
 /// - start auto-updating a downloaded app: PUT /apps/:id/auto-update
 /// - stop auto-updating a downloaded app: DELETE /apps/:id/auto-update
+///
+/// - RebuildIndex: POST /apps/rebuild-index
 pub fn handle_http_request(
     our: &Address,
     state: &mut State,
+    eth_provider: &eth::Provider,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
     req: &IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    match serve_paths(our, state, requested_packages, req) {
+    match serve_paths(our, state, eth_provider, requested_packages, req) {
         Ok((status_code, _headers, body)) => send_response(
             status_code,
             Some(HashMap::from([(
@@ -97,6 +101,7 @@ fn gen_package_info(
 fn serve_paths(
     our: &Address,
     state: &mut State,
+    eth_provider: &eth::Provider,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
     req: &IncomingHttpRequest,
 ) -> anyhow::Result<(StatusCode, Option<HashMap<String, String>>, Vec<u8>)> {
@@ -417,6 +422,18 @@ fn serve_paths(
                     format!("Invalid method {method} for {bound_path}").into_bytes(),
                 )),
             }
+        }
+        // RebuildIndex: POST
+        "/apps/rebuild-index" => {
+            if method != Method::POST {
+                return Ok((
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    None,
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
+                ));
+            }
+            crate::rebuild_index(our, state, eth_provider);
+            Ok((StatusCode::OK, None, vec![]))
         }
         _ => Ok((
             StatusCode::NOT_FOUND,

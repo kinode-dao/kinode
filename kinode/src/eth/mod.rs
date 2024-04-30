@@ -470,10 +470,35 @@ async fn handle_eth_action(
         EthAction::UnsubscribeLogs(sub_id) => {
             let mut sub_map = state
                 .active_subscriptions
-                .entry(km.source)
+                .entry(km.source.clone())
                 .or_insert(HashMap::new());
             if let Some(sub) = sub_map.remove(&sub_id) {
                 sub.close(sub_id, state).await;
+                kernel_message(
+                    &state.our,
+                    km.id,
+                    km.rsvp.unwrap_or(km.source),
+                    None,
+                    false,
+                    None,
+                    EthResponse::Ok,
+                    &state.send_to_loop,
+                )
+                .await;
+            } else {
+                verbose_print(
+                    &state.print_tx,
+                    "eth: got unsubscribe but no matching subscription found",
+                )
+                .await;
+                error_message(
+                    &state.our,
+                    km.id,
+                    km.source,
+                    EthError::MalformedRequest,
+                    &state.send_to_loop,
+                )
+                .await;
             }
         }
         EthAction::Request { .. } => {
