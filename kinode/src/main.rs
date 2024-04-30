@@ -457,12 +457,15 @@ async fn main() {
     // if a runtime task exits, try to recover it,
     // unless it was terminal signaling a quit
     // or a SIG* was intercepted
-    let mut quit_msg: String = tokio::select! {
+    let quit_msg: String = tokio::select! {
         Some(Ok(res)) = tasks.join_next() => {
-            format!(
-                "uh oh, a kernel process crashed -- this should never happen: {:?}",
-                res
-            )
+            match res {
+                Ok(_) => "graceful exit".into(),
+                Err(e) => format!(
+                    "uh oh, a kernel process crashed -- this should never happen: {e:?}"
+                ),
+            }
+
         }
         quit = terminal::terminal(
             our.clone(),
@@ -476,38 +479,38 @@ async fn main() {
             verbose_mode,
         ) => {
             match quit {
-                Ok(_) => "graceful exit".into(),
+                Ok(_) => match kernel_message_sender
+                    .send(KernelMessage {
+                        id: rand::random(),
+                        source: Address {
+                            node: our.name.clone(),
+                            process: KERNEL_PROCESS_ID.clone(),
+                        },
+                        target: Address {
+                            node: our.name.clone(),
+                            process: KERNEL_PROCESS_ID.clone(),
+                        },
+                        rsvp: None,
+                        message: Message::Request(Request {
+                            inherit: false,
+                            expects_response: None,
+                            body: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
+                            metadata: None,
+                            capabilities: vec![],
+                        }),
+                        lazy_load_blob: None,
+                    })
+                    .await
+                {
+                    Ok(()) => "graceful exit".into(),
+                    Err(_) => {
+                        "failed to gracefully shut down kernel".into()
+                    }
+                },
                 Err(e) => e.to_string(),
             }
         }
     };
-
-    // gracefully abort all running processes in kernel
-    if let Err(_) = kernel_message_sender
-        .send(KernelMessage {
-            id: rand::random(),
-            source: Address {
-                node: our.name.clone(),
-                process: KERNEL_PROCESS_ID.clone(),
-            },
-            target: Address {
-                node: our.name.clone(),
-                process: KERNEL_PROCESS_ID.clone(),
-            },
-            rsvp: None,
-            message: Message::Request(Request {
-                inherit: false,
-                expects_response: None,
-                body: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
-                metadata: None,
-                capabilities: vec![],
-            }),
-            lazy_load_blob: None,
-        })
-        .await
-    {
-        quit_msg = "failed to gracefully shut down kernel".into();
-    }
 
     // abort all remaining tasks
     tasks.shutdown().await;

@@ -10,8 +10,64 @@
 </head>
 
 <body>
+    <h1>system diagnostics & settings</h1>
     <main>
-        <h1>system diagnostics & settings</h1>
+        <article id="node-info">
+            <p>node info</p>
+            <p id="node-name"></p>
+            <p id="net-key"></p>
+            <p id="ip-ports"></p>
+            <p id="routers"></p>
+            <button>reset networking key</button>
+            <button>adjust networking info</button>
+            <button id="shutdown">shut down node</button>
+        </article>
+
+        <article id="net-diagnostics">
+            <p>networking diagnostics</p>
+            <p id="diagnostics"></p>
+        </article>
+        <article id="pings">
+            <p>fetch PKI data</p>
+            <form id="get-peer-pki">
+                <input type="text" name="peer" placeholder="peer-name.os">
+                <button type="submit">get peer info</button>
+            </form>
+            <p id="peer-pki-response"></p>
+            <p>ping a node</p>
+            <form id="ping-peer">
+                <input type="text" name="peer" placeholder="peer-name.os">
+                <input type="text" name="content" placeholder="message">
+                <label><input type="number" name="timeout">timeout (seconds)</label>
+                <button type="submit">ping</button>
+            </form>
+            <p id="peer-ping-response"></p>
+        </article>
+
+        <article id="eth-rpc-providers">
+            <p>ETH RPC providers</p>
+            <ul id="providers"></ul>
+        </article>
+
+        <article id="eth-rpc-settings">
+            <p>ETH RPC settings</p>
+            <p id="public"></p>
+            <div>
+                <p>nodes allowed to connect:</p>
+                <ul id="allowed-nodes"></ul>
+            </div>
+            <div>
+                <p>nodes banned from connecting:</p>
+                <ul id="denied-nodes"></ul>
+            </div>
+        </article>
+
+        <article id="kernel">
+            <p>running processes:</p>
+            <p>(TODO)</p>
+            <ul></ul>
+        </article>
+
 
         <script src="/settings:settings:sys/script.js"></script>
     </main>

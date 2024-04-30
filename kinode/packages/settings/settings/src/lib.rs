@@ -12,12 +12,18 @@ enum SettingsRequest {
         content: String,
         timeout: u64,
     },
+    PeerId(NodeId),
     EthConfig(eth::EthConfigAction),
     Shutdown,
     KillProcess(ProcessId),
 }
 
-type SettingsResponse = Result<(), SettingsError>;
+type SettingsResponse = Result<Option<SettingsData>, SettingsError>;
+
+#[derive(Debug, Serialize, Deserialize)]
+enum SettingsData {
+    PeerId(net::Identity),
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 enum SettingsError {
@@ -34,6 +40,7 @@ struct SettingsState {
     pub our: Address,
     pub ws_clients: HashSet<u32>,
     pub identity: Option<net::Identity>,
+    pub diagnostics: Option<String>,
     pub eth_rpc_providers: Option<eth::SavedConfigs>,
     pub eth_rpc_access_settings: Option<eth::AccessSettings>,
 }
@@ -44,6 +51,7 @@ impl SettingsState {
             our,
             ws_clients: HashSet::new(),
             identity: None,
+            diagnostics: None,
             eth_rpc_providers: None,
             eth_rpc_access_settings: None,
         }
@@ -79,6 +87,19 @@ impl SettingsState {
             return Err(anyhow::anyhow!("got malformed response from net"));
         };
         self.identity = Some(identity);
+
+        // diagnostics string
+        let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
+            .body(rmp_serde::to_vec(&net::NetAction::GetDiagnostics).unwrap())
+            .send_and_await_response(5)
+        else {
+            return Err(anyhow::anyhow!("failed to get diagnostics from net"));
+        };
+        let Ok(net::NetResponse::Diagnostics(diagnostics_string)) = rmp_serde::from_slice(&body)
+        else {
+            return Err(anyhow::anyhow!("got malformed response from net"));
+        };
+        self.diagnostics = Some(diagnostics_string);
 
         // eth rpc providers
         let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "eth", "distro", "sys"))
@@ -164,6 +185,9 @@ fn main_loop(state: &mut SettingsState) {
                 expects_response,
                 ..
             }) => {
+                if source.node() != state.our.node {
+                    continue; // ignore messages from other nodes
+                }
                 let response = handle_request(&source, &body, state);
                 if expects_response.is_some() {
                     Response::new()
@@ -186,7 +210,7 @@ fn handle_request(source: &Address, body: &[u8], state: &mut SettingsState) -> S
         {
             http::HttpServerRequest::Http(ref incoming) => {
                 match handle_http_request(state, incoming) {
-                    Ok(()) => Ok(()),
+                    Ok(()) => Ok(None),
                     Err(e) => {
                         println!("error handling HTTP request: {e}");
                         http::send_response(
@@ -194,23 +218,23 @@ fn handle_request(source: &Address, body: &[u8], state: &mut SettingsState) -> S
                             None,
                             "Service Unavailable".to_string().as_bytes().to_vec(),
                         );
-                        Ok(())
+                        Ok(None)
                     }
                 }
             }
             http::HttpServerRequest::WebSocketOpen { channel_id, .. } => {
                 state.ws_clients.insert(channel_id);
-                Ok(())
+                Ok(None)
             }
             http::HttpServerRequest::WebSocketClose(channel_id) => {
                 // client frontend closed a websocket
                 state.ws_clients.remove(&channel_id);
-                Ok(())
+                Ok(None)
             }
             http::HttpServerRequest::WebSocketPush { .. } => {
                 // client frontend sent a websocket message
                 // we don't expect this! we only use websockets to push updates
-                Ok(())
+                Ok(None)
             }
         }
     } else {
@@ -248,7 +272,11 @@ fn handle_http_request(
             Ok(http::send_response(
                 http::StatusCode::OK,
                 None,
-                serde_json::to_vec(&response)?,
+                match response {
+                    Ok(Some(data)) => serde_json::to_vec(&data)?,
+                    Ok(None) => "null".as_bytes().to_vec(),
+                    Err(e) => serde_json::to_vec(&e)?,
+                },
             ))
         }
         // Any other method will be rejected.
@@ -285,6 +313,33 @@ fn handle_settings_request(
                         return Err(SettingsError::HiOffline);
                     }
                 }
+            } else {
+                return Ok(None);
+            }
+        }
+        SettingsRequest::PeerId(node) => {
+            // get peer info
+            match Request::to(("our", "net", "distro", "sys"))
+                .body(rmp_serde::to_vec(&net::NetAction::GetPeer(node)).unwrap())
+                .send_and_await_response(30)
+                .unwrap()
+            {
+                Ok(msg) => match rmp_serde::from_slice::<net::NetResponse>(msg.body()) {
+                    Ok(net::NetResponse::Peer(Some(peer))) => {
+                        println!("got peer info: {peer:?}");
+                        return Ok(Some(SettingsData::PeerId(peer)));
+                    }
+                    Ok(net::NetResponse::Peer(None)) => {
+                        println!("peer not found");
+                        return Ok(None);
+                    }
+                    _ => {
+                        return Err(SettingsError::KernelNonresponsive);
+                    }
+                },
+                Err(_) => {
+                    return Err(SettingsError::KernelNonresponsive);
+                }
             }
         }
         SettingsRequest::EthConfig(action) => {
@@ -310,7 +365,7 @@ fn handle_settings_request(
             }
         }
         SettingsRequest::Shutdown => {
-            // shutdown the node IMMEDIATELY
+            // shutdown the node IMMEDIATELY!
             Request::to(("our", "kernel", "distro", "sys"))
                 .body(serde_json::to_vec(&kernel_types::KernelCommand::Shutdown).unwrap())
                 .send()
@@ -330,5 +385,5 @@ fn handle_settings_request(
 
     state.fetch().map_err(|_| SettingsError::StateFetchFailed)?;
     state.ws_update();
-    SettingsResponse::Ok(())
+    SettingsResponse::Ok(None)
 }
