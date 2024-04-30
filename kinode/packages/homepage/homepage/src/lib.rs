@@ -85,7 +85,6 @@ fn init(our: Address) {
             if let Ok(request) = serde_json::from_slice::<HomepageRequest>(message.body()) {
                 match request {
                     HomepageRequest::Add { label, icon, path } => {
-                        println!("adding app {label} {path}");
                         app_data.insert(
                             message.source().process.clone(),
                             HomepageApp {
@@ -111,7 +110,6 @@ fn init(our: Address) {
                 match request {
                     HttpServerRequest::Http(incoming) => {
                         let path = incoming.bound_path(None);
-                        println!("on path: {}", path);
                         if path == "/apps" {
                             send_response(
                                 StatusCode::OK,
