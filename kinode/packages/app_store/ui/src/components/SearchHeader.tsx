@@ -10,6 +10,7 @@ import {
 
 import { MY_APPS_PATH } from "../constants/path";
 import classNames from "classnames";
+import { FaHome } from "react-icons/fa";
 
 interface SearchHeaderProps {
   value?: string;
@@ -17,6 +18,7 @@ interface SearchHeaderProps {
   onBack?: () => void;
   onlyMyApps?: boolean;
   hideSearch?: boolean;
+  hidePublish?: boolean;
 }
 
 export default function SearchHeader({
@@ -24,6 +26,7 @@ export default function SearchHeader({
   onChange = () => null,
   onBack,
   hideSearch = false,
+  hidePublish = false,
 }: SearchHeaderProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -35,7 +38,7 @@ export default function SearchHeader({
   return (
     <div className="flex justify-between">
       {location.pathname !== '/' ? (
-        <button className="flex flex-col c mr-1 icon" onClick={() => {
+        <button className="flex flex-col c mr-2 icon" onClick={() => {
           if (onBack) {
             onBack()
           } else {
@@ -46,16 +49,22 @@ export default function SearchHeader({
         </button>
       ) : (
         <button
-          className="flex flex-col c mr-1 alt"
-          onClick={() => navigate("/publish")}
+          className="flex flex-col c mr-2 icon"
+          onClick={() => window.location.href = '/'}
         >
-          <FaUpload />
+          <FaHome />
         </button>
       )}
+      {!hidePublish && <button
+        className="flex flex-col c mr-2 icon"
+        onClick={() => navigate("/publish")}
+      >
+        <FaUpload />
+      </button>}
       {!hideSearch && (
-        <div className="flex mx-2 flex-1 rounded-md">
+        <div className="flex mr-2 flex-1 rounded-md">
           <button
-            className="icon"
+            className="icon mr-2"
             type="button"
             onClick={() => inputRef.current?.focus()}
           >
@@ -67,10 +76,10 @@ export default function SearchHeader({
             onChange={(event) => onChange(event.target.value)}
             value={value}
             placeholder="Search for apps..."
-            className="w-full ml-2"
+            className="w-full mr-2"
           />
           {value.length > 0 && <button
-            className="icon ml-2"
+            className="icon"
             onClick={() => onChange("")}
           >
             <FaX />
@@ -79,11 +88,11 @@ export default function SearchHeader({
       )}
       <div className="flex">
         <button
-          className={classNames("flex ml-1 alt")}
+          className={classNames("flex alt")}
           onClick={() => (isMyAppsPage ? navigate(-1) : navigate(MY_APPS_PATH))}
         >
-          <FaDownload className="mr-1" />
-          My Apps
+          <FaDownload className="mr-2" />
+          <span>My Apps</span>
         </button>
       </div>
     </div>
