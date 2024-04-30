@@ -1,7 +1,4 @@
 use alloy_sol_macro::sol;
-use ring::pkcs8::Document;
-use ring::rand::SystemRandom;
-use ring::signature::{self, KeyPair};
 use sha3::{Digest, Keccak256};
 
 sol! {
@@ -24,7 +21,9 @@ sol! {
             uint16 _udp
         );
 
-        function _getOwner(bytes32 node) internal pure returns (address);
+        function ownerOf(uint256 node) returns (address);
+
+        function multicall(bytes[] calldata data);
     }
 }
 
@@ -71,13 +70,6 @@ pub fn encode_namehash(name: &str) -> [u8; 32] {
         node = hasher.finalize().into();
     }
     node
-}
-
-pub fn generate_networking_key() -> (String, Document) {
-    let rng = SystemRandom::new();
-    let doc = signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
-    let key_pair = signature::Ed25519KeyPair::from_pkcs8(doc.as_ref()).unwrap();
-    (hex::encode(key_pair.public_key().as_ref()), doc)
 }
 
 #[cfg(test)]
