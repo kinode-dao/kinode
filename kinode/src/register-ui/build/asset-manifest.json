@@ -1,17 +1,13 @@
 {
   "files": {
-    "main.css": "/static/css/main.eb8419e6.css",
+    "main.css": "/static/css/main.160abeec.css",
     "main.js": "/static/js/main.94cc3f8a.js",
-    "static/media/OpenSans-CondBold.ttf": "/static/media/OpenSans-CondBold.6293057f8484b6c0da03.ttf",
-    "static/media/BarlowCondensed-Black.ttf": "/static/media/BarlowCondensed-Black.3ba02bbdeb04e17f34bf.ttf",
-    "static/media/Futura-Heavy.ttf": "/static/media/Futura-Heavy.af72c25a6945b0f48abb.ttf",
     "static/media/unknown.png": "/static/media/unknown.880d04d4611a45ab1001.png",
-    "static/media/background.jpg": "/static/media/background.01d2427cfc21fb685016.jpg",
     "index.html": "/index.html",
     "static/media/kinode.svg": "/static/media/kinode.6b178bc9164b31d90099844a82d04497.svg"
   },
   "entrypoints": [
-    "static/css/main.eb8419e6.css",
+    "static/css/main.160abeec.css",
     "static/js/main.94cc3f8a.js"
   ]
 }

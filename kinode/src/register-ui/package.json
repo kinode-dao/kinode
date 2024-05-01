@@ -40,7 +40,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "npm run tc && GENERATE_SOURCEMAP=false react-scripts build",
+    "build": "npx tailwindcss -i ./src/input.css -o ./src/index.css && npm run tc && GENERATE_SOURCEMAP=false react-scripts build",
     "build:copy": "npm run build",
     "inline": "node ./add-inline-tags.js && cd build && inline-source ./index.html > ./inline-index.html && cd ..",
     "build-inline": "npm run build && npm run inline",

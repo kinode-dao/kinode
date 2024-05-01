@@ -135,3 +135,13 @@ button:disabled {
 .c {
   @apply place-items-center place-content-center;
 }
+
+.special-bg-homepage {
+  background-color: #000000;
+  background-image: radial-gradient(circle at -255% 50%, #e25f35b3 35%, transparent 86.05%), radial-gradient(circle at -7% -43%, #860001db 50%, transparent 87.05%);
+}
+
+.special-bg-loadingscreen {
+  background-color: #000000;
+  background-image: radial-gradient(circle at 50% 200%, #e25f35ff 37%, transparent 74.05%), linear-gradient(180deg, #22211fff 50%, transparent 150.05%);
+}

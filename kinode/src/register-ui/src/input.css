@@ -89,7 +89,9 @@
 }
 
 body {
-  @apply bg-[url('./assets/background.jpg')] bg-cover bg-no-repeat bg-center bg-fixed text-white;
+  @apply text-white;
+  background-color: #000000;
+  background-image: linear-gradient(-128deg, #860001a0 26%, transparent 70.05%), linear-gradient(-179deg, #e25f356b 22%, transparent 53.05%);
 }
 
 input {
