@@ -19,6 +19,7 @@ members = [
     "kinode/packages/chess/chess",
     "kinode/packages/homepage/homepage",
     "kinode/packages/kns_indexer/kns_indexer", "kinode/packages/kns_indexer/get_block", "kinode/packages/kns_indexer/state",
+    "kinode/packages/settings/settings",
     "kinode/packages/terminal/terminal",
     "kinode/packages/terminal/alias", "kinode/packages/terminal/cat", "kinode/packages/terminal/echo", "kinode/packages/terminal/hi", "kinode/packages/terminal/m", "kinode/packages/terminal/top",
     "kinode/packages/terminal/namehash_to_name", "kinode/packages/terminal/net_diagnostics", "kinode/packages/terminal/peer", "kinode/packages/terminal/peers",

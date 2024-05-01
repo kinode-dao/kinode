@@ -1,0 +1,30 @@
+[
+    {
+        "process_name": "settings",
+        "process_wasm_path": "/settings.wasm",
+        "on_exit": "Restart",
+        "request_networking": true,
+        "request_capabilities": [
+            "eth:distro:sys",
+            {
+                "process": "eth:distro:sys",
+                "params": {
+                    "root": true
+                }
+            },
+            "homepage:homepage:sys",
+            "http_server:distro:sys",
+            "kernel:distro:sys",
+            "net:distro:sys",
+            "vfs:distro:sys"
+        ],
+        "grant_capabilities": [
+            "eth:distro:sys",
+            "http_server:distro:sys",
+            "kernel:distro:sys",
+            "net:distro:sys",
+            "vfs:distro:sys"
+        ],
+        "public": false
+    }
+]

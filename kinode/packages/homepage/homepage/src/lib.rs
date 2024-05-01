@@ -5,10 +5,10 @@ use kinode_process_lib::{
         bind_http_path, bind_http_static_path, send_response, serve_ui, HttpServerError,
         HttpServerRequest, StatusCode,
     },
-    println, Address, Message, ProcessId,
+    println, Address, Message,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// The request format to add or remove an app from the homepage. You must have messaging
 /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
@@ -40,7 +40,7 @@ wit_bindgen::generate!({
 
 call_init!(init);
 fn init(our: Address) {
-    let mut app_data: HashMap<ProcessId, HomepageApp> = HashMap::new();
+    let mut app_data: BTreeMap<ProcessId, HomepageApp> = BTreeMap::new();
 
     serve_ui(&our, "ui", true, false, vec!["/"]).expect("failed to serve ui");
 
@@ -86,7 +86,7 @@ fn init(our: Address) {
                 match request {
                     HomepageRequest::Add { label, icon, path } => {
                         app_data.insert(
-                            message.source().process.clone(),
+                            message.source().process.to_string(),
                             HomepageApp {
                                 package_name: message.source().clone().package().to_string(),
                                 path: format!(
@@ -113,7 +113,7 @@ fn init(our: Address) {
                         if path == "/apps" {
                             send_response(
                                 StatusCode::OK,
-                                Some(HashMap::from([(
+                                Some(std::collections::HashMap::from([(
                                     "Content-Type".to_string(),
                                     "application/json".to_string(),
                                 )])),
