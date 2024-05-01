@@ -4,123 +4,82 @@ use alloy_rpc_types::pubsub::SubscriptionResult;
 
 /// cleans itself up when the subscription is closed or fails.
 pub async fn create_new_subscription(
-    our: String,
+    state: &ModuleState,
     km_id: u64,
     target: Address,
     rsvp: Option<Address>,
-    send_to_loop: MessageSender,
     sub_id: u64,
     eth_action: EthAction,
-    providers: Providers,
-    active_subscriptions: ActiveSubscriptions,
-    response_channels: ResponseChannels,
-    print_tx: PrintSender,
 ) {
-    verbose_print(&print_tx, "eth: creating new subscription").await;
-    match build_subscription(
-        &our,
-        km_id,
-        &target,
-        &send_to_loop,
-        &eth_action,
-        &providers,
-        &response_channels,
-        &print_tx,
-    )
-    .await
-    {
-        Ok(maybe_raw_sub) => {
-            // send a response to the target that the subscription was successful
-            kernel_message(
+    let our = state.our.clone();
+    let send_to_loop = state.send_to_loop.clone();
+    let active_subscriptions = state.active_subscriptions.clone();
+    let providers = state.providers.clone();
+    let response_channels = state.response_channels.clone();
+    let print_tx = state.print_tx.clone();
+    tokio::spawn(async move {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            build_subscription(
                 &our,
                 km_id,
-                target.clone(),
-                rsvp.clone(),
-                false,
-                None,
-                EthResponse::Ok,
+                &target,
                 &send_to_loop,
-            )
-            .await;
-            let mut subs = active_subscriptions
-                .entry(target.clone())
-                .or_insert(HashMap::new());
-            let active_subscriptions = active_subscriptions.clone();
-            match maybe_raw_sub {
-                Ok(rx) => {
-                    subs.insert(
-                        sub_id,
-                        // this is a local sub, as in, we connect to the rpc endpt
-                        ActiveSub::Local(tokio::spawn(async move {
-                            // await the subscription error and kill it if so
-                            if let Err(e) = maintain_local_subscription(
-                                &our,
-                                sub_id,
-                                rx,
-                                &target,
-                                &rsvp,
-                                &send_to_loop,
-                            )
-                            .await
-                            {
-                                verbose_print(
-                                    &print_tx,
-                                    "eth: closed local subscription due to error",
-                                )
-                                .await;
-                                kernel_message(
+                &eth_action,
+                &providers,
+                &response_channels,
+                &print_tx,
+            ),
+        )
+        .await
+        {
+            Ok(Ok(maybe_raw_sub)) => {
+                // send a response to the target that the subscription was successful
+                kernel_message(
+                    &our,
+                    km_id,
+                    target.clone(),
+                    rsvp.clone(),
+                    false,
+                    None,
+                    EthResponse::Ok,
+                    &send_to_loop,
+                )
+                .await;
+                let mut subs = active_subscriptions
+                    .entry(target.clone())
+                    .or_insert(HashMap::new());
+                let active_subscriptions = active_subscriptions.clone();
+                match maybe_raw_sub {
+                    Ok(rx) => {
+                        let our = our.clone();
+                        let send_to_loop = send_to_loop.clone();
+                        let print_tx = print_tx.clone();
+                        subs.insert(
+                            sub_id,
+                            // this is a local sub, as in, we connect to the rpc endpoint
+                            ActiveSub::Local(tokio::spawn(async move {
+                                // await the subscription error and kill it if so
+                                if let Err(e) = maintain_local_subscription(
                                     &our,
-                                    rand::random(),
-                                    target.clone(),
-                                    rsvp,
-                                    true,
-                                    None,
-                                    EthSubResult::Err(e),
-                                    &send_to_loop,
-                                )
-                                .await;
-                                active_subscriptions.entry(target).and_modify(|sub_map| {
-                                    sub_map.remove(&km_id);
-                                });
-                            }
-                        })),
-                    );
-                }
-                Err((provider_node, remote_sub_id)) => {
-                    // this is a remote sub, given by a relay node
-                    let (sender, rx) = tokio::sync::mpsc::channel(10);
-                    let keepalive_km_id = rand::random();
-                    let (keepalive_err_sender, keepalive_err_receiver) =
-                        tokio::sync::mpsc::channel(1);
-                    response_channels.insert(keepalive_km_id, keepalive_err_sender);
-                    subs.insert(
-                        remote_sub_id,
-                        ActiveSub::Remote {
-                            provider_node: provider_node.clone(),
-                            handle: tokio::spawn(async move {
-                                if let Err(e) = maintain_remote_subscription(
-                                    &our,
-                                    &provider_node,
-                                    remote_sub_id,
                                     sub_id,
-                                    keepalive_km_id,
                                     rx,
-                                    keepalive_err_receiver,
                                     &target,
+                                    &rsvp,
                                     &send_to_loop,
                                 )
                                 .await
                                 {
                                     verbose_print(
                                         &print_tx,
-                                        "eth: closed subscription with provider node due to error",
+                                        "eth: closed local subscription due to error",
                                     )
                                     .await;
                                     kernel_message(
                                         &our,
                                         rand::random(),
                                         target.clone(),
-                                        None,
+                                        rsvp,
                                         true,
                                         None,
                                         EthSubResult::Err(e),
@@ -128,21 +87,84 @@ pub async fn create_new_subscription(
                                     )
                                     .await;
                                     active_subscriptions.entry(target).and_modify(|sub_map| {
-                                        sub_map.remove(&sub_id);
+                                        sub_map.remove(&km_id);
                                     });
-                                    response_channels.remove(&keepalive_km_id);
                                 }
-                            }),
-                            sender,
-                        },
-                    );
+                            })),
+                        );
+                    }
+                    Err((provider_node, remote_sub_id)) => {
+                        // this is a remote sub, given by a relay node
+                        let (sender, rx) = tokio::sync::mpsc::channel(10);
+                        let keepalive_km_id = rand::random();
+                        let (keepalive_err_sender, keepalive_err_receiver) =
+                            tokio::sync::mpsc::channel(1);
+                        response_channels.insert(keepalive_km_id, keepalive_err_sender);
+                        let our = our.clone();
+                        let send_to_loop = send_to_loop.clone();
+                        let print_tx = print_tx.clone();
+                        let response_channels = response_channels.clone();
+                        subs.insert(
+                            remote_sub_id,
+                            ActiveSub::Remote {
+                                provider_node: provider_node.clone(),
+                                handle: tokio::spawn(async move {
+                                    if let Err(e) = maintain_remote_subscription(
+                                        &our,
+                                        &provider_node,
+                                        remote_sub_id,
+                                        sub_id,
+                                        keepalive_km_id,
+                                        rx,
+                                        keepalive_err_receiver,
+                                        &target,
+                                        &send_to_loop,
+                                    )
+                                    .await
+                                    {
+                                        verbose_print(
+                                        &print_tx,
+                                        "eth: closed subscription with provider node due to error",
+                                    )
+                                    .await;
+                                        kernel_message(
+                                            &our,
+                                            rand::random(),
+                                            target.clone(),
+                                            None,
+                                            true,
+                                            None,
+                                            EthSubResult::Err(e),
+                                            &send_to_loop,
+                                        )
+                                        .await;
+                                        active_subscriptions.entry(target).and_modify(|sub_map| {
+                                            sub_map.remove(&sub_id);
+                                        });
+                                        response_channels.remove(&keepalive_km_id);
+                                    }
+                                }),
+                                sender,
+                            },
+                        );
+                    }
                 }
             }
+            Ok(Err(e)) => {
+                error_message(&our, km_id, target.clone(), e, &send_to_loop).await;
+            }
+            Err(_) => {
+                error_message(
+                    &our,
+                    km_id,
+                    target.clone(),
+                    EthError::RpcTimeout,
+                    &send_to_loop,
+                )
+                .await;
+            }
         }
-        Err(e) => {
-            error_message(&our, km_id, target.clone(), e, &send_to_loop).await;
-        }
-    }
+    });
 }
 
 /// terrible abuse of result in return type, yes, sorry
@@ -171,38 +193,71 @@ async fn build_subscription(
     // first, try any url providers we have for this chain,
     // then if we have none or they all fail, go to node providers.
     // finally, if no provider works, return an error.
-    for url_provider in &mut aps.urls {
+
+    // bump the successful provider to the front of the list for future requests
+    for (index, url_provider) in aps.urls.iter_mut().enumerate() {
         let pubsub = match &url_provider.pubsub {
             Some(pubsub) => pubsub,
             None => {
                 if let Ok(()) = activate_url_provider(url_provider).await {
-                    verbose_print(print_tx, "eth: activated a url provider").await;
+                    verbose_print(
+                        &print_tx,
+                        &format!("eth: activated url provider {}", url_provider.url),
+                    )
+                    .await;
                     url_provider.pubsub.as_ref().unwrap()
                 } else {
+                    verbose_print(
+                        &print_tx,
+                        &format!("eth: could not activate url provider {}", url_provider.url),
+                    )
+                    .await;
                     continue;
                 }
             }
         };
         let kind = serde_json::to_value(&kind).unwrap();
         let params = serde_json::to_value(&params).unwrap();
-        if let Ok(id) = pubsub
+        match pubsub
             .inner()
             .prepare("eth_subscribe", [kind, params])
             .await
         {
-            let rx = pubsub.inner().get_raw_subscription(id).await;
-            return Ok(Ok(rx));
+            Ok(id) => {
+                let rx = pubsub.inner().get_raw_subscription(id).await;
+                let successful_provider = aps.urls.remove(index);
+                aps.urls.insert(0, successful_provider);
+                return Ok(Ok(rx));
+            }
+            Err(rpc_error) => {
+                verbose_print(
+                    &print_tx,
+                    &format!(
+                        "eth: got error from url provider {}: {}",
+                        url_provider.url, rpc_error
+                    ),
+                )
+                .await;
+                // this provider failed and needs to be reset
+                url_provider.pubsub = None;
+            }
         }
-        // this provider failed and needs to be reset
-        url_provider.pubsub = None;
     }
-    // now we need a response channel
+
     let (sender, mut response_receiver) = tokio::sync::mpsc::channel(1);
     response_channels.insert(km_id, sender);
     // we need to create our own unique sub id because in the remote provider node,
     // all subs will be identified under our process address.
     let remote_sub_id = rand::random();
     for node_provider in &mut aps.nodes {
+        verbose_print(
+            &print_tx,
+            &format!(
+                "eth: attempting to fulfill via {}",
+                node_provider.kns_update.name
+            ),
+        )
+        .await;
         match forward_to_node_provider(
             &our,
             km_id,
@@ -232,7 +287,7 @@ async fn build_subscription(
                 )
                 .await;
                 response_channels.remove(&km_id);
-                return Ok(Err((node_provider.name.clone(), remote_sub_id)));
+                return Ok(Err((node_provider.kns_update.name.clone(), remote_sub_id)));
             }
             EthResponse::Response { .. } => {
                 // the response to a SubscribeLogs request must be an 'ok'

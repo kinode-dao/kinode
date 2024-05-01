@@ -2,14 +2,19 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key,
 };
+#[cfg(not(feature = "simulation-mode"))]
 use alloy_primitives::keccak256;
+use anyhow::Result;
 use digest::generic_array::GenericArray;
+use hmac::Hmac;
+use jwt::SignWithKey;
 use lib::types::core::Keyfile;
 use ring::pbkdf2;
 use ring::pkcs8::Document;
 use ring::rand::SystemRandom;
 use ring::signature::{self, KeyPair};
 use ring::{digest as ring_digest, rand::SecureRandom};
+use sha2::Sha256;
 use std::num::NonZeroU32;
 
 type DiskKey = [u8; CREDENTIAL_LEN];
@@ -108,6 +113,24 @@ pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'stati
     })
 }
 
+pub fn generate_jwt(jwt_secret_bytes: &[u8], username: &str) -> Option<String> {
+    let jwt_secret: Hmac<Sha256> = match Hmac::new_from_slice(jwt_secret_bytes) {
+        Ok(secret) => secret,
+        Err(_) => return None,
+    };
+
+    let claims = crate::http::server_types::JwtClaims {
+        username: username.to_string(),
+        expiration: 0,
+    };
+
+    match claims.sign_with_key(&jwt_secret) {
+        Ok(token) => Some(token),
+        Err(_) => None,
+    }
+}
+
+#[cfg(not(feature = "simulation-mode"))]
 pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>), &'static str> {
     let (username, routers, _salt, _key_enc, _jwt_enc) =
         bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
@@ -116,6 +139,7 @@ pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>),
     Ok((username, routers))
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 pub fn namehash(name: &str) -> Vec<u8> {
     let mut node = vec![0u8; 32];
     if name.is_empty() {

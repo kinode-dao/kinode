@@ -1,5 +1,4 @@
 use crate::keygen;
-use aes_gcm::aead::KeyInit;
 use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
 use alloy_providers::provider::{Provider, TempProvider};
 use alloy_pubsub::PubSubFrontend;
@@ -9,13 +8,11 @@ use alloy_signer::Signature;
 use alloy_sol_macro::sol;
 use alloy_sol_types::{SolCall, SolValue};
 use alloy_transport_ws::WsConnect;
-use hmac::Hmac;
-use jwt::SignWithKey;
+use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use lib::types::core::*;
 use ring::rand::SystemRandom;
 use ring::signature;
 use ring::signature::KeyPair;
-use sha2::Sha256;
 use static_dir::static_dir;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -93,23 +90,6 @@ fn _hex_string_to_u8_array(hex_str: &str) -> Result<[u8; 32], &'static str> {
     }
 
     Ok(bytes)
-}
-
-pub fn generate_jwt(jwt_secret_bytes: &[u8], username: &str) -> Option<String> {
-    let jwt_secret: Hmac<Sha256> = match Hmac::new_from_slice(jwt_secret_bytes) {
-        Ok(secret) => secret,
-        Err(_) => return None,
-    };
-
-    let claims = crate::http::server_types::JwtClaims {
-        username: username.to_string(),
-        expiration: 0,
-    };
-
-    match claims.sign_with_key(&jwt_secret) {
-        Ok(token) => Some(token),
-        Err(_) => None,
-    }
 }
 
 /// Serve the registration page and receive POSTs and PUTs from it
@@ -366,7 +346,9 @@ async fn handle_keyfile_vet(
     // additional checks?
     let encoded_keyfile = match payload.keyfile.is_empty() {
         true => keyfile.ok_or(warp::reject())?,
-        false => base64::decode(payload.keyfile).map_err(|_| warp::reject())?,
+        false => base64_standard
+            .decode(payload.keyfile)
+            .map_err(|_| warp::reject())?,
     };
 
     let decoded_keyfile = keygen::decode_keyfile(&encoded_keyfile, &payload.password_hash)
@@ -543,7 +525,7 @@ async fn handle_import_keyfile(
     provider: Arc<Provider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
-    let encoded_keyfile = match base64::decode(info.keyfile.clone()) {
+    let encoded_keyfile = match base64_standard.decode(info.keyfile.clone()) {
         Ok(k) => k,
         Err(_) => {
             return Ok(warp::reply::with_status(
@@ -762,8 +744,8 @@ async fn success_response(
     decoded_keyfile: Keyfile,
     encoded_keyfile: Vec<u8>,
 ) -> Result<warp::reply::Response, Rejection> {
-    let encoded_keyfile_str = base64::encode(&encoded_keyfile);
-    let token = match generate_jwt(&decoded_keyfile.jwt_secret_bytes, &our.name) {
+    let encoded_keyfile_str = base64_standard.encode(&encoded_keyfile);
+    let token = match keygen::generate_jwt(&decoded_keyfile.jwt_secret_bytes, &our.name) {
         Some(token) => token,
         None => {
             return Ok(warp::reply::with_status(

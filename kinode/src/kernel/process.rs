@@ -607,7 +607,7 @@ pub async fn make_process_loop(
         };
 
     // the process will run until it returns from init() or crashes
-    let is_error = match bindings
+    match bindings
         .call_init(&mut store, &metadata.our.to_string())
         .await
     {
@@ -618,7 +618,6 @@ pub async fn make_process_loop(
                     content: format!("process {} returned without error", metadata.our.process),
                 })
                 .await;
-            false
         }
         Err(_) => {
             let stderr = wasi_stderr.contents().into();
@@ -632,7 +631,6 @@ pub async fn make_process_loop(
                     ),
                 })
                 .await;
-            true
         }
     };
 
@@ -715,73 +713,61 @@ pub async fn make_process_loop(
                     lazy_load_blob: None,
                 })
                 .await?;
-            if is_error {
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: format!(
-                            "skipping OnExit::Restart for process {} due to crash",
-                            metadata.our.process
-                        ),
-                    })
-                    .await;
-            } else {
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 1,
-                        content: format!(
-                            "firing OnExit::Restart for process {}",
-                            metadata.our.process
-                        ),
-                    })
-                    .await;
-                send_to_loop
-                    .send(t::KernelMessage {
-                        id: rand::random(),
-                        source: our_kernel.clone(),
-                        target: our_kernel.clone(),
-                        rsvp: None,
-                        message: t::Message::Request(t::Request {
-                            inherit: false,
-                            expects_response: None,
-                            body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
-                                id: metadata.our.process.clone(),
-                                wasm_bytes_handle: metadata.wasm_bytes_handle,
-                                wit_version: Some(metadata.wit_version),
-                                on_exit: metadata.on_exit,
-                                initial_capabilities,
-                                public: metadata.public,
-                            })
-                            .unwrap(),
-                            metadata: None,
-                            capabilities: vec![],
-                        }),
-                        lazy_load_blob: Some(t::LazyLoadBlob {
-                            mime: None,
-                            bytes: wasm_bytes,
-                        }),
-                    })
-                    .await?;
-                send_to_loop
-                    .send(t::KernelMessage {
-                        id: rand::random(),
-                        source: our_kernel.clone(),
-                        target: our_kernel.clone(),
-                        rsvp: None,
-                        message: t::Message::Request(t::Request {
-                            inherit: false,
-                            expects_response: None,
-                            body: serde_json::to_vec(&t::KernelCommand::RunProcess(
-                                metadata.our.process.clone(),
-                            ))
-                            .unwrap(),
-                            metadata: None,
-                            capabilities: vec![],
-                        }),
-                        lazy_load_blob: None,
-                    })
-                    .await?;
-            }
+            let _ = send_to_terminal
+                .send(t::Printout {
+                    verbosity: 1,
+                    content: format!(
+                        "firing OnExit::Restart for process {}",
+                        metadata.our.process
+                    ),
+                })
+                .await;
+            send_to_loop
+                .send(t::KernelMessage {
+                    id: rand::random(),
+                    source: our_kernel.clone(),
+                    target: our_kernel.clone(),
+                    rsvp: None,
+                    message: t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
+                            id: metadata.our.process.clone(),
+                            wasm_bytes_handle: metadata.wasm_bytes_handle,
+                            wit_version: Some(metadata.wit_version),
+                            on_exit: metadata.on_exit,
+                            initial_capabilities,
+                            public: metadata.public,
+                        })
+                        .unwrap(),
+                        metadata: None,
+                        capabilities: vec![],
+                    }),
+                    lazy_load_blob: Some(t::LazyLoadBlob {
+                        mime: None,
+                        bytes: wasm_bytes,
+                    }),
+                })
+                .await?;
+            send_to_loop
+                .send(t::KernelMessage {
+                    id: rand::random(),
+                    source: our_kernel.clone(),
+                    target: our_kernel.clone(),
+                    rsvp: None,
+                    message: t::Message::Request(t::Request {
+                        inherit: false,
+                        expects_response: None,
+                        body: serde_json::to_vec(&t::KernelCommand::RunProcess(
+                            metadata.our.process.clone(),
+                        ))
+                        .unwrap(),
+                        metadata: None,
+                        capabilities: vec![],
+                    }),
+                    lazy_load_blob: None,
+                })
+                .await?;
         }
         // if requests, fire them
         // even in death, a process can only message processes it has capabilities for
