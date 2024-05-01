@@ -1259,6 +1259,7 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
     </div>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
   <script>
     if ('${fake}' === 'true') {
       document.getElementById("fake-or-not").innerHTML = "Fake node -- any password will work!";
@@ -1270,12 +1271,8 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
       document.getElementById("signup-form").style.display = "none";
       document.getElementById("loading").style.display = "flex";
 
-      // sha256 hash password
-      const encoder = new TextEncoder();
-      const data = encoder.encode(password);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const hashHex = '0x' + hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      // sha256 hash password using crypto-js
+      const hashHex = '0x' + CryptoJS.SHA256(password).toString(CryptoJS.enc.Hex);
 
       const result = await fetch("/login", {
         method: "POST",
