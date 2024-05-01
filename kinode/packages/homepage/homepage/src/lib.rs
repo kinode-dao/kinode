@@ -64,7 +64,7 @@ fn init(our: Address) {
     )
     .expect("failed to bind to /our.js");
 
-    bind_http_path("/apps", true, true).expect("failed to bind /apps");
+    bind_http_path("/apps", true, false).expect("failed to bind /apps");
 
     loop {
         let Ok(ref message) = await_message() else {
