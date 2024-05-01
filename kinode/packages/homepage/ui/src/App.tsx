@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import BgOrangeBlack from './components/BgOrangeBlack'
 import KinodeText from './components/KinodeText'
 import KinodeBird from './components/KinodeBird'
 import useHomepageStore from './store/homepageStore'
@@ -27,11 +26,7 @@ function App() {
   }, [our])
 
   return (
-    <div className="flex-col-center relative h-screen w-screen overflow-hidden">
-      <div className='absolute w-full h-full top-0 bottom-0 left-0 right-0 -z-20'>
-        <BgOrangeBlack />
-      </div>
-      <div className='absolute w-full h-full top-0 bottom-0 left-0 right-0 -z-10 backdrop-blur-[128px]' />
+    <div className="flex-col-center relative h-screen w-screen overflow-hidden special-bg-homepage">
       <h5 className='absolute top-8 left-8'>
         {isHosted && <a
           href={`https://${our.replace('.os', '')}.hosting.kinode.net/`}
