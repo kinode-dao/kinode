@@ -156,7 +156,10 @@ fn init(our: Address) {
         state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
     }
 
+    #[cfg(not(feature = "simulation-mode"))]
     println!("indexing on contract address {}", state.contract_address);
+    #[cfg(feature = "simulation-mode")]
+    println!("simulation mode: not indexing packages");
 
     // create new provider for sepolia with request-timeout of 60s
     // can change, log requests can take quite a long time.
