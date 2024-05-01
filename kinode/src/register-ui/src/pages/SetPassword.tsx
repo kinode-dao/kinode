@@ -3,7 +3,6 @@ import KinodeHeader from "../components/KnsHeader";
 import Loader from "../components/Loader";
 import { utils, providers } from "ethers";
 import { downloadKeyfile } from "../utils/download-keyfile";
-import { ReactComponent as NameLogo } from "../assets/kinode.svg"
 import { Tooltip } from "../components/Tooltip";
 import { KinodeTitle } from "../components/KinodeTitle";
 

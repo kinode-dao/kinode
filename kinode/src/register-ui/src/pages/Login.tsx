@@ -1,7 +1,6 @@
-import React, { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { namehash } from "ethers/lib/utils";
 import { BytesLike, utils } from "ethers";
-import kinodeLogo from "../assets/kinode.svg";
 import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
@@ -39,7 +38,7 @@ function Login({
   const [loading, setLoading] = useState<string>("");
   const [showReset, setShowReset] = useState<boolean>(false);
   const [reset, setReset] = useState<boolean>(false);
-  const [restartFlow, setRestartFlow] = useState<boolean>(false);
+  const [_restartFlow, setRestartFlow] = useState<boolean>(false);
 
   useEffect(() => {
     document.title = "Login";
@@ -243,7 +242,7 @@ function Login({
                 setReset(!showReset);
               }}
             >
-              Reset Networking Info
+              {showReset ? 'Cancel' : 'Reset Networking Info'}
             </button>
             <button
               className="clear self-stretch"

@@ -12,7 +12,7 @@ type OsHomeProps = {
     nodeChainId: string
 }
 
-function KinodeHome({ openConnect, knsName, provider, closeConnect, nodeChainId }: OsHomeProps) {
+function KinodeHome({ openConnect, knsName, closeConnect, nodeChainId }: OsHomeProps) {
     const navigate = useNavigate()
     const inviteRedir = () => navigate('/claim-invite')
     const registerEthRedir = () => navigate('/register-eth-name')

@@ -10,6 +10,8 @@
     "@types/node": "^16.18.50",
     "@types/react": "^18.2.21",
     "@types/react-dom": "^18.2.7",
+    "@unocss/vite": "^0.59.4",
+    "@vitejs/plugin-react": "^4.2.1",
     "@web3-react/coinbase-wallet": "^8.2.3",
     "@web3-react/core": "^8.2.2",
     "@web3-react/gnosis-safe": "^8.2.4",
@@ -33,15 +35,18 @@
     "react-icons": "^5.0.1",
     "react-modal": "^3.16.1",
     "react-router-dom": "^6.16.0",
-    "react-scripts": "5.0.1",
     "tailwindcss": "^3.4.1",
     "typechain": "^8.3.1",
-    "typescript": "^4.9.5"
+    "typescript": "^5.3.3",
+    "unocss": "^0.59.4",
+    "vite": "^5.2.10",
+    "vite-plugin-svgr": "^4.2.0"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "npx tailwindcss -i ./src/input.css -o ./src/index.css && npm run tc && GENERATE_SOURCEMAP=false react-scripts build",
+    "start": "vite",
+    "build": "npm run tc && tsc && vite build && rm -rf build && mv dist build",
     "build:copy": "npm run build",
+    "serve": "vite preview",
     "inline": "node ./add-inline-tags.js && cd build && inline-source ./index.html > ./inline-index.html && cd ..",
     "build-inline": "npm run build && npm run inline",
     "test": "react-scripts test",
@@ -69,5 +74,6 @@
   "devDependencies": {
     "@types/react-modal": "^3.16.2",
     "inline-source-cli": "^2.0.0"
-  }
+  },
+  "type": "module"
 }

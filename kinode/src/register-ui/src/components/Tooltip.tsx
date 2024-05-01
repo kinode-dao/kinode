@@ -13,7 +13,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ text, button, className, posit
   const [showTooltip, setShowTooltip] = useState(false)
   return <div className={classNames("flex place-items-center place-content-center text-sm relative cursor-pointer shrink", className)}>
     <div onClick={() => setShowTooltip(!showTooltip)}>
-    {button || <button
+      {button || <button
         className="icon ml-4"
         type='button'
       >
@@ -22,7 +22,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ text, button, className, posit
     </div>
     <div className={classNames('absolute rounded bg-black p-2 min-w-[200px] z-10',
       {
-        "hidden": !showTooltip,
+        "!hidden": !showTooltip,
         "top-8": position === "top" || !position,
         "bottom-8": position === "bottom",
         "right-8": position === "left",
@@ -31,7 +31,7 @@ export const Tooltip: React.FC<TooltipProps> = ({ text, button, className, posit
       {text}
     </div>
     <button type="button" className={classNames("absolute bg-black icon right-0 top-0", {
-      "hidden": !showTooltip,
+      "!hidden": !showTooltip,
     })} onClick={() => setShowTooltip(false)}>
       <FaX />
     </button>
