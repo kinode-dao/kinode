@@ -26,6 +26,7 @@ export interface AppsStore {
   approveCaps: (app: AppInfo) => Promise<void>
   setMirroring: (info: AppInfo, mirroring: boolean) => Promise<void>
   setAutoUpdate: (app: AppInfo, autoUpdate: boolean) => Promise<void>
+  rebuildIndex: () => Promise<void>
 
   // searchApps: (query: string, onlyMyApps?: boolean) => Promise<AppInfo[]>
 
@@ -153,6 +154,14 @@ const useAppsStore = create<AppsStore>()(
         })
         if (res.status !== HTTP_STATUS.OK) {
           throw new Error(`Failed to get app: ${appId(info)}`)
+        }
+      },
+      rebuildIndex: async () => {
+        const res = await fetch(`${BASE_URL}/apps/rebuild-index`, {
+          method: 'POST'
+        })
+        if (res.status !== HTTP_STATUS.OK) {
+          throw new Error('Failed to rebuild index')
         }
       },
       setMirroring: async (info: AppInfo, mirroring: boolean) => {
