@@ -3,13 +3,14 @@
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
 use lib::types::core::*;
-//#[cfg(feature = "simulation-mode")]
+#[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::env;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
 mod eth;
+#[cfg(feature = "simulation-mode")]
 mod fakenet;
 mod http;
 mod kernel;
@@ -456,6 +457,7 @@ async fn setup_ws_networking(ws_networking_port: Option<u16>) -> (tokio::net::Tc
 }
 
 /// On simulation mode, we either boot from existing keys, or generate and post keys to chain.
+#[cfg(feature = "simulation-mode")]
 pub async fn simulate_node(
     fake_node_name: Option<String>,
     password: Option<String>,
