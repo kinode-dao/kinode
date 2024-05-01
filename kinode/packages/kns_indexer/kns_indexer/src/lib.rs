@@ -120,7 +120,10 @@ call_init!(init);
 fn init(our: Address) {
     let (chain_id, contract_address) = (10, KNS_OPTIMISM_ADDRESS.to_string());
 
+    #[cfg(not(feature = "simulation-mode"))]
     println!("indexing on contract address {}", contract_address);
+    #[cfg(feature = "simulation-mode")]
+    println!("simulation mode: not indexing KNS");
 
     // if we have state, load it in
     let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
