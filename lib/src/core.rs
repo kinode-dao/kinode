@@ -1082,6 +1082,7 @@ pub struct Erc721Properties {
     pub license: Option<String>,
     pub screenshots: Option<Vec<String>>,
     pub wit_version: Option<(u32, u32, u32)>,
+    pub dependencies: Vec<String>,
 }
 
 /// the type that gets deserialized from each entry in the array in `manifest.json`
