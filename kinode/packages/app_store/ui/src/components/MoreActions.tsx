@@ -5,6 +5,7 @@ import Dropdown from "./Dropdown";
 import { AppInfo } from "../types/Apps";
 import { appId } from "../utils/app";
 import useAppsStore from "../store/apps-store";
+import { APP_DETAILS_PATH } from "../constants/path";
 
 interface MoreActionsProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
@@ -26,7 +27,7 @@ export default function MoreActions({ app, className }: MoreActionsProps) {
           {app.metadata?.description && (
             <button
               className="my-1 whitespace-nowrap clear"
-              onClick={() => navigate(`/app-details/${appId(app)}`)}
+              onClick={() => navigate(`/${APP_DETAILS_PATH}/${appId(app)}`)}
             >
               View Details
             </button>
@@ -50,7 +51,7 @@ export default function MoreActions({ app, className }: MoreActionsProps) {
       <div className="flex flex-col bg-black/50 p-2 rounded-lg">
         <button
           className="my-1 whitespace-nowrap clear"
-          onClick={() => navigate(`/app-details/${appId(app)}`)}
+          onClick={() => navigate(`/${APP_DETAILS_PATH}/${appId(app)}`)}
         >
           View Details
         </button>

@@ -5,10 +5,10 @@ use kinode_process_lib::{
         bind_http_path, bind_http_static_path, send_response, serve_ui, HttpServerError,
         HttpServerRequest, StatusCode,
     },
-    println, Address, Message,
+    println, Address, Message, ProcessId,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// The request format to add or remove an app from the homepage. You must have messaging
 /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
@@ -21,6 +21,7 @@ enum HomepageRequest {
         label: String,
         icon: String,
         path: String,
+        widget: Option<String>,
     },
     Remove,
 }
@@ -31,6 +32,17 @@ struct HomepageApp {
     path: String,
     label: String,
     base64_icon: String,
+    is_favorite: bool,
+    widget: Option<String>,
+}
+
+fn get_package_id(url_params: &HashMap<String, String>) -> anyhow::Result<ProcessId> {
+    let Some(package_id) = url_params.get("id") else {
+        return Err(anyhow::anyhow!("Missing id"));
+    };
+
+    let id = package_id.parse::<ProcessId>()?;
+    Ok(id)
 }
 
 wit_bindgen::generate!({
@@ -40,7 +52,7 @@ wit_bindgen::generate!({
 
 call_init!(init);
 fn init(our: Address) {
-    let mut app_data: BTreeMap<ProcessId, HomepageApp> = BTreeMap::new();
+    let mut app_data: BTreeMap<String, HomepageApp> = BTreeMap::new();
 
     serve_ui(&our, "ui", true, false, vec!["/"]).expect("failed to serve ui");
 
@@ -65,6 +77,7 @@ fn init(our: Address) {
     .expect("failed to bind to /our.js");
 
     bind_http_path("/apps", true, false).expect("failed to bind /apps");
+    bind_http_path("/apps/:id/favorite", true, false).expect("failed to bind /apps/:id/favorite");
 
     loop {
         let Ok(ref message) = await_message() else {
@@ -84,7 +97,12 @@ fn init(our: Address) {
             // they must have messaging access to us in order to perform this.
             if let Ok(request) = serde_json::from_slice::<HomepageRequest>(message.body()) {
                 match request {
-                    HomepageRequest::Add { label, icon, path } => {
+                    HomepageRequest::Add {
+                        label,
+                        icon,
+                        path,
+                        widget,
+                    } => {
                         app_data.insert(
                             message.source().process.to_string(),
                             HomepageApp {
@@ -98,42 +116,70 @@ fn init(our: Address) {
                                 ),
                                 label: label.clone(),
                                 base64_icon: icon.clone(),
+                                is_favorite: false,
+                                widget: widget.clone(),
                             },
                         );
                     }
                     HomepageRequest::Remove => {
-                        app_data.remove(&message.source().process);
+                        app_data.remove(&message.source().process.to_string());
                     }
                 }
-            } else if let Ok(request) = serde_json::from_slice::<HttpServerRequest>(message.body())
-            {
-                match request {
+            } else if let Ok(req) = serde_json::from_slice::<HttpServerRequest>(message.body()) {
+                match req {
                     HttpServerRequest::Http(incoming) => {
                         let path = incoming.bound_path(None);
-                        if path == "/apps" {
-                            send_response(
-                                StatusCode::OK,
-                                Some(std::collections::HashMap::from([(
-                                    "Content-Type".to_string(),
-                                    "application/json".to_string(),
-                                )])),
-                                format!(
-                                    "[{}]",
-                                    app_data
-                                        .values()
-                                        .map(|app| serde_json::to_string(app).unwrap())
-                                        .collect::<Vec<String>>()
-                                        .join(",")
-                                )
-                                .as_bytes()
-                                .to_vec(),
-                            );
-                        } else {
-                            send_response(
-                                StatusCode::OK,
-                                Some(HashMap::new()),
-                                "yes hello".as_bytes().to_vec(),
-                            );
+                        match path {
+                            "/apps" => {
+                                send_response(
+                                    StatusCode::OK,
+                                    Some(HashMap::from([(
+                                        "Content-Type".to_string(),
+                                        "application/json".to_string(),
+                                    )])),
+                                    format!(
+                                        "[{}]",
+                                        app_data
+                                            .values()
+                                            .map(|app| serde_json::to_string(app).unwrap())
+                                            .collect::<Vec<String>>()
+                                            .join(",")
+                                    )
+                                    .as_bytes()
+                                    .to_vec(),
+                                );
+                            }
+                            "/apps/:id/favorite" => {
+                                let url_params = incoming.url_params();
+                                let Ok(app_id) = get_package_id(url_params) else {
+                                    send_response(
+                                        StatusCode::BAD_REQUEST,
+                                        None,
+                                        format!("Missing id").into_bytes(),
+                                    );
+                                    println!("failed to parse app id");
+                                    for key in url_params {
+                                        println!("{} {}", key.0, key.1);
+                                    }
+                                    println!("All application IDs currently stored:");
+                                    for key in app_data.keys() {
+                                        println!("{}", key);
+                                    }
+                                    continue;
+                                };
+                                let app = app_data.get_mut(&app_id.to_string());
+                                if let Some(app) = app {
+                                    app.is_favorite = !app.is_favorite;
+                                }
+                                send_response(StatusCode::CREATED, Some(HashMap::new()), vec![]);
+                            }
+                            _ => {
+                                send_response(
+                                    StatusCode::OK,
+                                    Some(HashMap::new()),
+                                    "yes hello".as_bytes().to_vec(),
+                                );
+                            }
                         }
                     }
                     _ => {}

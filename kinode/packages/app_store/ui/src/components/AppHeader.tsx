@@ -3,7 +3,7 @@ import { AppInfo } from "../types/Apps";
 import { appId } from "../utils/app";
 import { useNavigate } from "react-router-dom";
 import classNames from "classnames";
-import { FaCircleQuestion } from "react-icons/fa6";
+import { APP_DETAILS_PATH } from "../constants/path";
 
 interface AppHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   app: AppInfo;
@@ -21,7 +21,7 @@ export default function AppHeader({
     <div
       {...props}
       className={classNames('flex w-full justify-content-start', size, props.className, { 'cursor-pointer': size !== 'large' })}
-      onClick={() => navigate(`/app-details/${appId(app)}`)}
+      onClick={() => navigate(`/${APP_DETAILS_PATH}/${appId(app)}`)}
     >
       {app.metadata?.image && <img
         src={app.metadata.image}

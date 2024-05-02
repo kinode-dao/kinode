@@ -8,8 +8,7 @@ import SearchHeader from "../components/SearchHeader";
 import { PageProps } from "../types/Page";
 import { useNavigate } from "react-router-dom";
 import { appId } from "../utils/app";
-
-interface MyAppsPageProps extends PageProps { }
+import { PUBLISH_PATH } from "../constants/path";
 
 export default function MyAppsPage() { // eslint-disable-line
   const { myApps, getMyApps } = useAppsStore()
@@ -57,7 +56,7 @@ export default function MyAppsPage() { // eslint-disable-line
       <SearchHeader value={searchQuery} onChange={searchMyApps} />
       <div className="flex justify-between items-center mt-2">
         <h4 className="mb-2">My Packages</h4>
-        <button onClick={() => navigate('/publish')}>
+        <button onClick={() => navigate(PUBLISH_PATH)}>
           <FaUpload className="mr-2" />
           Publish Package
         </button>

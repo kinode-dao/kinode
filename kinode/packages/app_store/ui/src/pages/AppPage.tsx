@@ -8,6 +8,7 @@ import AppHeader from "../components/AppHeader";
 import SearchHeader from "../components/SearchHeader";
 import { PageProps } from "../types/Page";
 import { appId } from "../utils/app";
+import { PUBLISH_PATH } from "../constants/path";
 
 interface AppPageProps extends PageProps { }
 
@@ -35,7 +36,7 @@ export default function AppPage() {
   }, [params.id]);
 
   const goToPublish = useCallback(() => {
-    navigate("/publish", { state: { app } });
+    navigate(PUBLISH_PATH, { state: { app } });
   }, [app, navigate]);
 
   const version = useMemo(

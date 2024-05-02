@@ -8,7 +8,7 @@ import {
   FaX,
 } from "react-icons/fa6";
 
-import { MY_APPS_PATH } from "../constants/path";
+import { MY_APPS_PATH, PUBLISH_PATH } from "../constants/path";
 import classNames from "classnames";
 import { FaHome } from "react-icons/fa";
 
@@ -57,7 +57,7 @@ export default function SearchHeader({
       )}
       {!hidePublish && <button
         className="flex flex-col c mr-2 icon"
-        onClick={() => navigate("/publish")}
+        onClick={() => navigate(PUBLISH_PATH)}
       >
         <FaUpload />
       </button>}
