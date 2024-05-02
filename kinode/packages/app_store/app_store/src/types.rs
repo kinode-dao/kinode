@@ -1,4 +1,4 @@
-use crate::LocalRequest;
+use crate::{start_api_download, DownloadResponse, LocalRequest};
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::eth::Log;
 use kinode_process_lib::kernel_types as kt;
@@ -365,6 +365,7 @@ impl State {
         &mut self,
         our: &Address,
         log: Log,
+        requested_apis: &mut HashMap<PackageId, RequestedPackage>,
     ) -> anyhow::Result<()> {
         let block_number: u64 = log
             .block_number
@@ -413,21 +414,34 @@ impl State {
 
                 let listing = match self.get_listing_with_hash_mut(&package_hash) {
                     Some(current_listing) => {
-                        current_listing.name = package_name;
-                        current_listing.publisher = publisher_name;
+                        current_listing.name = package_name.clone();
+                        current_listing.publisher = publisher_name.clone();
                         current_listing.metadata_hash = metadata_hash;
                         current_listing.metadata = metadata;
                         current_listing.clone()
                     }
                     None => PackageListing {
                         owner: "".to_string(),
-                        name: package_name,
-                        publisher: publisher_name,
+                        name: package_name.clone(),
+                        publisher: publisher_name.clone(),
                         metadata_hash,
                         metadata,
                     },
                 };
-                self.insert_listing(package_hash, listing);
+                self.insert_listing(package_hash.clone(), listing);
+
+                let api_hash = ""; // TODO
+                let api_download_request_result = start_api_download(
+                    our,
+                    requested_apis,
+                    PackageId::new(&package_name, &publisher_name),
+                    &publisher_name,
+                    api_hash,
+                );
+                match api_download_request_result {
+                    DownloadResponse::Failure => println!("failed to get API for {package_name}"),
+                    _ => {}
+                }
             }
             AppMetadataUpdated::SIGNATURE_HASH => {
                 let package_hash = log.topics()[1].to_string();

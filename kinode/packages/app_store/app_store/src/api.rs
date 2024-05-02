@@ -17,6 +17,14 @@ pub enum RemoteRequest {
         package_id: PackageId,
         desired_version_hash: Option<String>,
     },
+    /// Request a package API from another node who we expect to
+    /// be mirroring it. If the remote node is mirroring the package,
+    /// they must respond with RemoteResponse::DownloadApproved,
+    /// at which point requester can expect an FTWorkerRequest::Receive.
+    DownloadApi {
+        package_id: PackageId,
+        desired_version_hash: String,
+    },
 }
 
 /// The response expected from sending a [`RemoteRequest`].
@@ -45,6 +53,7 @@ pub enum LocalRequest {
     /// This is used for locally installing a package.
     NewPackage {
         package: PackageId,
+        metadata: kernel_types::Erc721Metadata,
         /// Sets whether we will mirror this package for others
         mirror: bool,
     },
