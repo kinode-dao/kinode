@@ -40,7 +40,7 @@ wit_bindgen::generate!({
 
 call_init!(init);
 fn init(our: Address) {
-    let mut app_data: BTreeMap<ProcessId, HomepageApp> = BTreeMap::new();
+    let mut app_data: BTreeMap<String, HomepageApp> = BTreeMap::new();
 
     serve_ui(&our, "ui", true, false, vec!["/"]).expect("failed to serve ui");
 
@@ -102,7 +102,7 @@ fn init(our: Address) {
                         );
                     }
                     HomepageRequest::Remove => {
-                        app_data.remove(&message.source().process);
+                        app_data.remove(&message.source().process.to_string());
                     }
                 }
             } else if let Ok(request) = serde_json::from_slice::<HttpServerRequest>(message.body())
@@ -131,7 +131,7 @@ fn init(our: Address) {
                         } else {
                             send_response(
                                 StatusCode::OK,
-                                Some(HashMap::new()),
+                                Some(std::collections::HashMap::new()),
                                 "yes hello".as_bytes().to_vec(),
                             );
                         }
