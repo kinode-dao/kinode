@@ -5,6 +5,7 @@ use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
 use kinode_process_lib::{call_init, println};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
@@ -103,6 +104,46 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
     println!("subscribed to logs successfully");
 }
 
+fn get_widget() -> String {
+    return r#"<html>
+<head>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="h-screen w-screen">
+    <div id="latest-apps" class="flex flex-col items-center bg-white/25 rounded-lg shadow-lg w-full h-full overflow-y-auto">
+        <h1 class="font-bold text-white">Latest Apps</h1>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/main:app_store:sys/apps/listed')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('latest-apps');
+                    data.forEach(app => {
+                        const div = document.createElement('div');
+                        div.className = 'm-2 grow self-stretch flex items-stretch m-2 p-2 rounded-lg shadow bg-white/25 font-sans';
+                        div.innerHTML = `${app.metadata.image ? `<div 
+                            class="rounded mr-2"
+                            style="background-image: url('${app.metadata.image}'); 
+                                background-cover: cover;
+                                background-position: center;
+                                width: 33%"
+                        ></div>` : ''}
+                        <div class="flex flex-col grow">
+                            <h2 class="font-bold">${app.metadata.name}</h2>
+                            <p>${app.metadata.description}</p>
+                        </div>`;
+                        container.appendChild(div);
+                    });
+                })
+                .catch(error => console.error('Error fetching apps:', error));
+        });
+    </script>
+</body>
+</html>"#
+        .to_string();
+}
+
 call_init!(init);
 fn init(our: Address) {
     println!("started");
@@ -137,7 +178,8 @@ fn init(our: Address) {
                 "Add": {
                     "label": "App Store",
                     "icon": ICON,
-                    "path": "/" // just our root
+                    "path": "/", // just our root
+                    "widget": get_widget()
                 }
             })
             .to_string()

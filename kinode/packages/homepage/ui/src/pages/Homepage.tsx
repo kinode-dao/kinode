@@ -5,6 +5,7 @@ import useHomepageStore from '../store/homepageStore'
 import { FaGear, FaV } from 'react-icons/fa6'
 import AppsDock from '../components/AppsDock'
 import AllApps from '../components/AllApps'
+import Widgets from '../components/Widgets'
 
 interface AppStoreApp {
   package: string,
@@ -77,8 +78,9 @@ function Homepage() {
         <KinodeText />
         <KinodeBird />
       </div>
-      <AppsDock apps={apps.filter(a => a.is_favorite)} />
-      <AllApps apps={apps} />
+      <AppsDock />
+      <Widgets />
+      <AllApps />
     </div>
   )
 }

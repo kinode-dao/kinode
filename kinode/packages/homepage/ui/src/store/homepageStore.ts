@@ -10,6 +10,7 @@ export interface HomepageApp {
   state?: {
     our_version: string
   }
+  widget?: string
 }
 
 export interface HomepageStore {
