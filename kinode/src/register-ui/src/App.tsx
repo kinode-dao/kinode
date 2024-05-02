@@ -46,7 +46,7 @@ function App() {
   const params = useParams()
 
   const [pw, setPw] = useState<string>('');
-  const [key, setKey] = useState<string>('');
+  const [key, _setKey] = useState<string>('');
   const [keyFileName, setKeyFileName] = useState<string>('');
   const [reset, setReset] = useState<boolean>(false);
   const [direct, setDirect] = useState<boolean>(false);
