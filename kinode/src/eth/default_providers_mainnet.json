@@ -1,12 +1,5 @@
 [
     {
-        "chain_id": 31337,
-        "trusted": true,
-        "provider": {
-            "RpcUrl": "ws://localhost:8545"
-        }
-    },
-    {
         "chain_id": 1,
         "trusted": false,
         "provider": {
