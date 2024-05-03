@@ -108,10 +108,32 @@ fn get_widget() -> String {
     return r#"<html>
 <head>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .app {
+            max-width: 32%; 
+            width: 100%;
+        }
+
+        .app-image {
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .app-info {
+            max-width: 67%
+        }
+    </style>
 </head>
-<body class="h-screen w-screen">
-    <div id="latest-apps" class="flex flex-col items-center bg-white/25 rounded-lg shadow-lg w-full h-full overflow-y-auto">
-        <h1 class="font-bold text-white">Latest Apps</h1>
+<body class="text-white overflow-hidden">
+    <div 
+        id="latest-apps" 
+        class="flex flex-wrap p-2 gap-2 items-center backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto"
+        style="
+            scrollbar-color: transparent transparent;
+            scrollbar-width: none;
+        "
+    >
     </div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -121,15 +143,12 @@ fn get_widget() -> String {
                     const container = document.getElementById('latest-apps');
                     data.forEach(app => {
                         const div = document.createElement('div');
-                        div.className = 'm-2 grow self-stretch flex items-stretch m-2 p-2 rounded-lg shadow bg-white/25 font-sans';
+                        div.className = 'app p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 font-sans';
                         div.innerHTML = `${app.metadata.image ? `<div 
-                            class="rounded mr-2"
-                            style="background-image: url('${app.metadata.image}'); 
-                                background-cover: cover;
-                                background-position: center;
-                                width: 33%"
+                            class="app-image rounded mr-2 grow"
+                            style="background-image: url('${app.metadata.image}');"
                         ></div>` : ''}
-                        <div class="flex flex-col grow">
+                        <div class="app-info flex flex-col grow">
                             <h2 class="font-bold">${app.metadata.name}</h2>
                             <p>${app.metadata.description}</p>
                         </div>`;

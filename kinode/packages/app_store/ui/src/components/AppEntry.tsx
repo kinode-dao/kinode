@@ -15,7 +15,7 @@ export default function AppEntry({ app, ...props }: AppEntryProps) {
     <div {...props} key={appId(app)} className="flex justify-between w-full rounded hover:bg-white/10 card">
       <AppHeader app={app} size="small" />
       <div className="flex mr-1 items-start">
-        {!app.state?.caps_approved && <ActionButton app={app} className="mr-2" />}
+        <ActionButton app={app} className="mr-2" />
         <MoreActions app={app} />
       </div>
     </div>

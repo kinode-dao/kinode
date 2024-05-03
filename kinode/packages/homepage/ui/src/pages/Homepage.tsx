@@ -79,8 +79,8 @@ function Homepage() {
         <KinodeBird />
       </div>
       <AppsDock />
-      <Widgets />
       <AllApps />
+      <Widgets />
     </div>
   )
 }
