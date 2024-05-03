@@ -1,14 +1,13 @@
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message, call_init, eth, get_typed_state, println, set_state, Address, Message, Request,
-    Response,
+    await_message, call_init, eth, get_typed_state, net, println, set_state, Address, Message,
+    Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{
     hash_map::{Entry, HashMap},
     BTreeMap,
 };
-use std::string::FromUtf8Error;
 
 wit_bindgen::generate!({
     path: "wit",
@@ -449,33 +448,5 @@ fn get_name(log: &eth::Log) -> anyhow::Result<String> {
             "got event other than NodeRegistered without knowing about existing node name"
         )
     })?;
-    dnswire_decode(decoded.name.to_vec()).map_err(|e| anyhow::anyhow!(e))
-}
-
-fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {
-    let mut i = 0;
-    let mut result = Vec::new();
-
-    while i < wire_format_bytes.len() {
-        let len = wire_format_bytes[i] as usize;
-        if len == 0 {
-            break;
-        }
-        let end = i + len + 1;
-        let mut span = wire_format_bytes[i + 1..end].to_vec();
-        span.push('.' as u8);
-        result.push(span);
-        i = end;
-    }
-
-    let flat: Vec<_> = result.into_iter().flatten().collect();
-
-    let name = String::from_utf8(flat)?;
-
-    // Remove the trailing '.' if it exists (it should always exist)
-    if name.ends_with('.') {
-        Ok(name[0..name.len() - 1].to_string())
-    } else {
-        Ok(name)
-    }
+    net::dnswire_decode(&decoded.name).map_err(|e| anyhow::anyhow!(e))
 }
