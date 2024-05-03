@@ -464,6 +464,19 @@ fn handle_local_request(
             else {
                 return (LocalResponse::NewPackageResponse(NewPackageResponse::Failure), None);
             };
+
+            let drive_path = format!("/{package}/pkg");
+            let result = Request::new()
+                .target(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: format!("{}/api.zip", drive_path),
+                    action: vfs::VfsAction::Len,
+                }).unwrap())
+                .send_and_await_response(5);
+            if let Ok(Ok(_)) = result {
+                state.downloaded_apis.insert(package.to_owned());
+            };
+
             (LocalResponse::NewPackageResponse(NewPackageResponse::Success), None)
         }
         LocalRequest::Download {
@@ -693,7 +706,7 @@ fn handle_receive_download_api(
     println!("successfully received api {}", package_id.package());
     // only save the package if we actually requested it
     let Some(requested_package) = requested_apis.remove(&package_id) else {
-        return Err(anyhow::anyhow!("received unrequested package--rejecting!"));
+        return Err(anyhow::anyhow!("received unrequested api--rejecting!"));
     };
     let Some(blob) = get_blob() else {
         return Err(anyhow::anyhow!("received download but found no blob"));
@@ -708,11 +721,11 @@ fn handle_receive_download_api(
     if download_hash != hash {
         if hash.is_empty() {
             println!(
-                "\x1b[33mwarning: downloaded package has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
+                "\x1b[33mwarning: downloaded api has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
             );
         } else {
             return Err(anyhow::anyhow!(
-                "downloaded package is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
+                "downloaded api is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
             ));
         }
     } else {
