@@ -4,7 +4,7 @@ use kinode_process_lib::eth::Log;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::{println, *};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 sol! {
     event AppRegistered(
@@ -102,6 +102,8 @@ pub struct State {
     /// ingest apps on disk if we have to rebuild our state. this is also
     /// updated every time we download, create, or uninstall a package.
     pub downloaded_packages: HashMap<PackageId, PackageState>,
+    /// the APIs we have
+    pub downloaded_apis: HashSet<PackageId>,
 }
 
 impl State {
@@ -115,6 +117,7 @@ impl State {
             package_hashes: HashMap::new(),
             listed_packages: HashMap::new(),
             downloaded_packages: HashMap::new(),
+            downloaded_apis: HashSet::new(),
         };
         state.populate_packages_from_filesystem()?;
         Ok(state)
@@ -151,6 +154,58 @@ impl State {
 
     pub fn get_downloaded_package(&self, package_id: &PackageId) -> Option<PackageState> {
         self.downloaded_packages.get(package_id).cloned()
+    }
+
+    pub fn add_downloaded_api(
+        &mut self,
+        package_id: &PackageId,
+        package_bytes: Option<Vec<u8>>,
+    ) -> anyhow::Result<()> {
+        if let Some(package_bytes) = package_bytes {
+            let drive_name = format!("/{package_id}/pkg");
+            let blob = LazyLoadBlob {
+                mime: Some("application/zip".to_string()),
+                bytes: package_bytes,
+            };
+
+            // create a new drive for this package in VFS
+            // this is possible because we have root access
+            Request::to(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: drive_name.clone(),
+                    action: vfs::VfsAction::CreateDrive,
+                })?)
+                .send_and_await_response(5)??;
+
+            // convert the zip to a new package drive
+            let response = Request::to(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: drive_name.clone(),
+                    action: vfs::VfsAction::AddZip,
+                })?)
+                .blob(blob.clone())
+                .send_and_await_response(5)??;
+            let vfs::VfsResponse::Ok = serde_json::from_slice::<vfs::VfsResponse>(response.body())?
+            else {
+                return Err(anyhow::anyhow!(
+                    "cannot add NewPackage: do not have capability to access vfs"
+                ));
+            };
+
+            // save the zip file itself in VFS for sharing with other nodes
+            // call it <package_id>.zip
+            let zip_path = format!("{}/api.zip", drive_name);
+            Request::to(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: zip_path,
+                    action: vfs::VfsAction::Write,
+                })?)
+                .blob(blob)
+                .send_and_await_response(5)??;
+        }
+        self.downloaded_apis.insert(package_id.to_owned());
+        crate::set_state(&bincode::serialize(self)?);
+        Ok(())
     }
 
     pub fn add_downloaded_package(

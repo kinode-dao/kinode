@@ -244,7 +244,7 @@ fn handle_message(
                 if our.node != source.node {
                     return Err(anyhow::anyhow!("local request from non-local node"));
                 }
-                let resp = handle_local_request(
+                let (body, blob) = handle_local_request(
                     &our,
                     &local_request,
                     state,
@@ -253,7 +253,13 @@ fn handle_message(
                     requested_packages,
                 );
                 if expects_response.is_some() {
-                    Response::new().body(serde_json::to_vec(&resp)?).send()?;
+                    let response = Response::new().body(serde_json::to_vec(&body)?);
+                    let response = if let Some(blob) = blob {
+                        response.blob(blob)
+                    } else {
+                        response
+                    };
+                    response.send()?;
                 }
             }
             Req::RemoteRequest(remote_request) => {
@@ -307,7 +313,7 @@ fn handle_message(
                     )?;
                 }
             }
-        },
+        }
         Message::Response { body, context, .. } => {
             // the only kind of response we care to handle here!
             let Some(context) = context else {
@@ -434,11 +440,11 @@ fn handle_local_request(
     eth_provider: &eth::Provider,
     requested_apis: &mut HashMap<PackageId, RequestedPackage>,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
-) -> LocalResponse {
+) -> (LocalResponse, Option<LazyLoadBlob>) {
     match request {
         LocalRequest::NewPackage { package, metadata, mirror } => {
             let Some(blob) = get_blob() else {
-                return LocalResponse::NewPackageResponse(NewPackageResponse::Failure);
+                return (LocalResponse::NewPackageResponse(NewPackageResponse::Failure), None);
             };
             // set the version hash for this new local package
             let our_version = generate_version_hash(&blob.bytes);
@@ -456,9 +462,9 @@ fn handle_local_request(
             };
             let Ok(()) = state.add_downloaded_package(package, package_state, Some(blob.bytes))
             else {
-                return LocalResponse::NewPackageResponse(NewPackageResponse::Failure);
+                return (LocalResponse::NewPackageResponse(NewPackageResponse::Failure), None);
             };
-            LocalResponse::NewPackageResponse(NewPackageResponse::Success)
+            (LocalResponse::NewPackageResponse(NewPackageResponse::Success), None)
         }
         LocalRequest::Download {
             package: package_id,
@@ -466,7 +472,7 @@ fn handle_local_request(
             mirror,
             auto_update,
             desired_version_hash,
-        } => LocalResponse::DownloadResponse(start_download(
+        } => (LocalResponse::DownloadResponse(start_download(
             our,
             requested_packages,
             package_id,
@@ -474,32 +480,67 @@ fn handle_local_request(
             *mirror,
             *auto_update,
             desired_version_hash,
-        )),
-        LocalRequest::Install(package) => match handle_install(our, state, package) {
+        )), None),
+        LocalRequest::Install(package) => (match handle_install(our, state, package) {
             Ok(()) => LocalResponse::InstallResponse(InstallResponse::Success),
             Err(_) => LocalResponse::InstallResponse(InstallResponse::Failure),
-        },
-        LocalRequest::Uninstall(package) => match state.uninstall(package) {
+        }, None),
+        LocalRequest::Uninstall(package) => (match state.uninstall(package) {
             Ok(()) => LocalResponse::UninstallResponse(UninstallResponse::Success),
             Err(_) => LocalResponse::UninstallResponse(UninstallResponse::Failure),
-        },
-        LocalRequest::StartMirroring(package) => match state.start_mirroring(package) {
+        }, None),
+        LocalRequest::StartMirroring(package) => (match state.start_mirroring(package) {
             true => LocalResponse::MirrorResponse(MirrorResponse::Success),
             false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
-        },
-        LocalRequest::StopMirroring(package) => match state.stop_mirroring(package) {
+        }, None),
+        LocalRequest::StopMirroring(package) => (match state.stop_mirroring(package) {
             true => LocalResponse::MirrorResponse(MirrorResponse::Success),
             false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
-        },
-        LocalRequest::StartAutoUpdate(package) => match state.start_auto_update(package) {
+        }, None),
+        LocalRequest::StartAutoUpdate(package) => (match state.start_auto_update(package) {
             true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
             false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
-        },
-        LocalRequest::StopAutoUpdate(package) => match state.stop_auto_update(package) {
+        }, None),
+        LocalRequest::StopAutoUpdate(package) => (match state.stop_auto_update(package) {
             true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
             false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
-        },
-        LocalRequest::RebuildIndex => rebuild_index(our, state, eth_provider, requested_apis),
+        }, None),
+        LocalRequest::RebuildIndex => (rebuild_index(our, state, eth_provider, requested_apis), None),
+        LocalRequest::ListApis => (list_apis(state), None),
+        LocalRequest::GetApi(ref package_id) => get_api(package_id, state),
+    }
+}
+
+pub fn get_api(package_id: &PackageId, state: &mut State) -> (LocalResponse, Option<LazyLoadBlob>) {
+    let (response, blob) = if !state.downloaded_apis.contains(package_id) {
+        (GetApiResponse::Failure, None)
+    } else {
+        let drive_path = format!("/{package_id}/pkg");
+        let result = Request::new()
+            .target(("our", "vfs", "distro", "sys"))
+            .body(serde_json::to_vec(&vfs::VfsRequest {
+                path: format!("{}/api.zip", drive_path),
+                action: vfs::VfsAction::Read,
+            }).unwrap())
+            .send_and_await_response(5);
+        let Ok(Ok(_)) = result else {
+            return (LocalResponse::GetApiResponse(GetApiResponse::Failure), None);
+        };
+        let Some(blob) = get_blob() else {
+            return (LocalResponse::GetApiResponse(GetApiResponse::Failure), None);
+        };
+        let blob = LazyLoadBlob {
+            mime: Some("application/json".to_string()),
+            bytes: blob.bytes,
+        };
+        (GetApiResponse::Success, Some(blob))
+    };
+    (LocalResponse::GetApiResponse(response), blob)
+}
+
+pub fn list_apis(state: &mut State) -> LocalResponse {
+    LocalResponse::ListApisResponse {
+        apis: state.downloaded_apis.iter().cloned().collect()
     }
 }
 
@@ -678,22 +719,10 @@ fn handle_receive_download_api(
         verified = true;
     }
 
-    // TODO: add some state
-    //state.add_downloaded_package(
-    //    package_id,
-    //    PackageState {
-    //        mirrored_from: Some(requested_package.from),
-    //        our_version: download_hash,
-    //        installed: false,
-    //        verified,
-    //        caps_approved: false,
-    //        manifest_hash: None, // generated in the add fn
-    //        mirroring: requested_package.mirror,
-    //        auto_update: requested_package.auto_update,
-    //        metadata: None, // TODO
-    //    },
-    //    Some(blob.bytes),
-    //)?;
+    state.add_downloaded_api(
+        &package_id,
+        Some(blob.bytes),
+    )?;
 
     Ok(())
 }

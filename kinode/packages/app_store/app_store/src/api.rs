@@ -102,6 +102,10 @@ pub enum LocalRequest {
     /// This is an expensive operation! Throw away our state and rebuild from scratch.
     /// Re-index the locally downloaded/installed packages AND the onchain data.
     RebuildIndex,
+    /// List all apps we have APIs for.
+    ListApis,
+    /// Return the given API, if we have it.
+    GetApi(PackageId),
 }
 
 /// Local responses take this form.
@@ -116,6 +120,8 @@ pub enum LocalResponse {
     MirrorResponse(MirrorResponse),
     AutoUpdateResponse(AutoUpdateResponse),
     RebuiltIndex,
+    ListApisResponse { apis: Vec<PackageId> },
+    GetApiResponse(GetApiResponse),  // API in blob (or None)
 }
 
 // TODO for all: expand these to elucidate why something failed
@@ -153,6 +159,12 @@ pub enum MirrorResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum AutoUpdateResponse {
+    Success,
+    Failure,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum GetApiResponse {
     Success,
     Failure,
 }
