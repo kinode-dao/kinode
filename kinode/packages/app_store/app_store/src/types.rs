@@ -192,16 +192,16 @@ impl State {
                 ));
             };
 
-            // save the zip file itself in VFS for sharing with other nodes
-            // call it <package_id>.zip
-            let zip_path = format!("{}/api.zip", drive_name);
-            Request::to(("our", "vfs", "distro", "sys"))
-                .body(serde_json::to_vec(&vfs::VfsRequest {
-                    path: zip_path,
-                    action: vfs::VfsAction::Write,
-                })?)
-                .blob(blob)
-                .send_and_await_response(5)??;
+            //// save the zip file itself in VFS for sharing with other nodes
+            //// call it <package_id>.zip
+            //let zip_path = format!("{}/api.zip", drive_name);
+            //Request::to(("our", "vfs", "distro", "sys"))
+            //    .body(serde_json::to_vec(&vfs::VfsRequest {
+            //        path: zip_path,
+            //        action: vfs::VfsAction::Write,
+            //    })?)
+            //    .blob(blob)
+            //    .send_and_await_response(5)??;
         }
         self.downloaded_apis.insert(package_id.to_owned());
         crate::set_state(&bincode::serialize(self)?);

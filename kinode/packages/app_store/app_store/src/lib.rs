@@ -404,7 +404,7 @@ fn handle_remote_request(
                     },
                 ));
             }
-            let file_name = format!("/api-{}-v0.1.0.zip", package_id);  // TODO: actual version
+            let file_name = format!("/{}-v0.1.0-api.zip", package_id);  // TODO: actual version
             // get the .zip from VFS and attach as blob to response
             let file_path = format!("/{}/pkg/api.zip", package_id);
             let Ok(Ok(_)) = Request::to(("our", "vfs", "distro", "sys"))
@@ -469,8 +469,8 @@ fn handle_local_request(
             let result = Request::new()
                 .target(("our", "vfs", "distro", "sys"))
                 .body(serde_json::to_vec(&vfs::VfsRequest {
-                    path: format!("{}/api.zip", drive_path),
-                    action: vfs::VfsAction::Len,
+                    path: format!("{}/api", drive_path),
+                    action: vfs::VfsAction::Metadata,
                 }).unwrap())
                 .send_and_await_response(5);
             if let Ok(Ok(_)) = result {
@@ -670,7 +670,7 @@ fn handle_receive_download(
     let package_name = package_name[1..].trim_end_matches(".zip");
     let Ok(package_id) = package_name.parse::<PackageId>() else {
         let package_name_split = package_name.split('-').collect::<Vec<_>>();
-        let [api, package_name, version] = package_name_split.as_slice() else {
+        let [package_name, version, api] = package_name_split.as_slice() else {
             return Err(anyhow::anyhow!(
                 "bad package filename fron download: {package_name}"
             ));
