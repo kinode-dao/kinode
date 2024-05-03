@@ -87,7 +87,10 @@ async fn main() {
             provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
         });
     }
-    let local_chain_port = matches.get_one::<u16>("fakechain-port").cloned().unwrap_or(8545);
+    let local_chain_port = matches
+        .get_one::<u16>("fakechain-port")
+        .cloned()
+        .unwrap_or(8545);
     eth_provider_config.push(lib::eth::ProviderConfig {
         chain_id: 31337,
         trusted: true,
