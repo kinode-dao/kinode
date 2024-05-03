@@ -690,7 +690,7 @@ async fn confirm_change_network_keys(
     success_response(sender, our.clone(), decoded_keyfile, encoded_keyfile).await
 }
 
-async fn assign_ws_routing(
+pub async fn assign_ws_routing(
     our: &mut Identity,
     kns_address: EthAddress,
     provider: Arc<Provider<PubSubFrontend>>,

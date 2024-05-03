@@ -7,27 +7,52 @@ use alloy_rpc_types::request::{TransactionInput, TransactionRequest};
 use alloy_signer::{LocalWallet, Signer, SignerSync};
 use alloy_sol_types::SolCall;
 use alloy_transport_ws::WsConnect;
+use lib::core::Identity;
 use std::str::FromStr;
+use std::sync::Arc;
 
 pub mod helpers;
 
+use crate::register::assign_ws_routing;
 pub use helpers::RegisterHelpers::*;
 pub use helpers::*;
 
+const FAKE_DOTDEV: &str = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+const FAKE_KNS: &str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+
+pub async fn assign_ws_local_helper(
+    our: &mut Identity,
+    ws_port: u16,
+    fakechain_port: u16,
+) -> Result<(), anyhow::Error> {
+    let kns = Address::from_str(FAKE_KNS)?;
+    let endpoint = format!("ws://localhost:{}", fakechain_port);
+
+    let ws = WsConnect {
+        url: endpoint,
+        auth: None,
+    };
+
+    let client = ClientBuilder::default().ws(ws).await?;
+    let provider = Provider::new_with_client(client);
+
+    assign_ws_routing(our, kns, Arc::new(provider), Some(ws_port)).await
+}
+
 pub async fn register_local(
     name: &str,
-    port: u16,
+    ws_port: u16,
     pubkey: &str,
-    router_port: u16,
+    fakechain_port: u16,
 ) -> Result<(), anyhow::Error> {
     let wallet = LocalWallet::from_str(
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     )?;
 
-    let dotdev = Address::from_str("0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9")?;
-    let kns = Address::from_str("0x5FbDB2315678afecb367f032d93F642f64180aa3")?;
+    let dotdev = Address::from_str(FAKE_DOTDEV)?;
+    let kns = Address::from_str(FAKE_KNS)?;
 
-    let endpoint = format!("ws://localhost:{}", router_port);
+    let endpoint = format!("ws://localhost:{}", fakechain_port);
     let ws = WsConnect {
         url: endpoint,
         auth: None,
@@ -47,7 +72,7 @@ pub async fn register_local(
     let set_ip = setAllIpCall {
         _node: namehash.into(),
         _ip: ip,
-        _ws: port,
+        _ws: ws_port,
         _wt: 0,
         _tcp: 0,
         _udp: 0,
@@ -88,7 +113,7 @@ pub async fn register_local(
             let set_ip = setAllIpCall {
                 _node: namehash.into(),
                 _ip: ip,
-                _ws: port,
+                _ws: ws_port,
                 _wt: 0,
                 _tcp: 0,
                 _udp: 0,

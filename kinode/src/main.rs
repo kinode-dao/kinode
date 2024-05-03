@@ -64,10 +64,11 @@ async fn main() {
     let is_detached = false;
 
     #[cfg(feature = "simulation-mode")]
-    let (password, fake_node_name, is_detached) = (
+    let (password, fake_node_name, is_detached, fakechain_port) = (
         matches.get_one::<String>("password"),
         matches.get_one::<String>("fake-node-name"),
         *matches.get_one::<bool>("detached").unwrap(),
+        matches.get_one::<u16>("fakechain-port").cloned(),
     );
 
     // default eth providers/routers
@@ -131,19 +132,18 @@ async fn main() {
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
 
     let our_ip = find_public_ip().await;
+    let (wc_tcp_handle, flag_used) = setup_ws_networking(ws_networking_port.cloned()).await;
 
     #[cfg(feature = "simulation-mode")]
     let (our, encoded_keyfile, decoded_keyfile) = simulate_node(
         fake_node_name.cloned(),
         password.cloned(),
         home_directory_path,
-        ws_networking_port.cloned(),
-        http_server_port,
+        (wc_tcp_handle, flag_used),
+        fakechain_port,
     )
     .await;
 
-    #[cfg(not(feature = "simulation-mode"))]
-    let (wc_tcp_handle, flag_used) = setup_ws_networking(ws_networking_port.cloned()).await;
     #[cfg(not(feature = "simulation-mode"))]
     let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
         &home_directory_path,
@@ -462,8 +462,8 @@ pub async fn simulate_node(
     fake_node_name: Option<String>,
     password: Option<String>,
     home_directory_path: &str,
-    router_port: Option<u16>,
-    node_port: u16,
+    (ws_networking, _ws_used): (tokio::net::TcpListener, bool),
+    fakechain_port: Option<u16>,
 ) -> (Identity, Vec<u8>, Keyfile) {
     match fake_node_name {
         None => {
@@ -477,15 +477,24 @@ pub async fn simulate_node(
                         .expect("could not read keyfile");
                     let decoded = keygen::decode_keyfile(&keyfile, &password)
                         .expect("could not decode keyfile");
-                    let identity = Identity {
+                    let mut identity = Identity {
                         name: decoded.username.clone(),
                         networking_key: format!(
                             "0x{}",
                             hex::encode(decoded.networking_keypair.public_key().as_ref())
                         ),
-                        ws_routing: Some(("127.0.0.1".to_string(), node_port)),
+                        ws_routing: None,
                         allowed_routers: decoded.routers.clone(),
                     };
+
+                    fakenet::assign_ws_local_helper(
+                        &mut identity,
+                        ws_networking.local_addr().unwrap().port(),
+                        fakechain_port.unwrap_or(8545),
+                    )
+                    .await
+                    .unwrap();
+
                     (identity, keyfile, decoded)
                 }
             }
@@ -497,16 +506,17 @@ pub async fn simulate_node(
             let mut jwt_secret = [0u8; 32];
             ring::rand::SecureRandom::fill(&seed, &mut jwt_secret).unwrap();
 
-            let router_port = router_port.unwrap_or(8545);
+            let fakechain_port: u16 = fakechain_port.unwrap_or(8545);
+            let ws_port = ws_networking.local_addr().unwrap().port();
 
-            fakenet::register_local(&name, node_port, &pubkey, router_port)
+            fakenet::register_local(&name, ws_port, &pubkey, fakechain_port)
                 .await
                 .unwrap();
 
             let identity = Identity {
                 name: name.clone(),
                 networking_key: pubkey,
-                ws_routing: Some(("127.0.0.1".to_string(), node_port)),
+                ws_routing: Some(("127.0.0.1".into(), ws_port)),
                 allowed_routers: vec![],
             };
 
@@ -563,7 +573,7 @@ fn build_command() -> Command {
         )
         .arg(
             arg!(--"ws-port" <PORT> "Kinode internal WebSockets protocol port [default: first unbound at or above 9000]")
-                .alias("network-router-port")
+                .alias("--ws-port")
                 .value_parser(value_parser!(u16)),
         )
         .arg(
@@ -582,7 +592,10 @@ fn build_command() -> Command {
     let app = app
         .arg(arg!(--password <PASSWORD> "Networking password"))
         .arg(arg!(--"fake-node-name" <NAME> "Name of fake node to boot"))
-        .arg(arg!(--"net-pk" <NET_PK> "Networking private key"))
+        .arg(
+            arg!(--"fakechain-port" <FAKECHAIN_PORT> "Port to bind to for fakechain")
+                .value_parser(value_parser!(u16)),
+        )
         .arg(
             arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
                 .action(clap::ArgAction::SetTrue),
