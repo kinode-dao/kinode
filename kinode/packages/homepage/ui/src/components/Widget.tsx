@@ -6,14 +6,15 @@ import { useState } from "react"
 interface WidgetProps {
   package_name: string,
   widget: string
+  forceLarge?: boolean
 }
 
-const Widget: React.FC<WidgetProps> = ({ package_name, widget }) => {
+const Widget: React.FC<WidgetProps> = ({ package_name, widget, forceLarge }) => {
   const { widgetSettings, toggleWidgetVisibility } = useHomepageStore()
   const [isHovered, setIsHovered] = useState(false)
   return <div
     className={classNames("self-stretch flex flex-wrap shadow-lg rounded-lg relative", {
-      "min-w-full": widgetSettings[package_name]?.size === "large",
+      "min-w-full": forceLarge || widgetSettings[package_name]?.size === "large",
       "min-w-1/2": !widgetSettings[package_name]?.size || widgetSettings[package_name]?.size === "small"
     })}
     onMouseEnter={() => setIsHovered(true)}

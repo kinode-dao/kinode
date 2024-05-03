@@ -20,9 +20,10 @@ const Widgets = () => {
     <div className="flex-center flex-wrap gap-4 flex-grow self-stretch">
       {apps
         .filter(app => app.widget)
-        .map(({ widget, package_name }) => !widgetSettings[package_name]?.hide && <Widget
+        .map(({ widget, package_name }, _i, _appsWithWidgets) => !widgetSettings[package_name]?.hide && <Widget
           package_name={package_name}
           widget={widget!}
+          forceLarge={_appsWithWidgets.length === 1}
         />)}
     </div>
     {showWidgetsSettings && <WidgetsSettingsModal />}
