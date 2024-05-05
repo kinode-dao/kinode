@@ -110,7 +110,7 @@ fn get_widget() -> String {
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .app {
-            max-width: 32%; 
+            max-width: 32%;
             width: 100%;
         }
 
@@ -126,8 +126,8 @@ fn get_widget() -> String {
     </style>
 </head>
 <body class="text-white overflow-hidden">
-    <div 
-        id="latest-apps" 
+    <div
+        id="latest-apps"
         class="flex flex-wrap p-2 gap-2 items-center backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto"
         style="
             scrollbar-color: transparent transparent;
@@ -144,7 +144,7 @@ fn get_widget() -> String {
                     data.forEach(app => {
                         const div = document.createElement('div');
                         div.className = 'app p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 font-sans';
-                        div.innerHTML = `${app.metadata.image ? `<div 
+                        div.innerHTML = `${app.metadata.image ? `<div
                             class="app-image rounded mr-2 grow"
                             style="background-image: url('${app.metadata.image}');"
                         ></div>` : ''}
@@ -518,9 +518,7 @@ pub fn rebuild_index(
 ) -> LocalResponse {
     *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
     // kill our old subscription and build a new one.
-    eth_provider
-        .unsubscribe(1)
-        .expect("app_store: failed to unsub from eth events!");
+    let _ = eth_provider.unsubscribe(1);
 
     let filter = eth::Filter::new()
         .address(eth::Address::from_str(&state.contract_address).unwrap())
