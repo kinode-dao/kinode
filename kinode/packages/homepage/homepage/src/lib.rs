@@ -19,8 +19,8 @@ enum HomepageRequest {
     /// the icon is a base64 encoded image.
     Add {
         label: String,
-        icon: String,
-        path: String,
+        icon: Option<String>,
+        path: Option<String>,
         widget: Option<String>,
     },
     Remove,
@@ -29,9 +29,9 @@ enum HomepageRequest {
 #[derive(Serialize, Deserialize)]
 struct HomepageApp {
     package_name: String,
-    path: String,
+    path: Option<String>,
     label: String,
-    base64_icon: String,
+    base64_icon: Option<String>,
     widget: Option<String>,
 }
 
@@ -96,13 +96,15 @@ fn init(our: Address) {
                             message.source().process.to_string(),
                             HomepageApp {
                                 package_name: message.source().package().to_string(),
-                                path: format!(
-                                    "/{}:{}:{}/{}",
-                                    message.source().process(),
-                                    message.source().package(),
-                                    message.source().publisher(),
-                                    path.strip_prefix('/').unwrap_or(&path)
-                                ),
+                                path: path.map(|path| {
+                                    format!(
+                                        "/{}:{}:{}/{}",
+                                        message.source().process(),
+                                        message.source().package(),
+                                        message.source().publisher(),
+                                        path.strip_prefix('/').unwrap_or(&path)
+                                    )
+                                }),
                                 label,
                                 base64_icon: icon,
                                 widget,
