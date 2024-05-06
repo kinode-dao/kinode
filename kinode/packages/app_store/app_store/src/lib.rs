@@ -5,7 +5,6 @@ use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::*;
 use kinode_process_lib::{call_init, println};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
