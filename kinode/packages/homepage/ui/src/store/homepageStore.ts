@@ -20,19 +20,9 @@ export interface HomepageStore {
   isHosted: boolean
   setIsHosted: (isHosted: boolean) => void
   fetchHostedStatus: (our: string) => Promise<void>
-  favoriteApp: (appId: string) => Promise<Response>
 
   apps: HomepageApp[]
   setApps: (apps: HomepageApp[]) => void
-  widgetSettings: {
-    [key: string]: {
-      hide: boolean,
-      size: 'small' | 'large'
-    }
-  }
-  setWidgetSettings: (widgetSettings: HomepageStore['widgetSettings']) => void
-  toggleWidgetVisibility: (package_name: string) => void
-  setWidgetSize: (package_name: string, size: 'small' | 'large') => void
   showWidgetsSettings: boolean
   setShowWidgetsSettings: (showWidgetsSettings: boolean) => void
 }
@@ -45,28 +35,8 @@ const useHomepageStore = create<HomepageStore>()(
 
       apps: [],
       setApps: (apps: HomepageApp[]) => set({ apps }),
-      widgetSettings: {},
-      setWidgetSettings: (widgetSettings: HomepageStore['widgetSettings']) => set({ widgetSettings }),
       showWidgetsSettings: false,
       setShowWidgetsSettings: (showWidgetsSettings: boolean) => set({ showWidgetsSettings }),
-      toggleWidgetVisibility: (package_name: string) => set({
-        widgetSettings: {
-          ...get().widgetSettings,
-          [package_name]: {
-            ...get().widgetSettings[package_name],
-            hide: !get().widgetSettings[package_name]?.hide
-          }
-        }
-      }),
-      setWidgetSize: (package_name: string, size: 'small' | 'large') => set({
-        widgetSettings: {
-          ...get().widgetSettings,
-          [package_name]: {
-            ...get().widgetSettings[package_name],
-            size
-          }
-        }
-      }),
       isHosted: false,
       setIsHosted: (isHosted: boolean) => set({ isHosted }),
       fetchHostedStatus: async (our: string) => {
@@ -80,7 +50,6 @@ const useHomepageStore = create<HomepageStore>()(
           set({ isHosted: hosted })
         }
       },
-      favoriteApp: async (appId: string) => await fetch(`/apps/${appId.replace('/', '')}/favorite`, { method: 'POST' }),
     }),
     {
       name: 'homepage_store', // unique name

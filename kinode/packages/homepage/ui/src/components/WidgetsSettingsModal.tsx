@@ -2,9 +2,11 @@ import { FaCheck, FaX } from "react-icons/fa6"
 import useHomepageStore from "../store/homepageStore"
 import { Modal } from "./Modal"
 import classNames from "classnames"
+import usePersistentStore from "../store/persistentStore"
 
 const WidgetsSettingsModal = () => {
-  const { apps, setShowWidgetsSettings, toggleWidgetVisibility, widgetSettings, setWidgetSize } = useHomepageStore()
+  const { apps, setShowWidgetsSettings } = useHomepageStore()
+  const { widgetSettings, toggleWidgetVisibility, setWidgetSize } = usePersistentStore()
 
   return <Modal
     title='Widget Settings'

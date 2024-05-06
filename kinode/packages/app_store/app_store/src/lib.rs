@@ -110,7 +110,6 @@ fn get_widget() -> String {
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .app {
-            max-width: 32%;
             width: 100%;
         }
 
@@ -122,6 +121,12 @@ fn get_widget() -> String {
 
         .app-info {
             max-width: 67%
+        }
+
+        @media screen and (min-width: 500px) {
+            .app {
+                width: 49%;
+            }
         }
     </style>
 </head>

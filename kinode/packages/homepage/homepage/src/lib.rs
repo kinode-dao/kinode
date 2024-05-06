@@ -32,7 +32,6 @@ struct HomepageApp {
     path: String,
     label: String,
     base64_icon: String,
-    is_favorite: bool,
     widget: Option<String>,
 }
 
@@ -77,7 +76,6 @@ fn init(our: Address) {
     .expect("failed to bind to /our.js");
 
     bind_http_path("/apps", true, false).expect("failed to bind /apps");
-    bind_http_path("/apps/:id/favorite", true, false).expect("failed to bind /apps/:id/favorite");
 
     loop {
         let Ok(ref message) = await_message() else {
@@ -116,7 +114,6 @@ fn init(our: Address) {
                                 ),
                                 label: label.clone(),
                                 base64_icon: icon.clone(),
-                                is_favorite: false,
                                 widget: widget.clone(),
                             },
                         );
@@ -148,30 +145,6 @@ fn init(our: Address) {
                                     .as_bytes()
                                     .to_vec(),
                                 );
-                            }
-                            "/apps/:id/favorite" => {
-                                let url_params = incoming.url_params();
-                                let Ok(app_id) = get_package_id(url_params) else {
-                                    send_response(
-                                        StatusCode::BAD_REQUEST,
-                                        None,
-                                        format!("Missing id").into_bytes(),
-                                    );
-                                    println!("failed to parse app id");
-                                    for key in url_params {
-                                        println!("{} {}", key.0, key.1);
-                                    }
-                                    println!("All application IDs currently stored:");
-                                    for key in app_data.keys() {
-                                        println!("{}", key);
-                                    }
-                                    continue;
-                                };
-                                let app = app_data.get_mut(&app_id.to_string());
-                                if let Some(app) = app {
-                                    app.is_favorite = !app.is_favorite;
-                                }
-                                send_response(StatusCode::CREATED, Some(HashMap::new()), vec![]);
                             }
                             _ => {
                                 send_response(
