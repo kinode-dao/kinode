@@ -5,7 +5,7 @@ use kinode_process_lib::{
         bind_http_path, bind_http_static_path, send_response, serve_ui, HttpServerError,
         HttpServerRequest, StatusCode,
     },
-    println, Address, Message, ProcessId,
+    println, Address, Message,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -35,15 +35,6 @@ struct HomepageApp {
     widget: Option<String>,
 }
 
-fn get_package_id(url_params: &HashMap<String, String>) -> anyhow::Result<ProcessId> {
-    let Some(package_id) = url_params.get("id") else {
-        return Err(anyhow::anyhow!("Missing id"));
-    };
-
-    let id = package_id.parse::<ProcessId>()?;
-    Ok(id)
-}
-
 wit_bindgen::generate!({
     path: "wit",
     world: "process",
@@ -60,7 +51,7 @@ fn init(our: Address) {
         false,
         false,
         Some("text/html".to_string()),
-        our.node.clone().as_bytes().to_vec(),
+        our.node().into(),
     )
     .expect("failed to bind to /our");
 
@@ -104,17 +95,17 @@ fn init(our: Address) {
                         app_data.insert(
                             message.source().process.to_string(),
                             HomepageApp {
-                                package_name: message.source().clone().package().to_string(),
+                                package_name: message.source().package().to_string(),
                                 path: format!(
                                     "/{}:{}:{}/{}",
-                                    message.source().clone().process().to_string(),
-                                    message.source().clone().package().to_string(),
-                                    message.source().clone().publisher().to_string(),
+                                    message.source().process(),
+                                    message.source().package(),
+                                    message.source().publisher(),
                                     path.strip_prefix('/').unwrap_or(&path)
                                 ),
-                                label: label.clone(),
-                                base64_icon: icon.clone(),
-                                widget: widget.clone(),
+                                label,
+                                base64_icon: icon,
+                                widget,
                             },
                         );
                     }
