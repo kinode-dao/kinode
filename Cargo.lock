@@ -6529,6 +6529,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
 
 [[package]]
+name = "widget"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "kinode_process_lib 0.7.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.7.0)",
+ "serde",
+ "serde_json",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "wiggle"
 version = "19.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
