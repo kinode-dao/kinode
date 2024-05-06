@@ -121,7 +121,7 @@ pub enum LocalResponse {
     AutoUpdateResponse(AutoUpdateResponse),
     RebuiltIndex,
     ListApisResponse { apis: Vec<PackageId> },
-    GetApiResponse(GetApiResponse),  // API in blob (or None)
+    GetApiResponse(GetApiResponse), // API in blob (or None)
 }
 
 // TODO for all: expand these to elucidate why something failed

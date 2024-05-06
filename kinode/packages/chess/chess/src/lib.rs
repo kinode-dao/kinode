@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 extern crate base64;
 
-use crate::kinode::process::chess_sys_api_v0::{ChessRequest, ChessResponse, NewGameRequest, MoveRequest};
+use crate::kinode::process::chess_sys_api_v0::{
+    ChessRequest, ChessResponse, MoveRequest, NewGameRequest,
+};
 
 const ICON: &str = include_str!("icon");
 

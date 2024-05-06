@@ -313,7 +313,7 @@ fn handle_message(
                     )?;
                 }
             }
-        }
+        },
         Message::Response { body, context, .. } => {
             // the only kind of response we care to handle here!
             let Some(context) = context else {
@@ -404,8 +404,8 @@ fn handle_remote_request(
                     },
                 ));
             }
-            let file_name = format!("/{}-api-v0.1.0.zip", package_id);  // TODO: actual version
-            // get the .zip from VFS and attach as blob to response
+            let file_name = format!("/{}-api-v0.1.0.zip", package_id); // TODO: actual version
+                                                                       // get the .zip from VFS and attach as blob to response
             let file_path = format!("/{}/pkg/api.zip", package_id);
             let Ok(Ok(_)) = Request::to(("our", "vfs", "distro", "sys"))
                 .body(
@@ -442,9 +442,16 @@ fn handle_local_request(
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
 ) -> (LocalResponse, Option<LazyLoadBlob>) {
     match request {
-        LocalRequest::NewPackage { package, metadata, mirror } => {
+        LocalRequest::NewPackage {
+            package,
+            metadata,
+            mirror,
+        } => {
             let Some(blob) = get_blob() else {
-                return (LocalResponse::NewPackageResponse(NewPackageResponse::Failure), None);
+                return (
+                    LocalResponse::NewPackageResponse(NewPackageResponse::Failure),
+                    None,
+                );
             };
             // set the version hash for this new local package
             let our_version = generate_version_hash(&blob.bytes);
@@ -462,22 +469,31 @@ fn handle_local_request(
             };
             let Ok(()) = state.add_downloaded_package(package, package_state, Some(blob.bytes))
             else {
-                return (LocalResponse::NewPackageResponse(NewPackageResponse::Failure), None);
+                return (
+                    LocalResponse::NewPackageResponse(NewPackageResponse::Failure),
+                    None,
+                );
             };
 
             let drive_path = format!("/{package}/pkg");
             let result = Request::new()
                 .target(("our", "vfs", "distro", "sys"))
-                .body(serde_json::to_vec(&vfs::VfsRequest {
-                    path: format!("{}/api", drive_path),
-                    action: vfs::VfsAction::Metadata,
-                }).unwrap())
+                .body(
+                    serde_json::to_vec(&vfs::VfsRequest {
+                        path: format!("{}/api", drive_path),
+                        action: vfs::VfsAction::Metadata,
+                    })
+                    .unwrap(),
+                )
                 .send_and_await_response(5);
             if let Ok(Ok(_)) = result {
                 state.downloaded_apis.insert(package.to_owned());
             };
 
-            (LocalResponse::NewPackageResponse(NewPackageResponse::Success), None)
+            (
+                LocalResponse::NewPackageResponse(NewPackageResponse::Success),
+                None,
+            )
         }
         LocalRequest::Download {
             package: package_id,
@@ -485,40 +501,64 @@ fn handle_local_request(
             mirror,
             auto_update,
             desired_version_hash,
-        } => (LocalResponse::DownloadResponse(start_download(
-            our,
-            requested_packages,
-            package_id,
-            download_from,
-            *mirror,
-            *auto_update,
-            desired_version_hash,
-        )), None),
-        LocalRequest::Install(package) => (match handle_install(our, state, package) {
-            Ok(()) => LocalResponse::InstallResponse(InstallResponse::Success),
-            Err(_) => LocalResponse::InstallResponse(InstallResponse::Failure),
-        }, None),
-        LocalRequest::Uninstall(package) => (match state.uninstall(package) {
-            Ok(()) => LocalResponse::UninstallResponse(UninstallResponse::Success),
-            Err(_) => LocalResponse::UninstallResponse(UninstallResponse::Failure),
-        }, None),
-        LocalRequest::StartMirroring(package) => (match state.start_mirroring(package) {
-            true => LocalResponse::MirrorResponse(MirrorResponse::Success),
-            false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
-        }, None),
-        LocalRequest::StopMirroring(package) => (match state.stop_mirroring(package) {
-            true => LocalResponse::MirrorResponse(MirrorResponse::Success),
-            false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
-        }, None),
-        LocalRequest::StartAutoUpdate(package) => (match state.start_auto_update(package) {
-            true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
-            false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
-        }, None),
-        LocalRequest::StopAutoUpdate(package) => (match state.stop_auto_update(package) {
-            true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
-            false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
-        }, None),
-        LocalRequest::RebuildIndex => (rebuild_index(our, state, eth_provider, requested_apis), None),
+        } => (
+            LocalResponse::DownloadResponse(start_download(
+                our,
+                requested_packages,
+                package_id,
+                download_from,
+                *mirror,
+                *auto_update,
+                desired_version_hash,
+            )),
+            None,
+        ),
+        LocalRequest::Install(package) => (
+            match handle_install(our, state, package) {
+                Ok(()) => LocalResponse::InstallResponse(InstallResponse::Success),
+                Err(_) => LocalResponse::InstallResponse(InstallResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::Uninstall(package) => (
+            match state.uninstall(package) {
+                Ok(()) => LocalResponse::UninstallResponse(UninstallResponse::Success),
+                Err(_) => LocalResponse::UninstallResponse(UninstallResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::StartMirroring(package) => (
+            match state.start_mirroring(package) {
+                true => LocalResponse::MirrorResponse(MirrorResponse::Success),
+                false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::StopMirroring(package) => (
+            match state.stop_mirroring(package) {
+                true => LocalResponse::MirrorResponse(MirrorResponse::Success),
+                false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::StartAutoUpdate(package) => (
+            match state.start_auto_update(package) {
+                true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
+                false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::StopAutoUpdate(package) => (
+            match state.stop_auto_update(package) {
+                true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
+                false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::RebuildIndex => (
+            rebuild_index(our, state, eth_provider, requested_apis),
+            None,
+        ),
         LocalRequest::ListApis => (list_apis(state), None),
         LocalRequest::GetApi(ref package_id) => get_api(package_id, state),
     }
@@ -531,10 +571,13 @@ pub fn get_api(package_id: &PackageId, state: &mut State) -> (LocalResponse, Opt
         let drive_path = format!("/{package_id}/pkg");
         let result = Request::new()
             .target(("our", "vfs", "distro", "sys"))
-            .body(serde_json::to_vec(&vfs::VfsRequest {
-                path: format!("{}/api.zip", drive_path),
-                action: vfs::VfsAction::Read,
-            }).unwrap())
+            .body(
+                serde_json::to_vec(&vfs::VfsRequest {
+                    path: format!("{}/api.zip", drive_path),
+                    action: vfs::VfsAction::Read,
+                })
+                .unwrap(),
+            )
             .send_and_await_response(5);
         let Ok(Ok(_)) = result else {
             return (LocalResponse::GetApiResponse(GetApiResponse::Failure), None);
@@ -553,7 +596,7 @@ pub fn get_api(package_id: &PackageId, state: &mut State) -> (LocalResponse, Opt
 
 pub fn list_apis(state: &mut State) -> LocalResponse {
     LocalResponse::ListApisResponse {
-        apis: state.downloaded_apis.iter().cloned().collect()
+        apis: state.downloaded_apis.iter().cloned().collect(),
     }
 }
 
@@ -685,13 +728,7 @@ fn handle_receive_download(
                 "bad package filename fron download: {package_name}"
             ));
         };
-        return handle_receive_download_api(
-            our,
-            state,
-            package_id,
-            version,
-            requested_apis,
-        );
+        return handle_receive_download_api(our, state, package_id, version, requested_apis);
     };
     handle_receive_download_package(our, state, &package_id, requested_packages)
 }
@@ -732,10 +769,7 @@ fn handle_receive_download_api(
         verified = true;
     }
 
-    state.add_downloaded_api(
-        &package_id,
-        Some(blob.bytes),
-    )?;
+    state.add_downloaded_api(&package_id, Some(blob.bytes))?;
 
     Ok(())
 }

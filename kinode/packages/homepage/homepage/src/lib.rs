@@ -10,7 +10,7 @@ use kinode_process_lib::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::kinode::process::homepage_sys_api_v0::{HomepageRequest, AddRequest};
+use crate::kinode::process::homepage_sys_api_v0::{AddRequest, HomepageRequest};
 
 // /// The request format to add or remove an app from the homepage. You must have messaging
 // /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.

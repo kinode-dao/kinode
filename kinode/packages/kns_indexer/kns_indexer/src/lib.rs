@@ -9,7 +9,9 @@ use std::collections::{
     BTreeMap,
 };
 
-use crate::kinode::process::kns_indexer_sys_api_v0::{IndexerRequests, NamehashToNameRequest, NodeInfoRequest, GetStateRequest};
+use crate::kinode::process::kns_indexer_sys_api_v0::{
+    GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
+};
 
 wit_bindgen::generate!({
     path: "wit",

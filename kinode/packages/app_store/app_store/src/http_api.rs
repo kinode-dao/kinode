@@ -34,7 +34,14 @@ pub fn handle_http_request(
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
     req: &IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    match serve_paths(our, state, eth_provider, requested_apis, requested_packages, req) {
+    match serve_paths(
+        our,
+        state,
+        eth_provider,
+        requested_apis,
+        requested_packages,
+        req,
+    ) {
         Ok((status_code, _headers, body)) => send_response(
             status_code,
             Some(HashMap::from([(
