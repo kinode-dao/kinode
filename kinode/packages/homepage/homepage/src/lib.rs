@@ -10,20 +10,22 @@ use kinode_process_lib::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// The request format to add or remove an app from the homepage. You must have messaging
-/// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
-#[derive(Serialize, Deserialize)]
-enum HomepageRequest {
-    /// the package and process name will come from request source.
-    /// the path will automatically have the process_id prepended.
-    /// the icon is a base64 encoded image.
-    Add {
-        label: String,
-        icon: String,
-        path: String,
-    },
-    Remove,
-}
+use crate::kinode::process::homepage_sys_api_v0::{HomepageRequest, AddRequest};
+
+// /// The request format to add or remove an app from the homepage. You must have messaging
+// /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
+// #[derive(Serialize, Deserialize)]
+// enum HomepageRequest {
+//     /// the package and process name will come from request source.
+//     /// the path will automatically have the process_id prepended.
+//     /// the icon is a base64 encoded image.
+//     Add {
+//         label: String,
+//         icon: String,
+//         path: String,
+//     },
+//     Remove,
+// }
 
 #[derive(Serialize, Deserialize)]
 struct HomepageApp {
@@ -35,7 +37,9 @@ struct HomepageApp {
 
 wit_bindgen::generate!({
     path: "wit",
-    world: "process",
+    world: "homepage",
+    generate_unused_types: true,
+    additional_derives: [Deserialize, Serialize],
 });
 
 call_init!(init);
@@ -84,7 +88,7 @@ fn init(our: Address) {
             // they must have messaging access to us in order to perform this.
             if let Ok(request) = serde_json::from_slice::<HomepageRequest>(message.body()) {
                 match request {
-                    HomepageRequest::Add { label, icon, path } => {
+                    HomepageRequest::Add(AddRequest { label, icon, path }) => {
                         app_data.insert(
                             message.source().process.to_string(),
                             HomepageApp {

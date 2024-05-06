@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 extern crate base64;
 
+use crate::kinode::process::chess_sys_api_v0::{ChessRequest, ChessResponse, NewGameRequest, MoveRequest};
+
 const ICON: &str = include_str!("icon");
 
 //
@@ -15,20 +17,20 @@ const ICON: &str = include_str!("icon");
 // to a byte vector and send them over IPC.
 //
 
-#[derive(Debug, Serialize, Deserialize)]
-enum ChessRequest {
-    NewGame { white: String, black: String },
-    Move { game_id: String, move_str: String },
-    Resign(String),
-}
-
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-enum ChessResponse {
-    NewGameAccepted,
-    NewGameRejected,
-    MoveAccepted,
-    MoveRejected,
-}
+//#[derive(Debug, Serialize, Deserialize)]
+//enum ChessRequest {
+//    NewGame { white: String, black: String },
+//    Move { game_id: String, move_str: String },
+//    Resign(String),
+//}
+//
+//#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+//enum ChessResponse {
+//    NewGameAccepted,
+//    NewGameRejected,
+//    MoveAccepted,
+//    MoveRejected,
+//}
 
 //
 // Our serializable state format.
@@ -99,7 +101,9 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
 // Boilerplate: generate the wasm bindings for a process
 wit_bindgen::generate!({
     path: "wit",
-    world: "process",
+    world: "chess",
+    generate_unused_types: true,
+    additional_derives: [Deserialize, Serialize],
 });
 // After generating bindings, use this macro to define the Component struct
 // and its init() function, which the kernel will look for on startup.
@@ -250,7 +254,7 @@ fn handle_chess_request(
     let game_id = source_node;
 
     match action {
-        ChessRequest::NewGame { white, black } => {
+        ChessRequest::NewGame(NewGameRequest { white, black }) => {
             // Make a new game with source.node
             // This will replace any existing game with source.node!
             if state.games.contains_key(game_id) {
@@ -277,7 +281,7 @@ fn handle_chess_request(
                 .body(serde_json::to_vec(&ChessResponse::NewGameAccepted)?)
                 .send()
         }
-        ChessRequest::Move { ref move_str, .. } => {
+        ChessRequest::Move(MoveRequest { ref move_str, .. }) => {
             // Get the associated game, and respond with an error if
             // we don't have it in our state.
             let Some(game) = state.games.get_mut(game_id) else {

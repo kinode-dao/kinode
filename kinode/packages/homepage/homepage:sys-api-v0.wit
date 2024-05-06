@@ -1,0 +1,18 @@
+interface homepage-sys-api-v0 {
+    /// The request format to add or remove an app from the homepage. You must have messaging
+    /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
+    variant homepage-request {
+        /// the package and process name will come from request source.
+        /// the path will automatically have the process_id prepended.
+        /// the icon is a base64 encoded image.
+        add(add-request),
+        remove,
+    }
+
+    add-request {
+        package-name: string,
+        path: string,
+        label: string,
+        base64-icon: string,
+    }
+}

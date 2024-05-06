@@ -1,0 +1,4 @@
+world chess {
+    import chess-sys-api-v0;
+    include process;
+}
