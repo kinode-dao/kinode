@@ -105,7 +105,7 @@ wit_bindgen::generate!({
     path: "wit",
     world: "chess",
     generate_unused_types: true,
-    additional_derives: [Deserialize, Serialize],
+    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
 });
 // After generating bindings, use this macro to define the Component struct
 // and its init() function, which the kernel will look for on startup.
@@ -336,7 +336,7 @@ fn handle_local_request(
     action: &ChessRequest,
 ) -> anyhow::Result<()> {
     match action {
-        ChessRequest::NewGame { white, black } => {
+        ChessRequest::NewGame(NewGameRequest { white, black }) => {
             // Create a new game. We'll enforce that one of the two players is us.
             if white != &our.node && black != &our.node {
                 return Err(anyhow::anyhow!("cannot start a game without us!"));
@@ -377,7 +377,7 @@ fn handle_local_request(
             save_chess_state(&state);
             Ok(())
         }
-        ChessRequest::Move { game_id, move_str } => {
+        ChessRequest::Move(MoveRequest { game_id, move_str }) => {
             // Make a move. We'll enforce that it's our turn. The game_id is the
             // person we're playing with.
             let Some(game) = state.games.get_mut(game_id) else {
@@ -495,10 +495,10 @@ fn handle_http_request(
             // send the other player a new game request
             let Ok(msg) = Request::new()
                 .target((game_id, our.process.clone()))
-                .body(serde_json::to_vec(&ChessRequest::NewGame {
+                .body(serde_json::to_vec(&ChessRequest::NewGame(NewGameRequest {
                     white: player_white.clone(),
                     black: player_black.clone(),
-                })?)
+                }))?)
                 .send_and_await_response(5)?
             else {
                 return Err(anyhow::anyhow!(
@@ -594,10 +594,10 @@ fn handle_http_request(
             // if so, update the records
             let Ok(msg) = Request::new()
                 .target((game_id, our.process.clone()))
-                .body(serde_json::to_vec(&ChessRequest::Move {
+                .body(serde_json::to_vec(&ChessRequest::Move(MoveRequest {
                     game_id: game_id.to_string(),
                     move_str: move_str.to_string(),
-                })?)
+                }))?)
                 .send_and_await_response(5)?
             else {
                 return Err(anyhow::anyhow!(

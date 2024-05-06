@@ -1,4 +1,4 @@
-interface chess-sys-api-v0.1.0 {
+interface chess-sys-api-v0 {
     variant chess-request {
         new-game(new-game-request),
         move(move-request),

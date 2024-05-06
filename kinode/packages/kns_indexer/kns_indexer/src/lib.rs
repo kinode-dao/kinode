@@ -17,7 +17,7 @@ wit_bindgen::generate!({
     path: "wit",
     world: "kns-indexer",
     generate_unused_types: true,
-    additional_derives: [Deserialize, Serialize],
+    additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
 // perhaps a constant in process_lib?

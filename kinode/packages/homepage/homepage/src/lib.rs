@@ -39,7 +39,7 @@ wit_bindgen::generate!({
     path: "wit",
     world: "homepage",
     generate_unused_types: true,
-    additional_derives: [Deserialize, Serialize],
+    additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
 call_init!(init);

@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 wit_bindgen::generate!({
     path: "wit",
-    world: "terminal",
+    world: "process",
 });
 
 #[derive(Debug, Serialize, Deserialize)]

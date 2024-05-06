@@ -9,14 +9,14 @@ interface kns-indexer-sys-api-v0 {
     variant indexer-requests {
         /// return the human readable name for a namehash
         /// returns an Option<String>
-        namehash-to-name(namehash-to-name-requests),
+        namehash-to-name(namehash-to-name-request),
         /// return the most recent on-chain routing information for a node name.
         /// returns an Option<KnsUpdate>
         /// set block to 0 if you just want to get the current state of the indexer
-        node-info(node-info-requests),
+        node-info(node-info-request),
         /// return the entire state of the indexer at the given block
         /// set block to 0 if you just want to get the current state of the indexer
-        get-state(get-state-requests),
+        get-state(get-state-request),
     }
 
     record namehash-to-name-request {
