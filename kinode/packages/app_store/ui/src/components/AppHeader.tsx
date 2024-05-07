@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import classNames from "classnames";
 import { APP_DETAILS_PATH } from "../constants/path";
 import ColorDot from "./ColorDot";
+import { isMobileCheck } from "../utils/dimensions";
 
 interface AppHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   app: AppInfo;
@@ -17,6 +18,7 @@ export default function AppHeader({
   ...props
 }: AppHeaderProps) {
   const navigate = useNavigate()
+  const isMobile = isMobileCheck()
 
   return (
     <div
@@ -35,7 +37,7 @@ export default function AppHeader({
           dotSize={size}
           className={classNames('mr-2')}
         />}
-      <div className="flex flex-col w-full">
+      <div className={classNames("flex flex-col", { 'gap-2 max-w-3/4': isMobile })}>
         <div
           className={classNames("whitespace-nowrap overflow-hidden text-ellipsis", { 'text-3xl': size === 'large', })}
         >

@@ -23,7 +23,7 @@ export default function MoreActions({ app, className }: MoreActionsProps) {
 
     return (
       <Dropdown className={className}>
-        <div className="flex flex-col bg-black/50 p-2 rounded-lg">
+        <div className="flex flex-col backdrop-blur-lg p-2 rounded-lg relative z-10">
           {app.metadata?.description && (
             <button
               className="my-1 whitespace-nowrap clear"
@@ -48,7 +48,7 @@ export default function MoreActions({ app, className }: MoreActionsProps) {
 
   return (
     <Dropdown className={className}>
-      <div className="flex flex-col bg-black/50 p-2 rounded-lg">
+      <div className="flex flex-col p-2 rounded-lg backdrop-blur-lg relative z-10">
         <button
           className="my-1 whitespace-nowrap clear"
           onClick={() => navigate(`/${APP_DETAILS_PATH}/${appId(app)}`)}
