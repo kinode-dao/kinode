@@ -91,6 +91,13 @@ async fn main() {
             trusted: true,
             provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
         });
+        // save the new provider config
+        tokio::fs::write(
+            format!("{}/.eth_providers", home_directory_path),
+            serde_json::to_string(&eth_provider_config).unwrap(),
+        )
+        .await
+        .expect("failed to save new eth provider config!");
     }
     let local_chain_port = matches
         .get_one::<u16>("fakechain-port")

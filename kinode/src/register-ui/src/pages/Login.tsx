@@ -11,6 +11,8 @@ import DirectCheckbox from "../components/DirectCheckbox";
 import { useNavigate } from "react-router-dom";
 import { Tooltip } from "../components/Tooltip";
 import { KinodeTitle } from "../components/KinodeTitle";
+import { isMobileCheck } from "../utils/dimensions";
+import classNames from "classnames";
 
 const { useProvider } = hooks;
 
@@ -184,6 +186,8 @@ function Login({
 
   const isDirect = Boolean(routers?.length === 0);
 
+  const isMobile = isMobileCheck()
+
   return (
     <>
       <KinodeHeader
@@ -198,7 +202,9 @@ function Login({
       ) : (
         <form
           id="signup-form"
-          className="flex flex-col w-full max-w-[450px]"
+          className={classNames("flex flex-col w-full max-w-[450px]", {
+            'p-2': isMobile
+          })}
           onSubmit={handleLogin}
         >
           <div className="self-stretch mb-2 flex flex-col">

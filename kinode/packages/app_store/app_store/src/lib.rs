@@ -109,6 +109,70 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
     println!("subscribed to logs successfully");
 }
 
+fn get_widget() -> String {
+    return r#"<html>
+<head>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .app {
+            width: 100%;
+        }
+
+        .app-image {
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .app-info {
+            max-width: 67%
+        }
+
+        @media screen and (min-width: 500px) {
+            .app {
+                width: 49%;
+            }
+        }
+    </style>
+</head>
+<body class="text-white overflow-hidden">
+    <div
+        id="latest-apps"
+        class="flex flex-wrap p-2 gap-2 items-center backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto"
+        style="
+            scrollbar-color: transparent transparent;
+            scrollbar-width: none;
+        "
+    >
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/main:app_store:sys/apps/listed')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('latest-apps');
+                    data.forEach(app => {
+                        const div = document.createElement('div');
+                        div.className = 'app p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 font-sans';
+                        div.innerHTML = `${app.metadata.image ? `<div
+                            class="app-image rounded mr-2 grow"
+                            style="background-image: url('${app.metadata.image}');"
+                        ></div>` : ''}
+                        <div class="app-info flex flex-col grow">
+                            <h2 class="font-bold">${app.metadata.name}</h2>
+                            <p>${app.metadata.description}</p>
+                        </div>`;
+                        container.appendChild(div);
+                    });
+                })
+                .catch(error => console.error('Error fetching apps:', error));
+        });
+    </script>
+</body>
+</html>"#
+        .to_string();
+}
+
 call_init!(init);
 fn init(our: Address) {
     println!("started");
@@ -143,7 +207,8 @@ fn init(our: Address) {
                 "Add": {
                     "label": "App Store",
                     "icon": ICON,
-                    "path": "/" // just our root
+                    "path": "/", // just our root
+                    "widget": get_widget()
                 }
             })
             .to_string()
@@ -460,9 +525,7 @@ pub fn rebuild_index(
 ) -> LocalResponse {
     *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
     // kill our old subscription and build a new one.
-    eth_provider
-        .unsubscribe(1)
-        .expect("app_store: failed to unsub from eth events!");
+    let _ = eth_provider.unsubscribe(1);
 
     let filter = eth::Filter::new()
         .address(eth::Address::from_str(&state.contract_address).unwrap())
