@@ -365,7 +365,22 @@ impl State {
                         metadata: None,
                     },
                     None,
-                )?
+                )?;
+
+                let drive_path = format!("/{package_id}/pkg");
+                let result = Request::new()
+                    .target(("our", "vfs", "distro", "sys"))
+                    .body(
+                        serde_json::to_vec(&vfs::VfsRequest {
+                            path: format!("{}/api", drive_path),
+                            action: vfs::VfsAction::Metadata,
+                        })
+                        .unwrap(),
+                    )
+                    .send_and_await_response(5);
+                if let Ok(Ok(_)) = result {
+                    self.downloaded_apis.insert(package_id.to_owned());
+                };
             }
         }
         Ok(())
