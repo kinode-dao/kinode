@@ -5,6 +5,7 @@ import Modal from "./Modal";
 import { getAppName } from "../utils/app";
 import Loader from "./Loader";
 import classNames from "classnames";
+import { useNavigate } from "react-router-dom";
 
 interface ActionButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
@@ -17,6 +18,7 @@ export default function ActionButton({ app, ...props }: ActionButtonProps) {
   const [mirror, setMirror] = useState(app.metadata?.properties?.mirrors?.[0] || "Other");
   const [customMirror, setCustomMirror] = useState("");
   const [caps, setCaps] = useState<string[]>([]);
+  const [launchPath, setLaunchPath] = useState('');
   const [loading, setLoading] = useState("");
 
   const { clean, installed, downloaded, updatable } = useMemo(() => {
@@ -42,9 +44,27 @@ export default function ActionButton({ app, ...props }: ActionButtonProps) {
     setMirror(app.metadata?.properties?.mirrors?.[0] || "Other");
   }, [app.metadata?.properties?.mirrors]);
 
+  useEffect(() => {
+    if (installed) {
+      fetch('/apps').then(data => data.json())
+        .then((data: Array<{ package_name: string, path: string }>) => {
+          // console.log(data)
+          if (Array.isArray(data)) {
+            // console.log('is array')
+            const homepageAppData = data.find(otherApp => app.package === otherApp.package_name)
+            if (homepageAppData) {
+              // console.log('found the good appness', homepageAppData.package_name, homepageAppData.path);
+              setLaunchPath(homepageAppData.path)
+            }
+          }
+        })
+    }
+  }, [installed])
+
   const onClick = useCallback(async () => {
-    if (installed && !updatable) {
-      window.alert("App is installed");
+    if (installed && !updatable && launchPath) {
+      window.location.href = `/${launchPath.replace('/', '')}`
+      return;
     } else {
       if (downloaded) {
         getCaps(app).then((manifest) => {
@@ -53,7 +73,7 @@ export default function ActionButton({ app, ...props }: ActionButtonProps) {
       }
       setShowModal(true);
     }
-  }, [app, installed, downloaded, updatable, setShowModal, getCaps]);
+  }, [app, installed, downloaded, updatable, setShowModal, getCaps, launchPath]);
 
   const download = useCallback(async (e: FormEvent) => {
     e.preventDefault();
@@ -137,16 +157,21 @@ export default function ActionButton({ app, ...props }: ActionButtonProps) {
       <button
         {...props}
         type="button"
-        className={classNames("text-sm min-w-[100px] px-2 py-1 self-start", props.className)}
+        className={classNames("text-sm min-w-[100px] px-2 py-1 self-start", props.className, {
+          'bg-orange': installed,
+          'hidden': installed && !updatable && !launchPath
+        })}
         onClick={onClick}
       >
         {installed && updatable
           ? "Update"
-          : installed
-            ? "Installed"
-            : downloaded
-              ? "Install"
-              : "Download"}
+          : installed && launchPath
+            ? "Launch"
+            : installed
+              ? "Installed"
+              : downloaded
+                ? "Install"
+                : "Download"}
       </button>
       <Modal show={showModal} hide={() => setShowModal(false)}>
         {loading ? (

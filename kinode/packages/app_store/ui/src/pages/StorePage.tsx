@@ -80,13 +80,6 @@ export default function StorePage() {
     }
   }, []);
 
-  // const viewDetails = useCallback(
-  //   (app: AppInfo) => () => {
-  //     navigate(`/app-details/${appId(app)}`);
-  //   },
-  //   [navigate]
-  // );
-
   const searchApps = useCallback(
     (query: string) => {
       setSearchQuery(query);

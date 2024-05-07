@@ -8,7 +8,7 @@ use kinode_process_lib::{
     println, Address, Message,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// The request format to add or remove an app from the homepage. You must have messaging
 /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
@@ -19,8 +19,9 @@ enum HomepageRequest {
     /// the icon is a base64 encoded image.
     Add {
         label: String,
-        icon: String,
-        path: String,
+        icon: Option<String>,
+        path: Option<String>,
+        widget: Option<String>,
     },
     Remove,
 }
@@ -28,9 +29,10 @@ enum HomepageRequest {
 #[derive(Serialize, Deserialize)]
 struct HomepageApp {
     package_name: String,
-    path: String,
+    path: Option<String>,
     label: String,
-    base64_icon: String,
+    base64_icon: Option<String>,
+    widget: Option<String>,
 }
 
 wit_bindgen::generate!({
@@ -91,20 +93,28 @@ fn init(our: Address) {
             // they must have messaging access to us in order to perform this.
             if let Ok(request) = serde_json::from_slice::<HomepageRequest>(message.body()) {
                 match request {
-                    HomepageRequest::Add { label, icon, path } => {
+                    HomepageRequest::Add {
+                        label,
+                        icon,
+                        path,
+                        widget,
+                    } => {
                         app_data.insert(
                             message.source().process.to_string(),
                             HomepageApp {
-                                package_name: message.source().clone().package().to_string(),
-                                path: format!(
-                                    "/{}:{}:{}/{}",
-                                    message.source().clone().process().to_string(),
-                                    message.source().clone().package().to_string(),
-                                    message.source().clone().publisher().to_string(),
-                                    path.strip_prefix('/').unwrap_or(&path)
-                                ),
-                                label: label.clone(),
-                                base64_icon: icon.clone(),
+                                package_name: message.source().package().to_string(),
+                                path: path.map(|path| {
+                                    format!(
+                                        "/{}:{}:{}/{}",
+                                        message.source().process(),
+                                        message.source().package(),
+                                        message.source().publisher(),
+                                        path.strip_prefix('/').unwrap_or(&path)
+                                    )
+                                }),
+                                label,
+                                base64_icon: icon,
+                                widget,
                             },
                         );
                     }
@@ -112,35 +122,37 @@ fn init(our: Address) {
                         app_data.remove(&message.source().process.to_string());
                     }
                 }
-            } else if let Ok(request) = serde_json::from_slice::<HttpServerRequest>(message.body())
-            {
-                match request {
+            } else if let Ok(req) = serde_json::from_slice::<HttpServerRequest>(message.body()) {
+                match req {
                     HttpServerRequest::Http(incoming) => {
                         let path = incoming.bound_path(None);
-                        if path == "/apps" {
-                            send_response(
-                                StatusCode::OK,
-                                Some(std::collections::HashMap::from([(
-                                    "Content-Type".to_string(),
-                                    "application/json".to_string(),
-                                )])),
-                                format!(
-                                    "[{}]",
-                                    app_data
-                                        .values()
-                                        .map(|app| serde_json::to_string(app).unwrap())
-                                        .collect::<Vec<String>>()
-                                        .join(",")
-                                )
-                                .as_bytes()
-                                .to_vec(),
-                            );
-                        } else {
-                            send_response(
-                                StatusCode::OK,
-                                Some(std::collections::HashMap::new()),
-                                "yes hello".as_bytes().to_vec(),
-                            );
+                        match path {
+                            "/apps" => {
+                                send_response(
+                                    StatusCode::OK,
+                                    Some(HashMap::from([(
+                                        "Content-Type".to_string(),
+                                        "application/json".to_string(),
+                                    )])),
+                                    format!(
+                                        "[{}]",
+                                        app_data
+                                            .values()
+                                            .map(|app| serde_json::to_string(app).unwrap())
+                                            .collect::<Vec<String>>()
+                                            .join(",")
+                                    )
+                                    .as_bytes()
+                                    .to_vec(),
+                                );
+                            }
+                            _ => {
+                                send_response(
+                                    StatusCode::OK,
+                                    Some(HashMap::new()),
+                                    "yes hello".as_bytes().to_vec(),
+                                );
+                            }
                         }
                     }
                     _ => {}
