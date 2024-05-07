@@ -14,17 +14,20 @@ wit_bindgen::generate!({
     world: "process",
 });
 
-const KNS_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
+#[cfg(not(feature = "simulation-mode"))]
+const KNS_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6"; // optimism
 #[cfg(feature = "simulation-mode")]
-const KNS_ADDRESS: &'static str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+const KNS_ADDRESS: &'static str = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; // local
 
-const CHAIN_ID: u64 = 10;
+#[cfg(not(feature = "simulation-mode"))]
+const CHAIN_ID: u64 = 10; // optimism
 #[cfg(feature = "simulation-mode")]
-const CHAIN_ID: u64 = 31337;
+const CHAIN_ID: u64 = 31337; // local
 
-const KNS_FIRST_BLOCK: u64 = 114_923_786;
+#[cfg(not(feature = "simulation-mode"))]
+const KNS_FIRST_BLOCK: u64 = 114_923_786; // optimism
 #[cfg(feature = "simulation-mode")]
-const KNS_FIRST_BLOCK: u64 = 1;
+const KNS_FIRST_BLOCK: u64 = 1; // local
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -123,17 +126,17 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
 
 call_init!(init);
 fn init(our: Address) {
-    println!("indexing on contract address {}", KNS_CONTRACT_ADDRESS);
+    println!("indexing on contract address {}", KNS_ADDRESS);
 
     // if we have state, load it in
     let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
         Some(s) => {
             // if chain id or contract address changed from a previous run, reset state
-            if s.chain_id != CHAIN_ID || s.contract_address != KNS_CONTRACT_ADDRESS {
+            if s.chain_id != CHAIN_ID || s.contract_address != KNS_ADDRESS {
                 println!("resetting state because runtime contract address or chain ID changed");
                 State {
                     chain_id: CHAIN_ID,
-                    contract_address: KNS_CONTRACT_ADDRESS,
+                    contract_address: KNS_ADDRESS.to_string(),
                     names: HashMap::new(),
                     nodes: HashMap::new(),
                     block: KNS_FIRST_BLOCK,
@@ -145,7 +148,7 @@ fn init(our: Address) {
         }
         None => State {
             chain_id: CHAIN_ID,
-            contract_address: KNS_CONTRACT_ADDRESS,
+            contract_address: KNS_ADDRESS.to_string(),
             names: HashMap::new(),
             nodes: HashMap::new(),
             block: KNS_FIRST_BLOCK,

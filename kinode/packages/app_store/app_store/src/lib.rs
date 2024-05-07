@@ -39,14 +39,17 @@ use ft_worker_lib::{
 
 const ICON: &str = include_str!("icon");
 
+#[cfg(not(feature = "simulation-mode"))]
 const CHAIN_ID: u64 = 10; // optimism
 #[cfg(feature = "simulation-mode")]
 const CHAIN_ID: u64 = 31337; // local
 
+#[cfg(not(feature = "simulation-mode"))]
 const CONTRACT_ADDRESS: &str = "0x52185B6a6017E6f079B994452F234f7C2533787B"; // optimism
 #[cfg(feature = "simulation-mode")]
-const CONTRACT_ADDRESS: &str = "0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6"; // local
+const CONTRACT_ADDRESS: &str = "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318"; // local
 
+#[cfg(not(feature = "simulation-mode"))]
 const CONTRACT_FIRST_BLOCK: u64 = 118_590_088;
 #[cfg(feature = "simulation-mode")]
 const CONTRACT_FIRST_BLOCK: u64 = 1;
