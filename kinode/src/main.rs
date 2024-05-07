@@ -83,6 +83,13 @@ async fn main() {
             trusted: true,
             provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
         });
+        // save the new provider config
+        tokio::fs::write(
+            format!("{}/.eth_providers", home_directory_path),
+            serde_json::to_string(&eth_provider_config).unwrap(),
+        )
+        .await
+        .expect("failed to save new eth provider config!");
     }
 
     // kernel receives system messages via this channel, all other modules send messages
@@ -147,6 +154,7 @@ async fn main() {
                 std::net::Ipv4Addr::LOCALHOST
             }
         };
+
         // if the --ws-port flag is used, bind to that port right away.
         // if the flag is not used, find the first available port between 9000 and 65535.
         // NOTE: if the node has a different port specified in its onchain (direct) id,
@@ -158,22 +166,24 @@ async fn main() {
             (
                 http::utils::find_open_port(*port, port + 1)
                     .await
-                    .expect("ws-port selected with flag could not be bound"),
+                    .expect("ws-port selected with flag could not be bound!"),
                 true,
             )
         } else {
             (
                 http::utils::find_open_port(9000, 65535)
                     .await
-                    .expect("no ports found in range 9000-65535 for websocket server"),
+                    .expect("no ports found in range 9000-65535 for websocket server!"),
                 false,
             )
         };
 
         println!(
-            "login or register at http://localhost:{}\r",
-            http_server_port
+            "WS networking at port {}: if a different port should be used, boot with --ws-port\r",
+            ws_tcp_handle.local_addr().unwrap().port()
         );
+
+        println!("login or register at http://localhost:{http_server_port}\r");
 
         (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
             home_directory_path,
