@@ -15,6 +15,7 @@ use {
 
 use crate::net::types::*;
 use crate::net::utils::*;
+use crate::KNS_ADDRESS;
 use lib::types::core::*;
 
 /// only used in connection initialization, otherwise, nacks and Responses are only used for "timeouts"
@@ -34,7 +35,6 @@ pub async fn networking(
     print_tx: PrintSender,
     self_message_tx: MessageSender,
     message_rx: MessageReceiver,
-    contract_address: String,
     reveal_ip: bool,
 ) -> Result<()> {
     // branch on whether we are a direct or indirect node
@@ -57,7 +57,6 @@ pub async fn networking(
                 self_message_tx,
                 message_rx,
                 reveal_ip,
-                contract_address,
             )
             .await
         }
@@ -95,7 +94,6 @@ pub async fn networking(
                 print_tx,
                 self_message_tx,
                 message_rx,
-                contract_address,
             )
             .await
         }
@@ -112,7 +110,6 @@ async fn indirect_networking(
     _self_message_tx: MessageSender,
     mut message_rx: MessageReceiver,
     reveal_ip: bool,
-    contract_address: String,
 ) -> Result<()> {
     print_debug(&print_tx, "net: starting as indirect").await;
     let pki: OnchainPKI = Arc::new(DashMap::new());
@@ -148,7 +145,6 @@ async fn indirect_networking(
                         names.clone(),
                         &kernel_message_tx,
                         &print_tx,
-                        &contract_address,
                     )
                     .await {
                         Ok(()) => continue,
@@ -283,7 +279,6 @@ async fn direct_networking(
     print_tx: PrintSender,
     _self_message_tx: MessageSender,
     mut message_rx: MessageReceiver,
-    contract_address: String,
 ) -> Result<()> {
     print_debug(&print_tx, "net: starting as direct").await;
     let pki: OnchainPKI = Arc::new(DashMap::new());
@@ -318,7 +313,6 @@ async fn direct_networking(
                         names.clone(),
                         &kernel_message_tx,
                         &print_tx,
-                        &contract_address,
                     )
                     .await {
                         Ok(()) => continue,
@@ -855,7 +849,6 @@ async fn handle_local_message(
     names: PKINames,
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
-    contract_address: &str,
 ) -> Result<()> {
     print_debug(print_tx, "net: handling local message").await;
     let body = match km.message {
@@ -1019,7 +1012,7 @@ async fn handle_local_message(
                     let mut printout = String::new();
                     printout.push_str(&format!(
                         "indexing from contract address {}\r\n",
-                        contract_address
+                        KNS_ADDRESS
                     ));
                     printout.push_str(&format!("our Identity: {:#?}\r\n", our));
                     printout.push_str("we have connections with peers:\r\n");

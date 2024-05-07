@@ -129,6 +129,7 @@ pub fn generate_jwt(jwt_secret_bytes: &[u8], username: &str) -> Option<String> {
     }
 }
 
+#[cfg(not(feature = "simulation-mode"))]
 pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>), &'static str> {
     let (username, routers, _salt, _key_enc, _jwt_enc) =
         bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)

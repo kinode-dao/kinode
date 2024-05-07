@@ -209,8 +209,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     break;
                 }
                 Err(e) => {
-                    println!("got some kind of error: {:?}", e);
-                    println!("failed to fetch logs! trying again in 5s...");
+                    println!(
+                        "got eth error while fetching logs: {:?}, trying again in 5s...",
+                        e
+                    );
                     std::thread::sleep(std::time::Duration::from_secs(5));
                     continue;
                 }

@@ -17,6 +17,7 @@ mod kernel;
 mod keygen;
 mod kv;
 mod net;
+#[cfg(not(feature = "simulation-mode"))]
 mod register;
 mod sqlite;
 mod state;
@@ -39,9 +40,13 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
 #[cfg(not(feature = "simulation-mode"))]
-const CHAIN_ID: u64 = 10;
+pub const CHAIN_ID: u64 = 10;
 #[cfg(feature = "simulation-mode")]
-const CHAIN_ID: u64 = 31337;
+pub const CHAIN_ID: u64 = 31337;
+#[cfg(not(feature = "simulation-mode"))]
+pub const KNS_ADDRESS: &str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
+#[cfg(feature = "simulation-mode")]
+pub const KNS_ADDRESS: &str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 
 #[tokio::main]
 async fn main() {
@@ -80,7 +85,7 @@ async fn main() {
             }
             Err(_) => serde_json::from_str(DEFAULT_ETH_PROVIDERS).unwrap(),
         };
-    if let Some(rpc) = matches.get_one::<String>("rpc") {
+    if let Some(rpc) = rpc {
         eth_provider_config.push(lib::eth::ProviderConfig {
             chain_id: CHAIN_ID,
             trusted: true,
@@ -274,7 +279,6 @@ async fn main() {
         print_sender.clone(),
         net_message_sender,
         net_message_receiver,
-        register::KNS_OPTIMISM_ADDRESS.to_string(),
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
     ));
     tasks.spawn(state::state_sender(
