@@ -54,6 +54,15 @@ fn init(our: Address) {
     .expect("failed to bind to /our");
 
     bind_http_static_path(
+        "/amionline",
+        false,
+        false,
+        Some("text/html".to_string()),
+        "yes".as_bytes().to_vec(),
+    )
+    .expect("failed to bind to /amionline");
+
+    bind_http_static_path(
         "/our.js",
         false,
         false,
