@@ -36,7 +36,7 @@ struct HomepageApp {
 }
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "target/wit",
     world: "homepage",
     generate_unused_types: true,
     additional_derives: [serde::Deserialize, serde::Serialize],

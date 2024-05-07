@@ -10,7 +10,7 @@ mod tester_types;
 use tester_types as tt;
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "target/wit",
     world: "process",
 });
 

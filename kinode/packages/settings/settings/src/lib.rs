@@ -133,7 +133,7 @@ impl SettingsState {
 }
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "target/wit",
     world: "process",
 });
 

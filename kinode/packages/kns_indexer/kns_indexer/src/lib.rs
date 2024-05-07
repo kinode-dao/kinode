@@ -14,7 +14,7 @@ use crate::kinode::process::kns_indexer_sys_api_v0::{
 };
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "target/wit",
     world: "kns-indexer",
     generate_unused_types: true,
     additional_derives: [serde::Deserialize, serde::Serialize],

@@ -102,7 +102,7 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
 
 // Boilerplate: generate the wasm bindings for a process
 wit_bindgen::generate!({
-    path: "wit",
+    path: "target/wit",
     world: "chess",
     generate_unused_types: true,
     additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],

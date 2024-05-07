@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "target/wit",
     world: "process",
 });
 
