@@ -49,18 +49,25 @@ fn init(our: Address) {
         false,
         false,
         Some("text/html".to_string()),
-        our.node.clone().as_bytes().to_vec(),
+        our.node().into(),
     )
     .expect("failed to bind to /our");
+
+    bind_http_static_path(
+        "/amionline",
+        false,
+        false,
+        Some("text/html".to_string()),
+        "yes".into(),
+    )
+    .expect("failed to bind to /amionline");
 
     bind_http_static_path(
         "/our.js",
         false,
         false,
         Some("application/javascript".to_string()),
-        format!("window.our = {{}}; window.our.node = '{}';", &our.node)
-            .as_bytes()
-            .to_vec(),
+        format!("window.our = {{}}; window.our.node = '{}';", &our.node).into(),
     )
     .expect("failed to bind to /our.js");
 
