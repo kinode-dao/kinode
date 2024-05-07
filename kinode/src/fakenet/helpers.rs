@@ -23,7 +23,6 @@ sol! {
 
         function ip(bytes32) external view returns (uint128, uint16, uint16, uint16, uint16);
 
-
         function ownerOf(uint256 node) returns (address);
 
         function multicall(bytes[] calldata data);

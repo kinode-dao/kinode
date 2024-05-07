@@ -18,6 +18,9 @@ pub use helpers::*;
 
 const FAKE_DOTDEV: &str = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
 
+/// Attempts to connect to a local anvil fakechain,
+/// registering a name with its KNS contract.
+/// If name is already registered, resets it.
 pub async fn register_local(
     name: &str,
     ws_port: u16,
@@ -134,6 +137,8 @@ pub async fn register_local(
     Ok(())
 }
 
+/// Booting from a keyfile, fetches the node's IP data from the KNS contract
+/// and assigns it to the Identity struct.
 pub async fn assign_ws_local_helper(
     our: &mut Identity,
     ws_port: u16,
