@@ -11,7 +11,7 @@ export const Modal: React.FC<Props> = ({ title, onClose, children }) => {
   const isMobile = isMobileCheck()
   return (
     <div className="flex fixed top-0 left-0 w-full h-full bg-black bg-opacity-50 place-items-center place-content-center backdrop-blur-md">
-      <div className={classNames("flex flex-col rounded-lg bg-black py-4 shadow-lg", {
+      <div className={classNames("flex flex-col rounded-lg bg-black py-4 shadow-lg max-h-screen overflow-y-auto", {
         'min-w-[500px] px-8 w-1/2': !isMobile,
         'px-4 w-full': isMobile
       })}>

@@ -1,6 +1,7 @@
 import classNames from 'classnames'
 import React from 'react'
 import { hexToRgb, hslToRgb, rgbToHex, rgbToHsl } from '../utils/colors'
+import { isMobileCheck } from '../utilities/dimensions'
 
 interface ColorDotProps extends React.HTMLAttributes<HTMLSpanElement> {
   num: string,
@@ -10,6 +11,8 @@ const ColorDot: React.FC<ColorDotProps> = ({
   num,
   ...props
 }) => {
+  const isMobile = isMobileCheck()
+
   num = (num || '').replace(/(0x|\.)/g, '')
 
   while (num.length < 6) {
@@ -27,7 +30,10 @@ const ColorDot: React.FC<ColorDotProps> = ({
   return (
     <div {...props} className={classNames('flex', props.className)}>
       <div
-        className='m-0 align-self-center h-32 w-32 border border-8 rounded-full outline-black'
+        className={classNames('m-0 align-self-center border rounded-full outline-black', {
+          'h-32 w-32 border-8': !isMobile,
+          'h-12 w-12 border-3': isMobile
+        })}
         style={{
           borderTopColor: leftColor,
           borderRightColor: rightColor,

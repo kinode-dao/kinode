@@ -1,9 +1,10 @@
 import classNames from "classnames"
-import ColorDot from "./HexNum"
+import ColorDot from "./ColorDot"
 import { HomepageApp } from "../store/homepageStore"
 import { FaHeart, FaRegHeart } from "react-icons/fa6"
 import { useState } from "react"
 import usePersistentStore from "../store/persistentStore"
+import { isMobileCheck } from "../utilities/dimensions"
 
 interface AppDisplayProps {
   app: HomepageApp
@@ -12,8 +13,13 @@ interface AppDisplayProps {
 const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
   const { favoriteApp } = usePersistentStore();
   const [isHovered, setIsHovered] = useState(false)
+  const isMobile = isMobileCheck()
+
   return <a
-    className={classNames("flex-col-center gap-2 relative hover:opacity-90", { 'cursor-pointer': app.path, 'pointer-events-none': !app.path })}
+    className={classNames("flex-col-center gap-2 relative hover:opacity-90", {
+      'cursor-pointer': app.path,
+      'pointer-events-none': !app.path,
+    })}
     id={app.package_name}
     href={app.path}
     onMouseEnter={() => setIsHovered(true)}
@@ -22,7 +28,10 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
     {app.base64_icon
       ? <img
         src={app.base64_icon}
-        className='h-32 w-32 rounded'
+        className={classNames('rounded', {
+          'h-12 w-12': isMobile,
+          'h-32 w-32': !isMobile
+        })}
       />
       : <ColorDot num={app.state?.our_version || '0'} />}
     <h6>{app.label}</h6>
