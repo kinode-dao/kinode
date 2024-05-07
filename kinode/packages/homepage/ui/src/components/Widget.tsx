@@ -36,7 +36,7 @@ const Widget: React.FC<WidgetProps> = ({ package_name, widget, forceLarge }) => 
       data-widget-code={widget}
     />
     {isHovered && <button
-      className="absolute top-0 left-2 icon"
+      className="absolute top-0 left-0 icon"
       onClick={() => toggleWidgetVisibility(package_name)}
     >
       {widgetSettings[package_name]?.hide ? <FaEye /> : <FaEyeSlash />}

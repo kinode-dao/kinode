@@ -16,7 +16,7 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
   const isMobile = isMobileCheck()
 
   return <a
-    className={classNames("flex-col-center gap-2 relative hover:opacity-90", {
+    className={classNames("flex-col-center gap-2 relative hover:opacity-90 transition-opacity", {
       'cursor-pointer': app.path,
       'pointer-events-none': !app.path,
     })}
@@ -29,8 +29,8 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
       ? <img
         src={app.base64_icon}
         className={classNames('rounded', {
-          'h-12 w-12': isMobile,
-          'h-32 w-32': !isMobile
+          'h-8 w-8': isMobile,
+          'h-16 w-16': !isMobile
         })}
       />
       : <ColorDot num={app.state?.our_version || '0'} />}

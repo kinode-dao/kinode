@@ -4,6 +4,7 @@ import { appId } from "../utils/app";
 import { useNavigate } from "react-router-dom";
 import classNames from "classnames";
 import { APP_DETAILS_PATH } from "../constants/path";
+import ColorDot from "./ColorDot";
 
 interface AppHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   app: AppInfo;
@@ -23,11 +24,17 @@ export default function AppHeader({
       className={classNames('flex w-full justify-content-start', size, props.className, { 'cursor-pointer': size !== 'large' })}
       onClick={() => navigate(`/${APP_DETAILS_PATH}/${appId(app)}`)}
     >
-      {app.metadata?.image && <img
-        src={app.metadata.image}
-        alt="app icon"
-        className={classNames('mr-2', { 'h-32 rounded-md': size === 'large', 'h-12 rounded': size !== 'large' })}
-      />}
+      {app.metadata?.image
+        ? <img
+          src={app.metadata.image}
+          alt="app icon"
+          className={classNames('mr-2', { 'h-32 rounded-md': size === 'large', 'h-12 rounded': size !== 'large' })}
+        />
+        : <ColorDot
+          num={app.metadata_hash}
+          dotSize={size}
+          className={classNames('mr-2')}
+        />}
       <div className="flex flex-col w-full">
         <div
           className={classNames("whitespace-nowrap overflow-hidden text-ellipsis", { 'text-3xl': size === 'large', })}

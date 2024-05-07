@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import KinodeText from '../components/KinodeText'
 import KinodeBird from '../components/KinodeBird'
 import useHomepageStore from '../store/homepageStore'
-import { FaGear, FaV } from 'react-icons/fa6'
+import { FaChevronDown, FaChevronUp, FaScrewdriverWrench, FaV } from 'react-icons/fa6'
 import AppsDock from '../components/AppsDock'
 import AllApps from '../components/AllApps'
 import Widgets from '../components/Widgets'
 import { isMobileCheck } from '../utilities/dimensions'
 import classNames from 'classnames'
+import WidgetsSettingsModal from '../components/WidgetsSettingsModal'
 
 interface AppStoreApp {
   package: string,
@@ -18,7 +19,8 @@ interface AppStoreApp {
 }
 function Homepage() {
   const [our, setOur] = useState('')
-  const { apps, setApps, isHosted, fetchHostedStatus } = useHomepageStore()
+  const [allAppsExpanded, setAllAppsExpanded] = useState(false)
+  const { apps, setApps, isHosted, fetchHostedStatus, showWidgetsSettings, setShowWidgetsSettings } = useHomepageStore()
   const isMobile = isMobileCheck()
 
   useEffect(() => {
@@ -60,9 +62,7 @@ function Homepage() {
   }, [our])
 
   return (
-    <div className={classNames("flex-col-center relative w-screen overflow-hidden special-bg-homepage", {
-      'h-screen': !isMobile,
-      'min-h-screen': isMobile
+    <div className={classNames("flex-col-center relative w-screen overflow-hidden special-bg-homepage min-h-screen", {
     })}>
       <h5 className={classNames('absolute flex gap-4 c', {
         'top-8 left-8 right-8': !isMobile,
@@ -75,26 +75,36 @@ function Homepage() {
           <FaV />
         </a>}
         {our}
-        <a
-          href='/settings:settings:sys'
-          className='button icon ml-auto'
+        <button
+          className="icon ml-auto"
+          onClick={() => setShowWidgetsSettings(true)}
         >
-          <FaGear />
-        </a>
+          <FaScrewdriverWrench />
+        </button>
       </h5>
       {isMobile
         ? <div className='flex-center gap-4 p-8 mt-8 max-w-screen'>
           <KinodeBird />
           <KinodeText />
         </div>
-        : <div className={classNames("flex-col-center mx-0 gap-6 mt-8 mb-16")}>
+        : <div className={classNames("flex-col-center mx-0 gap-4 mt-8 mb-4")}>
           <h3 className='text-center'>Welcome to</h3>
           <KinodeText />
           <KinodeBird />
         </div>}
       <AppsDock />
-      <AllApps />
       <Widgets />
+      <button
+        className={classNames("clear flex-center self-center", {
+          '-mb-1': !allAppsExpanded,
+        })}
+        onClick={() => setAllAppsExpanded(!allAppsExpanded)}
+      >
+        {allAppsExpanded ? <FaChevronDown /> : <FaChevronUp />}
+        <span className="ml-2">{allAppsExpanded ? 'Collapse' : 'All installed apps'}</span>
+      </button>
+      <AllApps expanded={allAppsExpanded} />
+      {showWidgetsSettings && <WidgetsSettingsModal />}
     </div>
   )
 }

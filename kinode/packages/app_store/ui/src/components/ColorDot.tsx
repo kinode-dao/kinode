@@ -1,14 +1,16 @@
 import classNames from 'classnames'
 import React from 'react'
 import { hexToRgb, hslToRgb, rgbToHex, rgbToHsl } from '../utils/colors'
-import { isMobileCheck } from '../utilities/dimensions'
+import { isMobileCheck } from '../utils/dimensions'
 
 interface ColorDotProps extends React.HTMLAttributes<HTMLSpanElement> {
   num: string,
+  dotSize?: 'small' | 'medium' | 'large'
 }
 
 const ColorDot: React.FC<ColorDotProps> = ({
   num,
+  dotSize,
   ...props
 }) => {
   const isMobile = isMobileCheck()
@@ -31,8 +33,11 @@ const ColorDot: React.FC<ColorDotProps> = ({
     <div {...props} className={classNames('flex', props.className)}>
       <div
         className={classNames('m-0 align-self-center border rounded-full outline-black', {
-          'h-16 w-16 border-4': !isMobile,
-          'h-8 w-8 border-2': isMobile
+          'h-20 w-20': !isMobile && dotSize === 'large',
+          'h-16 w-16': !isMobile && dotSize === 'medium',
+          'h-12 w-12': isMobile || dotSize === 'small',
+          'border-4': !isMobile,
+          'border-2': isMobile,
         })}
         style={{
           borderTopColor: leftColor,
