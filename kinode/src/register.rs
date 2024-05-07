@@ -153,7 +153,7 @@ pub async fn register(
     let ip = warp::any().map(move || ip.clone());
     let ws_port = warp::any().map(move || if ws_flag_used { Some(ws_port) } else { None });
 
-    let static_files = warp::path("static").and(static_dir!("src/register-ui/build/static/"));
+    let static_files = warp::path("assets").and(static_dir!("src/register-ui/build/assets/"));
 
     let react_app = warp::path::end()
         .and(warp::get())

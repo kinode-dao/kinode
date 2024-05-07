@@ -1,13 +1,8 @@
 import React, { useEffect, useRef } from "react";
-import { hooks } from "../connectors/metamask";
 import { DotOsRegistrar } from "../abis/types";
 import isValidDomain from "is-valid-domain";
 import { hash } from "eth-ens-namehash";
 import { toAscii } from "idna-uts46-hx";
-
-global.Buffer = global.Buffer || require("buffer").Buffer;
-
-const { useChainId, useProvider } = hooks;
 
 type ClaimOsNameProps = {
   name: string;

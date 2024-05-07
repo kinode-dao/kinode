@@ -23,8 +23,6 @@ type OsHeaderProps = {
 
 function KinodeHeader({
   header,
-  openConnect,
-  nameLogo = false,
   closeConnect,
   nodeChainId,
   hideConnect = false,

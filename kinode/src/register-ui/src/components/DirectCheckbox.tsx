@@ -1,5 +1,4 @@
 import { DirectTooltip } from "./DirectTooltip";
-import { Tooltip } from "./Tooltip";
 
 interface Props {
   direct: boolean;

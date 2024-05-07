@@ -75,6 +75,7 @@ async fn persist_state(
 }
 
 /// handle commands inside messages sent directly to kernel. source is always our own node.
+/// returns Some(()) if the kernel should shut down.
 async fn handle_kernel_request(
     our_name: String,
     keypair: Arc<signature::Ed25519KeyPair>,
@@ -88,9 +89,9 @@ async fn handle_kernel_request(
     caps_oracle: t::CapMessageSender,
     engine: &Engine,
     home_directory_path: &str,
-) {
+) -> Option<()> {
     let t::Message::Request(request) = km.message else {
-        return;
+        return None;
     };
     let command: t::KernelCommand = match serde_json::from_slice(&request.body) {
         Err(e) => {
@@ -100,7 +101,7 @@ async fn handle_kernel_request(
                     content: format!("kernel: couldn't parse command: {:?}", e),
                 })
                 .await;
-            return;
+            return None;
         }
         Ok(c) => c,
     };
@@ -138,6 +139,7 @@ async fn handle_kernel_request(
             for handle in process_handles.values() {
                 handle.abort();
             }
+            return Some(());
         }
         //
         // initialize a new process. this is the only way to create a new process.
@@ -183,7 +185,7 @@ async fn handle_kernel_request(
                     })
                     .await
                     .expect("event loop: fatal: sender died");
-                return;
+                return None;
             };
 
             // check cap sigs & transform valid to unsigned to be plugged into procs
@@ -321,7 +323,7 @@ async fn handle_kernel_request(
                         ),
                     })
                     .await;
-                return;
+                return None;
             };
             let signed_caps: Vec<(t::Capability, Vec<u8>)> = capabilities
                 .iter()
@@ -361,7 +363,7 @@ async fn handle_kernel_request(
                         ),
                     })
                     .await;
-                return;
+                return None;
             };
             for cap in capabilities {
                 entry.capabilities.remove(&cap);
@@ -465,7 +467,7 @@ async fn handle_kernel_request(
                             content: format!("kernel: no such process {process_id} to kill"),
                         })
                         .await;
-                    return;
+                    return None;
                 }
             };
             process_handle.abort();
@@ -484,7 +486,7 @@ async fn handle_kernel_request(
                         content: format!("killing process {process_id}"),
                     })
                     .await;
-                return;
+                return None;
             }
             let _ = send_to_terminal
                 .send(t::Printout {
@@ -537,7 +539,7 @@ async fn handle_kernel_request(
                             content: format!("kernel: no such running process {}", process_id),
                         })
                         .await;
-                    return;
+                    return None;
                 };
                 let _ = send_to_terminal
                     .send(t::Printout {
@@ -563,6 +565,7 @@ async fn handle_kernel_request(
             }
         },
     }
+    None
 }
 
 /// spawn a process loop and insert the process in the relevant kernel state maps
@@ -1064,7 +1067,7 @@ pub async fn kernel(
                     if our.name != kernel_message.source.node {
                         continue;
                     }
-                    handle_kernel_request(
+                    if let Some(()) = handle_kernel_request(
                         our.name.clone(),
                         keypair.clone(),
                         kernel_message,
@@ -1077,7 +1080,10 @@ pub async fn kernel(
                         caps_oracle_sender.clone(),
                         &engine,
                         &home_directory_path,
-                    ).await;
+                    ).await {
+                        // shut down the node
+                        return Ok(());
+                    }
                 } else {
                     // pass message to appropriate runtime module or process
                     match senders.get(&kernel_message.target.process) {

@@ -4,7 +4,6 @@ import Modal from "react-modal"
 import { SEPOLIA_OPT_HEX, SEPOLIA_OPT_INT } from '../constants/chainId';
 
 const {
-  useChainId,
   useIsActivating,
 } = hooks;
 

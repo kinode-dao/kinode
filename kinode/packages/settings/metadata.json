@@ -1,0 +1,16 @@
+{
+    "name": "System Settings",
+    "description": "A program for managing key system settings, including onchain identity.",
+    "image": "",
+    "properties": {
+        "package_name": "settings",
+        "current_version": "0.1.0",
+        "publisher": "sys",
+        "mirrors": [],
+        "code_hashes": {
+            "0.1.0": ""
+        }
+    },
+    "external_url": "https://kinode.org",
+    "animation_url": ""
+}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, FormEvent, useCallback } from "react";
+import { useState, useEffect, FormEvent, useCallback } from "react";
 import { hooks } from "../connectors/metamask";
 import { Link, useNavigate } from "react-router-dom";
 import { toDNSWireFormat } from "../utils/dnsWire";
@@ -9,7 +9,6 @@ import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import { getNetworkName, setChain } from "../utils/chain";
-import { ReactComponent as NameLogo } from "../assets/kinode.svg"
 import DirectCheckbox from "../components/DirectCheckbox";
 import { Tooltip } from "../components/Tooltip";
 

@@ -5,11 +5,7 @@ import isValidDomain from 'is-valid-domain'
 import { hash } from 'eth-ens-namehash'
 import { toAscii } from 'idna-uts46-hx'
 
-global.Buffer = global.Buffer || require('buffer').Buffer;
-
 const {
-  useChainId,
-  useProvider,
   useAccount,
 } = hooks;
 
