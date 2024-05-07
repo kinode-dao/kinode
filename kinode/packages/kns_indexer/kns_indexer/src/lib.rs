@@ -14,9 +14,17 @@ wit_bindgen::generate!({
     world: "process",
 });
 
-// perhaps a constant in process_lib?
-const KNS_OPTIMISM_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
-const KNS_LOCAL_ADDRESS: &'static str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+const KNS_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
+#[cfg(feature = "simulation-mode")]
+const KNS_ADDRESS: &'static str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+
+const CHAIN_ID: u64 = 10;
+#[cfg(feature = "simulation-mode")]
+const CHAIN_ID: u64 = 31337;
+
+const KNS_FIRST_BLOCK: u64 = 114_923_786;
+#[cfg(feature = "simulation-mode")]
+const KNS_FIRST_BLOCK: u64 = 1;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -115,33 +123,20 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
 
 call_init!(init);
 fn init(our: Address) {
-    #[cfg(feature = "simulation-mode")]
-    let (chain_id, contract_address) = (31337, KNS_LOCAL_ADDRESS.to_string());
-    #[cfg(not(feature = "simulation-mode"))]
-    let (chain_id, contract_address) = (10, KNS_OPTIMISM_ADDRESS.to_string());
-
-    #[cfg(not(feature = "simulation-mode"))]
-    println!("indexing on contract address {}", contract_address);
-    #[cfg(feature = "simulation-mode")]
-    println!("simulation mode: not indexing KNS");
-
-    #[cfg(feature = "simulation-mode")]
-    let kns_first_block: u64 = 1;
-    #[cfg(not(feature = "simulation-mode"))]
-    let kns_first_block: u64 = 114_923_786;
+    println!("indexing on contract address {}", KNS_CONTRACT_ADDRESS);
 
     // if we have state, load it in
     let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
         Some(s) => {
             // if chain id or contract address changed from a previous run, reset state
-            if s.chain_id != chain_id || s.contract_address != contract_address {
+            if s.chain_id != CHAIN_ID || s.contract_address != KNS_CONTRACT_ADDRESS {
                 println!("resetting state because runtime contract address or chain ID changed");
                 State {
-                    chain_id,
-                    contract_address,
+                    chain_id: CHAIN_ID,
+                    contract_address: KNS_CONTRACT_ADDRESS,
                     names: HashMap::new(),
                     nodes: HashMap::new(),
-                    block: kns_first_block,
+                    block: KNS_FIRST_BLOCK,
                 }
             } else {
                 println!("loading in {} persisted PKI entries", s.nodes.len());
@@ -149,11 +144,11 @@ fn init(our: Address) {
             }
         }
         None => State {
-            chain_id,
-            contract_address: contract_address.clone(),
+            chain_id: CHAIN_ID,
+            contract_address: KNS_CONTRACT_ADDRESS,
             names: HashMap::new(),
             nodes: HashMap::new(),
-            block: kns_first_block,
+            block: KNS_FIRST_BLOCK,
         },
     };
 
