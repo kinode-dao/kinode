@@ -218,9 +218,20 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    // load in our saved state or initalize a new one if none exists
-    let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))
-        .unwrap_or(State::new(CONTRACT_ADDRESS.to_string()).unwrap());
+    let mut state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?))
+    {
+        Some(state) => {
+            println!("loaded saved state");
+            state
+        }
+        _ => {
+            println!("failed to load state, initializing");
+            State::new(CONTRACT_ADDRESS.to_string()).unwrap()
+        }
+    };
+    // // load in our saved state or initalize a new one if none exists
+    // let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))
+    //     .unwrap_or(State::new(CONTRACT_ADDRESS.to_string()).unwrap());
 
     if state.contract_address != CONTRACT_ADDRESS {
         println!("warning: contract address mismatch--overwriting saved state");
@@ -532,12 +543,14 @@ pub fn rebuild_index(
         .from_block(state.last_saved_block - 1)
         .events(EVENTS);
 
+    subscribe_to_logs(&eth_provider, filter.clone());
+
     for log in fetch_logs(&eth_provider, &filter) {
         if let Err(e) = state.ingest_listings_contract_event(our, log) {
             println!("error ingesting log: {e:?}");
         };
     }
-    subscribe_to_logs(&eth_provider, filter);
+
     LocalResponse::RebuiltIndex
 }
 

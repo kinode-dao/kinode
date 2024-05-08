@@ -3,20 +3,6 @@
         "chain_id": 1,
         "trusted": false,
         "provider": {
-            "RpcUrl": "wss://ethereum.publicnode.com"
-        }
-    },
-    {
-        "chain_id": 10,
-        "trusted": false,
-        "provider": {
-            "RpcUrl": "wss://optimism-rpc.publicnode.com"
-        }
-    },
-    {
-        "chain_id": 1,
-        "trusted": false,
-        "provider": {
             "Node": {
                 "use_as_provider": true,
                 "kns_update": {

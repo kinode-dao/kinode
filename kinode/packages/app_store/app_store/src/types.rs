@@ -73,6 +73,9 @@ pub struct PackageState {
     pub installed: bool,
     pub verified: bool,
     pub caps_approved: bool,
+    /// the hash of the manifest file, which is used to determine whether package
+    /// capabilities have changed. if they have changed, auto-install must fail
+    /// and the user must approve the new capabilities.
     pub manifest_hash: Option<String>,
     /// are we serving this package to others?
     pub mirroring: bool,
@@ -360,7 +363,7 @@ impl State {
         Ok(())
     }
 
-    /// only saves state if last_saved_block is more than 1000 blocks behind
+    /// saves state
     pub fn ingest_listings_contract_event(
         &mut self,
         our: &Address,
@@ -518,10 +521,8 @@ impl State {
             }
             _ => {}
         }
-        if block_number > self.last_saved_block + 1000 {
-            self.last_saved_block = block_number;
-            crate::set_state(&bincode::serialize(self)?);
-        }
+        self.last_saved_block = block_number;
+        crate::set_state(&bincode::serialize(self)?);
         Ok(())
     }
 }
