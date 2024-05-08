@@ -1,4 +1,4 @@
-import React, { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, FormEvent } from "react";
 import { hooks } from "../connectors/metamask";
 import { Link, useNavigate } from "react-router-dom";
 import EnterKnsName from "../components/EnterKnsName";
@@ -7,11 +7,8 @@ import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import DirectCheckbox from "../components/DirectCheckbox";
-import { ReactComponent as NameLogo } from "../assets/kinode.svg"
 import { KinodeTitle } from "../components/KinodeTitle";
 import { Tooltip } from "../components/Tooltip";
-
-global.Buffer = global.Buffer || require("buffer").Buffer;
 
 const { useAccounts, useProvider } = hooks;
 

@@ -1,6 +1,6 @@
-import React, { useState, useEffect, FormEvent, useCallback } from "react";
+import { useState, useEffect, FormEvent, useCallback } from "react";
 import { hooks } from "../connectors/metamask";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { toDNSWireFormat } from "../utils/dnsWire";
 import { BytesLike, utils } from "ethers";
 import EnterEthName from "../components/EnterEthName";
@@ -10,7 +10,6 @@ import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import { getNetworkName, setChain } from "../utils/chain";
 import { hash } from "eth-ens-namehash";
-import { ReactComponent as NameLogo } from "../assets/kinode.svg";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { MAINNET_OPT_HEX, OPTIMISM_OPT_HEX } from "../constants/chainId";
 import { KinodeTitle } from "../components/KinodeTitle";
@@ -26,7 +25,6 @@ function RegisterEthName({
   nameWrapper,
   ensRegistry,
   knsEnsEntry,
-  knsEnsExit,
   kns,
   openConnect,
   provider,
@@ -136,7 +134,7 @@ function RegisterEthName({
 
         const tx = await knsEnsEntry.setKNSRecords(dnsFormat, data, { gasLimit: 300000 });
 
-        const onRegistered = (node: any, name: any) => {
+        const onRegistered = (node: any, _name: any) => {
           if (node === namehash) {
             kns.off("NodeRegistered", onRegistered);
             setLoading("");

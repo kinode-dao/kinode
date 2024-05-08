@@ -1,27 +1,20 @@
-import React, {
+import {
     FormEvent,
     useCallback,
     useEffect,
-    useRef,
     useState,
 } from "react";
 import { hooks } from "../connectors/metamask";
 import { Link, useNavigate } from "react-router-dom";
 import { namehash } from "ethers/lib/utils";
-import { toAscii } from "idna-uts46-hx";
-import { hash } from "eth-ens-namehash";
-import isValidDomain from "is-valid-domain";
 import Loader from "../components/Loader";
 import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import { getNetworkName, setChain } from "../utils/chain";
-import { ReactComponent as NameLogo } from "../assets/kinode.svg"
-import { Tooltip } from "../components/Tooltip";
-import { DirectTooltip } from "../components/DirectTooltip";
 import DirectCheckbox from "../components/DirectCheckbox";
 
-const { useAccounts, useProvider } = hooks;
+const { useProvider } = hooks;
 
 interface ResetProps extends PageProps { }
 
@@ -39,7 +32,6 @@ function ResetNode({
     setRouters,
     nodeChainId,
 }: ResetProps) {
-    const accounts = useAccounts();
     const provider = useProvider();
     const navigate = useNavigate();
 
@@ -154,7 +146,7 @@ function ResetNode({
                 closeConnect={closeConnect}
                 nodeChainId={nodeChainId}
             />
-            {Boolean(provider) && (
+            {Boolean(provider) ? (
                 <form
                     id="signup-form"
                     className="flex flex-col"
@@ -175,6 +167,10 @@ function ResetNode({
                         </>
                     )}
                 </form>
+            ) : (
+                <div>
+                    Please connect a wallet to continue.
+                </div>
             )}
         </>
     );

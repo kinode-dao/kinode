@@ -9,6 +9,8 @@ import { OPTIMISM_OPT_HEX, SEPOLIA_OPT_HEX } from "../constants/chainId";
 import sepoliaLogo from "../assets/sepolia.png";
 import optimismLogo from "../assets/optimism.png";
 import { Tooltip } from "./Tooltip";
+import { isMobileCheck } from "../utils/dimensions";
+import classNames from "classnames";
 
 const { useIsActivating, useChainId } = hooks;
 
@@ -23,8 +25,6 @@ type OsHeaderProps = {
 
 function KinodeHeader({
   header,
-  openConnect,
-  nameLogo = false,
   closeConnect,
   nodeChainId,
   hideConnect = false,
@@ -72,6 +72,8 @@ function KinodeHeader({
     alert("You can change your connected account in your wallet.");
   }, []);
 
+  const isMobile = isMobileCheck()
+
   return (
     <>
       <div id="signup-form-header" className="flex flex-col">
@@ -79,7 +81,10 @@ function KinodeHeader({
           nodeChainId === OPTIMISM_OPT_HEX) && (
             <Tooltip
               position="left"
-              className="!absolute top-8 right-8 z-10"
+              className={classNames("!absolute z-10", {
+                'top-8 right-8': !isMobile,
+                'top-2 right-2': isMobile
+              })}
               button={nodeChainId === SEPOLIA_OPT_HEX ? (
                 <img
                   alt="sepolia"
@@ -116,7 +121,9 @@ function KinodeHeader({
               />
             ) : (
               <div className="flex flex-col gap-8 my-4">
-                <h5 className="flex c">
+                <h5 className={classNames("flex c", {
+                  'flex-wrap text-center max-w-3/4 gap-2': isMobile
+                })}>
                   {!isActivating && 'You must connect to a browser wallet to continue.'}
 
                   {isActivating ? (

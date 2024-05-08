@@ -73,6 +73,9 @@ pub struct PackageState {
     pub installed: bool,
     pub verified: bool,
     pub caps_approved: bool,
+    /// the hash of the manifest file, which is used to determine whether package
+    /// capabilities have changed. if they have changed, auto-install must fail
+    /// and the user must approve the new capabilities.
     pub manifest_hash: Option<String>,
     /// are we serving this package to others?
     pub mirroring: bool,
@@ -360,7 +363,7 @@ impl State {
         Ok(())
     }
 
-    /// only saves state if last_saved_block is more than 1000 blocks behind
+    /// saves state
     pub fn ingest_listings_contract_event(
         &mut self,
         our: &Address,
@@ -392,14 +395,11 @@ impl State {
                     ),
                 );
 
-                if generate_package_hash(&package_name, publisher_dnswire.to_vec().as_slice())
-                    != package_hash
-                {
+                if generate_package_hash(&package_name, &publisher_dnswire) != package_hash {
                     return Err(anyhow::anyhow!("got log with mismatched package hash"));
                 }
 
-                let Ok(publisher_name) = dnswire_decode(publisher_dnswire.to_vec().as_slice())
-                else {
+                let Ok(publisher_name) = net::dnswire_decode(&publisher_dnswire) else {
                     return Err(anyhow::anyhow!("got log with invalid publisher name"));
                 };
 
@@ -521,40 +521,9 @@ impl State {
             }
             _ => {}
         }
-        if block_number > self.last_saved_block + 1000 {
-            self.last_saved_block = block_number;
-            crate::set_state(&bincode::serialize(self)?);
-        }
+        self.last_saved_block = block_number;
+        crate::set_state(&bincode::serialize(self)?);
         Ok(())
-    }
-}
-
-/// take a DNSwire-formatted node ID from chain and convert it to a String
-fn dnswire_decode(wire_format_bytes: &[u8]) -> Result<String, std::string::FromUtf8Error> {
-    let mut i = 0;
-    let mut result = Vec::new();
-
-    while i < wire_format_bytes.len() {
-        let len = wire_format_bytes[i] as usize;
-        if len == 0 {
-            break;
-        }
-        let end = i + len + 1;
-        let mut span = wire_format_bytes[i + 1..end].to_vec();
-        span.push('.' as u8);
-        result.push(span);
-        i = end;
-    }
-
-    let flat: Vec<_> = result.into_iter().flatten().collect();
-
-    let name = String::from_utf8(flat)?;
-
-    // Remove the trailing '.' if it exists (it should always exist)
-    if name.ends_with('.') {
-        Ok(name[0..name.len() - 1].to_string())
-    } else {
-        Ok(name)
     }
 }
 

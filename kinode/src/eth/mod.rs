@@ -391,7 +391,10 @@ async fn handle_message(
                     }
                     verbose_print(
                         &state.print_tx,
-                        "eth: got sub_keepalive but no matching sub found",
+                        &format!(
+                            "eth: got sub_keepalive from {} but no matching sub found",
+                            km.source
+                        ),
                     )
                     .await;
                     // send a response with an EthSubError

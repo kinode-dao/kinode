@@ -1,6 +1,17 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
+export interface HomepageApp {
+  package_name: string,
+  path: string
+  label: string,
+  base64_icon?: string,
+  is_favorite: boolean,
+  state?: {
+    our_version: string
+  }
+  widget?: string
+}
 
 export interface HomepageStore {
   get: () => HomepageStore
@@ -9,6 +20,11 @@ export interface HomepageStore {
   isHosted: boolean
   setIsHosted: (isHosted: boolean) => void
   fetchHostedStatus: (our: string) => Promise<void>
+
+  apps: HomepageApp[]
+  setApps: (apps: HomepageApp[]) => void
+  showWidgetsSettings: boolean
+  setShowWidgetsSettings: (showWidgetsSettings: boolean) => void
 }
 
 const useHomepageStore = create<HomepageStore>()(
@@ -17,6 +33,10 @@ const useHomepageStore = create<HomepageStore>()(
       get,
       set,
 
+      apps: [],
+      setApps: (apps: HomepageApp[]) => set({ apps }),
+      showWidgetsSettings: false,
+      setShowWidgetsSettings: (showWidgetsSettings: boolean) => set({ showWidgetsSettings }),
       isHosted: false,
       setIsHosted: (isHosted: boolean) => set({ isHosted }),
       fetchHostedStatus: async (our: string) => {
