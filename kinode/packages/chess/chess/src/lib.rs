@@ -495,10 +495,12 @@ fn handle_http_request(
             // send the other player a new game request
             let Ok(msg) = Request::new()
                 .target((game_id, our.process.clone()))
-                .body(serde_json::to_vec(&ChessRequest::NewGame(NewGameRequest {
-                    white: player_white.clone(),
-                    black: player_black.clone(),
-                }))?)
+                .body(serde_json::to_vec(&ChessRequest::NewGame(
+                    NewGameRequest {
+                        white: player_white.clone(),
+                        black: player_black.clone(),
+                    },
+                ))?)
                 .send_and_await_response(5)?
             else {
                 return Err(anyhow::anyhow!(

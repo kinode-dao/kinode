@@ -405,7 +405,7 @@ fn handle_remote_request(
                 ));
             }
             let file_name = format!("/{}-api-v0.zip", package_id); // TODO: actual version
-            // get the .zip from VFS and attach as blob to response
+                                                                   // get the .zip from VFS and attach as blob to response
             let file_path = format!("/{}/pkg/api.zip", package_id);
             let Ok(Ok(_)) = Request::to(("our", "vfs", "distro", "sys"))
                 .body(
