@@ -300,6 +300,7 @@ async fn build_subscription(
             }
         }
     }
+    response_channels.remove(&km_id);
     return Err(EthError::NoRpcForChain);
 }
 
@@ -338,6 +339,9 @@ async fn maintain_local_subscription(
 /// handle the subscription updates from a remote provider,
 /// and also perform keepalive checks on that provider.
 /// current keepalive is 30s, this can be adjusted as desired
+///
+/// if the subscription goes more than 2 hours without an update,
+/// the provider will be considered dead and the subscription will be closed.
 async fn maintain_remote_subscription(
     our: &str,
     provider_node: &str,
@@ -350,11 +354,16 @@ async fn maintain_remote_subscription(
     send_to_loop: &MessageSender,
 ) -> Result<(), EthSubError> {
     let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+    let mut last_received = tokio::time::Instant::now();
+    let two_hours = tokio::time::Duration::from_secs(2 * 3600);
+
     loop {
         tokio::select! {
             incoming = rx.recv() => {
                 match incoming {
                     Some(EthSubResult::Ok(upd)) => {
+                        // Update the last received time on any successful sub result
+                        last_received = tokio::time::Instant::now();
                         kernel_message(
                             &our,
                             rand::random(),
@@ -381,7 +390,6 @@ async fn maintain_remote_subscription(
                             id: sub_id,
                             error: "subscription closed unexpectedly".to_string(),
                         });
-
                     }
                 }
             }
@@ -405,6 +413,12 @@ async fn maintain_remote_subscription(
                         error: "subscription node-provider failed keepalive".to_string(),
                     });
                 }
+            }
+            _ = tokio::time::sleep_until(last_received + two_hours) => {
+                return Err(EthSubError {
+                    id: sub_id,
+                    error: "No updates received for 2 hours, subscription considered dead.".to_string(),
+                });
             }
         }
     }
