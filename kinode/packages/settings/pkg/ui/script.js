@@ -2,16 +2,11 @@ const APP_PATH = '/settings:settings:sys/ask';
 
 // Fetch initial data and populate the UI
 function init() {
-    fetch('/our')
-        .then(response => response.text())
+    fetch(APP_PATH)
+        .then(response => response.json())
         .then(data => {
-            const our = data + '@settings:settings:sys';
-            fetch(APP_PATH)
-                .then(response => response.json())
-                .then(data => {
-                    console.log(data);
-                    populate(data);
-                });
+            console.log(data);
+            populate(data);
         });
 }
 
@@ -158,7 +153,8 @@ document.getElementById('ping-peer').addEventListener('submit', (e) => {
 })
 
 // Setup WebSocket connection
-const ws = new WebSocket("ws://" + location.host + "/settings:settings:sys/");
+const wsProtocol = location.protocol === 'https:' ? 'wss://' : 'ws://';
+const ws = new WebSocket(wsProtocol + location.host + "/settings:settings:sys/");
 ws.onmessage = event => {
     const data = JSON.parse(event.data);
     console.log(data);

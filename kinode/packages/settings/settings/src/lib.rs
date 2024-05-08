@@ -249,6 +249,7 @@ fn handle_http_request(
     state: &mut SettingsState,
     http_request: &http::IncomingHttpRequest,
 ) -> anyhow::Result<()> {
+    state.fetch()?;
     match http_request.method()?.as_str() {
         "GET" => Ok(http::send_response(
             http::StatusCode::OK,
