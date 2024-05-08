@@ -39,9 +39,20 @@ use ft_worker_lib::{
 
 const ICON: &str = include_str!("icon");
 
+#[cfg(not(feature = "simulation-mode"))]
 const CHAIN_ID: u64 = 10; // optimism
+#[cfg(feature = "simulation-mode")]
+const CHAIN_ID: u64 = 31337; // local
+
+#[cfg(not(feature = "simulation-mode"))]
 const CONTRACT_ADDRESS: &str = "0x52185B6a6017E6f079B994452F234f7C2533787B"; // optimism
+#[cfg(feature = "simulation-mode")]
+const CONTRACT_ADDRESS: &str = "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318"; // local
+
+#[cfg(not(feature = "simulation-mode"))]
 const CONTRACT_FIRST_BLOCK: u64 = 118_590_088;
+#[cfg(feature = "simulation-mode")]
+const CONTRACT_FIRST_BLOCK: u64 = 1;
 
 const EVENTS: [&str; 3] = [
     "AppRegistered(uint256,string,bytes,string,bytes32)",
@@ -71,7 +82,6 @@ pub enum Resp {
 }
 
 fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Log> {
-    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.get_logs(filter) {
             Ok(res) => return res,
@@ -82,13 +92,10 @@ fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Lo
             }
         }
     }
-    #[cfg(feature = "simulation-mode")] // TODO use local testnet, provider_chainId: 31337
-    vec![]
 }
 
 #[allow(unused_variables)]
 fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
-    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.subscribe(1, filter.clone()) {
             Ok(()) => break,
@@ -99,7 +106,6 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
             }
         }
     }
-    #[cfg(not(feature = "simulation-mode"))]
     println!("subscribed to logs successfully");
 }
 
@@ -221,10 +227,7 @@ fn init(our: Address) {
         state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
     }
 
-    #[cfg(not(feature = "simulation-mode"))]
     println!("indexing on contract address {}", state.contract_address);
-    #[cfg(feature = "simulation-mode")]
-    println!("simulation mode: not indexing packages");
 
     // create new provider for sepolia with request-timeout of 60s
     // can change, log requests can take quite a long time.
