@@ -1,7 +1,6 @@
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message, call_init, eth, get_typed_state, net, println, set_state, Address, Message,
-    Request, Response,
+    await_message, call_init, eth, net, println, Address, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{
@@ -128,31 +127,42 @@ call_init!(init);
 fn init(our: Address) {
     println!("indexing on contract address {}", KNS_ADDRESS);
 
-    // if we have state, load it in
-    let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
-        Some(s) => {
-            // if chain id or contract address changed from a previous run, reset state
-            if s.chain_id != CHAIN_ID || s.contract_address != KNS_ADDRESS {
-                println!("resetting state because runtime contract address or chain ID changed");
-                State {
-                    chain_id: CHAIN_ID,
-                    contract_address: KNS_ADDRESS.to_string(),
-                    names: HashMap::new(),
-                    nodes: HashMap::new(),
-                    block: KNS_FIRST_BLOCK,
-                }
-            } else {
-                println!("loading in {} persisted PKI entries", s.nodes.len());
-                s
-            }
-        }
-        None => State {
-            chain_id: CHAIN_ID,
-            contract_address: KNS_ADDRESS.to_string(),
-            names: HashMap::new(),
-            nodes: HashMap::new(),
-            block: KNS_FIRST_BLOCK,
-        },
+    // we **can** persist PKI state between boots but with current size, it's
+    // more robust just to reload the whole thing. the new contracts will allow
+    // us to quickly verify we have the updated mapping with root hash, but right
+    // now it's tricky to recover from missed events.
+    //
+    // let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
+    //     Some(s) => {
+    //         // if chain id or contract address changed from a previous run, reset state
+    //         if s.chain_id != CHAIN_ID || s.contract_address != KNS_ADDRESS {
+    //             println!("resetting state because runtime contract address or chain ID changed");
+    //             State {
+    //                 chain_id: CHAIN_ID,
+    //                 contract_address: KNS_ADDRESS.to_string(),
+    //                 names: HashMap::new(),
+    //                 nodes: HashMap::new(),
+    //                 block: KNS_FIRST_BLOCK,
+    //             }
+    //         } else {
+    //             println!("loading in {} persisted PKI entries", s.nodes.len());
+    //             s
+    //         }
+    //     }
+    //     None => State {
+    //         chain_id: CHAIN_ID,
+    //         contract_address: KNS_ADDRESS.to_string(),
+    //         names: HashMap::new(),
+    //         nodes: HashMap::new(),
+    //         block: KNS_FIRST_BLOCK,
+    //     },
+    // };
+    let state = State {
+        chain_id: CHAIN_ID,
+        contract_address: KNS_ADDRESS.to_string(),
+        names: HashMap::new(),
+        nodes: HashMap::new(),
+        block: KNS_FIRST_BLOCK,
     };
 
     match main(our, state) {
@@ -164,14 +174,6 @@ fn init(our: Address) {
 }
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
-    // shove all state into net::net
-    Request::new()
-        .target((&our.node, "net", "distro", "sys"))
-        .try_body(NetAction::KnsBatchUpdate(
-            state.nodes.values().cloned().collect::<Vec<_>>(),
-        ))?
-        .send()?;
-
     let filter = eth::Filter::new()
         .address(state.contract_address.parse::<eth::Address>().unwrap())
         .from_block(state.block - 1)
@@ -190,36 +192,38 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     println!(
         "subscribing, state.block: {}, chain_id: {}",
-        state.block, state.chain_id
+        state.block - 1,
+        state.chain_id
     );
 
+    subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
+
     // if block in state is < current_block, get logs from that part.
-    if state.block < eth_provider.get_block_number().unwrap_or(u64::MAX) {
-        loop {
-            match eth_provider.get_logs(&filter) {
-                Ok(logs) => {
-                    for log in logs {
-                        match handle_log(&our, &mut state, &log) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!("log-handling error! {e:?}");
-                            }
+    loop {
+        match eth_provider.get_logs(&filter) {
+            Ok(logs) => {
+                for log in logs {
+                    match handle_log(&our, &mut state, &log) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("log-handling error! {e:?}");
                         }
                     }
-                    break;
                 }
-                Err(e) => {
-                    println!(
-                        "got eth error while fetching logs: {:?}, trying again in 5s...",
-                        e
-                    );
-                    std::thread::sleep(std::time::Duration::from_secs(5));
-                    continue;
-                }
+                break;
+            }
+            Err(e) => {
+                println!(
+                    "got eth error while fetching logs: {:?}, trying again in 5s...",
+                    e
+                );
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                continue;
             }
         }
     }
-    // shove all state into net::net
+
+    // shove initial state into net::net
     Request::new()
         .target((&our.node, "net", "distro", "sys"))
         .try_body(NetAction::KnsBatchUpdate(
@@ -227,9 +231,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    set_state(&bincode::serialize(&state)?);
-
-    subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
+    // set_state(&bincode::serialize(&state)?);
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -364,7 +366,7 @@ fn handle_eth_message(
         pending_requests.remove(block);
     }
 
-    set_state(&bincode::serialize(state)?);
+    // set_state(&bincode::serialize(state)?);
     Ok(())
 }
 
@@ -437,19 +439,19 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     }
 
     // if new block is > 100 from last block, save state
-    let block = log.block_number.expect("expect");
-    if block > state.block + 100 {
-        kinode_process_lib::print_to_terminal(
-            1,
-            &format!(
-                "persisting {} PKI entries at block {}",
-                state.nodes.len(),
-                block
-            ),
-        );
-        state.block = block;
-        set_state(&bincode::serialize(state)?);
-    }
+    // let block = log.block_number.expect("expect");
+    // if block > state.block + 100 {
+    //     kinode_process_lib::print_to_terminal(
+    //         1,
+    //         &format!(
+    //             "persisting {} PKI entries at block {}",
+    //             state.nodes.len(),
+    //             block
+    //         ),
+    //     );
+    //     state.block = block;
+    //     set_state(&bincode::serialize(state)?);
+    // }
     Ok(())
 }
 
