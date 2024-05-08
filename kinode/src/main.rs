@@ -173,6 +173,11 @@ async fn main() {
     .await;
 
     #[cfg(not(feature = "simulation-mode"))]
+    println!(
+        "login or register at http://localhost:{}\r",
+        http_server_port
+    );
+    #[cfg(not(feature = "simulation-mode"))]
     let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
         &home_directory_path,
         our_ip.to_string(),
