@@ -35,7 +35,8 @@ export default function AppEntry({ app, size = "medium", overrideImageSize, ...p
         isIcon={size !== 'large'}
         className={classNames({
           'absolute top-0 right-0': size !== 'large',
-          'bg-orange text-lg min-w-1/5': size === 'large'
+          'bg-orange text-lg min-w-1/5': size === 'large',
+          'ml-auto': size === 'large' && isMobile
         })} />
     </div>
   );

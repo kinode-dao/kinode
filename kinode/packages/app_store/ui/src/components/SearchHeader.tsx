@@ -10,6 +10,8 @@ import {
 import { MY_APPS_PATH, PUBLISH_PATH } from "../constants/path";
 import classNames from "classnames";
 import { isMobileCheck } from "../utils/dimensions";
+import HomeButton from "./HomeButton";
+import { FaHome } from "react-icons/fa";
 
 interface SearchHeaderProps {
   value?: string;
@@ -40,17 +42,28 @@ export default function SearchHeader({
       "gap-4": isMobile,
       "gap-8": !isMobile
     })}>
-      {location.pathname !== '/' && <button
-        className="flex flex-col c icon icon-orange"
-        onClick={() => {
-          if (onBack) {
-            onBack()
-          } else {
-            canGoBack ? navigate(-1) : navigate('/')
-          }
-        }}>
-        <FaArrowLeft />
-      </button>}
+      {location.pathname !== '/'
+        ? <button
+          className="flex flex-col c icon icon-orange"
+          onClick={() => {
+            if (onBack) {
+              onBack()
+            } else {
+              canGoBack ? navigate(-1) : navigate('/')
+            }
+          }}
+        >
+          <FaArrowLeft />
+        </button>
+        : isMobile
+          ? <button
+            className={classNames("icon icon-orange", {
+            })}
+            onClick={() => window.location.href = '/'}
+          >
+            <FaHome />
+          </button>
+          : <></>}
       {!hidePublish && <button
         className="flex flex-col c icon icon-orange"
         onClick={() => navigate(PUBLISH_PATH)}
@@ -68,7 +81,10 @@ export default function SearchHeader({
             className="w-full self-stretch grow"
           />
           <button
-            className="icon border-0 absolute right-4 top-1/2 -translate-y-1/2"
+            className={classNames("icon border-0 absolute top-1/2 -translate-y-1/2", {
+              'right-2': isMobile,
+              'right-4': !isMobile
+            })}
             type="button"
             onClick={() => inputRef.current?.focus()}
           >
@@ -83,7 +99,7 @@ export default function SearchHeader({
         })}
         onClick={() => (isMyAppsPage ? navigate(-1) : navigate(MY_APPS_PATH))}
       >
-        <span>My Apps</span>
+        {!isMobile && <span>My Apps</span>}
         <FaDownload />
       </button>
     </div>

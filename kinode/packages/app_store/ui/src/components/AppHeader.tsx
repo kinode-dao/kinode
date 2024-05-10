@@ -21,8 +21,9 @@ export default function AppHeader({
 
   const appName = <div
     className={classNames({
-      'text-3xl font-[OpenSans]': size === 'large',
-      'text-xl': size !== 'large'
+      'text-3xl font-[OpenSans]': !isMobile && size === 'large',
+      'text-xl': !isMobile && size !== 'large',
+      'text-lg': isMobile
     })}
   >
     {app.metadata?.name || appId(app)}

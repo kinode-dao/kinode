@@ -126,15 +126,15 @@ export default function StorePage() {
   const isMobile = isMobileCheck()
 
   return (
-    <div className={classNames("flex flex-col max-w-[900px] w-full", {
-      'gap-4': isMobile,
-      'gap-6': !isMobile
+    <div className={classNames("flex flex-col w-full max-h-screen", {
+      'gap-4 max-w-screen p-2': isMobile,
+      'gap-6 max-w-[900px]': !isMobile
     })}>
-      <HomeButton />
+      {!isMobile && <HomeButton />}
       <SearchHeader value={searchQuery} onChange={searchApps} />
       <div className={classNames("flex items-center self-stretch justify-between", {
-        'gap-4': isMobile,
-        'gap-8': !isMobile
+        'gap-4 flex-wrap': isMobile,
+        'gap-8 grow': !isMobile
       })}>
         <button
           className="flex flex-col c icon icon-orange"
@@ -172,41 +172,43 @@ export default function StorePage() {
           <option>Recently updated</option>
         </select>
       </div>
-      {!searchQuery ? <>
+      {!searchQuery ? <div className={classNames("flex flex-col", {
+        'grow overflow-y-auto gap-4 items-center px-2': isMobile
+      })}>
         <h2>Top apps this week...</h2>
         <div className={classNames("flex gap-2", {
-          'flex-wrap': isMobile
+          'flex-col': isMobile
         })}>
           {displayedApps.slice(0, 4).map((app) => (
             <AppEntry
               key={appId(app) + (app.state?.our_version || "")}
-              size='medium'
+              size={'medium'}
               app={app}
               className={classNames("grow", {
                 'w-1/4': !isMobile,
-                'w-1/2': isMobile
+                'w-full': isMobile
               })}
             />
           ))}
         </div>
         <h2>Must-have apps!</h2>
         <div className={classNames("flex gap-2", {
-          'flex-wrap': isMobile
+          'flex-col': isMobile
         })}>
           {displayedApps.slice(0, 6).map((app) => (
             <AppEntry
               key={appId(app) + (app.state?.our_version || "")}
-              size='small'
+              size={isMobile ? 'medium' : 'small'}
               app={app}
-              overrideImageSize="large"
+              overrideImageSize={isMobile ? 'medium' : 'large'}
               className={classNames("grow", {
                 'w-1/6': !isMobile,
-                'w-1/2': isMobile
+                'w-full': isMobile
               })}
             />
           ))}
         </div>
-      </> : <div className={classNames("flex-col-center", {
+      </div> : <div className={classNames("flex-col-center grow", {
         'gap-2': isMobile,
         'gap-4': !isMobile,
       })}>
