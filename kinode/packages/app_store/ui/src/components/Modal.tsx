@@ -27,7 +27,7 @@ const Modal: React.FC<ModalProps> = ({
 
   return (
     <div
-      className={classNames(`bg-black/25 fixed top-0 bottom-0 left-0 right-0 flex flex-col c z-30 min-h-[10em] min-w-[30em]`,
+      className={classNames(`bg-black/25 backdrop-blur-lg fixed top-0 bottom-0 left-0 right-0 flex flex-col c z-30 min-h-[10em] min-w-[30em]`,
         { show }
       )}
       onClick={hide}

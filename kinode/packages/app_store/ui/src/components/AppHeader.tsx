@@ -1,54 +1,83 @@
 import React from "react";
 import { AppInfo } from "../types/Apps";
 import { appId } from "../utils/app";
-import { useNavigate } from "react-router-dom";
 import classNames from "classnames";
-import { APP_DETAILS_PATH } from "../constants/path";
 import ColorDot from "./ColorDot";
 import { isMobileCheck } from "../utils/dimensions";
 
 interface AppHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   app: AppInfo;
   size?: "small" | "medium" | "large";
+  overrideImageSize?: "small" | "medium" | "large"
 }
 
 export default function AppHeader({
   app,
   size = "medium",
+  overrideImageSize,
   ...props
 }: AppHeaderProps) {
-  const navigate = useNavigate()
   const isMobile = isMobileCheck()
 
-  return (
-    <div
-      {...props}
-      className={classNames('flex w-full justify-content-start', size, props.className, { 'cursor-pointer': size !== 'large' })}
-      onClick={() => navigate(`/${APP_DETAILS_PATH}/${appId(app)}`)}
-    >
-      {app.metadata?.image
-        ? <img
-          src={app.metadata.image}
-          alt="app icon"
-          className={classNames('mr-2', { 'h-32 rounded-md': size === 'large', 'h-12 rounded': size !== 'large' })}
-        />
-        : <ColorDot
-          num={app.metadata_hash}
-          dotSize={size}
-          className={classNames('mr-2')}
-        />}
-      <div className={classNames("flex flex-col", { 'gap-2 max-w-3/4': isMobile })}>
+  const appName = <div
+    className={classNames({
+      'text-3xl font-[OpenSans]': size === 'large',
+      'text-xl': size !== 'large'
+    })}
+  >
+    {app.metadata?.name || appId(app)}
+  </div>
+
+  const imageSize = overrideImageSize || size
+
+  return <div
+    {...props}
+    className={classNames('flex w-full justify-content-start', size, props.className, {
+      'flex-col': size === 'small',
+      'gap-2': isMobile,
+      'gap-4': !isMobile,
+      'gap-6': !isMobile && size === 'large'
+    })}
+  >
+    {size === 'small' && appName}
+    {app.metadata?.image
+      ? <img
+        src={app.metadata.image}
+        alt="app icon"
+        className={classNames('object-cover', {
+          'rounded': !imageSize,
+          'rounded-lg': imageSize === 'small',
+          'rounded-xl': imageSize === 'medium',
+          'rounded-2xl': imageSize === 'large',
+          'h-32': imageSize === 'large' || imageSize === 'small',
+          'h-20': imageSize === 'medium',
+        })}
+      />
+      : <ColorDot
+        num={app.metadata_hash}
+        dotSize={imageSize}
+      />}
+    <div className={classNames("flex flex-col", {
+      'gap-2': isMobile,
+      'gap-4 max-w-3/4': isMobile && size !== 'small'
+    })}>
+      {size !== 'small' && appName}
+      {app.metadata?.description && (
         <div
-          className={classNames("whitespace-nowrap overflow-hidden text-ellipsis", { 'text-3xl': size === 'large', })}
+          style={{
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}
+          className={classNames({
+            'text-2xl': size === 'large'
+          })}
         >
-          {app.metadata?.name || appId(app)}
+          {app.metadata.description}
         </div>
-        {app.metadata?.description && size !== "large" && (
-          <div className="whitespace-nowrap overflow-hidden text-ellipsis">
-            {app.metadata?.description?.slice(0, 100)}
-          </div>
-        )}
-      </div>
+      )}
     </div>
-  );
+  </div>
 }

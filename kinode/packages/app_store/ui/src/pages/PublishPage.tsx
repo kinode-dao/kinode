@@ -16,6 +16,7 @@ import { AppInfo } from "../types/Apps";
 import Checkbox from "../components/Checkbox";
 import Jazzicon from "../components/Jazzicon";
 import { Tooltip } from "../components/Tooltip";
+import HomeButton from "../components/HomeButton";
 
 const { useIsActivating } = hooks;
 
@@ -208,7 +209,8 @@ export default function PublishPage({
   }, [listedApps, packageName, publisherId, isUpdate, setIsUpdate]);
 
   return (
-    <div className="max-w-[900px] w-full">
+    <div className="max-w-[900px] w-full flex flex-col">
+      <HomeButton />
       <SearchHeader
         hideSearch
         hidePublish
