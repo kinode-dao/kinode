@@ -110,7 +110,7 @@ function App() {
   const props = { provider, packageAbi };
 
   return (
-    <div className="flex flex-col c h-screen w-screen">
+    <div className="flex flex-col c h-screen w-screen max-h-screen max-w-screen overflow-x-hidden special-appstore-background">
       <Web3ReactProvider connectors={connectors}>
         <Router basename={BASE_URL}>
           <Routes>

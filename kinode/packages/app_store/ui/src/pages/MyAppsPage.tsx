@@ -9,6 +9,7 @@ import { PageProps } from "../types/Page";
 import { useNavigate } from "react-router-dom";
 import { appId } from "../utils/app";
 import { PUBLISH_PATH } from "../constants/path";
+import HomeButton from "../components/HomeButton";
 
 export default function MyAppsPage() { // eslint-disable-line
   const { myApps, getMyApps } = useAppsStore()
@@ -53,6 +54,7 @@ export default function MyAppsPage() { // eslint-disable-line
 
   return (
     <div className="flex flex-col w-full max-w-[900px]">
+      <HomeButton />
       <SearchHeader value={searchQuery} onChange={searchMyApps} />
       <div className="flex justify-between items-center mt-2">
         <h3>My Packages</h3>
