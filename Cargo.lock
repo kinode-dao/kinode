@@ -3084,7 +3084,7 @@ dependencies = [
  "hmac",
  "http 1.1.0",
  "jwt",
- "kit 0.3.1 (git+https://github.com/kinode-dao/kit?rev=25b474a)",
+ "kit 0.4.1",
  "lazy_static",
  "lib",
  "log",
@@ -3240,73 +3240,6 @@ dependencies = [
 [[package]]
 name = "kit"
 version = "0.3.1"
-dependencies = [
- "anyhow",
- "base64 0.21.7",
- "clap",
- "color-eyre",
- "dirs 5.0.1",
- "fs-err",
- "futures-util",
- "git2",
- "hex",
- "kinode_process_lib 0.7.0 (git+https://github.com/kinode-dao/process_lib.git?rev=2aa3a1a)",
- "nix",
- "regex",
- "reqwest 0.11.27",
- "rmp-serde",
- "semver 1.0.22",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-tungstenite 0.20.1",
- "toml",
- "tracing",
- "tracing-appender",
- "tracing-error",
- "tracing-subscriber",
- "walkdir",
- "zip 0.6.6",
-]
-
-[[package]]
-name = "kit"
-version = "0.3.1"
-source = "git+https://github.com/kinode-dao/kit?rev=25b474a#25b474abec180f6ae63b3f2c13f459a180b5be73"
-dependencies = [
- "anyhow",
- "base64 0.21.7",
- "clap",
- "color-eyre",
- "dirs 5.0.1",
- "fs-err",
- "futures-util",
- "git2",
- "hex",
- "kinode_process_lib 0.6.0",
- "nix",
- "regex",
- "reqwest 0.11.27",
- "rmp-serde",
- "semver 1.0.22",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-tungstenite 0.20.1",
- "toml",
- "tracing",
- "tracing-appender",
- "tracing-error",
- "tracing-subscriber",
- "walkdir",
- "zip 0.6.6",
-]
-
-[[package]]
-name = "kit"
-version = "0.3.1"
 source = "git+https://github.com/kinode-dao/kit?rev=659f59e#659f59ec9b8a503e4998e1bbe4b991429fa7ff33"
 dependencies = [
  "anyhow",
@@ -3329,6 +3262,41 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-tungstenite 0.21.0",
+ "toml",
+ "tracing",
+ "tracing-appender",
+ "tracing-error",
+ "tracing-subscriber",
+ "walkdir",
+ "zip 0.6.6",
+]
+
+[[package]]
+name = "kit"
+version = "0.4.1"
+source = "git+https://github.com/kinode-dao/kit?rev=63eb4c5#63eb4c5c3e3d3046b45e837a56f22246e322a408"
+dependencies = [
+ "anyhow",
+ "base64 0.21.7",
+ "clap",
+ "color-eyre",
+ "dirs 5.0.1",
+ "fs-err",
+ "futures-util",
+ "git2",
+ "hex",
+ "kinode_process_lib 0.7.0 (git+https://github.com/kinode-dao/process_lib.git?rev=2aa3a1a)",
+ "nix",
+ "regex",
+ "reqwest 0.11.27",
+ "rmp-serde",
+ "semver 1.0.22",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite 0.20.1",
  "toml",
  "tracing",
  "tracing-appender",
@@ -3378,7 +3346,7 @@ version = "0.7.2"
 dependencies = [
  "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "anyhow",
- "kit 0.3.1 (git+https://github.com/kinode-dao/kit?rev=659f59e)",
+ "kit 0.3.1",
  "lazy_static",
  "rand 0.8.5",
  "reqwest 0.12.4",

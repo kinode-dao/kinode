@@ -11,7 +11,8 @@ interface homepage-sys-api-v0 {
 
     record add-request {
         label: string,
-        icon: string,
-        path: string,
+        icon: option<string>,
+        path: option<string>,
+        widget: option<string>,
     }
 }
