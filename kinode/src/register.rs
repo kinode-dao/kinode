@@ -1,4 +1,5 @@
 use crate::keygen;
+use crate::KNS_ADDRESS;
 use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
 use alloy_providers::provider::{Provider, TempProvider};
 use alloy_pubsub::PubSubFrontend;
@@ -27,16 +28,6 @@ use warp::{
 };
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
-
-// pub const KNS_SEPOLIA_ADDRESS: EthAddress = EthAddress::new([
-//     0x38, 0x07, 0xFB, 0xD6, 0x92, 0xAa, 0x5c, 0x96, 0xF1, 0xD8, 0xD7, 0xc5, 0x9a, 0x13, 0x46, 0xa8,
-//     0x85, 0xF4, 0x0B, 0x1C,
-// ]);
-
-pub const KNS_OPTIMISM_ADDRESS: EthAddress = EthAddress::new([
-    0xca, 0x5b, 0x58, 0x11, 0xc0, 0xC4, 0x0a, 0xAB, 0x32, 0x95, 0xf9, 0x32, 0xb1, 0xB5, 0x11, 0x2E,
-    0xb7, 0xbb, 0x4b, 0xD6,
-]);
 
 sol! {
     function auth(
@@ -126,7 +117,7 @@ pub async fn register(
     });
 
     // KnsRegistrar contract address
-    let kns_address = KNS_OPTIMISM_ADDRESS;
+    let kns_address = EthAddress::from_str(KNS_ADDRESS).unwrap();
 
     // This ETH provider uses public rpc endpoints to verify registration signatures.
     let url = if let Some(rpc_url) = maybe_rpc {
@@ -134,8 +125,16 @@ pub async fn register(
     } else {
         "wss://optimism-rpc.publicnode.com".to_string()
     };
-    let connector = WsConnect { url, auth: None };
-    let Ok(client) = ClientBuilder::default().ws(connector).await else {
+    println!(
+        "Connecting to Optimism RPC at {url}\n\
+        Specify a different RPC URL with the --rpc flag."
+    );
+    // this fails occasionally in certain networking environments. i'm not sure why.
+    // frustratingly, the exact same call does not fail in the eth module. more investigation needed.
+    let Ok(client) = ClientBuilder::default()
+        .ws(WsConnect { url, auth: None })
+        .await
+    else {
         panic!(
             "Error: runtime could not connect to ETH RPC.\n\
             This is necessary in order to verify node identity onchain.\n\
@@ -143,6 +142,7 @@ pub async fn register(
             the --rpc flag, and you are connected to the internet."
         );
     };
+    println!("Connected to Optimism RPC");
 
     let provider = Arc::new(Provider::new_with_client(client));
 
@@ -690,7 +690,7 @@ async fn confirm_change_network_keys(
     success_response(sender, our.clone(), decoded_keyfile, encoded_keyfile).await
 }
 
-async fn assign_ws_routing(
+pub async fn assign_ws_routing(
     our: &mut Identity,
     kns_address: EthAddress,
     provider: Arc<Provider<PubSubFrontend>>,
@@ -737,7 +737,6 @@ async fn assign_ws_routing(
     }
     Ok(())
 }
-
 async fn success_response(
     sender: Arc<RegistrationSender>,
     our: Identity,

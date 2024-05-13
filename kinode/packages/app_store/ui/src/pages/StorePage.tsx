@@ -9,6 +9,8 @@ import { PageProps } from "../types/Page";
 import { appId } from "../utils/app";
 import classNames from 'classnames';
 import { FaArrowRotateRight } from "react-icons/fa6";
+import { isMobileCheck } from "../utils/dimensions";
+import HomeButton from "../components/HomeButton";
 
 interface StorePageProps extends PageProps { }
 
@@ -21,6 +23,7 @@ export default function StorePage() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [displayedApps, setDisplayedApps] = useState<AppInfo[]>(listedApps);
   const [page, setPage] = useState(1);
+  const [tags, setTags] = useState<string[]>([])
 
   const pages = useMemo(
     () =>
@@ -42,6 +45,14 @@ export default function StorePage() {
     getListedApps()
       .then((apps) => {
         setDisplayedApps(Object.values(apps));
+        let _tags: string[] = [];
+        for (const app of Object.values(apps)) {
+          _tags = _tags.concat((app.metadata as any || {}).tags || [])
+        }
+        if (_tags.length === 0) {
+          _tags = ['App', 'Tags', 'Coming', 'Soon', 'tm'];
+        }
+        setTags(Array.from(new Set(_tags)))
       })
       .catch((error) => console.error(error));
   }, []); // eslint-disable-line
@@ -80,13 +91,6 @@ export default function StorePage() {
     }
   }, []);
 
-  // const viewDetails = useCallback(
-  //   (app: AppInfo) => () => {
-  //     navigate(`/app-details/${appId(app)}`);
-  //   },
-  //   [navigate]
-  // );
-
   const searchApps = useCallback(
     (query: string) => {
       setSearchQuery(query);
@@ -119,18 +123,38 @@ export default function StorePage() {
     }
   }, [rebuildIndex]);
 
+  const isMobile = isMobileCheck()
+
   return (
-    <div className="max-w-[900px] w-full">
+    <div className={classNames("flex flex-col w-full max-h-screen", {
+      'gap-4 max-w-screen p-2': isMobile,
+      'gap-6 max-w-[900px]': !isMobile
+    })}>
+      {!isMobile && <HomeButton />}
       <SearchHeader value={searchQuery} onChange={searchApps} />
-      <div className="flex justify-between items-center my-2 mx-0">
-        <h4>New</h4>
+      <div className={classNames("flex items-center self-stretch justify-between", {
+        'gap-4 flex-wrap': isMobile,
+        'gap-8 grow': !isMobile
+      })}>
         <button
-          className="flex flex-col c mr-auto ml-1 icon"
+          className="flex flex-col c icon icon-orange"
           onClick={tryRebuildIndex}
           title="Rebuild index"
         >
           <FaArrowRotateRight />
         </button>
+
+        {tags.slice(0, isMobile ? 3 : 6).map(tag => (
+          <button
+            key={tag}
+            className="clear flex c rounded-full !bg-white/10 !hover:bg-white/25"
+            onClick={() => {
+              console.log('clicked tag', tag)
+            }}
+          >
+            {tag}
+          </button>
+        ))}
 
         <select
           value={resultsSort}
@@ -138,6 +162,9 @@ export default function StorePage() {
             setResultsSort(e.target.value);
             sortApps(e.target.value);
           }}
+          className={classNames({
+            'basis-1/5': !isMobile
+          })}
         >
           <option>Recently published</option>
           <option>Most popular</option>
@@ -145,13 +172,54 @@ export default function StorePage() {
           <option>Recently updated</option>
         </select>
       </div>
-      <div className="flex flex-col flex-1 overflow-y-auto gap-2 max-h-[80vh]">
-        {displayedApps.map((app) => (
-          <AppEntry
-            key={appId(app) + (app.state?.our_version || "")}
-            app={app}
-          />
-        ))}
+      {!searchQuery ? <div className={classNames("flex flex-col", {
+        'grow overflow-y-auto gap-4 items-center px-2': isMobile
+      })}>
+        <h2>Top apps this week...</h2>
+        <div className={classNames("flex gap-2", {
+          'flex-col': isMobile
+        })}>
+          {displayedApps.slice(0, 4).map((app) => (
+            <AppEntry
+              key={appId(app) + (app.state?.our_version || "")}
+              size={'medium'}
+              app={app}
+              className={classNames("grow", {
+                'w-1/4': !isMobile,
+                'w-full': isMobile
+              })}
+            />
+          ))}
+        </div>
+        <h2>Must-have apps!</h2>
+        <div className={classNames("flex gap-2", {
+          'flex-col': isMobile
+        })}>
+          {displayedApps.slice(0, 6).map((app) => (
+            <AppEntry
+              key={appId(app) + (app.state?.our_version || "")}
+              size={isMobile ? 'medium' : 'small'}
+              app={app}
+              overrideImageSize={isMobile ? 'medium' : 'large'}
+              className={classNames("grow", {
+                'w-1/6': !isMobile,
+                'w-full': isMobile
+              })}
+            />
+          ))}
+        </div>
+      </div> : <div className={classNames("flex-col-center grow", {
+        'gap-2': isMobile,
+        'gap-4': !isMobile,
+      })}>
+        {displayedApps.map(app => <AppEntry
+          size='large'
+          app={app}
+          className="self-stretch items-center"
+          overrideImageSize="medium"
+        />)}
+      </div>}
+      <div className="flex flex-col gap-2 overflow-y-auto">
         {pages.length > 1 && (
           <div className="flex self-center">
             {page !== pages[0] && (

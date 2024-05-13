@@ -93,6 +93,17 @@ checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"
 [[package]]
 name = "alloy-consensus"
 version = "0.1.0"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
+dependencies = [
+ "alloy-eips 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
+ "alloy-network",
+ "alloy-primitives 0.6.4",
+ "alloy-rlp",
+]
+
+[[package]]
+name = "alloy-consensus"
+version = "0.1.0"
 source = "git+https://github.com/alloy-rs/alloy?rev=cad7935#cad7935d69f433e45d190902e58b1c996b35adfa"
 dependencies = [
  "alloy-eips 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=cad7935)",
@@ -102,6 +113,38 @@ dependencies = [
  "c-kzg",
  "serde",
  "sha2",
+]
+
+[[package]]
+name = "alloy-contract"
+version = "0.1.0"
+source = "git+https://github.com/alloy-rs/alloy?rev=6f8ebb4#6f8ebb45afca1a201a11d421ec46db0f7a1d8d08"
+dependencies = [
+ "alloy-dyn-abi",
+ "alloy-json-abi",
+ "alloy-primitives 0.6.4",
+ "alloy-providers",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
+ "alloy-sol-types 0.6.4",
+ "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
+ "thiserror",
+]
+
+[[package]]
+name = "alloy-dyn-abi"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2919acdad13336bc5dc26b636cdd6892c2f27fb0d4a58320a00c2713cf6a4e9a"
+dependencies = [
+ "alloy-json-abi",
+ "alloy-primitives 0.6.4",
+ "alloy-sol-type-parser",
+ "alloy-sol-types 0.6.4",
+ "const-hex",
+ "itoa",
+ "serde",
+ "serde_json",
+ "winnow 0.6.6",
 ]
 
 [[package]]
@@ -136,6 +179,18 @@ dependencies = [
  "alloy-primitives 0.7.0",
  "alloy-serde",
  "serde",
+]
+
+[[package]]
+name = "alloy-json-abi"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "24ed0f2a6c3a1c947b4508522a53a190dba8f94dcd4e3e1a5af945a498e78f2f"
+dependencies = [
+ "alloy-primitives 0.6.4",
+ "alloy-sol-type-parser",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -325,7 +380,7 @@ name = "alloy-rpc-types"
 version = "0.1.0"
 source = "git+https://github.com/alloy-rs/alloy?rev=cad7935#cad7935d69f433e45d190902e58b1c996b35adfa"
 dependencies = [
- "alloy-consensus",
+ "alloy-consensus 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=cad7935)",
  "alloy-eips 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=cad7935)",
  "alloy-genesis",
  "alloy-primitives 0.7.0",
@@ -412,6 +467,15 @@ dependencies = [
  "quote",
  "syn 2.0.60",
  "syn-solidity 0.7.0",
+]
+
+[[package]]
+name = "alloy-sol-type-parser"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0045cc89524e1451ccf33e8581355b6027ac7c6e494bb02959d4213ad0d8e91d"
+dependencies = [
+ "winnow 0.6.6",
 ]
 
 [[package]]
@@ -2603,7 +2667,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.6",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -2982,9 +3046,12 @@ dependencies = [
 
 [[package]]
 name = "kinode"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "aes-gcm",
+ "alloy-consensus 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
+ "alloy-contract",
+ "alloy-network",
  "alloy-primitives 0.6.4",
  "alloy-providers",
  "alloy-pubsub",
@@ -3017,7 +3084,7 @@ dependencies = [
  "hmac",
  "http 1.1.0",
  "jwt",
- "kit 0.3.1",
+ "kit 0.3.1 (git+https://github.com/kinode-dao/kit?rev=25b474a)",
  "lazy_static",
  "lib",
  "log",
@@ -3037,6 +3104,7 @@ dependencies = [
  "serde_json",
  "serde_urlencoded",
  "sha2",
+ "sha3",
  "snow",
  "static_dir",
  "thiserror",
@@ -3055,7 +3123,7 @@ dependencies = [
 
 [[package]]
 name = "kinode_lib"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "lib",
 ]
@@ -3205,6 +3273,40 @@ dependencies = [
 [[package]]
 name = "kit"
 version = "0.3.1"
+source = "git+https://github.com/kinode-dao/kit?rev=25b474a#25b474abec180f6ae63b3f2c13f459a180b5be73"
+dependencies = [
+ "anyhow",
+ "base64 0.21.7",
+ "clap",
+ "color-eyre",
+ "dirs 5.0.1",
+ "fs-err",
+ "futures-util",
+ "git2",
+ "hex",
+ "kinode_process_lib 0.6.0",
+ "nix",
+ "regex",
+ "reqwest 0.11.27",
+ "rmp-serde",
+ "semver 1.0.22",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-tungstenite 0.20.1",
+ "toml",
+ "tracing",
+ "tracing-appender",
+ "tracing-error",
+ "tracing-subscriber",
+ "walkdir",
+ "zip 0.6.6",
+]
+
+[[package]]
+name = "kit"
+version = "0.3.1"
 source = "git+https://github.com/kinode-dao/kit?rev=659f59e#659f59ec9b8a503e4998e1bbe4b991429fa7ff33"
 dependencies = [
  "anyhow",
@@ -3272,7 +3374,7 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
 name = "lib"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "anyhow",
@@ -6582,6 +6684,19 @@ name = "webpki-roots"
 version = "0.25.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
+
+[[package]]
+name = "widget"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "kinode_process_lib 0.7.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.7.0)",
+ "serde",
+ "serde_json",
+ "url",
+ "wit-bindgen",
+]
 
 [[package]]
 name = "wiggle"

@@ -2,7 +2,6 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key,
 };
-#[cfg(not(feature = "simulation-mode"))]
 use alloy_primitives::keccak256;
 use anyhow::Result;
 use digest::generic_array::GenericArray;
@@ -139,7 +138,6 @@ pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>),
     Ok((username, routers))
 }
 
-#[cfg(not(feature = "simulation-mode"))]
 pub fn namehash(name: &str) -> Vec<u8> {
     let mut node = vec![0u8; 32];
     if name.is_empty() {

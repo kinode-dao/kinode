@@ -16,6 +16,9 @@ import { AppInfo } from "../types/Apps";
 import Checkbox from "../components/Checkbox";
 import Jazzicon from "../components/Jazzicon";
 import { Tooltip } from "../components/Tooltip";
+import HomeButton from "../components/HomeButton";
+import classNames from "classnames";
+import { isMobileCheck } from "../utils/dimensions";
 
 const { useIsActivating } = hooks;
 
@@ -207,16 +210,22 @@ export default function PublishPage({
     }
   }, [listedApps, packageName, publisherId, isUpdate, setIsUpdate]);
 
+  const isMobile = isMobileCheck()
+
   return (
-    <div className="max-w-[900px] w-full">
+    <div className={classNames("w-full flex flex-col gap-2", {
+      'max-w-[900px]': !isMobile,
+      'p-2 h-screen w-screen': isMobile
+    })}>
+      {!isMobile && <HomeButton />}
       <SearchHeader
         hideSearch
         hidePublish
         onBack={showMetadataForm ? () => setShowMetadataForm(false) : undefined}
       />
-      <div className="flex justify-between items-center my-2">
+      <div className="flex-center justify-between">
         <h4>Publish Package</h4>
-        {Boolean(account) && <div className="card flex items-center">
+        {Boolean(account) && <div className="card flex-center">
           <span>Publishing as:</span>
           <Jazzicon address={account!} className="mx-2" />
           <span className="font-mono">{account?.slice(0, 4)}...{account?.slice(-4)}</span>
@@ -224,20 +233,20 @@ export default function PublishPage({
       </div>
 
       {loading ? (
-        <div className="flex flex-col items-center">
+        <div className="flex-col-center">
           <Loader msg={loading} />
         </div>
       ) : publishSuccess ? (
-        <div className="flex flex-col items-center">
-          <h4 className="mb-2">Package Published!</h4>
-          <div className="mb-2">
+        <div className="flex-col-center gap-2">
+          <h4>Package Published!</h4>
+          <div>
             <strong>Package Name:</strong> {publishSuccess.packageName}
           </div>
-          <div className="mb-2">
+          <div>
             <strong>Publisher ID:</strong> {publishSuccess.publisherId}
           </div>
           <button
-            className={`flex ml-2 mt-2`}
+            className={`flex ml-2`}
             onClick={() => setPublishSuccess(undefined)}
           >
             Publish Another Package
@@ -247,7 +256,7 @@ export default function PublishPage({
         <MetadataForm {...{ packageName, publisherId, app: state?.app }} goBack={() => setShowMetadataForm(false)} />
       ) : !account || !isActive ? (
         <>
-          <h4 style={{}}>Please connect your wallet to publish a package</h4>
+          <h4>Please connect your wallet {isMobile && <br />} to publish a package</h4>
           <button className={`connect-wallet row`} onClick={connectWallet}>
             Connect Wallet
           </button>
@@ -256,7 +265,7 @@ export default function PublishPage({
         <Loader msg="Approve connection in your wallet" />
       ) : (
         <form
-          className="flex flex-col flex-1 overflow-y-auto"
+          className="flex flex-col flex-1 overflow-y-auto gap-2"
           onSubmit={publishPackage}
         >
           <div
@@ -270,7 +279,7 @@ export default function PublishPage({
               Update existing package
             </label>
           </div>
-          <div className="flex flex-col mb-2">
+          <div className="flex flex-col">
             <label htmlFor="package-name">Package Name</label>
             <input
               id="package-name"
@@ -282,7 +291,7 @@ export default function PublishPage({
               onBlur={checkIfUpdate}
             />
           </div>
-          <div className="flex flex-col mb-2">
+          <div className="flex flex-col">
             <label htmlFor="publisher-id">Publisher ID</label>
             <input
               id="publisher-id"
@@ -293,7 +302,7 @@ export default function PublishPage({
               onBlur={checkIfUpdate}
             />
           </div>
-          <div className="flex flex-col mb-2">
+          <div className="flex flex-col gap-2">
             <label htmlFor="metadata-url">
               Metadata URL
             </label>
@@ -306,7 +315,7 @@ export default function PublishPage({
               onBlur={calculateMetadataHash}
               placeholder="https://github/my-org/my-repo/metadata.json"
             />
-            <div className="mt-2">
+            <div>
               Metadata is a JSON file that describes your package.
               <br /> You can{" "}
               <a onClick={() => setShowMetadataForm(true)}
@@ -317,7 +326,7 @@ export default function PublishPage({
               .
             </div>
           </div>
-          <div className="flex flex-col mb-2">
+          <div className="flex flex-col">
             <label htmlFor="metadata-hash">Metadata Hash</label>
             <input
               readOnly
@@ -334,7 +343,7 @@ export default function PublishPage({
         </form>
       )}
 
-      <div className="flex flex-col my-2 mt-4">
+      <div className="flex flex-col">
         <h4>Packages You Own</h4>
         {myPublishedApps.length > 0 ? (
           <div className="flex flex-col">
@@ -344,11 +353,9 @@ export default function PublishPage({
                   <Jazzicon address={app.publisher} className="mr-2" />
                   <span>{app.package}</span>
                 </div>
-                {/* <Tooltip content="View Package"> */}
                 <button className="flex items-center" onClick={() => unpublishPackage(app.package, app.publisher)}>
                   <span>Unpublish</span>
                 </button>
-                {/* </Tooltip> */}
               </div>
             ))}
           </div>

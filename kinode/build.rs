@@ -24,17 +24,28 @@ fn get_features() -> String {
 }
 
 fn output_reruns(dir: &Path, rerun_files: &HashSet<String>) {
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.filter_map(|e| e.ok()) {
-            let path = entry.path();
-            if path.is_dir() {
-                // If the entry is a directory, recursively walk it
-                output_reruns(&path, rerun_files);
-            } else if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                // Check if the current file is in our list of interesting files
-                if rerun_files.contains(filename) {
-                    // If so, print a `cargo:rerun-if-changed=PATH` line for it
-                    println!("cargo:rerun-if-changed={}", path.display());
+    if rerun_files.contains(dir.to_str().unwrap()) {
+        // Output for all files in the directory if the directory itself is specified in rerun_files
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                println!("cargo:rerun-if-changed={}", path.display());
+            }
+        }
+    } else {
+        // Check files individually
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if path.is_dir() {
+                    // If the entry is a directory, recursively walk it
+                    output_reruns(&path, rerun_files);
+                } else if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                    // Check if the current file is in our list of interesting files
+                    if rerun_files.contains(filename) {
+                        // If so, print a `cargo:rerun-if-changed=PATH` line for it
+                        println!("cargo:rerun-if-changed={}", path.display());
+                    }
                 }
             }
         }

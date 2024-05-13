@@ -39,9 +39,20 @@ use ft_worker_lib::{
 
 const ICON: &str = include_str!("icon");
 
+#[cfg(not(feature = "simulation-mode"))]
 const CHAIN_ID: u64 = 10; // optimism
+#[cfg(feature = "simulation-mode")]
+const CHAIN_ID: u64 = 31337; // local
+
+#[cfg(not(feature = "simulation-mode"))]
 const CONTRACT_ADDRESS: &str = "0x52185B6a6017E6f079B994452F234f7C2533787B"; // optimism
+#[cfg(feature = "simulation-mode")]
+const CONTRACT_ADDRESS: &str = "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318"; // local
+
+#[cfg(not(feature = "simulation-mode"))]
 const CONTRACT_FIRST_BLOCK: u64 = 118_590_088;
+#[cfg(feature = "simulation-mode")]
+const CONTRACT_FIRST_BLOCK: u64 = 1;
 
 const EVENTS: [&str; 3] = [
     "AppRegistered(uint256,string,bytes,string,bytes32)",
@@ -71,7 +82,6 @@ pub enum Resp {
 }
 
 fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Log> {
-    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.get_logs(filter) {
             Ok(res) => return res,
@@ -82,13 +92,10 @@ fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Lo
             }
         }
     }
-    #[cfg(feature = "simulation-mode")] // TODO use local testnet, provider_chainId: 31337
-    vec![]
 }
 
 #[allow(unused_variables)]
 fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
-    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.subscribe(1, filter.clone()) {
             Ok(()) => break,
@@ -99,8 +106,71 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
             }
         }
     }
-    #[cfg(not(feature = "simulation-mode"))]
     println!("subscribed to logs successfully");
+}
+
+fn get_widget() -> String {
+    return r#"<html>
+<head>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .app {
+            width: 100%;
+        }
+
+        .app-image {
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .app-info {
+            max-width: 67%
+        }
+
+        @media screen and (min-width: 500px) {
+            .app {
+                width: 49%;
+            }
+        }
+    </style>
+</head>
+<body class="text-white overflow-hidden">
+    <div
+        id="latest-apps"
+        class="flex flex-wrap p-2 gap-2 items-center backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto"
+        style="
+            scrollbar-color: transparent transparent;
+            scrollbar-width: none;
+        "
+    >
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/main:app_store:sys/apps/listed')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('latest-apps');
+                    data.forEach(app => {
+                        const div = document.createElement('div');
+                        div.className = 'app p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 font-sans';
+                        div.innerHTML = `${app.metadata.image ? `<div
+                            class="app-image rounded mr-2 grow"
+                            style="background-image: url('${app.metadata.image}');"
+                        ></div>` : ''}
+                        <div class="app-info flex flex-col grow">
+                            <h2 class="font-bold">${app.metadata.name}</h2>
+                            <p>${app.metadata.description}</p>
+                        </div>`;
+                        container.appendChild(div);
+                    });
+                })
+                .catch(error => console.error('Error fetching apps:', error));
+        });
+    </script>
+</body>
+</html>"#
+        .to_string();
 }
 
 call_init!(init);
@@ -137,7 +207,8 @@ fn init(our: Address) {
                 "Add": {
                     "label": "App Store",
                     "icon": ICON,
-                    "path": "/" // just our root
+                    "path": "/", // just our root
+                    "widget": get_widget()
                 }
             })
             .to_string()
@@ -147,19 +218,27 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    // load in our saved state or initalize a new one if none exists
-    let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))
-        .unwrap_or(State::new(CONTRACT_ADDRESS.to_string()).unwrap());
+    let mut state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?))
+    {
+        Some(state) => {
+            println!("loaded saved state");
+            state
+        }
+        _ => {
+            println!("failed to load state, initializing");
+            State::new(CONTRACT_ADDRESS.to_string()).unwrap()
+        }
+    };
+    // // load in our saved state or initalize a new one if none exists
+    // let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))
+    //     .unwrap_or(State::new(CONTRACT_ADDRESS.to_string()).unwrap());
 
     if state.contract_address != CONTRACT_ADDRESS {
         println!("warning: contract address mismatch--overwriting saved state");
         state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
     }
 
-    #[cfg(not(feature = "simulation-mode"))]
     println!("indexing on contract address {}", state.contract_address);
-    #[cfg(feature = "simulation-mode")]
-    println!("simulation mode: not indexing packages");
 
     // create new provider for sepolia with request-timeout of 60s
     // can change, log requests can take quite a long time.
@@ -608,21 +687,21 @@ pub fn rebuild_index(
 ) -> LocalResponse {
     *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
     // kill our old subscription and build a new one.
-    eth_provider
-        .unsubscribe(1)
-        .expect("app_store: failed to unsub from eth events!");
+    let _ = eth_provider.unsubscribe(1);
 
     let filter = eth::Filter::new()
         .address(eth::Address::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block - 1)
         .events(EVENTS);
 
+    subscribe_to_logs(&eth_provider, filter.clone());
+
     for log in fetch_logs(&eth_provider, &filter) {
         if let Err(e) = state.ingest_listings_contract_event(our, log, requested_apis) {
             println!("error ingesting log: {e:?}");
         };
     }
-    subscribe_to_logs(&eth_provider, filter);
+
     LocalResponse::RebuiltIndex
 }
 

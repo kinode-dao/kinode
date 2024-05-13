@@ -163,12 +163,6 @@ fn initialize(our: Address) {
 
     // Grab our state, then enter the main event loop.
     let mut state: SettingsState = SettingsState::new(our);
-    match state.fetch() {
-        Ok(()) => {}
-        Err(e) => {
-            println!("failed to fetch initial state: {e}");
-        }
-    }
     main_loop(&mut state);
 }
 
@@ -249,6 +243,7 @@ fn handle_http_request(
     state: &mut SettingsState,
     http_request: &http::IncomingHttpRequest,
 ) -> anyhow::Result<()> {
+    state.fetch()?;
     match http_request.method()?.as_str() {
         "GET" => Ok(http::send_response(
             http::StatusCode::OK,

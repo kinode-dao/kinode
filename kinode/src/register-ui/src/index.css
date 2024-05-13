@@ -152,5 +152,13 @@ button:disabled {
 }
 
 .network-icon {
-  @apply w-12 h-12 filter grayscale;
+  @apply filter grayscale;
+
+  &.isMobile {
+    @apply w-8 h-8;
+  }
+
+  &:not(.isMobile) {
+    @apply w-12 h-12;
+  }
 }

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
-import { ethers } from "ethers";
 import { Web3ReactProvider, Web3ReactHooks } from '@web3-react/core';
 import type { MetaMask } from '@web3-react/metamask'
 
@@ -8,7 +7,7 @@ import { PackageStore, PackageStore__factory } from "./abis/types";
 import StorePage from "./pages/StorePage";
 import MyAppsPage from "./pages/MyAppsPage";
 import AppPage from "./pages/AppPage";
-import { MY_APPS_PATH } from "./constants/path";
+import { APP_DETAILS_PATH, MY_APPS_PATH, PUBLISH_PATH, STORE_PATH } from "./constants/path";
 import { ChainId, PACKAGE_STORE_ADDRESSES } from "./constants/chain";
 import PublishPage from "./pages/PublishPage";
 import { hooks as metaMaskHooks, metaMask } from './utils/metamask'
@@ -111,14 +110,14 @@ function App() {
   const props = { provider, packageAbi };
 
   return (
-    <div className="flex flex-col c h-screen w-screen">
+    <div className="flex flex-col c h-screen w-screen max-h-screen max-w-screen overflow-x-hidden special-appstore-background">
       <Web3ReactProvider connectors={connectors}>
         <Router basename={BASE_URL}>
           <Routes>
-            <Route path="/" element={<StorePage />} />
+            <Route path={STORE_PATH} element={<StorePage />} />
             <Route path={MY_APPS_PATH} element={<MyAppsPage />} />
-            <Route path="/app-details/:id" element={<AppPage />} />
-            <Route path="/publish" element={<PublishPage {...props} />} />
+            <Route path={`${APP_DETAILS_PATH}/:id`} element={<AppPage />} />
+            <Route path={PUBLISH_PATH} element={<PublishPage {...props} />} />
           </Routes>
         </Router>
       </Web3ReactProvider>
