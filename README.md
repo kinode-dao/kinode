@@ -42,7 +42,6 @@ cargo +nightly build -p kinode
 No security audits of this crate have ever been performed. This software is under active development and should be **used at your own risk**.
 
 ## Boot
-Get an eth-sepolia-rpc API key and pass that as an argument. You can get one for free at `alchemy.com`.
 
 Make sure not to use the same home directory for two nodes at once! You can use any name for the home directory: here we just use `home`. The `--` here separates cargo arguments from binary arguments.
 
@@ -52,17 +51,19 @@ TODO: document feature flags in `--simulation-mode`
 cargo +nightly run -p kinode -- home
 ```
 
-On boot you will be prompted to navigate to `localhost:8080`. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need Optimism ETH or an invite code.
+On boot you will be prompted to navigate to `localhost:8080` (or whatever HTTP port your node bound to: it will try 8080 and go up from there, or use the port passed with the `--http-port` boot flag. Make sure your browser wallet matches the network that the node is being booted on. Follow the registration UI -- if you want to register a new ID you will either need Optimism ETH or an invite code.
 
 ## Configuring the ETH RPC Provider
 
-By default, a node will use the [hardcoded providers](./kinode/default_providers_mainnet.json) for the network it is booted on. A node can use a WebSockets RPC URL directly, or use another Kinode as a relay point. To adjust the providers a node uses, just create and modify the `.eth_providers` file in the node's home folder (set at boot). See the Kinode Book for more docs, and see the [default providers file here](./kinode/default_providers_mainnet.json) for a template to create `.eth_providers`.
+By default, a node will use the [hardcoded providers](./kinode/src/eth/default_providers_mainnet.json) for the network it is booted on. A node can use a WebSockets RPC URL directly, or use another Kinode as a relay point. To adjust the providers a node uses, just create and modify the `.eth_providers` file in the node's home folder (set at boot). See the Kinode Book for more docs, and see the [default providers file here](./kinode/src/eth/default_providers_mainnet.json) for a template to create `.eth_providers`.
 
-You may also add a RPC provider or otherwise modify your configuration by sending messages from the terminal to the `eth:distro:sys` process. Use this message format to add a provider -- this will make your node's performance better when accessing a blockchain:
+You may also add a RPC provider or otherwise modify your configuration by sending messages from the terminal to the `eth:distro:sys` process. You can get one for free at `alchemy.com`. Use this message format to add a provider -- this will make your node's performance better when accessing a blockchain:
 ```
 m our@eth:distro:sys '{"AddProvider": {"chain_id": <SOME_CHAIN_ID>, "trusted": true, "provider": {"RpcUrl": "<WS_RPC_URL>"}}}'
 ```
 We will soon add a settings GUI for this.
+
+You can also do the same thing by using the `--rpc` boot flag with an Optimism WebSockets RPC URL.
 
 ## Distro and Runtime processes
 
@@ -89,9 +90,11 @@ The distro userspace packages are:
 - `app_store:sys`
 - `chess:sys`
 - `homepage:sys`
+- `kino_updates:sys`
 - `kns_indexer:sys`
+- `settings:sys`
 - `terminal:sys`
-- `tester:sys` (used with `kit` for running test suites)
+- `tester:sys` (used with `kit` for running test suites, only installed in `simulation-mode`)
 
 The `sys` publisher is not a real node ID, but it's also not a special case value. Packages, whether runtime or userspace, installed from disk when a node bootstraps do not have their package ID or publisher node ID validated. Packages installed (not injected locally, as is done during development) after a node has booted will have their publisher field validated.
 
@@ -110,7 +113,7 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - UpArrow/DownArrow or CTRL+P/CTRL+N to move up and down through command history
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
-- `m <address> <json>`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>. JSON containing spaces must be wrapped in single-quotes (`''`).
+- `m <address> '<json>'`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>. JSON containing spaces must be wrapped in single-quotes (`''`).
     - Example: `m our@eth:distro:sys "SetPublic" -a 5`
     - the '-a' flag is used to expect a response with a given timeout
     - `our` will always be interpolated by the system as your node's name
@@ -126,14 +129,6 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - `net_diagnostics`: print some useful networking diagnostic data
 - `peers`: print the peers the node currently hold connections with
 - `peer <name>`: print the peer's PKI info, if it exists
-
-### Terminal example usage
-
-Download and install an app:
-```
-m our@main:app_store:sys '{"Download": {"package": {"package_name": "<pkg>", "publisher_node": "<node>"}, "install_from": "<node>"}}'
-m our@main:app_store:sys '{"Install": {"package_name": "<pkg>", "publisher_node": "<node>"}}'
-```
 
 ## Running as a Docker container
 
