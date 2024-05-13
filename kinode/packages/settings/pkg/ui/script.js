@@ -56,17 +56,17 @@ function populate_eth_rpc_providers(providers) {
     ul.innerHTML = '';
     providers.forEach(provider => {
         const li = document.createElement('li');
-        li.innerHTML = `<li>${JSON.stringify(provider)}</li>`;
+        li.innerHTML = `${JSON.stringify(provider, undefined, 2)}`;
         ul.appendChild(li);
     });
 }
 
 function populate_eth_rpc_settings(settings) {
     if (settings.public) {
-        document.getElementById('public').innerText = 'public';
+        document.getElementById('public').innerText = 'status: public';
         document.getElementById('allowed-nodes').style.display = 'none';
     } else {
-        document.getElementById('public').innerText = 'private';
+        document.getElementById('public').innerText = 'status: private';
         const ul = document.getElementById('allowed-nodes');
         ul.innerHTML = '';
         if (settings.allow.length === 0) {
@@ -119,7 +119,7 @@ document.getElementById('get-peer-pki').addEventListener('submit', (e) => {
             if (data === null) {
                 document.getElementById('peer-pki-response').innerText = "no pki data for peer";
             } else {
-                document.getElementById('peer-pki-response').innerText = JSON.stringify(data);
+                document.getElementById('peer-pki-response').innerText = JSON.stringify(data, undefined, 2);
             }
         });
 })

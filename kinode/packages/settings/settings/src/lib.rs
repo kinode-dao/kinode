@@ -243,16 +243,18 @@ fn handle_http_request(
     state: &mut SettingsState,
     http_request: &http::IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    state.fetch()?;
     match http_request.method()?.as_str() {
-        "GET" => Ok(http::send_response(
-            http::StatusCode::OK,
-            Some(HashMap::from([(
-                String::from("Content-Type"),
-                String::from("application/json"),
-            )])),
-            serde_json::to_vec(&state)?,
-        )),
+        "GET" => {
+            state.fetch()?;
+            Ok(http::send_response(
+                http::StatusCode::OK,
+                Some(HashMap::from([(
+                    String::from("Content-Type"),
+                    String::from("application/json"),
+                )])),
+                serde_json::to_vec(&state)?,
+            ))
+        }
         "POST" => {
             let Some(blob) = get_blob() else {
                 return Ok(http::send_response(
@@ -263,6 +265,7 @@ fn handle_http_request(
             };
             let request = serde_json::from_slice::<SettingsRequest>(&blob.bytes)?;
             let response = handle_settings_request(state, request);
+            state.fetch()?;
             state.ws_update();
             Ok(http::send_response(
                 http::StatusCode::OK,

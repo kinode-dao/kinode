@@ -411,13 +411,11 @@ async fn maintain_remote_subscription(
                     &send_to_loop,
                 ).await;
             }
-            incoming = net_error_rx.recv() => {
-                if let Some(Err(_net_error)) = incoming {
-                    break EthSubError {
-                        id: sub_id,
-                        error: "subscription node-provider failed keepalive".to_string(),
-                    };
-                }
+            _incoming = net_error_rx.recv() => {
+                break EthSubError {
+                    id: sub_id,
+                    error: "subscription node-provider failed keepalive".to_string(),
+                };
             }
             _ = tokio::time::sleep_until(last_received + two_hours) => {
                 break EthSubError {
