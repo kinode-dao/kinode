@@ -125,7 +125,10 @@ pub async fn register(
     } else {
         "wss://optimism-rpc.publicnode.com".to_string()
     };
-    println!("Connecting to Optimism RPC at {url}");
+    println!(
+        "Connecting to Optimism RPC at {url}\n\
+        Specify a different RPC URL with the --rpc flag."
+    );
     // this fails occasionally in certain networking environments. i'm not sure why.
     // frustratingly, the exact same call does not fail in the eth module. more investigation needed.
     let Ok(client) = ClientBuilder::default()
