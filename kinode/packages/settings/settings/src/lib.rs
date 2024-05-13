@@ -163,12 +163,6 @@ fn initialize(our: Address) {
 
     // Grab our state, then enter the main event loop.
     let mut state: SettingsState = SettingsState::new(our);
-    match state.fetch() {
-        Ok(()) => {}
-        Err(e) => {
-            println!("failed to fetch initial state: {e}");
-        }
-    }
     main_loop(&mut state);
 }
 
