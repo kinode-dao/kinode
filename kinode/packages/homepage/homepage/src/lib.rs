@@ -81,7 +81,12 @@ fn init(our: Address) {
             // they must have messaging access to us in order to perform this.
             if let Ok(request) = serde_json::from_slice::<HomepageRequest>(message.body()) {
                 match request {
-                    HomepageRequest::Add(AddRequest { label, icon, path, widget }) => {
+                    HomepageRequest::Add(AddRequest {
+                        label,
+                        icon,
+                        path,
+                        widget,
+                    }) => {
                         app_data.insert(
                             message.source().process.to_string(),
                             HomepageApp {
