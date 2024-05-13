@@ -47,6 +47,18 @@
 
         <article id="eth-rpc-providers">
             <h2>ETH RPC providers</h2>
+            <div id="provider-edits">
+                <form id="add-eth-provider">
+                    <input type="number" name="chain-id" placeholder="1">
+                    <input type="text" name="rpc-url" placeholder="wss://rpc-url.com">
+                    <button type="submit">add provider</button>
+                </form>
+                <form id="remove-eth-provider">
+                    <input type="number" name="chain-id" placeholder="1">
+                    <input type="text" name="rpc-url" placeholder="wss://rpc-url.com">
+                    <button type="submit">remove provider</button>
+                </form>
+            </div>
             <ul id="providers"></ul>
         </article>
 

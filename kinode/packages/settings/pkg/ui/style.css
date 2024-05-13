@@ -127,6 +127,13 @@ article#kernel {
   grid-area: kernel;
 }
 
+div#provider-edits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 20px;
+  grid-auto-flow: row;
+}
+
 article {
   background-color: #333;
   border: 1px solid #444;
