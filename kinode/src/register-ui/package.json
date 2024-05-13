@@ -27,7 +27,7 @@
     "eslint-config-react-app": "^7.0.1",
     "eth-ens-namehash": "^2.0.8",
     "ethers": "^5.7.2",
-    "idna-uts46-hx": "^2.3.1",
+    "idna-uts46-hx": "^6.0.4",
     "is-valid-domain": "^0.1.6",
     "jazzicon": "^1.5.0",
     "react": "^18.2.0",
