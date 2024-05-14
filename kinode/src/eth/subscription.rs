@@ -428,7 +428,7 @@ async fn maintain_remote_subscription(
     active_subscriptions
         .entry(target.clone())
         .and_modify(|sub_map| {
-            sub_map.remove(&sub_id);
+            sub_map.remove(&remote_sub_id);
         });
     response_channels.remove(&keepalive_km_id);
     e
