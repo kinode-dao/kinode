@@ -7,10 +7,11 @@ const AllApps: React.FC<{ expanded: boolean }> = ({ expanded }) => {
   const { apps } = useHomepageStore()
   const isMobile = isMobileCheck()
 
-  return <div className={classNames('flex-center flex-wrap gap-4 overflow-y-auto self-stretch relative', {
-    'max-h-0': !expanded,
-    'p-8 max-h-[1000px]': expanded,
-    'placeholder': isMobile
+  return <div className={classNames('flex-center flex-wrap overflow-y-auto fixed h-screen w-screen backdrop-blur-md transition transition-all ease-in-out duration-500', {
+    'top-[100vh]': !expanded,
+    'top-0': expanded,
+    'gap-4 p-8': isMobile,
+    'gap-8 p-16': !isMobile,
   })}>
     {apps.length === 0
       ? <div>Loading apps...</div>

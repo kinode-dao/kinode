@@ -125,8 +125,16 @@ pub async fn register(
     } else {
         "wss://optimism-rpc.publicnode.com".to_string()
     };
-    let connector = WsConnect { url, auth: None };
-    let Ok(client) = ClientBuilder::default().ws(connector).await else {
+    println!(
+        "Connecting to Optimism RPC at {url}\n\
+        Specify a different RPC URL with the --rpc flag."
+    );
+    // this fails occasionally in certain networking environments. i'm not sure why.
+    // frustratingly, the exact same call does not fail in the eth module. more investigation needed.
+    let Ok(client) = ClientBuilder::default()
+        .ws(WsConnect { url, auth: None })
+        .await
+    else {
         panic!(
             "Error: runtime could not connect to ETH RPC.\n\
             This is necessary in order to verify node identity onchain.\n\
@@ -134,6 +142,7 @@ pub async fn register(
             the --rpc flag, and you are connected to the internet."
         );
     };
+    println!("Connected to Optimism RPC");
 
     let provider = Arc::new(Provider::new_with_client(client));
 

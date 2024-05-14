@@ -82,12 +82,56 @@ h1 {
 }
 
 main {
+  margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 20px 20px;
+  grid-auto-flow: row;
+  grid-template-areas:
+    "diagnostics diagnostics diagnostics"
+    "node-info pings pings"
+    "eth-rpc-providers eth-rpc-providers eth-rpc-settings"
+    "kernel kernel kernel";
   padding: 20px;
-  max-width: 1200px;
+  max-width: 1100px;
   min-width: 300px;
+}
+
+article#net-diagnostics {
+  grid-area: diagnostics;
+}
+
+p#diagnostics,
+p#peer-pki-response,
+p#peer-ping-response {
+  white-space: pre-wrap;
+}
+
+article#node-info {
+  grid-area: node-info;
+}
+
+article#pings {
+  grid-area: pings;
+}
+
+article#eth-rpc-providers {
+  grid-area: eth-rpc-providers;
+}
+
+article#eth-rpc-settings {
+  grid-area: eth-rpc-settings;
+}
+
+article#kernel {
+  grid-area: kernel;
+}
+
+div#provider-edits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 20px;
+  grid-auto-flow: row;
 }
 
 article {
@@ -129,9 +173,18 @@ button {
   border-radius: 4px;
 }
 
+button#shutdown {
+  background-color: #f44336;
+}
+
 button:hover {
   background-color: white;
   color: #4CAF50;
+}
+
+button#shutdown:hover {
+  background-color: white;
+  color: #f44336;
 }
 
 input[type="text"],
@@ -178,4 +231,5 @@ li {
   background-color: #2c2c2c;
   border-radius: 4px;
   word-wrap: break-word;
+  white-space: pre-wrap;
 }

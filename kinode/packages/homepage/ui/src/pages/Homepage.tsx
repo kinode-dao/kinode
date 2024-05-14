@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import KinodeText from '../components/KinodeText'
 import KinodeBird from '../components/KinodeBird'
-import useHomepageStore from '../store/homepageStore'
+import useHomepageStore, { HomepageApp } from '../store/homepageStore'
 import { FaChevronDown, FaChevronUp, FaScrewdriverWrench, FaV } from 'react-icons/fa6'
 import AppsDock from '../components/AppsDock'
 import AllApps from '../components/AllApps'
@@ -20,37 +20,56 @@ interface AppStoreApp {
 function Homepage() {
   const [our, setOur] = useState('')
   const [allAppsExpanded, setAllAppsExpanded] = useState(false)
-  const { apps, setApps, isHosted, fetchHostedStatus, showWidgetsSettings, setShowWidgetsSettings } = useHomepageStore()
+  const { setApps, isHosted, fetchHostedStatus, showWidgetsSettings, setShowWidgetsSettings } = useHomepageStore()
   const isMobile = isMobileCheck()
 
+  const getAppPathsAndIcons = () => {
+    Promise.all([
+      fetch('/apps').then(res => res.json() as any as HomepageApp[]),
+      fetch('/main:app_store:sys/apps').then(res => res.json())
+    ]).then(([appsData, appStoreData]) => {
+      console.log({ appsData, appStoreData })
+      const appz = appsData.map(app => ({
+        ...app,
+        is_favorite: false, // Assuming initial state for all apps
+      }));
+
+      appStoreData.forEach((appStoreApp: AppStoreApp) => {
+        const existingAppIndex = appz.findIndex(a => a.package_name === appStoreApp.package);
+        if (existingAppIndex === -1) {
+          appz.push({
+            package_name: appStoreApp.package,
+            path: '',
+            label: appStoreApp.package,
+            state: appStoreApp.state,
+            is_favorite: false
+          });
+        } else {
+          appz[existingAppIndex] = {
+            ...appz[existingAppIndex],
+            state: appStoreApp.state
+          };
+        }
+      });
+
+      setApps(appz);
+
+      // TODO: be less dumb about this edge case!
+      for (
+        let i = 0;
+        i < 5 && appz.find(a => a.package_name === 'app_store' && !a.base64_icon);
+        i++
+      ) {
+        getAppPathsAndIcons();
+      }
+    });
+  }
+
   useEffect(() => {
-    fetch('/apps')
-      .then(res => res.json())
-      .then(data => setApps(data))
-      .then(() => {
-        fetch('/main:app_store:sys/apps')
-          .then(res => res.json())
-          .then(data => {
-            const appz = [...apps]
-            data.forEach((app: AppStoreApp) => {
-              if (!appz.find(a => a.package_name === app.package)) {
-                appz.push({
-                  package_name: app.package,
-                  path: '',
-                  label: app.package,
-                  state: app.state,
-                  is_favorite: false
-                })
-              } else {
-                const i = appz.findIndex(a => a.package_name === app.package)
-                if (i !== -1) {
-                  appz[i] = { ...appz[i], state: app.state }
-                }
-              }
-            })
-            setApps(appz)
-          })
-      })
+    getAppPathsAndIcons();
+  }, [our]);
+
+  useEffect(() => {
     fetch('/our')
       .then(res => res.text())
       .then(data => {
@@ -95,13 +114,14 @@ function Homepage() {
       <AppsDock />
       <Widgets />
       <button
-        className={classNames("clear flex-center self-center", {
-          '-mb-1': !allAppsExpanded,
+        className={classNames("fixed alt clear flex-center self-center z-20", {
+          'bottom-2 right-2': isMobile,
+          'bottom-8 right-8': !isMobile,
         })}
         onClick={() => setAllAppsExpanded(!allAppsExpanded)}
       >
         {allAppsExpanded ? <FaChevronDown /> : <FaChevronUp />}
-        <span className="ml-2">{allAppsExpanded ? 'Collapse' : 'All installed apps'}</span>
+        <span className="ml-2">{allAppsExpanded ? 'Collapse' : 'All apps'}</span>
       </button>
       <AllApps expanded={allAppsExpanded} />
       {showWidgetsSettings && <WidgetsSettingsModal />}

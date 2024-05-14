@@ -33,8 +33,8 @@ const ColorDot: React.FC<ColorDotProps> = ({
     <div {...props} className={classNames('flex', props.className)}>
       <div
         className={classNames('m-0 align-self-center border rounded-full outline-black', {
-          'h-20 w-20': !isMobile && dotSize === 'large',
-          'h-16 w-16': !isMobile && dotSize === 'medium',
+          'h-32 w-32': !isMobile && dotSize === 'large',
+          'h-18 w-18': !isMobile && dotSize === 'medium',
           'h-12 w-12': isMobile || dotSize === 'small',
           'border-4': !isMobile,
           'border-2': isMobile,

@@ -56,17 +56,17 @@ function populate_eth_rpc_providers(providers) {
     ul.innerHTML = '';
     providers.forEach(provider => {
         const li = document.createElement('li');
-        li.innerHTML = `<li>${JSON.stringify(provider)}</li>`;
+        li.innerHTML = `${JSON.stringify(provider, undefined, 2)}`;
         ul.appendChild(li);
     });
 }
 
 function populate_eth_rpc_settings(settings) {
     if (settings.public) {
-        document.getElementById('public').innerText = 'public';
+        document.getElementById('public').innerText = 'status: public';
         document.getElementById('allowed-nodes').style.display = 'none';
     } else {
-        document.getElementById('public').innerText = 'private';
+        document.getElementById('public').innerText = 'status: private';
         const ul = document.getElementById('allowed-nodes');
         ul.innerHTML = '';
         if (settings.allow.length === 0) {
@@ -119,7 +119,8 @@ document.getElementById('get-peer-pki').addEventListener('submit', (e) => {
             if (data === null) {
                 document.getElementById('peer-pki-response').innerText = "no pki data for peer";
             } else {
-                document.getElementById('peer-pki-response').innerText = JSON.stringify(data);
+                e.target.reset();
+                document.getElementById('peer-pki-response').innerText = JSON.stringify(data, undefined, 2);
             }
         });
 })
@@ -143,11 +144,72 @@ document.getElementById('ping-peer').addEventListener('submit', (e) => {
     }).then(response => response.json())
         .then(data => {
             if (data === null) {
+                e.target.reset();
                 document.getElementById('peer-ping-response').innerText = "ping successful!";
             } else if (data === "HiTimeout") {
                 document.getElementById('peer-ping-response').innerText = "node timed out";
             } else if (data === "HiOffline") {
                 document.getElementById('peer-ping-response').innerText = "node is offline";
+            }
+        });
+})
+
+document.getElementById('add-eth-provider').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    const rpc_url = data.get('rpc-url');
+    // validate rpc url
+    if (!rpc_url.startsWith('wss://') && !rpc_url.startsWith('ws://')) {
+        alert('Invalid RPC URL');
+        return;
+    }
+    const body = {
+        "EthConfig": {
+            "AddProvider": {
+                chain_id: Number(data.get('chain-id')),
+                trusted: false,
+                provider: { "RpcUrl": rpc_url },
+            }
+        }
+    };
+    fetch(APP_PATH, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    }).then(response => response.json())
+        .then(data => {
+            if (data === null) {
+                e.target.reset();
+                return;
+            } else {
+                alert(data);
+            }
+        });
+})
+
+document.getElementById('remove-eth-provider').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    const body = {
+        "EthConfig": {
+            "RemoveProvider": [Number(data.get('chain-id')), data.get('rpc-url')]
+        }
+    };
+    fetch(APP_PATH, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    }).then(response => response.json())
+        .then(data => {
+            if (data === null) {
+                e.target.reset();
+                return;
+            } else {
+                alert(data);
             }
         });
 })

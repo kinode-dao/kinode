@@ -86,7 +86,7 @@ async fn main() {
             Err(_) => serde_json::from_str(DEFAULT_ETH_PROVIDERS).unwrap(),
         };
     if let Some(rpc) = rpc {
-        eth_provider_config.push(lib::eth::ProviderConfig {
+        eth_provider_config.insert(lib::eth::ProviderConfig {
             chain_id: CHAIN_ID,
             trusted: true,
             provider: lib::eth::NodeOrRpcUrl::RpcUrl(rpc.to_string()),
