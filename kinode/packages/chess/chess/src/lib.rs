@@ -15,26 +15,6 @@ use crate::kinode::process::chess_sys_api_v0::{
 const ICON: &str = include_str!("icon");
 
 //
-// Our "chess protocol" request/response format. We'll always serialize these
-// to a byte vector and send them over IPC.
-//
-
-//#[derive(Debug, Serialize, Deserialize)]
-//enum ChessRequest {
-//    NewGame { white: String, black: String },
-//    Move { game_id: String, move_str: String },
-//    Resign(String),
-//}
-//
-//#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
-//enum ChessResponse {
-//    NewGameAccepted,
-//    NewGameRejected,
-//    MoveAccepted,
-//    MoveRejected,
-//}
-
-//
 // Our serializable state format.
 //
 

@@ -1,4 +1,7 @@
 interface chess-sys-api-v0 {
+    /// Our "chess protocol" request/response format. We'll always serialize these
+    /// to a byte vector and send them over IPC.
+
     variant chess-request {
         new-game(new-game-request),
         move(move-request),
