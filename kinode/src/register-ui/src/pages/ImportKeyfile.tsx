@@ -132,7 +132,7 @@ function ImportKeyfile({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               keyfile: localKey,
-              password: hashed_password,
+              password_hash: hashed_password,
             }),
           });
 
@@ -145,7 +145,7 @@ function ImportKeyfile({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               keyfile: localKey,
-              password: hashed_password,
+              password_hash: hashed_password,
             }),
           });
 
