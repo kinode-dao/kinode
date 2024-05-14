@@ -12,45 +12,58 @@
 <body>
     <h1>system diagnostics & settings</h1>
     <main>
+        <article id="net-diagnostics">
+            <h2>networking diagnostics</h2>
+            <p id="diagnostics"></p>
+        </article>
+
         <article id="node-info">
-            <p>node info</p>
+            <h2>node info</h2>
             <p id="node-name"></p>
             <p id="net-key"></p>
             <p id="ip-ports"></p>
             <p id="routers"></p>
-            <button>reset networking key</button>
-            <button>adjust networking info</button>
+            <button>reset networking key (TODO)</button>
+            <button>adjust networking info (TODO)</button>
             <button id="shutdown">shut down node</button>
         </article>
 
-        <article id="net-diagnostics">
-            <p>networking diagnostics</p>
-            <p id="diagnostics"></p>
-        </article>
         <article id="pings">
-            <p>fetch PKI data</p>
+            <h2>fetch PKI data</h2>
             <form id="get-peer-pki">
                 <input type="text" name="peer" placeholder="peer-name.os">
                 <button type="submit">get peer info</button>
             </form>
             <p id="peer-pki-response"></p>
-            <p>ping a node</p>
+            <h2>ping a node</h2>
             <form id="ping-peer">
                 <input type="text" name="peer" placeholder="peer-name.os">
                 <input type="text" name="content" placeholder="message">
-                <label><input type="number" name="timeout">timeout (seconds)</label>
+                <input type="number" name="timeout" placeholder="timeout (seconds)">
                 <button type="submit">ping</button>
             </form>
             <p id="peer-ping-response"></p>
         </article>
 
         <article id="eth-rpc-providers">
-            <p>ETH RPC providers</p>
+            <h2>ETH RPC providers</h2>
+            <div id="provider-edits">
+                <form id="add-eth-provider">
+                    <input type="number" name="chain-id" placeholder="1">
+                    <input type="text" name="rpc-url" placeholder="wss://rpc-url.com">
+                    <button type="submit">add provider</button>
+                </form>
+                <form id="remove-eth-provider">
+                    <input type="number" name="chain-id" placeholder="1">
+                    <input type="text" name="rpc-url" placeholder="wss://rpc-url.com">
+                    <button type="submit">remove provider</button>
+                </form>
+            </div>
             <ul id="providers"></ul>
         </article>
 
         <article id="eth-rpc-settings">
-            <p>ETH RPC settings</p>
+            <h2>ETH RPC settings</h2>
             <p id="public"></p>
             <div>
                 <p>nodes allowed to connect:</p>
@@ -63,7 +76,7 @@
         </article>
 
         <article id="kernel">
-            <p>running processes:</p>
+            <h2>running processes</h2>
             <p>(TODO)</p>
             <ul></ul>
         </article>
