@@ -5,6 +5,7 @@ import DownloadButton from "./DownloadButton";
 import InstallButton from "./InstallButton";
 import LaunchButton from "./LaunchButton";
 import { FaCheck } from "react-icons/fa6";
+import classNames from "classnames";
 
 interface ActionButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
@@ -12,7 +13,6 @@ interface ActionButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
 }
 
 export default function ActionButton({ app, isIcon = false, ...props }: ActionButtonProps) {
-  const [incrementNumber, setIncrementNumber] = useState(0);
   const { installed, downloaded, updatable } = useMemo(() => {
     const versions = Object.entries(app?.metadata?.properties?.code_hashes || {});
     const latestHash = (versions.find(([v]) => v === app.metadata?.properties?.current_version) || [])[1];
@@ -29,7 +29,7 @@ export default function ActionButton({ app, isIcon = false, ...props }: ActionBu
       downloaded,
       updatable,
     };
-  }, [app, incrementNumber]);
+  }, [app]);
 
 
   const [launchPath, setLaunchPath] = useState('');
@@ -44,25 +44,33 @@ export default function ActionButton({ app, isIcon = false, ...props }: ActionBu
           }
         }
       })
-  }, [app, incrementNumber])
+  }, [app])
 
   return (
     <>
       {(installed && launchPath)
         ? <LaunchButton app={app} {...props} isIcon={isIcon} launchPath={launchPath} />
         : (installed && updatable)
-          ? <UpdateButton app={app} {...props} isIcon={isIcon} callback={() => setIncrementNumber(incrementNumber + 1)} />
+          ? <UpdateButton app={app} {...props} isIcon={isIcon} />
           : !downloaded
-            ? <DownloadButton app={app} {...props} isIcon={isIcon} callback={() => setIncrementNumber(incrementNumber + 1)} />
+            ? <DownloadButton app={app} {...props} isIcon={isIcon} />
             : !installed
-              ? <InstallButton app={app} {...props} isIcon={isIcon} callback={() => setIncrementNumber(incrementNumber + 1)} />
+              ? <InstallButton app={app} {...props} isIcon={isIcon} />
               : isIcon
                 ? <button
                   className="pointer-events none icon clear absolute top-0 right-0"
                 >
                   <FaCheck />
                 </button>
-                : <div>Installed</div>}
+                : <></>
+        // <button
+        //   onClick={() => { }}
+        //   {...props as any}
+        //   className={classNames("clear pointer-events-none", props.className)}
+        // >
+        //   Installed
+        // </button>
+      }
     </>
   );
 }

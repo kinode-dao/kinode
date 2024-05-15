@@ -37,7 +37,7 @@ export default function AppPage() {
           .catch(console.error);
       }
     }
-  }, [params.id]);
+  }, [params.id, myApps, listedApps]);
 
   const goToPublish = useCallback(() => {
     navigate(PUBLISH_PATH, { state: { app } });
@@ -92,9 +92,9 @@ export default function AppPage() {
   ]
 
   return (
-    <div className={classNames("flex flex-col w-full h-screen",
+    <div className={classNames("flex flex-col w-full p-2",
       {
-        'gap-4 p-2 max-w-screen': isMobile,
+        'gap-4 max-w-screen': isMobile,
         'gap-8 max-w-[900px]': !isMobile,
       })}
     >

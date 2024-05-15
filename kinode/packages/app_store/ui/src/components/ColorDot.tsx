@@ -15,7 +15,7 @@ const ColorDot: React.FC<ColorDotProps> = ({
 }) => {
   const isMobile = isMobileCheck()
 
-  num = (num || '').replace(/(0x|\.)/g, '')
+  num = num ? num : '';
 
   while (num.length < 6) {
     num = '0' + num
