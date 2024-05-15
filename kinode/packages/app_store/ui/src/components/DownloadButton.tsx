@@ -5,17 +5,15 @@ import Modal from "./Modal";
 import { getAppName } from "../utils/app";
 import Loader from "./Loader";
 import classNames from "classnames";
-import { useNavigate } from "react-router-dom";
 import { FaDownload } from "react-icons/fa6";
 
 interface DownloadButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
   isIcon?: boolean;
-  callback?: () => void;
 }
 
-export default function DownloadButton({ app, isIcon = false, callback, ...props }: DownloadButtonProps) {
-  const { downloadApp, getCaps, getMyApp } =
+export default function DownloadButton({ app, isIcon = false, ...props }: DownloadButtonProps) {
+  const { downloadApp, getCaps, getMyApp, getMyApps } =
     useAppsStore();
   const [showModal, setShowModal] = useState(false);
   const [mirror, setMirror] = useState(app.metadata?.properties?.mirrors?.[0] || "Other");
@@ -50,7 +48,7 @@ export default function DownloadButton({ app, isIcon = false, callback, ...props
             setLoading("");
             setShowModal(false);
             clearInterval(interval);
-            callback && callback();
+            getMyApps();
           })
           .catch(console.log);
       }, 2000);

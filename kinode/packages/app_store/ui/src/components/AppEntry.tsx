@@ -8,14 +8,16 @@ import { isMobileCheck } from "../utils/dimensions";
 import classNames from "classnames";
 import { useNavigate } from "react-router-dom";
 import { APP_DETAILS_PATH } from "../constants/path";
+import MoreActions from "./MoreActions";
 
 interface AppEntryProps extends React.HTMLAttributes<HTMLDivElement> {
   app: AppInfo;
   size?: "small" | "medium" | "large";
   overrideImageSize?: "small" | "medium" | "large";
+  showMoreActions?: boolean;
 }
 
-export default function AppEntry({ app, size = "medium", overrideImageSize, ...props }: AppEntryProps) {
+export default function AppEntry({ app, size = "medium", overrideImageSize, showMoreActions, ...props }: AppEntryProps) {
   const isMobile = isMobileCheck()
   const navigate = useNavigate()
 
@@ -27,17 +29,26 @@ export default function AppEntry({ app, size = "medium", overrideImageSize, ...p
         'flex-wrap gap-2': isMobile,
         'flex-col relative': size !== 'large'
       })}
-      onClick={() => navigate(`/${APP_DETAILS_PATH}/${appId(app)}`)}
+      onClick={() => {
+        if (!showMoreActions) {
+          navigate(`/${APP_DETAILS_PATH}/${appId(app)}`)
+        }
+      }}
     >
       <AppHeader app={app} size={size} overrideImageSize={overrideImageSize} />
       <ActionButton
         app={app}
-        isIcon={size !== 'large'}
+        isIcon={!showMoreActions && size !== 'large'}
         className={classNames({
-          'absolute top-0 right-0': size !== 'large',
+          'absolute': size !== 'large',
+          'top-2 right-2': size !== 'large' && showMoreActions,
+          'top-0 right-0': size !== 'large' && !showMoreActions,
           'bg-orange text-lg min-w-1/5': size === 'large',
           'ml-auto': size === 'large' && isMobile
         })} />
+      {showMoreActions && <div className="absolute bottom-2 right-2">
+        <MoreActions app={app} />
+      </div>}
     </div>
   );
 }

@@ -47,15 +47,15 @@ export default function AppHeader({
         alt="app icon"
         className={classNames('object-cover', {
           'rounded': !imageSize,
-          'rounded-lg': imageSize === 'small',
-          'rounded-xl': imageSize === 'medium',
+          'rounded-md': imageSize === 'small',
+          'rounded-lg': imageSize === 'medium',
           'rounded-2xl': imageSize === 'large',
           'h-32': imageSize === 'large' || imageSize === 'small',
           'h-20': imageSize === 'medium',
         })}
       />
       : <ColorDot
-        num={app.metadata_hash}
+        num={app.metadata_hash || app.state?.our_version?.toString() || ''}
         dotSize={imageSize}
       />}
     <div className={classNames("flex flex-col", {
