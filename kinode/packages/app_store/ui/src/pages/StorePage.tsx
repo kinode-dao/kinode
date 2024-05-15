@@ -126,8 +126,8 @@ export default function StorePage() {
   const isMobile = isMobileCheck()
 
   return (
-    <div className={classNames("flex flex-col w-full max-h-screen", {
-      'gap-4 max-w-screen p-2': isMobile,
+    <div className={classNames("flex flex-col w-full max-h-screen p-2", {
+      'gap-4 max-w-screen': isMobile,
       'gap-6 max-w-[900px]': !isMobile
     })}>
       {!isMobile && <HomeButton />}
@@ -173,7 +173,8 @@ export default function StorePage() {
         </select>
       </div>
       {!searchQuery ? <div className={classNames("flex flex-col", {
-        'grow overflow-y-auto gap-4 items-center px-2': isMobile
+        'gap-4': !isMobile,
+        'grow overflow-y-auto gap-2 items-center px-2': isMobile
       })}>
         <h2>Top apps this week...</h2>
         <div className={classNames("flex gap-2", {
@@ -195,7 +196,7 @@ export default function StorePage() {
         <div className={classNames("flex gap-2", {
           'flex-col': isMobile
         })}>
-          {displayedApps.slice(0, 6).map((app) => (
+          {displayedApps.slice(0, 5).map((app) => (
             <AppEntry
               key={appId(app) + (app.state?.our_version || "")}
               size={isMobile ? 'medium' : 'small'}

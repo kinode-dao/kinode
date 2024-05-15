@@ -9,11 +9,10 @@ import classNames from "classnames";
 interface UpdateButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
   isIcon?: boolean;
-  callback?: () => void
 }
 
-export default function UpdateButton({ app, callback, isIcon = false, ...props }: UpdateButtonProps) {
-  const { updateApp, getCaps, getMyApp } =
+export default function UpdateButton({ app, isIcon = false, ...props }: UpdateButtonProps) {
+  const { updateApp, getCaps, getMyApp, getMyApps } =
     useAppsStore();
   const [showModal, setShowModal] = useState(false);
   const [caps, setCaps] = useState<string[]>([]);
@@ -40,7 +39,7 @@ export default function UpdateButton({ app, callback, isIcon = false, ...props }
             setLoading("");
             setShowModal(false);
             clearInterval(interval);
-            callback && callback();
+            getMyApps();
           })
           .catch(console.log);
       }, 2000);
