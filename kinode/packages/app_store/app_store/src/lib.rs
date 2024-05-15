@@ -831,7 +831,7 @@ pub fn handle_install(
                 .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                     id: parsed_new_process_id.clone(),
                     wasm_bytes_handle: wasm_path,
-                    wit_version: None,
+                    wit_version: None, // TODO get from manifest!!!
                     on_exit: entry.on_exit.clone(),
                     initial_capabilities: HashSet::new(),
                     public: entry.public,

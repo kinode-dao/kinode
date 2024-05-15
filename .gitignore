@@ -2,6 +2,7 @@ target/
 wit/
 **/target/
 **/wit/
+**/wit-*/
 **/*.wasm
 .vscode
 .app-signing

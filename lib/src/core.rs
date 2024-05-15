@@ -838,7 +838,8 @@ pub struct UnencryptedIdentity {
 pub struct ProcessMetadata {
     pub our: Address,
     pub wasm_bytes_handle: String,
-    pub wit_version: u32,
+    /// if None, use the oldest version: 0.7.0
+    pub wit_version: Option<u32>,
     pub on_exit: OnExit,
     pub public: bool,
 }
@@ -1019,7 +1020,7 @@ impl std::fmt::Display for PersistedProcess {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "Process {{\n    wasm_bytes_handle: {},\n    wit_version: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
+            "Process {{\n    wasm_bytes_handle: {},\n    wit_version: {:?},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
             {
                 if &self.wasm_bytes_handle == "" {
                     "(none, this is a runtime process)"
@@ -1027,7 +1028,7 @@ impl std::fmt::Display for PersistedProcess {
                     &self.wasm_bytes_handle
                 }
             },
-            self.wit_version.unwrap_or_default(),
+            self.wit_version,
             self.on_exit,
             self.public,
             {
@@ -1081,7 +1082,7 @@ pub struct Erc721Properties {
     pub code_hashes: HashMap<String, String>,
     pub license: Option<String>,
     pub screenshots: Option<Vec<String>>,
-    pub wit_version: Option<(u32, u32, u32)>,
+    pub wit_version: Option<u32>,
 }
 
 /// the type that gets deserialized from each entry in the array in `manifest.json`

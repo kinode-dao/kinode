@@ -18,7 +18,7 @@ mod standard_host;
 
 const PROCESS_CHANNEL_CAPACITY: usize = 100;
 
-const DEFAULT_WIT_VERSION: u32 = 0;
+pub const LATEST_WIT_VERSION: u32 = 0;
 
 #[derive(Serialize, Deserialize)]
 struct StartProcessMetadata {
@@ -606,10 +606,7 @@ async fn start_process(
             process: id.clone(),
         },
         wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle.clone(),
-        wit_version: process_metadata
-            .persisted
-            .wit_version
-            .unwrap_or(DEFAULT_WIT_VERSION),
+        wit_version: process_metadata.persisted.wit_version,
         on_exit: process_metadata.persisted.on_exit.clone(),
         public: process_metadata.persisted.public,
     };
