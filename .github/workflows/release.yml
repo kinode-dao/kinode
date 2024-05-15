@@ -33,3 +33,5 @@ jobs:
         id: push
         run: |
             docker build . -t 0xlynett/kinode -t 0xlynett/kinode:${{ github.ref_name }}
+            docker push 0xlynett/kinode:latest
+            docker push 0xlynett/kinode:${{ github.ref_name }}
