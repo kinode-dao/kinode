@@ -47,12 +47,16 @@ const useAppsStore = create<AppsStore>()(
       searchResults: [] as AppInfo[],
       query: '',
       getMyApps: async () => {
+        const listedApps = await get().getListedApps()
         const res = await fetch(`${BASE_URL}/apps`)
         const apps = await res.json() as AppInfo[]
 
         const myApps = apps.reduce((acc, app) => {
           const appType = getAppType(app)
 
+          if (listedApps.find(lapp => lapp.metadata_hash === app.metadata_hash)) {
+            console.log({ listedappmatch: app })
+          }
           acc[appType].push(app)
           return acc
         }, {

@@ -12,6 +12,7 @@ export default function Dropdown({ ...props }: DropdownProps) {
       {...props}
       unmountOnClose={true}
       className={classNames("relative", props.className)}
+      direction='left'
       menuButton={<MenuButton className="small">
         <FaEllipsisH className='-mb-1' />
       </MenuButton>}

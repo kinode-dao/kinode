@@ -10,11 +10,10 @@ import { FaI } from "react-icons/fa6";
 interface InstallButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
   isIcon?: boolean;
-  callback?: () => void;
 }
 
-export default function InstallButton({ app, isIcon = false, callback, ...props }: InstallButtonProps) {
-  const { installApp, getCaps, getMyApp } =
+export default function InstallButton({ app, isIcon = false, ...props }: InstallButtonProps) {
+  const { installApp, getCaps, getMyApp, getMyApps } =
     useAppsStore();
   const [showModal, setShowModal] = useState(false);
   const [caps, setCaps] = useState<string[]>([]);
@@ -40,7 +39,7 @@ export default function InstallButton({ app, isIcon = false, callback, ...props 
             setLoading("");
             setShowModal(false);
             clearInterval(interval);
-            callback && callback();
+            getMyApps();
           })
           .catch(console.log);
       }, 2000);
