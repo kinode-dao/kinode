@@ -106,7 +106,7 @@ async fn main() {
             .get_one::<u16>("fakechain-port")
             .cloned()
             .unwrap_or(8545);
-        eth_provider_config.push(lib::eth::ProviderConfig {
+        eth_provider_config.insert(lib::eth::ProviderConfig {
             chain_id: 31337,
             trusted: true,
             provider: lib::eth::NodeOrRpcUrl::RpcUrl(format!(
