@@ -13,8 +13,10 @@ use lib::types::core::{self as t, STATE_PROCESS_ID, VFS_PROCESS_ID};
 
 /// Manipulate a single process.
 pub mod process;
-/// Implement the functions served to processes by `kinode.wit`.
+/// Implement the functions served to processes by `wit-v0.7.0/kinode.wit`.
 mod standard_host;
+/// Implement the functions served to processes by `wit-v0.8.0/kinode.wit`.
+mod standard_host_v0;
 
 const PROCESS_CHANNEL_CAPACITY: usize = 100;
 

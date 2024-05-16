@@ -306,6 +306,16 @@ impl Address {
             },
         }
     }
+    pub fn de_wit_v0(wit: crate::v0::wit::Address) -> Address {
+        Address {
+            node: wit.node,
+            process: ProcessId {
+                process_name: wit.process.process_name,
+                package_name: wit.process.package_name,
+                publisher_node: wit.process.publisher_node,
+            },
+        }
+    }
 }
 
 impl std::str::FromStr for Address {
@@ -529,6 +539,24 @@ impl OnExit {
         }
     }
 
+    pub fn en_wit_v0(&self) -> crate::v0::wit::OnExit {
+        match self {
+            OnExit::None => crate::v0::wit::OnExit::None,
+            OnExit::Restart => crate::v0::wit::OnExit::Restart,
+            OnExit::Requests(reqs) => crate::v0::wit::OnExit::Requests(
+                reqs.iter()
+                    .map(|(address, request, blob)| {
+                        (
+                            address.en_wit_v0(),
+                            en_wit_request_v0(request.clone()),
+                            en_wit_blob_v0(blob.clone()),
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
     pub fn de_wit(wit: wit::OnExit) -> Self {
         match wit {
             wit::OnExit::None => OnExit::None,
@@ -540,6 +568,24 @@ impl OnExit {
                             Address::de_wit(address),
                             de_wit_request(request),
                             de_wit_blob(blob),
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    pub fn de_wit_v0(wit: crate::v0::wit::OnExit) -> Self {
+        match wit {
+            crate::v0::wit::OnExit::None => OnExit::None,
+            crate::v0::wit::OnExit::Restart => OnExit::Restart,
+            crate::v0::wit::OnExit::Requests(reqs) => OnExit::Requests(
+                reqs.into_iter()
+                    .map(|(address, request, blob)| {
+                        (
+                            Address::de_wit_v0(address),
+                            de_wit_request_v0(request),
+                            de_wit_blob_v0(blob),
                         )
                     })
                     .collect(),
