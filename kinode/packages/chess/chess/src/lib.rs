@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 extern crate base64;
 
 use crate::kinode::process::chess::{
-    Request as ChessRequest, Response as ChessResponse, MoveRequest, NewGameRequest,
+    MoveRequest, NewGameRequest, Request as ChessRequest, Response as ChessResponse,
 };
 
 const ICON: &str = include_str!("icon");
