@@ -8,9 +8,15 @@ use std::collections::{
     BTreeMap,
 };
 
+use crate::kinode::process::kns_indexer::{
+    GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
+};
+
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "kns-indexer-sys-v0",
+    generate_unused_types: true,
+    additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
 #[cfg(not(feature = "simulation-mode"))]
@@ -40,27 +46,6 @@ struct State {
     nodes: HashMap<String, KnsUpdate>,
     // last block we have an update from
     block: u64,
-}
-
-/// IndexerRequests are used to query discrete information from the indexer
-/// for example, if you want to know the human readable name for a namehash,
-/// you would send a NamehashToName request.
-/// If you want to know the most recent on-chain routing information for a
-/// human readable name, you would send a NodeInfo request.
-/// The block parameter specifies the recency of the data: the indexer will
-/// not respond until it has processed events up to the specified block.
-#[derive(Debug, Serialize, Deserialize)]
-pub enum IndexerRequests {
-    /// return the human readable name for a namehash
-    /// returns an Option<String>
-    NamehashToName { hash: String, block: u64 },
-    /// return the most recent on-chain routing information for a node name.
-    /// returns an Option<KnsUpdate>
-    /// set block to 0 if you just want to get the current state of the indexer
-    NodeInfo { name: String, block: u64 },
-    /// return the entire state of the indexer at the given block
-    /// set block to 0 if you just want to get the current state of the indexer
-    GetState { block: u64 },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -262,7 +247,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             };
 
             match request {
-                IndexerRequests::NamehashToName { ref hash, block } => {
+                IndexerRequests::NamehashToName(NamehashToNameRequest { ref hash, block }) => {
                     if block <= state.block {
                         Response::new()
                             .body(serde_json::to_vec(&state.names.get(hash))?)
@@ -274,7 +259,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             .push(request);
                     }
                 }
-                IndexerRequests::NodeInfo { ref name, block } => {
+                IndexerRequests::NodeInfo(NodeInfoRequest { ref name, block }) => {
                     if block <= state.block {
                         Response::new()
                             .body(serde_json::to_vec(&state.nodes.get(name))?)
@@ -286,7 +271,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             .push(request);
                     }
                 }
-                IndexerRequests::GetState { block } => {
+                IndexerRequests::GetState(GetStateRequest { block }) => {
                     if block <= state.block {
                         Response::new().body(serde_json::to_vec(&state)?).send()?;
                     } else {
@@ -337,19 +322,19 @@ fn handle_eth_message(
         if *block <= state.block {
             for request in requests.iter() {
                 match request {
-                    IndexerRequests::NamehashToName { hash, .. } => {
+                    IndexerRequests::NamehashToName(NamehashToNameRequest { hash, .. }) => {
                         Response::new()
                             .body(serde_json::to_vec(&state.names.get(hash))?)
                             .send()
                             .unwrap();
                     }
-                    IndexerRequests::NodeInfo { name, .. } => {
+                    IndexerRequests::NodeInfo(NodeInfoRequest { name, .. }) => {
                         Response::new()
                             .body(serde_json::to_vec(&state.nodes.get(name))?)
                             .send()
                             .unwrap();
                     }
-                    IndexerRequests::GetState { .. } => {
+                    IndexerRequests::GetState(GetStateRequest { .. }) => {
                         Response::new()
                             .body(serde_json::to_vec(&state)?)
                             .send()

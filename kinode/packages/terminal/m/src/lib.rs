@@ -5,7 +5,7 @@ use kinode_process_lib::{
 use regex::Regex;
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "target/wit",
     world: "process",
 });
 

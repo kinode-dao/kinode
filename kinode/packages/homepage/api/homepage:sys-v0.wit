@@ -1,0 +1,23 @@
+interface homepage {
+    /// The request format to add or remove an app from the homepage. You must have messaging
+    /// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
+    variant request {
+        /// the package and process name will come from request source.
+        /// the path will automatically have the process_id prepended.
+        /// the icon is a base64 encoded image.
+        add(add-request),
+        remove,
+    }
+
+    record add-request {
+        label: string,
+        icon: option<string>,
+        path: option<string>,
+        widget: option<string>,
+    }
+}
+
+world homepage-sys-v0 {
+    import homepage;
+    include process;
+}

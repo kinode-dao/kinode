@@ -23,7 +23,7 @@ export default function MoreActions({ app, className }: MoreActionsProps) {
 
     return (
       <Dropdown className={className}>
-        <div className="flex flex-col backdrop-blur-lg p-2 rounded-lg relative z-10">
+        <div className="flex flex-col backdrop-blur-lg bg-black/10 p-2 rounded-lg relative z-10">
           {app.metadata?.description && (
             <button
               className="my-1 whitespace-nowrap clear"

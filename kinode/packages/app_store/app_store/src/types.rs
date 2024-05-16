@@ -1,10 +1,10 @@
-use crate::LocalRequest;
+use crate::{start_api_download, DownloadResponse, LocalRequest};
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::eth::Log;
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::{println, *};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 sol! {
     event AppRegistered(
@@ -105,6 +105,8 @@ pub struct State {
     /// ingest apps on disk if we have to rebuild our state. this is also
     /// updated every time we download, create, or uninstall a package.
     pub downloaded_packages: HashMap<PackageId, PackageState>,
+    /// the APIs we have
+    pub downloaded_apis: HashSet<PackageId>,
 }
 
 impl State {
@@ -118,6 +120,7 @@ impl State {
             package_hashes: HashMap::new(),
             listed_packages: HashMap::new(),
             downloaded_packages: HashMap::new(),
+            downloaded_apis: HashSet::new(),
         };
         state.populate_packages_from_filesystem()?;
         Ok(state)
@@ -154,6 +157,47 @@ impl State {
 
     pub fn get_downloaded_package(&self, package_id: &PackageId) -> Option<PackageState> {
         self.downloaded_packages.get(package_id).cloned()
+    }
+
+    pub fn add_downloaded_api(
+        &mut self,
+        package_id: &PackageId,
+        package_bytes: Option<Vec<u8>>,
+    ) -> anyhow::Result<()> {
+        if let Some(package_bytes) = package_bytes {
+            let drive_name = format!("/{package_id}/pkg");
+            let blob = LazyLoadBlob {
+                mime: Some("application/zip".to_string()),
+                bytes: package_bytes,
+            };
+
+            // create a new drive for this package in VFS
+            // this is possible because we have root access
+            Request::to(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: drive_name.clone(),
+                    action: vfs::VfsAction::CreateDrive,
+                })?)
+                .send_and_await_response(5)??;
+
+            // convert the zip to a new package drive
+            let response = Request::to(("our", "vfs", "distro", "sys"))
+                .body(serde_json::to_vec(&vfs::VfsRequest {
+                    path: drive_name.clone(),
+                    action: vfs::VfsAction::AddZip,
+                })?)
+                .blob(blob.clone())
+                .send_and_await_response(5)??;
+            let vfs::VfsResponse::Ok = serde_json::from_slice::<vfs::VfsResponse>(response.body())?
+            else {
+                return Err(anyhow::anyhow!(
+                    "cannot add NewPackage: do not have capability to access vfs"
+                ));
+            };
+        }
+        self.downloaded_apis.insert(package_id.to_owned());
+        crate::set_state(&bincode::serialize(self)?);
+        Ok(())
     }
 
     pub fn add_downloaded_package(
@@ -313,7 +357,22 @@ impl State {
                         metadata: None,
                     },
                     None,
-                )?
+                )?;
+
+                let drive_path = format!("/{package_id}/pkg");
+                let result = Request::new()
+                    .target(("our", "vfs", "distro", "sys"))
+                    .body(
+                        serde_json::to_vec(&vfs::VfsRequest {
+                            path: format!("{}/api", drive_path),
+                            action: vfs::VfsAction::Metadata,
+                        })
+                        .unwrap(),
+                    )
+                    .send_and_await_response(5);
+                if let Ok(Ok(_)) = result {
+                    self.downloaded_apis.insert(package_id.to_owned());
+                };
             }
         }
         Ok(())
@@ -368,6 +427,7 @@ impl State {
         &mut self,
         our: &Address,
         log: Log,
+        requested_apis: &mut HashMap<PackageId, RequestedPackage>,
     ) -> anyhow::Result<()> {
         let block_number: u64 = log
             .block_number
@@ -416,21 +476,34 @@ impl State {
 
                 let listing = match self.get_listing_with_hash_mut(&package_hash) {
                     Some(current_listing) => {
-                        current_listing.name = package_name;
-                        current_listing.publisher = publisher_name;
+                        current_listing.name = package_name.clone();
+                        current_listing.publisher = publisher_name.clone();
                         current_listing.metadata_hash = metadata_hash;
                         current_listing.metadata = metadata;
                         current_listing.clone()
                     }
                     None => PackageListing {
                         owner: "".to_string(),
-                        name: package_name,
-                        publisher: publisher_name,
+                        name: package_name.clone(),
+                        publisher: publisher_name.clone(),
                         metadata_hash,
                         metadata,
                     },
                 };
-                self.insert_listing(package_hash, listing);
+                self.insert_listing(package_hash.clone(), listing);
+
+                let api_hash = ""; // TODO
+                let api_download_request_result = start_api_download(
+                    our,
+                    requested_apis,
+                    PackageId::new(&package_name, &publisher_name),
+                    &publisher_name,
+                    api_hash,
+                );
+                match api_download_request_result {
+                    DownloadResponse::Failure => println!("failed to get API for {package_name}"),
+                    _ => {}
+                }
             }
             AppMetadataUpdated::SIGNATURE_HASH => {
                 let package_hash = log.topics()[1].to_string();

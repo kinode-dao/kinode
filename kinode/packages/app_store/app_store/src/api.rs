@@ -17,6 +17,14 @@ pub enum RemoteRequest {
         package_id: PackageId,
         desired_version_hash: Option<String>,
     },
+    /// Request a package API from another node who we expect to
+    /// be mirroring it. If the remote node is mirroring the package,
+    /// they must respond with RemoteResponse::DownloadApproved,
+    /// at which point requester can expect an FTWorkerRequest::Receive.
+    DownloadApi {
+        package_id: PackageId,
+        desired_version_hash: String,
+    },
 }
 
 /// The response expected from sending a [`RemoteRequest`].
@@ -45,6 +53,7 @@ pub enum LocalRequest {
     /// This is used for locally installing a package.
     NewPackage {
         package: PackageId,
+        metadata: kernel_types::Erc721Metadata,
         /// Sets whether we will mirror this package for others
         mirror: bool,
     },
@@ -93,6 +102,10 @@ pub enum LocalRequest {
     /// This is an expensive operation! Throw away our state and rebuild from scratch.
     /// Re-index the locally downloaded/installed packages AND the onchain data.
     RebuildIndex,
+    /// List all apps we have APIs for.
+    ListApis,
+    /// Return the given API, if we have it.
+    GetApi(PackageId),
 }
 
 /// Local responses take this form.
@@ -107,6 +120,8 @@ pub enum LocalResponse {
     MirrorResponse(MirrorResponse),
     AutoUpdateResponse(AutoUpdateResponse),
     RebuiltIndex,
+    ListApisResponse { apis: Vec<PackageId> },
+    GetApiResponse(GetApiResponse), // API in blob (or None)
 }
 
 // TODO for all: expand these to elucidate why something failed
@@ -144,6 +159,12 @@ pub enum MirrorResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum AutoUpdateResponse {
+    Success,
+    Failure,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum GetApiResponse {
     Success,
     Failure,
 }

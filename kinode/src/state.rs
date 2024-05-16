@@ -297,7 +297,7 @@ async fn handle_request(
 
 /// function run only upon fresh boot.
 ///
-/// for each folder in /modules, looks for a package.zip file, extracts the contents,
+/// for each included package.zip file, extracts the contents,
 /// sends the contents to VFS, and reads the manifest.json.
 ///
 /// the manifest.json contains instructions for which processes to boot and what
