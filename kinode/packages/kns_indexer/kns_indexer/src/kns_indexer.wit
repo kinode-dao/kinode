@@ -1,4 +1,0 @@
-world kns-indexer {
-    import kns-indexer-sys-api-v0;
-    include process;
-}

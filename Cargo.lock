@@ -3230,7 +3230,7 @@ dependencies = [
 [[package]]
 name = "kit"
 version = "0.4.1"
-source = "git+https://github.com/kinode-dao/kit?rev=63eb4c5#63eb4c5c3e3d3046b45e837a56f22246e322a408"
+source = "git+https://github.com/kinode-dao/kit?rev=9ad80d2#9ad80d25db1c0fd137ef236f26e506e89470b0ad"
 dependencies = [
  "anyhow",
  "base64 0.21.7",

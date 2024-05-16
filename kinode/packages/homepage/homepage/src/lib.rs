@@ -10,7 +10,7 @@ use kinode_process_lib::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
-use crate::kinode::process::homepage_sys_api_v0::{AddRequest, HomepageRequest};
+use crate::kinode::process::homepage::{AddRequest, Request as HomepageRequest};
 
 #[derive(Serialize, Deserialize)]
 struct HomepageApp {
@@ -23,7 +23,7 @@ struct HomepageApp {
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "homepage",
+    world: "homepage-sys-v0",
     generate_unused_types: true,
     additional_derives: [serde::Deserialize, serde::Serialize],
 });

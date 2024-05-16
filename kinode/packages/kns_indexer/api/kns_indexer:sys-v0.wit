@@ -1,4 +1,4 @@
-interface kns-indexer-sys-api-v0 {
+interface kns-indexer {
     /// IndexerRequests are used to query discrete information from the indexer
     /// for example, if you want to know the human readable name for a namehash,
     /// you would send a NamehashToName request.
@@ -32,4 +32,9 @@ interface kns-indexer-sys-api-v0 {
     record get-state-request {
         block: u64,
     }
+}
+
+world kns-indexer-sys-v0 {
+    import kns-indexer;
+    include process;
 }

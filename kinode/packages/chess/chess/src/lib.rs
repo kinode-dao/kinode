@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 extern crate base64;
 
-use crate::kinode::process::chess_sys_api_v0::{
-    ChessRequest, ChessResponse, MoveRequest, NewGameRequest,
+use crate::kinode::process::chess::{
+    Request as ChessRequest, Response as ChessResponse, MoveRequest, NewGameRequest,
 };
 
 const ICON: &str = include_str!("icon");
@@ -83,7 +83,7 @@ fn send_ws_update(our: &Address, game: &Game, open_channels: &HashSet<u32>) -> a
 // Boilerplate: generate the wasm bindings for a process
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "chess",
+    world: "chess-sys-v0",
     generate_unused_types: true,
     additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
 });
