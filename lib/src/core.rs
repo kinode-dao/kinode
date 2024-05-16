@@ -1072,7 +1072,7 @@ pub struct Erc721Metadata {
 /// - `license`: An optional field containing the license of the package.
 /// - `screenshots`: An optional field containing a list of URLs to screenshots of the package.
 /// - `wit_version`: An optional field containing the version of the WIT standard that the package adheres to.
-/// - `dependencies`: An optional field containing a list of `PackageId`s: API dependencies
+/// - `dependencies`: An optional field containing a list of `PackageId`s: API dependencies.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Erc721Properties {
     pub package_name: String,

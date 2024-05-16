@@ -475,13 +475,15 @@ fn handle_remote_request(
                     ReasonDenied::NotMirroring,
                 ));
             }
-            if &package_state.our_version != desired_version_hash {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                    ReasonDenied::HashMismatch {
-                        requested: desired_version_hash.clone(),
-                        have: package_state.our_version.clone(),
-                    },
-                ));
+            if let Some(desired_version_hash) = desired_version_hash {
+                if &package_state.our_version != desired_version_hash {
+                    return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                        ReasonDenied::HashMismatch {
+                            requested: desired_version_hash.clone(),
+                            have: package_state.our_version.clone(),
+                        },
+                    ));
+                }
             }
             let file_name = format!("/{}-api-v0.zip", package_id); // TODO: actual version
                                                                    // get the .zip from VFS and attach as blob to response
@@ -710,14 +712,14 @@ pub fn start_api_download(
     requested_apis: &mut HashMap<PackageId, RequestedPackage>,
     package_id: PackageId,
     download_from: &NodeId,
-    desired_version_hash: &str,
+    desired_version_hash: Option<&str>,
 ) -> DownloadResponse {
     match Request::to((download_from.as_str(), our.process.clone()))
         .inherit(true)
         .body(
             serde_json::to_vec(&RemoteRequest::DownloadApi {
                 package_id: package_id.clone(),
-                desired_version_hash: desired_version_hash.to_string(),
+                desired_version_hash: desired_version_hash.map(|s| s.to_string()),
             })
             .unwrap(),
         )
@@ -731,7 +733,7 @@ pub fn start_api_download(
                         from: download_from.to_string(),
                         mirror: false,
                         auto_update: false,
-                        desired_version_hash: Some(desired_version_hash.to_string()),
+                        desired_version_hash: desired_version_hash.map(|s| s.to_string()),
                     },
                 );
                 DownloadResponse::Started
@@ -792,19 +794,19 @@ fn handle_receive_download(
     let package_name = package_name[1..].trim_end_matches(".zip");
     let Ok(package_id) = package_name.parse::<PackageId>() else {
         let package_name_split = package_name.split('-').collect::<Vec<_>>();
-        let [package_name, api, version] = package_name_split.as_slice() else {
+        let [package_name, version] = package_name_split.as_slice() else {
             return Err(anyhow::anyhow!(
-                "bad package filename fron download: {package_name}"
+                "bad api package filename from download (failed to split): {package_name}"
             ));
         };
-        if api != &"api" || version.chars().next() != Some('v') {
+        if version.chars().next() != Some('v') {
             return Err(anyhow::anyhow!(
-                "bad package filename fron download: {package_name}"
+                "bad package filename from download (unexpected version): {package_name}"
             ));
         }
         let Ok(package_id) = package_name.parse::<PackageId>() else {
             return Err(anyhow::anyhow!(
-                "bad package filename fron download: {package_name}"
+                "bad package filename from download (bad PackageId): {package_name}"
             ));
         };
         return handle_receive_download_api(our, state, package_id, version, requested_apis);
@@ -831,22 +833,22 @@ fn handle_receive_download_api(
     // for now we can reject if it's not latest.
     let download_hash = generate_version_hash(&blob.bytes);
     let mut verified = false;
-    let Some(hash) = requested_package.desired_version_hash else {
-        return Err(anyhow::anyhow!("must have version hash to match against"));
-    };
-    if download_hash != hash {
-        if hash.is_empty() {
-            println!(
-                "\x1b[33mwarning: downloaded api has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
-            );
+    // TODO: require api_hash
+    if let Some(hash) = requested_package.desired_version_hash {
+        if download_hash != hash {
+            if hash.is_empty() {
+                println!(
+                    "\x1b[33mwarning: downloaded api has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
+                );
+            } else {
+                return Err(anyhow::anyhow!(
+                    "downloaded api is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
+                ));
+            }
         } else {
-            return Err(anyhow::anyhow!(
-                "downloaded api is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
-            ));
+            verified = true;
         }
-    } else {
-        verified = true;
-    }
+    };
 
     state.add_downloaded_api(&package_id, Some(blob.bytes))?;
 

@@ -492,7 +492,7 @@ impl State {
                 };
                 self.insert_listing(package_hash.clone(), listing);
 
-                let api_hash = ""; // TODO
+                let api_hash = None; // TODO
                 let api_download_request_result = start_api_download(
                     our,
                     requested_apis,

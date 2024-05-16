@@ -23,7 +23,7 @@ pub enum RemoteRequest {
     /// at which point requester can expect an FTWorkerRequest::Receive.
     DownloadApi {
         package_id: PackageId,
-        desired_version_hash: String,
+        desired_version_hash: Option<String>,
     },
 }
 
