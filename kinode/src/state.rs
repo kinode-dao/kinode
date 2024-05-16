@@ -596,7 +596,7 @@ async fn bootstrap(
                 std::collections::hash_map::Entry::Vacant(v) => {
                     v.insert(PersistedProcess {
                         wasm_bytes_handle: wasm_bytes_handle.clone(),
-                        wit_version: None,
+                        wit_version: package_metadata.properties.wit_version,
                         on_exit: entry.on_exit,
                         capabilities: requested_caps,
                         public: public_process,

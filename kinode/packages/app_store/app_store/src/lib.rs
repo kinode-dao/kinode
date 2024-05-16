@@ -1021,6 +1021,12 @@ pub fn handle_install(
 ) -> anyhow::Result<()> {
     let drive_path = format!("/{package_id}/pkg");
     let manifest = fetch_package_manifest(package_id)?;
+    let metadata = state
+        .get_downloaded_package(package_id)
+        .ok_or_else(|| anyhow::anyhow!("package not found in manager"))?
+        .metadata
+        .ok_or_else(|| anyhow::anyhow!("package has no metadata"))?;
+
     // always grant read/write to their drive, which we created for them
     let Some(read_cap) = get_capability(
         &Address::new(&our.node, ("vfs", "distro", "sys")),
@@ -1085,7 +1091,7 @@ pub fn handle_install(
                 .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                     id: parsed_new_process_id.clone(),
                     wasm_bytes_handle: wasm_path,
-                    wit_version: None, // TODO get from manifest!!!
+                    wit_version: metadata.properties.wit_version,
                     on_exit: entry.on_exit.clone(),
                     initial_capabilities: HashSet::new(),
                     public: entry.public,

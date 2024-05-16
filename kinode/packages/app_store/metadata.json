@@ -4,12 +4,13 @@
     "image": "",
     "properties": {
         "package_name": "app_store",
-        "current_version": "0.3.1",
         "publisher": "sys",
+        "current_version": "0.3.1",
         "mirrors": [],
         "code_hashes": {
             "0.3.1": ""
         },
+        "wit_version": 0,
         "dependencies": []
     },
     "external_url": "https://kinode.org",

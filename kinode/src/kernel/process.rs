@@ -309,8 +309,6 @@ pub async fn make_process_loop(
     let metadata = match metadata.wit_version {
         // assume missing version is oldest wit version
         None => {
-            println!("WIT 0.7.0 OR NONE GIVEN\r");
-
             let (bindings, mut store, wasi_stderr) =
                 make_component(engine, &wasm_bytes, home_directory_path, process_state).await?;
 
@@ -351,8 +349,6 @@ pub async fn make_process_loop(
         // match version numbers
         // assume higher uncovered version number is latest version
         Some(0) | _ => {
-            println!("WIT 0.8.0 OR HIGHER\r");
-
             let (bindings, mut store, wasi_stderr) =
                 make_component_v0(engine, &wasm_bytes, home_directory_path, process_state).await?;
 
