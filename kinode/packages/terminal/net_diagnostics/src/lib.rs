@@ -1,7 +1,7 @@
 use kinode_process_lib::{call_init, net, println, Address, Message, Request};
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "target/wit",
     world: "process",
 });
 

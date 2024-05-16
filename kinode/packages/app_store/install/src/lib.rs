@@ -6,7 +6,7 @@ mod api;
 use api::*;
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "target/wit",
     world: "process",
 });
 

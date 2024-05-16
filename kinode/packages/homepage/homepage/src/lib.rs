@@ -10,21 +10,7 @@ use kinode_process_lib::{
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
-/// The request format to add or remove an app from the homepage. You must have messaging
-/// access to `homepage:homepage:sys` in order to perform this. Serialize using serde_json.
-#[derive(Serialize, Deserialize)]
-enum HomepageRequest {
-    /// the package and process name will come from request source.
-    /// the path will automatically have the process_id prepended.
-    /// the icon is a base64 encoded image.
-    Add {
-        label: String,
-        icon: Option<String>,
-        path: Option<String>,
-        widget: Option<String>,
-    },
-    Remove,
-}
+use crate::kinode::process::homepage::{AddRequest, Request as HomepageRequest};
 
 #[derive(Serialize, Deserialize)]
 struct HomepageApp {
@@ -36,8 +22,10 @@ struct HomepageApp {
 }
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "homepage-sys-v0",
+    generate_unused_types: true,
+    additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
 call_init!(init);
@@ -93,12 +81,12 @@ fn init(our: Address) {
             // they must have messaging access to us in order to perform this.
             if let Ok(request) = serde_json::from_slice::<HomepageRequest>(message.body()) {
                 match request {
-                    HomepageRequest::Add {
+                    HomepageRequest::Add(AddRequest {
                         label,
                         icon,
                         path,
                         widget,
-                    } => {
+                    }) => {
                         app_data.insert(
                             message.source().process.to_string(),
                             HomepageApp {

@@ -30,10 +30,18 @@ pub fn handle_http_request(
     our: &Address,
     state: &mut State,
     eth_provider: &eth::Provider,
+    requested_apis: &mut HashMap<PackageId, RequestedPackage>,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
     req: &IncomingHttpRequest,
 ) -> anyhow::Result<()> {
-    match serve_paths(our, state, eth_provider, requested_packages, req) {
+    match serve_paths(
+        our,
+        state,
+        eth_provider,
+        requested_apis,
+        requested_packages,
+        req,
+    ) {
         Ok((status_code, _headers, body)) => send_response(
             status_code,
             Some(HashMap::from([(
@@ -102,6 +110,7 @@ fn serve_paths(
     our: &Address,
     state: &mut State,
     eth_provider: &eth::Provider,
+    requested_apis: &mut HashMap<PackageId, RequestedPackage>,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
     req: &IncomingHttpRequest,
 ) -> anyhow::Result<(StatusCode, Option<HashMap<String, String>>, Vec<u8>)> {
@@ -432,7 +441,7 @@ fn serve_paths(
                     format!("Invalid method {method} for {bound_path}").into_bytes(),
                 ));
             }
-            crate::rebuild_index(our, state, eth_provider);
+            crate::rebuild_index(our, state, eth_provider, requested_apis);
             Ok((StatusCode::OK, None, vec![]))
         }
         _ => Ok((

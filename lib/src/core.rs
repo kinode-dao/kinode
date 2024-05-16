@@ -1072,6 +1072,7 @@ pub struct Erc721Metadata {
 /// - `license`: An optional field containing the license of the package.
 /// - `screenshots`: An optional field containing a list of URLs to screenshots of the package.
 /// - `wit_version`: An optional field containing the version of the WIT standard that the package adheres to.
+/// - `dependencies`: An optional field containing a list of `PackageId`s: API dependencies
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Erc721Properties {
     pub package_name: String,
@@ -1082,6 +1083,7 @@ pub struct Erc721Properties {
     pub license: Option<String>,
     pub screenshots: Option<Vec<String>>,
     pub wit_version: Option<(u32, u32, u32)>,
+    pub dependencies: Option<Vec<String>>,
 }
 
 /// the type that gets deserialized from each entry in the array in `manifest.json`
