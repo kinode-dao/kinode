@@ -13,12 +13,14 @@ use lib::types::core::{self as t, STATE_PROCESS_ID, VFS_PROCESS_ID};
 
 /// Manipulate a single process.
 pub mod process;
-/// Implement the functions served to processes by `kinode.wit`.
+/// Implement the functions served to processes by `wit-v0.7.0/kinode.wit`.
 mod standard_host;
+/// Implement the functions served to processes by `wit-v0.8.0/kinode.wit`.
+mod standard_host_v0;
 
 const PROCESS_CHANNEL_CAPACITY: usize = 100;
 
-const DEFAULT_WIT_VERSION: u32 = 0;
+pub const LATEST_WIT_VERSION: u32 = 0;
 
 #[derive(Serialize, Deserialize)]
 struct StartProcessMetadata {
@@ -606,10 +608,7 @@ async fn start_process(
             process: id.clone(),
         },
         wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle.clone(),
-        wit_version: process_metadata
-            .persisted
-            .wit_version
-            .unwrap_or(DEFAULT_WIT_VERSION),
+        wit_version: process_metadata.persisted.wit_version,
         on_exit: process_metadata.persisted.on_exit.clone(),
         public: process_metadata.persisted.public,
     };

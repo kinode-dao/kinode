@@ -358,7 +358,7 @@ async fn bootstrap(
         .entry(ProcessId::new(Some("kernel"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
-            wit_version: None,
+            wit_version: Some(crate::kernel::LATEST_WIT_VERSION),
             on_exit: OnExit::Restart,
             capabilities: runtime_caps.clone(),
             public: false,
@@ -368,7 +368,7 @@ async fn bootstrap(
         .entry(ProcessId::new(Some("net"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
-            wit_version: None,
+            wit_version: Some(crate::kernel::LATEST_WIT_VERSION),
             on_exit: OnExit::Restart,
             capabilities: runtime_caps.clone(),
             public: false,
@@ -379,7 +379,7 @@ async fn bootstrap(
             .entry(runtime_module.0)
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: "".into(),
-                wit_version: None,
+                wit_version: Some(crate::kernel::LATEST_WIT_VERSION),
                 on_exit: OnExit::Restart,
                 capabilities: runtime_caps.clone(),
                 public: runtime_module.3,
@@ -596,7 +596,7 @@ async fn bootstrap(
                 std::collections::hash_map::Entry::Vacant(v) => {
                     v.insert(PersistedProcess {
                         wasm_bytes_handle: wasm_bytes_handle.clone(),
-                        wit_version: None,
+                        wit_version: package_metadata.properties.wit_version,
                         on_exit: entry.on_exit,
                         capabilities: requested_caps,
                         public: public_process,
