@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 wit_bindgen::generate!({
-    path: "wit",
+    path: "target/wit",
     world: "process",
 });
 
@@ -231,7 +231,7 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
         .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
             id: parsed_new_process_id.clone(),
             wasm_bytes_handle: wasm_path.clone(),
-            wit_version: None,
+            wit_version: None, // update this with new versions if desired
             on_exit: kt::OnExit::None,
             initial_capabilities: HashSet::new(),
             public: entry.public,
@@ -297,10 +297,9 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
     print_to_terminal(
         3,
         &format!(
-            "{}: Process {{\n    wasm_bytes_handle: {},\n    wit_version: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
+            "{}: Process {{\n    wasm_bytes_handle: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
             parsed_new_process_id.clone(),
             wasm_path.clone(),
-            "None",
             kt::OnExit::None,
             entry.public,
             {

@@ -8,11 +8,13 @@ import SearchHeader from "../components/SearchHeader";
 import { PageProps } from "../types/Page";
 import { useNavigate } from "react-router-dom";
 import { appId } from "../utils/app";
-
-interface MyAppsPageProps extends PageProps { }
+import { PUBLISH_PATH } from "../constants/path";
+import HomeButton from "../components/HomeButton";
+import { isMobileCheck } from "../utils/dimensions";
+import classNames from "classnames";
 
 export default function MyAppsPage() { // eslint-disable-line
-  const { myApps, getMyApps } = useAppsStore()
+  const { myApps, getMyApps, } = useAppsStore()
   const navigate = useNavigate();
 
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -52,26 +54,58 @@ export default function MyAppsPage() { // eslint-disable-line
     }
   }, [myApps]);
 
+  const isMobile = isMobileCheck()
+  console.log({ myApps })
+
   return (
-    <div className="flex flex-col w-full max-w-[900px]">
+    <div className={classNames("flex flex-col w-full h-screen p-2",
+      {
+        'gap-4 max-w-screen': isMobile,
+        'gap-8 max-w-[900px]': !isMobile,
+      })}>
+      <HomeButton />
       <SearchHeader value={searchQuery} onChange={searchMyApps} />
       <div className="flex justify-between items-center mt-2">
-        <h4 className="mb-2">My Packages</h4>
-        <button onClick={() => navigate('/publish')}>
+        <h3>My Packages</h3>
+        <button onClick={() => navigate(PUBLISH_PATH)}>
           <FaUpload className="mr-2" />
           Publish Package
         </button>
       </div>
 
-      <div className="flex flex-col card gap-2 mt-2">
-        <h4>Downloaded</h4>
-        {(displayedApps.downloaded || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
-        <h4>Installed</h4>
-        {(displayedApps.installed || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
-        <h4>Local</h4>
-        {(displayedApps.local || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
-        <h4>System</h4>
-        {(displayedApps.system || []).map((app) => <AppEntry key={appId(app)} app={app} />)}
+      <div className={classNames("flex flex-col card gap-2 mt-2",
+        {
+          'max-h-[80vh] overflow-y-scroll overflow-x-visible': !isMobile,
+        })}
+        style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#FFF5D9 transparent',
+        }}
+      >
+        {displayedApps.downloaded.length > 0 && <h4>Downloaded</h4>}
+        {(displayedApps.downloaded || []).map((app) => <AppEntry
+          key={appId(app)}
+          app={app}
+          showMoreActions
+        />)}
+        {displayedApps.installed.length > 0 && <h4>Installed</h4>}
+        {(displayedApps.installed || []).map((app) => <AppEntry
+          key={appId(app)}
+          app={app}
+          showMoreActions
+        />)}
+        {displayedApps.local.length > 0 && <h4>Local</h4>}
+        {(displayedApps.local || []).map((app) => <AppEntry
+          key={appId(app)}
+          app={app}
+          showMoreActions
+        />)}
+        {displayedApps.system.length > 0 && <h4>System</h4>}
+        {(displayedApps.system || []).map((app) => <AppEntry
+          key={appId(app)}
+          app={app}
+          showMoreActions
+        />)}
       </div>
     </div>
   );

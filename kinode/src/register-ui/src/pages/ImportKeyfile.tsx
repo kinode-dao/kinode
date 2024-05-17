@@ -1,44 +1,33 @@
-import React, {
+import {
   FormEvent,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
-import { useNavigate } from "react-router-dom";
 import { utils } from "ethers";
 import KinodeHeader from "../components/KnsHeader";
 import { PageProps } from "../lib/types";
 import Loader from "../components/Loader";
 
-const KEY_WRONG_NET_KEY = "Keyfile does not match public key";
-const KEY_WRONG_IP = "IP Address does not match records";
-
 interface ImportKeyfileProps extends PageProps { }
 
 function ImportKeyfile({
-  direct,
   pw,
-  knsName,
-  setDirect,
   setPw,
-  setOsName,
-  kns,
   openConnect,
   appSizeOnLoad,
-  ipAddress,
   closeConnect,
   nodeChainId,
 }: ImportKeyfileProps) {
-  const navigate = useNavigate();
 
   const [localKey, setLocalKey] = useState<string>("");
   const [localKeyFileName, setLocalKeyFileName] = useState<string>("");
-  const [keyErrs, setKeyErrs] = useState<string[]>([]);
+  const [keyErrs, _setKeyErrs] = useState<string[]>([]);
 
-  const [pwErr, setPwErr] = useState<string>("");
-  const [pwVet, setPwVet] = useState<boolean>(false);
-  const [pwDebounced, setPwDebounced] = useState<boolean>(false);
+  const [pwErr, _setPwErr] = useState<string>("");
+  const [pwVet, _setPwVet] = useState<boolean>(false);
+  const [pwDebounced, _setPwDebounced] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
 
   useEffect(() => {
@@ -143,7 +132,7 @@ function ImportKeyfile({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               keyfile: localKey,
-              password: hashed_password,
+              password_hash: hashed_password,
             }),
           });
 
@@ -156,7 +145,7 @@ function ImportKeyfile({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               keyfile: localKey,
-              password: hashed_password,
+              password_hash: hashed_password,
             }),
           });
 

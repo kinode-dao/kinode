@@ -2,6 +2,7 @@ target/
 wit/
 **/target/
 **/wit/
+**/wit-*/
 **/*.wasm
 .vscode
 .app-signing
@@ -10,8 +11,6 @@ wit/
 *.swo
 *.zip
 /home
-packages/**/pkg/*.wasm
-packages/**/wit
 */**/node_modules
 .env
 kinode/src/bootstrapped_processes.rs

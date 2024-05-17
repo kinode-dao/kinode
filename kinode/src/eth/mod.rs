@@ -63,18 +63,26 @@ impl ActiveProviders {
                 kns_update,
                 use_as_provider,
             } => {
-                self.nodes.push(NodeProvider {
-                    trusted: new.trusted,
-                    usable: use_as_provider,
-                    kns_update,
-                });
+                self.remove_provider(&kns_update.name);
+                self.nodes.insert(
+                    0,
+                    NodeProvider {
+                        trusted: new.trusted,
+                        usable: use_as_provider,
+                        kns_update,
+                    },
+                );
             }
             NodeOrRpcUrl::RpcUrl(url) => {
-                self.urls.push(UrlProvider {
-                    trusted: new.trusted,
-                    url,
-                    pubsub: None,
-                });
+                self.remove_provider(&url);
+                self.urls.insert(
+                    0,
+                    UrlProvider {
+                        trusted: new.trusted,
+                        url,
+                        pubsub: None,
+                    },
+                );
             }
         }
     }
@@ -391,7 +399,10 @@ async fn handle_message(
                     }
                     verbose_print(
                         &state.print_tx,
-                        "eth: got sub_keepalive but no matching sub found",
+                        &format!(
+                            "eth: got sub_keepalive from {} but no matching sub found",
+                            km.source
+                        ),
                     )
                     .await;
                     // send a response with an EthSubError

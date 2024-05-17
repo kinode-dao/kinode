@@ -1,7 +1,6 @@
-import React, { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { namehash } from "ethers/lib/utils";
 import { BytesLike, utils } from "ethers";
-import kinodeLogo from "../assets/kinode.svg";
 import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
@@ -12,6 +11,8 @@ import DirectCheckbox from "../components/DirectCheckbox";
 import { useNavigate } from "react-router-dom";
 import { Tooltip } from "../components/Tooltip";
 import { KinodeTitle } from "../components/KinodeTitle";
+import { isMobileCheck } from "../utils/dimensions";
+import classNames from "classnames";
 
 const { useProvider } = hooks;
 
@@ -39,7 +40,7 @@ function Login({
   const [loading, setLoading] = useState<string>("");
   const [showReset, setShowReset] = useState<boolean>(false);
   const [reset, setReset] = useState<boolean>(false);
-  const [restartFlow, setRestartFlow] = useState<boolean>(false);
+  const [_restartFlow, setRestartFlow] = useState<boolean>(false);
 
   useEffect(() => {
     document.title = "Login";
@@ -185,6 +186,8 @@ function Login({
 
   const isDirect = Boolean(routers?.length === 0);
 
+  const isMobile = isMobileCheck()
+
   return (
     <>
       <KinodeHeader
@@ -199,7 +202,9 @@ function Login({
       ) : (
         <form
           id="signup-form"
-          className="flex flex-col w-full max-w-[450px]"
+          className={classNames("flex flex-col w-full max-w-[450px]", {
+            'p-2': isMobile
+          })}
           onSubmit={handleLogin}
         >
           <div className="self-stretch mb-2 flex flex-col">
@@ -243,7 +248,7 @@ function Login({
                 setReset(!showReset);
               }}
             >
-              Reset Networking Info
+              {showReset ? 'Cancel' : 'Reset Networking Info'}
             </button>
             <button
               className="clear self-stretch"

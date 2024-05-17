@@ -60,7 +60,7 @@ h6 {
 button,
 button[type="submit"],
 .button {
-  @apply flex m-0 py-2 px-6 rounded border-orange bg-orange border-2 cursor-pointer place-items-center place-content-center text-center rounded-lg heading transition ease-in-out duration-100 hover:bg-black text-white font-[OpenSans];
+  @apply flex m-0 py-2 px-6 rounded border-orange bg-orange border cursor-pointer place-items-center place-content-center text-center rounded-lg heading transition ease-in-out duration-100 hover:bg-black text-white font-[OpenSans];
 }
 
 .clear {
@@ -80,7 +80,15 @@ button[type="submit"],
 }
 
 .icon.alt {
-  @apply border-black/25 hover:border-white/25
+  @apply border-black/25 hover:border-white/25;
+}
+
+.icon.icon-orange {
+  @apply border-orange bg-orange/25;
+}
+
+.icon.clear {
+  @apply border-0;
 }
 
 body {
@@ -98,7 +106,7 @@ textarea,
 input[type="text"],
 input[type="password"],
 input[type="checkbox"] {
-  @apply px-4 py-2 rounded-lg bg-orange bg-opacity-25 text-white border border-orange border-2;
+  @apply px-4 py-2 rounded-lg bg-orange bg-opacity-25 text-white border border-solid border-orange;
 }
 
 input[type="checkbox"] {
@@ -132,4 +140,9 @@ button:disabled {
 
 .c {
   @apply place-items-center place-content-center;
+}
+
+.special-appstore-background {
+  background-color: #22211f;
+  background-image: radial-gradient(circle at -20% -68%, #f75a2991 36%, transparent 56.05%), linear-gradient(37deg, #86000185 19%, transparent 45.05%), linear-gradient(-36deg, #8600016e 26%, transparent 50.05%);
 }

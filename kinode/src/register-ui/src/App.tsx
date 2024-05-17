@@ -46,7 +46,7 @@ function App() {
   const params = useParams()
 
   const [pw, setPw] = useState<string>('');
-  const [key, setKey] = useState<string>('');
+  const [key, _setKey] = useState<string>('');
   const [keyFileName, setKeyFileName] = useState<string>('');
   const [reset, setReset] = useState<boolean>(false);
   const [direct, setDirect] = useState<boolean>(false);
@@ -65,7 +65,7 @@ function App() {
   const openConnect = () => setConnectOpen(true)
   const closeConnect = () => setConnectOpen(false)
 
-  const rpcUrl = useMemo(() => provider?.network?.chainId === ChainId.SEPOLIA ? process.env.REACT_APP_SEPOLIA_RPC_URL : process.env.REACT_APP_OPTIMISM_RPC_URL, [provider])
+  const rpcUrl = useMemo(() => provider?.network?.chainId === ChainId.SEPOLIA ? import.meta.env.REACT_APP_SEPOLIA_RPC_URL : import.meta.env.REACT_APP_OPTIMISM_RPC_URL, [provider])
 
   const [dotOs, setDotOs] = useState<DotOsRegistrar>(
     DotOsRegistrar__factory.connect(
@@ -83,7 +83,7 @@ function App() {
     KNSEnsEntry__factory.connect(
       provider?.network?.chainId === ChainId.SEPOLIA ? KNS_ENS_ENTRY_ADDRESSES[ChainId.SEPOLIA] : KNS_ENS_ENTRY_ADDRESSES[ChainId.MAINNET],
       // set rpc url based on chain id
-      new ethers.providers.JsonRpcProvider(provider?.network?.chainId === ChainId.SEPOLIA ? process.env.REACT_APP_SEPOLIA_RPC_URL : process.env.REACT_APP_MAINNET_RPC_URL))
+      new ethers.providers.JsonRpcProvider(provider?.network?.chainId === ChainId.SEPOLIA ? import.meta.env.REACT_APP_SEPOLIA_RPC_URL : import.meta.env.REACT_APP_MAINNET_RPC_URL))
   );
 
   const [knsEnsExit, setKnsEnsExit] = useState<KNSEnsExit>(
@@ -192,11 +192,11 @@ function App() {
         ))
         setNameWrapper(NameWrapper__factory.connect(
           NAMEWRAPPER_ADDRESSES[ChainId.MAINNET],
-          new ethers.providers.JsonRpcProvider(process.env.REACT_APP_MAINNET_RPC_URL)
+          new ethers.providers.JsonRpcProvider(import.meta.env.REACT_APP_MAINNET_RPC_URL)
         ))
         setEnsRegistry(ENSRegistry__factory.connect(
           ENS_REGISTRY_ADDRESSES[ChainId.MAINNET],
-          new ethers.providers.JsonRpcProvider(process.env.REACT_APP_MAINNET_RPC_URL)
+          new ethers.providers.JsonRpcProvider(import.meta.env.REACT_APP_MAINNET_RPC_URL)
         ))
       }
     })

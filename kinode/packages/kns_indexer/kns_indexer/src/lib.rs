@@ -1,23 +1,38 @@
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message, call_init, eth, get_typed_state, net::KnsUpdate, println, set_state, Address,
-    Message, Request, Response,
+    await_message, call_init, eth, net, println, Address, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{
     hash_map::{Entry, HashMap},
     BTreeMap,
 };
-use std::string::FromUtf8Error;
+
+use crate::kinode::process::kns_indexer::{
+    GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
+};
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "kns-indexer-sys-v0",
+    generate_unused_types: true,
+    additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
-// perhaps a constant in process_lib?
-const KNS_OPTIMISM_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
-const KNS_FIRST_BLOCK: u64 = 114_923_786;
+#[cfg(not(feature = "simulation-mode"))]
+const KNS_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6"; // optimism
+#[cfg(feature = "simulation-mode")]
+const KNS_ADDRESS: &'static str = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; // local
+
+#[cfg(not(feature = "simulation-mode"))]
+const CHAIN_ID: u64 = 10; // optimism
+#[cfg(feature = "simulation-mode")]
+const CHAIN_ID: u64 = 31337; // local
+
+#[cfg(not(feature = "simulation-mode"))]
+const KNS_FIRST_BLOCK: u64 = 114_923_786; // optimism
+#[cfg(feature = "simulation-mode")]
+const KNS_FIRST_BLOCK: u64 = 1; // local
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct State {
@@ -31,27 +46,6 @@ struct State {
     nodes: HashMap<String, KnsUpdate>,
     // last block we have an update from
     block: u64,
-}
-
-/// IndexerRequests are used to query discrete information from the indexer
-/// for example, if you want to know the human readable name for a namehash,
-/// you would send a NamehashToName request.
-/// If you want to know the most recent on-chain routing information for a
-/// human readable name, you would send a NodeInfo request.
-/// The block parameter specifies the recency of the data: the indexer will
-/// not respond until it has processed events up to the specified block.
-#[derive(Debug, Serialize, Deserialize)]
-pub enum IndexerRequests {
-    /// return the human readable name for a namehash
-    /// returns an Option<String>
-    NamehashToName { hash: String, block: u64 },
-    /// return the most recent on-chain routing information for a node name.
-    /// returns an Option<KnsUpdate>
-    /// set block to 0 if you just want to get the current state of the indexer
-    NodeInfo { name: String, block: u64 },
-    /// return the entire state of the indexer at the given block
-    /// set block to 0 if you just want to get the current state of the indexer
-    GetState { block: u64 },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -80,7 +74,6 @@ sol! {
 }
 
 fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth::Filter) {
-    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.subscribe(1, filter.clone().from_block(from_block)) {
             Ok(()) => break,
@@ -91,44 +84,49 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
             }
         }
     }
-    #[cfg(not(feature = "simulation-mode"))]
     println!("subscribed to logs successfully");
 }
 
 call_init!(init);
 fn init(our: Address) {
-    let (chain_id, contract_address) = (10, KNS_OPTIMISM_ADDRESS.to_string());
+    println!("indexing on contract address {}", KNS_ADDRESS);
 
-    #[cfg(not(feature = "simulation-mode"))]
-    println!("indexing on contract address {}", contract_address);
-    #[cfg(feature = "simulation-mode")]
-    println!("simulation mode: not indexing KNS");
-
-    // if we have state, load it in
-    let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
-        Some(s) => {
-            // if chain id or contract address changed from a previous run, reset state
-            if s.chain_id != chain_id || s.contract_address != contract_address {
-                println!("resetting state because runtime contract address or chain ID changed");
-                State {
-                    chain_id,
-                    contract_address,
-                    names: HashMap::new(),
-                    nodes: HashMap::new(),
-                    block: KNS_FIRST_BLOCK,
-                }
-            } else {
-                println!("loading in {} persisted PKI entries", s.nodes.len());
-                s
-            }
-        }
-        None => State {
-            chain_id,
-            contract_address: contract_address.clone(),
-            names: HashMap::new(),
-            nodes: HashMap::new(),
-            block: KNS_FIRST_BLOCK,
-        },
+    // we **can** persist PKI state between boots but with current size, it's
+    // more robust just to reload the whole thing. the new contracts will allow
+    // us to quickly verify we have the updated mapping with root hash, but right
+    // now it's tricky to recover from missed events.
+    //
+    // let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
+    //     Some(s) => {
+    //         // if chain id or contract address changed from a previous run, reset state
+    //         if s.chain_id != CHAIN_ID || s.contract_address != KNS_ADDRESS {
+    //             println!("resetting state because runtime contract address or chain ID changed");
+    //             State {
+    //                 chain_id: CHAIN_ID,
+    //                 contract_address: KNS_ADDRESS.to_string(),
+    //                 names: HashMap::new(),
+    //                 nodes: HashMap::new(),
+    //                 block: KNS_FIRST_BLOCK,
+    //             }
+    //         } else {
+    //             println!("loading in {} persisted PKI entries", s.nodes.len());
+    //             s
+    //         }
+    //     }
+    //     None => State {
+    //         chain_id: CHAIN_ID,
+    //         contract_address: KNS_ADDRESS.to_string(),
+    //         names: HashMap::new(),
+    //         nodes: HashMap::new(),
+    //         block: KNS_FIRST_BLOCK,
+    //     },
+    // };
+    let state = State {
+        chain_id: CHAIN_ID,
+        contract_address: KNS_ADDRESS.to_string(),
+        names: HashMap::new(),
+        nodes: HashMap::new(),
+        block: KNS_FIRST_BLOCK,
     };
 
     match main(our, state) {
@@ -140,14 +138,6 @@ fn init(our: Address) {
 }
 
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
-    // shove all state into net::net
-    Request::new()
-        .target((&our.node, "net", "distro", "sys"))
-        .try_body(NetAction::KnsBatchUpdate(
-            state.nodes.values().cloned().collect::<Vec<_>>(),
-        ))?
-        .send()?;
-
     let filter = eth::Filter::new()
         .address(state.contract_address.parse::<eth::Address>().unwrap())
         .from_block(state.block - 1)
@@ -164,31 +154,40 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // if they do time out, we try them again
     let eth_provider = eth::Provider::new(state.chain_id, 60);
 
+    println!(
+        "subscribing, state.block: {}, chain_id: {}",
+        state.block - 1,
+        state.chain_id
+    );
+
+    subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
+
     // if block in state is < current_block, get logs from that part.
-    #[cfg(not(feature = "simulation-mode"))]
-    if state.block < eth_provider.get_block_number().unwrap_or(u64::MAX) {
-        loop {
-            match eth_provider.get_logs(&filter) {
-                Ok(logs) => {
-                    for log in logs {
-                        match handle_log(&our, &mut state, &log) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                println!("log-handling error! {e:?}");
-                            }
+    loop {
+        match eth_provider.get_logs(&filter) {
+            Ok(logs) => {
+                for log in logs {
+                    match handle_log(&our, &mut state, &log) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            println!("log-handling error! {e:?}");
                         }
                     }
-                    break;
                 }
-                Err(_) => {
-                    println!("failed to fetch logs! trying again in 5s...");
-                    std::thread::sleep(std::time::Duration::from_secs(5));
-                    continue;
-                }
+                break;
+            }
+            Err(e) => {
+                println!(
+                    "got eth error while fetching logs: {:?}, trying again in 5s...",
+                    e
+                );
+                std::thread::sleep(std::time::Duration::from_secs(5));
+                continue;
             }
         }
     }
-    // shove all state into net::net
+
+    // shove initial state into net::net
     Request::new()
         .target((&our.node, "net", "distro", "sys"))
         .try_body(NetAction::KnsBatchUpdate(
@@ -196,9 +195,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ))?
         .send()?;
 
-    set_state(&bincode::serialize(&state)?);
-
-    subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
+    // set_state(&bincode::serialize(&state)?);
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -229,7 +226,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             };
 
             match request {
-                IndexerRequests::NamehashToName { ref hash, block } => {
+                IndexerRequests::NamehashToName(NamehashToNameRequest { ref hash, block }) => {
                     if block <= state.block {
                         Response::new()
                             .body(serde_json::to_vec(&state.names.get(hash))?)
@@ -241,7 +238,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             .push(request);
                     }
                 }
-                IndexerRequests::NodeInfo { ref name, block } => {
+                IndexerRequests::NodeInfo(NodeInfoRequest { ref name, block }) => {
                     if block <= state.block {
                         Response::new()
                             .body(serde_json::to_vec(&state.nodes.get(name))?)
@@ -253,7 +250,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             .push(request);
                     }
                 }
-                IndexerRequests::GetState { block } => {
+                IndexerRequests::GetState(GetStateRequest { block }) => {
                     if block <= state.block {
                         Response::new().body(serde_json::to_vec(&state)?).send()?;
                     } else {
@@ -304,19 +301,19 @@ fn handle_eth_message(
         if *block <= state.block {
             for request in requests.iter() {
                 match request {
-                    IndexerRequests::NamehashToName { hash, .. } => {
+                    IndexerRequests::NamehashToName(NamehashToNameRequest { hash, .. }) => {
                         Response::new()
                             .body(serde_json::to_vec(&state.names.get(hash))?)
                             .send()
                             .unwrap();
                     }
-                    IndexerRequests::NodeInfo { name, .. } => {
+                    IndexerRequests::NodeInfo(NodeInfoRequest { name, .. }) => {
                         Response::new()
                             .body(serde_json::to_vec(&state.nodes.get(name))?)
                             .send()
                             .unwrap();
                     }
-                    IndexerRequests::GetState { .. } => {
+                    IndexerRequests::GetState(GetStateRequest { .. }) => {
                         Response::new()
                             .body(serde_json::to_vec(&state)?)
                             .send()
@@ -333,7 +330,7 @@ fn handle_eth_message(
         pending_requests.remove(block);
     }
 
-    set_state(&bincode::serialize(state)?);
+    // set_state(&bincode::serialize(state)?);
     Ok(())
 }
 
@@ -414,19 +411,19 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     }
 
     // if new block is > 100 from last block, save state
-    let block = log.block_number.expect("expect");
-    if block > state.block + 100 {
-        kinode_process_lib::print_to_terminal(
-            1,
-            &format!(
-                "persisting {} PKI entries at block {}",
-                state.nodes.len(),
-                block
-            ),
-        );
-        state.block = block;
-        set_state(&bincode::serialize(state)?);
-    }
+    // let block = log.block_number.expect("expect");
+    // if block > state.block + 100 {
+    //     kinode_process_lib::print_to_terminal(
+    //         1,
+    //         &format!(
+    //             "persisting {} PKI entries at block {}",
+    //             state.nodes.len(),
+    //             block
+    //         ),
+    //     );
+    //     state.block = block;
+    //     set_state(&bincode::serialize(state)?);
+    // }
     Ok(())
 }
 
@@ -436,33 +433,5 @@ fn get_name(log: &eth::Log) -> anyhow::Result<String> {
             "got event other than NodeRegistered without knowing about existing node name"
         )
     })?;
-    dnswire_decode(decoded.name.to_vec()).map_err(|e| anyhow::anyhow!(e))
-}
-
-fn dnswire_decode(wire_format_bytes: Vec<u8>) -> Result<String, FromUtf8Error> {
-    let mut i = 0;
-    let mut result = Vec::new();
-
-    while i < wire_format_bytes.len() {
-        let len = wire_format_bytes[i] as usize;
-        if len == 0 {
-            break;
-        }
-        let end = i + len + 1;
-        let mut span = wire_format_bytes[i + 1..end].to_vec();
-        span.push('.' as u8);
-        result.push(span);
-        i = end;
-    }
-
-    let flat: Vec<_> = result.into_iter().flatten().collect();
-
-    let name = String::from_utf8(flat)?;
-
-    // Remove the trailing '.' if it exists (it should always exist)
-    if name.ends_with('.') {
-        Ok(name[0..name.len() - 1].to_string())
-    } else {
-        Ok(name)
-    }
+    net::dnswire_decode(&decoded.name).map_err(|e| anyhow::anyhow!(e))
 }

@@ -1,0 +1,235 @@
+/* CSS Reset from https://www.joshwcomeau.com/css/custom-css-reset/ */
+
+/*
+  1. Use a more-intuitive box-sizing model.
+*/
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/*
+    2. Remove default margin
+  */
+* {
+  margin: 0;
+}
+
+/*
+    Typographic tweaks!
+    3. Add accessible line-height
+    4. Improve text rendering
+  */
+body {
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+    5. Improve media defaults
+  */
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+/*
+    6. Remove built-in form typography styles
+  */
+input,
+button,
+textarea,
+select {
+  font: inherit;
+}
+
+/*
+    7. Avoid text overflows
+  */
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  overflow-wrap: break-word;
+}
+
+/*
+    8. Create a root stacking context
+  */
+#root,
+#__next {
+  isolation: isolate;
+}
+
+/* Actual styles */
+
+body {
+  font-family: 'Courier New', Courier, monospace;
+  background-color: #1a1a1a;
+  color: #f0f0f0;
+}
+
+h1 {
+  padding: 20px;
+}
+
+main {
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 20px 20px;
+  grid-auto-flow: row;
+  grid-template-areas:
+    "diagnostics diagnostics diagnostics"
+    "node-info pings pings"
+    "eth-rpc-providers eth-rpc-providers eth-rpc-settings"
+    "kernel kernel kernel";
+  padding: 20px;
+  max-width: 1100px;
+  min-width: 300px;
+}
+
+article#net-diagnostics {
+  grid-area: diagnostics;
+}
+
+p#diagnostics,
+p#peer-pki-response,
+p#peer-ping-response {
+  white-space: pre-wrap;
+}
+
+article#node-info {
+  grid-area: node-info;
+}
+
+article#pings {
+  grid-area: pings;
+}
+
+article#eth-rpc-providers {
+  grid-area: eth-rpc-providers;
+}
+
+article#eth-rpc-settings {
+  grid-area: eth-rpc-settings;
+}
+
+article#kernel {
+  grid-area: kernel;
+}
+
+div#provider-edits {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 20px;
+  grid-auto-flow: row;
+}
+
+article {
+  background-color: #333;
+  border: 1px solid #444;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+/* Custom scrollbar styles */
+article::-webkit-scrollbar {
+  width: 8px;
+}
+
+article::-webkit-scrollbar-track {
+  background: #2c2c2c;
+}
+
+article::-webkit-scrollbar-thumb {
+  background-color: #444;
+  border-radius: 4px;
+}
+
+button {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  margin: 4px 2px;
+  transition-duration: 0.4s;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+button#shutdown {
+  background-color: #f44336;
+}
+
+button:hover {
+  background-color: white;
+  color: #4CAF50;
+}
+
+button#shutdown:hover {
+  background-color: white;
+  color: #f44336;
+}
+
+input[type="text"],
+input[type="number"],
+select,
+textarea {
+  width: 100%;
+  padding: 12px 20px;
+  margin: 8px 0;
+  display: inline-block;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+input[type="submit"] {
+  background-color: #f44336;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  margin: 4px 2px;
+  transition-duration: 0.4s;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+input[type="submit"]:hover {
+  background-color: white;
+  color: #f44336;
+}
+
+ul {
+  list-style-type: none;
+  padding: 0;
+}
+
+li {
+  padding: 8px;
+  margin-bottom: 6px;
+  background-color: #2c2c2c;
+  border-radius: 4px;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}

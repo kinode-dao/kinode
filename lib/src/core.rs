@@ -85,26 +85,29 @@ impl PackageId {
 impl std::str::FromStr for PackageId {
     type Err = ProcessIdParseError;
     /// Attempt to parse a `PackageId` from a string. The string must
-    /// contain exactly two segments, where segments are strings separated
-    /// by a colon `:`. The segments cannot themselves contain colons.
+    /// contain exactly two segments, where segments are non-empty strings
+    /// separated by a colon (`:`). The segments cannot themselves contain colons.
+    ///
     /// Please note that while any string without colons will parse successfully
     /// to create a `PackageId`, not all strings without colons are actually
     /// valid usernames, which the `publisher_node` field of a `PackageId` will
     /// always in practice be.
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        // split string on colons into 2 segments
-        let mut segments = input.split(':');
-        let package_name = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        let publisher_node = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        if segments.next().is_some() {
+        let segments: Vec<&str> = input.split(':').collect();
+        if segments.len() < 2 {
+            return Err(ProcessIdParseError::MissingField);
+        } else if segments.len() > 2 {
             return Err(ProcessIdParseError::TooManyColons);
         }
+        let package_name = segments[0].to_string();
+        if package_name.is_empty() {
+            return Err(ProcessIdParseError::MissingField);
+        }
+        let publisher_node = segments[1].to_string();
+        if publisher_node.is_empty() {
+            return Err(ProcessIdParseError::MissingField);
+        }
+
         Ok(PackageId {
             package_name,
             publisher_node,
@@ -147,7 +150,21 @@ impl ProcessId {
             publisher_node: self.publisher_node.clone(),
         }
     }
+    pub fn en_wit_v0(&self) -> crate::v0::wit::ProcessId {
+        crate::v0::wit::ProcessId {
+            process_name: self.process_name.clone(),
+            package_name: self.package_name.clone(),
+            publisher_node: self.publisher_node.clone(),
+        }
+    }
     pub fn de_wit(wit: wit::ProcessId) -> ProcessId {
+        ProcessId {
+            process_name: wit.process_name,
+            package_name: wit.package_name,
+            publisher_node: wit.publisher_node,
+        }
+    }
+    pub fn de_wit_v0(wit: crate::v0::wit::ProcessId) -> ProcessId {
         ProcessId {
             process_name: wit.process_name,
             package_name: wit.package_name,
@@ -165,22 +182,23 @@ impl std::str::FromStr for ProcessId {
     /// valid usernames, which the `publisher_node` field of a `ProcessId` will
     /// always in practice be.
     fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
-        // split string on colons into 3 segments
-        let mut segments = input.split(':');
-        let process_name = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        let package_name = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        let publisher_node = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        if segments.next().is_some() {
+        let segments: Vec<&str> = input.split(':').collect();
+        if segments.len() < 3 {
+            return Err(ProcessIdParseError::MissingField);
+        } else if segments.len() > 3 {
             return Err(ProcessIdParseError::TooManyColons);
+        }
+        let process_name = segments[0].to_string();
+        if process_name.is_empty() {
+            return Err(ProcessIdParseError::MissingField);
+        }
+        let package_name = segments[1].to_string();
+        if package_name.is_empty() {
+            return Err(ProcessIdParseError::MissingField);
+        }
+        let publisher_node = segments[2].to_string();
+        if publisher_node.is_empty() {
+            return Err(ProcessIdParseError::MissingField);
         }
         Ok(ProcessId {
             process_name,
@@ -234,14 +252,7 @@ pub enum ProcessIdParseError {
 
 impl std::fmt::Display for ProcessIdParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ProcessIdParseError::TooManyColons => "Too many colons in ProcessId string",
-                ProcessIdParseError::MissingField => "Missing field in ProcessId string",
-            }
-        )
+        write!(f, "{}", self.to_string())
     }
 }
 
@@ -276,7 +287,23 @@ impl Address {
             process: self.process.en_wit(),
         }
     }
+    pub fn en_wit_v0(&self) -> crate::v0::wit::Address {
+        crate::v0::wit::Address {
+            node: self.node.clone(),
+            process: self.process.en_wit_v0(),
+        }
+    }
     pub fn de_wit(wit: wit::Address) -> Address {
+        Address {
+            node: wit.node,
+            process: ProcessId {
+                process_name: wit.process.process_name,
+                package_name: wit.process.package_name,
+                publisher_node: wit.process.publisher_node,
+            },
+        }
+    }
+    pub fn de_wit_v0(wit: crate::v0::wit::Address) -> Address {
         Address {
             node: wit.node,
             process: ProcessId {
@@ -293,36 +320,42 @@ impl std::str::FromStr for Address {
     /// Attempt to parse an `Address` from a string. The formatting structure for
     /// an Address is `node@process_name:package_name:publisher_node`.
     ///
-    /// TODO: clarify if `@` can be present in process name / package name / publisher name
-    ///
-    /// TODO: ensure `:` cannot sneak into first segment
+    /// The string being parsed must contain exactly one `@` and three `:` characters.
+    /// The `@` character separates the node ID from the rest of the address, and the
+    /// `:` characters separate the process name, package name, and publisher node ID.
     fn from_str(input: &str) -> Result<Self, AddressParseError> {
-        // split string on colons into 4 segments,
-        // first one with @, next 3 with :
-        let mut name_rest = input.split('@');
-        let node = name_rest
-            .next()
-            .ok_or(AddressParseError::MissingField)?
-            .to_string();
-        let mut segments = name_rest
-            .next()
-            .ok_or(AddressParseError::MissingNodeId)?
-            .split(':');
-        let process_name = segments
-            .next()
-            .ok_or(AddressParseError::MissingField)?
-            .to_string();
-        let package_name = segments
-            .next()
-            .ok_or(AddressParseError::MissingField)?
-            .to_string();
-        let publisher_node = segments
-            .next()
-            .ok_or(AddressParseError::MissingField)?
-            .to_string();
-        if segments.next().is_some() {
+        // split string on '@' and ensure there is exactly one '@'
+        let parts: Vec<&str> = input.split('@').collect();
+        if parts.len() < 2 {
+            return Err(AddressParseError::MissingNodeId);
+        } else if parts.len() > 2 {
+            return Err(AddressParseError::TooManyAts);
+        }
+        let node = parts[0].to_string();
+        if node.is_empty() {
+            return Err(AddressParseError::MissingNodeId);
+        }
+
+        // split the rest on ':' and ensure there are exactly three ':'
+        let segments: Vec<&str> = parts[1].split(':').collect();
+        if segments.len() < 3 {
+            return Err(AddressParseError::MissingField);
+        } else if segments.len() > 3 {
             return Err(AddressParseError::TooManyColons);
         }
+        let process_name = segments[0].to_string();
+        if process_name.is_empty() {
+            return Err(AddressParseError::MissingField);
+        }
+        let package_name = segments[1].to_string();
+        if package_name.is_empty() {
+            return Err(AddressParseError::MissingField);
+        }
+        let publisher_node = segments[2].to_string();
+        if publisher_node.is_empty() {
+            return Err(AddressParseError::MissingField);
+        }
+
         Ok(Address {
             node,
             process: ProcessId {
@@ -375,8 +408,8 @@ impl std::fmt::Display for Address {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum AddressParseError {
+    TooManyAts,
     TooManyColons,
     MissingNodeId,
     MissingField,
@@ -384,21 +417,14 @@ pub enum AddressParseError {
 
 impl std::fmt::Display for AddressParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                AddressParseError::TooManyColons => "Too many colons in ProcessId string",
-                AddressParseError::MissingNodeId => "Node ID missing",
-                AddressParseError::MissingField => "Missing field in ProcessId string",
-            }
-        )
+        write!(f, "{self}")
     }
 }
 
 impl std::error::Error for AddressParseError {
     fn description(&self) -> &str {
         match self {
+            AddressParseError::TooManyAts => "Too many '@' chars in ProcessId string",
             AddressParseError::TooManyColons => "Too many colons in ProcessId string",
             AddressParseError::MissingNodeId => "Node ID missing",
             AddressParseError::MissingField => "Missing field in ProcessId string",
@@ -509,6 +535,24 @@ impl OnExit {
         }
     }
 
+    pub fn en_wit_v0(&self) -> crate::v0::wit::OnExit {
+        match self {
+            OnExit::None => crate::v0::wit::OnExit::None,
+            OnExit::Restart => crate::v0::wit::OnExit::Restart,
+            OnExit::Requests(reqs) => crate::v0::wit::OnExit::Requests(
+                reqs.iter()
+                    .map(|(address, request, blob)| {
+                        (
+                            address.en_wit_v0(),
+                            en_wit_request_v0(request.clone()),
+                            en_wit_blob_v0(blob.clone()),
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
     pub fn de_wit(wit: wit::OnExit) -> Self {
         match wit {
             wit::OnExit::None => OnExit::None,
@@ -520,6 +564,24 @@ impl OnExit {
                             Address::de_wit(address),
                             de_wit_request(request),
                             de_wit_blob(blob),
+                        )
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    pub fn de_wit_v0(wit: crate::v0::wit::OnExit) -> Self {
+        match wit {
+            crate::v0::wit::OnExit::None => OnExit::None,
+            crate::v0::wit::OnExit::Restart => OnExit::Restart,
+            crate::v0::wit::OnExit::Requests(reqs) => OnExit::Requests(
+                reqs.into_iter()
+                    .map(|(address, request, blob)| {
+                        (
+                            Address::de_wit_v0(address),
+                            de_wit_request_v0(request),
+                            de_wit_blob_v0(blob),
                         )
                     })
                     .collect(),
@@ -625,6 +687,20 @@ pub fn de_wit_request(wit: wit::Request) -> Request {
     }
 }
 
+pub fn de_wit_request_v0(wit: crate::v0::wit::Request) -> Request {
+    Request {
+        inherit: wit.inherit,
+        expects_response: wit.expects_response,
+        body: wit.body,
+        metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .iter()
+            .map(|cap| de_wit_capability_v0(cap.clone()))
+            .collect(),
+    }
+}
+
 pub fn en_wit_request(request: Request) -> wit::Request {
     wit::Request {
         inherit: request.inherit,
@@ -635,6 +711,20 @@ pub fn en_wit_request(request: Request) -> wit::Request {
             .capabilities
             .iter()
             .map(|cap| en_wit_capability(cap.clone()))
+            .collect(),
+    }
+}
+
+pub fn en_wit_request_v0(request: Request) -> crate::v0::wit::Request {
+    crate::v0::wit::Request {
+        inherit: request.inherit,
+        expects_response: request.expects_response,
+        body: request.body,
+        metadata: request.metadata,
+        capabilities: request
+            .capabilities
+            .iter()
+            .map(|cap| en_wit_capability_v0(cap.clone()))
             .collect(),
     }
 }
@@ -652,6 +742,19 @@ pub fn de_wit_response(wit: wit::Response) -> Response {
     }
 }
 
+pub fn de_wit_response_v0(wit: crate::v0::wit::Response) -> Response {
+    Response {
+        inherit: wit.inherit,
+        body: wit.body,
+        metadata: wit.metadata,
+        capabilities: wit
+            .capabilities
+            .iter()
+            .map(|cap| de_wit_capability_v0(cap.clone()))
+            .collect(),
+    }
+}
+
 pub fn en_wit_response(response: Response) -> wit::Response {
     wit::Response {
         inherit: response.inherit,
@@ -661,6 +764,19 @@ pub fn en_wit_response(response: Response) -> wit::Response {
             .capabilities
             .iter()
             .map(|cap| en_wit_capability(cap.clone()))
+            .collect(),
+    }
+}
+
+pub fn en_wit_response_v0(response: Response) -> crate::v0::wit::Response {
+    crate::v0::wit::Response {
+        inherit: response.inherit,
+        body: response.body,
+        metadata: response.metadata,
+        capabilities: response
+            .capabilities
+            .iter()
+            .map(|cap| en_wit_capability_v0(cap.clone()))
             .collect(),
     }
 }
@@ -675,10 +791,30 @@ pub fn de_wit_blob(wit: Option<wit::LazyLoadBlob>) -> Option<LazyLoadBlob> {
     }
 }
 
+pub fn de_wit_blob_v0(wit: Option<crate::v0::wit::LazyLoadBlob>) -> Option<LazyLoadBlob> {
+    match wit {
+        None => None,
+        Some(wit) => Some(LazyLoadBlob {
+            mime: wit.mime,
+            bytes: wit.bytes,
+        }),
+    }
+}
+
 pub fn en_wit_blob(load: Option<LazyLoadBlob>) -> Option<wit::LazyLoadBlob> {
     match load {
         None => None,
         Some(load) => Some(wit::LazyLoadBlob {
+            mime: load.mime,
+            bytes: load.bytes,
+        }),
+    }
+}
+
+pub fn en_wit_blob_v0(load: Option<LazyLoadBlob>) -> Option<crate::v0::wit::LazyLoadBlob> {
+    match load {
+        None => None,
+        Some(load) => Some(crate::v0::wit::LazyLoadBlob {
             mime: load.mime,
             bytes: load.bytes,
         }),
@@ -702,9 +838,33 @@ pub fn de_wit_capability(wit: wit::Capability) -> (Capability, Vec<u8>) {
     )
 }
 
+pub fn de_wit_capability_v0(wit: crate::v0::wit::Capability) -> (Capability, Vec<u8>) {
+    (
+        Capability {
+            issuer: Address {
+                node: wit.issuer.node,
+                process: ProcessId {
+                    process_name: wit.issuer.process.process_name,
+                    package_name: wit.issuer.process.package_name,
+                    publisher_node: wit.issuer.process.publisher_node,
+                },
+            },
+            params: wit.params,
+        },
+        vec![],
+    )
+}
+
 pub fn en_wit_capability(cap: (Capability, Vec<u8>)) -> wit::Capability {
     wit::Capability {
         issuer: cap.0.issuer.en_wit(),
+        params: cap.0.params,
+    }
+}
+
+pub fn en_wit_capability_v0(cap: (Capability, Vec<u8>)) -> crate::v0::wit::Capability {
+    crate::v0::wit::Capability {
+        issuer: cap.0.issuer.en_wit_v0(),
         params: cap.0.params,
     }
 }
@@ -718,6 +878,15 @@ pub fn en_wit_message(message: Message) -> wit::Message {
     }
 }
 
+pub fn en_wit_message_v0(message: Message) -> crate::v0::wit::Message {
+    match message {
+        Message::Request(request) => crate::v0::wit::Message::Request(en_wit_request_v0(request)),
+        Message::Response((response, context)) => {
+            crate::v0::wit::Message::Response((en_wit_response_v0(response), context))
+        }
+    }
+}
+
 pub fn en_wit_send_error(error: SendError) -> wit::SendError {
     wit::SendError {
         kind: en_wit_send_error_kind(error.kind),
@@ -726,10 +895,26 @@ pub fn en_wit_send_error(error: SendError) -> wit::SendError {
     }
 }
 
+pub fn en_wit_send_error_v0(error: SendError) -> crate::v0::wit::SendError {
+    crate::v0::wit::SendError {
+        kind: en_wit_send_error_kind_v0(error.kind),
+        target: error.target.en_wit_v0(),
+        message: en_wit_message_v0(error.message),
+        lazy_load_blob: en_wit_blob_v0(error.lazy_load_blob),
+    }
+}
+
 pub fn en_wit_send_error_kind(kind: SendErrorKind) -> wit::SendErrorKind {
     match kind {
         SendErrorKind::Offline => wit::SendErrorKind::Offline,
         SendErrorKind::Timeout => wit::SendErrorKind::Timeout,
+    }
+}
+
+pub fn en_wit_send_error_kind_v0(kind: SendErrorKind) -> crate::v0::wit::SendErrorKind {
+    match kind {
+        SendErrorKind::Offline => crate::v0::wit::SendErrorKind::Offline,
+        SendErrorKind::Timeout => crate::v0::wit::SendErrorKind::Timeout,
     }
 }
 
@@ -903,7 +1088,8 @@ pub struct UnencryptedIdentity {
 pub struct ProcessMetadata {
     pub our: Address,
     pub wasm_bytes_handle: String,
-    pub wit_version: u32,
+    /// if None, use the oldest version: 0.7.0
+    pub wit_version: Option<u32>,
     pub on_exit: OnExit,
     pub public: bool,
 }
@@ -1084,7 +1270,7 @@ impl std::fmt::Display for PersistedProcess {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             f,
-            "Process {{\n    wasm_bytes_handle: {},\n    wit_version: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
+            "Process {{\n    wasm_bytes_handle: {},\n    wit_version: {:?},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
             {
                 if &self.wasm_bytes_handle == "" {
                     "(none, this is a runtime process)"
@@ -1092,7 +1278,7 @@ impl std::fmt::Display for PersistedProcess {
                     &self.wasm_bytes_handle
                 }
             },
-            self.wit_version.unwrap_or_default(),
+            self.wit_version,
             self.on_exit,
             self.public,
             {
@@ -1137,6 +1323,7 @@ pub struct Erc721Metadata {
 /// - `license`: An optional field containing the license of the package.
 /// - `screenshots`: An optional field containing a list of URLs to screenshots of the package.
 /// - `wit_version`: An optional field containing the version of the WIT standard that the package adheres to.
+/// - `dependencies`: An optional field containing a list of `PackageId`s: API dependencies.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Erc721Properties {
     pub package_name: String,
@@ -1146,7 +1333,8 @@ pub struct Erc721Properties {
     pub code_hashes: HashMap<String, String>,
     pub license: Option<String>,
     pub screenshots: Option<Vec<String>>,
-    pub wit_version: Option<(u32, u32, u32)>,
+    pub wit_version: Option<u32>,
+    pub dependencies: Option<Vec<String>>,
 }
 
 /// the type that gets deserialized from each entry in the array in `manifest.json`
@@ -1648,7 +1836,7 @@ pub enum NetResponse {
     Verified(bool),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct KnsUpdate {
     pub name: String, // actual username / domain name
     pub owner: String,

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Kinode Settings</title>
+    <link rel="stylesheet" href="/settings:settings:sys/style.css">
+</head>
+
+<body>
+    <h1>system diagnostics & settings</h1>
+    <main>
+        <article id="net-diagnostics">
+            <h2>networking diagnostics</h2>
+            <p id="diagnostics"></p>
+        </article>
+
+        <article id="node-info">
+            <h2>node info</h2>
+            <p id="node-name"></p>
+            <p id="net-key"></p>
+            <p id="ip-ports"></p>
+            <p id="routers"></p>
+            <button>reset networking key (TODO)</button>
+            <button>adjust networking info (TODO)</button>
+            <button id="shutdown">shut down node</button>
+        </article>
+
+        <article id="pings">
+            <h2>fetch PKI data</h2>
+            <form id="get-peer-pki">
+                <input type="text" name="peer" placeholder="peer-name.os">
+                <button type="submit">get peer info</button>
+            </form>
+            <p id="peer-pki-response"></p>
+            <h2>ping a node</h2>
+            <form id="ping-peer">
+                <input type="text" name="peer" placeholder="peer-name.os">
+                <input type="text" name="content" placeholder="message">
+                <input type="number" name="timeout" placeholder="timeout (seconds)">
+                <button type="submit">ping</button>
+            </form>
+            <p id="peer-ping-response"></p>
+        </article>
+
+        <article id="eth-rpc-providers">
+            <h2>ETH RPC providers</h2>
+            <div id="provider-edits">
+                <form id="add-eth-provider">
+                    <input type="number" name="chain-id" placeholder="1">
+                    <input type="text" name="rpc-url" placeholder="wss://rpc-url.com">
+                    <button type="submit">add provider</button>
+                </form>
+                <form id="remove-eth-provider">
+                    <input type="number" name="chain-id" placeholder="1">
+                    <input type="text" name="rpc-url" placeholder="wss://rpc-url.com">
+                    <button type="submit">remove provider</button>
+                </form>
+            </div>
+            <ul id="providers"></ul>
+        </article>
+
+        <article id="eth-rpc-settings">
+            <h2>ETH RPC settings</h2>
+            <p id="public"></p>
+            <div>
+                <p>nodes allowed to connect:</p>
+                <ul id="allowed-nodes"></ul>
+            </div>
+            <div>
+                <p>nodes banned from connecting:</p>
+                <ul id="denied-nodes"></ul>
+            </div>
+        </article>
+
+        <article id="kernel">
+            <h2>running processes</h2>
+            <p>(TODO)</p>
+            <ul></ul>
+        </article>
+
+
+        <script src="/settings:settings:sys/script.js"></script>
+    </main>
+</body>
+
+</html>

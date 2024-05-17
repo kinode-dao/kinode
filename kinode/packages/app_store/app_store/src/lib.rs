@@ -9,8 +9,8 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "process-v0",
 });
 
 mod api;
@@ -39,9 +39,20 @@ use ft_worker_lib::{
 
 const ICON: &str = include_str!("icon");
 
+#[cfg(not(feature = "simulation-mode"))]
 const CHAIN_ID: u64 = 10; // optimism
+#[cfg(feature = "simulation-mode")]
+const CHAIN_ID: u64 = 31337; // local
+
+#[cfg(not(feature = "simulation-mode"))]
 const CONTRACT_ADDRESS: &str = "0x52185B6a6017E6f079B994452F234f7C2533787B"; // optimism
+#[cfg(feature = "simulation-mode")]
+const CONTRACT_ADDRESS: &str = "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318"; // local
+
+#[cfg(not(feature = "simulation-mode"))]
 const CONTRACT_FIRST_BLOCK: u64 = 118_590_088;
+#[cfg(feature = "simulation-mode")]
+const CONTRACT_FIRST_BLOCK: u64 = 1;
 
 const EVENTS: [&str; 3] = [
     "AppRegistered(uint256,string,bytes,string,bytes32)",
@@ -71,7 +82,6 @@ pub enum Resp {
 }
 
 fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Log> {
-    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.get_logs(filter) {
             Ok(res) => return res,
@@ -82,13 +92,10 @@ fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Lo
             }
         }
     }
-    #[cfg(feature = "simulation-mode")] // TODO use local testnet, provider_chainId: 31337
-    vec![]
 }
 
 #[allow(unused_variables)]
 fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
-    #[cfg(not(feature = "simulation-mode"))]
     loop {
         match eth_provider.subscribe(1, filter.clone()) {
             Ok(()) => break,
@@ -99,8 +106,74 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
             }
         }
     }
-    #[cfg(not(feature = "simulation-mode"))]
     println!("subscribed to logs successfully");
+}
+
+fn get_widget() -> String {
+    return r#"<html>
+<head>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .app {
+            width: 100%;
+        }
+
+        .app-image {
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .app-info {
+            max-width: 67%
+        }
+
+        @media screen and (min-width: 500px) {
+            .app {
+                width: 49%;
+            }
+        }
+    </style>
+</head>
+<body class="text-white overflow-hidden">
+    <div
+        id="latest-apps"
+        class="flex flex-wrap p-2 gap-2 items-center backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto"
+        style="
+            scrollbar-color: transparent transparent;
+            scrollbar-width: none;
+        "
+    >
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/main:app_store:sys/apps/listed')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('latest-apps');
+                    data.forEach(app => {
+                        const a = document.createElement('a');
+                        a.className = 'app p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 hover:bg-white/20 font-sans cursor-pointer';
+                        a.href = `/main:app_store:sys/app-details/${app.package}:${app.publisher}` 
+                        a.target = '_blank';
+                        a.rel = 'noopener noreferrer';
+                        a.innerHTML = `${app.metadata.image ? `<div
+                            class="app-image rounded mr-2 grow"
+                            style="background-image: url('${app.metadata.image}');"
+                        ></div>` : ''}
+                        <div class="app-info flex flex-col grow">
+                            <h2 class="font-bold">${app.metadata.name}</h2>
+                            <p>${app.metadata.description}</p>
+                        </div>`;
+                        container.appendChild(a);
+                    });
+                })
+                .catch(error => console.error('Error fetching apps:', error));
+        });
+    </script>
+</body>
+</html>"#
+        .to_string();
 }
 
 call_init!(init);
@@ -137,7 +210,8 @@ fn init(our: Address) {
                 "Add": {
                     "label": "App Store",
                     "icon": ICON,
-                    "path": "/" // just our root
+                    "path": "/", // just our root
+                    "widget": get_widget()
                 }
             })
             .to_string()
@@ -147,24 +221,33 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    // load in our saved state or initalize a new one if none exists
-    let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))
-        .unwrap_or(State::new(CONTRACT_ADDRESS.to_string()).unwrap());
+    let mut state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?))
+    {
+        Some(state) => {
+            println!("loaded saved state");
+            state
+        }
+        _ => {
+            println!("failed to load state, initializing");
+            State::new(CONTRACT_ADDRESS.to_string()).unwrap()
+        }
+    };
+    // // load in our saved state or initalize a new one if none exists
+    // let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))
+    //     .unwrap_or(State::new(CONTRACT_ADDRESS.to_string()).unwrap());
 
     if state.contract_address != CONTRACT_ADDRESS {
         println!("warning: contract address mismatch--overwriting saved state");
         state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
     }
 
-    #[cfg(not(feature = "simulation-mode"))]
     println!("indexing on contract address {}", state.contract_address);
-    #[cfg(feature = "simulation-mode")]
-    println!("simulation mode: not indexing packages");
 
     // create new provider for sepolia with request-timeout of 60s
     // can change, log requests can take quite a long time.
     let eth_provider = eth::Provider::new(CHAIN_ID, 60);
 
+    let mut requested_apis: HashMap<PackageId, RequestedPackage> = HashMap::new();
     let mut requested_packages: HashMap<PackageId, RequestedPackage> = HashMap::new();
 
     // get past logs, subscribe to new ones.
@@ -175,7 +258,7 @@ fn init(our: Address) {
         .events(EVENTS);
 
     for log in fetch_logs(&eth_provider, &filter) {
-        if let Err(e) = state.ingest_listings_contract_event(&our, log) {
+        if let Err(e) = state.ingest_listings_contract_event(&our, log, &mut requested_apis) {
             println!("error ingesting log: {e:?}");
         };
     }
@@ -195,6 +278,7 @@ fn init(our: Address) {
                     &our,
                     &mut state,
                     &eth_provider,
+                    &mut requested_apis,
                     &mut requested_packages,
                     &message,
                 ) {
@@ -225,9 +309,10 @@ fn init(our: Address) {
 /// finally, fire a response if expected from a request.
 fn handle_message(
     our: &Address,
-    mut state: &mut State,
+    state: &mut State,
     eth_provider: &eth::Provider,
-    mut requested_packages: &mut HashMap<PackageId, RequestedPackage>,
+    requested_apis: &mut HashMap<PackageId, RequestedPackage>,
+    requested_packages: &mut HashMap<PackageId, RequestedPackage>,
     message: &Message,
 ) -> anyhow::Result<()> {
     match message {
@@ -241,25 +326,32 @@ fn handle_message(
                 if our.node != source.node {
                     return Err(anyhow::anyhow!("local request from non-local node"));
                 }
-                let resp = handle_local_request(
+                let (body, blob) = handle_local_request(
                     &our,
                     &local_request,
-                    &mut state,
+                    state,
                     eth_provider,
-                    &mut requested_packages,
+                    requested_apis,
+                    requested_packages,
                 );
                 if expects_response.is_some() {
-                    Response::new().body(serde_json::to_vec(&resp)?).send()?;
+                    let response = Response::new().body(serde_json::to_vec(&body)?);
+                    let response = if let Some(blob) = blob {
+                        response.blob(blob)
+                    } else {
+                        response
+                    };
+                    response.send()?;
                 }
             }
             Req::RemoteRequest(remote_request) => {
-                let resp = handle_remote_request(&our, &source, &remote_request, &mut state);
+                let resp = handle_remote_request(&our, &source, &remote_request, state);
                 if expects_response.is_some() {
                     Response::new().body(serde_json::to_vec(&resp)?).send()?;
                 }
             }
             Req::FTWorkerResult(FTWorkerResult::ReceiveSuccess(name)) => {
-                handle_receive_download(&our, &mut state, &name, &mut requested_packages)?;
+                handle_receive_download(&our, state, &name, requested_apis, requested_packages)?;
             }
             Req::FTWorkerCommand(_) => {
                 spawn_receive_transfer(&our, &body)?;
@@ -272,7 +364,7 @@ fn handle_message(
                     return Err(anyhow::anyhow!("eth sub event from weird addr: {source}"));
                 }
                 if let Ok(eth::EthSub { result, .. }) = eth_result {
-                    handle_eth_sub_event(our, &mut state, result)?;
+                    handle_eth_sub_event(our, state, result, requested_apis)?;
                 } else {
                     println!("got eth subscription error");
                     // attempt to resubscribe
@@ -295,8 +387,9 @@ fn handle_message(
                 if let HttpServerRequest::Http(req) = incoming {
                     http_api::handle_http_request(
                         our,
-                        &mut state,
+                        state,
                         eth_provider,
+                        requested_apis,
                         requested_packages,
                         &req,
                     )?;
@@ -371,6 +464,55 @@ fn handle_remote_request(
                 )),
             }
         }
+        RemoteRequest::DownloadApi {
+            package_id,
+            desired_version_hash,
+        } => {
+            let Some(package_state) = state.get_downloaded_package(package_id) else {
+                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::NoPackage,
+                ));
+            };
+            if !package_state.mirroring {
+                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::NotMirroring,
+                ));
+            }
+            if let Some(desired_version_hash) = desired_version_hash {
+                if &package_state.our_version != desired_version_hash {
+                    return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                        ReasonDenied::HashMismatch {
+                            requested: desired_version_hash.clone(),
+                            have: package_state.our_version.clone(),
+                        },
+                    ));
+                }
+            }
+            let file_name = format!("/{}-api-v0.zip", package_id); // TODO: actual version
+                                                                   // get the .zip from VFS and attach as blob to response
+            let file_path = format!("/{}/pkg/api.zip", package_id);
+            let Ok(Ok(_)) = Request::to(("our", "vfs", "distro", "sys"))
+                .body(
+                    serde_json::to_vec(&vfs::VfsRequest {
+                        path: file_path,
+                        action: vfs::VfsAction::Read,
+                    })
+                    .unwrap(),
+                )
+                .send_and_await_response(5)
+            else {
+                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::FileNotFound,
+                ));
+            };
+            // transfer will *inherit* the blob bytes we receive from VFS
+            match spawn_transfer(&our, &file_name, None, 60, &source) {
+                Ok(()) => Resp::RemoteResponse(RemoteResponse::DownloadApproved),
+                Err(_e) => Resp::RemoteResponse(RemoteResponse::DownloadDenied(
+                    ReasonDenied::WorkerSpawnFailed,
+                )),
+            }
+        }
     }
 }
 
@@ -380,12 +522,20 @@ fn handle_local_request(
     request: &LocalRequest,
     state: &mut State,
     eth_provider: &eth::Provider,
+    requested_apis: &mut HashMap<PackageId, RequestedPackage>,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
-) -> LocalResponse {
+) -> (LocalResponse, Option<LazyLoadBlob>) {
     match request {
-        LocalRequest::NewPackage { package, mirror } => {
+        LocalRequest::NewPackage {
+            package,
+            metadata,
+            mirror,
+        } => {
             let Some(blob) = get_blob() else {
-                return LocalResponse::NewPackageResponse(NewPackageResponse::Failure);
+                return (
+                    LocalResponse::NewPackageResponse(NewPackageResponse::Failure),
+                    None,
+                );
             };
             // set the version hash for this new local package
             let our_version = generate_version_hash(&blob.bytes);
@@ -399,13 +549,35 @@ fn handle_local_request(
                 manifest_hash: None, // generated in the add fn
                 mirroring: *mirror,
                 auto_update: false, // can't auto-update a local package
-                metadata: None,     // TODO
+                metadata: Some(metadata.clone()),
             };
             let Ok(()) = state.add_downloaded_package(package, package_state, Some(blob.bytes))
             else {
-                return LocalResponse::NewPackageResponse(NewPackageResponse::Failure);
+                return (
+                    LocalResponse::NewPackageResponse(NewPackageResponse::Failure),
+                    None,
+                );
             };
-            LocalResponse::NewPackageResponse(NewPackageResponse::Success)
+
+            let drive_path = format!("/{package}/pkg");
+            let result = Request::new()
+                .target(("our", "vfs", "distro", "sys"))
+                .body(
+                    serde_json::to_vec(&vfs::VfsRequest {
+                        path: format!("{}/api", drive_path),
+                        action: vfs::VfsAction::Metadata,
+                    })
+                    .unwrap(),
+                )
+                .send_and_await_response(5);
+            if let Ok(Ok(_)) = result {
+                state.downloaded_apis.insert(package.to_owned());
+            };
+
+            (
+                LocalResponse::NewPackageResponse(NewPackageResponse::Success),
+                None,
+            )
         }
         LocalRequest::Download {
             package: package_id,
@@ -413,40 +585,102 @@ fn handle_local_request(
             mirror,
             auto_update,
             desired_version_hash,
-        } => LocalResponse::DownloadResponse(start_download(
-            our,
-            requested_packages,
-            package_id,
-            download_from,
-            *mirror,
-            *auto_update,
-            desired_version_hash,
-        )),
-        LocalRequest::Install(package) => match handle_install(our, state, package) {
-            Ok(()) => LocalResponse::InstallResponse(InstallResponse::Success),
-            Err(_) => LocalResponse::InstallResponse(InstallResponse::Failure),
-        },
-        LocalRequest::Uninstall(package) => match state.uninstall(package) {
-            Ok(()) => LocalResponse::UninstallResponse(UninstallResponse::Success),
-            Err(_) => LocalResponse::UninstallResponse(UninstallResponse::Failure),
-        },
-        LocalRequest::StartMirroring(package) => match state.start_mirroring(package) {
-            true => LocalResponse::MirrorResponse(MirrorResponse::Success),
-            false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
-        },
-        LocalRequest::StopMirroring(package) => match state.stop_mirroring(package) {
-            true => LocalResponse::MirrorResponse(MirrorResponse::Success),
-            false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
-        },
-        LocalRequest::StartAutoUpdate(package) => match state.start_auto_update(package) {
-            true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
-            false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
-        },
-        LocalRequest::StopAutoUpdate(package) => match state.stop_auto_update(package) {
-            true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
-            false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
-        },
-        LocalRequest::RebuildIndex => rebuild_index(our, state, eth_provider),
+        } => (
+            LocalResponse::DownloadResponse(start_download(
+                our,
+                requested_packages,
+                package_id,
+                download_from,
+                *mirror,
+                *auto_update,
+                desired_version_hash,
+            )),
+            None,
+        ),
+        LocalRequest::Install(package) => (
+            match handle_install(our, state, package) {
+                Ok(()) => LocalResponse::InstallResponse(InstallResponse::Success),
+                Err(_) => LocalResponse::InstallResponse(InstallResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::Uninstall(package) => (
+            match state.uninstall(package) {
+                Ok(()) => LocalResponse::UninstallResponse(UninstallResponse::Success),
+                Err(_) => LocalResponse::UninstallResponse(UninstallResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::StartMirroring(package) => (
+            match state.start_mirroring(package) {
+                true => LocalResponse::MirrorResponse(MirrorResponse::Success),
+                false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::StopMirroring(package) => (
+            match state.stop_mirroring(package) {
+                true => LocalResponse::MirrorResponse(MirrorResponse::Success),
+                false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::StartAutoUpdate(package) => (
+            match state.start_auto_update(package) {
+                true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
+                false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::StopAutoUpdate(package) => (
+            match state.stop_auto_update(package) {
+                true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
+                false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
+            },
+            None,
+        ),
+        LocalRequest::RebuildIndex => (
+            rebuild_index(our, state, eth_provider, requested_apis),
+            None,
+        ),
+        LocalRequest::ListApis => (list_apis(state), None),
+        LocalRequest::GetApi(ref package_id) => get_api(package_id, state),
+    }
+}
+
+pub fn get_api(package_id: &PackageId, state: &mut State) -> (LocalResponse, Option<LazyLoadBlob>) {
+    let (response, blob) = if !state.downloaded_apis.contains(package_id) {
+        (GetApiResponse::Failure, None)
+    } else {
+        let drive_path = format!("/{package_id}/pkg");
+        let result = Request::new()
+            .target(("our", "vfs", "distro", "sys"))
+            .body(
+                serde_json::to_vec(&vfs::VfsRequest {
+                    path: format!("{}/api.zip", drive_path),
+                    action: vfs::VfsAction::Read,
+                })
+                .unwrap(),
+            )
+            .send_and_await_response(5);
+        let Ok(Ok(_)) = result else {
+            return (LocalResponse::GetApiResponse(GetApiResponse::Failure), None);
+        };
+        let Some(blob) = get_blob() else {
+            return (LocalResponse::GetApiResponse(GetApiResponse::Failure), None);
+        };
+        let blob = LazyLoadBlob {
+            mime: Some("application/json".to_string()),
+            bytes: blob.bytes,
+        };
+        (GetApiResponse::Success, Some(blob))
+    };
+    (LocalResponse::GetApiResponse(response), blob)
+}
+
+pub fn list_apis(state: &mut State) -> LocalResponse {
+    LocalResponse::ListApisResponse {
+        apis: state.downloaded_apis.iter().cloned().collect(),
     }
 }
 
@@ -454,25 +688,63 @@ pub fn rebuild_index(
     our: &Address,
     state: &mut State,
     eth_provider: &eth::Provider,
+    requested_apis: &mut HashMap<PackageId, RequestedPackage>,
 ) -> LocalResponse {
     *state = State::new(CONTRACT_ADDRESS.to_string()).unwrap();
     // kill our old subscription and build a new one.
-    eth_provider
-        .unsubscribe(1)
-        .expect("app_store: failed to unsub from eth events!");
+    let _ = eth_provider.unsubscribe(1);
 
     let filter = eth::Filter::new()
         .address(eth::Address::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block - 1)
         .events(EVENTS);
 
+    subscribe_to_logs(&eth_provider, filter.clone());
+
     for log in fetch_logs(&eth_provider, &filter) {
-        if let Err(e) = state.ingest_listings_contract_event(our, log) {
+        if let Err(e) = state.ingest_listings_contract_event(our, log, requested_apis) {
             println!("error ingesting log: {e:?}");
         };
     }
-    subscribe_to_logs(&eth_provider, filter);
+
     LocalResponse::RebuiltIndex
+}
+
+pub fn start_api_download(
+    our: &Address,
+    requested_apis: &mut HashMap<PackageId, RequestedPackage>,
+    package_id: PackageId,
+    download_from: &NodeId,
+    desired_version_hash: Option<&str>,
+) -> DownloadResponse {
+    match Request::to((download_from.as_str(), our.process.clone()))
+        .inherit(true)
+        .body(
+            serde_json::to_vec(&RemoteRequest::DownloadApi {
+                package_id: package_id.clone(),
+                desired_version_hash: desired_version_hash.map(|s| s.to_string()),
+            })
+            .unwrap(),
+        )
+        .send_and_await_response(5)
+    {
+        Ok(Ok(Message::Response { body, .. })) => match serde_json::from_slice::<Resp>(&body) {
+            Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) => {
+                requested_apis.insert(
+                    package_id,
+                    RequestedPackage {
+                        from: download_from.to_string(),
+                        mirror: false,
+                        auto_update: false,
+                        desired_version_hash: desired_version_hash.map(|s| s.to_string()),
+                    },
+                );
+                DownloadResponse::Started
+            }
+            _ => DownloadResponse::Failure,
+        },
+        _ => DownloadResponse::Failure,
+    }
 }
 
 pub fn start_download(
@@ -518,18 +790,83 @@ fn handle_receive_download(
     our: &Address,
     state: &mut State,
     package_name: &str,
+    requested_apis: &mut HashMap<PackageId, RequestedPackage>,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
 ) -> anyhow::Result<()> {
     // remove leading / and .zip from file name to get package ID
     let package_name = package_name[1..].trim_end_matches(".zip");
     let Ok(package_id) = package_name.parse::<PackageId>() else {
-        return Err(anyhow::anyhow!(
-            "bad package filename fron download: {package_name}"
-        ));
+        let package_name_split = package_name.split('-').collect::<Vec<_>>();
+        let [package_name, version] = package_name_split.as_slice() else {
+            return Err(anyhow::anyhow!(
+                "bad api package filename from download (failed to split): {package_name}"
+            ));
+        };
+        if version.chars().next() != Some('v') {
+            return Err(anyhow::anyhow!(
+                "bad package filename from download (unexpected version): {package_name}"
+            ));
+        }
+        let Ok(package_id) = package_name.parse::<PackageId>() else {
+            return Err(anyhow::anyhow!(
+                "bad package filename from download (bad PackageId): {package_name}"
+            ));
+        };
+        return handle_receive_download_api(our, state, package_id, version, requested_apis);
     };
+    handle_receive_download_package(our, state, &package_id, requested_packages)
+}
+
+fn handle_receive_download_api(
+    our: &Address,
+    state: &mut State,
+    package_id: PackageId,
+    version: &str,
+    requested_apis: &mut HashMap<PackageId, RequestedPackage>,
+) -> anyhow::Result<()> {
+    println!("successfully received api {}", package_id.package());
+    // only save the package if we actually requested it
+    let Some(requested_package) = requested_apis.remove(&package_id) else {
+        return Err(anyhow::anyhow!("received unrequested api--rejecting!"));
+    };
+    let Some(blob) = get_blob() else {
+        return Err(anyhow::anyhow!("received download but found no blob"));
+    };
+    // check the version hash for this download against requested!!
+    // for now we can reject if it's not latest.
+    let download_hash = generate_version_hash(&blob.bytes);
+    let mut verified = false;
+    // TODO: require api_hash
+    if let Some(hash) = requested_package.desired_version_hash {
+        if download_hash != hash {
+            if hash.is_empty() {
+                println!(
+                    "\x1b[33mwarning: downloaded api has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
+                );
+            } else {
+                return Err(anyhow::anyhow!(
+                    "downloaded api is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
+                ));
+            }
+        } else {
+            verified = true;
+        }
+    };
+
+    state.add_downloaded_api(&package_id, Some(blob.bytes))?;
+
+    Ok(())
+}
+
+fn handle_receive_download_package(
+    our: &Address,
+    state: &mut State,
+    package_id: &PackageId,
+    requested_packages: &mut HashMap<PackageId, RequestedPackage>,
+) -> anyhow::Result<()> {
     println!("successfully received {}", package_id);
     // only save the package if we actually requested it
-    let Some(requested_package) = requested_packages.remove(&package_id) else {
+    let Some(requested_package) = requested_packages.remove(package_id) else {
         return Err(anyhow::anyhow!("received unrequested package--rejecting!"));
     };
     let Some(blob) = get_blob() else {
@@ -557,7 +894,7 @@ fn handle_receive_download(
         }
         None => {
             // check against `metadata.properties.current_version`
-            let Some(package_listing) = state.get_listing(&package_id) else {
+            let Some(package_listing) = state.get_listing(package_id) else {
                 return Err(anyhow::anyhow!(
                     "downloaded package cannot be found in manager--rejecting download!"
                 ));
@@ -592,7 +929,7 @@ fn handle_receive_download(
         }
     }
 
-    let old_manifest_hash = match state.downloaded_packages.get(&package_id) {
+    let old_manifest_hash = match state.downloaded_packages.get(package_id) {
         Some(package_state) => package_state
             .manifest_hash
             .clone()
@@ -601,7 +938,7 @@ fn handle_receive_download(
     };
 
     state.add_downloaded_package(
-        &package_id,
+        package_id,
         PackageState {
             mirrored_from: Some(requested_package.from),
             our_version: download_hash,
@@ -616,7 +953,7 @@ fn handle_receive_download(
         Some(blob.bytes),
     )?;
 
-    let new_manifest_hash = match state.downloaded_packages.get(&package_id) {
+    let new_manifest_hash = match state.downloaded_packages.get(package_id) {
         Some(package_state) => package_state
             .manifest_hash
             .clone()
@@ -627,7 +964,7 @@ fn handle_receive_download(
     // lastly, if auto_update is true, AND the caps_hash has NOT changed,
     // trigger install!
     if requested_package.auto_update && old_manifest_hash == new_manifest_hash {
-        handle_install(our, state, &package_id)?;
+        handle_install(our, state, package_id)?;
     }
     Ok(())
 }
@@ -655,11 +992,12 @@ fn handle_eth_sub_event(
     our: &Address,
     state: &mut State,
     event: eth::SubscriptionResult,
+    requested_apis: &mut HashMap<PackageId, RequestedPackage>,
 ) -> anyhow::Result<()> {
     let eth::SubscriptionResult::Log(log) = event else {
         return Err(anyhow::anyhow!("got non-log event"));
     };
-    state.ingest_listings_contract_event(our, *log)
+    state.ingest_listings_contract_event(our, *log, requested_apis)
 }
 
 fn fetch_package_manifest(package: &PackageId) -> anyhow::Result<Vec<kt::PackageManifestEntry>> {
@@ -688,6 +1026,12 @@ pub fn handle_install(
 ) -> anyhow::Result<()> {
     let drive_path = format!("/{package_id}/pkg");
     let manifest = fetch_package_manifest(package_id)?;
+    let metadata = state
+        .get_downloaded_package(package_id)
+        .ok_or_else(|| anyhow::anyhow!("package not found in manager"))?
+        .metadata
+        .ok_or_else(|| anyhow::anyhow!("package has no metadata"))?;
+
     // always grant read/write to their drive, which we created for them
     let Some(read_cap) = get_capability(
         &Address::new(&our.node, ("vfs", "distro", "sys")),
@@ -752,7 +1096,7 @@ pub fn handle_install(
                 .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
                     id: parsed_new_process_id.clone(),
                     wasm_bytes_handle: wasm_path,
-                    wit_version: None,
+                    wit_version: metadata.properties.wit_version,
                     on_exit: entry.on_exit.clone(),
                     initial_capabilities: HashSet::new(),
                     public: entry.public,

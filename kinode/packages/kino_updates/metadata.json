@@ -1,0 +1,17 @@
+{
+    "name": "kino_updates",
+    "description": "Updates from Kinode DAO",
+    "image": "https://kinode.org/static/media/kinode.a60d538cb0ae88c56b07.png",
+    "properties": {
+        "package_name": "kino_updates",
+        "current_version": "0.1.0",
+        "publisher": "sys",
+        "mirrors": [],
+        "code_hashes": {
+            "0.1.0": ""
+        },
+        "dependencies": []
+    },
+    "external_url": "https://kinode.org",
+    "animation_url": ""
+}
