@@ -121,7 +121,7 @@ fn main() -> anyhow::Result<()> {
         .par_iter()
         .filter_map(|entry_path| {
             let parent_pkg_path = entry_path.join("pkg");
-            if parent_pkg_path.exists() {
+            if !parent_pkg_path.exists() {
                 // don't run on, e.g., `.DS_Store`
                 return None;
             }
