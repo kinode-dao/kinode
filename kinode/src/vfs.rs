@@ -37,8 +37,7 @@ pub async fn vfs(
         if our_node.clone() != km.source.node {
             println!(
                 "vfs: request must come from our_node={}, got: {}",
-                our_node,
-                km.source.node,
+                our_node, km.source.node,
             );
             continue;
         }
