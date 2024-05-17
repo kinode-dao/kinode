@@ -85,26 +85,29 @@ impl PackageId {
 impl std::str::FromStr for PackageId {
     type Err = ProcessIdParseError;
     /// Attempt to parse a `PackageId` from a string. The string must
-    /// contain exactly two segments, where segments are strings separated
-    /// by a colon `:`. The segments cannot themselves contain colons.
+    /// contain exactly two segments, where segments are non-empty strings
+    /// separated by a colon (`:`). The segments cannot themselves contain colons.
+    ///
     /// Please note that while any string without colons will parse successfully
     /// to create a `PackageId`, not all strings without colons are actually
     /// valid usernames, which the `publisher_node` field of a `PackageId` will
     /// always in practice be.
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        // split string on colons into 2 segments
-        let mut segments = input.split(':');
-        let package_name = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        let publisher_node = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        if segments.next().is_some() {
+        let segments: Vec<&str> = input.split(':').collect();
+        if segments.len() < 2 {
+            return Err(ProcessIdParseError::MissingField);
+        } else if segments.len() > 2 {
             return Err(ProcessIdParseError::TooManyColons);
         }
+        let package_name = segments[0].to_string();
+        if package_name.is_empty() {
+            return Err(ProcessIdParseError::MissingField);
+        }
+        let publisher_node = segments[1].to_string();
+        if publisher_node.is_empty() {
+            return Err(ProcessIdParseError::MissingField);
+        }
+
         Ok(PackageId {
             package_name,
             publisher_node,
@@ -179,22 +182,23 @@ impl std::str::FromStr for ProcessId {
     /// valid usernames, which the `publisher_node` field of a `ProcessId` will
     /// always in practice be.
     fn from_str(input: &str) -> Result<Self, ProcessIdParseError> {
-        // split string on colons into 3 segments
-        let mut segments = input.split(':');
-        let process_name = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        let package_name = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        let publisher_node = segments
-            .next()
-            .ok_or(ProcessIdParseError::MissingField)?
-            .to_string();
-        if segments.next().is_some() {
+        let segments: Vec<&str> = input.split(':').collect();
+        if segments.len() < 3 {
+            return Err(ProcessIdParseError::MissingField);
+        } else if segments.len() > 3 {
             return Err(ProcessIdParseError::TooManyColons);
+        }
+        let process_name = segments[0].to_string();
+        if process_name.is_empty() {
+            return Err(ProcessIdParseError::MissingField);
+        }
+        let package_name = segments[1].to_string();
+        if package_name.is_empty() {
+            return Err(ProcessIdParseError::MissingField);
+        }
+        let publisher_node = segments[2].to_string();
+        if publisher_node.is_empty() {
+            return Err(ProcessIdParseError::MissingField);
         }
         Ok(ProcessId {
             process_name,
@@ -248,14 +252,7 @@ pub enum ProcessIdParseError {
 
 impl std::fmt::Display for ProcessIdParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                ProcessIdParseError::TooManyColons => "Too many colons in ProcessId string",
-                ProcessIdParseError::MissingField => "Missing field in ProcessId string",
-            }
-        )
+        write!(f, "{}", self.to_string())
     }
 }
 
@@ -323,36 +320,42 @@ impl std::str::FromStr for Address {
     /// Attempt to parse an `Address` from a string. The formatting structure for
     /// an Address is `node@process_name:package_name:publisher_node`.
     ///
-    /// TODO: clarify if `@` can be present in process name / package name / publisher name
-    ///
-    /// TODO: ensure `:` cannot sneak into first segment
+    /// The string being parsed must contain exactly one `@` and three `:` characters.
+    /// The `@` character separates the node ID from the rest of the address, and the
+    /// `:` characters separate the process name, package name, and publisher node ID.
     fn from_str(input: &str) -> Result<Self, AddressParseError> {
-        // split string on colons into 4 segments,
-        // first one with @, next 3 with :
-        let mut name_rest = input.split('@');
-        let node = name_rest
-            .next()
-            .ok_or(AddressParseError::MissingField)?
-            .to_string();
-        let mut segments = name_rest
-            .next()
-            .ok_or(AddressParseError::MissingNodeId)?
-            .split(':');
-        let process_name = segments
-            .next()
-            .ok_or(AddressParseError::MissingField)?
-            .to_string();
-        let package_name = segments
-            .next()
-            .ok_or(AddressParseError::MissingField)?
-            .to_string();
-        let publisher_node = segments
-            .next()
-            .ok_or(AddressParseError::MissingField)?
-            .to_string();
-        if segments.next().is_some() {
+        // split string on '@' and ensure there is exactly one '@'
+        let parts: Vec<&str> = input.split('@').collect();
+        if parts.len() < 2 {
+            return Err(AddressParseError::MissingNodeId);
+        } else if parts.len() > 2 {
+            return Err(AddressParseError::TooManyAts);
+        }
+        let node = parts[0].to_string();
+        if node.is_empty() {
+            return Err(AddressParseError::MissingNodeId);
+        }
+
+        // split the rest on ':' and ensure there are exactly three ':'
+        let segments: Vec<&str> = parts[1].split(':').collect();
+        if segments.len() < 3 {
+            return Err(AddressParseError::MissingField);
+        } else if segments.len() > 3 {
             return Err(AddressParseError::TooManyColons);
         }
+        let process_name = segments[0].to_string();
+        if process_name.is_empty() {
+            return Err(AddressParseError::MissingField);
+        }
+        let package_name = segments[1].to_string();
+        if package_name.is_empty() {
+            return Err(AddressParseError::MissingField);
+        }
+        let publisher_node = segments[2].to_string();
+        if publisher_node.is_empty() {
+            return Err(AddressParseError::MissingField);
+        }
+
         Ok(Address {
             node,
             process: ProcessId {
@@ -405,8 +408,8 @@ impl std::fmt::Display for Address {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum AddressParseError {
+    TooManyAts,
     TooManyColons,
     MissingNodeId,
     MissingField,
@@ -414,21 +417,14 @@ pub enum AddressParseError {
 
 impl std::fmt::Display for AddressParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                AddressParseError::TooManyColons => "Too many colons in ProcessId string",
-                AddressParseError::MissingNodeId => "Node ID missing",
-                AddressParseError::MissingField => "Missing field in ProcessId string",
-            }
-        )
+        write!(f, "{self}")
     }
 }
 
 impl std::error::Error for AddressParseError {
     fn description(&self) -> &str {
         match self {
+            AddressParseError::TooManyAts => "Too many '@' chars in ProcessId string",
             AddressParseError::TooManyColons => "Too many colons in ProcessId string",
             AddressParseError::MissingNodeId => "Node ID missing",
             AddressParseError::MissingField => "Missing field in ProcessId string",
