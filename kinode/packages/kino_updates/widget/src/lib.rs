@@ -6,10 +6,6 @@ wit_bindgen::generate!({
     world: "process",
 });
 
-/// Fetching OS version from main package.. LMK if there's a better way...
-const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
-/// A static message to display on the homepage.
-const MOTD: &str = "Welcome to Kinode!";
 /// 20 minutes
 const REFRESH_INTERVAL: u64 = 20 * 60 * 1000;
 
@@ -79,43 +75,25 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         }}
     </style>
 </head>
-<body class="text-white overflow-hidden">
-    <p>Kinode {}: {}</p>
-    <p>Recent posts from kinode.org:</p>
+<body class="text-white overflow-hidden h-screen w-screen flex flex-col gap-2">
     <div
         id="latest-blog-posts"
-        class="flex flex-col p-2 gap-2 backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto"
+        class="flex flex-col p-2 gap-2 backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto self-stretch"
         style="
             scrollbar-color: transparent transparent;
             scrollbar-width: none;
         "
     >
+        <p class="m-0 self-stretch text-center">Recent Posts</p>
         {}
     </div>
 </body>
 </html>"#,
-        version_from_cargo_toml(),
-        MOTD,
         posts
             .into_iter()
             .map(post_to_html_string)
             .collect::<String>()
     );
-}
-
-fn version_from_cargo_toml() -> String {
-    let version = CARGO_TOML
-        .lines()
-        .find(|line| line.starts_with("version = "))
-        .expect("Failed to find version in Cargo.toml");
-
-    version
-        .split('=')
-        .last()
-        .expect("Failed to parse version from Cargo.toml")
-        .trim()
-        .trim_matches('"')
-        .to_string()
 }
 
 fn fetch_three_most_recent_blog_posts() -> Vec<KinodeBlogPost> {
