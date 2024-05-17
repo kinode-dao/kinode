@@ -219,7 +219,13 @@ async fn connect_websocket(
     let ws_stream = match connect_async(req).await {
         Ok((ws_stream, _)) => ws_stream,
         Err(e) => {
-            println!("{e:?}");
+            let _ = print_tx
+                .send(Printout {
+                    verbosity: 1,
+                    content: format!("http_client: underlying lib connection error {e:?}"),
+                })
+                .await;
+
             return Err(HttpClientError::WsOpenFailed {
                 url: url.to_string(),
             });
