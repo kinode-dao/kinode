@@ -152,9 +152,12 @@ fn get_widget() -> String {
                 .then(data => {
                     const container = document.getElementById('latest-apps');
                     data.forEach(app => {
-                        const div = document.createElement('div');
-                        div.className = 'app p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 font-sans';
-                        div.innerHTML = `${app.metadata.image ? `<div
+                        const a = document.createElement('a');
+                        a.className = 'app p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 hover:bg-white/20 font-sans cursor-pointer';
+                        a.href = `/main:app_store:sys/app-details/${app.package}:${app.publisher}` 
+                        a.target = '_blank';
+                        a.rel = 'noopener noreferrer';
+                        a.innerHTML = `${app.metadata.image ? `<div
                             class="app-image rounded mr-2 grow"
                             style="background-image: url('${app.metadata.image}');"
                         ></div>` : ''}
@@ -162,7 +165,7 @@ fn get_widget() -> String {
                             <h2 class="font-bold">${app.metadata.name}</h2>
                             <p>${app.metadata.description}</p>
                         </div>`;
-                        container.appendChild(div);
+                        container.appendChild(a);
                     });
                 })
                 .catch(error => console.error('Error fetching apps:', error));
