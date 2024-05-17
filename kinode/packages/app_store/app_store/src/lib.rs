@@ -10,7 +10,7 @@ use std::str::FromStr;
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process",
+    world: "process-v0",
 });
 
 mod api;

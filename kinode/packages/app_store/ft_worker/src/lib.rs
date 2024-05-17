@@ -7,7 +7,7 @@ use ft_worker_lib::*;
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process",
+    world: "process-v0",
 });
 
 /// internal worker protocol
