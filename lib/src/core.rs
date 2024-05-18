@@ -2,7 +2,7 @@ use crate::wit;
 use ring::signature;
 use rusqlite::types::{FromSql, FromSqlError, ToSql, ValueRef};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet, BTreeMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use thiserror::Error;
 
 lazy_static::lazy_static! {
