@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process",
+    world: "process-v0",
 });
 
 /// Fetching OS version from main package.. LMK if there's a better way...

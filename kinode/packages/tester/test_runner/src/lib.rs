@@ -11,7 +11,7 @@ use tester_types as tt;
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process",
+    world: "process-v0",
 });
 
 fn make_vfs_address(our: &Address) -> anyhow::Result<Address> {

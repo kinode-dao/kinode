@@ -1849,6 +1849,9 @@ pub struct KnsUpdate {
 
 impl KnsUpdate {
     pub fn get_protocol_port(&self, protocol: &str) -> u16 {
-        self.ports.get(protocol).cloned().unwrap_or(0)
+        match self.ports.get(protocol) {
+            Some(port) => *port,
+            None => 0,
+        }
     }
 }

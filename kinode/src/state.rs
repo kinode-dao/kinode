@@ -589,6 +589,7 @@ async fn bootstrap(
                 std::collections::hash_map::Entry::Occupied(p) => {
                     let p = p.into_mut();
                     p.wasm_bytes_handle = wasm_bytes_handle.clone();
+                    p.wit_version = package_metadata.properties.wit_version;
                     p.on_exit = entry.on_exit;
                     p.capabilities.extend(requested_caps);
                     p.public = public_process;
@@ -717,8 +718,6 @@ async fn get_zipped_packages() -> Vec<(
     Erc721Metadata,
     zip::ZipArchive<std::io::Cursor<&'static [u8]>>,
 )> {
-    // println!("fs: reading distro packages...\r");
-
     let mut packages = Vec::new();
 
     for (package_name, metadata_bytes, bytes) in BOOTSTRAPPED_PROCESSES.iter() {
@@ -727,7 +726,7 @@ async fn get_zipped_packages() -> Vec<(
                 packages.push((metadata, zip));
             } else {
                 println!(
-                    "fs: metadata for package {} is not valid Erc721Metadata",
+                    "fs: metadata for package {} is not valid Erc721Metadata\r",
                     package_name
                 );
             }

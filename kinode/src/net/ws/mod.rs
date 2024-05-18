@@ -981,7 +981,7 @@ async fn handle_local_message(
                         Identity {
                             name: log.name.clone(),
                             networking_key: log.public_key.clone(),
-                            routing: if log.ips[0] == *"0.0.0.0" {
+                            routing: if log.ips.is_empty() {
                                 NodeRouting::Routers(log.routers)
                             } else {
                                 NodeRouting::Direct {
@@ -1002,7 +1002,7 @@ async fn handle_local_message(
                             Identity {
                                 name: log.name.clone(),
                                 networking_key: log.public_key.clone(),
-                                routing: if log.ips[0] == *"0.0.0.0" {
+                                routing: if log.ips.is_empty() {
                                     NodeRouting::Routers(log.routers)
                                 } else {
                                     NodeRouting::Direct {
