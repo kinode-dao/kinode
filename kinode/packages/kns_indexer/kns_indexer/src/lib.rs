@@ -364,7 +364,10 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             node.routers = vec![];
         }
         WsUpdate::SIGNATURE_HASH => {
-            node.ports.insert("ws".to_string(), WsUpdate::decode_log_data(log.data(), true).unwrap().port);
+            node.ports.insert(
+                "ws".to_string(),
+                WsUpdate::decode_log_data(log.data(), true).unwrap().port,
+            );
             // when we get port data, we should delete any router data,
             // since the assignment of port indicates an direct node
             node.routers = vec![];
