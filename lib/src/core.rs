@@ -2,7 +2,7 @@ use crate::wit;
 use ring::signature;
 use rusqlite::types::{FromSql, FromSqlError, ToSql, ValueRef};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, BTreeMap};
 use thiserror::Error;
 
 lazy_static::lazy_static! {
@@ -1843,7 +1843,7 @@ pub struct KnsUpdate {
     pub node: String, // hex namehash of node
     pub public_key: String,
     pub ips: Vec<String>,
-    pub ports: HashMap<String, u16>,
+    pub ports: BTreeMap<String, u16>,
     pub routers: Vec<String>,
 }
 

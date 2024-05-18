@@ -1,3 +1,6 @@
+use crate::kinode::process::kns_indexer::{
+    GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
+};
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
     await_message, call_init, eth, net, println, Address, Message, Request, Response,
@@ -6,10 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{
     hash_map::{Entry, HashMap},
     BTreeMap,
-};
-
-use crate::kinode::process::kns_indexer::{
-    GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
 
 wit_bindgen::generate!({
@@ -43,22 +42,9 @@ struct State {
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
     // NOTE: not every namehash will have a node registered
-    nodes: HashMap<String, KnsUpdate>,
+    nodes: HashMap<String, net::KnsUpdate>,
     // last block we have an update from
     block: u64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NetAction {
-    KnsUpdate(KnsUpdate),
-    KnsBatchUpdate(Vec<KnsUpdate>),
-}
-
-impl TryInto<Vec<u8>> for NetAction {
-    type Error = anyhow::Error;
-    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        Ok(rmp_serde::to_vec(&self)?)
-    }
 }
 
 sol! {
@@ -190,9 +176,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // shove initial state into net::net
     Request::new()
         .target((&our.node, "net", "distro", "sys"))
-        .try_body(NetAction::KnsBatchUpdate(
+        .body(rmp_serde::to_vec(&net::NetAction::KnsBatchUpdate(
             state.nodes.values().cloned().collect::<Vec<_>>(),
-        ))?
+        ))?)
         .send()?;
 
     // set_state(&bincode::serialize(&state)?);
@@ -345,7 +331,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     let node = state
         .nodes
         .entry(name.to_string())
-        .or_insert_with(|| KnsUpdate {
+        .or_insert_with(|| net::KnsUpdate {
             name: name.to_string(),
             owner: "".to_string(),
             node: node_id.to_string(),
@@ -406,7 +392,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     {
         Request::new()
             .target((&our.node, "net", "distro", "sys"))
-            .try_body(NetAction::KnsUpdate(node.clone()))?
+            .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(node.clone()))?)
             .send()?;
     }
 
