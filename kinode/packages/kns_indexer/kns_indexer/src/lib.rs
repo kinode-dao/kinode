@@ -336,8 +336,8 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             owner: "".to_string(),
             node: node_id.to_string(),
             public_key: "".to_string(),
-            ip: "".to_string(),
-            port: 0,
+            ips: vec![],
+            ports: BTreeMap::new(),
             routers: vec![],
         });
 
@@ -352,19 +352,19 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
         }
         IpUpdate::SIGNATURE_HASH => {
             let ip = IpUpdate::decode_log_data(log.data(), true).unwrap().ip;
-            node.ip = format!(
+            node.ips = vec![format!(
                 "{}.{}.{}.{}",
                 (ip >> 24) & 0xFF,
                 (ip >> 16) & 0xFF,
                 (ip >> 8) & 0xFF,
                 ip & 0xFF
-            );
+            )];
             // when we get ip data, we should delete any router data,
             // since the assignment of ip indicates an direct node
             node.routers = vec![];
         }
         WsUpdate::SIGNATURE_HASH => {
-            node.port = WsUpdate::decode_log_data(log.data(), true).unwrap().port;
+            node.ports.insert("ws".to_string(), WsUpdate::decode_log_data(log.data(), true).unwrap().port);
             // when we get port data, we should delete any router data,
             // since the assignment of port indicates an direct node
             node.routers = vec![];
@@ -378,8 +378,8 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
                 .collect::<Vec<String>>();
             // when we get routing data, we should delete any ws/ip data,
             // since the assignment of routers indicates an indirect node
-            node.ip = "".to_string();
-            node.port = 0;
+            node.ips = vec![];
+            node.ports.clear();
         }
         _ => {
             send = false;
@@ -387,7 +387,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     }
 
     if node.public_key != ""
-        && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
+        && ((!node.ips.is_empty() && !node.ports.is_empty()) || node.routers.len() > 0)
         && send
     {
         Request::new()
