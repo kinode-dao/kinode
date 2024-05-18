@@ -294,7 +294,7 @@ async fn main() {
             })
             .collect(),
     ));
-    tasks.spawn(net::ws::networking(
+    tasks.spawn(net::networking(
         our.clone(),
         our_ip.to_string(),
         networking_keypair_arc.clone(),

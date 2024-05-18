@@ -1,13 +1,14 @@
 use crate::net::{types::*, utils::*, ws::*};
-use anyhow::{anyhow, Result};
-use futures::stream::{SplitSink, SplitStream};
-use futures::{SinkExt, StreamExt};
-use lib::types::core::*;
-use ring::signature::Ed25519KeyPair;
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
-use tokio::time::timeout;
-use tokio_tungstenite::{connect_async, tungstenite, MaybeTlsStream, WebSocketStream};
+use {
+    anyhow::Result,
+    futures::stream::{SplitSink, SplitStream},
+    futures::{SinkExt, StreamExt},
+    ring::signature::Ed25519KeyPair,
+    tokio::net::TcpStream,
+    tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver},
+    tokio::time::timeout,
+    tokio_tungstenite::{connect_async, tungstenite, MaybeTlsStream, WebSocketStream},
+};
 
 pub async fn save_new_peer(
     identity: &Identity,

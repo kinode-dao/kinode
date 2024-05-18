@@ -1,3 +1,9 @@
+use crate::{
+    net::ws::{connection::*, utils::*},
+    net::{types::*, utils::*},
+    KNS_ADDRESS,
+};
+use lib::types::core::*;
 use {
     anyhow::{anyhow, Result},
     dashmap::DashMap,
@@ -15,11 +21,6 @@ use {
 
 mod connection;
 mod utils;
-
-use crate::net::ws::{connection::*, utils::*};
-use crate::net::{types::*, utils::*};
-use crate::KNS_ADDRESS;
-use lib::types::core::*;
 
 /// only used in connection initialization, otherwise, nacks and Responses are only used for "timeouts"
 pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
