@@ -42,8 +42,8 @@ pub async fn networking(
     reveal_ip: bool,
 ) -> Result<()> {
     // branch on whether we are a direct or indirect node
-    match &our.routing {
-        NodeRouting::Routers(_) => {
+    match our.ws_routing() {
+        None => {
             // indirect node: run the indirect networking strategy
             print_tx
                 .send(Printout {
@@ -64,17 +64,7 @@ pub async fn networking(
             )
             .await
         }
-        NodeRouting::Direct {
-            ip,
-            ws_port,
-            tcp_port: _,
-        }
-        | NodeRouting::Both {
-            ip,
-            ws_port,
-            tcp_port: _,
-            ..
-        } => {
+        Some((ip, ws_port)) => {
             // direct node: run the direct networking strategy
             if &our_ip != ip {
                 return Err(anyhow!(
@@ -987,8 +977,7 @@ async fn handle_local_message(
                             } else {
                                 NodeRouting::Direct {
                                     ip: log.ips[0].clone(),
-                                    ws_port: log.get_protocol_port("ws"),
-                                    tcp_port: log.get_protocol_port("tcp"),
+                                    ports: log.ports,
                                 }
                             },
                         },
@@ -1008,8 +997,7 @@ async fn handle_local_message(
                                 } else {
                                     NodeRouting::Direct {
                                         ip: log.ips[0].clone(),
-                                        ws_port: log.get_protocol_port("ws"),
-                                        tcp_port: log.get_protocol_port("tcp"),
+                                        ports: log.ports,
                                     }
                                 },
                             },

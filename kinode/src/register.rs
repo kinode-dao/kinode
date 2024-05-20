@@ -109,8 +109,7 @@ pub async fn register(
         name: "".to_string(),
         routing: NodeRouting::Both {
             ip: ip.clone(),
-            ws_port,
-            tcp_port: 0,
+            ports: std::collections::BTreeMap::from([("ws".to_string(), ws_port)]),
             routers: vec![
                 "default-router-1.os".into(),
                 "default-router-2.os".into(),
@@ -551,8 +550,7 @@ async fn handle_import_keyfile(
                     routing: if k.routers.is_empty() {
                         NodeRouting::Direct {
                             ip,
-                            ws_port: 9000,
-                            tcp_port: 0,
+                            ports: std::collections::BTreeMap::from([("ws".to_string(), 9000)]),
                         }
                     } else {
                         NodeRouting::Routers(k.routers.clone())
@@ -610,8 +608,7 @@ async fn handle_login(
                     routing: if k.routers.is_empty() {
                         NodeRouting::Direct {
                             ip,
-                            ws_port: 9000,
-                            tcp_port: 0,
+                            ports: std::collections::BTreeMap::from([("ws".to_string(), 9000)]),
                         }
                     } else {
                         NodeRouting::Routers(k.routers.clone())
@@ -745,8 +742,7 @@ pub async fn assign_ws_routing(
         }
         our.routing = NodeRouting::Direct {
             ip: node_ip,
-            ws_port: ws,
-            tcp_port: 0,
+            ports: std::collections::BTreeMap::from([("ws".to_string(), ws)]),
         };
     }
     Ok(())

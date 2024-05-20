@@ -192,7 +192,7 @@ pub async fn create_passthrough(
         ));
     }
     let to_id = pki.get(&to_name).ok_or(anyhow!("unknown KNS name"))?;
-    let NodeRouting::Direct { ip, ws_port, .. } = &to_id.routing else {
+    let Some((ip, ws_port)) = to_id.ws_routing() else {
         // create passthrough to indirect node that we do routing for
         //
         let target_peer = peers

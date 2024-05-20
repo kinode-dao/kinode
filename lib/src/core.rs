@@ -1013,14 +1013,12 @@ pub enum NodeRouting {
     Routers(Vec<NodeId>),
     Direct {
         ip: String,
-        ws_port: u16,
-        tcp_port: u16,
+        ports: BTreeMap<String, u16>,
     },
     /// currently only used for initial registration...
     Both {
         ip: String,
-        ws_port: u16,
-        tcp_port: u16,
+        ports: BTreeMap<String, u16>,
         routers: Vec<NodeId>,
     },
 }
@@ -1032,11 +1030,30 @@ impl Identity {
             _ => false,
         }
     }
+    pub fn get_protocol_port(&self, protocol: &str) -> Option<u16> {
+        match &self.routing {
+            NodeRouting::Routers(_) => None,
+            NodeRouting::Direct { ports, .. } => ports.get(protocol).cloned(),
+            NodeRouting::Both { ports, .. } => ports.get(protocol).cloned(),
+        }
+    }
     pub fn ws_routing(&self) -> Option<(&str, &u16)> {
         match &self.routing {
             NodeRouting::Routers(_) => None,
-            NodeRouting::Direct { ip, ws_port, .. } => Some((ip, ws_port)),
-            NodeRouting::Both { ip, ws_port, .. } => Some((ip, ws_port)),
+            NodeRouting::Direct { ip, ports } => {
+                if let Some(port) = ports.get("ws") {
+                    Some((ip, port))
+                } else {
+                    None
+                }
+            }
+            NodeRouting::Both { ip, ports, .. } => {
+                if let Some(port) = ports.get("ws") {
+                    Some((ip, port))
+                } else {
+                    None
+                }
+            }
         }
     }
     pub fn routers(&self) -> Option<&Vec<NodeId>> {
@@ -1049,23 +1066,17 @@ impl Identity {
     pub fn both_to_direct(&mut self) {
         if let NodeRouting::Both {
             ip,
-            ws_port,
-            tcp_port,
+            ports,
             routers: _,
         } = self.routing.clone()
         {
-            self.routing = NodeRouting::Direct {
-                ip,
-                ws_port,
-                tcp_port,
-            };
+            self.routing = NodeRouting::Direct { ip, ports };
         }
     }
     pub fn both_to_routers(&mut self) {
         if let NodeRouting::Both {
             ip: _,
-            ws_port: _,
-            tcp_port: _,
+            ports: _,
             routers,
         } = self.routing.clone()
         {
