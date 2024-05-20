@@ -1,3 +1,9 @@
+use crate::{
+    net::ws::{connection::*, utils::*},
+    net::{types::*, utils::*},
+    KNS_ADDRESS,
+};
+use lib::types::core::*;
 use {
     anyhow::{anyhow, Result},
     dashmap::DashMap,
@@ -13,10 +19,8 @@ use {
     },
 };
 
-use crate::net::types::*;
-use crate::net::utils::*;
-use crate::KNS_ADDRESS;
-use lib::types::core::*;
+mod connection;
+mod utils;
 
 /// only used in connection initialization, otherwise, nacks and Responses are only used for "timeouts"
 pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -38,7 +42,7 @@ pub async fn networking(
     reveal_ip: bool,
 ) -> Result<()> {
     // branch on whether we are a direct or indirect node
-    match &our.ws_routing {
+    match our.ws_routing() {
         None => {
             // indirect node: run the indirect networking strategy
             print_tx
@@ -60,7 +64,7 @@ pub async fn networking(
             )
             .await
         }
-        Some((ip, port)) => {
+        Some((ip, ws_port)) => {
             // direct node: run the direct networking strategy
             if &our_ip != ip {
                 return Err(anyhow!(
@@ -69,12 +73,12 @@ pub async fn networking(
                     ip
                 ));
             }
-            let tcp = match TcpListener::bind(format!("0.0.0.0:{}", port)).await {
+            let tcp = match TcpListener::bind(format!("0.0.0.0:{}", ws_port)).await {
                 Ok(tcp) => tcp,
                 Err(_e) => {
                     return Err(anyhow!(
                         "net: fatal error: can't listen on port {}, update your KNS identity or free up that port",
-                        port,
+                        ws_port,
                     ));
                 }
             };
@@ -232,7 +236,10 @@ async fn connect_to_routers(
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) -> Result<()> {
-    for router in &our.allowed_routers {
+    let NodeRouting::Routers(ref routers) = our.routing else {
+        return Err(anyhow!("no routers to connect to"));
+    };
+    for router in routers {
         if peers.contains_key(router) {
             continue;
         }
@@ -467,7 +474,7 @@ async fn establish_new_peer_connection(
         // try to establish a connection with them
         // here, we can *choose* to use our routers so as not to reveal
         // networking information about ourselves to the target.
-        if peer_id.ws_routing.is_some() && reveal_ip {
+        if peer_id.is_direct() && reveal_ip {
             print_debug(
                 &print_tx,
                 &format!("net: attempting to connect to {} directly", peer_id.name),
@@ -561,7 +568,10 @@ async fn init_connection_via_router(
     print_tx: PrintSender,
 ) -> bool {
     let routers_shuffled = {
-        let mut routers = peer_id.allowed_routers.clone();
+        let mut routers = match our.routing {
+            NodeRouting::Routers(ref routers) => routers.clone(),
+            _ => vec![],
+        };
         routers.shuffle(&mut rand::thread_rng());
         routers
     };
@@ -684,10 +694,10 @@ async fn recv_connection_via_router(
     let mut buf = vec![0u8; 65535];
     let (mut noise, our_static_key) = build_responder();
 
-    let Some((ref ip, ref port)) = router.ws_routing else {
+    let Some((ip, port)) = router.ws_routing() else {
         return Err(anyhow!("router has no routing information"));
     };
-    let Ok(ws_url) = make_ws_url(our_ip, ip, port) else {
+    let Ok(ws_url) = make_conn_url(our_ip, ip, port, "ws") else {
         return Err(anyhow!("failed to parse websocket url"));
     };
     let Ok(Ok((websocket, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await else {
@@ -764,15 +774,13 @@ async fn init_connection(
 
     let (ref ip, ref port) = match use_router {
         None => peer_id
-            .ws_routing
-            .as_ref()
+            .ws_routing()
             .ok_or(anyhow!("target has no routing information"))?,
         Some(router_id) => router_id
-            .ws_routing
-            .as_ref()
+            .ws_routing()
             .ok_or(anyhow!("target has no routing information"))?,
     };
-    let ws_url = make_ws_url(our_ip, ip, port)?;
+    let ws_url = make_conn_url(our_ip, ip, port, "ws")?;
     let Ok(Ok((websocket, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await else {
         return Err(anyhow!("failed to connect to target"));
     };
@@ -886,8 +894,11 @@ async fn handle_local_message(
                     // someone wants to open a passthrough with us through a router!
                     // if we are an indirect node, and source is one of our routers,
                     // respond by attempting to init a matching passthrough.
-                    let res: Result<NetResponse> = if our.allowed_routers.contains(&km.source.node)
-                    {
+                    let allowed_routers = match our.routing {
+                        NodeRouting::Routers(ref routers) => routers,
+                        _ => &vec![],
+                    };
+                    let res: Result<NetResponse> = if allowed_routers.contains(&km.source.node) {
                         let router_id = peers
                             .get(&km.source.node)
                             .ok_or(anyhow!("unknown router"))?
@@ -960,13 +971,15 @@ async fn handle_local_message(
                         log.name.clone(),
                         Identity {
                             name: log.name.clone(),
-                            networking_key: log.public_key,
-                            ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
-                                None
+                            networking_key: log.public_key.clone(),
+                            routing: if log.ips.is_empty() {
+                                NodeRouting::Routers(log.routers)
                             } else {
-                                Some((log.ip, log.port))
+                                NodeRouting::Direct {
+                                    ip: log.ips[0].clone(),
+                                    ports: log.ports,
+                                }
                             },
-                            allowed_routers: log.routers,
                         },
                     );
                     names.insert(log.node, log.name);
@@ -978,13 +991,15 @@ async fn handle_local_message(
                             log.name.clone(),
                             Identity {
                                 name: log.name.clone(),
-                                networking_key: log.public_key,
-                                ws_routing: if log.ip == *"0.0.0.0" || log.port == 0 {
-                                    None
+                                networking_key: log.public_key.clone(),
+                                routing: if log.ips.is_empty() {
+                                    NodeRouting::Routers(log.routers)
                                 } else {
-                                    Some((log.ip, log.port))
+                                    NodeRouting::Direct {
+                                        ip: log.ips[0].clone(),
+                                        ports: log.ports,
+                                    }
                                 },
-                                allowed_routers: log.routers,
                             },
                         );
                         names.insert(log.node, log.name);

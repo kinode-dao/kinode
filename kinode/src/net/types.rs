@@ -1,12 +1,8 @@
 use dashmap::DashMap;
-use futures::stream::{SplitSink, SplitStream};
 use lib::types::core::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::net::TcpStream;
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_tungstenite::{tungstenite, MaybeTlsStream, WebSocketStream};
 
 /// Sent to a node when you want to connect directly to them.
 /// Sent in the 'e, ee, s, es' and 's, se' phases of XX noise protocol pattern.
@@ -46,36 +42,9 @@ pub struct RoutingRequest {
     pub target: NodeId,
 }
 
-pub enum Connection {
-    Peer(PeerConnection),
-    Passthrough(PassthroughConnection),
-    PendingPassthrough(PendingPassthroughConnection),
-}
-
-pub struct PeerConnection {
-    pub noise: snow::TransportState,
-    pub buf: Vec<u8>,
-    pub write_stream: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-    pub read_stream: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-}
-
-pub struct PassthroughConnection {
-    pub write_stream_1: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-    pub read_stream_1: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-    pub write_stream_2: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-    pub read_stream_2: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-}
-
-pub struct PendingPassthroughConnection {
-    pub target: NodeId,
-    pub write_stream: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-    pub read_stream: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-}
-
 pub type Peers = Arc<DashMap<String, Peer>>;
 pub type PKINames = Arc<DashMap<String, NodeId>>;
 pub type OnchainPKI = Arc<DashMap<String, Identity>>;
-pub type PendingPassthroughs = HashMap<(NodeId, NodeId), PendingPassthroughConnection>;
 
 #[derive(Clone)]
 pub struct Peer {

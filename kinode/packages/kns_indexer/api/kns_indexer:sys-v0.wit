@@ -36,5 +36,5 @@ interface kns-indexer {
 
 world kns-indexer-sys-v0 {
     import kns-indexer;
-    include process;
+    include process-v0;
 }

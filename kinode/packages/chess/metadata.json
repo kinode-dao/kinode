@@ -10,6 +10,7 @@
         "code_hashes": {
             "0.2.1": ""
         },
+        "wit_version": 0,
         "dependencies": []
     },
     "external_url": "https://kinode.org",

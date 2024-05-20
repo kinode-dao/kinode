@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process",
+    world: "process-v0",
 });
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -152,7 +152,7 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
         return Err(anyhow::anyhow!("script not in scripts.json file"));
     };
     let wasm_path = if wasm_path.starts_with("/") {
-        wasm_path.clone()
+        wasm_path
     } else {
         format!("/{}", wasm_path)
     };
@@ -231,7 +231,7 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
         .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
             id: parsed_new_process_id.clone(),
             wasm_bytes_handle: wasm_path.clone(),
-            wit_version: None, // update this with new versions if desired
+            wit_version: entry.wit_version,
             on_exit: kt::OnExit::None,
             initial_capabilities: HashSet::new(),
             public: entry.public,

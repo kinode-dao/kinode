@@ -5,7 +5,7 @@ use kinode_process_lib::{
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process",
+    world: "process-v0",
 });
 
 call_init!(init);

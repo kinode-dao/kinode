@@ -107,13 +107,15 @@ pub async fn register(
     let our_temp_id = Arc::new(Identity {
         networking_key: format!("0x{}", public_key),
         name: "".to_string(),
-        ws_routing: Some((ip.clone(), ws_port)),
-        allowed_routers: vec![
-            // "next-release-router.os".into(),
-            "default-router-1.os".into(),
-            "default-router-2.os".into(),
-            "default-router-3.os".into(),
-        ],
+        routing: NodeRouting::Both {
+            ip: ip.clone(),
+            ports: std::collections::BTreeMap::from([("ws".to_string(), ws_port)]),
+            routers: vec![
+                "default-router-1.os".into(),
+                "default-router-2.os".into(),
+                "default-router-3.os".into(),
+            ],
+        },
     });
 
     // KnsRegistrar contract address
@@ -376,9 +378,9 @@ async fn handle_boot(
 
     our.name = info.username;
     if info.direct {
-        our.allowed_routers = vec![];
+        our.both_to_direct();
     } else {
-        our.ws_routing = None;
+        our.both_to_routers();
     }
     let jwt_seed = SystemRandom::new();
     let mut jwt_secret = [0u8, 32];
@@ -497,7 +499,7 @@ async fn handle_boot(
 
     let decoded_keyfile = Keyfile {
         username: our.name.clone(),
-        routers: our.allowed_routers.clone(),
+        routers: our.routers().unwrap_or(&vec![]).clone(),
         networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
             .unwrap(),
         jwt_secret_bytes: jwt_secret.to_vec(),
@@ -545,12 +547,14 @@ async fn handle_import_keyfile(
                         "0x{}",
                         hex::encode(k.networking_keypair.public_key().as_ref())
                     ),
-                    ws_routing: if k.routers.is_empty() {
-                        Some((ip, 9000))
+                    routing: if k.routers.is_empty() {
+                        NodeRouting::Direct {
+                            ip,
+                            ports: std::collections::BTreeMap::from([("ws".to_string(), 9000)]),
+                        }
                     } else {
-                        None
+                        NodeRouting::Routers(k.routers.clone())
                     },
-                    allowed_routers: k.routers.clone(),
                 };
 
                 (k, our)
@@ -601,12 +605,14 @@ async fn handle_login(
                         "0x{}",
                         hex::encode(k.networking_keypair.public_key().as_ref())
                     ),
-                    ws_routing: if k.routers.is_empty() {
-                        Some((ip, 9000))
+                    routing: if k.routers.is_empty() {
+                        NodeRouting::Direct {
+                            ip,
+                            ports: std::collections::BTreeMap::from([("ws".to_string(), 9000)]),
+                        }
                     } else {
-                        None
+                        NodeRouting::Routers(k.routers.clone())
                     },
-                    allowed_routers: k.routers.clone(),
                 };
 
                 (k, our)
@@ -663,15 +669,16 @@ async fn confirm_change_network_keys(
     };
 
     // Determine if direct node or not
+
     if info.direct {
-        our.allowed_routers = vec![];
+        our.both_to_direct();
     } else {
-        our.ws_routing = None;
+        our.both_to_routers();
     }
 
     let decoded_keyfile = Keyfile {
         username: our.name.clone(),
-        routers: our.allowed_routers.clone(),
+        routers: our.routers().unwrap_or(&vec![]).clone(),
         networking_keypair: signature::Ed25519KeyPair::from_pkcs8(networking_keypair.as_ref())
             .unwrap(),
         jwt_secret_bytes: old_decoded_keyfile.jwt_secret_bytes,
@@ -733,7 +740,10 @@ pub async fn assign_ws_routing(
                 ));
             }
         }
-        our.ws_routing = Some((node_ip, ws));
+        our.routing = NodeRouting::Direct {
+            ip: node_ip,
+            ports: std::collections::BTreeMap::from([("ws".to_string(), ws)]),
+        };
     }
     Ok(())
 }

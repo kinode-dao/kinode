@@ -12,7 +12,7 @@ license = "Apache-2.0"
 
 [build-dependencies]
 anyhow = "1.0.71"
-kit = { git = "https://github.com/kinode-dao/kit", rev = "49093a0" }
+kit = { git = "https://github.com/kinode-dao/kit", rev = "d319c5b" }
 reqwest = { version = "0.12.4", features = ["blocking"] }
 tokio = "1.28"
 

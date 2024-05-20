@@ -11,7 +11,7 @@ use tester_types as tt;
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process",
+    world: "process-v0",
 });
 
 type Messages = IndexMap<kt::Message, tt::KernelMessage>;

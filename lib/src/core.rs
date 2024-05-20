@@ -2,7 +2,7 @@ use crate::wit;
 use ring::signature;
 use rusqlite::types::{FromSql, FromSqlError, ToSql, ValueRef};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use thiserror::Error;
 
 lazy_static::lazy_static! {
@@ -1005,8 +1005,84 @@ pub struct LoginAndResetInfo {
 pub struct Identity {
     pub name: NodeId,
     pub networking_key: String,
-    pub ws_routing: Option<(String, u16)>,
-    pub allowed_routers: Vec<NodeId>,
+    pub routing: NodeRouting,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum NodeRouting {
+    Routers(Vec<NodeId>),
+    Direct {
+        ip: String,
+        ports: BTreeMap<String, u16>,
+    },
+    /// currently only used for initial registration...
+    Both {
+        ip: String,
+        ports: BTreeMap<String, u16>,
+        routers: Vec<NodeId>,
+    },
+}
+
+impl Identity {
+    pub fn is_direct(&self) -> bool {
+        match &self.routing {
+            NodeRouting::Direct { .. } => true,
+            _ => false,
+        }
+    }
+    pub fn get_protocol_port(&self, protocol: &str) -> Option<u16> {
+        match &self.routing {
+            NodeRouting::Routers(_) => None,
+            NodeRouting::Direct { ports, .. } => ports.get(protocol).cloned(),
+            NodeRouting::Both { ports, .. } => ports.get(protocol).cloned(),
+        }
+    }
+    pub fn ws_routing(&self) -> Option<(&str, &u16)> {
+        match &self.routing {
+            NodeRouting::Routers(_) => None,
+            NodeRouting::Direct { ip, ports } => {
+                if let Some(port) = ports.get("ws") {
+                    Some((ip, port))
+                } else {
+                    None
+                }
+            }
+            NodeRouting::Both { ip, ports, .. } => {
+                if let Some(port) = ports.get("ws") {
+                    Some((ip, port))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+    pub fn routers(&self) -> Option<&Vec<NodeId>> {
+        match &self.routing {
+            NodeRouting::Routers(routers) => Some(routers),
+            NodeRouting::Direct { .. } => None,
+            NodeRouting::Both { routers, .. } => Some(routers),
+        }
+    }
+    pub fn both_to_direct(&mut self) {
+        if let NodeRouting::Both {
+            ip,
+            ports,
+            routers: _,
+        } = self.routing.clone()
+        {
+            self.routing = NodeRouting::Direct { ip, ports };
+        }
+    }
+    pub fn both_to_routers(&mut self) {
+        if let NodeRouting::Both {
+            ip: _,
+            ports: _,
+            routers,
+        } = self.routing.clone()
+        {
+            self.routing = NodeRouting::Routers(routers);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1777,7 +1853,16 @@ pub struct KnsUpdate {
     pub owner: String,
     pub node: String, // hex namehash of node
     pub public_key: String,
-    pub ip: String,
-    pub port: u16,
+    pub ips: Vec<String>,
+    pub ports: BTreeMap<String, u16>,
     pub routers: Vec<String>,
+}
+
+impl KnsUpdate {
+    pub fn get_protocol_port(&self, protocol: &str) -> u16 {
+        match self.ports.get(protocol) {
+            Some(port) => *port,
+            None => 0,
+        }
+    }
 }

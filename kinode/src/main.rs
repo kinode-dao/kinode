@@ -77,14 +77,19 @@ async fn main() {
     );
 
     // default eth providers/routers
-    let mut eth_provider_config: lib::eth::SavedConfigs =
-        match tokio::fs::read_to_string(format!("{}/.eth_providers", home_directory_path)).await {
-            Ok(contents) => {
-                println!("loaded saved eth providers\r");
-                serde_json::from_str(&contents).unwrap()
-            }
-            Err(_) => serde_json::from_str(DEFAULT_ETH_PROVIDERS).unwrap(),
-        };
+    let mut eth_provider_config: lib::eth::SavedConfigs = if let Ok(contents) =
+        tokio::fs::read_to_string(format!("{}/.eth_providers", home_directory_path)).await
+    {
+        if let Ok(contents) = serde_json::from_str(&contents) {
+            println!("loaded saved eth providers\r");
+            contents
+        } else {
+            println!("error loading saved eth providers, using default providers\r");
+            serde_json::from_str(DEFAULT_ETH_PROVIDERS).unwrap()
+        }
+    } else {
+        serde_json::from_str(DEFAULT_ETH_PROVIDERS).unwrap()
+    };
     if let Some(rpc) = rpc {
         eth_provider_config.insert(lib::eth::ProviderConfig {
             chain_id: CHAIN_ID,
@@ -289,7 +294,7 @@ async fn main() {
             })
             .collect(),
     ));
-    tasks.spawn(net::ws::networking(
+    tasks.spawn(net::networking(
         our.clone(),
         our_ip.to_string(),
         networking_keypair_arc.clone(),

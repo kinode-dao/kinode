@@ -1,3 +1,6 @@
+use crate::kinode::process::kns_indexer::{
+    GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
+};
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
     await_message, call_init, eth, net, println, Address, Message, Request, Response,
@@ -6,10 +9,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::{
     hash_map::{Entry, HashMap},
     BTreeMap,
-};
-
-use crate::kinode::process::kns_indexer::{
-    GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
 
 wit_bindgen::generate!({
@@ -43,43 +42,9 @@ struct State {
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
     // NOTE: not every namehash will have a node registered
-    nodes: HashMap<String, KnsUpdate>,
+    nodes: HashMap<String, net::KnsUpdate>,
     // last block we have an update from
     block: u64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NetAction {
-    KnsUpdate(KnsUpdate),
-    KnsBatchUpdate(Vec<KnsUpdate>),
-}
-
-impl TryInto<Vec<u8>> for NetAction {
-    type Error = anyhow::Error;
-    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        Ok(rmp_serde::to_vec(&self)?)
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct KnsUpdate {
-    pub name: String, // actual username / domain name
-    pub owner: String,
-    pub node: String, // hex namehash of node
-    pub public_key: String,
-    pub ip: String,
-    pub port: u16,
-    pub routers: Vec<String>,
-}
-
-impl KnsUpdate {
-    pub fn new(name: &String, node: &String) -> Self {
-        Self {
-            name: name.clone(),
-            node: node.clone(),
-            ..Default::default()
-        }
-    }
 }
 
 sol! {
@@ -211,9 +176,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // shove initial state into net::net
     Request::new()
         .target((&our.node, "net", "distro", "sys"))
-        .try_body(NetAction::KnsBatchUpdate(
+        .body(rmp_serde::to_vec(&net::NetAction::KnsBatchUpdate(
             state.nodes.values().cloned().collect::<Vec<_>>(),
-        ))?
+        ))?)
         .send()?;
 
     // set_state(&bincode::serialize(&state)?);
@@ -366,7 +331,15 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     let node = state
         .nodes
         .entry(name.to_string())
-        .or_insert_with(|| KnsUpdate::new(name, &node_id.to_string()));
+        .or_insert_with(|| net::KnsUpdate {
+            name: name.to_string(),
+            owner: "".to_string(),
+            node: node_id.to_string(),
+            public_key: "".to_string(),
+            ips: vec![],
+            ports: BTreeMap::new(),
+            routers: vec![],
+        });
 
     let mut send = true;
 
@@ -379,19 +352,22 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
         }
         IpUpdate::SIGNATURE_HASH => {
             let ip = IpUpdate::decode_log_data(log.data(), true).unwrap().ip;
-            node.ip = format!(
+            node.ips = vec![format!(
                 "{}.{}.{}.{}",
                 (ip >> 24) & 0xFF,
                 (ip >> 16) & 0xFF,
                 (ip >> 8) & 0xFF,
                 ip & 0xFF
-            );
+            )];
             // when we get ip data, we should delete any router data,
             // since the assignment of ip indicates an direct node
             node.routers = vec![];
         }
         WsUpdate::SIGNATURE_HASH => {
-            node.port = WsUpdate::decode_log_data(log.data(), true).unwrap().port;
+            node.ports.insert(
+                "ws".to_string(),
+                WsUpdate::decode_log_data(log.data(), true).unwrap().port,
+            );
             // when we get port data, we should delete any router data,
             // since the assignment of port indicates an direct node
             node.routers = vec![];
@@ -405,8 +381,8 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
                 .collect::<Vec<String>>();
             // when we get routing data, we should delete any ws/ip data,
             // since the assignment of routers indicates an indirect node
-            node.ip = "".to_string();
-            node.port = 0;
+            node.ips = vec![];
+            node.ports.clear();
         }
         _ => {
             send = false;
@@ -414,12 +390,12 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     }
 
     if node.public_key != ""
-        && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
+        && ((!node.ips.is_empty() && !node.ports.is_empty()) || node.routers.len() > 0)
         && send
     {
         Request::new()
             .target((&our.node, "net", "distro", "sys"))
-            .try_body(NetAction::KnsUpdate(node.clone()))?
+            .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(node.clone()))?)
             .send()?;
     }
 

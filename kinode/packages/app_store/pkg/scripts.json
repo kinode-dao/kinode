@@ -8,7 +8,8 @@
         ],
         "grant_capabilities": [
             "main:app_store:sys"
-        ]
+        ],
+        "wit_version": 0
     },
     "install.wasm": {
         "root": false,
@@ -19,7 +20,8 @@
         ],
         "grant_capabilities": [
             "main:app_store:sys"
-        ]
+        ],
+        "wit_version": 0
     },
     "uninstall.wasm": {
         "root": false,
@@ -30,6 +32,7 @@
         ],
         "grant_capabilities": [
             "main:app_store:sys"
-        ]
+        ],
+        "wit_version": 0
     }
 }
