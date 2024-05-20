@@ -57,6 +57,12 @@ const WidgetsSettingsModal = () => {
           </div>
         </div>
       </div>)}
+      <button
+        className="clear"
+        onClick={() => window.location.href = '/settings:settings:sys'}
+      >
+        Looking for system settings?
+      </button>
     </div>
   </Modal>
 }
