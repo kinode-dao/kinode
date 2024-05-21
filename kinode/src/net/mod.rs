@@ -7,8 +7,7 @@ use {
     anyhow::{anyhow, Result},
     dashmap::DashMap,
     ring::signature::Ed25519KeyPair,
-    std::collections::HashMap,
-    std::sync::{Arc, Mutex},
+    std::sync::Arc,
     tokio::task::JoinSet,
 };
 
@@ -105,13 +104,26 @@ pub async fn networking(
             // if we are indirect, we need to establish a route to each router
             // and then listen for incoming connections on each of them.
             for router in routers {
-                // initiate_routing(&ext, router, pki, peers, peer_message_queues).await;
+                connect_to_peer(ext.clone(), router, net_data.clone()).await;
             }
         }
     }
 
     // if any tasks complete, we should exit with an error
     tasks.join_next().await.unwrap().map_err(|e| e.into())
+}
+
+async fn connect_to_peer(ext: IdentityExt, peer: &NodeId, net_data: NetData) {
+    // get peer identity from PKI
+    // if it doesn't exist, throw offline error
+
+    // if it's direct, see what protocols we can use
+    // prefer tcp, then ws
+
+    // if it's indirect, for each router they list,
+    // - try to connect to that router
+    // - try to send connection request to that router
+    // - wait for success/failure response
 }
 
 /// handle messages from the kernel. if the `target` is our node-id, we handle
@@ -165,7 +177,6 @@ async fn local_recv(ext: IdentityExt, mut kernel_message_rx: MessageReceiver, da
 }
 
 async fn handle_message(ext: &IdentityExt, km: &KernelMessage, data: &NetData) {
-    // utils::print_debug(&ext.print_tx, "net: handling local message").await;
     match &km.message {
         lib::core::Message::Request(request) => handle_request(ext, km, &request.body, data).await,
         lib::core::Message::Response((response, _context)) => {
