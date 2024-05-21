@@ -1,8 +1,15 @@
-use dashmap::DashMap;
-use lib::types::core::*;
-use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedSender;
+use {
+    anyhow::Result,
+    dashmap::DashMap,
+    lib::types::core::{
+        Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
+    },
+    ring::signature::Ed25519KeyPair,
+    serde::{Deserialize, Serialize},
+    std::sync::{Arc, Mutex},
+    tokio::sync::mpsc::UnboundedSender,
+    tokio::task::JoinSet,
+};
 
 /// Sent to a node when you want to connect directly to them.
 /// Sent in the 'e, ee, s, es' and 's, se' phases of XX noise protocol pattern.
@@ -45,6 +52,7 @@ pub struct RoutingRequest {
 pub type Peers = Arc<DashMap<String, Peer>>;
 pub type PKINames = Arc<DashMap<String, NodeId>>;
 pub type OnchainPKI = Arc<DashMap<String, Identity>>;
+pub type PeerMessageQueues = Arc<DashMap<NodeId, Vec<KernelMessage>>>;
 
 #[derive(Clone)]
 pub struct Peer {
@@ -53,4 +61,24 @@ pub struct Peer {
     /// associated with them. We can send them prompts to establish Passthroughs.
     pub routing_for: bool,
     pub sender: UnboundedSender<KernelMessage>,
+}
+
+/// [`Identity`], with additional fields for networking.
+#[derive(Clone)]
+pub struct IdentityExt {
+    pub our: Arc<Identity>,
+    pub our_ip: Arc<String>,
+    pub keypair: Arc<Ed25519KeyPair>,
+    pub kernel_message_tx: MessageSender,
+    pub network_error_tx: NetworkErrorSender,
+    pub print_tx: PrintSender,
+    pub self_message_tx: MessageSender,
+}
+
+#[derive(Clone)]
+pub struct NetData {
+    pub pki: OnchainPKI,
+    pub peers: Peers,
+    pub names: PKINames,
+    pub peer_message_queues: PeerMessageQueues,
 }

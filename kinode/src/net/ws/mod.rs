@@ -32,7 +32,7 @@ pub const MESSAGE_MAX_SIZE: u32 = 10_485_800;
 /// Entry point from the main kernel task. Runs forever, spawns listener and sender tasks.
 pub async fn networking(
     our: Identity,
-    our_ip: String,
+    our_ip: Arc<String>,
     keypair: Arc<Ed25519KeyPair>,
     kernel_message_tx: MessageSender,
     network_error_tx: NetworkErrorSender,
@@ -53,7 +53,7 @@ pub async fn networking(
                 .await?;
             indirect_networking(
                 our,
-                our_ip,
+                our_ip.to_string(),
                 keypair,
                 kernel_message_tx,
                 network_error_tx,
@@ -66,7 +66,7 @@ pub async fn networking(
         }
         Some((ip, ws_port)) => {
             // direct node: run the direct networking strategy
-            if &our_ip != ip {
+            if *our_ip != ip {
                 return Err(anyhow!(
                     "net: fatal error: IP address mismatch: {} != {}, update your KNS identity",
                     our_ip,
@@ -90,7 +90,7 @@ pub async fn networking(
                 .await?;
             direct_networking(
                 our,
-                our_ip,
+                our_ip.to_string(),
                 tcp,
                 keypair,
                 kernel_message_tx,
@@ -202,7 +202,7 @@ async fn indirect_networking(
                         // offline error for each message in this peer's queue
                         if let Some(queue) = peer_message_queues.remove(&peer_name) {
                             for km in queue {
-                                error_offline(km, &network_error_tx).await?;
+                                error_offline(km, &network_error_tx).await;
                             }
                         }
                     }
@@ -373,7 +373,7 @@ async fn direct_networking(
                         // offline error for each message in this peer's queue
                         if let Some(queue) = peer_message_queues.remove(&peer_name) {
                             for km in queue {
-                                error_offline(km, &network_error_tx).await?;
+                                error_offline(km, &network_error_tx).await;
                             }
                         }
                     }
@@ -500,7 +500,7 @@ async fn establish_new_peer_connection(
                     (peer_id.name.clone(), Ok(()))
                 }
                 _ => {
-                    let _ = error_offline(km, &network_error_tx).await;
+                    error_offline(km, &network_error_tx).await;
                     (
                         peer_id.name.clone(),
                         Err(anyhow!("failed to connect to peer")),
@@ -539,7 +539,7 @@ async fn establish_new_peer_connection(
                 (peer_id.name.clone(), Ok(()))
             } else {
                 // none of the routers worked!
-                let _ = error_offline(km, &network_error_tx).await;
+                error_offline(km, &network_error_tx).await;
                 (
                     peer_id.name.clone(),
                     Err(anyhow!("failed to connect to peer")),
@@ -550,7 +550,7 @@ async fn establish_new_peer_connection(
     // peer cannot be found in PKI, throw an offline error
     else {
         let peer_name = km.target.node.clone();
-        let _ = error_offline(km, &network_error_tx).await;
+        error_offline(km, &network_error_tx).await;
         (peer_name, Err(anyhow!("failed to connect to peer")))
     }
 }

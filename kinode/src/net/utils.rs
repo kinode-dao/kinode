@@ -10,6 +10,25 @@ lazy_static::lazy_static! {
                                         .expect("net: couldn't build noise params?");
 }
 
+pub fn ingest_log(log: KnsUpdate, pki: &OnchainPKI, names: &PKINames) {
+    pki.insert(
+        log.name.clone(),
+        Identity {
+            name: log.name.clone(),
+            networking_key: log.public_key,
+            routing: if log.ips.is_empty() {
+                NodeRouting::Routers(log.routers)
+            } else {
+                NodeRouting::Direct {
+                    ip: log.ips[0].clone(),
+                    ports: log.ports,
+                }
+            },
+        },
+    );
+    names.insert(log.node, log.name);
+}
+
 pub fn validate_signature(from: &str, signature: &[u8], message: &[u8], pki: &OnchainPKI) -> bool {
     if let Some(peer_id) = pki.get(from) {
         let their_networking_key = signature::UnparsedPublicKey::new(
@@ -102,7 +121,7 @@ pub fn make_conn_url(our_ip: &str, ip: &str, port: &u16, protocol: &str) -> Resu
     Ok(url)
 }
 
-pub async fn error_offline(km: KernelMessage, network_error_tx: &NetworkErrorSender) -> Result<()> {
+pub async fn error_offline(km: KernelMessage, network_error_tx: &NetworkErrorSender) {
     network_error_tx
         .send(WrappedSendError {
             id: km.id,
@@ -114,8 +133,8 @@ pub async fn error_offline(km: KernelMessage, network_error_tx: &NetworkErrorSen
                 lazy_load_blob: km.lazy_load_blob,
             },
         })
-        .await?;
-    Ok(())
+        .await
+        .expect("net: network_error_tx was dropped");
 }
 
 pub fn net_key_string_to_hex(s: &str) -> Vec<u8> {
@@ -163,6 +182,17 @@ pub async fn parse_hello_message(
     Ok(())
 }
 
+/// Create a terminal printout at verbosity level 0.
+pub async fn print_loud(print_tx: &PrintSender, content: &str) {
+    let _ = print_tx
+        .send(Printout {
+            verbosity: 0,
+            content: content.into(),
+        })
+        .await;
+}
+
+/// Create a terminal printout at verbosity level 2.
 pub async fn print_debug(print_tx: &PrintSender, content: &str) {
     let _ = print_tx
         .send(Printout {
