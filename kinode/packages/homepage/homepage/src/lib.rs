@@ -12,6 +12,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::kinode::process::homepage::{AddRequest, Request as HomepageRequest};
 
+/// Fetching OS version from main package.. LMK if there's a better way...
+const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
+
 #[derive(Serialize, Deserialize)]
 struct HomepageApp {
     package_name: String,
@@ -62,6 +65,7 @@ fn init(our: Address) {
     .expect("failed to bind to /our.js");
 
     bind_http_path("/apps", true, false).expect("failed to bind /apps");
+    bind_http_path("/version", true, false).expect("failed to bind /version");
 
     loop {
         let Ok(ref message) = await_message() else {
@@ -134,6 +138,13 @@ fn init(our: Address) {
                                     .to_vec(),
                                 );
                             }
+                            "/version" => {
+                                send_response(
+                                    StatusCode::OK,
+                                    Some(HashMap::new()),
+                                    version_from_cargo_toml().as_bytes().to_vec(),
+                                );
+                            }
                             _ => {
                                 send_response(
                                     StatusCode::OK,
@@ -148,4 +159,19 @@ fn init(our: Address) {
             }
         }
     }
+}
+
+fn version_from_cargo_toml() -> String {
+    let version = CARGO_TOML
+        .lines()
+        .find(|line| line.starts_with("version = "))
+        .expect("Failed to find version in Cargo.toml");
+
+    version
+        .split('=')
+        .last()
+        .expect("Failed to parse version from Cargo.toml")
+        .trim()
+        .trim_matches('"')
+        .to_string()
 }
