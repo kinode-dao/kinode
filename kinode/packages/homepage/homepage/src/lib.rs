@@ -1,6 +1,6 @@
 #![feature(let_chains)]
 use kinode_process_lib::{
-    await_message, call_init,
+    await_message, call_init, get_blob,
     http::{
         bind_http_path, bind_http_static_path, send_response, serve_ui, HttpServerError,
         HttpServerRequest, StatusCode,
@@ -22,6 +22,7 @@ struct HomepageApp {
     label: String,
     base64_icon: Option<String>,
     widget: Option<String>,
+    order: Option<u16>,
 }
 
 wit_bindgen::generate!({
@@ -66,6 +67,7 @@ fn init(our: Address) {
 
     bind_http_path("/apps", true, false).expect("failed to bind /apps");
     bind_http_path("/version", true, false).expect("failed to bind /version");
+    bind_http_path("/order", true, false).expect("failed to bind /order");
 
     loop {
         let Ok(ref message) = await_message() else {
@@ -107,6 +109,7 @@ fn init(our: Address) {
                                 label,
                                 base64_icon: icon,
                                 widget,
+                                order: None,
                             },
                         );
                     }
@@ -126,16 +129,11 @@ fn init(our: Address) {
                                         "Content-Type".to_string(),
                                         "application/json".to_string(),
                                     )])),
-                                    format!(
-                                        "[{}]",
-                                        app_data
-                                            .values()
-                                            .map(|app| serde_json::to_string(app).unwrap())
-                                            .collect::<Vec<String>>()
-                                            .join(",")
-                                    )
-                                    .as_bytes()
-                                    .to_vec(),
+                                    {
+                                        let mut apps: Vec<_> = app_data.values().collect();
+                                        apps.sort_by_key(|app| app.order.unwrap_or(255));
+                                        serde_json::to_vec(&apps).unwrap_or_else(|_| Vec::new())
+                                    },
                                 );
                             }
                             "/version" => {
@@ -144,6 +142,34 @@ fn init(our: Address) {
                                     Some(HashMap::new()),
                                     version_from_cargo_toml().as_bytes().to_vec(),
                                 );
+                            }
+                            "/order" => {
+                                // POST of a list of package names.
+                                // go through the list and update each app in app_data to have the index of its name in the list as its order
+                                if let Some(body) = get_blob() {
+                                    let apps: Vec<String> =
+                                        serde_json::from_slice(&body.bytes).unwrap();
+                                    for (i, app) in apps.iter().enumerate() {
+                                        println!("setting order for {app} to {i}");
+                                        if let Some(app) = app_data.get_mut(app) {
+                                            app.order = Some(i as u16);
+                                        }
+                                    }
+                                    send_response(
+                                        StatusCode::OK,
+                                        Some(HashMap::from([(
+                                            "Content-Type".to_string(),
+                                            "application/json".to_string(),
+                                        )])),
+                                        vec![],
+                                    );
+                                } else {
+                                    send_response(
+                                        StatusCode::BAD_REQUEST,
+                                        Some(HashMap::new()),
+                                        vec![],
+                                    );
+                                }
                             }
                             _ => {
                                 send_response(
