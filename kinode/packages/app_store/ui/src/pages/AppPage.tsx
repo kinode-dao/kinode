@@ -55,19 +55,19 @@ export default function AppPage() {
   const isMobile = isMobileCheck()
 
   const appDetails: Array<{ top: ReactElement, middle: ReactElement, bottom: ReactElement }> = [
-    {
-      top: <div className={classNames({ 'text-sm': isMobile })}>0 ratings</div>,
-      middle: <span className="text-2xl">5.0</span>,
-      bottom: <div className={classNames("flex-center gap-1", {
-        'text-sm': isMobile
-      })}>
-        <FaStar />
-        <FaStar />
-        <FaStar />
-        <FaStar />
-        <FaStar />
-      </div>
-    },
+    // {
+    //   top: <div className={classNames({ 'text-sm': isMobile })}>0 ratings</div>,
+    //   middle: <span className="text-2xl">5.0</span>,
+    //   bottom: <div className={classNames("flex-center gap-1", {
+    //     'text-sm': isMobile
+    //   })}>
+    //     <FaStar />
+    //     <FaStar />
+    //     <FaStar />
+    //     <FaStar />
+    //     <FaStar />
+    //   </div>
+    // },
     {
       top: <div className={classNames({ 'text-sm': isMobile })}>Developer</div>,
       middle: <FaPeopleGroup size={36} />,

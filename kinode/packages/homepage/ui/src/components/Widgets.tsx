@@ -1,7 +1,7 @@
 import useHomepageStore from "../store/homepageStore"
 import Widget from "./Widget"
 import usePersistentStore from "../store/persistentStore"
-import { isMobileCheck } from "../utilities/dimensions"
+import { isMobileCheck } from "../utils/dimensions"
 import classNames from "classnames"
 
 const Widgets = () => {

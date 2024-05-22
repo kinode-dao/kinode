@@ -1,6 +1,6 @@
 import classNames from "classnames"
 import useHomepageStore from "../store/homepageStore"
-import { isMobileCheck } from "../utilities/dimensions"
+import { isMobileCheck } from "../utils/dimensions"
 import AppDisplay from "./AppDisplay"
 
 const AllApps: React.FC<{ expanded: boolean }> = ({ expanded }) => {

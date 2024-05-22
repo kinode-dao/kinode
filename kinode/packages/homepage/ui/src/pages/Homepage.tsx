@@ -6,7 +6,7 @@ import { FaChevronDown, FaChevronUp, FaScrewdriverWrench } from 'react-icons/fa6
 import AppsDock from '../components/AppsDock'
 import AllApps from '../components/AllApps'
 import Widgets from '../components/Widgets'
-import { isMobileCheck } from '../utilities/dimensions'
+import { isMobileCheck } from '../utils/dimensions'
 import classNames from 'classnames'
 import WidgetsSettingsModal from '../components/WidgetsSettingsModal'
 
