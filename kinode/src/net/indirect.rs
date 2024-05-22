@@ -6,9 +6,9 @@ use crate::net::{
 use lib::types::core::{Identity, NodeRouting};
 use tokio::{sync::mpsc, time};
 
-pub async fn maintain_routers(ext: IdentityExt, data: NetData) {
+pub async fn maintain_routers(ext: IdentityExt, data: NetData) -> anyhow::Result<()> {
     let NodeRouting::Routers(ref routers) = ext.our.routing else {
-        return;
+        return Err(anyhow::anyhow!("net: no routers to maintain"));
     };
     loop {
         for router_namehash in routers {
@@ -37,13 +37,14 @@ pub async fn connect_to_router(router_id: &Identity, ext: IdentityExt, data: Net
     )
     .await;
     let (peer_tx, peer_rx) = mpsc::unbounded_channel();
-    let router_peer = Peer {
-        identity: router_id.clone(),
-        routing_for: false,
-        sender: peer_tx.clone(),
-    };
-    data.peers
-        .insert(router_id.name.clone(), router_peer.clone());
+    data.peers.insert(
+        router_id.name.clone(),
+        Peer {
+            identity: router_id.clone(),
+            routing_for: false,
+            sender: peer_tx.clone(),
+        },
+    );
     if let Some(port) = router_id.get_protocol_port(TCP_PROTOCOL) {
         match tcp::init_direct(&ext, &data, &router_id, port, false, peer_rx).await {
             Ok(()) => return,

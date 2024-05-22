@@ -1,6 +1,9 @@
-use crate::net::types::*;
-use anyhow::{anyhow, Result};
-use lib::types::core::*;
+use crate::net::types::{HandshakePayload, OnchainPKI, PKINames, RoutingRequest};
+use lib::types::core::{
+    Address, Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetworkErrorSender,
+    NodeRouting, PrintSender, Printout, ProcessId, Response, SendError, SendErrorKind,
+    WrappedSendError,
+};
 use ring::signature::{self};
 use snow::params::NoiseParams;
 
@@ -42,37 +45,48 @@ pub fn validate_signature(from: &str, signature: &[u8], message: &[u8], pki: &On
 }
 
 pub fn validate_routing_request(
-    our_name: &str,
+    our_name: &String,
     buf: &[u8],
     pki: &OnchainPKI,
-) -> Result<(Identity, NodeId)> {
+) -> anyhow::Result<(Identity, Identity)> {
     let routing_request: RoutingRequest = rmp_serde::from_slice(buf)?;
-    let their_id = pki
+    let from_id = pki
         .get(&routing_request.source)
-        .ok_or(anyhow!("unknown KNS name"))?;
+        .ok_or(anyhow::anyhow!("unknown KNS name"))?;
     let their_networking_key = signature::UnparsedPublicKey::new(
         &signature::ED25519,
-        net_key_string_to_hex(&their_id.networking_key),
+        net_key_string_to_hex(&from_id.networking_key),
     );
     their_networking_key
         .verify(
-            [&routing_request.target, our_name].concat().as_bytes(),
+            format!("{}{}", routing_request.target, our_name).as_bytes(),
             &routing_request.signature,
         )
-        .map_err(|e| anyhow!("their_networking_key.verify failed: {:?}", e))?;
-    if routing_request.target == routing_request.source {
-        return Err(anyhow!("can't route to self"));
+        .map_err(|e| anyhow::anyhow!("their_networking_key.verify failed: {:?}", e))?;
+    let target_id = pki
+        .get(&routing_request.target)
+        .ok_or(anyhow::anyhow!("unknown KNS name"))?;
+    match target_id.routers() {
+        Some(routers) => {
+            if !routers.contains(our_name) {
+                return Err(anyhow::anyhow!("not routing for them"));
+            }
+        }
+        None => return Err(anyhow::anyhow!("not routing for them")),
     }
-    Ok((their_id.clone(), routing_request.target))
+    if routing_request.target == routing_request.source {
+        return Err(anyhow::anyhow!("can't route to self"));
+    }
+    Ok((from_id.clone(), target_id.clone()))
 }
 
 pub fn validate_handshake(
     handshake: &HandshakePayload,
     their_static_key: &[u8],
     their_id: &Identity,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     if handshake.protocol_version != 1 {
-        return Err(anyhow!("handshake protocol version mismatch"));
+        return Err(anyhow::anyhow!("handshake protocol version mismatch"));
     }
     // verify their signature of their static key
     let their_networking_key = signature::UnparsedPublicKey::new(
@@ -81,7 +95,7 @@ pub fn validate_handshake(
     );
     their_networking_key
         .verify(their_static_key, &handshake.signature)
-        .map_err(|e| anyhow!("their_networking_key.verify handshake failed: {:?}", e))?;
+        .map_err(|e| anyhow::anyhow!("their_networking_key.verify handshake failed: {:?}", e))?;
     Ok(())
 }
 
@@ -113,7 +127,12 @@ pub fn build_initiator() -> (snow::HandshakeState, Vec<u8>) {
     )
 }
 
-pub fn make_conn_url(our_ip: &str, ip: &str, port: &u16, protocol: &str) -> Result<url::Url> {
+pub fn make_conn_url(
+    our_ip: &str,
+    ip: &str,
+    port: &u16,
+    protocol: &str,
+) -> anyhow::Result<url::Url> {
     // if we have the same public IP as target, route locally,
     // otherwise they will appear offline due to loopback stuff
     let ip = if our_ip == ip { "localhost" } else { ip };
@@ -147,17 +166,16 @@ pub async fn parse_hello_message(
     body: &[u8],
     kernel_message_tx: &MessageSender,
     print_tx: &PrintSender,
-) -> Result<()> {
-    print_tx
-        .send(Printout {
-            verbosity: 0,
-            content: format!(
-                "\x1b[3;32m{}: {}\x1b[0m",
-                km.source.node,
-                std::str::from_utf8(body).unwrap_or("!!message parse error!!")
-            ),
-        })
-        .await?;
+) {
+    print_loud(
+        print_tx,
+        &format!(
+            "\x1b[3;32m{}: {}\x1b[0m",
+            km.source.node,
+            std::str::from_utf8(body).unwrap_or("!!message parse error!!")
+        ),
+    )
+    .await;
     kernel_message_tx
         .send(KernelMessage {
             id: km.id,
@@ -178,8 +196,8 @@ pub async fn parse_hello_message(
             )),
             lazy_load_blob: None,
         })
-        .await?;
-    Ok(())
+        .await
+        .expect("net: kernel_message_tx was dropped");
 }
 
 /// Create a terminal printout at verbosity level 0.

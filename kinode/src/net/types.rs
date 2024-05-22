@@ -1,14 +1,12 @@
 use {
-    anyhow::Result,
     dashmap::DashMap,
     lib::types::core::{
         Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
     },
     ring::signature::Ed25519KeyPair,
     serde::{Deserialize, Serialize},
-    std::sync::{Arc, Mutex},
+    std::sync::Arc,
     tokio::sync::mpsc::UnboundedSender,
-    tokio::task::JoinSet,
 };
 
 pub const WS_PROTOCOL: &str = "ws";
@@ -16,6 +14,8 @@ pub const TCP_PROTOCOL: &str = "tcp";
 
 /// Sent to a node when you want to connect directly to them.
 /// Sent in the 'e, ee, s, es' and 's, se' phases of XX noise protocol pattern.
+///
+/// Should always be serialized and deserialized using MessagePack.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HandshakePayload {
     pub protocol_version: u8,
@@ -24,9 +24,7 @@ pub struct HandshakePayload {
     // someone could reuse this signature, but then they will be unable
     // to encrypt messages to us.
     pub signature: Vec<u8>,
-    /// Set to true when you want them to act as a router for you, sending
-    /// messages from potentially many remote sources over this connection,
-    /// including from the router itself.
+    /// Set to true when you want them to act as a router for you.
     /// This is not relevant in a handshake sent from the receiver side.
     pub proxy_request: bool,
 }
@@ -42,6 +40,8 @@ pub struct HandshakePayload {
 /// they are willing to proxy for you.
 ///
 /// Sent in the 'e' phase of XX noise protocol pattern.
+///
+/// Should always be serialized and deserialized using MessagePack.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RoutingRequest {
     pub protocol_version: u8,
@@ -55,7 +55,6 @@ pub struct RoutingRequest {
 pub type Peers = Arc<DashMap<String, Peer>>;
 pub type PKINames = Arc<DashMap<String, NodeId>>;
 pub type OnchainPKI = Arc<DashMap<String, Identity>>;
-pub type PeerMessageQueues = Arc<DashMap<NodeId, Vec<KernelMessage>>>;
 
 #[derive(Clone)]
 pub struct Peer {
@@ -84,5 +83,4 @@ pub struct NetData {
     pub pki: OnchainPKI,
     pub peers: Peers,
     pub names: PKINames,
-    pub peer_message_queues: PeerMessageQueues,
 }

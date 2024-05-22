@@ -1,15 +1,9 @@
 use lib::types::core::{
     Address, Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
-    NetworkErrorSender, NodeId, NodeRouting, PrintSender, ProcessId,
+    NetworkErrorSender, NodeRouting, PrintSender, ProcessId,
 };
-use types::{IdentityExt, NetData, OnchainPKI, PKINames, Peer, PeerMessageQueues, Peers};
-use {
-    anyhow::{anyhow, Result},
-    dashmap::DashMap,
-    ring::signature::Ed25519KeyPair,
-    std::sync::Arc,
-    tokio::task::JoinSet,
-};
+use types::{IdentityExt, NetData, OnchainPKI, PKINames, Peers};
+use {dashmap::DashMap, ring::signature::Ed25519KeyPair, std::sync::Arc, tokio::task::JoinSet};
 
 mod connect;
 mod indirect;
@@ -37,7 +31,7 @@ pub async fn networking(
     self_message_tx: MessageSender,
     kernel_message_rx: MessageReceiver,
     reveal_ip: bool, // only used if indirect
-) -> Result<()> {
+) -> anyhow::Result<()> {
     let ext = IdentityExt {
         our: Arc::new(our),
         our_ip: Arc::new(our_ip),
@@ -56,21 +50,10 @@ pub async fn networking(
     // this allows us to act as a translator for others, and translate
     // our own router namehashes if we are indirect.
     let names: PKINames = Arc::new(DashMap::new());
-    // add a queue for messages received from kernel to nodes that we
-    // are in the middle of establishing a route for. this gets used
-    // often, since if a stream of messages starts to a new peer, the
-    // first one will initiate route creation and the rest will get
-    // dumped right here.
-    let peer_message_queues: PeerMessageQueues = Arc::new(DashMap::new());
 
-    let net_data = NetData {
-        pki,
-        peers,
-        names,
-        peer_message_queues,
-    };
+    let net_data = NetData { pki, peers, names };
 
-    let mut tasks = JoinSet::<()>::new();
+    let mut tasks = JoinSet::<anyhow::Result<()>>::new();
 
     // spawn the task for handling messages from the kernel,
     // and depending on the ports in our identity, the tasks
@@ -80,7 +63,7 @@ pub async fn networking(
     match &ext.our.routing {
         NodeRouting::Direct { ip, ports } => {
             if *ext.our_ip != *ip {
-                return Err(anyhow!(
+                return Err(anyhow::anyhow!(
                     "net: fatal error: IP address mismatch: {} != {}, update your KNS identity",
                     ext.our_ip,
                     ip
@@ -96,7 +79,7 @@ pub async fn networking(
         }
         NodeRouting::Routers(routers) | NodeRouting::Both { routers, .. } => {
             if routers.is_empty() {
-                return Err(anyhow!(
+                return Err(anyhow::anyhow!(
                     "net: fatal error: need at least one router, update your KNS identity"
                 ));
             }
@@ -109,12 +92,16 @@ pub async fn networking(
     }
 
     // if any of these tasks complete, we should exit with an error
-    tasks.join_next().await.unwrap().map_err(|e| e.into())
+    tasks.join_next().await.unwrap()?
 }
 
 /// handle messages from the kernel. if the `target` is our node-id, we handle
 /// it. otherwise, we treat it as a message to be routed.
-async fn local_recv(ext: IdentityExt, mut kernel_message_rx: MessageReceiver, data: NetData) {
+async fn local_recv(
+    ext: IdentityExt,
+    mut kernel_message_rx: MessageReceiver,
+    data: NetData,
+) -> anyhow::Result<()> {
     while let Some(km) = kernel_message_rx.recv().await {
         if km.target.node == ext.our.name {
             // handle messages sent to us
@@ -123,6 +110,7 @@ async fn local_recv(ext: IdentityExt, mut kernel_message_rx: MessageReceiver, da
             connect::send_to_peer(&ext, &data, km).await;
         }
     }
+    Err(anyhow::anyhow!("net: kernel message channel was dropped"))
 }
 
 async fn handle_message(ext: &IdentityExt, km: &KernelMessage, data: &NetData) {
@@ -307,7 +295,7 @@ async fn handle_remote_request(
         _ => {
             // if we can't parse this to a NetAction, treat it as a hello and print it,
             // and respond with a simple "delivered" response
-            let _ = utils::parse_hello_message(
+            utils::parse_hello_message(
                 &ext.our,
                 &km,
                 request_body,
