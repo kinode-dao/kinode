@@ -11,6 +11,7 @@ export interface HomepageApp {
     our_version: string
   }
   widget?: string
+  order?: number
 }
 
 export interface HomepageStore {

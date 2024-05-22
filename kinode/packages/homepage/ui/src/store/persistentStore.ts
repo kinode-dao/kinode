@@ -14,8 +14,12 @@ export interface PersistentStore {
   toggleWidgetVisibility: (package_name: string) => void
   setWidgetSize: (package_name: string, size: 'small' | 'large') => void,
   favoriteApps: {
-    [key: string]: boolean
+    [key: string]: {
+      favorite: boolean
+      order?: number
+    }
   }
+  setFavoriteApps: (favoriteApps: PersistentStore['favoriteApps']) => void
   favoriteApp: (package_name: string) => void
 }
 
@@ -27,6 +31,7 @@ const usePersistentStore = create<PersistentStore>()(
       widgetSettings: {},
       favoriteApps: {},
       setWidgetSettings: (widgetSettings: PersistentStore['widgetSettings']) => set({ widgetSettings }),
+      setFavoriteApps: (favoriteApps: PersistentStore['favoriteApps']) => set({ favoriteApps }),
       toggleWidgetVisibility: (package_name: string) => {
         const { widgetSettings } = get()
         set({
@@ -56,7 +61,10 @@ const usePersistentStore = create<PersistentStore>()(
         set({
           favoriteApps: {
             ...favoriteApps,
-            [package_name]: !favoriteApps[package_name]
+            [package_name]: {
+              ...favoriteApps[package_name],
+              favorite: !favoriteApps[package_name]?.favorite
+            }
           }
         })
       },
