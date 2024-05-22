@@ -30,8 +30,8 @@ fn init(_our: Address) {
     };
     match maybe_peer_id {
         Some(peer_id) => println!(
-            "peer identity for {}:\n    networking key: {}\n    routing: {:?}\n    routers: {:?}",
-            peer_id.name, peer_id.networking_key, peer_id.ws_routing, peer_id.allowed_routers
+            "peer identity for {}:\n    networking key: {}\n    routing: {:?}",
+            peer_id.name, peer_id.networking_key, peer_id.routing
         ),
         None => println!("no PKI entry found with name {name}"),
     }
