@@ -523,8 +523,7 @@ pub async fn simulate_node(
                             "0x{}",
                             hex::encode(decoded.networking_keypair.public_key().as_ref())
                         ),
-                        ws_routing: None,
-                        allowed_routers: decoded.routers.clone(),
+                        routing: NodeRouting::Routers(decoded.routers.clone()),
                     };
 
                     fakenet::assign_ws_local_helper(
@@ -556,8 +555,10 @@ pub async fn simulate_node(
             let identity = Identity {
                 name: name.clone(),
                 networking_key: pubkey,
-                ws_routing: Some(("127.0.0.1".into(), ws_port)),
-                allowed_routers: vec![],
+                routing: NodeRouting::Direct {
+                    ip: "127.0.0.1".into(),
+                    ports: std::collections::BTreeMap::from([("ws".to_string(), ws_port)]),
+                }
             };
 
             let decoded_keyfile = Keyfile {

@@ -7,7 +7,7 @@ use alloy_rpc_types::request::{TransactionInput, TransactionRequest};
 use alloy_signer::{LocalWallet, Signer, SignerSync};
 use alloy_sol_types::{SolCall, SolValue};
 use alloy_transport_ws::WsConnect;
-use lib::core::Identity;
+use lib::core::{Identity, NodeRouting};
 use std::str::FromStr;
 
 pub mod helpers;
@@ -191,7 +191,10 @@ pub async fn assign_ws_local_helper(
             ));
         }
 
-        our.ws_routing = Some((node_ip, ws));
+        our.routing = NodeRouting::Direct {
+            ip: node_ip,
+            ports: std::collections::BTreeMap::from([("ws".to_string(), ws)]),
+        };
     }
     Ok(())
 }
