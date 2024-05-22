@@ -22,8 +22,8 @@ fn init(_our: Address) {
         .iter()
         .map(|peer_id| {
             format!(
-                "{}:\n    networking key: {}\n    routing: {:?}\n    routers: {:?}",
-                peer_id.name, peer_id.networking_key, peer_id.ws_routing, peer_id.allowed_routers
+                "{}:\n    networking key: {}\n    routing: {:?}",
+                peer_id.name, peer_id.networking_key, peer_id.routing
             )
         })
         .collect::<Vec<_>>()
