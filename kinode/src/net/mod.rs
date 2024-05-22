@@ -2,7 +2,7 @@ use lib::types::core::{
     Address, Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
     NetworkErrorSender, NodeId, NodeRouting, PrintSender, ProcessId,
 };
-use types::{IdentityExt, NetData, OnchainPKI, PKINames, PeerMessageQueues, Peers};
+use types::{IdentityExt, NetData, OnchainPKI, PKINames, Peer, PeerMessageQueues, Peers};
 use {
     anyhow::{anyhow, Result},
     dashmap::DashMap,
@@ -11,6 +11,9 @@ use {
     tokio::task::JoinSet,
 };
 
+mod connect;
+mod indirect;
+mod tcp;
 pub mod types;
 mod utils;
 mod ws;
@@ -43,6 +46,7 @@ pub async fn networking(
         network_error_tx,
         print_tx,
         self_message_tx,
+        reveal_ip,
     };
     // start by initializing the structs where we'll store PKI in memory
     // and store a mapping of peers we have an active route for
@@ -84,14 +88,10 @@ pub async fn networking(
             }
             utils::print_loud(&ext.print_tx, "going online as a direct node").await;
             if ports.contains_key("ws") {
-                // tokio::spawn(ws::networking(
-                //     ext.clone(),
-                //     kernel_message_rx,
-                //     net_data.clone(),
-                // ));
+                tasks.spawn(ws::receiver(ext.clone(), net_data.clone()));
             }
             if ports.contains_key("tcp") {
-                todo!()
+                tasks.spawn(tcp::receiver(ext.clone(), net_data.clone()));
             }
         }
         NodeRouting::Routers(routers) | NodeRouting::Both { routers, .. } => {
@@ -103,75 +103,24 @@ pub async fn networking(
             utils::print_loud(&ext.print_tx, "going online as an indirect node").await;
             // if we are indirect, we need to establish a route to each router
             // and then listen for incoming connections on each of them.
-            for router in routers {
-                connect_to_peer(ext.clone(), router, net_data.clone()).await;
-            }
+            // this task will periodically check and re-connect to routers
+            tasks.spawn(indirect::maintain_routers(ext.clone(), net_data.clone()));
         }
     }
 
-    // if any tasks complete, we should exit with an error
+    // if any of these tasks complete, we should exit with an error
     tasks.join_next().await.unwrap().map_err(|e| e.into())
-}
-
-async fn connect_to_peer(ext: IdentityExt, peer: &NodeId, net_data: NetData) {
-    // get peer identity from PKI
-    // if it doesn't exist, throw offline error
-
-    // if it's direct, see what protocols we can use
-    // prefer tcp, then ws
-
-    // if it's indirect, for each router they list,
-    // - try to connect to that router
-    // - try to send connection request to that router
-    // - wait for success/failure response
 }
 
 /// handle messages from the kernel. if the `target` is our node-id, we handle
 /// it. otherwise, we treat it as a message to be routed.
 async fn local_recv(ext: IdentityExt, mut kernel_message_rx: MessageReceiver, data: NetData) {
-    let mut pending_peers = JoinSet::<(NodeId, Result<()>)>::new();
-    loop {
-        tokio::select! {
-            Some(km) = kernel_message_rx.recv() => {
-                if km.target.node == ext.our.name {
-                    // handle messages sent to us
-                    handle_message(&ext, &km, &data).await;
-                } else {
-                    // if target is a peer, route
-                    // if target is a pending-peer, queue
-                    // otherwise, initiate routing and set up a queue
-                    if let Some(peer) = data.peers.get_mut(&km.target.node) {
-                        peer.sender.send(km).expect("net: peer sender was dropped");
-                    } else if let Some(mut queue) = data.peer_message_queues.get_mut(&km.target.node) {
-                        queue.push(km);
-                    } else {
-                        // initiate routing
-                        // initiate_routing(&ext, km, pki, peers, peer_message_queues).await;
-                    }
-                }
-            }
-            Some(Ok((peer_name, result))) = pending_peers.join_next() => {
-                match result {
-                    Ok(()) => {
-                        // if we have a message queue for this peer, send it out
-                        if let Some((_name, queue)) = data.peer_message_queues.remove(&peer_name) {
-                            let peer = data.peers.get(&peer_name).expect("net: expected peer to be active");
-                            for km in queue {
-                                peer.sender.send(km).expect("net: peer sender was dropped");
-                            }
-                        }
-                    }
-                    Err(_e) => {
-                        // throw offline error for each message in this peer's queue
-                        // because we failed to establish a route
-                        if let Some((_name, queue)) = data.peer_message_queues.remove(&peer_name) {
-                            for km in queue {
-                                utils::error_offline(km, &ext.network_error_tx).await;
-                            }
-                        }
-                    }
-                }
-            }
+    while let Some(km) = kernel_message_rx.recv().await {
+        if km.target.node == ext.our.name {
+            // handle messages sent to us
+            handle_message(&ext, &km, &data).await;
+        } else {
+            connect::send_to_peer(&ext, &data, km).await;
         }
     }
 }

@@ -11,6 +11,9 @@ use {
     tokio::task::JoinSet,
 };
 
+pub const WS_PROTOCOL: &str = "ws";
+pub const TCP_PROTOCOL: &str = "tcp";
+
 /// Sent to a node when you want to connect directly to them.
 /// Sent in the 'e, ee, s, es' and 's, se' phases of XX noise protocol pattern.
 #[derive(Debug, Deserialize, Serialize)]
@@ -73,6 +76,7 @@ pub struct IdentityExt {
     pub network_error_tx: NetworkErrorSender,
     pub print_tx: PrintSender,
     pub self_message_tx: MessageSender,
+    pub reveal_ip: bool,
 }
 
 #[derive(Clone)]

@@ -13,7 +13,7 @@ use {
     std::{collections::HashMap, sync::Arc},
     tokio::net::TcpListener,
     tokio::task::JoinSet,
-    tokio::time,
+    tokio::{sync::mpsc, time},
     tokio_tungstenite::{
         accept_async, connect_async, tungstenite, MaybeTlsStream, WebSocketStream,
     },
@@ -30,6 +30,32 @@ pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 pub const MESSAGE_MAX_SIZE: u32 = 10_485_800;
 
 /// Entry point from the main kernel task. Runs forever, spawns listener and sender tasks.
+pub async fn receiver(ext: IdentityExt, net_data: NetData) {
+    todo!()
+}
+
+pub async fn init_direct(
+    ext: &IdentityExt,
+    data: &NetData,
+    peer_id: &Identity,
+    port: u16,
+    proxy_request: bool,
+    peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
+) -> Result<(), mpsc::UnboundedReceiver<KernelMessage>> {
+    todo!()
+}
+
+pub async fn init_routed(
+    ext: &IdentityExt,
+    data: &NetData,
+    peer_id: &Identity,
+    router_id: &Identity,
+    port: u16,
+    peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
+) -> Result<(), mpsc::UnboundedReceiver<KernelMessage>> {
+    todo!()
+}
+
 pub async fn networking(
     our: Identity,
     our_ip: Arc<String>,
