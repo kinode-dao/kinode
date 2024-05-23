@@ -14,7 +14,7 @@ import classNames from "classnames";
 
 const { useIsActivating, useChainId } = hooks;
 
-type OsHeaderProps = {
+type KinodeHeaderProps = {
   header: ReactNode;
   nameLogo?: boolean;
   nodeChainId: string;
@@ -28,7 +28,7 @@ function KinodeHeader({
   closeConnect,
   nodeChainId,
   hideConnect = false,
-}: OsHeaderProps) {
+}: KinodeHeaderProps) {
   const { account, isActive } = useWeb3React();
   const isActivating = useIsActivating();
   const chainId = useChainId();
@@ -36,18 +36,13 @@ function KinodeHeader({
   const [networkName, setNetworkName] = useState("");
 
   useEffect(() => {
-    setNetworkName(getNetworkName((chainId || 1).toString()));
+    setNetworkName(getNetworkName(chainId?.toString()));
   }, [chainId]);
 
   const connectWallet = useCallback(async () => {
     closeConnect();
-    await metaMask.activate().catch(() => { });
-
-    try {
-      setChain(nodeChainId);
-    } catch (error) {
-      console.error(error);
-    }
+    await metaMask.activate();
+    setChain(nodeChainId);
   }, [closeConnect, nodeChainId]);
 
   const changeToNodeChain = useCallback(async () => {
@@ -60,11 +55,7 @@ function KinodeHeader({
         );
       }
 
-      try {
-        setChain(nodeChainId);
-      } catch (error) {
-        console.error(error);
-      }
+      setChain(nodeChainId);
     }
   }, [chainId, nodeChainId]);
 
@@ -97,12 +88,12 @@ function KinodeHeader({
                   className="network-icon"
                   src={optimismLogo}
                 />
-              ) : null}
+              ) : 'Not connected'}
               text={nodeChainId === SEPOLIA_OPT_HEX
                 ? `Your Kinode is currently pointed at Sepolia. To point at Optimism, boot without the "--testnet" flag.`
                 : nodeChainId === OPTIMISM_OPT_HEX
                   ? `Your Kinode is currently pointed at Optimism. To point at Sepolia, boot with the "--testnet" flag.`
-                  : ''}
+                  : 'Your Kinode is not pointed at a chain.'}
             />
           )}
         <div className="flex flex-col gap-4 c">

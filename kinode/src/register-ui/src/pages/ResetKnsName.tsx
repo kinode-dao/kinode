@@ -97,7 +97,7 @@ function Reset({
         } else if (index !== -1) vets.splice(index, 1);
 
         try {
-          const owner = await dotOs.ownerOf(hash(normalized));
+          const owner = await dotOs?.ownerOf(hash(normalized));
 
           index = vets.indexOf(NAME_NOT_OWNER);
           if (owner === accounts![0] && index !== -1) vets.splice(index, 1);
@@ -123,15 +123,13 @@ function Reset({
       e.preventDefault();
       e.stopPropagation();
 
-      if (!provider) return openConnect();
+      if (!provider || !kns) return openConnect();
 
       try {
         setLoading("Please confirm the transaction in your wallet");
 
         const {
-          networking_key,
-          ws_routing: [ip_address, port],
-          allowed_routers,
+          networking_key, routing: { Both: { ip: ip_address, ports: { ws: port }, routers: allowed_routers } }
         } = (await fetch("/generate-networking-info", { method: "POST" }).then(
           (res) => res.json()
         )) as NetworkingInfo;

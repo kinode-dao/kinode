@@ -49,7 +49,7 @@ export const CHAIN_DETAILS: { [key: string]: Chain } = {
   }
 }
 
-export const getNetworkName = (networkId: string) => {
+export const getNetworkName = (networkId?: string) => {
   switch (networkId) {
     case '1':
     case '0x1':
@@ -74,8 +74,7 @@ export const setChain = async (chainId: string) => {
   networkId = '0x' + (typeof networkId === 'string' ? networkId.replace(/^0x/, '') : networkId.toString(16))
 
   if (!CHAIN_DETAILS[chainId]) {
-    console.error(`Invalid chain ID: ${chainId}`)
-    return
+    throw new Error(`Invalid chain ID: ${chainId}`)
   }
 
   if (chainId !== networkId) {

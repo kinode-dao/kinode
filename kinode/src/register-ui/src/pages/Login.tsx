@@ -90,8 +90,15 @@ function Login({
           // Generate keys on server that are stored temporarily
           const {
             networking_key,
-            ws_routing: [ip_address, port],
-            allowed_routers,
+            routing: {
+              Both: {
+                ip: ip_address,
+                ports: {
+                  ws: port
+                },
+                routers: allowed_routers
+              }
+            },
           } = (await fetch("/generate-networking-info", {
             method: "POST",
           }).then((res) => res.json())) as NetworkingInfo;
@@ -140,7 +147,7 @@ function Login({
 
         // Login or confirm new keys
         const result = await fetch(
-          reset ? "/confirm-change-network-keys" : "login",
+          reset ? "/api/confirm-change-network-keys" : "login",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },

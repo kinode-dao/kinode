@@ -55,9 +55,7 @@ function ResetNode({
                 setLoading("Please confirm the transaction in your wallet");
 
                 const {
-                    networking_key,
-                    ws_routing: [ip_address, port],
-                    allowed_routers,
+                    networking_key, routing: { Both: { ip: ip_address, ports: { ws: port }, routers: allowed_routers } }
                 } = (await fetch("/generate-networking-info", { method: "POST" }).then(
                     (res) => res.json()
                 )) as NetworkingInfo;
