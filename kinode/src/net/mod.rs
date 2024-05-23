@@ -2,13 +2,16 @@ use lib::types::core::{
     Address, Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
     NetworkErrorSender, NodeRouting, PrintSender, ProcessId,
 };
-use types::{IdentityExt, NetData, OnchainPKI, PKINames, Peers};
+use types::{
+    IdentityExt, NetData, OnchainPKI, PKINames, Peers, PendingPassthroughs, TCP_PROTOCOL,
+    WS_PROTOCOL,
+};
 use {dashmap::DashMap, ring::signature::Ed25519KeyPair, std::sync::Arc, tokio::task::JoinSet};
 
 mod connect;
 mod indirect;
 mod tcp;
-pub mod types;
+mod types;
 mod utils;
 mod ws;
 
@@ -28,10 +31,10 @@ pub async fn networking(
     kernel_message_tx: MessageSender,
     network_error_tx: NetworkErrorSender,
     print_tx: PrintSender,
-    self_message_tx: MessageSender,
     kernel_message_rx: MessageReceiver,
-    reveal_ip: bool, // only used if indirect
+    _reveal_ip: bool, // only used if indirect
 ) -> anyhow::Result<()> {
+    println!("networking\r\n");
     let ext = IdentityExt {
         our: Arc::new(our),
         our_ip: Arc::new(our_ip),
@@ -39,8 +42,7 @@ pub async fn networking(
         kernel_message_tx,
         network_error_tx,
         print_tx,
-        self_message_tx,
-        reveal_ip,
+        _reveal_ip,
     };
     // start by initializing the structs where we'll store PKI in memory
     // and store a mapping of peers we have an active route for
@@ -50,8 +52,15 @@ pub async fn networking(
     // this allows us to act as a translator for others, and translate
     // our own router namehashes if we are indirect.
     let names: PKINames = Arc::new(DashMap::new());
+    // only used by routers
+    let pending_passthroughs: PendingPassthroughs = Arc::new(DashMap::new());
 
-    let net_data = NetData { pki, peers, names };
+    let net_data = NetData {
+        pki,
+        peers,
+        names,
+        pending_passthroughs,
+    };
 
     let mut tasks = JoinSet::<anyhow::Result<()>>::new();
 
@@ -70,10 +79,15 @@ pub async fn networking(
                 ));
             }
             utils::print_loud(&ext.print_tx, "going online as a direct node").await;
-            if ports.contains_key("ws") {
+            if !ports.contains_key(WS_PROTOCOL) && !ports.contains_key(TCP_PROTOCOL) {
+                return Err(anyhow::anyhow!(
+                    "net: fatal error: need at least one networking protocol"
+                ));
+            }
+            if ports.contains_key(WS_PROTOCOL) {
                 tasks.spawn(ws::receiver(ext.clone(), net_data.clone()));
             }
-            if ports.contains_key("tcp") {
+            if ports.contains_key(TCP_PROTOCOL) {
                 tasks.spawn(tcp::receiver(ext.clone(), net_data.clone()));
             }
         }
@@ -102,10 +116,11 @@ async fn local_recv(
     mut kernel_message_rx: MessageReceiver,
     data: NetData,
 ) -> anyhow::Result<()> {
+    println!("local_recv\r\n");
     while let Some(km) = kernel_message_rx.recv().await {
         if km.target.node == ext.our.name {
             // handle messages sent to us
-            handle_message(&ext, &km, &data).await;
+            handle_message(&ext, km, &data).await;
         } else {
             connect::send_to_peer(&ext, &data, km).await;
         }
@@ -113,11 +128,11 @@ async fn local_recv(
     Err(anyhow::anyhow!("net: kernel message channel was dropped"))
 }
 
-async fn handle_message(ext: &IdentityExt, km: &KernelMessage, data: &NetData) {
+async fn handle_message(ext: &IdentityExt, km: KernelMessage, data: &NetData) {
     match &km.message {
-        lib::core::Message::Request(request) => handle_request(ext, km, &request.body, data).await,
+        lib::core::Message::Request(request) => handle_request(ext, &km, &request.body, data).await,
         lib::core::Message::Response((response, _context)) => {
-            handle_response(ext, km, &response.body, data).await
+            handle_response(&km, &response.body, data).await
         }
     }
 }
@@ -182,7 +197,10 @@ async fn handle_local_request(
                         crate::KNS_ADDRESS
                     ));
                     printout.push_str(&format!("our Identity: {:#?}\r\n", ext.our));
-                    printout.push_str("we have connections with peers:\r\n");
+                    printout.push_str(&format!(
+                        "we have connections with {} peers:\r\n",
+                        data.peers.len()
+                    ));
                     for peer in data.peers.iter() {
                         printout.push_str(&format!(
                             "    {}, routing_for={}\r\n",
@@ -193,6 +211,16 @@ async fn handle_local_request(
                         "we have {} entries in the PKI\r\n",
                         data.pki.len()
                     ));
+                    if !data.pending_passthroughs.is_empty() {
+                        printout.push_str(&format!(
+                            "we have {} pending passthroughs:\r\n",
+                            data.pending_passthroughs.len()
+                        ));
+                        for p in data.pending_passthroughs.iter() {
+                            printout.push_str(&format!("    {} -> {}\r\n", p.key().0, p.key().1));
+                        }
+                    }
+
                     (NetResponse::Diagnostics(printout), None)
                 }
                 NetAction::Sign => (
@@ -283,14 +311,34 @@ async fn handle_remote_request(
             // someone wants to open a passthrough with us through a router.
             // if we are an indirect node, and source is one of our routers,
             // respond by attempting to init a matching passthrough.
-            let allowed_routers = match ext.our.routing {
-                NodeRouting::Routers(ref routers) => routers,
+            let allowed_routers = match &ext.our.routing {
+                NodeRouting::Routers(routers) => routers,
                 _ => return,
             };
-            if allowed_routers.contains(&km.source.node) {
-                // connect back to that router and open a passthrough via them
-                todo!();
+            if !allowed_routers.contains(&km.source.node) {
+                return;
             }
+            let Some(router_id) = data.pki.get(&km.source.node) else {
+                return;
+            };
+            let Some(peer_id) = data.pki.get(&from) else {
+                return;
+            };
+            // pick a protocol to connect to router with
+            // spawn a task that has a timeout here to not block the loop
+            let ext = ext.clone();
+            let data = data.clone();
+            let peer_id = peer_id.clone();
+            let router_id = router_id.clone();
+            tokio::spawn(async move {
+                tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                    if router_id.tcp_routing().is_some() {
+                        tcp::recv_via_router(ext, data, peer_id, router_id).await;
+                    } else if router_id.ws_routing().is_some() {
+                        ws::recv_via_router(ext, data, peer_id, router_id).await;
+                    }
+                })
+            });
         }
         _ => {
             // if we can't parse this to a NetAction, treat it as a hello and print it,
@@ -309,26 +357,16 @@ async fn handle_remote_request(
 
 // Responses are received as a router, when we send ConnectionRequests
 // to a node we do routing for.
-async fn handle_response(
-    ext: &IdentityExt,
-    km: &KernelMessage,
-    response_body: &[u8],
-    data: &NetData,
-) {
+async fn handle_response(km: &KernelMessage, response_body: &[u8], data: &NetData) {
     match rmp_serde::from_slice::<lib::core::NetResponse>(response_body) {
-        Ok(lib::core::NetResponse::Accepted(_)) => {
-            // TODO anything here?
-        }
         Ok(lib::core::NetResponse::Rejected(to)) => {
             // drop from our pending map
             // this will drop the socket, causing initiator to see it as failed
-            todo!();
-            // pending_passthroughs
-            //     .ok_or(anyhow!("got net response as non-router"))?
-            //     .remove(&(to, km.source.node));
+            data.pending_passthroughs
+                .remove(&(to, km.source.node.to_owned()));
         }
         _ => {
-            // ignore
+            // ignore any other response, for now
         }
     }
 }

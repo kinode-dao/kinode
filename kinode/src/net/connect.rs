@@ -3,13 +3,14 @@ use crate::net::{
     types::{IdentityExt, NetData, Peer, TCP_PROTOCOL, WS_PROTOCOL},
     utils, ws,
 };
-use lib::types::core::{Identity, KernelMessage, NodeRouting};
+use lib::types::core::{Identity, KernelMessage, NodeId, NodeRouting};
 use rand::prelude::SliceRandom;
 use tokio::sync::mpsc;
 
 /// if target is a peer, queue to be routed
 /// otherwise, create peer and initiate routing
 pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, km: KernelMessage) {
+    println!("send_to_peer\r");
     if let Some(peer) = data.peers.get_mut(&km.target.node) {
         peer.sender.send(km).expect("net: peer sender was dropped");
     } else {
@@ -22,15 +23,15 @@ pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, km: KernelMessage) 
             routing_for: false,
             sender: peer_tx.clone(),
         };
-        data.peers.insert(km.target.node.clone(), new_peer.clone());
-        // send message to be routed
-        peer_tx.send(km).unwrap();
+        data.peers.insert(km.target.node.clone(), new_peer);
         tokio::spawn(connect_to_peer(
             ext.clone(),
             data.clone(),
-            new_peer,
+            km.target.node.clone(),
             peer_rx,
         ));
+        // send message to be routed
+        peer_tx.send(km).unwrap();
     }
 }
 
@@ -40,12 +41,14 @@ pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, km: KernelMessage) 
 ///
 /// if we fail to connect, remove the peer from the map
 /// and return an offline error for each message in the receiver
-pub async fn connect_to_peer(
+async fn connect_to_peer(
     ext: IdentityExt,
     data: NetData,
-    peer: Peer,
+    peer_name: NodeId,
     peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) {
+    println!("connect_to_peer\r");
+    let peer = data.peers.get_mut(&peer_name).unwrap();
     if peer.identity.is_direct() {
         utils::print_debug(
             &ext.print_tx,
@@ -59,7 +62,7 @@ pub async fn connect_to_peer(
             match tcp::init_direct(&ext, &data, &peer.identity, port, false, peer_rx).await {
                 Ok(()) => return,
                 Err(peer_rx) => {
-                    return handle_failed_connection(ext, data, &peer.identity, peer_rx).await;
+                    return handle_failed_connection(&ext, &data, &peer.identity, peer_rx).await;
                 }
             }
         }
@@ -67,22 +70,23 @@ pub async fn connect_to_peer(
             match ws::init_direct(&ext, &data, &peer.identity, port, false, peer_rx).await {
                 Ok(()) => return,
                 Err(peer_rx) => {
-                    return handle_failed_connection(ext, data, &peer.identity, peer_rx).await;
+                    return handle_failed_connection(&ext, &data, &peer.identity, peer_rx).await;
                 }
             }
         }
     } else {
-        connect_via_router(ext, data, peer, peer_rx).await;
+        connect_via_router(&ext, &data, &peer, peer_rx).await;
     }
 }
 
 /// loop through the peer's routers, attempting to connect
 async fn connect_via_router(
-    ext: IdentityExt,
-    data: NetData,
-    peer: Peer,
+    ext: &IdentityExt,
+    data: &NetData,
+    peer: &Peer,
     mut peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) {
+    println!("connect_via_router\r");
     let routers_shuffled = {
         let mut routers = match peer.identity.routing {
             NodeRouting::Routers(ref routers) => routers.clone(),
@@ -101,7 +105,7 @@ async fn connect_via_router(
             Some(id) => id.clone(),
         };
         if let Some(port) = router_id.get_protocol_port(TCP_PROTOCOL) {
-            match tcp::init_routed(&ext, &data, &peer.identity, &router_id, port, peer_rx).await {
+            match tcp::init_routed(ext, data, &peer.identity, &router_id, port, peer_rx).await {
                 Ok(()) => return,
                 Err(e) => {
                     peer_rx = e;
@@ -110,7 +114,7 @@ async fn connect_via_router(
             }
         }
         if let Some(port) = router_id.get_protocol_port(WS_PROTOCOL) {
-            match ws::init_routed(&ext, &data, &peer.identity, &router_id, port, peer_rx).await {
+            match ws::init_routed(ext, data, &peer.identity, &router_id, port, peer_rx).await {
                 Ok(()) => return,
                 Err(e) => {
                     peer_rx = e;
@@ -123,11 +127,12 @@ async fn connect_via_router(
 }
 
 pub async fn handle_failed_connection(
-    ext: IdentityExt,
-    data: NetData,
+    ext: &IdentityExt,
+    data: &NetData,
     peer_id: &Identity,
     mut peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) {
+    println!("handle_failed_connection\r");
     utils::print_debug(
         &ext.print_tx,
         &format!("net: failed to connect to {}", peer_id.name),

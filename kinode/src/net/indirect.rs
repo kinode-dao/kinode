@@ -7,15 +7,12 @@ use lib::types::core::{Identity, NodeRouting};
 use tokio::{sync::mpsc, time};
 
 pub async fn maintain_routers(ext: IdentityExt, data: NetData) -> anyhow::Result<()> {
+    println!("maintain_routers\r");
     let NodeRouting::Routers(ref routers) = ext.our.routing else {
         return Err(anyhow::anyhow!("net: no routers to maintain"));
     };
     loop {
-        for router_namehash in routers {
-            let Some(router_name) = data.names.get(router_namehash) else {
-                // namehash does not map to a known node name
-                continue;
-            };
+        for router_name in routers {
             if data.peers.contains_key(router_name.as_str()) {
                 // already connected to this router
                 continue;
@@ -24,13 +21,14 @@ pub async fn maintain_routers(ext: IdentityExt, data: NetData) -> anyhow::Result
                 // router does not exist in PKI that we know of
                 continue;
             };
-            connect_to_router(&router_id, ext.clone(), data.clone()).await;
+            connect_to_router(&router_id, &ext, &data).await;
         }
         time::sleep(time::Duration::from_secs(4)).await;
     }
 }
 
-pub async fn connect_to_router(router_id: &Identity, ext: IdentityExt, data: NetData) {
+pub async fn connect_to_router(router_id: &Identity, ext: &IdentityExt, data: &NetData) {
+    println!("connect_to_router\r");
     utils::print_debug(
         &ext.print_tx,
         &format!("net: attempting to connect to router {}", router_id.name),
@@ -46,7 +44,7 @@ pub async fn connect_to_router(router_id: &Identity, ext: IdentityExt, data: Net
         },
     );
     if let Some(port) = router_id.get_protocol_port(TCP_PROTOCOL) {
-        match tcp::init_direct(&ext, &data, &router_id, port, false, peer_rx).await {
+        match tcp::init_direct(ext, data, &router_id, port, false, peer_rx).await {
             Ok(()) => return,
             Err(peer_rx) => {
                 return connect::handle_failed_connection(ext, data, router_id, peer_rx).await;
@@ -54,7 +52,7 @@ pub async fn connect_to_router(router_id: &Identity, ext: IdentityExt, data: Net
         }
     }
     if let Some(port) = router_id.get_protocol_port(WS_PROTOCOL) {
-        match ws::init_direct(&ext, &data, &router_id, port, false, peer_rx).await {
+        match ws::init_direct(ext, data, &router_id, port, false, peer_rx).await {
             Ok(()) => return,
             Err(peer_rx) => {
                 return connect::handle_failed_connection(ext, data, router_id, peer_rx).await;

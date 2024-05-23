@@ -1,4 +1,4 @@
-use crate::net::types::{HandshakePayload, OnchainPKI, PKINames, RoutingRequest};
+use crate::net::types::{HandshakePayload, OnchainPKI, PKINames, PendingStream, RoutingRequest};
 use lib::types::core::{
     Address, Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetworkErrorSender,
     NodeRouting, PrintSender, Printout, ProcessId, Response, SendError, SendErrorKind,
@@ -11,6 +11,47 @@ lazy_static::lazy_static! {
     pub static ref PARAMS: NoiseParams = "Noise_XX_25519_ChaChaPoly_BLAKE2s"
                                         .parse()
                                         .expect("net: couldn't build noise params?");
+}
+
+/// cross the streams -- spawn on own task
+pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStream) {
+    use tokio::io::copy;
+    // copy from ws_socket to tcp_socket and vice versa
+    // do not use bidirectional because if one side closes,
+    // we want to close the entire passthrough
+    match (socket_1, socket_2) {
+        (PendingStream::Tcp(socket_1), PendingStream::Tcp(socket_2)) => {
+            let (mut r1, mut w1) = tokio::io::split(socket_1);
+            let (mut r2, mut w2) = tokio::io::split(socket_2);
+            let c1 = copy(&mut r1, &mut w2);
+            let c2 = copy(&mut r2, &mut w1);
+            tokio::select! {
+                _ = c1 => return,
+                _ = c2 => return,
+            }
+        }
+        (PendingStream::WebSocket(mut ws_socket), PendingStream::Tcp(tcp_socket))
+        | (PendingStream::Tcp(tcp_socket), PendingStream::WebSocket(mut ws_socket)) => {
+            let (mut r1, mut w1) = tokio::io::split(ws_socket.get_mut());
+            let (mut r2, mut w2) = tokio::io::split(tcp_socket);
+            let c1 = copy(&mut r1, &mut w2);
+            let c2 = copy(&mut r2, &mut w1);
+            tokio::select! {
+                _ = c1 => return,
+                _ = c2 => return,
+            }
+        }
+        (PendingStream::WebSocket(mut socket_1), PendingStream::WebSocket(mut socket_2)) => {
+            let (mut r1, mut w1) = tokio::io::split(socket_1.get_mut());
+            let (mut r2, mut w2) = tokio::io::split(socket_2.get_mut());
+            let c1 = copy(&mut r1, &mut w2);
+            let c2 = copy(&mut r2, &mut w1);
+            tokio::select! {
+                _ = c1 => return,
+                _ = c2 => return,
+            }
+        }
+    }
 }
 
 pub fn ingest_log(log: KnsUpdate, pki: &OnchainPKI, names: &PKINames) {

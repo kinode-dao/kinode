@@ -1037,6 +1037,13 @@ impl Identity {
             NodeRouting::Both { ports, .. } => ports.get(protocol).cloned(),
         }
     }
+    pub fn get_ip(&self) -> Option<&str> {
+        match &self.routing {
+            NodeRouting::Routers(_) => None,
+            NodeRouting::Direct { ip, .. } => Some(ip),
+            NodeRouting::Both { ip, .. } => Some(ip),
+        }
+    }
     pub fn ws_routing(&self) -> Option<(&str, &u16)> {
         match &self.routing {
             NodeRouting::Routers(_) => None,
@@ -1049,6 +1056,25 @@ impl Identity {
             }
             NodeRouting::Both { ip, ports, .. } => {
                 if let Some(port) = ports.get("ws") {
+                    Some((ip, port))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+    pub fn tcp_routing(&self) -> Option<(&str, &u16)> {
+        match &self.routing {
+            NodeRouting::Routers(_) => None,
+            NodeRouting::Direct { ip, ports } => {
+                if let Some(port) = ports.get("tcp") {
+                    Some((ip, port))
+                } else {
+                    None
+                }
+            }
+            NodeRouting::Both { ip, ports, .. } => {
+                if let Some(port) = ports.get("tcp") {
                     Some((ip, port))
                 } else {
                     None

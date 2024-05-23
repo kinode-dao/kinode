@@ -6,7 +6,9 @@ use {
     ring::signature::Ed25519KeyPair,
     serde::{Deserialize, Serialize},
     std::sync::Arc,
+    tokio::net::TcpStream,
     tokio::sync::mpsc::UnboundedSender,
+    tokio_tungstenite::{MaybeTlsStream, WebSocketStream},
 };
 
 pub const WS_PROTOCOL: &str = "ws";
@@ -55,6 +57,12 @@ pub struct RoutingRequest {
 pub type Peers = Arc<DashMap<String, Peer>>;
 pub type PKINames = Arc<DashMap<String, NodeId>>;
 pub type OnchainPKI = Arc<DashMap<String, Identity>>;
+/// (from, target) -> from's socket
+pub type PendingPassthroughs = Arc<DashMap<(NodeId, NodeId), PendingStream>>;
+pub enum PendingStream {
+    WebSocket(WebSocketStream<MaybeTlsStream<TcpStream>>),
+    Tcp(TcpStream),
+}
 
 #[derive(Clone)]
 pub struct Peer {
@@ -74,8 +82,7 @@ pub struct IdentityExt {
     pub kernel_message_tx: MessageSender,
     pub network_error_tx: NetworkErrorSender,
     pub print_tx: PrintSender,
-    pub self_message_tx: MessageSender,
-    pub reveal_ip: bool,
+    pub _reveal_ip: bool, // TODO use
 }
 
 #[derive(Clone)]
@@ -83,4 +90,5 @@ pub struct NetData {
     pub pki: OnchainPKI,
     pub peers: Peers,
     pub names: PKINames,
+    pub pending_passthroughs: PendingPassthroughs,
 }

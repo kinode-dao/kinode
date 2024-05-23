@@ -276,7 +276,7 @@ async fn main() {
         kernel_message_receiver,
         network_error_receiver,
         kernel_debug_message_receiver,
-        net_message_sender.clone(),
+        net_message_sender,
         home_directory_path.clone(),
         runtime_extensions,
         // from saved eth provider config, filter for node identities which will be
@@ -301,7 +301,6 @@ async fn main() {
         kernel_message_sender.clone(),
         network_error_sender,
         print_sender.clone(),
-        net_message_sender,
         net_message_receiver,
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
     ));

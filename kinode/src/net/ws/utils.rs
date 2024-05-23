@@ -1,7 +1,9 @@
 use crate::net::{
-    types::{HandshakePayload, Peers},
-    utils::{make_conn_url, print_debug, print_loud},
-    ws::{PeerConnection, PendingPassthroughs, MESSAGE_MAX_SIZE, TIMEOUT},
+    types::{
+        HandshakePayload, IdentityExt, Peers, PendingPassthroughs, PendingStream, WS_PROTOCOL,
+    },
+    utils::{maintain_passthrough, make_conn_url, print_debug, print_loud},
+    ws::{PeerConnection, WebSocket, MESSAGE_MAX_SIZE, TIMEOUT},
 };
 use lib::core::{
     Address, Identity, KernelMessage, Message, MessageSender, NetAction, NodeId, PrintSender,
@@ -9,10 +11,9 @@ use lib::core::{
 };
 use {
     futures::{SinkExt, StreamExt},
-    ring::signature::Ed25519KeyPair,
     tokio::sync::mpsc::UnboundedReceiver,
     tokio::time,
-    tokio_tungstenite::{connect_async, tungstenite, MaybeTlsStream, WebSocketStream},
+    tokio_tungstenite::{connect_async, tungstenite},
 };
 
 /// should always be spawned on its own task
@@ -24,6 +25,7 @@ pub async fn maintain_connection(
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) {
+    println!("maintain_connection\r");
     let mut last_message = std::time::Instant::now();
     loop {
         tokio::select! {
@@ -99,75 +101,40 @@ pub async fn maintain_connection(
     peers.remove(&peer_name);
 }
 
-/// cross the streams
-pub async fn maintain_passthrough(
-    mut socket_1: WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
-    mut socket_2: WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
-) {
-    let mut last_message = std::time::Instant::now();
-    loop {
-        tokio::select! {
-            maybe_recv = socket_1.next() => {
-                match maybe_recv {
-                    Some(Ok(msg)) => {
-                        let Ok(()) = socket_2.send(msg).await else {
-                            break
-                        };
-                        last_message = std::time::Instant::now();
-                    }
-                    _ => break,
-                }
-            },
-            maybe_recv = socket_2.next() => {
-                match maybe_recv {
-                    Some(Ok(msg)) => {
-                        let Ok(()) = socket_1.send(msg).await else {
-                            break
-                        };
-                        last_message = std::time::Instant::now();
-                    }
-                    _ => break,
-                }
-            },
-            // if a message has not been sent or received in ~2 hours, close the connection
-            _ = tokio::time::sleep(std::time::Duration::from_secs(7200)) => {
-                if last_message.elapsed().as_secs() > 7200 {
-                    break
-                }
-            }
-        }
-    }
-    let _ = socket_1.close(None).await;
-    let _ = socket_2.close(None).await;
-}
-
 pub async fn create_passthrough(
     our: &Identity,
     our_ip: &str,
     from_id: Identity,
     target_id: Identity,
     peers: &Peers,
-    pending_passthroughs: &mut PendingPassthroughs,
-    socket_1: WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+    pending_passthroughs: &PendingPassthroughs,
+    socket_1: WebSocket,
 ) -> anyhow::Result<()> {
+    println!("create_passthrough\r");
     // if the target has already generated a pending passthrough for this source,
     // immediately match them
-    if let Some(((_to, _from), socket_2)) =
+    if let Some(((_target, _from), pending_stream)) =
         pending_passthroughs.remove(&(target_id.name.clone(), from_id.name.clone()))
     {
-        tokio::spawn(maintain_passthrough(socket_1, socket_2));
+        tokio::spawn(maintain_passthrough(
+            PendingStream::WebSocket(socket_1),
+            pending_stream,
+        ));
         return Ok(());
     }
     if let Some((ip, ws_port)) = target_id.ws_routing() {
         // create passthrough to direct node
         // TODO this won't ever happen currently since we validate
         // passthrough requests as being to a node we route for
-        let ws_url = make_conn_url(our_ip, ip, ws_port, "ws")?;
+        let ws_url = make_conn_url(our_ip, ip, ws_port, WS_PROTOCOL)?;
         let Ok(Ok((socket_2, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
         else {
             return Err(anyhow::anyhow!("failed to connect to target"));
         };
-        tokio::spawn(maintain_passthrough(socket_1, socket_2));
+        tokio::spawn(maintain_passthrough(
+            PendingStream::WebSocket(socket_1),
+            PendingStream::WebSocket(socket_2),
+        ));
         return Ok(());
     }
     // create passthrough to indirect node that we do routing for
@@ -200,8 +167,14 @@ pub async fn create_passthrough(
         }),
         lazy_load_blob: None,
     })?;
-
-    pending_passthroughs.insert((from_id.name, target_id.name), socket_1);
+    // we'll remove this either if the above message gets a negative response,
+    // or if the target node connects to us with a matching passthrough.
+    // TODO it is currently possible to have dangling passthroughs in the map
+    // if the target is "connected" to us but nonresponsive.
+    pending_passthroughs.insert(
+        (from_id.name, target_id.name),
+        PendingStream::WebSocket(socket_1),
+    );
     Ok(())
 }
 
@@ -232,7 +205,7 @@ pub async fn send_protocol_message(
 pub async fn recv_protocol_message(conn: &mut PeerConnection) -> anyhow::Result<KernelMessage> {
     let outer_len = conn
         .noise
-        .read_message(&ws_recv(&mut conn.socket).await?, &mut conn.buf)?;
+        .read_message(&recv(&mut conn.socket).await?, &mut conn.buf)?;
 
     if outer_len < 4 {
         return Err(anyhow::anyhow!("protocol message too small!"));
@@ -249,7 +222,7 @@ pub async fn recv_protocol_message(conn: &mut PeerConnection) -> anyhow::Result<
     while msg.len() < msg_len as usize {
         let len = conn
             .noise
-            .read_message(&ws_recv(&mut conn.socket).await?, &mut conn.buf)?;
+            .read_message(&recv(&mut conn.socket).await?, &mut conn.buf)?;
         msg.extend_from_slice(&conn.buf[..len]);
     }
 
@@ -257,18 +230,17 @@ pub async fn recv_protocol_message(conn: &mut PeerConnection) -> anyhow::Result<
 }
 
 pub async fn send_protocol_handshake(
-    our: &Identity,
-    keypair: &Ed25519KeyPair,
+    ext: &IdentityExt,
     noise_static_key: &[u8],
     noise: &mut snow::HandshakeState,
     buf: &mut [u8],
-    socket: &mut WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+    socket: &mut WebSocket,
     proxy_request: bool,
 ) -> anyhow::Result<()> {
     let our_hs = rmp_serde::to_vec(&HandshakePayload {
         protocol_version: 1,
-        name: our.name.clone(),
-        signature: keypair.sign(noise_static_key).as_ref().to_vec(),
+        name: ext.our.name.clone(),
+        signature: ext.keypair.sign(noise_static_key).as_ref().to_vec(),
         proxy_request,
     })
     .expect("failed to serialize handshake payload");
@@ -283,17 +255,15 @@ pub async fn send_protocol_handshake(
 pub async fn recv_protocol_handshake(
     noise: &mut snow::HandshakeState,
     buf: &mut [u8],
-    socket: &mut WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
+    socket: &mut WebSocket,
 ) -> anyhow::Result<HandshakePayload> {
-    let len = noise.read_message(&ws_recv(socket).await?, buf)?;
+    let len = noise.read_message(&recv(socket).await?, buf)?;
     Ok(rmp_serde::from_slice(&buf[..len])?)
 }
 
 /// Receive a byte array from a read stream. If this returns an error,
 /// we should close the connection. Will automatically respond to 'PING' messages with a 'PONG'.
-pub async fn ws_recv(
-    socket: &mut WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>,
-) -> anyhow::Result<Vec<u8>> {
+pub async fn recv(socket: &mut WebSocket) -> anyhow::Result<Vec<u8>> {
     loop {
         match socket.next().await {
             Some(Ok(tungstenite::Message::Ping(_))) => {
