@@ -558,7 +558,7 @@ pub async fn simulate_node(
                 routing: NodeRouting::Direct {
                     ip: "127.0.0.1".into(),
                     ports: std::collections::BTreeMap::from([("ws".to_string(), ws_port)]),
-                }
+                },
             };
 
             let decoded_keyfile = Keyfile {
