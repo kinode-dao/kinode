@@ -18,7 +18,7 @@ const {
 
 interface RegisterOsNameProps extends PageProps { }
 
-function RegisterOsName({
+function RegisterKnsName({
   direct,
   setDirect,
   setOsName,
@@ -55,13 +55,23 @@ function RegisterOsName({
     e.preventDefault()
     e.stopPropagation()
 
-    if (!provider) return openConnect()
+    if (!provider || !kns) return openConnect()
 
     try {
       setLoading('Please confirm the transaction in your wallet');
+      let networkingInfoResponse;
+      try {
+        const response = await fetch('/generate-networking-info', { method: 'POST' });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        networkingInfoResponse = await response.json() as NetworkingInfo;
+      } catch (error) {
+        console.error('Failed to fetch networking info:', error);
+        throw error;
+      }
 
-      const { networking_key, ws_routing: [ip_address, port], allowed_routers } =
-        (await fetch('/generate-networking-info', { method: 'POST' }).then(res => res.json())) as NetworkingInfo
+      const { networking_key, routing: { Both: { ip: ip_address, ports: { ws: port }, routers: allowed_routers } } } = networkingInfoResponse;
 
       const ipAddress = ipToNumber(ip_address)
 
@@ -89,7 +99,7 @@ function RegisterOsName({
       }
 
       const dnsFormat = toDNSWireFormat(`${name}.os`);
-      const tx = await dotOs.register(
+      const tx = await dotOs?.register(
         dnsFormat,
         accounts![0],
         data
@@ -97,7 +107,7 @@ function RegisterOsName({
 
       setLoading('Registering KNS ID...');
 
-      await tx.wait();
+      await tx?.wait();
       setLoading('');
       setOsName(`${name}.os`);
       navigate("/set-password");
@@ -155,4 +165,4 @@ function RegisterOsName({
   )
 }
 
-export default RegisterOsName;
+export default RegisterKnsName;
