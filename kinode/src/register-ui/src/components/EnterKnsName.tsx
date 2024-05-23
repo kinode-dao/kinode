@@ -9,7 +9,7 @@ type ClaimOsNameProps = {
   setName: React.Dispatch<React.SetStateAction<string>>;
   nameValidities: string[];
   setNameValidities: React.Dispatch<React.SetStateAction<string[]>>;
-  dotOs: DotOsRegistrar;
+  dotOs?: DotOsRegistrar;
   triggerNameCheck: boolean;
   isReset?: boolean;
 };
@@ -65,7 +65,7 @@ function EnterKnsName({
         index = validities.indexOf(NAME_CLAIMED);
         if (validities.length === 0 || index !== -1) {
           try {
-            await dotOs.ownerOf(hash(normalized));
+            await dotOs?.ownerOf(hash(normalized));
             if (index === -1) validities.push(NAME_CLAIMED);
           } catch (e) {
             if (index !== -1) validities.splice(index, 1);

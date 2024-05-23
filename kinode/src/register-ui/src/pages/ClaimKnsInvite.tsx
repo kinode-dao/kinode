@@ -69,8 +69,15 @@ function ClaimOsInvite({
 
     const {
       networking_key,
-      ws_routing: [ip_address, port],
-      allowed_routers,
+      routing: {
+        Both: {
+          ip: ip_address,
+          ports: {
+            ws: port
+          },
+          routers
+        }
+      }
     } = (await fetch("/generate-networking-info", { method: "POST" }).then(
       (res) => res.json()
     )) as NetworkingInfo;
@@ -80,7 +87,7 @@ function ClaimOsInvite({
     setNetworkingKey(networking_key);
     setIpAddress(ipAddress);
     setPort(port);
-    setRouters(allowed_routers);
+    setRouters(routers);
 
     if (nameValidities.length !== 0 || inviteValidity !== "") return;
     if (!name || !invite) {
@@ -93,7 +100,7 @@ function ClaimOsInvite({
     setLoaderMsg("...Building EIP-4337 User Operation");
     setIsLoading(true);
 
-    console.log("BUILDING", networking_key, ipAddress, port, allowed_routers);
+    console.log("BUILDING", networking_key, ipAddress, port, routers);
 
     try {
       response = await fetch(process.env.REACT_APP_BUILD_USER_OP_POST!, {
@@ -105,7 +112,7 @@ function ClaimOsInvite({
           networkingKey: networking_key,
           wsIp: ipAddress,
           wsPort: port,
-          routers: allowed_routers,
+          routers: routers,
           direct: direct,
         }),
       });

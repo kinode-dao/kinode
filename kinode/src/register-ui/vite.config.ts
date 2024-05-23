@@ -38,4 +38,32 @@ export default defineConfig({
     react(),
   ],
   // ...
+  server: {
+    proxy: {
+      '/generate-networking-info': {
+        target: 'http://localhost:8080/generate-networking-info',
+        changeOrigin: true,
+      },
+      '/vet-keyfile': {
+        target: 'http://localhost:8080/vet-keyfile',
+        changeOrigin: true,
+      },
+      '/import-keyfile': {
+        target: 'http://localhost:8080/import-keyfile',
+        changeOrigin: true,
+      },
+      '/info': {
+        target: 'http://localhost:8080/info',
+        changeOrigin: true,
+      },
+      '/current-chain': {
+        target: 'http://localhost:8080/current-chain',
+        changeOrigin: true,
+      },
+      '/boot': {
+        target: 'http://localhost:8080/boot',
+        changeOrigin: true,
+      }
+    }
+  }
 })

@@ -27,7 +27,7 @@ import {
 import { ethers } from "ethers";
 import ConnectWallet from "./components/ConnectWallet";
 import RegisterEthName from "./pages/RegisterEthName";
-import RegisterOsName from "./pages/RegisterKnsName";
+import RegisterKnsName from "./pages/RegisterKnsName";
 import ClaimOsInvite from "./pages/ClaimKnsInvite";
 import SetPassword from "./pages/SetPassword";
 import Login from './pages/Login'
@@ -67,42 +67,47 @@ function App() {
 
   const rpcUrl = useMemo(() => provider?.network?.chainId === ChainId.SEPOLIA ? import.meta.env.REACT_APP_SEPOLIA_RPC_URL : import.meta.env.REACT_APP_OPTIMISM_RPC_URL, [provider])
 
-  const [dotOs, setDotOs] = useState<DotOsRegistrar>(
-    DotOsRegistrar__factory.connect(
-      provider?.network?.chainId === ChainId.SEPOLIA ? DOT_OS_ADDRESSES[ChainId.SEPOLIA] : DOT_OS_ADDRESSES[ChainId.OPTIMISM],
-      new ethers.providers.JsonRpcProvider(rpcUrl))
-  );
+  const [dotOs, setDotOs] = useState<DotOsRegistrar>();
+  const [kns, setKns] = useState<KNSRegistryResolver>();
+  const [knsEnsEntry, setKnsEnsEntry] = useState<KNSEnsEntry>();
+  const [knsEnsExit, setKnsEnsExit] = useState<KNSEnsExit>();
+  const [nameWrapper, setNameWrapper] = useState<NameWrapper>();
+  const [ensRegistry, setEnsRegistry] = useState<ENSRegistry>();
 
-  const [kns, setKns] = useState<KNSRegistryResolver>(
-    KNSRegistryResolver__factory.connect(
-      provider?.network?.chainId === ChainId.SEPOLIA ? KNS_REGISTRY_ADDRESSES[ChainId.SEPOLIA] : KNS_REGISTRY_ADDRESSES[ChainId.OPTIMISM],
-      new ethers.providers.JsonRpcProvider(rpcUrl))
-  );
+  useEffect(() => {
+    if (rpcUrl) {
+      setDotOs(DotOsRegistrar__factory.connect(
+        provider?.network?.chainId === ChainId.SEPOLIA ? DOT_OS_ADDRESSES[ChainId.SEPOLIA] : DOT_OS_ADDRESSES[ChainId.OPTIMISM],
+        new ethers.providers.JsonRpcProvider(rpcUrl)
+      ))
 
-  const [knsEnsEntry, setKnsEnsEntry] = useState<KNSEnsEntry>(
-    KNSEnsEntry__factory.connect(
-      provider?.network?.chainId === ChainId.SEPOLIA ? KNS_ENS_ENTRY_ADDRESSES[ChainId.SEPOLIA] : KNS_ENS_ENTRY_ADDRESSES[ChainId.MAINNET],
-      // set rpc url based on chain id
-      new ethers.providers.JsonRpcProvider(provider?.network?.chainId === ChainId.SEPOLIA ? import.meta.env.REACT_APP_SEPOLIA_RPC_URL : import.meta.env.REACT_APP_MAINNET_RPC_URL))
-  );
+      setKns(KNSRegistryResolver__factory.connect(
+        provider?.network?.chainId === ChainId.SEPOLIA ? KNS_REGISTRY_ADDRESSES[ChainId.SEPOLIA] : KNS_REGISTRY_ADDRESSES[ChainId.OPTIMISM],
+        new ethers.providers.JsonRpcProvider(rpcUrl)
+      ))
 
-  const [knsEnsExit, setKnsEnsExit] = useState<KNSEnsExit>(
-    KNSEnsExit__factory.connect(
-      provider?.network?.chainId === ChainId.SEPOLIA ? KNS_ENS_EXIT_ADDRESSES[ChainId.SEPOLIA] : KNS_ENS_EXIT_ADDRESSES[ChainId.OPTIMISM],
-      new ethers.providers.JsonRpcProvider(rpcUrl))
-  );
+      setKnsEnsEntry(KNSEnsEntry__factory.connect(
+        provider?.network?.chainId === ChainId.SEPOLIA ? KNS_ENS_ENTRY_ADDRESSES[ChainId.SEPOLIA] : KNS_ENS_ENTRY_ADDRESSES[ChainId.MAINNET],
+        new ethers.providers.JsonRpcProvider(provider?.network?.chainId === ChainId.SEPOLIA ? import.meta.env.REACT_APP_SEPOLIA_RPC_URL : import.meta.env.REACT_APP_MAINNET_RPC_URL)
+      ))
 
-  const [nameWrapper, setNameWrapper] = useState<NameWrapper>(
-    NameWrapper__factory.connect(
-      provider?.network?.chainId === ChainId.SEPOLIA ? NAMEWRAPPER_ADDRESSES[ChainId.SEPOLIA] : NAMEWRAPPER_ADDRESSES[ChainId.MAINNET],
-      new ethers.providers.JsonRpcProvider(rpcUrl))
-  );
+      setKnsEnsExit(KNSEnsExit__factory.connect(
+        provider?.network?.chainId === ChainId.SEPOLIA ? KNS_ENS_EXIT_ADDRESSES[ChainId.SEPOLIA] : KNS_ENS_EXIT_ADDRESSES[ChainId.OPTIMISM],
+        new ethers.providers.JsonRpcProvider(rpcUrl)
+      ))
 
-  const [ensRegistry, setEnsRegistry] = useState<ENSRegistry>(
-    ENSRegistry__factory.connect(
-      provider?.network?.chainId === ChainId.SEPOLIA ? ENS_REGISTRY_ADDRESSES[ChainId.SEPOLIA] : ENS_REGISTRY_ADDRESSES[ChainId.MAINNET],
-      new ethers.providers.JsonRpcProvider(rpcUrl))
-  );
+      setNameWrapper(NameWrapper__factory.connect(
+        provider?.network?.chainId === ChainId.SEPOLIA ? NAMEWRAPPER_ADDRESSES[ChainId.SEPOLIA] : NAMEWRAPPER_ADDRESSES[ChainId.MAINNET],
+        new ethers.providers.JsonRpcProvider(rpcUrl)
+      ))
+
+      setEnsRegistry(ENSRegistry__factory.connect(
+        provider?.network?.chainId === ChainId.SEPOLIA ? ENS_REGISTRY_ADDRESSES[ChainId.SEPOLIA] : ENS_REGISTRY_ADDRESSES[ChainId.MAINNET],
+        new ethers.providers.JsonRpcProvider(rpcUrl)
+      ))
+    }
+
+  }, [rpcUrl, provider])
 
   useEffect(() => setAppSizeOnLoad(
     (window.performance.getEntriesByType('navigation') as any)[0].transferSize
@@ -136,9 +141,11 @@ function App() {
           const nodeChainId = await currentChainResponse.json()
           setNodeChainId(nodeChainId.toLowerCase())
           console.log('Node Chain ID:', nodeChainId)
+        } else {
+          console.error('error processing chain response', currentChainResponse)
         }
-      } catch {
-        console.log('error getting current chain')
+      } catch (e) {
+        console.error('error getting current chain', e)
       }
     })()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -213,10 +220,14 @@ function App() {
     reset, setReset,
     pw, setPw,
     knsName, setOsName,
-    dotOs, kns,
-    knsEnsEntryNetwork, knsEnsExitNetwork,
-    knsEnsEntry, knsEnsExit,
-    nameWrapper, ensRegistry,
+    dotOs: dotOs!,
+    kns: kns!,
+    knsEnsEntry: knsEnsEntry!,
+    knsEnsExit: knsEnsExit!,
+    nameWrapper: nameWrapper!,
+    ensRegistry: ensRegistry!,
+    knsEnsEntryNetwork,
+    knsEnsExitNetwork,
     connectOpen, openConnect, closeConnect,
     provider, appSizeOnLoad,
     networkingKey, setNetworkingKey,
@@ -236,7 +247,7 @@ function App() {
             : <KinodeHome {...props} />
           } />
           <Route path="/claim-invite" element={<ClaimOsInvite {...props} />} />
-          <Route path="/register-name" element={<RegisterOsName  {...props} />} />
+          <Route path="/register-name" element={<RegisterKnsName  {...props} />} />
           <Route path="/register-eth-name" element={<RegisterEthName {...props} />} />
           <Route path="/set-password" element={<SetPassword {...props} />} />
           <Route path="/reset" element={<Reset {...props} />} />

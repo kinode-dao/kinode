@@ -38,12 +38,17 @@ export interface PageProps {
 }
 
 export type NetworkingInfo = {
+  name: string,
   networking_key: string,
-  ws_routing: [
-    ip_address: string,
-    port: number
-  ],
-  allowed_routers: string[]
+  routing: {
+    Both: {
+      ip: string,
+      ports: {
+        ws: number
+      },
+      routers: string[]
+    }
+  },
 }
 
 export type UnencryptedIdentity = {
