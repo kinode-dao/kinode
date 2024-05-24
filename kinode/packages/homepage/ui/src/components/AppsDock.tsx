@@ -2,7 +2,7 @@ import useHomepageStore, { HomepageApp } from "../store/homepageStore"
 import AppDisplay from "./AppDisplay"
 import usePersistentStore from "../store/persistentStore"
 import { useEffect, useState } from "react"
-import { isMobileCheck } from "../utilities/dimensions"
+import { isMobileCheck } from "../utils/dimensions"
 import classNames from "classnames"
 import { DragDropContext, Draggable, DropResult, Droppable } from 'react-beautiful-dnd'
 
