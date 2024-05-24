@@ -54,7 +54,8 @@ function App() {
   const [appSizeOnLoad, setAppSizeOnLoad] = useState<number>(0);
   const [networkingKey, setNetworkingKey] = useState<string>('');
   const [ipAddress, setIpAddress] = useState<number>(0);
-  const [port, setPort] = useState<number>(0);
+  const [ws_port, setWsPort] = useState<number>(0);
+  const [tcp_port, setTcpPort] = useState<number>(0);
   const [routers, setRouters] = useState<string[]>([]);
   const [nodeChainId, setNodeChainId] = useState('')
 
@@ -232,7 +233,8 @@ function App() {
     provider, appSizeOnLoad,
     networkingKey, setNetworkingKey,
     ipAddress, setIpAddress,
-    port, setPort,
+    ws_port, setWsPort,
+    tcp_port, setTcpPort,
     routers, setRouters,
     nodeChainId,
   }

@@ -43,7 +43,8 @@ function Reset({
   closeConnect,
   setNetworkingKey,
   setIpAddress,
-  setPort,
+  setWsPort,
+  setTcpPort,
   setRouters,
   nodeChainId,
 }: ResetProps) {
@@ -129,7 +130,14 @@ function Reset({
         setLoading("Please confirm the transaction in your wallet");
 
         const {
-          networking_key, routing: { Both: { ip: ip_address, ports: { ws: port }, routers: allowed_routers } }
+          networking_key,
+          routing: {
+            Both: {
+              ip: ip_address,
+              ports: { ws: ws_port, tcp: tcp_port },
+              routers: allowed_routers
+            }
+          }
         } = (await fetch("/generate-networking-info", { method: "POST" }).then(
           (res) => res.json()
         )) as NetworkingInfo;
@@ -138,7 +146,8 @@ function Reset({
 
         setNetworkingKey(networking_key);
         setIpAddress(ipAddress);
-        setPort(port);
+        setWsPort(ws_port || 0);
+        setTcpPort(tcp_port || 0);
         setRouters(allowed_routers);
 
         const data = [
@@ -147,10 +156,10 @@ function Reset({
               await kns.populateTransaction.setAllIp(
                 namehash(knsName),
                 ipAddress,
-                port,
-                0,
-                0,
-                0
+                ws_port || 0,  // ws
+                0,             // wt
+                tcp_port || 0, // tcp
+                0              // udp
               )
             ).data!
             : (
@@ -202,7 +211,8 @@ function Reset({
       direct,
       setNetworkingKey,
       setIpAddress,
-      setPort,
+      setWsPort,
+      setTcpPort,
       setRouters,
       nodeChainId,
       chainName,

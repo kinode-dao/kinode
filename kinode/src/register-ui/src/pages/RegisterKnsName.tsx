@@ -29,7 +29,8 @@ function RegisterKnsName({
   closeConnect,
   setNetworkingKey,
   setIpAddress,
-  setPort,
+  setWsPort,
+  setTcpPort,
   setRouters,
   nodeChainId,
 }: RegisterOsNameProps) {
@@ -71,19 +72,35 @@ function RegisterKnsName({
         throw error;
       }
 
-      const { networking_key, routing: { Both: { ip: ip_address, ports: { ws: port }, routers: allowed_routers } } } = networkingInfoResponse;
+      const {
+        networking_key,
+        routing: {
+          Both: {
+            ip: ip_address,
+            ports: { ws: ws_port, tcp: tcp_port },
+            routers: allowed_routers
+          }
+        }
+      } = networkingInfoResponse;
 
       const ipAddress = ipToNumber(ip_address)
 
       setNetworkingKey(networking_key)
       setIpAddress(ipAddress)
-      setPort(port)
+      setWsPort(ws_port || 0)
+      setTcpPort(tcp_port || 0)
       setRouters(allowed_routers)
 
       const data: BytesLike[] = [
         direct
-          ? (await kns.populateTransaction.setAllIp
-            (utils.namehash(`${name}.os`), ipAddress, port, 0, 0, 0)).data!
+          ? (await kns.populateTransaction.setAllIp(
+            utils.namehash(`${name}.os`),
+            ipAddress,
+            ws_port || 0,  // ws
+            0,             // wt
+            tcp_port || 0, // tcp
+            0              // udp
+          )).data!
           : (await kns.populateTransaction.setRouters
             (utils.namehash(`${name}.os`), allowed_routers.map(x => utils.namehash(x)))).data!,
         (await kns.populateTransaction.setKey(utils.namehash(`${name}.os`), networking_key)).data!
@@ -116,7 +133,7 @@ function RegisterKnsName({
       setLoading('');
       alert('There was an error registering your dot-os-name, please try again.')
     }
-  }, [name, direct, accounts, dotOs, kns, navigate, setOsName, provider, openConnect, setNetworkingKey, setIpAddress, setPort, setRouters, nodeChainId, chainName])
+  }, [name, direct, accounts, dotOs, kns, navigate, setOsName, provider, openConnect, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, nodeChainId, chainName])
 
   return (
     <>

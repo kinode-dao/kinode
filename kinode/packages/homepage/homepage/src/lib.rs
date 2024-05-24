@@ -167,7 +167,6 @@ fn init(our: Address) {
                                     let apps: Vec<String> =
                                         serde_json::from_slice(&body.bytes).unwrap();
                                     for (i, app) in apps.iter().enumerate() {
-                                        println!("setting order for {app} to {i}");
                                         if let Some(app) = app_data.get_mut(app) {
                                             app.order = Some(i as u16);
                                         }
@@ -194,7 +193,6 @@ fn init(our: Address) {
                                     .get("id")
                                     .unwrap_or(&"0".to_string())
                                     .clone();
-                                println!("id: {id}");
                                 let icon = match id.to_uppercase().as_str() {
                                     "0" => ICON_0,
                                     "1" => ICON_1,

@@ -94,7 +94,8 @@ function Login({
               Both: {
                 ip: ip_address,
                 ports: {
-                  ws: port
+                  ws: ws_port,
+                  tcp: tcp_port
                 },
                 routers: allowed_routers
               }
@@ -113,10 +114,10 @@ function Login({
                 await kns.populateTransaction.setAllIp(
                   namehash(knsName),
                   ipAddress,
-                  port,
-                  0,
-                  0,
-                  0
+                  ws_port || 0,  // ws
+                  0,             // wt
+                  tcp_port || 0, // tcp
+                  0              // udp
                 )
               ).data!
               : (
