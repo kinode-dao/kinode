@@ -1,8 +1,8 @@
+use lib::types::core::{
+    Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
+};
 use {
     dashmap::DashMap,
-    lib::types::core::{
-        Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
-    },
     ring::signature::Ed25519KeyPair,
     serde::{Deserialize, Serialize},
     std::sync::Arc,

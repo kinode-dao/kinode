@@ -1,27 +1,28 @@
 use crate::net::{
-    types::{IdentityExt, NetData, TCP_PROTOCOL},
+    types::{IdentityExt, NetData, Peer, PendingStream, RoutingRequest, TCP_PROTOCOL},
     utils::{
-        build_responder, print_debug, print_loud, validate_handshake, validate_routing_request,
-        validate_signature,
+        build_initiator, build_responder, create_passthrough, make_conn_url, print_debug,
+        validate_handshake, validate_routing_request, TIMEOUT,
     },
 };
-use lib::types::core::{Identity, KernelMessage, NodeId, NodeRouting};
+use lib::types::core::{Identity, KernelMessage};
 use {
-    dashmap::DashMap,
-    futures::{SinkExt, StreamExt},
-    rand::seq::SliceRandom,
-    ring::signature::Ed25519KeyPair,
-    std::{collections::HashMap, sync::Arc},
+    anyhow::anyhow,
+    tokio::io::AsyncWriteExt,
     tokio::net::{TcpListener, TcpStream},
     tokio::{sync::mpsc, time},
 };
 
-mod utils;
+pub mod utils;
 
-/// only used in connection initialization
-pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+pub struct PeerConnection {
+    pub noise: snow::TransportState,
+    pub buf: Vec<u8>,
+    pub stream: TcpStream,
+}
 
 pub async fn receiver(ext: IdentityExt, data: NetData) -> anyhow::Result<()> {
+    println!("tcp_receiver\r");
     let tcp_port = ext.our.get_protocol_port(TCP_PROTOCOL).unwrap();
     let tcp = match TcpListener::bind(format!("0.0.0.0:{tcp_port}")).await {
         Ok(tcp) => tcp,
@@ -83,7 +84,27 @@ pub async fn init_direct(
     proxy_request: bool,
     peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) -> Result<(), mpsc::UnboundedReceiver<KernelMessage>> {
-    todo!()
+    println!("tcp_init_direct\r");
+    match time::timeout(
+        TIMEOUT,
+        connect_with_handshake(ext, peer_id, port, None, proxy_request),
+    )
+    .await
+    {
+        Ok(Ok(connection)) => {
+            // maintain direct connection
+            tokio::spawn(utils::maintain_connection(
+                peer_id.name.clone(),
+                data.peers.clone(),
+                connection,
+                peer_rx,
+                ext.kernel_message_tx.clone(),
+                ext.print_tx.clone(),
+            ));
+            Ok(())
+        }
+        _ => return Err(peer_rx),
+    }
 }
 
 pub async fn init_routed(
@@ -91,10 +112,201 @@ pub async fn init_routed(
     data: &NetData,
     peer_id: &Identity,
     router_id: &Identity,
-    port: u16,
+    router_port: u16,
     peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) -> Result<(), mpsc::UnboundedReceiver<KernelMessage>> {
-    todo!()
+    println!("tcp_init_routed\r");
+    match time::timeout(
+        TIMEOUT,
+        connect_with_handshake(ext, peer_id, router_port, Some(router_id), false),
+    )
+    .await
+    {
+        Ok(Ok(connection)) => {
+            // maintain direct connection
+            tokio::spawn(utils::maintain_connection(
+                peer_id.name.clone(),
+                data.peers.clone(),
+                connection,
+                peer_rx,
+                ext.kernel_message_tx.clone(),
+                ext.print_tx.clone(),
+            ));
+            Ok(())
+        }
+        Ok(Err(e)) => {
+            print_debug(&ext.print_tx, &format!("net: error getting routed: {e}")).await;
+            Err(peer_rx)
+        }
+        Err(_) => {
+            print_debug(&ext.print_tx, "net: timed out while getting routed").await;
+            Err(peer_rx)
+        }
+    }
+}
+
+async fn recv_connection(
+    ext: IdentityExt,
+    data: NetData,
+    mut stream: TcpStream,
+) -> anyhow::Result<()> {
+    println!("tcp_recv_connection\r");
+    // before we begin XX handshake pattern, check first message over socket
+    let first_message = &utils::recv(&mut stream).await?;
+
+    // if the first message contains a "routing request",
+    // we see if the target is someone we are actively routing for,
+    // and create a Passthrough connection if so.
+    // a Noise 'e' message with have len 32
+    if first_message.len() != 32 {
+        let (from_id, target_id) =
+            validate_routing_request(&ext.our.name, first_message, &data.pki)?;
+        return create_passthrough(
+            &ext.our,
+            &ext.our_ip,
+            from_id,
+            target_id,
+            &data.peers,
+            &data.pending_passthroughs,
+            PendingStream::Tcp(stream),
+        )
+        .await;
+    }
+
+    let (mut noise, our_static_key) = build_responder();
+    let mut buf = vec![0u8; 65535];
+
+    // <- e
+    noise.read_message(first_message, &mut buf)?;
+
+    // -> e, ee, s, es
+    utils::send_protocol_handshake(
+        &ext,
+        &our_static_key,
+        &mut noise,
+        &mut buf,
+        &mut stream,
+        false,
+    )
+    .await?;
+
+    // <- s, se
+    let their_handshake = utils::recv_protocol_handshake(&mut noise, &mut buf, &mut stream).await?;
+
+    // now validate this handshake payload against the KNS PKI
+    let their_id = data
+        .pki
+        .get(&their_handshake.name)
+        .ok_or(anyhow!("unknown KNS name"))?;
+    validate_handshake(
+        &their_handshake,
+        noise
+            .get_remote_static()
+            .ok_or(anyhow!("noise error: missing remote pubkey"))?,
+        &their_id,
+    )?;
+
+    let (peer_tx, peer_rx) = mpsc::unbounded_channel();
+    data.peers.insert(
+        their_id.name.clone(),
+        Peer {
+            identity: their_id.clone(),
+            routing_for: their_handshake.proxy_request,
+            sender: peer_tx,
+        },
+    );
+    tokio::spawn(utils::maintain_connection(
+        their_handshake.name,
+        data.peers,
+        PeerConnection {
+            noise: noise.into_transport_mode()?,
+            buf,
+            stream,
+        },
+        peer_rx,
+        ext.kernel_message_tx,
+        ext.print_tx,
+    ));
+    Ok(())
+}
+
+async fn connect_with_handshake(
+    ext: &IdentityExt,
+    peer_id: &Identity,
+    port: u16,
+    use_router: Option<&Identity>,
+    proxy_request: bool,
+) -> anyhow::Result<PeerConnection> {
+    println!("tcp_connect_with_handshake\r");
+    let mut buf = vec![0u8; 65535];
+    let (mut noise, our_static_key) = build_initiator();
+
+    let ip = match use_router {
+        None => peer_id
+            .get_ip()
+            .ok_or(anyhow!("target has no IP address"))?,
+        Some(router_id) => router_id
+            .get_ip()
+            .ok_or(anyhow!("router has no IP address"))?,
+    };
+    let tcp_url = make_conn_url(&ext.our_ip, ip, &port, TCP_PROTOCOL)?;
+    let Ok(mut stream) = tokio::net::TcpStream::connect(tcp_url.to_string()).await else {
+        return Err(anyhow!("failed to connect to {tcp_url}"));
+    };
+
+    // if this is a routed request, before starting XX handshake pattern, send a
+    // routing request message over socket
+    if use_router.is_some() {
+        stream
+            .write_all(&rmp_serde::to_vec(&RoutingRequest {
+                protocol_version: 1,
+                source: ext.our.name.clone(),
+                signature: ext
+                    .keypair
+                    .sign(
+                        [&peer_id.name, use_router.unwrap().name.as_str()]
+                            .concat()
+                            .as_bytes(),
+                    )
+                    .as_ref()
+                    .to_vec(),
+                target: peer_id.name.clone(),
+            })?)
+            .await?;
+    }
+
+    // -> e
+    let len = noise.write_message(&[], &mut buf)?;
+    stream.write_all(&buf[..len]).await?;
+
+    // <- e, ee, s, es
+    let their_handshake = utils::recv_protocol_handshake(&mut noise, &mut buf, &mut stream).await?;
+
+    // now validate this handshake payload against the KNS PKI
+    validate_handshake(
+        &their_handshake,
+        noise
+            .get_remote_static()
+            .ok_or(anyhow!("noise error: missing remote pubkey"))?,
+        peer_id,
+    )?;
+
+    // -> s, se
+    utils::send_protocol_handshake(
+        &ext,
+        &our_static_key,
+        &mut noise,
+        &mut buf,
+        &mut stream,
+        proxy_request,
+    )
+    .await?;
+
+    Ok(PeerConnection {
+        noise: noise.into_transport_mode()?,
+        buf,
+        stream,
+    })
 }
 
 pub async fn recv_via_router(
@@ -103,13 +315,100 @@ pub async fn recv_via_router(
     peer_id: Identity,
     router_id: Identity,
 ) {
-    todo!()
+    println!("tcp_recv_via_router\r");
+    let Some((ip, port)) = router_id.ws_routing() else {
+        return;
+    };
+    let Ok(tcp_url) = make_conn_url(&ext.our_ip, ip, port, TCP_PROTOCOL) else {
+        return;
+    };
+    let Ok(stream) = tokio::net::TcpStream::connect(tcp_url.to_string()).await else {
+        return;
+    };
+    match connect_with_handshake_via_router(&ext, &peer_id, &router_id, stream).await {
+        Ok(connection) => {
+            let (peer_tx, peer_rx) = mpsc::unbounded_channel();
+            data.peers.insert(
+                peer_id.name.clone(),
+                Peer {
+                    identity: peer_id.clone(),
+                    routing_for: false,
+                    sender: peer_tx,
+                },
+            );
+            // maintain direct connection
+            tokio::spawn(utils::maintain_connection(
+                peer_id.name,
+                data.peers.clone(),
+                connection,
+                peer_rx,
+                ext.kernel_message_tx,
+                ext.print_tx,
+            ));
+        }
+        Err(e) => {
+            print_debug(&ext.print_tx, &format!("net: error getting routed: {e}")).await;
+        }
+    }
 }
 
-async fn recv_connection(
-    ext: IdentityExt,
-    data: NetData,
+async fn connect_with_handshake_via_router(
+    ext: &IdentityExt,
+    peer_id: &Identity,
+    router_id: &Identity,
     mut stream: TcpStream,
-) -> anyhow::Result<()> {
-    todo!()
+) -> anyhow::Result<PeerConnection> {
+    println!("tcp_connect_with_handshake_via_router\r");
+    // before beginning XX handshake pattern, send a routing request
+    stream
+        .write_all(&rmp_serde::to_vec(&RoutingRequest {
+            protocol_version: 1,
+            source: ext.our.name.clone(),
+            signature: ext
+                .keypair
+                .sign(
+                    [peer_id.name.as_str(), router_id.name.as_str()]
+                        .concat()
+                        .as_bytes(),
+                )
+                .as_ref()
+                .to_vec(),
+            target: peer_id.name.to_string(),
+        })?)
+        .await?;
+
+    let mut buf = vec![0u8; 65535];
+    let (mut noise, our_static_key) = build_responder();
+
+    // <- e
+    noise.read_message(&utils::recv(&mut stream).await?, &mut buf)?;
+
+    // -> e, ee, s, es
+    utils::send_protocol_handshake(
+        ext,
+        &our_static_key,
+        &mut noise,
+        &mut buf,
+        &mut stream,
+        false,
+    )
+    .await?;
+
+    // <- s, se
+    let their_handshake = utils::recv_protocol_handshake(&mut noise, &mut buf, &mut stream).await?;
+
+    // now validate this handshake payload against the KNS PKI
+    validate_handshake(
+        &their_handshake,
+        noise
+            .get_remote_static()
+            .ok_or(anyhow!("noise error: missing remote pubkey"))?,
+        &peer_id,
+    )?;
+
+    Ok(PeerConnection {
+        noise: noise.into_transport_mode()?,
+        buf,
+        stream,
+    })
 }

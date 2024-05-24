@@ -1,8 +1,5 @@
-use crate::net::{
-    tcp,
-    types::{IdentityExt, NetData, Peer, TCP_PROTOCOL, WS_PROTOCOL},
-    utils, ws,
-};
+use crate::net::types::{IdentityExt, NetData, Peer, TCP_PROTOCOL, WS_PROTOCOL};
+use crate::net::{tcp, utils, ws};
 use lib::types::core::{Identity, KernelMessage, NodeRouting};
 use rand::prelude::SliceRandom;
 use tokio::sync::mpsc;

@@ -1,8 +1,5 @@
-use crate::net::{
-    connect, tcp,
-    types::{IdentityExt, NetData, Peer, TCP_PROTOCOL, WS_PROTOCOL},
-    utils, ws,
-};
+use crate::net::types::{IdentityExt, NetData, Peer, TCP_PROTOCOL, WS_PROTOCOL};
+use crate::net::{connect, tcp, utils, ws};
 use lib::types::core::{Identity, NodeRouting};
 use tokio::{sync::mpsc, time};
 

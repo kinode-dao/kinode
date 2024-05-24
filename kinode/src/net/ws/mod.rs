@@ -1,8 +1,8 @@
 use crate::net::{
-    types::{IdentityExt, NetData, Peer, RoutingRequest, WS_PROTOCOL},
+    types::{IdentityExt, NetData, Peer, PendingStream, RoutingRequest, WS_PROTOCOL},
     utils::{
-        build_initiator, build_responder, make_conn_url, print_debug, validate_handshake,
-        validate_routing_request,
+        build_initiator, build_responder, create_passthrough, make_conn_url, print_debug,
+        validate_handshake, validate_routing_request, TIMEOUT,
     },
 };
 use lib::types::core::{Identity, KernelMessage};
@@ -18,9 +18,6 @@ use {
 
 mod utils;
 
-/// only used in connection initialization, otherwise, nacks and Responses are only used for "timeouts"
-pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-
 /// 10 MB -- TODO analyze as desired, apps can always chunk data into many messages
 /// note that this only applies to cross-network messages, not local ones.
 pub const MESSAGE_MAX_SIZE: u32 = 10_485_800;
@@ -33,7 +30,7 @@ pub struct PeerConnection {
 
 pub type WebSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
-pub async fn receiver(ext: IdentityExt, net_data: NetData) -> Result<()> {
+pub async fn receiver(ext: IdentityExt, data: NetData) -> Result<()> {
     println!("receiver\r");
     let ws_port = ext.our.get_protocol_port(WS_PROTOCOL).unwrap();
     let ws = match TcpListener::bind(format!("0.0.0.0:{ws_port}")).await {
@@ -58,7 +55,7 @@ pub async fn receiver(ext: IdentityExt, net_data: NetData) -> Result<()> {
             }
             Ok((stream, socket_addr)) => {
                 let ext = ext.clone();
-                let net_data = net_data.clone();
+                let data = data.clone();
                 tokio::spawn(async move {
                     let Ok(Ok(websocket)) =
                         time::timeout(TIMEOUT, accept_async(MaybeTlsStream::Plain(stream))).await
@@ -70,7 +67,7 @@ pub async fn receiver(ext: IdentityExt, net_data: NetData) -> Result<()> {
                         &format!("net: got WS connection from {socket_addr}"),
                     )
                     .await;
-                    match time::timeout(TIMEOUT, recv_connection(ext.clone(), net_data, websocket))
+                    match time::timeout(TIMEOUT, recv_connection(ext.clone(), data, websocket))
                         .await
                     {
                         Ok(Ok(())) => return,
@@ -209,6 +206,91 @@ pub async fn recv_via_router(
     }
 }
 
+async fn recv_connection(
+    ext: IdentityExt,
+    data: NetData,
+    mut socket: WebSocket,
+) -> anyhow::Result<()> {
+    println!("recv_connection\r");
+    // before we begin XX handshake pattern, check first message over socket
+    let first_message = &utils::recv(&mut socket).await?;
+
+    // if the first message contains a "routing request",
+    // we see if the target is someone we are actively routing for,
+    // and create a Passthrough connection if so.
+    // a Noise 'e' message with have len 32
+    if first_message.len() != 32 {
+        let (from_id, target_id) =
+            validate_routing_request(&ext.our.name, first_message, &data.pki)?;
+        return create_passthrough(
+            &ext.our,
+            &ext.our_ip,
+            from_id,
+            target_id,
+            &data.peers,
+            &data.pending_passthroughs,
+            PendingStream::WebSocket(socket),
+        )
+        .await;
+    }
+
+    let (mut noise, our_static_key) = build_responder();
+    let mut buf = vec![0u8; 65535];
+
+    // <- e
+    noise.read_message(first_message, &mut buf)?;
+
+    // -> e, ee, s, es
+    utils::send_protocol_handshake(
+        &ext,
+        &our_static_key,
+        &mut noise,
+        &mut buf,
+        &mut socket,
+        false,
+    )
+    .await?;
+
+    // <- s, se
+    let their_handshake = utils::recv_protocol_handshake(&mut noise, &mut buf, &mut socket).await?;
+
+    // now validate this handshake payload against the KNS PKI
+    let their_id = data
+        .pki
+        .get(&their_handshake.name)
+        .ok_or(anyhow!("unknown KNS name"))?;
+    validate_handshake(
+        &their_handshake,
+        noise
+            .get_remote_static()
+            .ok_or(anyhow!("noise error: missing remote pubkey"))?,
+        &their_id,
+    )?;
+
+    let (peer_tx, peer_rx) = mpsc::unbounded_channel();
+    data.peers.insert(
+        their_id.name.clone(),
+        Peer {
+            identity: their_id.clone(),
+            routing_for: their_handshake.proxy_request,
+            sender: peer_tx,
+        },
+    );
+    tokio::spawn(utils::maintain_connection(
+        their_handshake.name,
+        data.peers,
+        PeerConnection {
+            noise: noise.into_transport_mode()?,
+            buf,
+            socket,
+        },
+        peer_rx,
+        ext.kernel_message_tx,
+        ext.print_tx,
+    ));
+    Ok(())
+}
+
 async fn connect_with_handshake(
     ext: &IdentityExt,
     peer_id: &Identity,
@@ -290,91 +372,6 @@ async fn connect_with_handshake(
         buf,
         socket,
     })
-}
-
-async fn recv_connection(
-    ext: IdentityExt,
-    data: NetData,
-    mut socket: WebSocket,
-) -> anyhow::Result<()> {
-    println!("recv_connection\r");
-    // before we begin XX handshake pattern, check first message over socket
-    let first_message = &utils::recv(&mut socket).await?;
-
-    // if the first message contains a "routing request",
-    // we see if the target is someone we are actively routing for,
-    // and create a Passthrough connection if so.
-    // a Noise 'e' message with have len 32
-    if first_message.len() != 32 {
-        let (from_id, target_id) =
-            validate_routing_request(&ext.our.name, first_message, &data.pki)?;
-        return utils::create_passthrough(
-            &ext.our,
-            &ext.our_ip,
-            from_id,
-            target_id,
-            &data.peers,
-            &data.pending_passthroughs,
-            socket,
-        )
-        .await;
-    }
-
-    let (mut noise, our_static_key) = build_responder();
-    let mut buf = vec![0u8; 65535];
-
-    // <- e
-    noise.read_message(first_message, &mut buf)?;
-
-    // -> e, ee, s, es
-    utils::send_protocol_handshake(
-        &ext,
-        &our_static_key,
-        &mut noise,
-        &mut buf,
-        &mut socket,
-        false,
-    )
-    .await?;
-
-    // <- s, se
-    let their_handshake = utils::recv_protocol_handshake(&mut noise, &mut buf, &mut socket).await?;
-
-    // now validate this handshake payload against the KNS PKI
-    let their_id = data
-        .pki
-        .get(&their_handshake.name)
-        .ok_or(anyhow!("unknown KNS name"))?;
-    validate_handshake(
-        &their_handshake,
-        noise
-            .get_remote_static()
-            .ok_or(anyhow!("noise error: missing remote pubkey"))?,
-        &their_id,
-    )?;
-
-    let (peer_tx, peer_rx) = mpsc::unbounded_channel();
-    data.peers.insert(
-        their_id.name.clone(),
-        Peer {
-            identity: their_id.clone(),
-            routing_for: their_handshake.proxy_request,
-            sender: peer_tx,
-        },
-    );
-    tokio::spawn(utils::maintain_connection(
-        their_handshake.name,
-        data.peers,
-        PeerConnection {
-            noise: noise.into_transport_mode()?,
-            buf,
-            socket,
-        },
-        peer_rx,
-        ext.kernel_message_tx,
-        ext.print_tx,
-    ));
-    Ok(())
 }
 
 async fn connect_with_handshake_via_router(

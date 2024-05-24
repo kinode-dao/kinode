@@ -1,19 +1,13 @@
 use crate::net::{
-    types::{
-        HandshakePayload, IdentityExt, Peers, PendingPassthroughs, PendingStream, WS_PROTOCOL,
-    },
-    utils::{maintain_passthrough, make_conn_url, print_debug, print_loud},
-    ws::{PeerConnection, WebSocket, MESSAGE_MAX_SIZE, TIMEOUT},
+    types::{HandshakePayload, IdentityExt, Peers},
+    utils::{print_debug, print_loud},
+    ws::{PeerConnection, WebSocket, MESSAGE_MAX_SIZE},
 };
-use lib::core::{
-    Address, Identity, KernelMessage, Message, MessageSender, NetAction, NodeId, PrintSender,
-    ProcessId, Request,
-};
+use lib::core::{KernelMessage, MessageSender, NodeId, PrintSender};
 use {
     futures::{SinkExt, StreamExt},
     tokio::sync::mpsc::UnboundedReceiver,
-    tokio::time,
-    tokio_tungstenite::{connect_async, tungstenite},
+    tokio_tungstenite::tungstenite,
 };
 
 /// should always be spawned on its own task
@@ -101,81 +95,7 @@ pub async fn maintain_connection(
     peers.remove(&peer_name);
 }
 
-pub async fn create_passthrough(
-    our: &Identity,
-    our_ip: &str,
-    from_id: Identity,
-    target_id: Identity,
-    peers: &Peers,
-    pending_passthroughs: &PendingPassthroughs,
-    socket_1: WebSocket,
-) -> anyhow::Result<()> {
-    println!("create_passthrough\r");
-    // if the target has already generated a pending passthrough for this source,
-    // immediately match them
-    if let Some(((_target, _from), pending_stream)) =
-        pending_passthroughs.remove(&(target_id.name.clone(), from_id.name.clone()))
-    {
-        tokio::spawn(maintain_passthrough(
-            PendingStream::WebSocket(socket_1),
-            pending_stream,
-        ));
-        return Ok(());
-    }
-    if let Some((ip, ws_port)) = target_id.ws_routing() {
-        // create passthrough to direct node
-        let ws_url = make_conn_url(our_ip, ip, ws_port, WS_PROTOCOL)?;
-        let Ok(Ok((socket_2, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
-        else {
-            return Err(anyhow::anyhow!("failed to connect to target"));
-        };
-        tokio::spawn(maintain_passthrough(
-            PendingStream::WebSocket(socket_1),
-            PendingStream::WebSocket(socket_2),
-        ));
-        return Ok(());
-    }
-    // create passthrough to indirect node that we do routing for
-    let target_peer = peers
-        .get(&target_id.name)
-        .ok_or(anyhow::anyhow!("can't route to that indirect node"))?;
-    if !target_peer.routing_for {
-        return Err(anyhow::anyhow!("we don't route for that indirect node"));
-    }
-    // send their net:distro:sys process a message, notifying it to create a *matching*
-    // passthrough request, which we can pair with this pending one.
-    target_peer.sender.send(KernelMessage {
-        id: rand::random(),
-        source: Address {
-            node: our.name.clone(),
-            process: ProcessId::new(Some("net"), "distro", "sys"),
-        },
-        target: Address {
-            node: target_id.name.clone(),
-            process: ProcessId::new(Some("net"), "distro", "sys"),
-        },
-        rsvp: None,
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: Some(5),
-            body: rmp_serde::to_vec(&NetAction::ConnectionRequest(from_id.name.clone()))?,
-            metadata: None,
-            capabilities: vec![],
-        }),
-        lazy_load_blob: None,
-    })?;
-    // we'll remove this either if the above message gets a negative response,
-    // or if the target node connects to us with a matching passthrough.
-    // TODO it is currently possible to have dangling passthroughs in the map
-    // if the target is "connected" to us but nonresponsive.
-    pending_passthroughs.insert(
-        (from_id.name, target_id.name),
-        PendingStream::WebSocket(socket_1),
-    );
-    Ok(())
-}
-
-pub async fn send_protocol_message(
+async fn send_protocol_message(
     km: &KernelMessage,
     conn: &mut PeerConnection,
 ) -> anyhow::Result<()> {
@@ -199,7 +119,7 @@ pub async fn send_protocol_message(
 }
 
 /// any error in receiving a message will result in the connection being closed.
-pub async fn recv_protocol_message(conn: &mut PeerConnection) -> anyhow::Result<KernelMessage> {
+async fn recv_protocol_message(conn: &mut PeerConnection) -> anyhow::Result<KernelMessage> {
     let outer_len = conn
         .noise
         .read_message(&recv(&mut conn.socket).await?, &mut conn.buf)?;
