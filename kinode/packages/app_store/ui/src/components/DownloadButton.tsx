@@ -68,7 +68,10 @@ export default function DownloadButton({ app, isIcon = false, ...props }: Downlo
       <button
         {...props}
         type="button"
-        className={classNames("text-sm self-start", props.className, { 'icon clear': isIcon })}
+        className={classNames("text-sm self-start", props.className, {
+          'icon clear': isIcon,
+          'black': !isIcon,
+        })}
         onClick={onClick}
       >
         {isIcon ? <FaDownload /> : 'Download'}

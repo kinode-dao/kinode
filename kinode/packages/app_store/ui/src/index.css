@@ -71,6 +71,10 @@ button[type="submit"],
   @apply bg-white text-black border-white hover:text-white;
 }
 
+.black {
+  @apply bg-black text-white border-black hover:text-black hover:border-white hover:bg-white;
+}
+
 .thin {
   @apply px-0 border-none;
 }

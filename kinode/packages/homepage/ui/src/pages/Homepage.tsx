@@ -6,7 +6,7 @@ import { FaChevronDown, FaChevronUp, FaScrewdriverWrench } from 'react-icons/fa6
 import AppsDock from '../components/AppsDock'
 import AllApps from '../components/AllApps'
 import Widgets from '../components/Widgets'
-import { isMobileCheck } from '../utilities/dimensions'
+import { isMobileCheck } from '../utils/dimensions'
 import classNames from 'classnames'
 import WidgetsSettingsModal from '../components/WidgetsSettingsModal'
 
@@ -94,7 +94,7 @@ function Homepage() {
         'top-8 left-8 right-8': !isMobile,
         'top-2 left-2 right-2': isMobile
       })}>
-        {!isHosted && <img
+        {isHosted && <img
           src={valetIcon}
           className='!w-12 !h-12 !p-1 button icon object-cover'
           onClick={() => window.location.href = `https://${our.replace('.os', '')}.hosting.kinode.net/`}

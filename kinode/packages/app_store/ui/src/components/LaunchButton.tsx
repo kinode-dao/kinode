@@ -22,7 +22,8 @@ export default function LaunchButton({ app, launchPath, isIcon = false, ...props
         {...props}
         type="button"
         className={classNames("text-sm self-start", props.className, {
-          'icon clear': isIcon
+          'icon clear': isIcon,
+          'alt': !isIcon
         })}
         onClick={onLaunch}
       >

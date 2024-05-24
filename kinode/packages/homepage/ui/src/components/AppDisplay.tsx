@@ -1,10 +1,10 @@
 import classNames from "classnames"
-import ColorDot from "./ColorDot"
 import { HomepageApp } from "../store/homepageStore"
 import { FaHeart, FaRegHeart } from "react-icons/fa6"
 import { useState } from "react"
 import usePersistentStore from "../store/persistentStore"
-import { isMobileCheck } from "../utilities/dimensions"
+import { isMobileCheck } from "../utils/dimensions"
+import AppIconPlaceholder from "./AppIconPlaceholder"
 
 interface AppDisplayProps {
   app: HomepageApp
@@ -18,7 +18,7 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
   return <a
     className={classNames("flex-col-center gap-2 relative hover:opacity-90 transition-opacity", {
       'cursor-pointer': app.path,
-      'pointer-events-none': !app.path,
+      'cursor-not-allowed': !app.path,
     })}
     id={app.package_name}
     href={app.path}
@@ -33,7 +33,11 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
           'h-16 w-16': !isMobile
         })}
       />
-      : <ColorDot num={app.state?.our_version || '0'} />}
+      : <AppIconPlaceholder
+        text={app.state?.our_version || '0'}
+        size={'small'}
+        className="h-16 w-16"
+      />}
     <h6>{app.label}</h6>
     {app.path && isHovered && <button
       className="absolute p-2 -top-2 -right-2 clear text-sm"
