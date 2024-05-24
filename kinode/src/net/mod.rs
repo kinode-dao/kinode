@@ -146,7 +146,10 @@ async fn handle_request(
     if km.source.node == ext.our.name {
         handle_local_request(ext, km, request_body, data).await;
     } else {
-        handle_remote_request(ext, km, request_body, data).await;
+        match handle_remote_request(ext, km, request_body, data).await {
+            Ok(()) => return,
+            Err(e) => utils::print_debug(&ext.print_tx, &e.to_string()).await,
+        }
     }
 }
 
@@ -302,10 +305,14 @@ async fn handle_remote_request(
     km: &KernelMessage,
     request_body: &[u8],
     data: &NetData,
-) {
+) -> anyhow::Result<()> {
+    println!("handle_remote_request\r");
     match rmp_serde::from_slice::<NetAction>(request_body) {
         Ok(NetAction::KnsBatchUpdate(_)) | Ok(NetAction::KnsUpdate(_)) => {
             // for now, we don't get these from remote, only locally.
+            return Err(anyhow::anyhow!(
+                "net: not allowed to update PKI from remote"
+            ));
         }
         Ok(NetAction::ConnectionRequest(from)) => {
             // someone wants to open a passthrough with us through a router.
@@ -313,16 +320,16 @@ async fn handle_remote_request(
             // respond by attempting to init a matching passthrough.
             let allowed_routers = match &ext.our.routing {
                 NodeRouting::Routers(routers) => routers,
-                _ => return,
+                _ => return Err(anyhow::anyhow!("net: not an indirect node")),
             };
             if !allowed_routers.contains(&km.source.node) {
-                return;
+                return Err(anyhow::anyhow!("net: not one of our routers"));
             }
             let Some(router_id) = data.pki.get(&km.source.node) else {
-                return;
+                return Err(anyhow::anyhow!("net: router not in PKI"));
             };
             let Some(peer_id) = data.pki.get(&from) else {
-                return;
+                return Err(anyhow::anyhow!("net: peer not in PKI"));
             };
             // pick a protocol to connect to router with
             // spawn a task that has a timeout here to not block the loop
@@ -330,15 +337,16 @@ async fn handle_remote_request(
             let data = data.clone();
             let peer_id = peer_id.clone();
             let router_id = router_id.clone();
-            tokio::spawn(async move {
-                tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::spawn(tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                async move {
                     if router_id.tcp_routing().is_some() {
                         tcp::recv_via_router(ext, data, peer_id, router_id).await;
                     } else if router_id.ws_routing().is_some() {
                         ws::recv_via_router(ext, data, peer_id, router_id).await;
                     }
-                })
-            });
+                },
+            ));
         }
         _ => {
             // if we can't parse this to a NetAction, treat it as a hello and print it,
@@ -353,6 +361,7 @@ async fn handle_remote_request(
             .await;
         }
     }
+    Ok(())
 }
 
 // Responses are received as a router, when we send ConnectionRequests

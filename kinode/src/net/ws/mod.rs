@@ -153,7 +153,14 @@ pub async fn init_routed(
             ));
             Ok(())
         }
-        _ => return Err(peer_rx),
+        Ok(Err(e)) => {
+            print_debug(&ext.print_tx, &format!("net: error getting routed: {e}")).await;
+            Err(peer_rx)
+        }
+        Err(_) => {
+            print_debug(&ext.print_tx, "net: timed out while getting routed").await;
+            Err(peer_rx)
+        }
     }
 }
 
@@ -196,7 +203,9 @@ pub async fn recv_via_router(
                 ext.print_tx,
             ));
         }
-        _ => return,
+        Err(e) => {
+            print_debug(&ext.print_tx, &format!("net: error getting routed: {e}")).await;
+        }
     }
 }
 
@@ -227,21 +236,24 @@ async fn connect_with_handshake(
     // if this is a routed request, before starting XX handshake pattern, send a
     // routing request message over socket
     if use_router.is_some() {
-        let req = rmp_serde::to_vec(&RoutingRequest {
-            protocol_version: 1,
-            source: ext.our.name.clone(),
-            signature: ext
-                .keypair
-                .sign(
-                    [&peer_id.name, use_router.unwrap().name.as_str()]
-                        .concat()
-                        .as_bytes(),
-                )
-                .as_ref()
-                .to_vec(),
-            target: peer_id.name.clone(),
-        })?;
-        socket.send(tungstenite::Message::binary(req)).await?;
+        socket
+            .send(tungstenite::Message::binary(rmp_serde::to_vec(
+                &RoutingRequest {
+                    protocol_version: 1,
+                    source: ext.our.name.clone(),
+                    signature: ext
+                        .keypair
+                        .sign(
+                            [&peer_id.name, use_router.unwrap().name.as_str()]
+                                .concat()
+                                .as_bytes(),
+                        )
+                        .as_ref()
+                        .to_vec(),
+                    target: peer_id.name.clone(),
+                },
+            )?))
+            .await?;
     }
 
     // -> e
@@ -373,21 +385,24 @@ async fn connect_with_handshake_via_router(
 ) -> anyhow::Result<PeerConnection> {
     println!("connect_with_handshake_via_router\r");
     // before beginning XX handshake pattern, send a routing request
-    let req = rmp_serde::to_vec(&RoutingRequest {
-        protocol_version: 1,
-        source: ext.our.name.clone(),
-        signature: ext
-            .keypair
-            .sign(
-                [peer_id.name.as_str(), router_id.name.as_str()]
-                    .concat()
-                    .as_bytes(),
-            )
-            .as_ref()
-            .to_vec(),
-        target: peer_id.name.to_string(),
-    })?;
-    socket.send(tungstenite::Message::binary(req)).await?;
+    socket
+        .send(tungstenite::Message::binary(rmp_serde::to_vec(
+            &RoutingRequest {
+                protocol_version: 1,
+                source: ext.our.name.clone(),
+                signature: ext
+                    .keypair
+                    .sign(
+                        [peer_id.name.as_str(), router_id.name.as_str()]
+                            .concat()
+                            .as_bytes(),
+                    )
+                    .as_ref()
+                    .to_vec(),
+                target: peer_id.name.to_string(),
+            },
+        )?))
+        .await?;
 
     let mut buf = vec![0u8; 65535];
     let (mut noise, our_static_key) = build_responder();

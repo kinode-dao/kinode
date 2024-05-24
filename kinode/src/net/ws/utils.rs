@@ -124,8 +124,6 @@ pub async fn create_passthrough(
     }
     if let Some((ip, ws_port)) = target_id.ws_routing() {
         // create passthrough to direct node
-        // TODO this won't ever happen currently since we validate
-        // passthrough requests as being to a node we route for
         let ws_url = make_conn_url(our_ip, ip, ws_port, WS_PROTOCOL)?;
         let Ok(Ok((socket_2, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
         else {
@@ -138,7 +136,6 @@ pub async fn create_passthrough(
         return Ok(());
     }
     // create passthrough to indirect node that we do routing for
-    //
     let target_peer = peers
         .get(&target_id.name)
         .ok_or(anyhow::anyhow!("can't route to that indirect node"))?;

@@ -44,7 +44,7 @@ pub async fn connect_to_router(router_id: &Identity, ext: &IdentityExt, data: &N
         },
     );
     if let Some(port) = router_id.get_protocol_port(TCP_PROTOCOL) {
-        match tcp::init_direct(ext, data, &router_id, port, false, peer_rx).await {
+        match tcp::init_direct(ext, data, &router_id, port, true, peer_rx).await {
             Ok(()) => return,
             Err(peer_rx) => {
                 return connect::handle_failed_connection(ext, data, router_id, peer_rx).await;
@@ -52,7 +52,7 @@ pub async fn connect_to_router(router_id: &Identity, ext: &IdentityExt, data: &N
         }
     }
     if let Some(port) = router_id.get_protocol_port(WS_PROTOCOL) {
-        match ws::init_direct(ext, data, &router_id, port, false, peer_rx).await {
+        match ws::init_direct(ext, data, &router_id, port, true, peer_rx).await {
             Ok(()) => return,
             Err(peer_rx) => {
                 return connect::handle_failed_connection(ext, data, router_id, peer_rx).await;

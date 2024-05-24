@@ -1,4 +1,9 @@
 use crate::net::types::{HandshakePayload, OnchainPKI, PKINames, PendingStream, RoutingRequest};
+use crate::net::ws::WebSocket;
+use futures::{
+    stream::{SplitSink, SplitStream},
+    SinkExt, StreamExt,
+};
 use lib::types::core::{
     Address, Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetworkErrorSender,
     NodeRouting, PrintSender, Printout, ProcessId, Response, SendError, SendErrorKind,
@@ -15,6 +20,7 @@ lazy_static::lazy_static! {
 
 /// cross the streams -- spawn on own task
 pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStream) {
+    println!("maintain_passthrough\r");
     use tokio::io::copy;
     // copy from ws_socket to tcp_socket and vice versa
     // do not use bidirectional because if one side closes,
@@ -23,33 +29,51 @@ pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStre
         (PendingStream::Tcp(socket_1), PendingStream::Tcp(socket_2)) => {
             let (mut r1, mut w1) = tokio::io::split(socket_1);
             let (mut r2, mut w2) = tokio::io::split(socket_2);
-            let c1 = copy(&mut r1, &mut w2);
-            let c2 = copy(&mut r2, &mut w1);
             tokio::select! {
-                _ = c1 => return,
-                _ = c2 => return,
+                _ = copy(&mut r1, &mut w2) => {},
+                _ = copy(&mut r2, &mut w1) => {},
             }
         }
         (PendingStream::WebSocket(mut ws_socket), PendingStream::Tcp(tcp_socket))
         | (PendingStream::Tcp(tcp_socket), PendingStream::WebSocket(mut ws_socket)) => {
-            let (mut r1, mut w1) = tokio::io::split(ws_socket.get_mut());
-            let (mut r2, mut w2) = tokio::io::split(tcp_socket);
-            let c1 = copy(&mut r1, &mut w2);
-            let c2 = copy(&mut r2, &mut w1);
-            tokio::select! {
-                _ = c1 => return,
-                _ = c2 => return,
-            }
+            todo!();
         }
         (PendingStream::WebSocket(mut socket_1), PendingStream::WebSocket(mut socket_2)) => {
-            let (mut r1, mut w1) = tokio::io::split(socket_1.get_mut());
-            let (mut r2, mut w2) = tokio::io::split(socket_2.get_mut());
-            let c1 = copy(&mut r1, &mut w2);
-            let c2 = copy(&mut r2, &mut w1);
-            tokio::select! {
-                _ = c1 => return,
-                _ = c2 => return,
+            let mut last_message = std::time::Instant::now();
+            loop {
+                tokio::select! {
+                    maybe_recv = socket_1.next() => {
+                        match maybe_recv {
+                            Some(Ok(msg)) => {
+                                let Ok(()) = socket_2.send(msg).await else {
+                                    break
+                                };
+                                last_message = std::time::Instant::now();
+                            }
+                            _ => break,
+                        }
+                    },
+                    maybe_recv = socket_2.next() => {
+                        match maybe_recv {
+                            Some(Ok(msg)) => {
+                                let Ok(()) = socket_1.send(msg).await else {
+                                    break
+                                };
+                                last_message = std::time::Instant::now();
+                            }
+                            _ => break,
+                        }
+                    },
+                    // if a message has not been sent or received in 2-4 hours, close the connection
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(7200)) => {
+                        if last_message.elapsed().as_secs() > 7200 {
+                            break
+                        }
+                    }
+                }
             }
+            let _ = socket_1.close(None).await;
+            let _ = socket_2.close(None).await;
         }
     }
 }
@@ -90,6 +114,7 @@ pub fn validate_routing_request(
     buf: &[u8],
     pki: &OnchainPKI,
 ) -> anyhow::Result<(Identity, Identity)> {
+    println!("validate_routing_request\r");
     let routing_request: RoutingRequest = rmp_serde::from_slice(buf)?;
     let from_id = pki
         .get(&routing_request.source)
@@ -107,14 +132,6 @@ pub fn validate_routing_request(
     let target_id = pki
         .get(&routing_request.target)
         .ok_or(anyhow::anyhow!("unknown KNS name"))?;
-    match target_id.routers() {
-        Some(routers) => {
-            if !routers.contains(our_name) {
-                return Err(anyhow::anyhow!("not routing for them"));
-            }
-        }
-        None => return Err(anyhow::anyhow!("not routing for them")),
-    }
     if routing_request.target == routing_request.source {
         return Err(anyhow::anyhow!("can't route to self"));
     }

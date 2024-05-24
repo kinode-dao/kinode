@@ -492,18 +492,18 @@ impl State {
                 };
                 self.insert_listing(package_hash.clone(), listing);
 
-                let api_hash = None; // TODO
-                let api_download_request_result = start_api_download(
-                    our,
-                    requested_apis,
-                    PackageId::new(&package_name, &publisher_name),
-                    &publisher_name,
-                    api_hash,
-                );
-                match api_download_request_result {
-                    DownloadResponse::Failure => println!("failed to get API for {package_name}"),
-                    _ => {}
-                }
+                // let api_hash = None; // TODO
+                // let api_download_request_result = start_api_download(
+                // our,
+                // requested_apis,
+                // PackageId::new(&package_name, &publisher_name),
+                // &publisher_name,
+                // api_hash,
+                // );
+                // match api_download_request_result {
+                // DownloadResponse::Failure => println!("failed to get API for {package_name}"),
+                // _ => {}
+                // }
             }
             AppMetadataUpdated::SIGNATURE_HASH => {
                 let package_hash = log.topics()[1].to_string();
