@@ -59,6 +59,7 @@ async fn main() {
     create_home_directory(&home_directory_path).await;
     let http_server_port = set_http_server_port(matches.get_one::<u16>("port")).await;
     let ws_networking_port = matches.get_one::<u16>("ws-port");
+    let tcp_networking_port = matches.get_one::<u16>("tcp-port");
     let verbose_mode = *matches
         .get_one::<u8>("verbosity")
         .expect("verbosity required");
@@ -165,7 +166,8 @@ async fn main() {
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
 
     let our_ip = find_public_ip().await;
-    let (wc_tcp_handle, flag_used) = setup_ws_networking(ws_networking_port.cloned()).await;
+    let (ws_tcp_handle, ws_flag_used) = setup_networking(ws_networking_port).await;
+    let (tcp_tcp_handle, tcp_flag_used) = setup_networking(tcp_networking_port).await;
 
     #[cfg(feature = "simulation-mode")]
     let (our, encoded_keyfile, decoded_keyfile) = simulate_node(
@@ -186,7 +188,8 @@ async fn main() {
     let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
         &home_directory_path,
         our_ip.to_string(),
-        (wc_tcp_handle, flag_used),
+        (ws_tcp_handle, ws_flag_used),
+        (tcp_tcp_handle, tcp_flag_used),
         http_server_port,
         rpc.cloned(),
     )
@@ -474,22 +477,22 @@ async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
     }
 }
 
-/// Sets up WebSocket networking by finding an open port and creating a TCP listener.
+/// Sets up networking by finding an open port and creating a TCP listener.
 /// If a specific port is provided, it attempts to bind to it directly.
 /// If no port is provided, it searches for the first available port between 9000 and 65535.
 /// Returns a tuple containing the TcpListener and a boolean indicating if a specific port was used.
-async fn setup_ws_networking(ws_networking_port: Option<u16>) -> (tokio::net::TcpListener, bool) {
-    match ws_networking_port {
+async fn setup_networking(networking_port: Option<&u16>) -> (tokio::net::TcpListener, bool) {
+    match networking_port {
         Some(port) => {
-            let listener = http::utils::find_open_port(port, port + 1)
+            let listener = http::utils::find_open_port(*port, port + 1)
                 .await
-                .expect("ws-port selected with flag could not be bound");
+                .expect("port selected with flag could not be bound");
             (listener, true)
         }
         None => {
             let listener = http::utils::find_open_port(9000, 65535)
                 .await
-                .expect("no ports found in range 9000-65535 for websocket server");
+                .expect("no ports found in range 9000-65535 for kinode networking");
             (listener, false)
         }
     }
@@ -617,6 +620,11 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(u16)),
         )
         .arg(
+            arg!(--"tcp-port" <PORT> "Kinode internal TCP protocol port [default: first unbound at or above 9000]")
+                .alias("--tcp-port")
+                .value_parser(value_parser!(u16)),
+        )
+        .arg(
             arg!(--verbosity <VERBOSITY> "Verbosity level: higher is more verbose")
                 .default_value("0")
                 .value_parser(value_parser!(u8)),
@@ -684,6 +692,7 @@ async fn serve_register_fe(
     home_directory_path: &str,
     our_ip: String,
     ws_networking: (tokio::net::TcpListener, bool),
+    tcp_networking: (tokio::net::TcpListener, bool),
     http_server_port: u16,
     maybe_rpc: Option<String>,
 ) -> (Identity, Vec<u8>, Keyfile) {
@@ -700,6 +709,7 @@ async fn serve_register_fe(
                 kill_rx,
                 our_ip,
                 ws_networking,
+                tcp_networking,
                 http_server_port,
                 disk_keyfile,
                 maybe_rpc) => {
