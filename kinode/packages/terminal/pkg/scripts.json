@@ -45,6 +45,18 @@
         ],
         "wit_version": 0
     },
+    "kill.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [
+            "kernel:distro:sys"
+        ],
+        "grant_capabilities": [
+            "kernel:distro:sys"
+        ],
+        "wit_version": 0
+    },
     "m.wasm": {
         "root": true,
         "public": true,
@@ -106,7 +118,9 @@
         "request_capabilities": [
             "kernel:distro:sys"
         ],
-        "grant_capabilities": [],
+        "grant_capabilities": [
+            "kernel:distro:sys"
+        ],
         "wit_version": 0
     }
 }
