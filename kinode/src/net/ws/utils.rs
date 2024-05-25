@@ -1,7 +1,7 @@
 use crate::net::{
     types::{HandshakePayload, IdentityExt, Peers},
-    utils::{print_debug, print_loud},
-    ws::{PeerConnection, WebSocket, MESSAGE_MAX_SIZE},
+    utils::{print_debug, print_loud, MESSAGE_MAX_SIZE},
+    ws::{PeerConnection, WebSocket},
 };
 use lib::core::{KernelMessage, MessageSender, NodeId, PrintSender};
 use {
@@ -133,6 +133,7 @@ async fn recv_protocol_message(conn: &mut PeerConnection) -> anyhow::Result<Kern
         return Err(anyhow::anyhow!("message too large"));
     }
 
+    // bad
     let mut msg = Vec::with_capacity(msg_len as usize);
     msg.extend_from_slice(&conn.buf[4..outer_len]);
 

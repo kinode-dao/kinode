@@ -22,6 +22,10 @@ lazy_static::lazy_static! {
                                         .expect("net: couldn't build noise params?");
 }
 
+/// 10 MB -- TODO analyze as desired, apps can always chunk data into many messages
+/// note that this only applies to cross-network messages, not local ones.
+pub const MESSAGE_MAX_SIZE: u32 = 10_485_800;
+
 pub const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub async fn create_passthrough(
@@ -43,7 +47,7 @@ pub async fn create_passthrough(
         return Ok(());
     }
     if let Some((ip, tcp_port)) = target_id.tcp_routing() {
-        // create passthrough to direct node
+        // create passthrough to direct node over tcp
         let tcp_url = make_conn_url(our_ip, ip, tcp_port, TCP_PROTOCOL)?;
         let Ok(Ok(stream_2)) =
             time::timeout(TIMEOUT, tokio::net::TcpStream::connect(tcp_url.to_string())).await
@@ -54,7 +58,7 @@ pub async fn create_passthrough(
         return Ok(());
     }
     if let Some((ip, ws_port)) = target_id.ws_routing() {
-        // create passthrough to direct node
+        // create passthrough to direct node over websocket
         let ws_url = make_conn_url(our_ip, ip, ws_port, WS_PROTOCOL)?;
         let Ok(Ok((socket_2, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
         else {
@@ -135,7 +139,7 @@ pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStre
                             _ => break,
                         }
                     },
-                    maybe_recv = crate::net::tcp::utils::recv(&mut tcp_socket) => {
+                    maybe_recv = crate::net::tcp::utils::recv_raw(&mut tcp_socket) => {
                         match maybe_recv {
                             Ok((_len, bin)) => {
                                 let Ok(()) = ws_socket.send(tokio_tungstenite::tungstenite::Message::Binary(bin)).await else {

@@ -16,7 +16,7 @@ pub mod utils;
 
 pub struct PeerConnection {
     pub noise: snow::TransportState,
-    pub buf: Vec<u8>,
+    pub buf: [u8; 65535],
     pub stream: TcpStream,
 }
 
@@ -151,15 +151,15 @@ async fn recv_connection(
 ) -> anyhow::Result<()> {
     println!("tcp_recv_connection\r");
     // before we begin XX handshake pattern, check first message over socket
-    let (len, first_message) = &utils::recv(&mut stream).await?;
+    let (len, first_message) = utils::recv_raw(&mut stream).await?;
 
     // if the first message contains a "routing request",
     // we see if the target is someone we are actively routing for,
     // and create a Passthrough connection if so.
     // a Noise 'e' message with have len 32
-    if *len != 32 {
+    if len != 32 {
         let (from_id, target_id) =
-            validate_routing_request(&ext.our.name, first_message, &data.pki)?;
+            validate_routing_request(&ext.our.name, &first_message, &data.pki)?;
         return create_passthrough(
             &ext.our,
             &ext.our_ip,
@@ -172,15 +172,11 @@ async fn recv_connection(
         .await;
     }
 
+    let mut buf = [0u8; 65535];
     let (mut noise, our_static_key) = build_responder();
-    let mut buf = vec![0u8; 65535];
-
-    println!("e\r");
 
     // <- e
-    noise.read_message(first_message, &mut buf)?;
-
-    println!("e done\r");
+    noise.read_message(&first_message, &mut buf)?;
 
     // -> e, ee, s, es
     utils::send_protocol_handshake(
@@ -193,12 +189,8 @@ async fn recv_connection(
     )
     .await?;
 
-    println!("e, ee, s, es done\r");
-
     // <- s, se
     let their_handshake = utils::recv_protocol_handshake(&mut noise, &mut buf, &mut stream).await?;
-
-    println!("s, se done\r");
 
     // now validate this handshake payload against the KNS PKI
     let their_id = data
@@ -245,9 +237,6 @@ async fn connect_with_handshake(
     proxy_request: bool,
 ) -> anyhow::Result<PeerConnection> {
     println!("tcp_connect_with_handshake\r");
-    let mut buf = vec![0u8; 65535];
-    let (mut noise, our_static_key) = build_initiator();
-
     let ip = match use_router {
         None => peer_id
             .get_ip()
@@ -264,9 +253,9 @@ async fn connect_with_handshake(
     // if this is a routed request, before starting XX handshake pattern, send a
     // routing request message over socket
     if use_router.is_some() {
-        utils::send(
+        utils::send_raw(
             &mut stream,
-            rmp_serde::to_vec(&RoutingRequest {
+            &rmp_serde::to_vec(&RoutingRequest {
                 protocol_version: 1,
                 source: ext.our.name.clone(),
                 signature: ext
@@ -284,18 +273,15 @@ async fn connect_with_handshake(
         .await?;
     }
 
-    println!("e\r");
+    let mut buf = [0u8; 65535];
+    let (mut noise, our_static_key) = build_initiator();
 
     // -> e
     let len = noise.write_message(&[], &mut buf)?;
-    utils::send(&mut stream, buf[..len].to_vec()).await?;
-
-    println!("e done\r");
+    utils::send_raw(&mut stream, &buf[..len]).await?;
 
     // <- e, ee, s, es
     let their_handshake = utils::recv_protocol_handshake(&mut noise, &mut buf, &mut stream).await?;
-
-    println!("e, ee, s, es done\r");
 
     // now validate this handshake payload against the KNS PKI
     validate_handshake(
@@ -317,8 +303,6 @@ async fn connect_with_handshake(
     )
     .await?;
 
-    println!("s, se done\r");
-
     Ok(PeerConnection {
         noise: noise.into_transport_mode()?,
         buf,
@@ -333,7 +317,7 @@ pub async fn recv_via_router(
     router_id: Identity,
 ) {
     println!("tcp_recv_via_router\r");
-    let Some((ip, port)) = router_id.ws_routing() else {
+    let Some((ip, port)) = router_id.tcp_routing() else {
         return;
     };
     let Ok(tcp_url) = make_conn_url(&ext.our_ip, ip, port, TCP_PROTOCOL) else {
@@ -377,9 +361,9 @@ async fn connect_with_handshake_via_router(
 ) -> anyhow::Result<PeerConnection> {
     println!("tcp_connect_with_handshake_via_router\r");
     // before beginning XX handshake pattern, send a routing request
-    utils::send(
+    utils::send_raw(
         &mut stream,
-        rmp_serde::to_vec(&RoutingRequest {
+        &rmp_serde::to_vec(&RoutingRequest {
             protocol_version: 1,
             source: ext.our.name.clone(),
             signature: ext
@@ -396,11 +380,11 @@ async fn connect_with_handshake_via_router(
     )
     .await?;
 
-    let mut buf = vec![0u8; 65535];
+    let mut buf = [0u8; 65535];
     let (mut noise, our_static_key) = build_responder();
 
     // <- e
-    noise.read_message(&utils::recv(&mut stream).await?.1, &mut buf)?;
+    noise.read_message(&utils::recv_raw(&mut stream).await?.1, &mut buf)?;
 
     // -> e, ee, s, es
     utils::send_protocol_handshake(

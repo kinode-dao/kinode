@@ -18,10 +18,6 @@ use {
 
 mod utils;
 
-/// 10 MB -- TODO analyze as desired, apps can always chunk data into many messages
-/// note that this only applies to cross-network messages, not local ones.
-pub const MESSAGE_MAX_SIZE: u32 = 10_485_800;
-
 pub struct PeerConnection {
     pub noise: snow::TransportState,
     pub buf: Vec<u8>,
