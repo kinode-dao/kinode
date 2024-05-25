@@ -137,7 +137,7 @@ pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStre
                     },
                     maybe_recv = crate::net::tcp::utils::recv(&mut tcp_socket) => {
                         match maybe_recv {
-                            Ok(bin) => {
+                            Ok((_len, bin)) => {
                                 let Ok(()) = ws_socket.send(tokio_tungstenite::tungstenite::Message::Binary(bin)).await else {
                                     break
                                 };

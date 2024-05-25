@@ -40,49 +40,6 @@ sol! {
     function ip(bytes32) external view returns (uint128, uint16, uint16, uint16, uint16);
 }
 
-pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
-    let octets: Vec<&str> = ip.split('.').collect();
-
-    if octets.len() != 4 {
-        return Err("Invalid IP address");
-    }
-
-    let mut ip_num: u32 = 0;
-    for &octet in octets.iter() {
-        ip_num <<= 8;
-        match octet.parse::<u32>() {
-            Ok(num) => {
-                if num > 255 {
-                    return Err("Invalid octet in IP address");
-                }
-                ip_num += num;
-            }
-            Err(_) => return Err("Invalid number in IP address"),
-        }
-    }
-
-    Ok(ip_num)
-}
-
-fn _hex_string_to_u8_array(hex_str: &str) -> Result<[u8; 32], &'static str> {
-    if !hex_str.starts_with("0x") || hex_str.len() != 66 {
-        // "0x" + 64 hex chars
-        return Err("Invalid hex format or length");
-    }
-
-    let no_prefix = &hex_str[2..];
-    let mut bytes = [0_u8; 32];
-    for (i, byte) in no_prefix.as_bytes().chunks(2).enumerate() {
-        let hex_byte = std::str::from_utf8(byte)
-            .map_err(|_| "Invalid UTF-8 sequence")?
-            .parse::<u8>()
-            .map_err(|_| "Failed to parse hex byte")?;
-        bytes[i] = hex_byte;
-    }
-
-    Ok(bytes)
-}
-
 /// Serve the registration page and receive POSTs and PUTs from it
 pub async fn register(
     tx: RegistrationSender,
@@ -128,32 +85,7 @@ pub async fn register(
     // KnsRegistrar contract address
     let kns_address = EthAddress::from_str(KNS_ADDRESS).unwrap();
 
-    // This ETH provider uses public rpc endpoints to verify registration signatures.
-    let url = if let Some(rpc_url) = maybe_rpc {
-        rpc_url
-    } else {
-        "wss://optimism-rpc.publicnode.com".to_string()
-    };
-    println!(
-        "Connecting to Optimism RPC at {url}\n\
-        Specify a different RPC URL with the --rpc flag."
-    );
-    // this fails occasionally in certain networking environments. i'm not sure why.
-    // frustratingly, the exact same call does not fail in the eth module. more investigation needed.
-    let Ok(client) = ClientBuilder::default()
-        .ws(WsConnect { url, auth: None })
-        .await
-    else {
-        panic!(
-            "Error: runtime could not connect to ETH RPC.\n\
-            This is necessary in order to verify node identity onchain.\n\
-            Please make sure you are using a valid WebSockets URL if using \
-            the --rpc flag, and you are connected to the internet."
-        );
-    };
-    println!("Connected to Optimism RPC");
-
-    let provider = Arc::new(Provider::new_with_client(client));
+    let provider = Arc::new(connect_to_provider(maybe_rpc).await);
 
     let keyfile = warp::any().map(move || keyfile.clone());
     let our_temp_id = warp::any().map(move || our_temp_id.clone());
@@ -322,6 +254,35 @@ pub async fn register(
         })
         .1
         .await;
+}
+
+pub async fn connect_to_provider(maybe_rpc: Option<String>) -> Provider<PubSubFrontend> {
+    // This ETH provider uses public rpc endpoints to verify registration signatures.
+    let url = if let Some(rpc_url) = maybe_rpc {
+        rpc_url
+    } else {
+        "wss://optimism-rpc.publicnode.com".to_string()
+    };
+    println!(
+        "Connecting to Optimism RPC at {url}\n\
+        Specify a different RPC URL with the --rpc flag."
+    );
+    // this fails occasionally in certain networking environments. i'm not sure why.
+    // frustratingly, the exact same call does not fail in the eth module. more investigation needed.
+    let Ok(client) = ClientBuilder::default()
+        .ws(WsConnect { url, auth: None })
+        .await
+    else {
+        panic!(
+            "Error: runtime could not connect to ETH RPC.\n\
+            This is necessary in order to verify node identity onchain.\n\
+            Please make sure you are using a valid WebSockets URL if using \
+            the --rpc flag, and you are connected to the internet."
+        );
+    };
+    println!("Connected to Optimism RPC");
+
+    Provider::new_with_client(client)
 }
 
 async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Rejection> {

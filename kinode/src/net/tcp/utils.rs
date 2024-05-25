@@ -117,6 +117,7 @@ pub async fn send_protocol_handshake(
     stream: &mut TcpStream,
     proxy_request: bool,
 ) -> anyhow::Result<()> {
+    println!("tcp_send_protocol_handshake\r");
     let our_hs = rmp_serde::to_vec(&HandshakePayload {
         protocol_version: 1,
         name: ext.our.name.clone(),
@@ -142,6 +143,7 @@ pub async fn recv_protocol_handshake(
     buf: &mut [u8],
     stream: &mut TcpStream,
 ) -> anyhow::Result<HandshakePayload> {
+    println!("tcp_recv_protocol_handshake\r");
     let mut len = [0u8; 4];
     stream.read_exact(&mut len).await?;
     let outer_len = noise.read_message(&len, buf)?;
@@ -163,12 +165,25 @@ pub async fn recv_protocol_handshake(
     Ok(rmp_serde::from_slice(&msg)?)
 }
 
-pub async fn recv(stream: &mut TcpStream) -> anyhow::Result<Vec<u8>> {
+pub async fn send(stream: &mut TcpStream, msg: Vec<u8>) -> anyhow::Result<()> {
+    println!("tcp_send\r");
+    let len = (msg.len() as u32).to_be_bytes();
+    println!("tcp_send: msg_len: {}\r", msg.len());
+    let with_length_prefix = [len.to_vec(), msg.to_vec()].concat();
+    stream.write(&with_length_prefix).await?;
+    stream.flush().await?;
+    println!("tcp_send: sent\r");
+    Ok(())
+}
+
+pub async fn recv(stream: &mut TcpStream) -> anyhow::Result<(u32, Vec<u8>)> {
+    println!("tcp_recv\r");
     let mut len = [0u8; 4];
     stream.read_exact(&mut len).await?;
     let msg_len = u32::from_be_bytes(len);
+    println!("tcp_recv: msg_len: {}\r", msg_len);
 
     let mut msg = Vec::with_capacity(msg_len as usize);
     stream.read_exact(&mut msg).await?;
-    Ok(msg)
+    Ok((msg_len, msg))
 }

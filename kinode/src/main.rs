@@ -64,14 +64,14 @@ async fn main() {
         .get_one::<u8>("verbosity")
         .expect("verbosity required");
     let rpc = matches.get_one::<String>("rpc");
+    let password = matches.get_one::<String>("password");
 
     // if we are in sim-mode, detached determines whether terminal is interactive
     #[cfg(not(feature = "simulation-mode"))]
     let is_detached = false;
 
     #[cfg(feature = "simulation-mode")]
-    let (password, fake_node_name, is_detached, fakechain_port) = (
-        matches.get_one::<String>("password"),
+    let (fake_node_name, is_detached, fakechain_port) = (
         matches.get_one::<String>("fake-node-name"),
         *matches.get_one::<bool>("detached").unwrap(),
         matches.get_one::<u16>("fakechain-port").cloned(),
@@ -174,7 +174,8 @@ async fn main() {
         fake_node_name.cloned(),
         password.cloned(),
         home_directory_path,
-        (wc_tcp_handle, flag_used),
+        (ws_tcp_handle, ws_flag_used),
+        // NOTE: fakenodes only using WS protocol at the moment
         fakechain_port,
     )
     .await;
@@ -185,15 +186,30 @@ async fn main() {
         http_server_port
     );
     #[cfg(not(feature = "simulation-mode"))]
-    let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
-        &home_directory_path,
-        our_ip.to_string(),
-        (ws_tcp_handle, ws_flag_used),
-        (tcp_tcp_handle, tcp_flag_used),
-        http_server_port,
-        rpc.cloned(),
-    )
-    .await;
+    let (our, encoded_keyfile, decoded_keyfile) = match password {
+        None => {
+            serve_register_fe(
+                &home_directory_path,
+                our_ip.to_string(),
+                (ws_tcp_handle, ws_flag_used),
+                (tcp_tcp_handle, tcp_flag_used),
+                http_server_port,
+                rpc.cloned(),
+            )
+            .await
+        }
+        Some(password) => {
+            login_with_password(
+                &home_directory_path,
+                our_ip.to_string(),
+                (ws_tcp_handle, ws_flag_used),
+                (tcp_tcp_handle, tcp_flag_used),
+                rpc.cloned(),
+                password,
+            )
+            .await
+        }
+    };
 
     // the boolean flag determines whether the runtime module is *public* or not,
     // where public means that any process can always message it.
@@ -634,11 +650,11 @@ fn build_command() -> Command {
                 .default_value("true")
                 .value_parser(value_parser!(bool)),
         )
-        .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"));
+        .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"))
+        .arg(arg!(--password <PASSWORD> "Node password"));
 
     #[cfg(feature = "simulation-mode")]
     let app = app
-        .arg(arg!(--password <PASSWORD> "Networking password"))
         .arg(arg!(--"fake-node-name" <NAME> "Name of fake node to boot"))
         .arg(
             arg!(--"fakechain-port" <FAKECHAIN_PORT> "Port to bind to for fakechain")
@@ -730,4 +746,71 @@ async fn serve_register_fe(
     let _ = kill_tx.send(true);
 
     (our, encoded_keyfile, decoded_keyfile)
+}
+
+#[cfg(not(feature = "simulation-mode"))]
+async fn login_with_password(
+    home_directory_path: &str,
+    our_ip: String,
+    ws_networking: (tokio::net::TcpListener, bool),
+    tcp_networking: (tokio::net::TcpListener, bool),
+    maybe_rpc: Option<String>,
+    password: &str,
+) -> (Identity, Vec<u8>, Keyfile) {
+    use {alloy_primitives::Address as EthAddress, digest::Digest, ring::signature::KeyPair};
+
+    let disk_keyfile: Vec<u8> = tokio::fs::read(format!("{}/.keys", home_directory_path))
+        .await
+        .expect("could not read keyfile");
+
+    let password_hash = format!("0x{}", hex::encode(sha2::Sha256::digest(password)));
+
+    // KnsRegistrar contract address
+    let kns_address: EthAddress = KNS_ADDRESS.parse().unwrap();
+
+    let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
+
+    let k = keygen::decode_keyfile(&disk_keyfile, &password_hash)
+        .expect("could not decode keyfile, password incorrect");
+
+    let mut our = Identity {
+        name: k.username.clone(),
+        networking_key: format!(
+            "0x{}",
+            hex::encode(k.networking_keypair.public_key().as_ref())
+        ),
+        routing: if k.routers.is_empty() {
+            NodeRouting::Direct {
+                ip: our_ip,
+                ports: std::collections::BTreeMap::new(),
+            }
+        } else {
+            NodeRouting::Routers(k.routers.clone())
+        },
+    };
+
+    register::assign_direct_routing(
+        &mut our,
+        kns_address,
+        provider,
+        (
+            ws_networking.0.local_addr().unwrap().port(),
+            ws_networking.1,
+        ),
+        (
+            tcp_networking.0.local_addr().unwrap().port(),
+            tcp_networking.1,
+        ),
+    )
+    .await
+    .expect("information used to boot does not match information onchain");
+
+    tokio::fs::write(
+        format!("{}/.keys", home_directory_path),
+        disk_keyfile.clone(),
+    )
+    .await
+    .unwrap();
+
+    (our, disk_keyfile, k)
 }
