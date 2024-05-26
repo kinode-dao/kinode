@@ -3045,6 +3045,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "kfetch"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=010e175)",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "kill"
 version = "0.1.0"
 dependencies = [
