@@ -154,7 +154,7 @@ fn get_widget() -> String {
                     data.forEach(app => {
                         const a = document.createElement('a');
                         a.className = 'app p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 hover:bg-white/20 font-sans cursor-pointer';
-                        a.href = `/main:app_store:sys/app-details/${app.package}:${app.publisher}` 
+                        a.href = `/main:app_store:sys/app-details/${app.package}:${app.publisher}`
                         a.target = '_blank';
                         a.rel = 'noopener noreferrer';
                         a.innerHTML = `${app.metadata.image ? `<div

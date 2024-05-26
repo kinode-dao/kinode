@@ -32,7 +32,6 @@ pub enum RemoteRequest {
 pub enum RemoteResponse {
     DownloadApproved,
     DownloadDenied(ReasonDenied),
-    Metadata,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

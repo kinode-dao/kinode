@@ -1,4 +1,4 @@
-use kinode_process_lib::kernel_types::{KernelCommand, KernelPrint, KernelResponse};
+use kinode_process_lib::kernel_types::{KernelCommand, KernelResponse};
 use kinode_process_lib::{
     await_next_message_body, call_init, println, Address, Message, ProcessId, Request,
 };
