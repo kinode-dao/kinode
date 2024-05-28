@@ -4076,6 +4076,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "process_macros"
+version = "0.1.0"
+source = "git+https://github.com/kinode-dao/process_macros?rev=626e501#626e501d351e3365480ec6f770d474ed4ae339bf"
+dependencies = [
+ "quote",
+ "syn 2.0.60",
+]
+
+[[package]]
 name = "proptest"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5283,26 +5292,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "test_runner"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bincode",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=09dc9f9)",
- "serde",
- "serde_json",
- "thiserror",
- "wit-bindgen",
-]
-
-[[package]]
 name = "tester"
 version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "indexmap",
  "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=09dc9f9)",
+ "process_macros",
  "serde",
  "serde_json",
  "thiserror",
