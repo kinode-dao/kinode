@@ -13,8 +13,9 @@ const AppsDock: React.FC = () => {
 
   useEffect(() => {
     let final: HomepageApp[] = []
-    const dockedApps = Object.keys(favoriteApps)
-      .map(name => ({ ...apps.find(a => a.package_name === name), order: favoriteApps[name].order }))
+    const dockedApps = Object.entries(favoriteApps)
+      .filter(([_, { favorite }]) => favorite)
+      .map(([name, { order }]) => ({ ...apps.find(a => a.package_name === name), order }))
       .filter(a => a) as HomepageApp[]
     const orderedApps = dockedApps.filter(a => a.order !== undefined && a.order !== null)
     const unorderedApps = dockedApps.filter(a => a.order === undefined || a.order === null)
@@ -85,12 +86,15 @@ const AppsDock: React.FC = () => {
           ref={provided.innerRef}
           {...provided.droppableProps}
           className={classNames('flex-center flex-wrap border border-orange bg-orange/25 p-2 rounded !rounded-xl', {
-            'gap-8 mb-4': !isMobile,
+            'gap-8': !isMobile && dockedApps.length > 0,
+            'gap-4': !isMobile && dockedApps.length === 0,
+            'mb-4': !isMobile,
             'gap-4 mb-2': isMobile,
+            'flex-col': dockedApps.length === 0
           })}
         >
           {dockedApps.length === 0
-            ? <div>Favorite an app to pin it to your dock.</div>
+            ? <AppDisplay app={apps.find(app => app.package_name === 'app_store')!} />
             : dockedApps.map(app => <Draggable
               key={app.package_name}
               draggableId={app.package_name}
@@ -107,6 +111,7 @@ const AppsDock: React.FC = () => {
               )}
             </Draggable>)}
           {provided.placeholder}
+          {dockedApps.length === 0 && <div>Favorite an app to pin it to your dock.</div>}
         </div>
       )}
     </Droppable>
