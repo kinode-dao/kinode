@@ -194,7 +194,6 @@ fn init(our: Address) {
                                     .get("id")
                                     .unwrap_or(&"0".to_string())
                                     .clone();
-                                println!("id: {id}");
                                 let icon = match id.to_uppercase().as_str() {
                                     "0" => ICON_0,
                                     "1" => ICON_1,
