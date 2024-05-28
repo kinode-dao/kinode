@@ -31,54 +31,59 @@ pub async fn maintain_connection(
 
     loop {
         tokio::select! {
-            recv_result = recv_protocol_message(&mut conn) => {
-                match recv_result {
-                    Ok(km) => {
-                        if km.source.node != peer_name {
-                            print_loud(
-                                &print_tx,
-                                &format!(
-                                    "net: got message with spoofed source from {peer_name}!"
-                                ),
-                            ).await;
-                            break
-                        } else {
-                            kernel_message_tx.send(km).await.expect("net: fatal: kernel receiver died");
-                            continue
-                        }
-                    }
+            maybe_recv = peer_rx.recv() => {
+                let Some(km) = maybe_recv else {
+                    break
+                };
+                let Ok(()) = send_protocol_message(&km, &mut conn).await else {
+                    break
+                };
+            },
+            outer_len = recv_protocol_message_init(&mut conn.stream) => {
+                match outer_len {
+                    Ok((read, outer_len)) => match recv_protocol_message(&mut conn, read, outer_len).await {
+                         Ok(km) => {
+                             if km.source.node != peer_name {
+                                 print_loud(
+                                     &print_tx,
+                                     &format!(
+                                         "net: got message with spoofed source from {peer_name}!"
+                                     ),
+                                 ).await;
+                                 break
+                             } else {
+                                 kernel_message_tx.send(km).await.expect("net: fatal: kernel receiver died");
+                                 continue
+                             }
+                         }
+                         Err(e) => {
+                             print_debug(&print_tx, &format!("net: error receiving message: {e}")).await;
+                             break
+                         }
+                     }
                     Err(e) => {
                         print_debug(&print_tx, &format!("net: error receiving message: {e}")).await;
                         break
                     }
                 }
             },
-            maybe_recv = peer_rx.recv() => {
-                match maybe_recv {
-                    Some(km) => {
-                        match send_protocol_message(&km, &mut conn).await {
-                            Ok(()) => {
-                                continue
-                            }
-                            Err(e) => {
-                                print_debug(&print_tx, &format!("net: error sending message: {e}")).await;
-                                break
-                            }
-                        }
-                    }
-                    None => break
-                }
-            },
         }
     }
     let _ = conn.stream.shutdown().await;
+    print_debug(&print_tx, &format!("net: connection lost with {peer_name}")).await;
     peers.remove(&peer_name);
 }
 
-pub async fn send_protocol_message(
+async fn send_protocol_message(
     km: &KernelMessage,
     conn: &mut PeerConnection,
 ) -> anyhow::Result<()> {
+    println!(
+        "initiatior: {}, sending_nonce: {}, receiving_nonce: {}\r",
+        conn.noise.is_initiator(),
+        conn.noise.sending_nonce(),
+        conn.noise.receiving_nonce()
+    );
     let serialized = rmp_serde::to_vec(km)?;
     if serialized.len() > MESSAGE_MAX_SIZE as usize {
         return Err(anyhow::anyhow!("message too large"));
@@ -96,15 +101,29 @@ pub async fn send_protocol_message(
     Ok(conn.stream.flush().await?)
 }
 
-/// any error in receiving a message will result in the connection being closed.
-pub async fn recv_protocol_message(conn: &mut PeerConnection) -> anyhow::Result<KernelMessage> {
+async fn recv_protocol_message_init(stream: &mut TcpStream) -> anyhow::Result<(usize, [u8; 4])> {
     let mut outer_len = [0; 4];
-    conn.stream.read_exact(&mut outer_len).await?;
-    let outer_len = u32::from_be_bytes(outer_len);
+    let read = stream.read(&mut outer_len).await?;
+    Ok((read, outer_len))
+}
 
-    let mut msg = vec![0; outer_len as usize];
+/// any error in receiving a message will result in the connection being closed.
+async fn recv_protocol_message(
+    conn: &mut PeerConnection,
+    already_read: usize,
+    mut outer_len: [u8; 4],
+) -> anyhow::Result<KernelMessage> {
+    // fill out the rest of outer_len depending on how many bytes were read
+    if already_read < 4 {
+        conn.stream
+            .read_exact(&mut outer_len[already_read..])
+            .await?;
+    }
+    let outer_len = u32::from_be_bytes(outer_len) as usize;
+
+    let mut msg = vec![0; outer_len];
     let mut ptr = 0;
-    while ptr < outer_len as usize {
+    while ptr < outer_len {
         let mut inner_len = [0; 2];
         conn.stream.read_exact(&mut inner_len).await?;
         let inner_len = u16::from_be_bytes(inner_len);
