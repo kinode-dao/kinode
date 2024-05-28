@@ -3,10 +3,7 @@ interface main {
     // app store API as presented by main:app_store:sys-v0
     //
 
-    record package-id {
-        package-name: string,
-        publisher-node: string,
-    }
+    use standard.{package-id};
 
     record onchain-metadata {
         name: option<string>,

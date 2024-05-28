@@ -1,23 +1,30 @@
-use kinode_process_lib::http::{
-    bind_http_path, bind_ws_path, send_ws_push, serve_ui, HttpServerRequest, WsMessageType,
+use crate::kinode::process::main::{
+    ApisResponse, AutoUpdateResponse, DownloadRequest, DownloadResponse, GetApiResponse,
+    InstallResponse, LocalRequest, LocalResponse, MirrorResponse, NewPackageRequest,
+    NewPackageResponse, Reason, RebuildIndexResponse, RemoteDownloadRequest, RemoteRequest,
+    RemoteResponse, UninstallResponse,
 };
 use kinode_process_lib::kernel_types as kt;
-use kinode_process_lib::*;
-use kinode_process_lib::{call_init, println};
+use kinode_process_lib::{
+    await_message, call_init, get_blob, get_capability, get_typed_state, println,
+};
+use kinode_process_lib::{
+    eth, http, vfs, Address, LazyLoadBlob, Message, NodeId, PackageId, ProcessId, Request, Response,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "process-v0",
+    generate_unused_types: true,
+    world: "app-store-sys-v0",
+    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
 });
 
-mod api;
 mod http_api;
-use api::*;
 mod types;
-use types::*;
+use types::{PackageState, RequestedPackage, State};
 mod ft_worker_lib;
 use ft_worker_lib::{
     spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
@@ -70,7 +77,7 @@ pub enum Req {
     FTWorkerCommand(FTWorkerCommand),
     FTWorkerResult(FTWorkerResult),
     Eth(eth::EthSubResult),
-    Http(HttpServerRequest),
+    Http(http::HttpServerRequest),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -190,9 +197,9 @@ fn init(our: Address) {
         "/apps/:id/auto-update",
         "/apps/rebuild-index",
     ] {
-        bind_http_path(path, true, false).expect("failed to bind http path");
+        http::bind_http_path(path, true, false).expect("failed to bind http path");
     }
-    serve_ui(
+    http::serve_ui(
         &our,
         "ui",
         true,
@@ -201,7 +208,7 @@ fn init(our: Address) {
     )
     .expect("failed to serve static UI");
 
-    bind_ws_path("/", true, true).expect("failed to bind ws path");
+    http::bind_ws_path("/", true, true).expect("failed to bind ws path");
 
     // add ourselves to the homepage
     Request::to(("our", "homepage", "homepage", "sys"))
@@ -221,20 +228,17 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    let mut state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?))
-    {
-        Some(state) => {
-            println!("loaded saved state");
-            state
-        }
-        _ => {
-            println!("failed to load state, initializing");
-            State::new(CONTRACT_ADDRESS.to_string()).unwrap()
-        }
-    };
-    // // load in our saved state or initalize a new one if none exists
-    // let mut state = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?))
-    //     .unwrap_or(State::new(CONTRACT_ADDRESS.to_string()).unwrap());
+    let mut state: State =
+        match get_typed_state(|bytes| Ok(serde_json::from_slice::<State>(bytes)?)) {
+            Some(state) => {
+                println!("loaded saved state");
+                state
+            }
+            _ => {
+                println!("failed to load state, initializing");
+                State::new(CONTRACT_ADDRESS.to_string()).unwrap()
+            }
+        };
 
     if state.contract_address != CONTRACT_ADDRESS {
         println!("warning: contract address mismatch--overwriting saved state");
@@ -283,9 +287,9 @@ fn init(our: Address) {
                     &message,
                 ) {
                     println!("error handling message: {:?}", e);
-                    send_ws_push(
+                    http::send_ws_push(
                         channel_id,
-                        WsMessageType::Text,
+                        http::WsMessageType::Text,
                         LazyLoadBlob {
                             mime: Some("application/json".to_string()),
                             bytes: serde_json::json!({
@@ -328,7 +332,7 @@ fn handle_message(
                 }
                 let (body, blob) = handle_local_request(
                     &our,
-                    &local_request,
+                    local_request,
                     state,
                     eth_provider,
                     requested_apis,
@@ -345,7 +349,7 @@ fn handle_message(
                 }
             }
             Req::RemoteRequest(remote_request) => {
-                let resp = handle_remote_request(&our, &source, &remote_request, state);
+                let resp = handle_remote_request(&our, &source, remote_request, state);
                 if expects_response.is_some() {
                     Response::new().body(serde_json::to_vec(&resp)?).send()?;
                 }
@@ -384,7 +388,7 @@ fn handle_message(
                 {
                     return Err(anyhow::anyhow!("http_server from non-local node"));
                 }
-                if let HttpServerRequest::Http(req) = incoming {
+                if let http::HttpServerRequest::Http(req) = incoming {
                     http_api::handle_http_request(
                         our,
                         state,
@@ -411,32 +415,24 @@ fn handle_message(
 fn handle_remote_request(
     our: &Address,
     source: &Address,
-    request: &RemoteRequest,
+    request: RemoteRequest,
     state: &mut State,
 ) -> Resp {
     match request {
-        RemoteRequest::Download {
+        RemoteRequest::Download(RemoteDownloadRequest {
             package_id,
             desired_version_hash,
-        } => {
-            let Some(package_state) = state.get_downloaded_package(package_id) else {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                    ReasonDenied::NoPackage,
-                ));
+        }) => {
+            let package_id = package_id.to_process_lib();
+            let Some(package_state) = state.get_downloaded_package(&package_id) else {
+                return Resp::RemoteResponse(RemoteResponse::Denied(Reason::NoPackage));
             };
             if !package_state.mirroring {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                    ReasonDenied::NotMirroring,
-                ));
+                return Resp::RemoteResponse(RemoteResponse::Denied(Reason::NotMirroring));
             }
             if let Some(hash) = desired_version_hash {
-                if &package_state.our_version != hash {
-                    return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                        ReasonDenied::HashMismatch {
-                            requested: hash.clone(),
-                            have: package_state.our_version.clone(),
-                        },
-                    ));
+                if package_state.our_version != hash {
+                    return Resp::RemoteResponse(RemoteResponse::Denied(Reason::HashMismatch));
                 }
             }
             let file_name = format!("/{}.zip", package_id);
@@ -452,40 +448,28 @@ fn handle_remote_request(
                 )
                 .send_and_await_response(5)
             else {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                    ReasonDenied::FileNotFound,
-                ));
+                return Resp::RemoteResponse(RemoteResponse::Denied(Reason::NoPackage));
             };
             // transfer will *inherit* the blob bytes we receive from VFS
             match spawn_transfer(&our, &file_name, None, 60, &source) {
-                Ok(()) => Resp::RemoteResponse(RemoteResponse::DownloadApproved),
-                Err(_e) => Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                    ReasonDenied::WorkerSpawnFailed,
-                )),
+                Ok(()) => Resp::RemoteResponse(RemoteResponse::Approved),
+                Err(_e) => Resp::RemoteResponse(RemoteResponse::Denied(Reason::NoPackage)),
             }
         }
-        RemoteRequest::DownloadApi {
+        RemoteRequest::DownloadApi(RemoteDownloadRequest {
             package_id,
             desired_version_hash,
-        } => {
-            let Some(package_state) = state.get_downloaded_package(package_id) else {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                    ReasonDenied::NoPackage,
-                ));
+        }) => {
+            let package_id = package_id.to_process_lib();
+            let Some(package_state) = state.get_downloaded_package(&package_id) else {
+                return Resp::RemoteResponse(RemoteResponse::Denied(Reason::NoPackage));
             };
             if !package_state.mirroring {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                    ReasonDenied::NotMirroring,
-                ));
+                return Resp::RemoteResponse(RemoteResponse::Denied(Reason::NotMirroring));
             }
             if let Some(desired_version_hash) = desired_version_hash {
-                if &package_state.our_version != desired_version_hash {
-                    return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                        ReasonDenied::HashMismatch {
-                            requested: desired_version_hash.clone(),
-                            have: package_state.our_version.clone(),
-                        },
-                    ));
+                if package_state.our_version != desired_version_hash {
+                    return Resp::RemoteResponse(RemoteResponse::Denied(Reason::HashMismatch));
                 }
             }
             let file_name = format!("/{}-api-v0.zip", package_id); // TODO: actual version
@@ -501,16 +485,12 @@ fn handle_remote_request(
                 )
                 .send_and_await_response(5)
             else {
-                return Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                    ReasonDenied::FileNotFound,
-                ));
+                return Resp::RemoteResponse(RemoteResponse::Denied(Reason::NoPackage));
             };
             // transfer will *inherit* the blob bytes we receive from VFS
             match spawn_transfer(&our, &file_name, None, 60, &source) {
-                Ok(()) => Resp::RemoteResponse(RemoteResponse::DownloadApproved),
-                Err(_e) => Resp::RemoteResponse(RemoteResponse::DownloadDenied(
-                    ReasonDenied::WorkerSpawnFailed,
-                )),
+                Ok(()) => Resp::RemoteResponse(RemoteResponse::Approved),
+                Err(_e) => Resp::RemoteResponse(RemoteResponse::Denied(Reason::NoPackage)),
             }
         }
     }
@@ -519,26 +499,27 @@ fn handle_remote_request(
 /// only `our.node` can call this
 fn handle_local_request(
     our: &Address,
-    request: &LocalRequest,
+    request: LocalRequest,
     state: &mut State,
     eth_provider: &eth::Provider,
     requested_apis: &mut HashMap<PackageId, RequestedPackage>,
     requested_packages: &mut HashMap<PackageId, RequestedPackage>,
 ) -> (LocalResponse, Option<LazyLoadBlob>) {
     match request {
-        LocalRequest::NewPackage {
-            package,
+        LocalRequest::NewPackage(NewPackageRequest {
+            package_id,
             metadata,
             mirror,
-        } => {
+        }) => {
+            let package_id = package_id.to_process_lib();
             let Some(blob) = get_blob() else {
                 return (
-                    LocalResponse::NewPackageResponse(NewPackageResponse::Failure),
+                    LocalResponse::NewPackageResponse(NewPackageResponse::NoBlob),
                     None,
                 );
             };
             // set the version hash for this new local package
-            let our_version = generate_version_hash(&blob.bytes);
+            let our_version = types::generate_version_hash(&blob.bytes);
 
             let package_state = PackageState {
                 mirrored_from: Some(our.node.clone()),
@@ -547,19 +528,19 @@ fn handle_local_request(
                 verified: true, // side loaded apps are implicitly verified because there is no "source" to verify against
                 caps_approved: true, // TODO see if we want to auto-approve local installs
                 manifest_hash: None, // generated in the add fn
-                mirroring: *mirror,
+                mirroring: mirror,
                 auto_update: false, // can't auto-update a local package
-                metadata: Some(metadata.clone()),
+                metadata: Some(metadata.to_erc721_metadata()),
             };
-            let Ok(()) = state.add_downloaded_package(package, package_state, Some(blob.bytes))
+            let Ok(()) = state.add_downloaded_package(&package_id, package_state, Some(blob.bytes))
             else {
                 return (
-                    LocalResponse::NewPackageResponse(NewPackageResponse::Failure),
+                    LocalResponse::NewPackageResponse(NewPackageResponse::InstallFailed),
                     None,
                 );
             };
 
-            let drive_path = format!("/{package}/pkg");
+            let drive_path = format!("/{package_id}/pkg");
             let result = Request::new()
                 .target(("our", "vfs", "distro", "sys"))
                 .body(
@@ -571,7 +552,7 @@ fn handle_local_request(
                 )
                 .send_and_await_response(5);
             if let Ok(Ok(_)) = result {
-                state.downloaded_apis.insert(package.to_owned());
+                state.downloaded_apis.insert(package_id.to_owned());
             };
 
             (
@@ -579,61 +560,61 @@ fn handle_local_request(
                 None,
             )
         }
-        LocalRequest::Download {
-            package: package_id,
+        LocalRequest::Download(DownloadRequest {
+            package_id,
             download_from,
             mirror,
             auto_update,
             desired_version_hash,
-        } => (
+        }) => (
             LocalResponse::DownloadResponse(start_download(
                 our,
                 requested_packages,
-                package_id,
-                download_from,
-                *mirror,
-                *auto_update,
-                desired_version_hash,
+                &package_id.to_process_lib(),
+                &download_from,
+                mirror,
+                auto_update,
+                &desired_version_hash,
             )),
             None,
         ),
-        LocalRequest::Install(package) => (
-            match handle_install(our, state, package) {
+        LocalRequest::Install(package_id) => (
+            match handle_install(our, state, &package_id.to_process_lib()) {
                 Ok(()) => LocalResponse::InstallResponse(InstallResponse::Success),
                 Err(_) => LocalResponse::InstallResponse(InstallResponse::Failure),
             },
             None,
         ),
-        LocalRequest::Uninstall(package) => (
-            match state.uninstall(package) {
+        LocalRequest::Uninstall(package_id) => (
+            match state.uninstall(&package_id.to_process_lib()) {
                 Ok(()) => LocalResponse::UninstallResponse(UninstallResponse::Success),
                 Err(_) => LocalResponse::UninstallResponse(UninstallResponse::Failure),
             },
             None,
         ),
-        LocalRequest::StartMirroring(package) => (
-            match state.start_mirroring(package) {
+        LocalRequest::StartMirroring(package_id) => (
+            match state.start_mirroring(&package_id.to_process_lib()) {
                 true => LocalResponse::MirrorResponse(MirrorResponse::Success),
                 false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
             },
             None,
         ),
-        LocalRequest::StopMirroring(package) => (
-            match state.stop_mirroring(package) {
+        LocalRequest::StopMirroring(package_id) => (
+            match state.stop_mirroring(&package_id.to_process_lib()) {
                 true => LocalResponse::MirrorResponse(MirrorResponse::Success),
                 false => LocalResponse::MirrorResponse(MirrorResponse::Failure),
             },
             None,
         ),
-        LocalRequest::StartAutoUpdate(package) => (
-            match state.start_auto_update(package) {
+        LocalRequest::StartAutoUpdate(package_id) => (
+            match state.start_auto_update(&package_id.to_process_lib()) {
                 true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
                 false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
             },
             None,
         ),
-        LocalRequest::StopAutoUpdate(package) => (
-            match state.stop_auto_update(package) {
+        LocalRequest::StopAutoUpdate(package_id) => (
+            match state.stop_auto_update(&package_id.to_process_lib()) {
                 true => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Success),
                 false => LocalResponse::AutoUpdateResponse(AutoUpdateResponse::Failure),
             },
@@ -643,8 +624,8 @@ fn handle_local_request(
             rebuild_index(our, state, eth_provider, requested_apis),
             None,
         ),
-        LocalRequest::ListApis => (list_apis(state), None),
-        LocalRequest::GetApi(ref package_id) => get_api(package_id, state),
+        LocalRequest::Apis => (list_apis(state), None),
+        LocalRequest::GetApi(package_id) => get_api(&package_id.to_process_lib(), state),
     }
 }
 
@@ -679,9 +660,14 @@ pub fn get_api(package_id: &PackageId, state: &mut State) -> (LocalResponse, Opt
 }
 
 pub fn list_apis(state: &mut State) -> LocalResponse {
-    LocalResponse::ListApisResponse {
-        apis: state.downloaded_apis.iter().cloned().collect(),
-    }
+    LocalResponse::ApisResponse(ApisResponse {
+        apis: state
+            .downloaded_apis
+            .clone()
+            .into_iter()
+            .map(|id| crate::kinode::process::main::PackageId::from_process_lib(id))
+            .collect(),
+    })
 }
 
 pub fn rebuild_index(
@@ -707,7 +693,7 @@ pub fn rebuild_index(
         };
     }
 
-    LocalResponse::RebuiltIndex
+    LocalResponse::RebuildIndexResponse(RebuildIndexResponse::Success)
 }
 
 pub fn start_api_download(
@@ -720,16 +706,18 @@ pub fn start_api_download(
     match Request::to((download_from.as_str(), our.process.clone()))
         .inherit(true)
         .body(
-            serde_json::to_vec(&RemoteRequest::DownloadApi {
-                package_id: package_id.clone(),
+            serde_json::to_vec(&RemoteRequest::DownloadApi(RemoteDownloadRequest {
+                package_id: crate::kinode::process::main::PackageId::from_process_lib(
+                    package_id.clone(),
+                ),
                 desired_version_hash: desired_version_hash.map(|s| s.to_string()),
-            })
+            }))
             .unwrap(),
         )
         .send_and_await_response(5)
     {
         Ok(Ok(Message::Response { body, .. })) => match serde_json::from_slice::<Resp>(&body) {
-            Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) => {
+            Ok(Resp::RemoteResponse(RemoteResponse::Approved)) => {
                 requested_apis.insert(
                     package_id,
                     RequestedPackage {
@@ -741,9 +729,9 @@ pub fn start_api_download(
                 );
                 DownloadResponse::Started
             }
-            _ => DownloadResponse::Failure,
+            _ => DownloadResponse::BadResponse,
         },
-        _ => DownloadResponse::Failure,
+        _ => DownloadResponse::BadResponse,
     }
 }
 
@@ -759,16 +747,18 @@ pub fn start_download(
     match Request::to((download_from.as_str(), our.process.clone()))
         .inherit(true)
         .body(
-            serde_json::to_vec(&RemoteRequest::Download {
-                package_id: package_id.clone(),
+            serde_json::to_vec(&RemoteRequest::Download(RemoteDownloadRequest {
+                package_id: crate::kinode::process::main::PackageId::from_process_lib(
+                    package_id.clone(),
+                ),
                 desired_version_hash: desired_version_hash.clone(),
-            })
+            }))
             .unwrap(),
         )
         .send_and_await_response(5)
     {
         Ok(Ok(Message::Response { body, .. })) => match serde_json::from_slice::<Resp>(&body) {
-            Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) => {
+            Ok(Resp::RemoteResponse(RemoteResponse::Approved)) => {
                 requested_packages.insert(
                     package_id.clone(),
                     RequestedPackage {
@@ -780,9 +770,9 @@ pub fn start_download(
                 );
                 DownloadResponse::Started
             }
-            _ => DownloadResponse::Failure,
+            _ => DownloadResponse::BadResponse,
         },
-        _ => DownloadResponse::Failure,
+        _ => DownloadResponse::BadResponse,
     }
 }
 
@@ -834,7 +824,7 @@ fn handle_receive_download_api(
     };
     // check the version hash for this download against requested!!
     // for now we can reject if it's not latest.
-    let download_hash = generate_version_hash(&blob.bytes);
+    let download_hash = types::generate_version_hash(&blob.bytes);
     let mut verified = false;
     // TODO: require api_hash
     if let Some(hash) = requested_package.desired_version_hash {
@@ -874,7 +864,7 @@ fn handle_receive_download_package(
     };
     // check the version hash for this download against requested!!
     // for now we can reject if it's not latest.
-    let download_hash = generate_version_hash(&blob.bytes);
+    let download_hash = types::generate_version_hash(&blob.bytes);
     let mut verified = false;
     match requested_package.desired_version_hash {
         Some(hash) => {
@@ -907,13 +897,17 @@ fn handle_receive_download_package(
             let Some(latest_hash) = metadata
                 .properties
                 .code_hashes
+                .clone()
+                .into_iter()
+                .collect::<HashMap<_, _>>()
                 .get(&metadata.properties.current_version)
+                .cloned()
             else {
                 return Err(anyhow::anyhow!(
                     "downloaded package has no versions in manager--rejecting download!"
                 ));
             };
-            if &download_hash != latest_hash {
+            if download_hash != latest_hash {
                 if latest_hash.is_empty() {
                     println!(
                         "\x1b[33mwarning: downloaded package has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"

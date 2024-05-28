@@ -649,7 +649,7 @@ dependencies = [
  "alloy-sol-types 0.7.0",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=09dc9f9)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=9998921)",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -1935,7 +1935,7 @@ name = "download"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=09dc9f9)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=9998921)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2887,7 +2887,7 @@ name = "install"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=09dc9f9)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=9998921)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3199,6 +3199,28 @@ dependencies = [
 name = "kinode_process_lib"
 version = "0.8.0"
 source = "git+https://github.com/kinode-dao/process_lib.git?rev=7eb3a04#7eb3a04f9be79d1cc3a52fa460faeea7ba3008ed"
+dependencies = [
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=cad7935)",
+ "alloy-primitives 0.7.0",
+ "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=cad7935)",
+ "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=cad7935)",
+ "anyhow",
+ "bincode",
+ "http 1.1.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "kinode_process_lib"
+version = "0.8.0"
+source = "git+https://github.com/kinode-dao/process_lib?rev=9998921#9998921364561368fdb22f5b2839c60e1bda87a1"
 dependencies = [
  "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=cad7935)",
  "alloy-primitives 0.7.0",
@@ -5913,7 +5935,7 @@ name = "uninstall"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=09dc9f9)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=9998921)",
  "serde",
  "serde_json",
  "wit-bindgen",

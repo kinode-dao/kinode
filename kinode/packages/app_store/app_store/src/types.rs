@@ -1,8 +1,9 @@
-use crate::{start_api_download, DownloadResponse, LocalRequest};
+use crate::kinode::process::main::{DownloadRequest, LocalRequest, OnchainMetadata};
 use alloy_sol_types::{sol, SolEvent};
-use kinode_process_lib::eth::Log;
-use kinode_process_lib::kernel_types as kt;
-use kinode_process_lib::{println, *};
+use kinode_process_lib::{
+    eth::Log, get_blob, http, kernel_types as kt, net, println, vfs, Address, LazyLoadBlob,
+    Message, NodeId, PackageId, ProcessId, Request,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -35,6 +36,49 @@ pub enum IndexerRequests {
     /// return the most recent on-chain routing information for a node name.
     /// returns an Option<KnsUpdate>
     NodeInfo { name: String, block: u64 },
+}
+
+// quite annoyingly, we must convert from our gen'd version of PackageId
+// to the process_lib's gen'd version. this is in order to access custom
+// Impls that we want to use
+impl crate::kinode::process::main::PackageId {
+    pub fn to_process_lib(self) -> PackageId {
+        PackageId {
+            package_name: self.package_name,
+            publisher_node: self.publisher_node,
+        }
+    }
+    pub fn from_process_lib(package_id: PackageId) -> Self {
+        Self {
+            package_name: package_id.package_name,
+            publisher_node: package_id.publisher_node,
+        }
+    }
+}
+
+// less annoying but still bad
+impl OnchainMetadata {
+    pub fn to_erc721_metadata(self) -> kt::Erc721Metadata {
+        use kt::Erc721Properties;
+        kt::Erc721Metadata {
+            name: self.name,
+            description: self.description,
+            image: self.image,
+            external_url: self.external_url,
+            animation_url: self.animation_url,
+            properties: Erc721Properties {
+                package_name: self.properties.package_name,
+                publisher: self.properties.publisher,
+                current_version: self.properties.current_version,
+                mirrors: self.properties.mirrors,
+                code_hashes: self.properties.code_hashes.into_iter().collect(),
+                license: self.properties.license,
+                screenshots: self.properties.screenshots,
+                wit_version: self.properties.wit_version,
+                dependencies: self.properties.dependencies,
+            },
+        }
+    }
 }
 
 //
@@ -113,7 +157,7 @@ impl State {
     /// To create a new state, we populate the downloaded_packages map
     /// with all packages parseable from our filesystem.
     pub fn new(contract_address: String) -> anyhow::Result<Self> {
-        crate::print_to_terminal(1, "producing new state");
+        kinode_process_lib::print_to_terminal(1, "producing new state");
         let mut state = State {
             contract_address,
             last_saved_block: crate::CONTRACT_FIRST_BLOCK,
@@ -196,7 +240,7 @@ impl State {
             };
         }
         self.downloaded_apis.insert(package_id.to_owned());
-        crate::set_state(&bincode::serialize(self)?);
+        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
 
@@ -258,7 +302,7 @@ impl State {
         }
         self.downloaded_packages
             .insert(package_id.to_owned(), package_state);
-        crate::set_state(&bincode::serialize(self)?);
+        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
 
@@ -276,7 +320,7 @@ impl State {
                 true
             })
             .unwrap_or(false);
-        crate::set_state(&bincode::serialize(self).unwrap());
+        kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
         res
     }
 
@@ -416,7 +460,7 @@ impl State {
 
         // finally, remove from downloaded packages
         self.downloaded_packages.remove(package_id);
-        crate::set_state(&bincode::serialize(self)?);
+        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
 
         println!("uninstalled {package_id}");
         Ok(())
@@ -447,7 +491,7 @@ impl State {
                 let package_hash = package_hash.to_string();
                 let metadata_hash = metadata_hash.to_string();
 
-                crate::print_to_terminal(
+                kinode_process_lib::print_to_terminal(
                     1,
                     &format!(
                         "app registered with package_name {}, metadata_url {}, metadata_hash {}",
@@ -529,7 +573,10 @@ impl State {
                         Some(metadata)
                     }
                     Err(e) => {
-                        crate::print_to_terminal(1, &format!("failed to fetch metadata: {e:?}"));
+                        kinode_process_lib::print_to_terminal(
+                            1,
+                            &format!("failed to fetch metadata: {e:?}"),
+                        );
                         None
                     }
                 };
@@ -545,18 +592,22 @@ impl State {
                 if let Some(package_state) = self.downloaded_packages.get(&package_id) {
                     if package_state.auto_update {
                         if let Some(mirrored_from) = &package_state.mirrored_from {
-                            crate::print_to_terminal(
+                            kinode_process_lib::print_to_terminal(
                                 1,
                                 &format!("auto-updating package {package_id} from {mirrored_from}"),
                             );
                             Request::to(our)
-                                .body(serde_json::to_vec(&LocalRequest::Download {
-                                    package: package_id,
-                                    download_from: mirrored_from.clone(),
-                                    mirror: package_state.mirroring,
-                                    auto_update: package_state.auto_update,
-                                    desired_version_hash: None,
-                                })?)
+                                .body(serde_json::to_vec(&LocalRequest::Download(
+                                    DownloadRequest {
+                                        package_id: crate::kinode::process::main::PackageId::from_process_lib(
+                                            package_id,
+                                        ),
+                                        download_from: mirrored_from.clone(),
+                                        mirror: package_state.mirroring,
+                                        auto_update: package_state.auto_update,
+                                        desired_version_hash: None,
+                                    },
+                                ))?)
                                 .send()?;
                         }
                     }
@@ -595,7 +646,7 @@ impl State {
             _ => {}
         }
         self.last_saved_block = block_number;
-        crate::set_state(&bincode::serialize(self)?);
+        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
 }

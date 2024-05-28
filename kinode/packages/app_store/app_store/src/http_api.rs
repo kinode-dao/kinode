@@ -1,4 +1,5 @@
-use crate::{DownloadResponse, PackageListing, PackageState, RequestedPackage, State};
+use crate::types::{PackageListing, PackageState, RequestedPackage, State};
+use crate::DownloadResponse;
 use kinode_process_lib::{
     eth,
     http::{send_response, IncomingHttpRequest, Method, StatusCode},
@@ -223,7 +224,7 @@ fn serve_paths(
                             None,
                             format!("Downloading").into_bytes(),
                         )),
-                        DownloadResponse::Failure => Ok((
+                        _ => Ok((
                             StatusCode::SERVICE_UNAVAILABLE,
                             None,
                             format!("Failed to download").into_bytes(),
@@ -319,7 +320,7 @@ fn serve_paths(
                             None,
                             format!("Downloading").into_bytes(),
                         )),
-                        DownloadResponse::Failure => Ok((
+                        _ => Ok((
                             StatusCode::SERVICE_UNAVAILABLE,
                             None,
                             format!("Failed to download").into_bytes(),
