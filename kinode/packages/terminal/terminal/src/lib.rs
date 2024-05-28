@@ -115,6 +115,7 @@ fn init(our: Address) {
                         Ok(()) => continue,
                         Err(e) => println!("{e}"),
                     }
+                // checks for a request from a terminal script (different process, same package)
                 } else if state.our.node == source.node && state.our.package() == source.package() {
                     let Ok(action) = serde_json::from_slice::<TerminalAction>(&body) else {
                         println!("failed to parse action from: {}", source);
@@ -226,6 +227,8 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
             })?)
             .send()?;
     }
+    // inherits the blob from the previous request, `_bytes_response`,
+    // containing the wasm byte code of the process
     Request::new()
         .target(("our", "kernel", "distro", "sys"))
         .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
