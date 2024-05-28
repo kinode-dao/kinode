@@ -21,7 +21,6 @@ pub struct PeerConnection {
 }
 
 pub async fn receiver(ext: IdentityExt, data: NetData) -> anyhow::Result<()> {
-    println!("tcp_receiver\r");
     let tcp_port = ext.our.get_protocol_port(TCP_PROTOCOL).unwrap();
     let tcp = match TcpListener::bind(format!("0.0.0.0:{tcp_port}")).await {
         Ok(tcp) => tcp,

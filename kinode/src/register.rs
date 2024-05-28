@@ -34,9 +34,8 @@ sol! {
         bytes32 _node,
         address _sender
     ) public view virtual returns (bool authed);
-
+    function key(bytes32) external view returns (bytes32);
     function nodes(bytes32) external view returns (address, uint96);
-
     function ip(bytes32) external view returns (uint128, uint16, uint16, uint16, uint16);
 }
 
@@ -549,7 +548,7 @@ async fn handle_import_keyfile(
             }
         };
 
-    if let Err(e) = assign_direct_routing(
+    if let Err(e) = assign_routing(
         &mut our,
         kns_address,
         provider,
@@ -616,7 +615,7 @@ async fn handle_login(
             }
         };
 
-    if let Err(e) = assign_direct_routing(
+    if let Err(e) = assign_routing(
         &mut our,
         kns_address,
         provider,
@@ -692,10 +691,15 @@ async fn confirm_change_network_keys(
         &decoded_keyfile.file_key,
     );
 
-    success_response(sender, our.clone(), decoded_keyfile, encoded_keyfile).await
+    our.networking_key = format!(
+        "0x{}",
+        hex::encode(decoded_keyfile.networking_keypair.public_key().as_ref())
+    );
+
+    success_response(sender, our, decoded_keyfile, encoded_keyfile).await
 }
 
-pub async fn assign_direct_routing(
+pub async fn assign_routing(
     our: &mut Identity,
     kns_address: EthAddress,
     provider: Arc<Provider<PubSubFrontend>>,
@@ -704,6 +708,7 @@ pub async fn assign_direct_routing(
 ) -> anyhow::Result<()> {
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
     let ip_call = ipCall { _0: namehash }.abi_encode();
+    let key_call = keyCall { _0: namehash }.abi_encode();
     let tx_input = TransactionInput::new(Bytes::from(ip_call));
     let tx = TransactionRequest {
         to: Some(kns_address),
@@ -719,6 +724,23 @@ pub async fn assign_direct_routing(
     else {
         return Err(anyhow::anyhow!("Failed to decode node IP data from PKI"));
     };
+
+    let key_tx_input = TransactionInput::new(Bytes::from(key_call));
+    let key_tx = TransactionRequest {
+        to: Some(kns_address),
+        input: key_tx_input,
+        ..Default::default()
+    };
+
+    let Ok(public_key) = provider.call(key_tx, None).await else {
+        return Err(anyhow::anyhow!("Failed to fetch node key from PKI"));
+    };
+
+    if format!("0x{}", hex::encode(&public_key)) != our.networking_key {
+        return Err(anyhow::anyhow!(
+            "Networking key from PKI does not match our saved networking key"
+        ));
+    }
 
     let node_ip = format!(
         "{}.{}.{}.{}",
@@ -752,6 +774,8 @@ pub async fn assign_direct_routing(
             ports.insert("tcp".to_string(), tcp);
         }
         our.routing = NodeRouting::Direct { ip: node_ip, ports };
+    } else {
+        // indirect node
     }
     Ok(())
 }

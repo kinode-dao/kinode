@@ -27,7 +27,6 @@ pub struct PeerConnection {
 pub type WebSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 pub async fn receiver(ext: IdentityExt, data: NetData) -> Result<()> {
-    println!("receiver\r");
     let ws_port = ext.our.get_protocol_port(WS_PROTOCOL).unwrap();
     let ws = match TcpListener::bind(format!("0.0.0.0:{ws_port}")).await {
         Ok(ws) => ws,

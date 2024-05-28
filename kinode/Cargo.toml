@@ -81,6 +81,7 @@ serde_urlencoded = "0.7"
 sha2 = "0.10"
 sha3 = "0.10.8"
 snow = { version = "0.9.5", features = ["ring-resolver"] }
+socket2 = "0.5.7"
 static_dir = "0.2.0"
 thiserror = "1.0"
 tokio = { version = "1.28", features = ["fs", "macros", "rt-multi-thread", "signal", "sync"] }

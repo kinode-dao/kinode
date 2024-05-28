@@ -1030,32 +1030,27 @@ impl Identity {
             _ => false,
         }
     }
-    pub fn get_protocol_port(&self, protocol: &str) -> Option<u16> {
+    pub fn get_protocol_port(&self, protocol: &str) -> Option<&u16> {
         match &self.routing {
             NodeRouting::Routers(_) => None,
-            NodeRouting::Direct { ports, .. } => ports.get(protocol).cloned(),
-            NodeRouting::Both { ports, .. } => ports.get(protocol).cloned(),
+            NodeRouting::Direct { ports, .. } | NodeRouting::Both { ports, .. } => {
+                ports.get(protocol)
+            }
         }
     }
     pub fn get_ip(&self) -> Option<&str> {
         match &self.routing {
             NodeRouting::Routers(_) => None,
-            NodeRouting::Direct { ip, .. } => Some(ip),
-            NodeRouting::Both { ip, .. } => Some(ip),
+            NodeRouting::Direct { ip, .. } | NodeRouting::Both { ip, .. } => Some(ip),
         }
     }
     pub fn ws_routing(&self) -> Option<(&str, &u16)> {
         match &self.routing {
             NodeRouting::Routers(_) => None,
-            NodeRouting::Direct { ip, ports } => {
-                if let Some(port) = ports.get("ws") {
-                    Some((ip, port))
-                } else {
-                    None
-                }
-            }
-            NodeRouting::Both { ip, ports, .. } => {
-                if let Some(port) = ports.get("ws") {
+            NodeRouting::Direct { ip, ports } | NodeRouting::Both { ip, ports, .. } => {
+                if let Some(port) = ports.get("ws")
+                    && *port != 0
+                {
                     Some((ip, port))
                 } else {
                     None
@@ -1066,15 +1061,10 @@ impl Identity {
     pub fn tcp_routing(&self) -> Option<(&str, &u16)> {
         match &self.routing {
             NodeRouting::Routers(_) => None,
-            NodeRouting::Direct { ip, ports } => {
-                if let Some(port) = ports.get("tcp") {
-                    Some((ip, port))
-                } else {
-                    None
-                }
-            }
-            NodeRouting::Both { ip, ports, .. } => {
-                if let Some(port) = ports.get("tcp") {
+            NodeRouting::Direct { ip, ports } | NodeRouting::Both { ip, ports, .. } => {
+                if let Some(port) = ports.get("tcp")
+                    && *port != 0
+                {
                     Some((ip, port))
                 } else {
                     None
@@ -1084,9 +1074,8 @@ impl Identity {
     }
     pub fn routers(&self) -> Option<&Vec<NodeId>> {
         match &self.routing {
-            NodeRouting::Routers(routers) => Some(routers),
+            NodeRouting::Routers(routers) | NodeRouting::Both { routers, .. } => Some(routers),
             NodeRouting::Direct { .. } => None,
-            NodeRouting::Both { routers, .. } => Some(routers),
         }
     }
     pub fn both_to_direct(&mut self) {
@@ -1885,10 +1874,7 @@ pub struct KnsUpdate {
 }
 
 impl KnsUpdate {
-    pub fn get_protocol_port(&self, protocol: &str) -> u16 {
-        match self.ports.get(protocol) {
-            Some(port) => *port,
-            None => 0,
-        }
+    pub fn get_protocol_port(&self, protocol: &str) -> Option<&u16> {
+        self.ports.get(protocol)
     }
 }

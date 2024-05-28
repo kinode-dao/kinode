@@ -1,4 +1,4 @@
-use crate::net::types::{IdentityExt, NetData, Peer, TCP_PROTOCOL, WS_PROTOCOL};
+use crate::net::types::{IdentityExt, NetData, Peer};
 use crate::net::{tcp, utils, ws};
 use lib::types::core::{Identity, KernelMessage, NodeRouting};
 use rand::prelude::SliceRandom;
@@ -53,16 +53,16 @@ async fn connect_to_peer(
             &format!("net: attempting to connect to {} directly", peer_id.name),
         )
         .await;
-        if let Some(port) = peer_id.get_protocol_port(TCP_PROTOCOL) {
-            match tcp::init_direct(&ext, &data, &peer_id, port, false, peer_rx).await {
+        if let Some((_ip, port)) = peer_id.tcp_routing() {
+            match tcp::init_direct(&ext, &data, &peer_id, *port, false, peer_rx).await {
                 Ok(()) => return,
                 Err(peer_rx) => {
                     return handle_failed_connection(&ext, &data, &peer_id, peer_rx).await;
                 }
             }
         }
-        if let Some(port) = peer_id.get_protocol_port(WS_PROTOCOL) {
-            match ws::init_direct(&ext, &data, &peer_id, port, false, peer_rx).await {
+        if let Some((_ip, port)) = peer_id.ws_routing() {
+            match ws::init_direct(&ext, &data, &peer_id, *port, false, peer_rx).await {
                 Ok(()) => return,
                 Err(peer_rx) => {
                     return handle_failed_connection(&ext, &data, &peer_id, peer_rx).await;
@@ -103,8 +103,8 @@ async fn connect_via_router(
             None => continue,
             Some(id) => id.clone(),
         };
-        if let Some(port) = router_id.get_protocol_port(TCP_PROTOCOL) {
-            match tcp::init_routed(ext, data, &peer_id, &router_id, port, peer_rx).await {
+        if let Some((_ip, port)) = router_id.tcp_routing() {
+            match tcp::init_routed(ext, data, &peer_id, &router_id, *port, peer_rx).await {
                 Ok(()) => return,
                 Err(e) => {
                     peer_rx = e;
@@ -112,8 +112,8 @@ async fn connect_via_router(
                 }
             }
         }
-        if let Some(port) = router_id.get_protocol_port(WS_PROTOCOL) {
-            match ws::init_routed(ext, data, &peer_id, &router_id, port, peer_rx).await {
+        if let Some((_ip, port)) = router_id.ws_routing() {
+            match ws::init_routed(ext, data, &peer_id, &router_id, *port, peer_rx).await {
                 Ok(()) => return,
                 Err(e) => {
                     peer_rx = e;

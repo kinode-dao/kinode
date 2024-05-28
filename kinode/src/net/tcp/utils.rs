@@ -20,7 +20,15 @@ pub async fn maintain_connection(
     print_tx: PrintSender,
 ) {
     println!("tcp_maintain_connection\r");
-    let mut last_message = std::time::Instant::now();
+
+    let sock_ref = socket2::SockRef::from(&conn.stream);
+    let mut ka = socket2::TcpKeepalive::new();
+    ka = ka.with_time(std::time::Duration::from_secs(30));
+    ka = ka.with_interval(std::time::Duration::from_secs(30));
+    sock_ref
+        .set_tcp_keepalive(&ka)
+        .expect("failed to set tcp keepalive");
+
     loop {
         tokio::select! {
             recv_result = recv_protocol_message(&mut conn) => {
@@ -50,7 +58,6 @@ pub async fn maintain_connection(
                     Some(km) => {
                         match send_protocol_message(&km, &mut conn).await {
                             Ok(()) => {
-                                last_message = std::time::Instant::now();
                                 continue
                             }
                             Err(e) => {
@@ -62,12 +69,6 @@ pub async fn maintain_connection(
                     None => break
                 }
             },
-            // if a message has not been sent or received in 2 hours, close the connection
-            _ = tokio::time::sleep(std::time::Duration::from_secs(7200)) => {
-                if last_message.elapsed().as_secs() > 7200 {
-                    break
-                }
-            }
         }
     }
     let _ = conn.stream.shutdown().await;
@@ -126,7 +127,6 @@ pub async fn send_protocol_handshake(
     stream: &mut TcpStream,
     proxy_request: bool,
 ) -> anyhow::Result<()> {
-    println!("tcp_send_protocol_handshake\r");
     let our_hs = rmp_serde::to_vec(&HandshakePayload {
         protocol_version: 1,
         name: ext.our.name.clone(),
@@ -147,7 +147,6 @@ pub async fn recv_protocol_handshake(
     buf: &mut [u8],
     stream: &mut TcpStream,
 ) -> anyhow::Result<HandshakePayload> {
-    println!("tcp_recv_protocol_handshake\r");
     let mut len = [0; 2];
     stream.read_exact(&mut len).await?;
     let msg_len = u16::from_be_bytes(len);
@@ -158,7 +157,7 @@ pub async fn recv_protocol_handshake(
     Ok(rmp_serde::from_slice(&buf[..len])?)
 }
 
-/// make sure message is less than 65536 bytes
+/// make sure raw message is less than 65536 bytes
 pub async fn send_raw(stream: &mut TcpStream, msg: &[u8]) -> anyhow::Result<()> {
     let len = (msg.len() as u16).to_be_bytes();
     stream.write_all(&len).await?;
@@ -166,7 +165,7 @@ pub async fn send_raw(stream: &mut TcpStream, msg: &[u8]) -> anyhow::Result<()> 
     Ok(stream.flush().await?)
 }
 
-/// make sure message is less than 65536 bytes
+/// make sure raw message is less than 65536 bytes
 pub async fn recv_raw(stream: &mut TcpStream) -> anyhow::Result<(u16, Vec<u8>)> {
     let mut len = [0; 2];
     stream.read_exact(&mut len).await?;

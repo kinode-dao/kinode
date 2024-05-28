@@ -180,7 +180,9 @@ pub async fn recv_protocol_handshake(
 }
 
 /// Receive a byte array from a read stream. If this returns an error,
-/// we should close the connection. Will automatically respond to 'PING' messages with a 'PONG'.
+/// we should close the connection.
+///
+/// Will automatically respond to 'PING' messages with a 'PONG'.
 pub async fn recv(socket: &mut WebSocket) -> anyhow::Result<Vec<u8>> {
     loop {
         match socket.next().await {

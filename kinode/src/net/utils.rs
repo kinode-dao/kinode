@@ -11,7 +11,6 @@ use {
     futures::{SinkExt, StreamExt},
     ring::signature::{self},
     snow::params::NoiseParams,
-    tokio::io::AsyncWriteExt,
     tokio::time,
     tokio_tungstenite::connect_async,
 };
@@ -46,36 +45,39 @@ pub async fn create_passthrough(
         tokio::spawn(maintain_passthrough(socket_1, pending_stream));
         return Ok(());
     }
-    if let Some((ip, tcp_port)) = target_id.tcp_routing() {
-        // create passthrough to direct node over tcp
-        let tcp_url = make_conn_url(our_ip, ip, tcp_port, TCP_PROTOCOL)?;
-        let Ok(Ok(stream_2)) =
-            time::timeout(TIMEOUT, tokio::net::TcpStream::connect(tcp_url.to_string())).await
-        else {
-            return Err(anyhow::anyhow!("failed to connect to target"));
-        };
-        tokio::spawn(maintain_passthrough(socket_1, PendingStream::Tcp(stream_2)));
-        return Ok(());
-    }
-    if let Some((ip, ws_port)) = target_id.ws_routing() {
-        // create passthrough to direct node over websocket
-        let ws_url = make_conn_url(our_ip, ip, ws_port, WS_PROTOCOL)?;
-        let Ok(Ok((socket_2, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
-        else {
-            return Err(anyhow::anyhow!("failed to connect to target"));
-        };
-        tokio::spawn(maintain_passthrough(
-            socket_1,
-            PendingStream::WebSocket(socket_2),
-        ));
-        return Ok(());
+    if socket_1.is_tcp() {
+        if let Some((ip, tcp_port)) = target_id.tcp_routing() {
+            // create passthrough to direct node over tcp
+            let tcp_url = make_conn_url(our_ip, ip, tcp_port, TCP_PROTOCOL)?;
+            let Ok(Ok(stream_2)) =
+                time::timeout(TIMEOUT, tokio::net::TcpStream::connect(tcp_url.to_string())).await
+            else {
+                return Err(anyhow::anyhow!("failed to connect to target"));
+            };
+            tokio::spawn(maintain_passthrough(socket_1, PendingStream::Tcp(stream_2)));
+            return Ok(());
+        }
+    } else if socket_1.is_ws() {
+        if let Some((ip, ws_port)) = target_id.ws_routing() {
+            // create passthrough to direct node over websocket
+            let ws_url = make_conn_url(our_ip, ip, ws_port, WS_PROTOCOL)?;
+            let Ok(Ok((socket_2, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
+            else {
+                return Err(anyhow::anyhow!("failed to connect to target"));
+            };
+            tokio::spawn(maintain_passthrough(
+                socket_1,
+                PendingStream::WebSocket(socket_2),
+            ));
+            return Ok(());
+        }
     }
     // create passthrough to indirect node that we do routing for
     let target_peer = peers
         .get(&target_id.name)
-        .ok_or(anyhow::anyhow!("can't route to that indirect node"))?;
+        .ok_or(anyhow::anyhow!("can't route to that node"))?;
     if !target_peer.routing_for {
-        return Err(anyhow::anyhow!("we don't route for that indirect node"));
+        return Err(anyhow::anyhow!("we don't route for that node"));
     }
     // send their net:distro:sys process a message, notifying it to create a *matching*
     // passthrough request, which we can pair with this pending one.
@@ -110,56 +112,17 @@ pub async fn create_passthrough(
 /// cross the streams -- spawn on own task
 pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStream) {
     println!("maintain_passthrough\r");
-    use tokio::io::copy;
-    // copy from ws_socket to tcp_socket and vice versa
-    // do not use bidirectional because if one side closes,
-    // we want to close the entire passthrough
     match (socket_1, socket_2) {
         (PendingStream::Tcp(socket_1), PendingStream::Tcp(socket_2)) => {
+            // do not use bidirectional because if one side closes,
+            // we want to close the entire passthrough
+            use tokio::io::copy;
             let (mut r1, mut w1) = tokio::io::split(socket_1);
             let (mut r2, mut w2) = tokio::io::split(socket_2);
             tokio::select! {
                 _ = copy(&mut r1, &mut w2) => {},
                 _ = copy(&mut r2, &mut w1) => {},
             }
-        }
-        (PendingStream::WebSocket(mut ws_socket), PendingStream::Tcp(mut tcp_socket))
-        | (PendingStream::Tcp(mut tcp_socket), PendingStream::WebSocket(mut ws_socket)) => {
-            let mut last_message = std::time::Instant::now();
-            loop {
-                tokio::select! {
-                    maybe_recv = ws_socket.next() => {
-                        match maybe_recv {
-                            Some(Ok(tokio_tungstenite::tungstenite::Message::Binary(bin))) => {
-                                let Ok(()) = tcp_socket.write_all(&bin).await else {
-                                    break
-                                };
-                                last_message = std::time::Instant::now();
-                            }
-                            _ => break,
-                        }
-                    },
-                    maybe_recv = crate::net::tcp::utils::recv_raw(&mut tcp_socket) => {
-                        match maybe_recv {
-                            Ok((_len, bin)) => {
-                                let Ok(()) = ws_socket.send(tokio_tungstenite::tungstenite::Message::Binary(bin)).await else {
-                                    break
-                                };
-                                last_message = std::time::Instant::now();
-                            }
-                            _ => break,
-                        }
-                    },
-                    // if a message has not been sent or received in 2-4 hours, close the connection
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(7200)) => {
-                        if last_message.elapsed().as_secs() > 7200 {
-                            break
-                        }
-                    }
-                }
-            }
-            let _ = ws_socket.close(None).await;
-            let _ = tcp_socket.shutdown().await;
         }
         (PendingStream::WebSocket(mut socket_1), PendingStream::WebSocket(mut socket_2)) => {
             let mut last_message = std::time::Instant::now();
@@ -197,6 +160,10 @@ pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStre
             }
             let _ = socket_1.close(None).await;
             let _ = socket_2.close(None).await;
+        }
+        _ => {
+            // these foolish combinations must never occur
+            return;
         }
     }
 }
