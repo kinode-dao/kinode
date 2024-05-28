@@ -9,7 +9,7 @@ import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
 import { ipToNumber } from "../utils/ipToNumber";
 import { getNetworkName, setChain } from "../utils/chain";
-import { hash } from "eth-ens-namehash";
+import { hash } from "@ensdomains/eth-ens-namehash";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { MAINNET_OPT_HEX, OPTIMISM_OPT_HEX } from "../constants/chainId";
 import { KinodeTitle } from "../components/KinodeTitle";

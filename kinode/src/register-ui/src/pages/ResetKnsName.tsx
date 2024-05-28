@@ -9,7 +9,7 @@ import { hooks } from "../connectors/metamask";
 import { useNavigate } from "react-router-dom";
 import { namehash } from "ethers/lib/utils";
 import { toAscii } from "idna-uts46-hx";
-import { hash } from "eth-ens-namehash";
+import { hash } from "@ensdomains/eth-ens-namehash";
 import isValidDomain from "is-valid-domain";
 import Loader from "../components/Loader";
 import KinodeHeader from "../components/KnsHeader";
