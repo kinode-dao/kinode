@@ -43,7 +43,7 @@ pub struct ProcessId {
 impl Serialize for ProcessId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
-        S: serde::ser::Serializer,
+        S: serde::Serializer,
     {
         format!("{}", self).serialize(serializer)
     }
@@ -52,7 +52,7 @@ impl Serialize for ProcessId {
 impl<'a> Deserialize<'a> for ProcessId {
     fn deserialize<D>(deserializer: D) -> Result<ProcessId, D::Error>
     where
-        D: serde::de::Deserializer<'a>,
+        D: serde::Deserializer<'a>,
     {
         let s = String::deserialize(deserializer)?;
         s.parse().map_err(serde::de::Error::custom)
@@ -1237,6 +1237,14 @@ pub enum KernelResponse {
     StartedProcess,
     RunProcessError,
     KilledProcess(ProcessId),
+    Debug(KernelPrintResponse),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum KernelPrintResponse {
+    ProcessMap(UserspaceProcessMap),
+    Process(Option<UserspacePersistedProcess>),
+    HasCap(Option<bool>),
 }
 
 #[derive(Debug)]
@@ -1282,6 +1290,7 @@ pub enum CapMessage {
 pub type ReverseCapIndex = HashMap<ProcessId, HashMap<ProcessId, Vec<Capability>>>;
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
+pub type UserspaceProcessMap = HashMap<ProcessId, UserspacePersistedProcess>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersistedProcess {
@@ -1292,29 +1301,24 @@ pub struct PersistedProcess {
     pub public: bool, // marks if a process allows messages from any process
 }
 
-impl std::fmt::Display for PersistedProcess {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "Process {{\n    wasm_bytes_handle: {},\n    wit_version: {:?},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
-            {
-                if &self.wasm_bytes_handle == "" {
-                    "(none, this is a runtime process)"
-                } else {
-                    &self.wasm_bytes_handle
-                }
-            },
-            self.wit_version,
-            self.on_exit,
-            self.public,
-            {
-                let mut caps_string = "[".to_string();
-                for cap in self.capabilities.keys() {
-                    caps_string += &format!("\n        {}", cap.to_string());
-                }
-                caps_string + "\n    ]"
-            },
-        )
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct UserspacePersistedProcess {
+    pub wasm_bytes_handle: String,
+    pub wit_version: Option<u32>,
+    pub on_exit: OnExit,
+    pub capabilities: HashSet<Capability>,
+    pub public: bool,
+}
+
+impl From<PersistedProcess> for UserspacePersistedProcess {
+    fn from(p: PersistedProcess) -> Self {
+        UserspacePersistedProcess {
+            wasm_bytes_handle: p.wasm_bytes_handle,
+            wit_version: p.wit_version,
+            on_exit: p.on_exit,
+            capabilities: p.capabilities.into_keys().collect(),
+            public: p.public,
+        }
     }
 }
 

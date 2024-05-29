@@ -72,6 +72,14 @@ fn init(our: Address) {
                     ProcessId::new(Some("hi"), "terminal", "sys"),
                 ),
                 (
+                    "kill".to_string(),
+                    ProcessId::new(Some("kill"), "terminal", "sys"),
+                ),
+                (
+                    "kfetch".to_string(),
+                    ProcessId::new(Some("kfetch"), "terminal", "sys"),
+                ),
+                (
                     "m".to_string(),
                     ProcessId::new(Some("m"), "terminal", "sys"),
                 ),

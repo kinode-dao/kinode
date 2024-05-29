@@ -9,7 +9,7 @@ call_init!(init);
 fn init(_our: Address) {
     let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
         .body(rmp_serde::to_vec(&net::NetAction::GetDiagnostics).unwrap())
-        .send_and_await_response(5)
+        .send_and_await_response(60)
     else {
         println!("failed to get diagnostics from networking module");
         return;
@@ -18,5 +18,5 @@ fn init(_our: Address) {
         println!("got malformed response from networking module");
         return;
     };
-    println!("{printout}");
+    println!("\r\n{printout}");
 }
