@@ -95,7 +95,6 @@ pub async fn init_direct(
     proxy_request: bool,
     peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) -> Result<(), mpsc::UnboundedReceiver<KernelMessage>> {
-    println!("init_direct\r");
     match time::timeout(
         TIMEOUT,
         connect_with_handshake(ext, peer_id, port, None, proxy_request),
@@ -126,7 +125,6 @@ pub async fn init_routed(
     router_port: u16,
     peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) -> Result<(), mpsc::UnboundedReceiver<KernelMessage>> {
-    println!("init_routed\r");
     match time::timeout(
         TIMEOUT,
         connect_with_handshake(ext, peer_id, router_port, Some(router_id), false),
@@ -164,7 +162,6 @@ pub async fn recv_via_router(
     peer_id: Identity,
     router_id: Identity,
 ) {
-    println!("recv_via_router\r");
     let Some((ip, port)) = router_id.ws_routing() else {
         return;
     };
@@ -206,7 +203,6 @@ async fn recv_connection(
     data: NetData,
     mut socket: WebSocket,
 ) -> anyhow::Result<()> {
-    println!("recv_connection\r");
     // before we begin XX handshake pattern, check first message over socket
     let first_message = &utils::recv(&mut socket).await?;
 
@@ -293,7 +289,6 @@ async fn connect_with_handshake(
     use_router: Option<&Identity>,
     proxy_request: bool,
 ) -> anyhow::Result<PeerConnection> {
-    println!("connect_with_handshake\r");
     let mut buf = vec![0u8; 65535];
     let (mut noise, our_static_key) = build_initiator();
 
@@ -375,7 +370,6 @@ async fn connect_with_handshake_via_router(
     router_id: &Identity,
     mut socket: WebSocketStream<MaybeTlsStream<TcpStream>>,
 ) -> anyhow::Result<PeerConnection> {
-    println!("connect_with_handshake_via_router\r");
     // before beginning XX handshake pattern, send a routing request
     socket
         .send(tungstenite::Message::binary(rmp_serde::to_vec(

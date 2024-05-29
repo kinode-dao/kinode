@@ -7,7 +7,6 @@ use tokio::sync::mpsc;
 /// if target is a peer, queue to be routed
 /// otherwise, create peer and initiate routing
 pub async fn send_to_peer(ext: &IdentityExt, data: &NetData, km: KernelMessage) {
-    // println!("send_to_peer\r");
     if let Some(peer) = data.peers.get_mut(&km.target.node) {
         peer.sender.send(km).expect("net: peer sender was dropped");
     } else {
@@ -46,7 +45,6 @@ async fn connect_to_peer(
     peer_id: Identity,
     peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) {
-    println!("connect_to_peer\r");
     if peer_id.is_direct() {
         utils::print_debug(
             &ext.print_tx,
@@ -81,7 +79,6 @@ async fn connect_via_router(
     peer_id: &Identity,
     mut peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) {
-    println!("connect_via_router\r");
     let routers_shuffled = {
         let mut routers = match peer_id.routing {
             NodeRouting::Routers(ref routers) => routers.clone(),
@@ -131,7 +128,6 @@ pub async fn handle_failed_connection(
     peer_id: &Identity,
     mut peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) {
-    println!("handle_failed_connection\r");
     utils::print_debug(
         &ext.print_tx,
         &format!("net: failed to connect to {}", peer_id.name),
