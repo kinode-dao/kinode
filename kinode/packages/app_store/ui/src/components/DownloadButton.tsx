@@ -83,7 +83,7 @@ export default function DownloadButton({ app, isIcon = false, ...props }: Downlo
       </button>
       <Modal show={showModal} hide={() => setShowModal(false)}>
         {downloading ? (
-          <div className="flex-col-center">
+          <div className="flex-col-center gap-4">
             <Loader msg={downloading} />
             <div className="text-center">
               App is downloading in the background. You can safely close this window.
