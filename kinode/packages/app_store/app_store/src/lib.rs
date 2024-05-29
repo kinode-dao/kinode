@@ -5,9 +5,7 @@ use crate::kinode::process::main::{
     RemoteResponse, UninstallResponse,
 };
 use kinode_process_lib::kernel_types as kt;
-use kinode_process_lib::{
-    await_message, call_init, get_blob, get_capability, get_typed_state, println,
-};
+use kinode_process_lib::{await_message, call_init, get_blob, get_capability, get_state, println};
 use kinode_process_lib::{
     eth, http, vfs, Address, LazyLoadBlob, Message, NodeId, PackageId, ProcessId, Request, Response,
 };
@@ -19,7 +17,7 @@ wit_bindgen::generate!({
     path: "target/wit",
     generate_unused_types: true,
     world: "app-store-sys-v0",
-    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
+    additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
 mod http_api;
@@ -228,17 +226,27 @@ fn init(our: Address) {
         .send()
         .unwrap();
 
-    let mut state: State =
-        match get_typed_state(|bytes| Ok(serde_json::from_slice::<State>(bytes)?)) {
-            Some(state) => {
-                println!("loaded saved state");
-                state
+    let mut state: State = match get_state() {
+        Some(state_bytes) => {
+            println!("loaded saved state bytes");
+            println!("state bytes: {:?}", state_bytes);
+            println!("state bytes: {:?}", std::str::from_utf8(&state_bytes));
+            match serde_json::from_slice(&state_bytes) {
+                Ok(state) => {
+                    println!("loaded saved state");
+                    state
+                }
+                Err(e) => {
+                    println!("failed to deserialize state: {e}");
+                    State::new(CONTRACT_ADDRESS.to_string()).unwrap()
+                }
             }
-            _ => {
-                println!("failed to load state, initializing");
-                State::new(CONTRACT_ADDRESS.to_string()).unwrap()
-            }
-        };
+        }
+        _ => {
+            println!("failed to load state, initializing");
+            State::new(CONTRACT_ADDRESS.to_string()).unwrap()
+        }
+    };
 
     if state.contract_address != CONTRACT_ADDRESS {
         println!("warning: contract address mismatch--overwriting saved state");
