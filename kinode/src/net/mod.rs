@@ -34,7 +34,6 @@ pub async fn networking(
     kernel_message_rx: MessageReceiver,
     _reveal_ip: bool, // only used if indirect
 ) -> anyhow::Result<()> {
-    println!("networking\r\n");
     let ext = IdentityExt {
         our: Arc::new(our),
         our_ip: Arc::new(our_ip),
@@ -116,7 +115,6 @@ async fn local_recv(
     mut kernel_message_rx: MessageReceiver,
     data: NetData,
 ) -> anyhow::Result<()> {
-    println!("local_recv\r\n");
     while let Some(km) = kernel_message_rx.recv().await {
         if km.target.node == ext.our.name {
             // handle messages sent to us
@@ -306,7 +304,6 @@ async fn handle_remote_request(
     request_body: &[u8],
     data: &NetData,
 ) -> anyhow::Result<()> {
-    println!("handle_remote_request\r");
     match rmp_serde::from_slice::<NetAction>(request_body) {
         Ok(NetAction::KnsBatchUpdate(_)) | Ok(NetAction::KnsUpdate(_)) => {
             // for now, we don't get these from remote, only locally.

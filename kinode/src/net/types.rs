@@ -64,6 +64,15 @@ pub enum PendingStream {
     Tcp(TcpStream),
 }
 
+impl PendingStream {
+    pub fn is_ws(&self) -> bool {
+        matches!(self, PendingStream::WebSocket(_))
+    }
+    pub fn is_tcp(&self) -> bool {
+        matches!(self, PendingStream::Tcp(_))
+    }
+}
+
 #[derive(Clone)]
 pub struct Peer {
     pub identity: Identity,

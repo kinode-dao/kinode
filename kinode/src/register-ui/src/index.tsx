@@ -8,6 +8,9 @@ import '@unocss/reset/tailwind.css'
 import 'uno.css'
 import './index.css';
 
+import { Buffer } from 'buffer';
+window.Buffer = Buffer;
+
 const connectors: [MetaMask, Web3ReactHooks][] = [
   [metaMask, metaMaskHooks],
 ]

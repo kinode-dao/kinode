@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { hooks } from "../connectors/metamask";
 import { NameWrapper, ENSRegistry } from "../abis/types";
 import isValidDomain from 'is-valid-domain'
-import { hash } from 'eth-ens-namehash'
+import { hash } from '@ensdomains/eth-ens-namehash';
 import { toAscii } from 'idna-uts46-hx'
 
 const {
