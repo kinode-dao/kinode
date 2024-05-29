@@ -255,6 +255,7 @@ pub fn build_responder() -> (snow::HandshakeState, Vec<u8>) {
     (
         builder
             .local_private_key(&keypair.private)
+            .unwrap()
             .build_responder()
             .expect("net: couldn't build responder?"),
         keypair.public,
@@ -269,6 +270,7 @@ pub fn build_initiator() -> (snow::HandshakeState, Vec<u8>) {
     (
         builder
             .local_private_key(&keypair.private)
+            .unwrap()
             .build_initiator()
             .expect("net: couldn't build initiator?"),
         keypair.public,
