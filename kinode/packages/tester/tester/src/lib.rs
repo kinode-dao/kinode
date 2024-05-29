@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::str::FromStr;
 
 use crate::kinode::process::tester::{
-    Request as TesterRequest, Response as TesterResponse, RunRequest, FailResponse,
+    FailResponse, Request as TesterRequest, Response as TesterResponse, RunRequest,
 };
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::{
@@ -46,16 +46,15 @@ fn read_caps_by_child(
 ) -> anyhow::Result<HashMap<String, Vec<String>>> {
     let caps_file_path = format!("{}/grant_capabilities.json", dir_prefix);
     let caps_index = children.iter().position(|i| *i.path == *caps_file_path);
-    let caps_by_child: HashMap<String, Vec<String>> =
-        match caps_index {
-            None => HashMap::new(),
-            Some(caps_index) => {
-                children.remove(caps_index);
-                let file = vfs::file::open_file(&caps_file_path, false, None)?;
-                let file_contents = file.read()?;
-                serde_json::from_slice(&file_contents)?
-            }
-        };
+    let caps_by_child: HashMap<String, Vec<String>> = match caps_index {
+        None => HashMap::new(),
+        Some(caps_index) => {
+            children.remove(caps_index);
+            let file = vfs::file::open_file(&caps_file_path, false, None)?;
+            let file_contents = file.read()?;
+            serde_json::from_slice(&file_contents)?
+        }
+    };
     Ok(caps_by_child)
 }
 
@@ -97,9 +96,7 @@ fn handle_request(
     let Message::Response { body: vfs_body, .. } = response else {
         fail!("tester");
     };
-    let vfs::VfsResponse::ReadDir(mut children) =
-        serde_json::from_slice(&vfs_body)?
-    else {
+    let vfs::VfsResponse::ReadDir(mut children) = serde_json::from_slice(&vfs_body)? else {
         println!(
             "{:?}",
             serde_json::from_slice::<serde_json::Value>(&vfs_body)?
@@ -164,24 +161,25 @@ fn handle_request(
             fail!("tester");
         };
         let TesterResponse::Run(result) = response.body().try_into()?;
-        if let Err(FailResponse { test, file, line, column }) = result {
+        if let Err(FailResponse {
+            test,
+            file,
+            line,
+            column,
+        }) = result
+        {
             fail!(test, file, line, column);
         }
     }
 
     println!("test_runner: done running {:?}", children);
 
-    Response::new()
-        .body(TesterResponse::Run(Ok(())))
-        .send()?;
+    Response::new().body(TesterResponse::Run(Ok(()))).send()?;
 
     Ok(())
 }
 
-fn handle_message(
-    our: &Address,
-    node_names: &mut Vec<String>,
-) -> anyhow::Result<()> {
+fn handle_message(our: &Address, node_names: &mut Vec<String>) -> anyhow::Result<()> {
     let Ok(message) = await_message() else {
         return Ok(());
     };
