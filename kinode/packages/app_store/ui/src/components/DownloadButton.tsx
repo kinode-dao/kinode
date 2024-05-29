@@ -18,7 +18,7 @@ export default function DownloadButton({ app, isIcon = false, ...props }: Downlo
   const [showModal, setShowModal] = useState(false);
   const [mirror, setMirror] = useState(app.metadata?.properties?.mirrors?.[0] || "Other");
   const [customMirror, setCustomMirror] = useState("");
-  const [loading, setLoading] = useState("");
+  const [downloading, setDownloading] = useState("");
 
   useEffect(() => {
     setMirror(app.metadata?.properties?.mirrors?.[0] || "Other");
@@ -40,12 +40,12 @@ export default function DownloadButton({ app, isIcon = false, ...props }: Downlo
     }
 
     try {
-      setLoading(`Downloading ${getAppName(app)}...`);
+      setDownloading(`Downloading ${getAppName(app)}...`);
       await downloadApp(app, targetMirror);
       const interval = setInterval(() => {
         getMyApp(app)
           .then(() => {
-            setLoading("");
+            setDownloading("");
             setShowModal(false);
             clearInterval(interval);
             getMyApps();
@@ -57,7 +57,7 @@ export default function DownloadButton({ app, isIcon = false, ...props }: Downlo
       window.alert(
         `Failed to download app from ${targetMirror}, please try a different mirror.`
       );
-      setLoading("");
+      setDownloading("");
     }
   }, [mirror, customMirror, app, downloadApp, getMyApp]);
 
@@ -72,13 +72,23 @@ export default function DownloadButton({ app, isIcon = false, ...props }: Downlo
           'icon clear': isIcon,
           'black': !isIcon,
         })}
+        disabled={!!downloading}
         onClick={onClick}
       >
-        {isIcon ? <FaDownload /> : 'Download'}
+        {isIcon
+          ? <FaDownload />
+          : downloading
+            ? 'Downloading...'
+            : 'Download'}
       </button>
       <Modal show={showModal} hide={() => setShowModal(false)}>
-        {loading ? (
-          <Loader msg={loading} />
+        {downloading ? (
+          <div className="flex-col-center">
+            <Loader msg={downloading} />
+            <div className="text-center">
+              App is downloading in the background. You can safely close this window.
+            </div>
+          </div>
         ) : (
           <form className="flex flex-col items-center gap-2" onSubmit={download}>
             <h4>Download '{appName}'</h4>
