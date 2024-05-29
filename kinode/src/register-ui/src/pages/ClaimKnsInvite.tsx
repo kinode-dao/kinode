@@ -22,7 +22,8 @@ function ClaimOsInvite({
   openConnect,
   setNetworkingKey,
   setIpAddress,
-  setPort,
+  setWsPort,
+  setTcpPort,
   setRouters,
   closeConnect,
   nodeChainId,
@@ -73,7 +74,8 @@ function ClaimOsInvite({
         Both: {
           ip: ip_address,
           ports: {
-            ws: port
+            ws: ws_port,
+            tcp: tcp_port
           },
           routers
         }
@@ -86,7 +88,8 @@ function ClaimOsInvite({
 
     setNetworkingKey(networking_key);
     setIpAddress(ipAddress);
-    setPort(port);
+    setWsPort(ws_port || 0);
+    setTcpPort(tcp_port || 0);
     setRouters(routers);
 
     if (nameValidities.length !== 0 || inviteValidity !== "") return;
@@ -100,7 +103,7 @@ function ClaimOsInvite({
     setLoaderMsg("...Building EIP-4337 User Operation");
     setIsLoading(true);
 
-    console.log("BUILDING", networking_key, ipAddress, port, routers);
+    console.log("BUILDING", networking_key, ipAddress, ws_port, tcp_port, routers);
 
     try {
       response = await fetch(process.env.REACT_APP_BUILD_USER_OP_POST!, {
@@ -111,7 +114,8 @@ function ClaimOsInvite({
           address: accounts![0],
           networkingKey: networking_key,
           wsIp: ipAddress,
-          wsPort: port,
+          wsPort: ws_port,
+          tcpPort: tcp_port,
           routers: routers,
           direct: direct,
         }),

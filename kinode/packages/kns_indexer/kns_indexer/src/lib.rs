@@ -133,6 +133,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             "KeyUpdate(bytes32,bytes32)",
             "IpUpdate(bytes32,uint128)",
             "WsUpdate(bytes32,uint16)",
+            "TcpUpdate(bytes32,uint16)",
             "RoutingUpdate(bytes32,bytes32[])",
         ]);
 
@@ -174,12 +175,12 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     }
 
     // shove initial state into net::net
-    Request::new()
-        .target((&our.node, "net", "distro", "sys"))
-        .body(rmp_serde::to_vec(&net::NetAction::KnsBatchUpdate(
-            state.nodes.values().cloned().collect::<Vec<_>>(),
-        ))?)
-        .send()?;
+    // Request::new()
+    //     .target((&our.node, "net", "distro", "sys"))
+    //     .body(rmp_serde::to_vec(&net::NetAction::KnsBatchUpdate(
+    //         state.nodes.values().cloned().collect::<Vec<_>>(),
+    //     ))?)
+    //     .send()?;
 
     // set_state(&bincode::serialize(&state)?);
 
@@ -363,11 +364,29 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             // since the assignment of ip indicates an direct node
             node.routers = vec![];
         }
-        WsUpdate::SIGNATURE_HASH => {
-            node.ports.insert(
-                "ws".to_string(),
-                WsUpdate::decode_log_data(log.data(), true).unwrap().port,
-            );
+        WsUpdate::SIGNATURE_HASH
+        | TcpUpdate::SIGNATURE_HASH
+        | WtUpdate::SIGNATURE_HASH
+        | UdpUpdate::SIGNATURE_HASH => {
+            match log.topics()[0] {
+                WsUpdate::SIGNATURE_HASH => node.ports.insert(
+                    "ws".to_string(),
+                    WsUpdate::decode_log_data(log.data(), true).unwrap().port,
+                ),
+                TcpUpdate::SIGNATURE_HASH => node.ports.insert(
+                    "tcp".to_string(),
+                    TcpUpdate::decode_log_data(log.data(), true).unwrap().port,
+                ),
+                WtUpdate::SIGNATURE_HASH => node.ports.insert(
+                    "wt".to_string(),
+                    WtUpdate::decode_log_data(log.data(), true).unwrap().port,
+                ),
+                UdpUpdate::SIGNATURE_HASH => node.ports.insert(
+                    "udp".to_string(),
+                    UdpUpdate::decode_log_data(log.data(), true).unwrap().port,
+                ),
+                _ => None,
+            };
             // when we get port data, we should delete any router data,
             // since the assignment of port indicates an direct node
             node.routers = vec![];

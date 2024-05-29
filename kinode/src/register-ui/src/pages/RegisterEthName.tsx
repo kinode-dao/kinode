@@ -31,7 +31,8 @@ function RegisterEthName({
   closeConnect,
   setNetworkingKey,
   setIpAddress,
-  setPort,
+  setWsPort,
+  setTcpPort,
   setRouters,
   nodeChainId,
 }: RegisterOsNameProps) {
@@ -77,7 +78,8 @@ function RegisterEthName({
             Both: {
               ip: ip_address,
               ports: {
-                ws: port
+                ws: ws_port,
+                tcp: tcp_port
               },
               routers: allowed_routers
             }
@@ -90,7 +92,8 @@ function RegisterEthName({
 
         setNetworkingKey(networking_key);
         setIpAddress(ipAddress);
-        setPort(port);
+        setWsPort(ws_port || 0);
+        setTcpPort(tcp_port || 0);
         setRouters(allowed_routers);
 
         const cleanedName = name.trim().replace(".eth", "");
@@ -112,10 +115,10 @@ function RegisterEthName({
               await kns.populateTransaction.setAllIp(
                 utils.namehash(`${cleanedName}.eth`),
                 ipAddress,
-                port,
-                0,
-                0,
-                0
+                ws_port || 0,  // ws
+                0,             // wt
+                tcp_port || 0, // tcp
+                0              // udp
               )
             ).data!
             : (
@@ -174,7 +177,8 @@ function RegisterEthName({
       openConnect,
       setNetworkingKey,
       setIpAddress,
-      setPort,
+      setWsPort,
+      setTcpPort,
       setRouters,
       nodeChainId,
       chainName,

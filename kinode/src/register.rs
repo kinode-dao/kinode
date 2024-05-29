@@ -34,53 +34,9 @@ sol! {
         bytes32 _node,
         address _sender
     ) public view virtual returns (bool authed);
-
+    function key(bytes32) external view returns (bytes32);
     function nodes(bytes32) external view returns (address, uint96);
-
     function ip(bytes32) external view returns (uint128, uint16, uint16, uint16, uint16);
-}
-
-pub fn _ip_to_number(ip: &str) -> Result<u32, &'static str> {
-    let octets: Vec<&str> = ip.split('.').collect();
-
-    if octets.len() != 4 {
-        return Err("Invalid IP address");
-    }
-
-    let mut ip_num: u32 = 0;
-    for &octet in octets.iter() {
-        ip_num <<= 8;
-        match octet.parse::<u32>() {
-            Ok(num) => {
-                if num > 255 {
-                    return Err("Invalid octet in IP address");
-                }
-                ip_num += num;
-            }
-            Err(_) => return Err("Invalid number in IP address"),
-        }
-    }
-
-    Ok(ip_num)
-}
-
-fn _hex_string_to_u8_array(hex_str: &str) -> Result<[u8; 32], &'static str> {
-    if !hex_str.starts_with("0x") || hex_str.len() != 66 {
-        // "0x" + 64 hex chars
-        return Err("Invalid hex format or length");
-    }
-
-    let no_prefix = &hex_str[2..];
-    let mut bytes = [0_u8; 32];
-    for (i, byte) in no_prefix.as_bytes().chunks(2).enumerate() {
-        let hex_byte = std::str::from_utf8(byte)
-            .map_err(|_| "Invalid UTF-8 sequence")?
-            .parse::<u8>()
-            .map_err(|_| "Failed to parse hex byte")?;
-        bytes[i] = hex_byte;
-    }
-
-    Ok(bytes)
 }
 
 /// Serve the registration page and receive POSTs and PUTs from it
@@ -89,6 +45,7 @@ pub async fn register(
     kill_rx: oneshot::Receiver<bool>,
     ip: String,
     ws_networking: (tokio::net::TcpListener, bool),
+    tcp_networking: (tokio::net::TcpListener, bool),
     http_port: u16,
     keyfile: Option<Vec<u8>>,
     maybe_rpc: Option<String>,
@@ -100,6 +57,8 @@ pub async fn register(
 
     let ws_port = ws_networking.0.local_addr().unwrap().port();
     let ws_flag_used = ws_networking.1;
+    let tcp_port = tcp_networking.0.local_addr().unwrap().port();
+    let tcp_flag_used = tcp_networking.1;
 
     // This is a **temporary** identity, passed to the UI.
     // If it is confirmed through a /boot or /confirm-change-network-keys,
@@ -109,11 +68,15 @@ pub async fn register(
         name: "".to_string(),
         routing: NodeRouting::Both {
             ip: ip.clone(),
-            ports: std::collections::BTreeMap::from([("ws".to_string(), ws_port)]),
+            ports: std::collections::BTreeMap::from([
+                ("ws".to_string(), ws_port),
+                ("tcp".to_string(), tcp_port),
+            ]),
             routers: vec![
-                "default-router-1.os".into(),
-                "default-router-2.os".into(),
-                "default-router-3.os".into(),
+                // "default-router-1.os".into(),
+                // "default-router-2.os".into(),
+                // "default-router-3.os".into(),
+                "default-router-7.os".into(),
             ],
         },
     });
@@ -121,39 +84,15 @@ pub async fn register(
     // KnsRegistrar contract address
     let kns_address = EthAddress::from_str(KNS_ADDRESS).unwrap();
 
-    // This ETH provider uses public rpc endpoints to verify registration signatures.
-    let url = if let Some(rpc_url) = maybe_rpc {
-        rpc_url
-    } else {
-        "wss://optimism-rpc.publicnode.com".to_string()
-    };
-    println!(
-        "Connecting to Optimism RPC at {url}\n\
-        Specify a different RPC URL with the --rpc flag."
-    );
-    // this fails occasionally in certain networking environments. i'm not sure why.
-    // frustratingly, the exact same call does not fail in the eth module. more investigation needed.
-    let Ok(client) = ClientBuilder::default()
-        .ws(WsConnect { url, auth: None })
-        .await
-    else {
-        panic!(
-            "Error: runtime could not connect to ETH RPC.\n\
-            This is necessary in order to verify node identity onchain.\n\
-            Please make sure you are using a valid WebSockets URL if using \
-            the --rpc flag, and you are connected to the internet."
-        );
-    };
-    println!("Connected to Optimism RPC");
-
-    let provider = Arc::new(Provider::new_with_client(client));
+    let provider = Arc::new(connect_to_provider(maybe_rpc).await);
 
     let keyfile = warp::any().map(move || keyfile.clone());
     let our_temp_id = warp::any().map(move || our_temp_id.clone());
     let net_keypair = warp::any().map(move || net_keypair.clone());
     let tx = warp::any().map(move || tx.clone());
     let ip = warp::any().map(move || ip.clone());
-    let ws_port = warp::any().map(move || if ws_flag_used { Some(ws_port) } else { None });
+    let ws_port = warp::any().map(move || (ws_port, ws_flag_used));
+    let tcp_port = warp::any().map(move || (tcp_port, tcp_flag_used));
 
     let static_files = warp::path("assets").and(static_dir!("src/register-ui/build/assets/"));
 
@@ -247,10 +186,19 @@ pub async fn register(
                 .and(warp::body::json())
                 .and(ip.clone())
                 .and(ws_port.clone())
+                .and(tcp_port.clone())
                 .and(tx.clone())
-                .and_then(move |boot_info, ip, ws_port, tx| {
+                .and_then(move |boot_info, ip, ws_port, tcp_port, tx| {
                     let import_provider = import_provider.clone();
-                    handle_import_keyfile(boot_info, ip, ws_port, tx, kns_address, import_provider)
+                    handle_import_keyfile(
+                        boot_info,
+                        ip,
+                        ws_port,
+                        tcp_port,
+                        tx,
+                        kns_address,
+                        import_provider,
+                    )
                 }),
         ))
         .or(warp::path("login").and(
@@ -259,14 +207,16 @@ pub async fn register(
                 .and(warp::body::json())
                 .and(ip)
                 .and(ws_port.clone())
+                .and(tcp_port.clone())
                 .and(tx.clone())
                 .and(keyfile.clone())
-                .and_then(move |boot_info, ip, ws_port, tx, keyfile| {
+                .and_then(move |boot_info, ip, ws_port, tcp_port, tx, keyfile| {
                     let login_provider = login_provider.clone();
                     handle_login(
                         boot_info,
                         ip,
                         ws_port,
+                        tcp_port,
                         tx,
                         keyfile,
                         kns_address,
@@ -303,6 +253,35 @@ pub async fn register(
         })
         .1
         .await;
+}
+
+pub async fn connect_to_provider(maybe_rpc: Option<String>) -> Provider<PubSubFrontend> {
+    // This ETH provider uses public rpc endpoints to verify registration signatures.
+    let url = if let Some(rpc_url) = maybe_rpc {
+        rpc_url
+    } else {
+        "wss://optimism-rpc.publicnode.com".to_string()
+    };
+    println!(
+        "Connecting to Optimism RPC at {url}\n\
+        Specify a different RPC URL with the --rpc flag."
+    );
+    // this fails occasionally in certain networking environments. i'm not sure why.
+    // frustratingly, the exact same call does not fail in the eth module. more investigation needed.
+    let Ok(client) = ClientBuilder::default()
+        .ws(WsConnect { url, auth: None })
+        .await
+    else {
+        panic!(
+            "Error: runtime could not connect to ETH RPC.\n\
+            This is necessary in order to verify node identity onchain.\n\
+            Please make sure you are using a valid WebSockets URL if using \
+            the --rpc flag, and you are connected to the internet."
+        );
+    };
+    println!("Connected to Optimism RPC");
+
+    Provider::new_with_client(client)
 }
 
 async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Rejection> {
@@ -521,7 +500,8 @@ async fn handle_boot(
 async fn handle_import_keyfile(
     info: ImportKeyfileInfo,
     ip: String,
-    ws_networking_port: Option<u16>,
+    ws_networking_port: (u16, bool),
+    tcp_networking_port: (u16, bool),
     sender: Arc<RegistrationSender>,
     kns_address: EthAddress,
     provider: Arc<Provider<PubSubFrontend>>,
@@ -550,7 +530,7 @@ async fn handle_import_keyfile(
                     routing: if k.routers.is_empty() {
                         NodeRouting::Direct {
                             ip,
-                            ports: std::collections::BTreeMap::from([("ws".to_string(), 9000)]),
+                            ports: std::collections::BTreeMap::new(),
                         }
                     } else {
                         NodeRouting::Routers(k.routers.clone())
@@ -568,7 +548,15 @@ async fn handle_import_keyfile(
             }
         };
 
-    if let Err(e) = assign_ws_routing(&mut our, kns_address, provider, ws_networking_port).await {
+    if let Err(e) = assign_routing(
+        &mut our,
+        kns_address,
+        provider,
+        ws_networking_port,
+        tcp_networking_port,
+    )
+    .await
+    {
         return Ok(warp::reply::with_status(
             warp::reply::json(&e.to_string()),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -581,7 +569,8 @@ async fn handle_import_keyfile(
 async fn handle_login(
     info: LoginInfo,
     ip: String,
-    ws_networking_port: Option<u16>,
+    ws_networking_port: (u16, bool),
+    tcp_networking_port: (u16, bool),
     sender: Arc<RegistrationSender>,
     encoded_keyfile: Option<Vec<u8>>,
     kns_address: EthAddress,
@@ -608,7 +597,7 @@ async fn handle_login(
                     routing: if k.routers.is_empty() {
                         NodeRouting::Direct {
                             ip,
-                            ports: std::collections::BTreeMap::from([("ws".to_string(), 9000)]),
+                            ports: std::collections::BTreeMap::new(),
                         }
                     } else {
                         NodeRouting::Routers(k.routers.clone())
@@ -626,7 +615,15 @@ async fn handle_login(
             }
         };
 
-    if let Err(e) = assign_ws_routing(&mut our, kns_address, provider, ws_networking_port).await {
+    if let Err(e) = assign_routing(
+        &mut our,
+        kns_address,
+        provider,
+        ws_networking_port,
+        tcp_networking_port,
+    )
+    .await
+    {
         return Ok(warp::reply::with_status(
             warp::reply::json(&e.to_string()),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -694,17 +691,24 @@ async fn confirm_change_network_keys(
         &decoded_keyfile.file_key,
     );
 
-    success_response(sender, our.clone(), decoded_keyfile, encoded_keyfile).await
+    our.networking_key = format!(
+        "0x{}",
+        hex::encode(decoded_keyfile.networking_keypair.public_key().as_ref())
+    );
+
+    success_response(sender, our, decoded_keyfile, encoded_keyfile).await
 }
 
-pub async fn assign_ws_routing(
+pub async fn assign_routing(
     our: &mut Identity,
     kns_address: EthAddress,
     provider: Arc<Provider<PubSubFrontend>>,
-    ws_networking_port: Option<u16>,
+    ws_networking_port: (u16, bool),
+    tcp_networking_port: (u16, bool),
 ) -> anyhow::Result<()> {
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
     let ip_call = ipCall { _0: namehash }.abi_encode();
+    let key_call = keyCall { _0: namehash }.abi_encode();
     let tx_input = TransactionInput::new(Bytes::from(ip_call));
     let tx = TransactionRequest {
         to: Some(kns_address),
@@ -716,10 +720,27 @@ pub async fn assign_ws_routing(
         return Err(anyhow::anyhow!("Failed to fetch node IP data from PKI"));
     };
 
-    let Ok((ip, ws, _wt, _tcp, _udp)) = <(u128, u16, u16, u16, u16)>::abi_decode(&ip_data, false)
+    let Ok((ip, ws, _wt, tcp, _udp)) = <(u128, u16, u16, u16, u16)>::abi_decode(&ip_data, false)
     else {
         return Err(anyhow::anyhow!("Failed to decode node IP data from PKI"));
     };
+
+    let key_tx_input = TransactionInput::new(Bytes::from(key_call));
+    let key_tx = TransactionRequest {
+        to: Some(kns_address),
+        input: key_tx_input,
+        ..Default::default()
+    };
+
+    let Ok(public_key) = provider.call(key_tx, None).await else {
+        return Err(anyhow::anyhow!("Failed to fetch node key from PKI"));
+    };
+
+    if format!("0x{}", hex::encode(&public_key)) != our.networking_key {
+        return Err(anyhow::anyhow!(
+            "Networking key from PKI does not match our saved networking key"
+        ));
+    }
 
     let node_ip = format!(
         "{}.{}.{}.{}",
@@ -729,21 +750,32 @@ pub async fn assign_ws_routing(
         ip & 0xFF
     );
 
-    if node_ip != *"0.0.0.0" || ws != 0 {
+    if node_ip != *"0.0.0.0" && (ws != 0 || tcp != 0) {
         // direct node
-        if let Some(chosen_port) = ws_networking_port {
-            if chosen_port != ws {
+        let mut ports = std::collections::BTreeMap::new();
+        if ws != 0 {
+            if ws_networking_port.1 && ws != ws_networking_port.0 {
                 return Err(anyhow::anyhow!(
                     "Binary used --ws-port flag to set port to {}, but node is using port {} onchain.",
-                    chosen_port,
+                    ws_networking_port.0,
                     ws
                 ));
             }
+            ports.insert("ws".to_string(), ws);
         }
-        our.routing = NodeRouting::Direct {
-            ip: node_ip,
-            ports: std::collections::BTreeMap::from([("ws".to_string(), ws)]),
-        };
+        if tcp != 0 {
+            if tcp_networking_port.1 && tcp != tcp_networking_port.0 {
+                return Err(anyhow::anyhow!(
+                    "Binary used --tcp-port flag to set port to {}, but node is using port {} onchain.",
+                    tcp_networking_port.0,
+                    tcp
+                ));
+            }
+            ports.insert("tcp".to_string(), tcp);
+        }
+        our.routing = NodeRouting::Direct { ip: node_ip, ports };
+    } else {
+        // indirect node
     }
     Ok(())
 }

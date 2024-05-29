@@ -59,18 +59,19 @@ async fn main() {
     create_home_directory(&home_directory_path).await;
     let http_server_port = set_http_server_port(matches.get_one::<u16>("port")).await;
     let ws_networking_port = matches.get_one::<u16>("ws-port");
+    let tcp_networking_port = matches.get_one::<u16>("tcp-port");
     let verbose_mode = *matches
         .get_one::<u8>("verbosity")
         .expect("verbosity required");
     let rpc = matches.get_one::<String>("rpc");
+    let password = matches.get_one::<String>("password");
 
     // if we are in sim-mode, detached determines whether terminal is interactive
     #[cfg(not(feature = "simulation-mode"))]
     let is_detached = false;
 
     #[cfg(feature = "simulation-mode")]
-    let (password, fake_node_name, is_detached, fakechain_port) = (
-        matches.get_one::<String>("password"),
+    let (fake_node_name, is_detached, fakechain_port) = (
         matches.get_one::<String>("fake-node-name"),
         *matches.get_one::<bool>("detached").unwrap(),
         matches.get_one::<u16>("fakechain-port").cloned(),
@@ -165,14 +166,16 @@ async fn main() {
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
 
     let our_ip = find_public_ip().await;
-    let (wc_tcp_handle, flag_used) = setup_ws_networking(ws_networking_port.cloned()).await;
+    let (ws_tcp_handle, ws_flag_used) = setup_networking(ws_networking_port).await;
+    let (tcp_tcp_handle, tcp_flag_used) = setup_networking(tcp_networking_port).await;
 
     #[cfg(feature = "simulation-mode")]
     let (our, encoded_keyfile, decoded_keyfile) = simulate_node(
         fake_node_name.cloned(),
         password.cloned(),
         home_directory_path,
-        (wc_tcp_handle, flag_used),
+        (ws_tcp_handle, ws_flag_used),
+        // NOTE: fakenodes only using WS protocol at the moment
         fakechain_port,
     )
     .await;
@@ -183,14 +186,30 @@ async fn main() {
         http_server_port
     );
     #[cfg(not(feature = "simulation-mode"))]
-    let (our, encoded_keyfile, decoded_keyfile) = serve_register_fe(
-        &home_directory_path,
-        our_ip.to_string(),
-        (wc_tcp_handle, flag_used),
-        http_server_port,
-        rpc.cloned(),
-    )
-    .await;
+    let (our, encoded_keyfile, decoded_keyfile) = match password {
+        None => {
+            serve_register_fe(
+                &home_directory_path,
+                our_ip.to_string(),
+                (ws_tcp_handle, ws_flag_used),
+                (tcp_tcp_handle, tcp_flag_used),
+                http_server_port,
+                rpc.cloned(),
+            )
+            .await
+        }
+        Some(password) => {
+            login_with_password(
+                &home_directory_path,
+                our_ip.to_string(),
+                (ws_tcp_handle, ws_flag_used),
+                (tcp_tcp_handle, tcp_flag_used),
+                rpc.cloned(),
+                password,
+            )
+            .await
+        }
+    };
 
     // the boolean flag determines whether the runtime module is *public* or not,
     // where public means that any process can always message it.
@@ -276,7 +295,7 @@ async fn main() {
         kernel_message_receiver,
         network_error_receiver,
         kernel_debug_message_receiver,
-        net_message_sender.clone(),
+        net_message_sender,
         home_directory_path.clone(),
         runtime_extensions,
         // from saved eth provider config, filter for node identities which will be
@@ -301,7 +320,6 @@ async fn main() {
         kernel_message_sender.clone(),
         network_error_sender,
         print_sender.clone(),
-        net_message_sender,
         net_message_receiver,
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
     ));
@@ -475,22 +493,22 @@ async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
     }
 }
 
-/// Sets up WebSocket networking by finding an open port and creating a TCP listener.
+/// Sets up networking by finding an open port and creating a TCP listener.
 /// If a specific port is provided, it attempts to bind to it directly.
 /// If no port is provided, it searches for the first available port between 9000 and 65535.
 /// Returns a tuple containing the TcpListener and a boolean indicating if a specific port was used.
-async fn setup_ws_networking(ws_networking_port: Option<u16>) -> (tokio::net::TcpListener, bool) {
-    match ws_networking_port {
+async fn setup_networking(networking_port: Option<&u16>) -> (tokio::net::TcpListener, bool) {
+    match networking_port {
         Some(port) => {
-            let listener = http::utils::find_open_port(port, port + 1)
+            let listener = http::utils::find_open_port(*port, port + 1)
                 .await
-                .expect("ws-port selected with flag could not be bound");
+                .expect("port selected with flag could not be bound");
             (listener, true)
         }
         None => {
             let listener = http::utils::find_open_port(9000, 65535)
                 .await
-                .expect("no ports found in range 9000-65535 for websocket server");
+                .expect("no ports found in range 9000-65535 for kinode networking");
             (listener, false)
         }
     }
@@ -618,6 +636,11 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(u16)),
         )
         .arg(
+            arg!(--"tcp-port" <PORT> "Kinode internal TCP protocol port [default: first unbound at or above 9000]")
+                .alias("--tcp-port")
+                .value_parser(value_parser!(u16)),
+        )
+        .arg(
             arg!(--verbosity <VERBOSITY> "Verbosity level: higher is more verbose")
                 .default_value("0")
                 .value_parser(value_parser!(u8)),
@@ -627,11 +650,11 @@ fn build_command() -> Command {
                 .default_value("true")
                 .value_parser(value_parser!(bool)),
         )
-        .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"));
+        .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"))
+        .arg(arg!(--password <PASSWORD> "Node password"));
 
     #[cfg(feature = "simulation-mode")]
     let app = app
-        .arg(arg!(--password <PASSWORD> "Networking password"))
         .arg(arg!(--"fake-node-name" <NAME> "Name of fake node to boot"))
         .arg(
             arg!(--"fakechain-port" <FAKECHAIN_PORT> "Port to bind to for fakechain")
@@ -685,6 +708,7 @@ async fn serve_register_fe(
     home_directory_path: &str,
     our_ip: String,
     ws_networking: (tokio::net::TcpListener, bool),
+    tcp_networking: (tokio::net::TcpListener, bool),
     http_server_port: u16,
     maybe_rpc: Option<String>,
 ) -> (Identity, Vec<u8>, Keyfile) {
@@ -701,6 +725,7 @@ async fn serve_register_fe(
                 kill_rx,
                 our_ip,
                 ws_networking,
+                tcp_networking,
                 http_server_port,
                 disk_keyfile,
                 maybe_rpc) => {
@@ -721,4 +746,71 @@ async fn serve_register_fe(
     let _ = kill_tx.send(true);
 
     (our, encoded_keyfile, decoded_keyfile)
+}
+
+#[cfg(not(feature = "simulation-mode"))]
+async fn login_with_password(
+    home_directory_path: &str,
+    our_ip: String,
+    ws_networking: (tokio::net::TcpListener, bool),
+    tcp_networking: (tokio::net::TcpListener, bool),
+    maybe_rpc: Option<String>,
+    password: &str,
+) -> (Identity, Vec<u8>, Keyfile) {
+    use {alloy_primitives::Address as EthAddress, digest::Digest, ring::signature::KeyPair};
+
+    let disk_keyfile: Vec<u8> = tokio::fs::read(format!("{}/.keys", home_directory_path))
+        .await
+        .expect("could not read keyfile");
+
+    let password_hash = format!("0x{}", hex::encode(sha2::Sha256::digest(password)));
+
+    // KnsRegistrar contract address
+    let kns_address: EthAddress = KNS_ADDRESS.parse().unwrap();
+
+    let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
+
+    let k = keygen::decode_keyfile(&disk_keyfile, &password_hash)
+        .expect("could not decode keyfile, password incorrect");
+
+    let mut our = Identity {
+        name: k.username.clone(),
+        networking_key: format!(
+            "0x{}",
+            hex::encode(k.networking_keypair.public_key().as_ref())
+        ),
+        routing: if k.routers.is_empty() {
+            NodeRouting::Direct {
+                ip: our_ip,
+                ports: std::collections::BTreeMap::new(),
+            }
+        } else {
+            NodeRouting::Routers(k.routers.clone())
+        },
+    };
+
+    register::assign_routing(
+        &mut our,
+        kns_address,
+        provider,
+        (
+            ws_networking.0.local_addr().unwrap().port(),
+            ws_networking.1,
+        ),
+        (
+            tcp_networking.0.local_addr().unwrap().port(),
+            tcp_networking.1,
+        ),
+    )
+    .await
+    .expect("information used to boot does not match information onchain");
+
+    tokio::fs::write(
+        format!("{}/.keys", home_directory_path),
+        disk_keyfile.clone(),
+    )
+    .await
+    .unwrap();
+
+    (our, disk_keyfile, k)
 }

@@ -167,7 +167,6 @@ fn init(our: Address) {
                                     let apps: Vec<String> =
                                         serde_json::from_slice(&body.bytes).unwrap();
                                     for (i, app) in apps.iter().enumerate() {
-                                        println!("setting order for {app} to {i}");
                                         if let Some(app) = app_data.get_mut(app) {
                                             app.order = Some(i as u16);
                                         }
