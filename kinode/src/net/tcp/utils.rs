@@ -19,8 +19,6 @@ pub async fn maintain_connection(
     kernel_message_tx: MessageSender,
     print_tx: PrintSender,
 ) {
-    println!("tcp_maintain_connection\r");
-
     let sock_ref = socket2::SockRef::from(&conn.stream);
     let mut ka = socket2::TcpKeepalive::new();
     ka = ka.with_time(std::time::Duration::from_secs(30));
@@ -30,14 +28,14 @@ pub async fn maintain_connection(
         .expect("failed to set tcp keepalive");
 
     let (mut read_stream, mut write_stream) = conn.stream.into_split();
-    let (mut our_cipher, mut their_cipher) = if conn.noise.is_initiator() {
+    let initiator = conn.noise.is_initiator();
+    let snow::CipherStates(c1, c2) = conn.noise.extract_cipherstates();
+    let (mut our_cipher, mut their_cipher) = if initiator {
         // if initiator, we write with first and read with second
-        let snow::CipherStates(our_cipher, their_cipher) = conn.noise.extract_cipherstates();
-        (our_cipher, their_cipher)
+        (c1, c2)
     } else {
         // if responder, we read with first and write with second
-        let snow::CipherStates(their_cipher, our_cipher) = conn.noise.extract_cipherstates();
-        (our_cipher, their_cipher)
+        (c2, c1)
     };
 
     let write_buf = &mut [0; 65536];
@@ -99,23 +97,20 @@ async fn send_protocol_message(
     buf: &mut [u8],
     stream: &mut OwnedWriteHalf,
 ) -> anyhow::Result<()> {
-    println!("send_protocol_message\r");
     let serialized = rmp_serde::to_vec(km)?;
     if serialized.len() > MESSAGE_MAX_SIZE as usize {
         return Err(anyhow::anyhow!("message too large"));
     }
+
     let outer_len = (serialized.len() as u32).to_be_bytes();
     stream.write_all(&outer_len).await?;
-    println!("1\r");
+
     // 65519 = 65535 - 16 (TAGLEN)
     for payload in serialized.chunks(65519) {
         let len = cipher.encrypt(payload, buf)? as u16;
         stream.write_all(&len.to_be_bytes()).await?;
-        println!("  2\r");
         stream.write_all(&buf[..len as usize]).await?;
-        println!("  3\r");
     }
-    println!("send_protocol_message flush\r");
     Ok(stream.flush().await?)
 }
 
@@ -125,7 +120,6 @@ async fn recv_protocol_message(
     buf: &mut [u8],
     stream: &mut OwnedReadHalf,
 ) -> anyhow::Result<KernelMessage> {
-    println!("recv_protocol_message\r");
     stream.read_exact(&mut buf[..4]).await?;
     let outer_len = u32::from_be_bytes(buf[..4].try_into().unwrap()) as usize;
 
@@ -135,11 +129,11 @@ async fn recv_protocol_message(
         let mut inner_len = [0; 2];
         stream.read_exact(&mut inner_len).await?;
         let inner_len = u16::from_be_bytes(inner_len);
+
         stream.read_exact(&mut buf[..inner_len as usize]).await?;
         let read_len = cipher.decrypt(&buf[..inner_len as usize], &mut msg[ptr..])?;
         ptr += read_len;
     }
-    println!("recv_protocol_message done\r");
     Ok(rmp_serde::from_slice(&msg)?)
 }
 
@@ -174,6 +168,7 @@ pub async fn recv_protocol_handshake(
     let mut len = [0; 2];
     stream.read_exact(&mut len).await?;
     let msg_len = u16::from_be_bytes(len);
+
     let mut msg = vec![0; msg_len as usize];
     stream.read_exact(&mut msg).await?;
 
