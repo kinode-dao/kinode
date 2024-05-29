@@ -10,9 +10,10 @@ import classNames from "classnames";
 interface ActionButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
   isIcon?: boolean;
+  permitMultiButton?: boolean;
 }
 
-export default function ActionButton({ app, isIcon = false, ...props }: ActionButtonProps) {
+export default function ActionButton({ app, isIcon = false, permitMultiButton = false, ...props }: ActionButtonProps) {
   const { installed, downloaded, updatable } = useMemo(() => {
     const versions = Object.entries(app?.metadata?.properties?.code_hashes || {});
     const latestHash = (versions.find(([v]) => v === app.metadata?.properties?.current_version) || [])[1];
@@ -48,6 +49,8 @@ export default function ActionButton({ app, isIcon = false, ...props }: ActionBu
 
   return (
     <>
+      {/* if it's got a UI and it's updatable, show both buttons if we have space (launch will otherwise push out update) */}
+      {permitMultiButton && installed && updatable && launchPath && <UpdateButton app={app} {...props} isIcon={isIcon} />}
       {(installed && launchPath)
         ? <LaunchButton app={app} {...props} isIcon={isIcon} launchPath={launchPath} />
         : (installed && updatable)
