@@ -1,8 +1,10 @@
-use crate::kinode::process::main::{DownloadRequest, LocalRequest, OnchainMetadata};
+use crate::kinode::process::main::{DownloadRequest, LocalRequest};
+use crate::utils;
+use crate::VFS_TIMEOUT;
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    eth::Log, get_blob, http, kernel_types as kt, net, println, vfs, Address, LazyLoadBlob,
-    Message, NodeId, PackageId, ProcessId, Request,
+    eth, get_blob, kernel_types as kt, net, println, vfs, Address, LazyLoadBlob, Message, NodeId,
+    PackageId, ProcessId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -25,60 +27,6 @@ sol! {
         address indexed to,
         uint256 indexed tokenId
     );
-}
-
-/// from kns_indexer:sys
-#[derive(Debug, Serialize, Deserialize)]
-pub enum IndexerRequests {
-    /// return the human readable name for a namehash
-    /// returns an Option<String>
-    NamehashToName { hash: String, block: u64 },
-    /// return the most recent on-chain routing information for a node name.
-    /// returns an Option<KnsUpdate>
-    NodeInfo { name: String, block: u64 },
-}
-
-// quite annoyingly, we must convert from our gen'd version of PackageId
-// to the process_lib's gen'd version. this is in order to access custom
-// Impls that we want to use
-impl crate::kinode::process::main::PackageId {
-    pub fn to_process_lib(self) -> PackageId {
-        PackageId {
-            package_name: self.package_name,
-            publisher_node: self.publisher_node,
-        }
-    }
-    pub fn from_process_lib(package_id: PackageId) -> Self {
-        Self {
-            package_name: package_id.package_name,
-            publisher_node: package_id.publisher_node,
-        }
-    }
-}
-
-// less annoying but still bad
-impl OnchainMetadata {
-    pub fn to_erc721_metadata(self) -> kt::Erc721Metadata {
-        use kt::Erc721Properties;
-        kt::Erc721Metadata {
-            name: self.name,
-            description: self.description,
-            image: self.image,
-            external_url: self.external_url,
-            animation_url: self.animation_url,
-            properties: Erc721Properties {
-                package_name: self.properties.package_name,
-                publisher: self.properties.publisher,
-                current_version: self.properties.current_version,
-                mirrors: self.properties.mirrors,
-                code_hashes: self.properties.code_hashes.into_iter().collect(),
-                license: self.properties.license,
-                screenshots: self.properties.screenshots,
-                wit_version: self.properties.wit_version,
-                dependencies: self.properties.dependencies,
-            },
-        }
-    }
 }
 
 //
@@ -129,15 +77,16 @@ pub struct PackageState {
 }
 
 /// this process's saved state
-#[derive(Debug, Serialize, Deserialize)]
 pub struct State {
+    /// our address, grabbed from init()
+    pub our: Address,
+    /// the eth provider we are using -- not persisted
+    pub provider: eth::Provider,
     /// the address of the contract we are using to read package listings
     pub contract_address: String,
     /// the last block at which we saved the state of the listings to disk.
-    /// we don't want to save the state every time we get a new listing,
-    /// so we only save it every so often and then mark the block at which
-    /// that last occurred here. when we boot, we can read logs starting
-    /// from this block and rebuild latest state.
+    /// when we boot, we can read logs starting from this block and
+    /// rebuild latest state.
     pub last_saved_block: u64,
     /// we keep the full state of the package manager here, calculated from
     /// the listings contract logs. in the future, we'll offload this and
@@ -151,20 +100,31 @@ pub struct State {
     pub downloaded_packages: HashMap<PackageId, PackageState>,
     /// the APIs we have
     pub downloaded_apis: HashSet<PackageId>,
+    /// the packages we have outstanding requests to download (not persisted)
+    pub requested_packages: HashMap<PackageId, RequestedPackage>,
+    /// the APIs we have outstanding requests to download (not persisted)
+    pub requested_apis: HashMap<PackageId, RequestedPackage>,
 }
 
 impl State {
     /// To create a new state, we populate the downloaded_packages map
     /// with all packages parseable from our filesystem.
-    pub fn new(contract_address: String) -> anyhow::Result<Self> {
-        kinode_process_lib::print_to_terminal(1, "producing new state");
+    pub fn new(
+        our: Address,
+        provider: eth::Provider,
+        contract_address: String,
+    ) -> anyhow::Result<Self> {
         let mut state = State {
+            our,
+            provider,
             contract_address,
             last_saved_block: crate::CONTRACT_FIRST_BLOCK,
             package_hashes: HashMap::new(),
             listed_packages: HashMap::new(),
             downloaded_packages: HashMap::new(),
             downloaded_apis: HashSet::new(),
+            requested_packages: HashMap::new(),
+            requested_apis: HashMap::new(),
         };
         state.populate_packages_from_filesystem()?;
         Ok(state)
@@ -222,7 +182,7 @@ impl State {
                     path: drive_name.clone(),
                     action: vfs::VfsAction::CreateDrive,
                 })?)
-                .send_and_await_response(5)??;
+                .send_and_await_response(VFS_TIMEOUT)??;
 
             // convert the zip to a new package drive
             let response = Request::to(("our", "vfs", "distro", "sys"))
@@ -231,7 +191,7 @@ impl State {
                     action: vfs::VfsAction::AddZip,
                 })?)
                 .blob(blob.clone())
-                .send_and_await_response(5)??;
+                .send_and_await_response(VFS_TIMEOUT)??;
             let vfs::VfsResponse::Ok = serde_json::from_slice::<vfs::VfsResponse>(response.body())?
             else {
                 return Err(anyhow::anyhow!(
@@ -240,7 +200,7 @@ impl State {
             };
         }
         self.downloaded_apis.insert(package_id.to_owned());
-        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
 
@@ -264,7 +224,7 @@ impl State {
                     path: drive_name.clone(),
                     action: vfs::VfsAction::CreateDrive,
                 })?)
-                .send_and_await_response(5)??;
+                .send_and_await_response(VFS_TIMEOUT)??;
 
             // convert the zip to a new package drive
             let response = Request::to(("our", "vfs", "distro", "sys"))
@@ -273,7 +233,7 @@ impl State {
                     action: vfs::VfsAction::AddZip,
                 })?)
                 .blob(blob.clone())
-                .send_and_await_response(5)??;
+                .send_and_await_response(VFS_TIMEOUT)??;
             let vfs::VfsResponse::Ok = serde_json::from_slice::<vfs::VfsResponse>(response.body())?
             else {
                 return Err(anyhow::anyhow!(
@@ -290,19 +250,19 @@ impl State {
                     action: vfs::VfsAction::Write,
                 })?)
                 .blob(blob)
-                .send_and_await_response(5)??;
+                .send_and_await_response(VFS_TIMEOUT)??;
 
             let manifest_file = vfs::File {
                 path: format!("/{}/pkg/manifest.json", package_id),
                 timeout: 5,
             };
             let manifest_bytes = manifest_file.read()?;
-            let manifest_hash = generate_metadata_hash(&manifest_bytes);
+            let manifest_hash = utils::generate_metadata_hash(&manifest_bytes);
             package_state.manifest_hash = Some(manifest_hash);
         }
         self.downloaded_packages
             .insert(package_id.to_owned(), package_state);
-        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
 
@@ -320,7 +280,7 @@ impl State {
                 true
             })
             .unwrap_or(false);
-        kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+        // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
         res
     }
 
@@ -355,7 +315,7 @@ impl State {
                 path: "/".to_string(),
                 action: vfs::VfsAction::ReadDir,
             })?)
-            .send_and_await_response(3)??
+            .send_and_await_response(VFS_TIMEOUT)??
         else {
             return Err(anyhow::anyhow!("vfs: bad response"));
         };
@@ -378,7 +338,7 @@ impl State {
                 };
                 // generate entry from this data
                 // for the version hash, take the SHA-256 hash of the zip file
-                let our_version = generate_version_hash(&zip_file_bytes);
+                let our_version = utils::generate_version_hash(&zip_file_bytes);
                 let manifest_file = vfs::File {
                     path: format!("/{}/pkg/manifest.json", package_id),
                     timeout: 5,
@@ -395,7 +355,7 @@ impl State {
                         installed: true,
                         verified: true,      // implicity verified
                         caps_approved: true, // since it's already installed this must be true
-                        manifest_hash: Some(generate_metadata_hash(&manifest_bytes)),
+                        manifest_hash: Some(utils::generate_metadata_hash(&manifest_bytes)),
                         mirroring: false,
                         auto_update: false,
                         metadata: None,
@@ -413,7 +373,7 @@ impl State {
                         })
                         .unwrap(),
                     )
-                    .send_and_await_response(5);
+                    .send_and_await_response(VFS_TIMEOUT);
                 if let Ok(Ok(_)) = result {
                     self.downloaded_apis.insert(package_id.to_owned());
                 };
@@ -430,7 +390,7 @@ impl State {
                 path: format!("{}/manifest.json", drive_path),
                 action: vfs::VfsAction::Read,
             })?)
-            .send_and_await_response(5)??;
+            .send_and_await_response(VFS_TIMEOUT)??;
         let Some(blob) = get_blob() else {
             return Err(anyhow::anyhow!("no blob"));
         };
@@ -456,23 +416,18 @@ impl State {
                 path: drive_path,
                 action: vfs::VfsAction::RemoveDirAll,
             })?)
-            .send_and_await_response(5)??;
+            .send_and_await_response(VFS_TIMEOUT)??;
 
         // finally, remove from downloaded packages
         self.downloaded_packages.remove(package_id);
-        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
 
         println!("uninstalled {package_id}");
         Ok(())
     }
 
     /// saves state
-    pub fn ingest_listings_contract_event(
-        &mut self,
-        our: &Address,
-        log: Log,
-        requested_apis: &mut HashMap<PackageId, RequestedPackage>,
-    ) -> anyhow::Result<()> {
+    pub fn ingest_listings_contract_event(&mut self, log: eth::Log) -> anyhow::Result<()> {
         let block_number: u64 = log
             .block_number
             .ok_or(anyhow::anyhow!("got log with no block number"))?
@@ -499,7 +454,7 @@ impl State {
                     ),
                 );
 
-                if generate_package_hash(&package_name, &publisher_dnswire) != package_hash {
+                if utils::generate_package_hash(&package_name, &publisher_dnswire) != package_hash {
                     return Err(anyhow::anyhow!("got log with mismatched package hash"));
                 }
 
@@ -507,7 +462,7 @@ impl State {
                     return Err(anyhow::anyhow!("got log with invalid publisher name"));
                 };
 
-                let metadata = fetch_metadata(&metadata_url, &metadata_hash).ok();
+                let metadata = utils::fetch_metadata_from_url(&metadata_url, &metadata_hash).ok();
 
                 if let Some(metadata) = &metadata {
                     if metadata.properties.publisher != publisher_name {
@@ -537,12 +492,12 @@ impl State {
                 self.insert_listing(package_hash.clone(), listing);
 
                 // let api_hash = None; // TODO
-                // let api_download_request_result = start_api_download(
-                // our,
-                // requested_apis,
+                // let api_download_request_result = start_download(
+                // state,
                 // PackageId::new(&package_name, &publisher_name),
                 // &publisher_name,
                 // api_hash,
+                // true,
                 // );
                 // match api_download_request_result {
                 // DownloadResponse::Failure => println!("failed to get API for {package_name}"),
@@ -562,7 +517,7 @@ impl State {
                     .get_listing_with_hash_mut(&package_hash.to_string())
                     .ok_or(anyhow::anyhow!("got log with no matching listing"))?;
 
-                let metadata = match fetch_metadata(&metadata_url, &metadata_hash) {
+                let metadata = match utils::fetch_metadata_from_url(&metadata_url, &metadata_hash) {
                     Ok(metadata) => {
                         if metadata.properties.publisher != current_listing.publisher {
                             return Err(anyhow::anyhow!(format!(
@@ -596,7 +551,7 @@ impl State {
                                 1,
                                 &format!("auto-updating package {package_id} from {mirrored_from}"),
                             );
-                            Request::to(our)
+                            Request::to(&self.our)
                                 .body(serde_json::to_vec(&LocalRequest::Download(
                                     DownloadRequest {
                                         package_id: crate::kinode::process::main::PackageId::from_process_lib(
@@ -646,49 +601,7 @@ impl State {
             _ => {}
         }
         self.last_saved_block = block_number;
-        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
-}
-
-/// fetch metadata from metadata_url and verify it matches metadata_hash
-fn fetch_metadata(metadata_url: &str, metadata_hash: &str) -> anyhow::Result<kt::Erc721Metadata> {
-    let url = url::Url::parse(metadata_url)?;
-    let _response = http::send_request_await_response(http::Method::GET, url, None, 5, vec![])?;
-    let Some(body) = get_blob() else {
-        return Err(anyhow::anyhow!("no blob"));
-    };
-    let hash = generate_metadata_hash(&body.bytes);
-    if &hash == metadata_hash {
-        Ok(serde_json::from_slice::<kt::Erc721Metadata>(&body.bytes)?)
-    } else {
-        Err(anyhow::anyhow!(
-            "metadata hash mismatch: got {hash}, expected {metadata_hash}"
-        ))
-    }
-}
-
-/// generate a Keccak-256 hash of the metadata bytes
-fn generate_metadata_hash(metadata: &[u8]) -> String {
-    use sha3::{Digest, Keccak256};
-    let mut hasher = Keccak256::new();
-    hasher.update(metadata);
-    format!("0x{:x}", hasher.finalize())
-}
-
-/// generate a Keccak-256 hash of the package name and publisher (match onchain)
-fn generate_package_hash(name: &str, publisher_dnswire: &[u8]) -> String {
-    use sha3::{Digest, Keccak256};
-    let mut hasher = Keccak256::new();
-    hasher.update([name.as_bytes(), publisher_dnswire].concat());
-    let hash = hasher.finalize();
-    format!("0x{:x}", hash)
-}
-
-/// generate a SHA-256 hash of the zip bytes to act as a version hash
-pub fn generate_version_hash(zip_bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(zip_bytes);
-    format!("{:x}", hasher.finalize())
 }
