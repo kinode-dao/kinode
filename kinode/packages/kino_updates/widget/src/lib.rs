@@ -124,7 +124,7 @@ fn trim_content(content: &str) -> String {
 fn post_to_html_string(post: KinodeBlogPost) -> String {
     format!(
         r#"<a 
-            class="post p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 font-sans w-full"
+            class="post p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 hover:bg-white/20 font-sans w-full"
             href="https://kinode.org/blog/post/{}"
             target="_blank" 
             rel="noopener noreferrer"

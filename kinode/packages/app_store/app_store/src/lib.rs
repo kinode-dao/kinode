@@ -157,10 +157,11 @@ fn get_widget() -> String {
                         a.href = `/main:app_store:sys/app-details/${app.package}:${app.publisher}` 
                         a.target = '_blank';
                         a.rel = 'noopener noreferrer';
+                        const iconLetter = app.metadata_hash.replace('0x', '')[0].toUpperCase();
                         a.innerHTML = `<div
                             class="app-image rounded mr-2 grow"
                             style="
-                                background-image: url('${app.metadata.image || `/icons/${Math.floor(Math.random() * 10)}`}');
+                                background-image: url('${app.metadata.image || `/icons/${iconLetter}`}');
                                 height: 92px;
                                 width: 92px;
                                 max-width: 33%;
