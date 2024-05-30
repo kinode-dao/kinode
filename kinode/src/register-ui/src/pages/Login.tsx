@@ -148,7 +148,7 @@ function Login({
 
         // Login or confirm new keys
         const result = await fetch(
-          reset ? "/api/confirm-change-network-keys" : "login",
+          reset ? "confirm-change-network-keys" : "login",
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },

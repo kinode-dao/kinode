@@ -21,7 +21,6 @@ pub struct PeerConnection {
 }
 
 pub async fn receiver(ext: IdentityExt, data: NetData) -> anyhow::Result<()> {
-    println!("tcp_receiver\r");
     let tcp_port = ext.our.get_protocol_port(TCP_PROTOCOL).unwrap();
     let tcp = match TcpListener::bind(format!("0.0.0.0:{tcp_port}")).await {
         Ok(tcp) => tcp,
@@ -83,7 +82,6 @@ pub async fn init_direct(
     proxy_request: bool,
     peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) -> Result<(), mpsc::UnboundedReceiver<KernelMessage>> {
-    println!("tcp_init_direct\r");
     match time::timeout(
         TIMEOUT,
         connect_with_handshake(ext, peer_id, port, None, proxy_request),
@@ -114,7 +112,6 @@ pub async fn init_routed(
     router_port: u16,
     peer_rx: mpsc::UnboundedReceiver<KernelMessage>,
 ) -> Result<(), mpsc::UnboundedReceiver<KernelMessage>> {
-    println!("tcp_init_routed\r");
     match time::timeout(
         TIMEOUT,
         connect_with_handshake(ext, peer_id, router_port, Some(router_id), false),
@@ -149,7 +146,6 @@ async fn recv_connection(
     data: NetData,
     mut stream: TcpStream,
 ) -> anyhow::Result<()> {
-    println!("tcp_recv_connection\r");
     // before we begin XX handshake pattern, check first message over socket
     let (len, first_message) = utils::recv_raw(&mut stream).await?;
 
@@ -236,7 +232,6 @@ async fn connect_with_handshake(
     use_router: Option<&Identity>,
     proxy_request: bool,
 ) -> anyhow::Result<PeerConnection> {
-    println!("tcp_connect_with_handshake\r");
     let ip = match use_router {
         None => peer_id
             .get_ip()
@@ -316,7 +311,6 @@ pub async fn recv_via_router(
     peer_id: Identity,
     router_id: Identity,
 ) {
-    println!("tcp_recv_via_router\r");
     let Some((ip, port)) = router_id.tcp_routing() else {
         return;
     };
@@ -359,7 +353,6 @@ async fn connect_with_handshake_via_router(
     router_id: &Identity,
     mut stream: TcpStream,
 ) -> anyhow::Result<PeerConnection> {
-    println!("tcp_connect_with_handshake_via_router\r");
     // before beginning XX handshake pattern, send a routing request
     utils::send_raw(
         &mut stream,

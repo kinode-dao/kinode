@@ -789,7 +789,7 @@ async fn login_with_password(
         },
     };
 
-    register::assign_direct_routing(
+    register::assign_routing(
         &mut our,
         kns_address,
         provider,
