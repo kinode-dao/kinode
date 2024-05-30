@@ -153,14 +153,19 @@ fn get_widget() -> String {
                     const container = document.getElementById('latest-apps');
                     data.forEach(app => {
                         const a = document.createElement('a');
-                        a.className = 'app p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 hover:bg-white/20 font-sans cursor-pointer';
+                        a.className = 'app p-2 grow flex items-stretch rounded-lg shadow bg-white/10 hover:bg-white/20 font-sans cursor-pointer';
                         a.href = `/main:app_store:sys/app-details/${app.package}:${app.publisher}` 
                         a.target = '_blank';
                         a.rel = 'noopener noreferrer';
-                        a.innerHTML = `${app.metadata.image ? `<div
+                        a.innerHTML = `<div
                             class="app-image rounded mr-2 grow"
-                            style="background-image: url('${app.metadata.image}');"
-                        ></div>` : ''}
+                            style="
+                                background-image: url('${app.metadata.image || `/icons/${Math.floor(Math.random() * 10)}`}');
+                                height: 92px;
+                                width: 92px;
+                                max-width: 33%;
+                            "
+                        ></div>
                         <div class="app-info flex flex-col grow">
                             <h2 class="font-bold">${app.metadata.name}</h2>
                             <p>${app.metadata.description}</p>

@@ -33,7 +33,7 @@ fn init(_our: Address) {
                 serde_json::json!({
                     "Add": {
                         "label": "KinoUpdates",
-                        "widget": create_widget(fetch_three_most_recent_blog_posts()),
+                        "widget": create_widget(fetch_most_recent_blog_posts(6)),
                     }
                 })
                 .to_string(),
@@ -84,7 +84,6 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
             scrollbar-width: none;
         "
     >
-        <p class="m-0 self-stretch text-center">Recent Posts</p>
         {}
     </div>
 </body>
@@ -96,7 +95,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     );
 }
 
-fn fetch_three_most_recent_blog_posts() -> Vec<KinodeBlogPost> {
+fn fetch_most_recent_blog_posts(n: usize) -> Vec<KinodeBlogPost> {
     let blog_posts = match http::send_request_await_response(
         http::Method::GET,
         url::Url::parse("https://kinode.org/api/blog/posts").unwrap(),
@@ -109,13 +108,14 @@ fn fetch_three_most_recent_blog_posts() -> Vec<KinodeBlogPost> {
         Err(e) => panic!("Failed to fetch blog posts: {:?}", e),
     };
 
-    blog_posts.into_iter().rev().take(3).collect()
+    blog_posts.into_iter().rev().take(n as usize).collect()
 }
 
 /// Take first 100 chars of a blog post and append "..." to the end
 fn trim_content(content: &str) -> String {
-    if content.len() > 100 {
-        format!("{}...", &content[..100])
+    let len = 75;
+    if content.len() > len {
+        format!("{}...", &content[..len])
     } else {
         content.to_string()
     }
@@ -123,20 +123,24 @@ fn trim_content(content: &str) -> String {
 
 fn post_to_html_string(post: KinodeBlogPost) -> String {
     format!(
-        r#"<div class="post p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 font-sans w-full">
+        r#"<a 
+            class="post p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 font-sans w-full"
+            href="https://kinode.org/blog/post/{}"
+            target="_blank" 
+            rel="noopener noreferrer"
+        >
         <div
-            class="post-image rounded mr-2 grow"
+            class="post-image rounded mr-2 grow self-stretch h-full"
             style="background-image: url('https://kinode.org{}');"
         ></div>
         <div class="post-info flex flex-col grow">
             <h2 class="font-bold">{}</h2>
             <p>{}</p>
-            <a href="https://kinode.org/blog/post/{}" class="text-blue-500" target="_blank" rel="noopener noreferrer">Read more</a>
         </div>
-    </div>"#,
+    </a>"#,
+        post.slug,
         post.thumbnail_image,
         post.title,
         trim_content(&post.content),
-        post.slug,
     )
 }
