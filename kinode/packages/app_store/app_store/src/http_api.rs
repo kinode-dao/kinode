@@ -418,10 +418,10 @@ fn serve_paths(
                             None,
                             format!("Downloading").into_bytes(),
                         )),
-                        _ => Ok((
+                        other => Ok((
                             StatusCode::SERVICE_UNAVAILABLE,
                             None,
-                            format!("Failed to download").into_bytes(),
+                            format!("Failed to download: {other:?}").into_bytes(),
                         )),
                     }
                 }

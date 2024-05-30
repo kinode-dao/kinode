@@ -549,9 +549,8 @@ impl State {
     /// of stale metadata.
     pub fn update_listings(&mut self) {
         for (_package_hash, listing) in self.listed_packages.iter_mut() {
-            if let Some(metadata) =
+            if let Ok(metadata) =
                 utils::fetch_metadata_from_url(&listing.metadata_url, &listing.metadata_hash, 5)
-                    .ok()
             {
                 listing.metadata = Some(metadata);
             }
