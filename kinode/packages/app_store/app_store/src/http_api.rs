@@ -1,4 +1,4 @@
-use crate::types::{PackageListing, PackageState, State};
+use crate::state::{PackageListing, PackageState, State};
 use crate::DownloadResponse;
 use kinode_process_lib::{
     http::{

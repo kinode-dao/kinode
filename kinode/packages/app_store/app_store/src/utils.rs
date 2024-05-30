@@ -1,10 +1,10 @@
 use {
     crate::kinode::process::main::OnchainMetadata,
-    crate::types::{PackageState, State},
+    crate::state::{AppStoreLogError, PackageState, State},
     crate::{CONTRACT_ADDRESS, EVENTS, VFS_TIMEOUT},
     kinode_process_lib::{
-        eth, get_blob, http, kernel_types as kt, println, vfs, Address, PackageId, ProcessId,
-        Request,
+        eth, get_blob, http, kernel_types as kt, println, vfs, Address, LazyLoadBlob, PackageId,
+        ProcessId, Request,
     },
     std::collections::HashSet,
     std::str::FromStr,
@@ -85,10 +85,11 @@ pub fn fetch_and_subscribe_logs(state: &mut State) {
     let filter = app_store_filter(state);
     // get past logs, subscribe to new ones.
     for log in fetch_logs(&state.provider, &filter) {
-        if let Err(e) = state.ingest_listings_contract_event(log) {
+        if let Err(e) = state.ingest_contract_event(log, false) {
             println!("error ingesting log: {e:?}");
         };
     }
+    state.update_listings();
     subscribe_to_logs(&state.provider, filter);
 }
 
@@ -125,20 +126,24 @@ fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Lo
 pub fn fetch_metadata_from_url(
     metadata_url: &str,
     metadata_hash: &str,
-) -> anyhow::Result<kt::Erc721Metadata> {
-    let url = url::Url::parse(metadata_url)?;
-    let _response = http::send_request_await_response(http::Method::GET, url, None, 5, vec![])?;
-    let Some(body) = get_blob() else {
-        return Err(anyhow::anyhow!("no blob"));
-    };
-    let hash = generate_metadata_hash(&body.bytes);
-    if &hash == metadata_hash {
-        Ok(serde_json::from_slice::<kt::Erc721Metadata>(&body.bytes)?)
-    } else {
-        Err(anyhow::anyhow!(
-            "metadata hash mismatch: got {hash}, expected {metadata_hash}"
-        ))
+    timeout: u64,
+) -> Result<kt::Erc721Metadata, AppStoreLogError> {
+    if let Ok(url) = url::Url::parse(metadata_url) {
+        if let Ok(_) =
+            http::send_request_await_response(http::Method::GET, url, None, timeout, vec![])
+        {
+            if let Some(body) = get_blob() {
+                let hash = generate_metadata_hash(&body.bytes);
+                if &hash == metadata_hash {
+                    return Ok(serde_json::from_slice::<kt::Erc721Metadata>(&body.bytes)
+                        .map_err(|_| AppStoreLogError::MetadataNotFound)?);
+                } else {
+                    return Err(AppStoreLogError::MetadataHashMismatch);
+                }
+            }
+        }
     }
+    Err(AppStoreLogError::MetadataNotFound)
 }
 
 /// generate a Keccak-256 hash of the metadata bytes
@@ -223,6 +228,60 @@ pub fn new_package(
         state.downloaded_apis.insert(package_id.to_owned());
     };
     Ok(())
+}
+
+/// create a new package drive in VFS and add the package zip to it.
+/// returns a string representing the manifest hash of the package.
+pub fn create_package_drive(
+    package_id: &PackageId,
+    package_bytes: Vec<u8>,
+) -> anyhow::Result<String> {
+    let drive_name = format!("/{package_id}/pkg");
+    let blob = LazyLoadBlob {
+        mime: Some("application/zip".to_string()),
+        bytes: package_bytes,
+    };
+
+    // create a new drive for this package in VFS
+    // this is possible because we have root access
+    Request::to(("our", "vfs", "distro", "sys"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
+            path: drive_name.clone(),
+            action: vfs::VfsAction::CreateDrive,
+        })?)
+        .send_and_await_response(VFS_TIMEOUT)??;
+
+    // convert the zip to a new package drive
+    let response = Request::to(("our", "vfs", "distro", "sys"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
+            path: drive_name.clone(),
+            action: vfs::VfsAction::AddZip,
+        })?)
+        .blob(blob.clone())
+        .send_and_await_response(VFS_TIMEOUT)??;
+    let vfs::VfsResponse::Ok = serde_json::from_slice::<vfs::VfsResponse>(response.body())? else {
+        return Err(anyhow::anyhow!(
+            "cannot add NewPackage: do not have capability to access vfs"
+        ));
+    };
+
+    // save the zip file itself in VFS for sharing with other nodes
+    // call it <package_id>.zip
+    let zip_path = format!("{}/{}.zip", drive_name, package_id);
+    Request::to(("our", "vfs", "distro", "sys"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
+            path: zip_path,
+            action: vfs::VfsAction::Write,
+        })?)
+        .blob(blob)
+        .send_and_await_response(VFS_TIMEOUT)??;
+
+    let manifest_file = vfs::File {
+        path: format!("/{}/pkg/manifest.json", package_id),
+        timeout: VFS_TIMEOUT,
+    };
+    let manifest_bytes = manifest_file.read()?;
+    Ok(generate_metadata_hash(&manifest_bytes))
 }
 
 /// given a package id, interact with VFS and kernel to get manifest,
@@ -448,5 +507,44 @@ pub fn install(
             return Err(anyhow::anyhow!("failed to start process"));
         };
     }
+    Ok(())
+}
+
+pub fn uninstall(package_id: &PackageId) -> anyhow::Result<()> {
+    let drive_path = format!("/{package_id}/pkg");
+    Request::new()
+        .target(("our", "vfs", "distro", "sys"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
+            path: format!("{}/manifest.json", drive_path),
+            action: vfs::VfsAction::Read,
+        })?)
+        .send_and_await_response(VFS_TIMEOUT)??;
+    let Some(blob) = get_blob() else {
+        return Err(anyhow::anyhow!("no blob"));
+    };
+    let manifest = String::from_utf8(blob.bytes)?;
+    let manifest = serde_json::from_str::<Vec<kt::PackageManifestEntry>>(&manifest)?;
+    // reading from the package manifest, kill every process
+    for entry in &manifest {
+        let process_id = format!("{}:{}", entry.process_name, package_id);
+        let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
+            continue;
+        };
+        Request::new()
+            .target(("our", "kernel", "distro", "sys"))
+            .body(serde_json::to_vec(&kt::KernelCommand::KillProcess(
+                parsed_new_process_id,
+            ))?)
+            .send()?;
+    }
+    // then, delete the drive
+    Request::new()
+        .target(("our", "vfs", "distro", "sys"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
+            path: drive_path,
+            action: vfs::VfsAction::RemoveDirAll,
+        })?)
+        .send_and_await_response(VFS_TIMEOUT)??;
+
     Ok(())
 }

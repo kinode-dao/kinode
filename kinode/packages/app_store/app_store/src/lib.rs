@@ -25,9 +25,7 @@ use kinode_process_lib::{
     Message, NodeId, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::str::FromStr;
-use types::{PackageState, RequestedPackage, State};
+use state::{AppStoreLogError, PackageState, RequestedPackage, State};
 use utils::{fetch_and_subscribe_logs, fetch_state, subscribe_to_logs};
 
 wit_bindgen::generate!({
@@ -39,7 +37,7 @@ wit_bindgen::generate!({
 
 mod ft_worker_lib;
 mod http_api;
-pub mod types;
+pub mod state;
 pub mod utils;
 
 #[cfg(not(feature = "simulation-mode"))]
@@ -625,11 +623,14 @@ fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn handle_eth_sub_event(state: &mut State, event: eth::SubscriptionResult) -> anyhow::Result<()> {
+fn handle_eth_sub_event(
+    state: &mut State,
+    event: eth::SubscriptionResult,
+) -> Result<(), AppStoreLogError> {
     let eth::SubscriptionResult::Log(log) = event else {
-        return Err(anyhow::anyhow!("got non-log event"));
+        return Ok(());
     };
-    state.ingest_listings_contract_event(*log)
+    state.ingest_contract_event(*log, true)
 }
 
 /// the steps to take an existing package on disk and install/start it
