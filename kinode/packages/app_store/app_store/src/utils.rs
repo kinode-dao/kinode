@@ -56,17 +56,18 @@ impl OnchainMetadata {
 /// fetch state from disk or create a new one if that fails
 pub fn fetch_state(our: Address, provider: eth::Provider) -> State {
     if let Some(state_bytes) = get_state() {
-        if let Ok(state) = serde_json::from_slice::<SerializedState>(&state_bytes) {
-            if state.contract_address == CONTRACT_ADDRESS {
-                return State::from_serialized(our, provider, state);
-            } else {
-                println!(
-                    "state contract address mismatch! expected {}, got {}",
-                    CONTRACT_ADDRESS, state.contract_address
-                );
+        match serde_json::from_slice::<SerializedState>(&state_bytes) {
+            Ok(state) => {
+                if state.contract_address == CONTRACT_ADDRESS {
+                    return State::from_serialized(our, provider, state);
+                } else {
+                    println!(
+                        "state contract address mismatch! expected {}, got {}",
+                        CONTRACT_ADDRESS, state.contract_address
+                    );
+                }
             }
-        } else {
-            println!("failed to deserialize saved state");
+            Err(e) => println!("failed to deserialize saved state: {e}"),
         }
     }
     State::new(our, provider, CONTRACT_ADDRESS.to_string()).expect("state creation failed")
