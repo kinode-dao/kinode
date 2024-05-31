@@ -1,11 +1,10 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { namehash } from "ethers/lib/utils";
-import { BytesLike, utils } from "ethers";
+import { utils } from "ethers";
 import KinodeHeader from "../components/KnsHeader";
-import { NetworkingInfo, PageProps, UnencryptedIdentity } from "../lib/types";
+import { PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
 import { hooks } from "../connectors/metamask";
-import { ipToNumber } from "../utils/ipToNumber";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { useNavigate } from "react-router-dom";
@@ -13,6 +12,7 @@ import { Tooltip } from "../components/Tooltip";
 import { KinodeTitle } from "../components/KinodeTitle";
 import { isMobileCheck } from "../utils/dimensions";
 import classNames from "classnames";
+import { generateNetworkingKeys, getNetworkName } from "../utils/chain";
 
 const { useProvider } = hooks;
 
@@ -28,6 +28,10 @@ function Login({
   appSizeOnLoad,
   closeConnect,
   routers,
+  setNetworkingKey,
+  setIpAddress,
+  setWsPort,
+  setTcpPort,
   setRouters,
   knsName,
   setOsName,
@@ -88,51 +92,18 @@ function Login({
           }
 
           // Generate keys on server that are stored temporarily
-          const {
-            networking_key,
-            routing: {
-              Both: {
-                ip: ip_address,
-                ports: {
-                  ws: ws_port,
-                  tcp: tcp_port
-                },
-                routers: allowed_routers
-              }
-            },
-          } = (await fetch("/generate-networking-info", {
-            method: "POST",
-          }).then((res) => res.json())) as NetworkingInfo;
-
-          setLoading("Please confirm the transaction in your wallet");
-
-          const ipAddress = ipToNumber(ip_address);
-
-          const data: BytesLike[] = [
-            direct
-              ? (
-                await kns.populateTransaction.setAllIp(
-                  namehash(knsName),
-                  ipAddress,
-                  ws_port || 0,  // ws
-                  0,             // wt
-                  tcp_port || 0, // tcp
-                  0              // udp
-                )
-              ).data!
-              : (
-                await kns.populateTransaction.setRouters(
-                  namehash(knsName),
-                  allowed_routers.map((x) => namehash(x))
-                )
-              ).data!,
-            (
-              await kns.populateTransaction.setKey(
-                namehash(knsName),
-                networking_key
-              )
-            ).data!,
-          ];
+          const data = await generateNetworkingKeys({
+            direct,
+            kns,
+            nodeChainId,
+            chainName: getNetworkName(nodeChainId),
+            nameToSet: namehash(knsName),
+            setNetworkingKey,
+            setIpAddress,
+            setWsPort,
+            setTcpPort,
+            setRouters,
+          })
 
           setLoading("Please confirm the transaction");
 
