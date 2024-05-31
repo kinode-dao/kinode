@@ -291,7 +291,10 @@ fn handle_local_request(
         LocalRequest::Install(package_id) => (
             match handle_install(state, &package_id.to_process_lib()) {
                 Ok(()) => LocalResponse::InstallResponse(InstallResponse::Success),
-                Err(_) => LocalResponse::InstallResponse(InstallResponse::Failure),
+                Err(e) => {
+                    println!("error installing package: {e}");
+                    LocalResponse::InstallResponse(InstallResponse::Failure)
+                }
             },
             None,
         ),
@@ -451,49 +454,53 @@ fn handle_receive_download_package(
         return Err(anyhow::anyhow!("received download but found no blob"));
     };
     // check the version hash for this download against requested!
-    // for now we can reject if it's not latest.
     let download_hash = utils::generate_version_hash(&blob.bytes);
-    let verified = match requested_package.desired_version_hash {
+    let (verified, metadata) = match requested_package.desired_version_hash {
         Some(hash) => {
+            let Some(package_listing) = state.get_listing(package_id) else {
+                return Err(anyhow::anyhow!(
+                    "downloaded package cannot be found in manager--rejecting download!"
+                ));
+            };
+            let Some(metadata) = &package_listing.metadata else {
+                return Err(anyhow::anyhow!(
+                    "downloaded package has no metadata to check validity against!"
+                ));
+            };
             if download_hash != hash {
                 return Err(anyhow::anyhow!(
                     "downloaded package is not desired version--rejecting download! \
                     download hash: {download_hash}, desired hash: {hash}"
                 ));
             } else {
-                true
+                (true, Some(metadata.clone()))
             }
         }
-        None => {
-            let Some(package_listing) = state.get_listing(package_id) else {
-                return Err(anyhow::anyhow!(
-                    "downloaded package cannot be found in manager--rejecting download!"
-                ));
-            };
-            // check against `metadata.properties.current_version`
-            let Some(metadata) = &package_listing.metadata else {
-                return Err(anyhow::anyhow!(
-                    "downloaded package has no metadata to check validity against!"
-                ));
-            };
-            let Some(latest_hash) = metadata
-                .properties
-                .code_hashes
-                .get(&metadata.properties.current_version)
-            else {
-                return Err(anyhow::anyhow!(
-                    "downloaded package has no versions in manager--rejecting download!"
-                ));
-            };
-            if download_hash != *latest_hash {
-                return Err(anyhow::anyhow!(
-                    "downloaded package is not latest version--rejecting download! \
-                    download hash: {download_hash}, latest hash: {latest_hash}"
-                ));
-            } else {
-                true
+        None => match state.get_listing(package_id) {
+            None => {
+                println!("downloaded package cannot be found onchain, proceeding with unverified download");
+                (true, None)
             }
-        }
+            Some(package_listing) => {
+                if let Some(metadata) = &package_listing.metadata {
+                    let latest_hash = metadata
+                        .properties
+                        .code_hashes
+                        .get(&metadata.properties.current_version);
+                    if Some(&download_hash) != latest_hash {
+                        println!(
+                            "downloaded package is not latest version \
+                            download hash: {download_hash}, latest hash: {latest_hash:?} \
+                            proceeding with unverified download"
+                        );
+                    }
+                    (true, Some(metadata.clone()))
+                } else {
+                    println!("downloaded package has no metadata to check validity against, proceeding with unverified download");
+                    (true, None)
+                }
+            }
+        },
     };
 
     let old_manifest_hash = match state.downloaded_packages.get(package_id) {
@@ -515,7 +522,7 @@ fn handle_receive_download_package(
             manifest_hash: None, // generated in the add fn
             mirroring: requested_package.mirror,
             auto_update: requested_package.auto_update,
-            metadata: None, // TODO
+            metadata,
         },
         Some(blob.bytes),
     )?;
@@ -568,13 +575,18 @@ fn handle_eth_sub_event(
 /// the steps to take an existing package on disk and install/start it
 /// make sure you have reviewed and approved caps in manifest before calling this
 pub fn handle_install(state: &mut State, package_id: &PackageId) -> anyhow::Result<()> {
+    // wit version will default to the latest if not specified
     let metadata = state
         .get_downloaded_package(package_id)
         .ok_or_else(|| anyhow::anyhow!("package not found in manager"))?
-        .metadata
-        .ok_or_else(|| anyhow::anyhow!("package has no metadata"))?;
+        .metadata;
 
-    utils::install(package_id, &state.our.node, metadata.properties.wit_version)?;
+    let wit_version = match metadata {
+        Some(metadata) => metadata.properties.wit_version,
+        None => Some(0),
+    };
+
+    utils::install(package_id, &state.our.node, wit_version)?;
 
     // finally set the package as installed
     state.update_downloaded_package(package_id, |package_state| {
