@@ -1,6 +1,6 @@
 import classNames from "classnames"
 import { HomepageApp } from "../store/homepageStore"
-import { FaHeart, FaRegHeart } from "react-icons/fa6"
+import { FaHeart, FaRegHeart, } from "react-icons/fa6"
 import { useState } from "react"
 import usePersistentStore from "../store/persistentStore"
 import { isMobileCheck } from "../utils/dimensions"
@@ -11,7 +11,7 @@ interface AppDisplayProps {
 }
 
 const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
-  const { favoriteApp } = usePersistentStore();
+  const { favoriteApp, favoriteApps } = usePersistentStore();
   const [isHovered, setIsHovered] = useState(false)
   const isMobile = isMobileCheck()
 
@@ -46,7 +46,7 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
         favoriteApp(app.package_name)
       }}
     >
-      {app.is_favorite ? <FaHeart /> : <FaRegHeart />}
+      {favoriteApps[app.package_name]?.favorite ? <FaHeart /> : <FaRegHeart />}
     </button>}
   </a>
 }
