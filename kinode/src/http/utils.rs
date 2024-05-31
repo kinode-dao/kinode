@@ -27,8 +27,6 @@ pub fn _verify_auth_token(auth_token: &str, jwt_secret: &[u8]) -> Result<String,
         return Err(jwt::Error::Format);
     };
 
-    println!("hello\r");
-
     let claims: Result<JwtClaims, jwt::Error> = auth_token.verify_with_key(&secret);
 
     match claims {

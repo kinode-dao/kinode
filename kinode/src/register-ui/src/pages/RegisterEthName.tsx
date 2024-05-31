@@ -8,7 +8,7 @@ import Loader from "../components/Loader";
 import KinodeHeader from "../components/KnsHeader";
 import { PageProps } from "../lib/types";
 import { generateNetworkingKeys, getNetworkName, setChain } from "../utils/chain";
-import { hash } from "eth-ens-namehash";
+import { hash } from "@ensdomains/eth-ens-namehash";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { MAINNET_OPT_HEX, OPTIMISM_OPT_HEX } from "../constants/chainId";
 import { KinodeTitle } from "../components/KinodeTitle";

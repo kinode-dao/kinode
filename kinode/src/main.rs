@@ -395,7 +395,7 @@ async fn main() {
             match res {
                 Ok(_) => "graceful exit".into(),
                 Err(e) => format!(
-                    "uh oh, a kernel process crashed -- this should never happen: {e:?}"
+                    "runtime crash: {e:?}"
                 ),
             }
 

@@ -140,7 +140,11 @@ export default function AppPage() {
                 )
               )}
             </div>}
-          <ActionButton app={app} className={classNames("self-center bg-orange text-lg px-12")} />
+          <div className={classNames("flex-center gap-2", {
+            'flex-col': isMobile,
+          })}>
+            <ActionButton app={app} className={classNames("self-center bg-orange text-lg px-12")} permitMultiButton />
+          </div>
           {app.installed && app.state?.mirroring && (
             <button type="button" onClick={goToPublish}>
               Publish

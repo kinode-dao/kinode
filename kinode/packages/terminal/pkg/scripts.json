@@ -9,14 +9,6 @@
         "grant_capabilities": [],
         "wit_version": 0
     },
-    "echo.wasm": {
-        "root": false,
-        "public": false,
-        "request_networking": false,
-        "request_capabilities": [],
-        "grant_capabilities": [],
-        "wit_version": 0
-    },
     "cat.wasm": {
         "root": false,
         "public": false,
@@ -33,6 +25,14 @@
         "grant_capabilities": [],
         "wit_version": 0
     },
+    "echo.wasm": {
+        "root": false,
+        "public": false,
+        "request_networking": false,
+        "request_capabilities": [],
+        "grant_capabilities": [],
+        "wit_version": 0
+    },
     "hi.wasm": {
         "root": false,
         "public": false,
@@ -43,6 +43,23 @@
         "grant_capabilities": [
             "net:distro:sys"
         ],
+        "wit_version": 0
+    },
+    "kfetch.wasm": {
+        "root": true,
+        "public": false,
+        "request_networking": false,
+        "grant_capabilities": [
+            "eth:distro:sys",
+            "kernel:distro:sys",
+            "net:distro:sys"
+        ],
+        "wit_version": 0
+    },
+    "kill.wasm": {
+        "root": true,
+        "public": false,
+        "request_networking": false,
         "wit_version": 0
     },
     "m.wasm": {
@@ -100,13 +117,9 @@
         "wit_version": 0
     },
     "top.wasm": {
-        "root": false,
+        "root": true,
         "public": false,
         "request_networking": false,
-        "request_capabilities": [
-            "kernel:distro:sys"
-        ],
-        "grant_capabilities": [],
         "wit_version": 0
     }
 }

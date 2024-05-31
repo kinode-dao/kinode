@@ -36,7 +36,6 @@ pub async fn create_passthrough(
     pending_passthroughs: &PendingPassthroughs,
     socket_1: PendingStream,
 ) -> anyhow::Result<()> {
-    println!("create_passthrough\r");
     // if the target has already generated a pending passthrough for this source,
     // immediately match them
     if let Some(((_target, _from), pending_stream)) =
@@ -111,7 +110,6 @@ pub async fn create_passthrough(
 
 /// cross the streams -- spawn on own task
 pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStream) {
-    println!("maintain_passthrough\r");
     match (socket_1, socket_2) {
         (PendingStream::Tcp(socket_1), PendingStream::Tcp(socket_2)) => {
             // do not use bidirectional because if one side closes,
@@ -204,7 +202,6 @@ pub fn validate_routing_request(
     buf: &[u8],
     pki: &OnchainPKI,
 ) -> anyhow::Result<(Identity, Identity)> {
-    println!("validate_routing_request\r");
     let routing_request: RoutingRequest = rmp_serde::from_slice(buf)?;
     let from_id = pki
         .get(&routing_request.source)
@@ -255,6 +252,7 @@ pub fn build_responder() -> (snow::HandshakeState, Vec<u8>) {
     (
         builder
             .local_private_key(&keypair.private)
+            .unwrap()
             .build_responder()
             .expect("net: couldn't build responder?"),
         keypair.public,
@@ -269,6 +267,7 @@ pub fn build_initiator() -> (snow::HandshakeState, Vec<u8>) {
     (
         builder
             .local_private_key(&keypair.private)
+            .unwrap()
             .build_initiator()
             .expect("net: couldn't build initiator?"),
         keypair.public,

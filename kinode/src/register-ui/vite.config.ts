@@ -2,9 +2,13 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import UnoCSS from '@unocss/vite'
 import { presetUno, presetWind, presetIcons, transformerDirectives } from 'unocss'
+import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill';
 
 export default defineConfig({
   plugins: [
+    NodeGlobalsPolyfillPlugin({
+      buffer: true
+    }),
     UnoCSS({
       presets: [presetUno(), presetWind(), presetIcons()],
       shortcuts: [
