@@ -2,13 +2,12 @@ import { useState, useEffect, FormEvent, useCallback } from "react";
 import { hooks } from "../connectors/metamask";
 import { useNavigate } from "react-router-dom";
 import { toDNSWireFormat } from "../utils/dnsWire";
-import { BytesLike, utils } from "ethers";
+import { utils } from "ethers";
 import EnterEthName from "../components/EnterEthName";
 import Loader from "../components/Loader";
 import KinodeHeader from "../components/KnsHeader";
-import { NetworkingInfo, PageProps } from "../lib/types";
-import { ipToNumber } from "../utils/ipToNumber";
-import { getNetworkName, setChain } from "../utils/chain";
+import { PageProps } from "../lib/types";
+import { generateNetworkingKeys, getNetworkName, setChain } from "../utils/chain";
 import { hash } from "@ensdomains/eth-ens-namehash";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { MAINNET_OPT_HEX, OPTIMISM_OPT_HEX } from "../constants/chainId";
@@ -69,83 +68,36 @@ function RegisterEthName({
 
       if (!provider) return openConnect();
 
+      setLoading("Please confirm the transaction in your wallet");
       try {
-        setLoading("Please confirm the transaction in your wallet");
-
-        const {
-          networking_key,
-          routing: {
-            Both: {
-              ip: ip_address,
-              ports: {
-                ws: ws_port,
-                tcp: tcp_port
-              },
-              routers: allowed_routers
-            }
-          }
-        } = (await fetch("/generate-networking-info", { method: "POST" }).then(
-          (res) => res.json()
-        )) as NetworkingInfo;
-
-        const ipAddress = ipToNumber(ip_address);
-
-        setNetworkingKey(networking_key);
-        setIpAddress(ipAddress);
-        setWsPort(ws_port || 0);
-        setTcpPort(tcp_port || 0);
-        setRouters(allowed_routers);
-
         const cleanedName = name.trim().replace(".eth", "");
-
+        const nameToSet = utils.namehash(`${cleanedName}.eth`);
         const targetChainId = nodeChainId === OPTIMISM_OPT_HEX ? MAINNET_OPT_HEX : nodeChainId;
 
-        try {
-          await setChain(targetChainId);
-        } catch (error) {
-          window.alert(
-            `You must connect to the ${getNetworkName(targetChainId)} network to continue. Please connect and try again.`
-          );
-          throw new Error(`${getNetworkName(targetChainId)} not connected`);
-        }
-
-        const data: BytesLike[] = [
-          direct
-            ? (
-              await kns.populateTransaction.setAllIp(
-                utils.namehash(`${cleanedName}.eth`),
-                ipAddress,
-                ws_port || 0,  // ws
-                0,             // wt
-                tcp_port || 0, // tcp
-                0              // udp
-              )
-            ).data!
-            : (
-              await kns.populateTransaction.setRouters(
-                utils.namehash(`${cleanedName}.eth`),
-                allowed_routers.map((x) => utils.namehash(x))
-              )
-            ).data!,
-          (
-            await kns.populateTransaction.setKey(
-              utils.namehash(`${cleanedName}.eth`),
-              networking_key
-            )
-          ).data!,
-        ];
+        const data = await generateNetworkingKeys({
+          direct,
+          kns,
+          nodeChainId: targetChainId,
+          chainName,
+          nameToSet,
+          setNetworkingKey,
+          setIpAddress,
+          setWsPort,
+          setTcpPort,
+          setRouters,
+        });
 
         setLoading("Please confirm the transaction in your wallet");
 
         // console.log("node chain id", nodeChainId);
 
         const dnsFormat = toDNSWireFormat(`${cleanedName}.eth`);
-        const namehash = hash(`${cleanedName}.eth`);
+        const hashedName = hash(`${cleanedName}.eth`);
 
         const tx = await knsEnsEntry.setKNSRecords(dnsFormat, data, { gasLimit: 300000 });
 
         const onRegistered = (node: any, _name: any) => {
-          if (node === namehash) {
+          if (node === hashedName) {
             kns.off("NodeRegistered", onRegistered);
             setLoading("");
             setOsName(`${cleanedName}.eth`);
