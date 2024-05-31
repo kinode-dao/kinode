@@ -1,10 +1,10 @@
 use {
     crate::kinode::process::main::OnchainMetadata,
-    crate::state::{AppStoreLogError, PackageState, State},
+    crate::state::{AppStoreLogError, PackageState, SerializedState, State},
     crate::{CONTRACT_ADDRESS, EVENTS, VFS_TIMEOUT},
     kinode_process_lib::{
-        eth, get_blob, http, kernel_types as kt, println, vfs, Address, LazyLoadBlob, PackageId,
-        ProcessId, Request,
+        eth, get_blob, get_state, http, kernel_types as kt, println, vfs, Address, LazyLoadBlob,
+        PackageId, ProcessId, Request,
     },
     std::collections::HashSet,
     std::str::FromStr,
@@ -55,20 +55,20 @@ impl OnchainMetadata {
 
 /// fetch state from disk or create a new one if that fails
 pub fn fetch_state(our: Address, provider: eth::Provider) -> State {
-    // if let Some(state_bytes) = get_state() {
-    //     if let Ok(state) = serde_json::from_slice::<State>(&state_bytes) {
-    //         if state.contract_address == CONTRACT_ADDRESS {
-    //             return state;
-    //         } else {
-    //             println!(
-    //                 "state contract address mismatch! expected {}, got {}",
-    //                 CONTRACT_ADDRESS, state.contract_address
-    //             );
-    //         }
-    //     } else {
-    //         println!("failed to deserialize saved state");
-    //     }
-    // }
+    if let Some(state_bytes) = get_state() {
+        if let Ok(state) = serde_json::from_slice::<SerializedState>(&state_bytes) {
+            if state.contract_address == CONTRACT_ADDRESS {
+                return State::from_serialized(our, provider, state);
+            } else {
+                println!(
+                    "state contract address mismatch! expected {}, got {}",
+                    CONTRACT_ADDRESS, state.contract_address
+                );
+            }
+        } else {
+            println!("failed to deserialize saved state");
+        }
+    }
     State::new(our, provider, CONTRACT_ADDRESS.to_string()).expect("state creation failed")
 }
 
@@ -230,7 +230,9 @@ pub fn new_package(
 }
 
 /// create a new package drive in VFS and add the package zip to it.
-/// returns a string representing the manifest hash of the package.
+/// if an `api.zip` is present, unzip and stow in `/api`.
+/// returns a string representing the manifest hash of the package
+/// and a bool returning whether or not an api was found and unzipped.
 pub fn create_package_drive(
     package_id: &PackageId,
     package_bytes: Vec<u8>,
@@ -281,6 +283,31 @@ pub fn create_package_drive(
     };
     let manifest_bytes = manifest_file.read()?;
     Ok(generate_metadata_hash(&manifest_bytes))
+}
+
+pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
+    // get `pkg/api.zip` if it exists
+    let api_response = Request::to(("our", "vfs", "distro", "sys"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
+            path: format!("/{package_id}/pkg/api.zip"),
+            action: vfs::VfsAction::Read,
+        })?)
+        .send_and_await_response(VFS_TIMEOUT)??;
+    if let Ok(vfs::VfsResponse::Read) = serde_json::from_slice(api_response.body()) {
+        // unzip api.zip into /api
+        // blob inherited from Read request
+        let response = Request::to(("our", "vfs", "distro", "sys"))
+            .body(serde_json::to_vec(&vfs::VfsRequest {
+                path: format!("/{package_id}/pkg/api"),
+                action: vfs::VfsAction::AddZip,
+            })?)
+            .inherit(true)
+            .send_and_await_response(VFS_TIMEOUT)??;
+        if let Ok(vfs::VfsResponse::Ok) = serde_json::from_slice(response.body()) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// given a package id, interact with VFS and kernel to get manifest,

@@ -315,7 +315,6 @@ fn serve_paths(
                         pkg_state.mirroring,
                         pkg_state.auto_update,
                         None,
-                        false,
                     ) {
                         DownloadResponse::Started => Ok((
                             StatusCode::CREATED,
@@ -411,7 +410,6 @@ fn serve_paths(
                         mirror,
                         auto_update,
                         desired_version_hash,
-                        false,
                     ) {
                         DownloadResponse::Started => Ok((
                             StatusCode::CREATED,

@@ -2,8 +2,7 @@ use crate::utils;
 use crate::VFS_TIMEOUT;
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    eth, kernel_types as kt, net, println, vfs, Address, LazyLoadBlob, Message, NodeId, PackageId,
-    Request,
+    eth, kernel_types as kt, net, println, vfs, Address, Message, NodeId, PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -133,7 +132,48 @@ pub struct State {
     pub requested_apis: HashMap<PackageId, RequestedPackage>,
 }
 
+#[derive(Deserialize)]
+pub struct SerializedState {
+    pub contract_address: String,
+    pub last_saved_block: u64,
+    pub package_hashes: HashMap<PackageId, PackageHash>,
+    pub listed_packages: HashMap<PackageHash, PackageListing>,
+    pub downloaded_packages: HashMap<PackageId, PackageState>,
+    pub downloaded_apis: HashSet<PackageId>,
+}
+
+impl Serialize for State {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("State", 6)?;
+        state.serialize_field("contract_address", &self.contract_address)?;
+        state.serialize_field("last_saved_block", &self.last_saved_block)?;
+        state.serialize_field("package_hashes", &self.package_hashes)?;
+        state.serialize_field("listed_packages", &self.listed_packages)?;
+        state.serialize_field("downloaded_packages", &self.downloaded_packages)?;
+        state.serialize_field("downloaded_apis", &self.downloaded_apis)?;
+        state.end()
+    }
+}
+
 impl State {
+    pub fn from_serialized(our: Address, provider: eth::Provider, s: SerializedState) -> Self {
+        State {
+            our,
+            provider,
+            contract_address: s.contract_address,
+            last_saved_block: s.last_saved_block,
+            package_hashes: s.package_hashes,
+            listed_packages: s.listed_packages,
+            downloaded_packages: s.downloaded_packages,
+            downloaded_apis: s.downloaded_apis,
+            requested_packages: HashMap::new(),
+            requested_apis: HashMap::new(),
+        }
+    }
     /// To create a new state, we populate the downloaded_packages map
     /// with all packages parseable from our filesystem.
     pub fn new(
@@ -173,47 +213,6 @@ impl State {
         self.downloaded_packages.get(package_id).cloned()
     }
 
-    pub fn add_downloaded_api(
-        &mut self,
-        package_id: &PackageId,
-        package_bytes: Option<Vec<u8>>,
-    ) -> anyhow::Result<()> {
-        if let Some(package_bytes) = package_bytes {
-            let drive_name = format!("/{package_id}/pkg");
-            let blob = LazyLoadBlob {
-                mime: Some("application/zip".to_string()),
-                bytes: package_bytes,
-            };
-
-            // create a new drive for this package in VFS
-            // this is possible because we have root access
-            Request::to(("our", "vfs", "distro", "sys"))
-                .body(serde_json::to_vec(&vfs::VfsRequest {
-                    path: drive_name.clone(),
-                    action: vfs::VfsAction::CreateDrive,
-                })?)
-                .send_and_await_response(VFS_TIMEOUT)??;
-
-            // convert the zip to a new package drive
-            let response = Request::to(("our", "vfs", "distro", "sys"))
-                .body(serde_json::to_vec(&vfs::VfsRequest {
-                    path: drive_name.clone(),
-                    action: vfs::VfsAction::AddZip,
-                })?)
-                .blob(blob.clone())
-                .send_and_await_response(VFS_TIMEOUT)??;
-            let vfs::VfsResponse::Ok = serde_json::from_slice::<vfs::VfsResponse>(response.body())?
-            else {
-                return Err(anyhow::anyhow!(
-                    "cannot add NewPackage: do not have capability to access vfs"
-                ));
-            };
-        }
-        self.downloaded_apis.insert(package_id.to_owned());
-        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
-        Ok(())
-    }
-
     pub fn add_downloaded_package(
         &mut self,
         package_id: &PackageId,
@@ -224,9 +223,12 @@ impl State {
             let manifest_hash = utils::create_package_drive(package_id, package_bytes)?;
             package_state.manifest_hash = Some(manifest_hash);
         }
+        if utils::extract_api(package_id)? {
+            self.downloaded_apis.insert(package_id.to_owned());
+        }
         self.downloaded_packages
             .insert(package_id.to_owned(), package_state);
-        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
 
@@ -244,7 +246,7 @@ impl State {
                 true
             })
             .unwrap_or(false);
-        // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+        kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
         res
     }
 
@@ -348,7 +350,7 @@ impl State {
     pub fn uninstall(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
         utils::uninstall(package_id)?;
         self.downloaded_packages.remove(package_id);
-        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         println!("uninstalled {package_id}");
         Ok(())
     }
@@ -540,7 +542,9 @@ impl State {
             _ => {}
         }
         self.last_saved_block = block_number;
-        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        if update_listings {
+            kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+        }
         Ok(())
     }
 
@@ -549,12 +553,14 @@ impl State {
     /// of stale metadata.
     pub fn update_listings(&mut self) {
         for (_package_hash, listing) in self.listed_packages.iter_mut() {
-            if let Ok(metadata) =
-                utils::fetch_metadata_from_url(&listing.metadata_url, &listing.metadata_hash, 5)
-            {
-                listing.metadata = Some(metadata);
+            if listing.metadata.is_none() {
+                if let Ok(metadata) =
+                    utils::fetch_metadata_from_url(&listing.metadata_url, &listing.metadata_hash, 5)
+                {
+                    listing.metadata = Some(metadata);
+                }
             }
         }
-        // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+        kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
     }
 }

@@ -21,8 +21,8 @@ use ft_worker_lib::{
     spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
 };
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, get_state, http, println, vfs, Address, LazyLoadBlob,
-    Message, NodeId, PackageId, Request, Response,
+    await_message, call_init, eth, get_blob, http, println, vfs, Address, LazyLoadBlob, Message,
+    NodeId, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{AppStoreLogError, PackageState, RequestedPackage, State};
@@ -193,10 +193,6 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
             package_id,
             desired_version_hash,
         }) => (package_id, desired_version_hash),
-        RemoteRequest::DownloadApi(RemoteDownloadRequest {
-            package_id,
-            desired_version_hash,
-        }) => (package_id, desired_version_hash),
     };
 
     let package_id = package_id.to_owned().to_process_lib();
@@ -216,11 +212,6 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
         RemoteRequest::Download(_) => {
             // the file name of the zipped app
             format!("{}.zip", package_id)
-        }
-        RemoteRequest::DownloadApi(_) => {
-            // the file name of the zipped api
-            // TODO: actual version
-            format!("{}-api-v0.zip", package_id)
         }
     };
 
@@ -289,7 +280,6 @@ fn handle_local_request(
                 mirror,
                 auto_update,
                 desired_version_hash,
-                false,
             )),
             None,
         ),
@@ -404,7 +394,6 @@ pub fn start_download(
     mirror: bool,
     auto_update: bool,
     desired_version_hash: Option<String>,
-    api: bool,
 ) -> DownloadResponse {
     let download_request = RemoteDownloadRequest {
         package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id.clone()),
@@ -412,13 +401,7 @@ pub fn start_download(
     };
     if let Ok(Ok(Message::Response { body, .. })) =
         Request::to((from.as_str(), state.our.process.clone()))
-            .body(
-                serde_json::to_vec(&match api {
-                    true => RemoteRequest::DownloadApi(download_request),
-                    false => RemoteRequest::Download(download_request),
-                })
-                .unwrap(),
-            )
+            .body(serde_json::to_vec(&RemoteRequest::Download(download_request)).unwrap())
             .send_and_await_response(VFS_TIMEOUT)
     {
         if let Ok(Resp::RemoteResponse(RemoteResponse::Approved)) =
@@ -430,10 +413,7 @@ pub fn start_download(
                 auto_update,
                 desired_version_hash,
             };
-            match api {
-                false => state.requested_packages.insert(package_id, requested),
-                true => state.requested_apis.insert(package_id, requested),
-            };
+            state.requested_packages.insert(package_id, requested);
             return DownloadResponse::Started;
         }
     }
@@ -446,64 +426,11 @@ fn handle_receive_download(state: &mut State, package_name: &str) -> anyhow::Res
         .trim_start_matches("/")
         .trim_end_matches(".zip");
     let Ok(package_id) = package_name.parse::<PackageId>() else {
-        let package_name_split = package_name.split('-').collect::<Vec<_>>();
-        let [package_name, version] = package_name_split.as_slice() else {
-            return Err(anyhow::anyhow!(
-                "bad api package filename from download (failed to split): {package_name}"
-            ));
-        };
-        if version.chars().next() != Some('v') {
-            return Err(anyhow::anyhow!(
-                "bad package filename from download (unexpected version): {package_name}"
-            ));
-        }
-        let Ok(package_id) = package_name.parse::<PackageId>() else {
-            return Err(anyhow::anyhow!(
-                "bad package filename from download (bad PackageId): {package_name}"
-            ));
-        };
-        return handle_receive_download_api(state, package_id, version);
+        return Err(anyhow::anyhow!(
+            "bad package ID from download: {package_name}"
+        ));
     };
     handle_receive_download_package(state, &package_id)
-}
-
-fn handle_receive_download_api(
-    state: &mut State,
-    package_id: PackageId,
-    version: &str,
-) -> anyhow::Result<()> {
-    println!("successfully received api {}", package_id.package());
-    // only save the package if we actually requested it
-    let Some(requested_package) = state.requested_apis.remove(&package_id) else {
-        return Err(anyhow::anyhow!("received unrequested api--rejecting!"));
-    };
-    let Some(blob) = get_blob() else {
-        return Err(anyhow::anyhow!("received download but found no blob"));
-    };
-    // check the version hash for this download against requested!!
-    // for now we can reject if it's not latest.
-    let download_hash = utils::generate_version_hash(&blob.bytes);
-    let mut verified = false;
-    // TODO: require api_hash
-    if let Some(hash) = requested_package.desired_version_hash {
-        if download_hash != hash {
-            if hash.is_empty() {
-                println!(
-                    "\x1b[33mwarning: downloaded api has no version hashes--cannot verify code integrity, proceeding anyways\x1b[0m"
-                );
-            } else {
-                return Err(anyhow::anyhow!(
-                    "downloaded api is not desired version--rejecting download! download hash: {download_hash}, desired hash: {hash}"
-                ));
-            }
-        } else {
-            verified = true;
-        }
-    };
-
-    state.add_downloaded_api(&package_id, Some(blob.bytes))?;
-
-    Ok(())
 }
 
 fn handle_receive_download_package(

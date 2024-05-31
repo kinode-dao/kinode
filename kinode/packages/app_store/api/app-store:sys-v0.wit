@@ -38,7 +38,6 @@ interface main {
 
     variant remote-request {
         download(remote-download-request),
-        download-api(remote-download-request),
     }
 
     record remote-download-request {
