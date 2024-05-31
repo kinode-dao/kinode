@@ -433,16 +433,6 @@ async fn handle_request(
                     error: "blob needs to exist for AddZip".into(),
                 });
             };
-            let Some(mime) = blob.mime else {
-                return Err(VfsError::BadRequest {
-                    error: "blob mime type needs to exist for AddZip".into(),
-                });
-            };
-            if "application/zip" != mime {
-                return Err(VfsError::BadRequest {
-                    error: "blob mime type needs to be application/zip for AddZip".into(),
-                });
-            }
             let file = std::io::Cursor::new(&blob.bytes);
             let mut zip = match zip::ZipArchive::new(file) {
                 Ok(f) => f,
@@ -453,6 +443,8 @@ async fn handle_request(
                     })
                 }
             };
+
+            fs::create_dir_all(path.clone()).await?;
 
             // loop through items in archive; recursively add to root
             for i in 0..zip.len() {
