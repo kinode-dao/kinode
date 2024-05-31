@@ -73,10 +73,9 @@ pub async fn register(
                 ("tcp".to_string(), tcp_port),
             ]),
             routers: vec![
-                // "default-router-1.os".into(),
-                // "default-router-2.os".into(),
-                // "default-router-3.os".into(),
-                "default-router-7.os".into(),
+                "default-router-1.os".into(),
+                "default-router-2.os".into(),
+                "default-router-3.os".into(),
             ],
         },
     });
