@@ -46,14 +46,21 @@ interface main {
     }
 
     variant remote-response {
-        approved,
-        denied(reason),
+        download-approved,
+        download-denied(reason),
     }
 
-    enum reason {
+    variant reason {
         no-package,
         not-mirroring,
-        hash-mismatch,
+        hash-mismatch(hash-mismatch),
+        file-not-found,
+        worker-spawn-failed
+    }
+
+    record hash-mismatch {
+        requested: string,
+        have: string,
     }
 
     variant local-request {

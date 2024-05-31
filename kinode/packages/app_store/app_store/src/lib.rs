@@ -13,7 +13,7 @@
 //! - set to automatically update if a new version is available
 use crate::kinode::process::main::{
     ApisResponse, AutoUpdateResponse, DownloadRequest, DownloadResponse, GetApiResponse,
-    InstallResponse, LocalRequest, LocalResponse, MirrorResponse, NewPackageRequest,
+    HashMismatch, InstallResponse, LocalRequest, LocalResponse, MirrorResponse, NewPackageRequest,
     NewPackageResponse, Reason, RebuildIndexResponse, RemoteDownloadRequest, RemoteRequest,
     RemoteResponse, UninstallResponse,
 };
@@ -197,14 +197,19 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
 
     let package_id = package_id.to_owned().to_process_lib();
     let Some(package_state) = state.get_downloaded_package(&package_id) else {
-        return Resp::RemoteResponse(RemoteResponse::Denied(Reason::NoPackage));
+        return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NoPackage));
     };
     if !package_state.mirroring {
-        return Resp::RemoteResponse(RemoteResponse::Denied(Reason::NotMirroring));
+        return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NotMirroring));
     }
-    if let Some(hash) = desired_version_hash {
-        if package_state.our_version != *hash {
-            return Resp::RemoteResponse(RemoteResponse::Denied(Reason::HashMismatch));
+    if let Some(hash) = desired_version_hash.clone() {
+        if package_state.our_version != hash {
+            return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::HashMismatch(
+                HashMismatch {
+                    requested: hash,
+                    have: package_state.our_version,
+                },
+            )));
         }
     }
 
@@ -226,12 +231,12 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
         )
         .send_and_await_response(VFS_TIMEOUT)
     else {
-        return Resp::RemoteResponse(RemoteResponse::Denied(Reason::NoPackage));
+        return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::FileNotFound));
     };
     // transfer will *inherit* the blob bytes we receive from VFS
     match spawn_transfer(&state.our, &file_name, None, APP_SHARE_TIMEOUT, &source) {
-        Ok(()) => Resp::RemoteResponse(RemoteResponse::Approved),
-        Err(_e) => Resp::RemoteResponse(RemoteResponse::Denied(Reason::NoPackage)),
+        Ok(()) => Resp::RemoteResponse(RemoteResponse::DownloadApproved),
+        Err(_e) => Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::WorkerSpawnFailed)),
     }
 }
 
@@ -404,7 +409,7 @@ pub fn start_download(
             .body(serde_json::to_vec(&RemoteRequest::Download(download_request)).unwrap())
             .send_and_await_response(VFS_TIMEOUT)
     {
-        if let Ok(Resp::RemoteResponse(RemoteResponse::Approved)) =
+        if let Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) =
             serde_json::from_slice::<Resp>(&body)
         {
             let requested = RequestedPackage {
@@ -460,12 +465,12 @@ fn handle_receive_download_package(
             }
         }
         None => {
-            // check against `metadata.properties.current_version`
             let Some(package_listing) = state.get_listing(package_id) else {
                 return Err(anyhow::anyhow!(
                     "downloaded package cannot be found in manager--rejecting download!"
                 ));
             };
+            // check against `metadata.properties.current_version`
             let Some(metadata) = &package_listing.metadata else {
                 return Err(anyhow::anyhow!(
                     "downloaded package has no metadata to check validity against!"
