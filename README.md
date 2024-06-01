@@ -1,6 +1,11 @@
-<img width="551" alt="Screenshot 2024-05-08 at 2 38 11 PM" src="https://github.com/kinode-dao/kinode/assets/93405247/a833ba04-f07e-44e6-b66e-7c0c1e3794a3">
+<p align="center">
+    <img width="551" alt="Screenshot 2024-05-08 at 2 38 11 PM" src="https://github.com/kinode-dao/kinode/assets/93405247/a833ba04-f07e-44e6-b66e-7c0c1e3794a3">
+    <br />
+    <img src="https://img.shields.io/twitter/follow/kinodeOS">
+</p>
 
-Kinode is a decentralized OS, built for crypto.
+
+Kinode is a general-purpose sovereign cloud computer, built for crypto.
 
 This repo contains the core runtime and processes.
 Most developers need not build the runtime.
@@ -10,6 +15,7 @@ If you want to get on the network, you can download a binary, rather than buildi
 Then follow the instructions to [install it](https://book.kinode.org/install.html) and [join the network](https://book.kinode.org/login.html).
 
 If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a line in `#dev-support`.
+
 
 ## Setup
 
