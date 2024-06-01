@@ -1,6 +1,6 @@
-# Kinode
+<img width="551" alt="Screenshot 2024-05-08 at 2 38 11 PM" src="https://github.com/kinode-dao/kinode/assets/93405247/a833ba04-f07e-44e6-b66e-7c0c1e3794a3">
 
-Kinode OS is a decentralized OS, built for crypto.
+Kinode is a decentralized OS, built for crypto.
 
 This repo contains the core runtime and processes.
 Most developers need not build the runtime.
@@ -9,7 +9,7 @@ Instead, check out the [Kinode book](https://book.kinode.org/), and in particula
 If you want to get on the network, you can download a binary, rather than building it yourself, from [the releases page](https://github.com/kinode-dao/kinode/tags).
 Then follow the instructions to [install it](https://book.kinode.org/install.html) and [join the network](https://book.kinode.org/login.html).
 
-If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a question!
+If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a line in `#dev-support`.
 
 ## Setup
 
@@ -61,9 +61,8 @@ You may also add a RPC provider or otherwise modify your configuration by sendin
 ```
 m our@eth:distro:sys '{"AddProvider": {"chain_id": <SOME_CHAIN_ID>, "trusted": true, "provider": {"RpcUrl": "<WS_RPC_URL>"}}}'
 ```
-We will soon add a settings GUI for this.
 
-You can also do the same thing by using the `--rpc` boot flag with an Optimism WebSockets RPC URL.
+You can also do the same thing by using the `--rpc` boot flag with an Optimism WebSockets RPC URL, or going to the Settings app once booted into a node.
 
 ## Distro and Runtime processes
 
