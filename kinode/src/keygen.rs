@@ -112,21 +112,25 @@ pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'stati
     })
 }
 
-pub fn generate_jwt(jwt_secret_bytes: &[u8], username: &str) -> Option<String> {
-    let jwt_secret: Hmac<Sha256> = match Hmac::new_from_slice(jwt_secret_bytes) {
-        Ok(secret) => secret,
-        Err(_) => return None,
+pub fn generate_jwt(
+    jwt_secret_bytes: &[u8],
+    username: &str,
+    subdomain: &Option<String>,
+) -> Option<String> {
+    let jwt_secret: Hmac<Sha256> = Hmac::new_from_slice(jwt_secret_bytes).ok()?;
+
+    let subdomain = match subdomain.clone().unwrap_or_default().as_str() {
+        "" => None,
+        subdomain => Some(subdomain.to_string()),
     };
 
     let claims = crate::http::server_types::JwtClaims {
         username: username.to_string(),
+        subdomain,
         expiration: 0,
     };
 
-    match claims.sign_with_key(&jwt_secret) {
-        Ok(token) => Some(token),
-        Err(_) => None,
-    }
+    claims.sign_with_key(&jwt_secret).ok()
 }
 
 #[cfg(not(feature = "simulation-mode"))]

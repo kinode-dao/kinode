@@ -250,7 +250,7 @@ async fn serve(
     let _ = print_tx
         .send(Printout {
             verbosity: 0,
-            content: format!("http_server: running on port {}", our_port),
+            content: format!("http_server: running on port {our_port}"),
         })
         .await;
 
@@ -331,16 +331,21 @@ async fn login_handler(
     #[cfg(feature = "simulation-mode")]
     let info = LoginInfo {
         password_hash: "secret".to_string(),
+        subdomain: info.subdomain,
     };
 
     match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
         Ok(keyfile) => {
-            let token = match keygen::generate_jwt(&keyfile.jwt_secret_bytes, our.as_ref()) {
+            let token = match keygen::generate_jwt(
+                &keyfile.jwt_secret_bytes,
+                our.as_ref(),
+                &info.subdomain,
+            ) {
                 Some(token) => token,
                 None => {
                     return Ok(warp::reply::with_status(
                         warp::reply::json(&"Failed to generate JWT"),
-                        StatusCode::SERVICE_UNAVAILABLE,
+                        StatusCode::INTERNAL_SERVER_ERROR,
                     )
                     .into_response())
                 }
@@ -352,20 +357,25 @@ async fn login_handler(
             )
             .into_response();
 
-            match HeaderValue::from_str(&format!("kinode-auth_{}={};", our.as_ref(), &token)) {
+            let cookie = match info.subdomain.unwrap_or_default().as_str() {
+                "" => format!("kinode-auth_{our}={token};"),
+                subdomain => format!("kinode-auth_{our}@{subdomain}={token};"),
+            };
+
+            match HeaderValue::from_str(&cookie) {
                 Ok(v) => {
                     response.headers_mut().append("set-cookie", v);
                     Ok(response)
                 }
-                Err(_) => Ok(warp::reply::with_status(
-                    warp::reply::json(&"Failed to generate Auth JWT"),
+                Err(e) => Ok(warp::reply::with_status(
+                    warp::reply::json(&format!("Failed to generate Auth JWT: {e}")),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
                 .into_response()),
             }
         }
-        Err(_) => Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to decode keyfile"),
+        Err(e) => Ok(warp::reply::with_status(
+            warp::reply::json(&format!("Failed to decode keyfile: {e}")),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response()),
@@ -405,33 +415,36 @@ async fn ws_handler(
         return Err(warp::reject::not_found());
     };
 
-    if let Some(ref subdomain) = bound_path.secure_subdomain {
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 2,
-                content: format!(
-                    "http_server: ws request for {original_path} bound by subdomain {subdomain}"
-                ),
-            })
-            .await;
-        // assert that host matches what this app wants it to be
-        if host.is_none() {
-            return Err(warp::reject::not_found());
-        }
-        let host = host.as_ref().unwrap();
-        // parse out subdomain from host (there can only be one)
-        let request_subdomain = host.host().split('.').next().unwrap_or("");
-        if request_subdomain != subdomain {
-            return Err(warp::reject::not_found());
-        }
-    }
-
     if bound_path.authenticated {
         let Some(auth_token) = serialized_headers.get("cookie") else {
             return Err(warp::reject::not_found());
         };
-        if !auth_cookie_valid(&our, auth_token, &jwt_secret_bytes) {
-            return Err(warp::reject::not_found());
+
+        if let Some(ref subdomain) = bound_path.secure_subdomain {
+            let _ = print_tx
+                .send(Printout {
+                    verbosity: 2,
+                    content: format!(
+                        "http_server: ws request for {original_path} bound by subdomain {subdomain}"
+                    ),
+                })
+                .await;
+            // assert that host matches what this app wants it to be
+            let host = match host {
+                Some(host) => host,
+                None => return Err(warp::reject::not_found()),
+            };
+            // parse out subdomain from host (there can only be one)
+            let request_subdomain = host.host().split('.').next().unwrap_or("");
+            if request_subdomain != subdomain
+                || !auth_cookie_valid(&our, Some(&app), auth_token, &jwt_secret_bytes)
+            {
+                return Err(warp::reject::not_found());
+            }
+        } else {
+            if !auth_cookie_valid(&our, None, auth_token, &jwt_secret_bytes) {
+                return Err(warp::reject::not_found());
+            }
         }
     }
 
@@ -512,66 +525,71 @@ async fn http_handler(
         return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
     };
 
-    if bound_path.authenticated
-        && !auth_cookie_valid(
-            &our,
-            serialized_headers.get("cookie").unwrap_or(&"".to_string()),
-            &jwt_secret_bytes,
-        )
-    {
-        // redirect to login page so they can get an auth token
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 2,
-                content: format!(
-                    "http_server: redirecting request from {socket_addr:?} to login page"
-                ),
-            })
-            .await;
-        return Ok(warp::http::Response::builder()
-            .status(StatusCode::OK)
-            .body(login_html.to_string())
-            .into_response());
-    }
-
     let host = host.unwrap_or(warp::host::Authority::from_static("localhost"));
 
-    if let Some(ref subdomain) = bound_path.secure_subdomain {
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 2,
-                content: format!(
-                    "http_server: request for {original_path} bound by subdomain {subdomain}"
-                ),
-            })
-            .await;
-        let request_subdomain = host.host().split('.').next().unwrap_or("");
-        // assert that host matches what this app wants it to be
-        if request_subdomain.is_empty() {
-            return Ok(warp::reply::with_status(
-                "attempted to access secure subdomain without host",
-                StatusCode::UNAUTHORIZED,
-            )
-            .into_response());
-        }
-        if request_subdomain != subdomain {
-            return Ok(warp::http::Response::builder()
-                .status(StatusCode::TEMPORARY_REDIRECT)
-                .header(
-                    "Location",
-                    format!(
-                        "{}://{}.{}{}",
-                        match headers.get("X-Forwarded-Proto") {
-                            Some(proto) => proto.to_str().unwrap_or("http"),
-                            None => "http",
-                        },
-                        subdomain,
-                        host,
-                        original_path,
+    if bound_path.authenticated {
+        if let Some(ref subdomain) = bound_path.secure_subdomain {
+            let _ = print_tx
+                .send(Printout {
+                    verbosity: 2,
+                    content: format!(
+                        "http_server: request for {original_path} bound by subdomain {subdomain}"
                     ),
+                })
+                .await;
+            let request_subdomain = host.host().split('.').next().unwrap_or("");
+            // assert that host matches what this app wants it to be
+            if request_subdomain.is_empty() {
+                return Ok(warp::reply::with_status(
+                    "attempted to access secure subdomain without host",
+                    StatusCode::UNAUTHORIZED,
                 )
-                .body(vec![])
                 .into_response());
+            }
+            if request_subdomain != subdomain {
+                return Ok(warp::http::Response::builder()
+                    .status(StatusCode::TEMPORARY_REDIRECT)
+                    .header(
+                        "Location",
+                        format!(
+                            "{}://{}.{}{}",
+                            match headers.get("X-Forwarded-Proto") {
+                                Some(proto) => proto.to_str().unwrap_or("http"),
+                                None => "http",
+                            },
+                            subdomain,
+                            host,
+                            original_path,
+                        ),
+                    )
+                    .body(vec![])
+                    .into_response());
+            }
+            if !auth_cookie_valid(
+                &our,
+                Some(&app),
+                serialized_headers.get("cookie").unwrap_or(&"".to_string()),
+                &jwt_secret_bytes,
+            ) {
+                // redirect to login page so they can get an auth token
+                return Ok(warp::http::Response::builder()
+                    .status(StatusCode::OK)
+                    .body(login_html.to_string())
+                    .into_response());
+            }
+        } else {
+            if !auth_cookie_valid(
+                &our,
+                None,
+                serialized_headers.get("cookie").unwrap_or(&"".to_string()),
+                &jwt_secret_bytes,
+            ) {
+                // redirect to login page so they can get an auth token
+                return Ok(warp::http::Response::builder()
+                    .status(StatusCode::OK)
+                    .body(login_html.to_string())
+                    .into_response());
+            }
         }
     }
 

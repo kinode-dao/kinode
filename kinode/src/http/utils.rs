@@ -35,16 +35,24 @@ pub fn _verify_auth_token(auth_token: &str, jwt_secret: &[u8]) -> Result<String,
     }
 }
 
-pub fn auth_cookie_valid(our_node: &str, cookie: &str, jwt_secret: &[u8]) -> bool {
-    let cookie_parts: Vec<&str> = cookie.split("; ").collect();
-    let mut auth_token = None;
+pub fn auth_cookie_valid(
+    our_node: &str,
+    subdomain: Option<&ProcessId>,
+    cookie: &str,
+    jwt_secret: &[u8],
+) -> bool {
+    let cookie: Vec<&str> = cookie.split("; ").collect();
 
-    for cookie_part in cookie_parts {
-        let cookie_part_parts: Vec<&str> = cookie_part.split('=').collect();
-        if cookie_part_parts.len() == 2
-            && cookie_part_parts[0] == format!("kinode-auth_{}", our_node)
-        {
-            auth_token = Some(cookie_part_parts[1].to_string());
+    let token_label = match subdomain {
+        None => format!("kinode-auth_{our_node}"),
+        Some(subdomain) => format!("kinode-auth_{our_node}@{subdomain}"),
+    };
+
+    let mut auth_token = None;
+    for entry in cookie {
+        let cookie_parts: Vec<&str> = entry.split('=').collect();
+        if cookie_parts.len() == 2 && cookie_parts[0] == token_label {
+            auth_token = Some(cookie_parts[1].to_string());
             break;
         }
     }
@@ -61,7 +69,7 @@ pub fn auth_cookie_valid(our_node: &str, cookie: &str, jwt_secret: &[u8]) -> boo
     let claims: Result<JwtClaims, _> = auth_token.verify_with_key(&secret);
 
     match claims {
-        Ok(data) => data.username == our_node,
+        Ok(data) => data.username == our_node && data.subdomain == subdomain.map(|s| s.to_string()),
         Err(_) => false,
     }
 }
