@@ -93,7 +93,7 @@ impl process::ProcessState {
         }
     }
 
-    /// Convert a message from the main event loop into a result for the process to receive.
+    /// Forward the message from the main event loop to the process in the form of a result.
     /// If the message is a response or error, get context if we have one.
     fn kernel_message_to_process_receive(
         &mut self,

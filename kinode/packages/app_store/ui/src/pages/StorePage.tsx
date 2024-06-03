@@ -19,20 +19,24 @@ export default function StorePage() {
   const { listedApps, getListedApps, rebuildIndex } = useAppsStore();
 
   const [resultsSort, setResultsSort] = useState<string>("Recently published");
-
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [displayedApps, setDisplayedApps] = useState<AppInfo[]>(listedApps);
   const [page, setPage] = useState(1);
   const [tags, setTags] = useState<string[]>([])
+  const [launchPaths, setLaunchPaths] = useState<{ [package_name: string]: string }>({})
 
   const pages = useMemo(
     () =>
       Array.from(
-        { length: Math.ceil(displayedApps.length / 10) },
+        {
+          length: Math.ceil(listedApps.length / 10)
+        },
         (_, index) => index + 1
       ),
-    [displayedApps]
+    [listedApps]
   );
+
+  const featuredPackageNames = ['dartfrog', 'kcal', 'memedeck', 'filter'];
 
   useEffect(() => {
     const start = (page - 1) * 10;
@@ -104,6 +108,23 @@ export default function StorePage() {
 
   const isMobile = isMobileCheck()
 
+  useEffect(() => {
+    fetch('/apps').then(data => data.json())
+      .then((data: Array<{ package_name: string, path: string }>) => {
+        if (Array.isArray(data)) {
+          listedApps.forEach(app => {
+            const homepageAppData = data.find(otherApp => app.package === otherApp.package_name)
+            if (homepageAppData) {
+              setLaunchPaths({
+                ...launchPaths,
+                [app.package]: homepageAppData.path
+              })
+            }
+          })
+        }
+      })
+  }, [listedApps])
+
   return (
     <div className={classNames("flex flex-col w-full max-h-screen p-2", {
       'gap-4 max-w-screen': isMobile,
@@ -159,13 +180,14 @@ export default function StorePage() {
         <div className={classNames("flex gap-2", {
           'flex-col': isMobile
         })}>
-          {displayedApps.filter(app => {
-            return ['kcal', 'command_center', 'memedeck', 'filter'].indexOf(app.package) !== -1
+          {listedApps.filter(app => {
+            return featuredPackageNames.indexOf(app.package) !== -1
           }).map((app) => (
             <AppEntry
               key={appId(app) + (app.state?.our_version || "")}
               size={'medium'}
               app={app}
+              launchPath={launchPaths[app.package]}
               className={classNames("grow", {
                 'w-1/4': !isMobile,
                 'w-full': isMobile
@@ -179,34 +201,38 @@ export default function StorePage() {
         'gap-2': isMobile,
         'gap-4': !isMobile,
       })}>
-        {displayedApps.map(app => <AppEntry
-          key={appId(app) + (app.state?.our_version || "")}
-          size='large'
-          app={app}
-          className="self-stretch"
-          overrideImageSize="medium"
-        />)}
+        {displayedApps
+          .filter(app => searchQuery ? true : featuredPackageNames.indexOf(app.package) === -1)
+          .map(app => <AppEntry
+            key={appId(app) + (app.state?.our_version || "")}
+            size='large'
+            app={app}
+            className="self-stretch"
+            overrideImageSize="medium"
+          />)}
       </div>
-      {pages.length > 1 && <div className="flex self-center">
-        {page !== pages[0] && (
-          <button className="icon" onClick={() => setPage(page - 1)}>
-            <FaChevronLeft />
-          </button>
-        )}
+      {pages.length > 1 && <div className="flex flex-wrap self-center gap-2">
+        <button
+          className="icon"
+          onClick={() => page !== pages[0] && setPage(page - 1)}
+        >
+          <FaChevronLeft />
+        </button>
         {pages.map((p) => (
           <button
             key={`page-${p}`}
-            className={classNames('my-1 mx-2 clear', { "font-bold": p === page })}
+            className={classNames('icon', { "!bg-white/10": p === page })}
             onClick={() => setPage(p)}
           >
             {p}
           </button>
         ))}
-        {page !== pages[pages.length - 1] && (
-          <button className="icon" onClick={() => setPage(page + 1)}>
-            <FaChevronRight />
-          </button>
-        )}
+        <button
+          className="icon"
+          onClick={() => page !== pages[pages.length - 1] && setPage(page + 1)}
+        >
+          <FaChevronRight />
+        </button>
       </div>}
     </div>
   );
