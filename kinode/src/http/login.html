@@ -1168,7 +1168,7 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
         </svg>
       </div>
       <form id="signup-form" class="flex flex-col">
-        <h3 class="flex flex-col ml-2 text-lg"> ${node} </h3>
+        <h3 id="node-and-domain" class="flex flex-col ml-2 text-lg"></h3>
         <div class="flex mt-2 mb-2"> Enter Password </div>
         <input autofocus type="password" id="password" required="" minlength="6" name="password" placeholder="Password"
           oninput="document.getElementById('password-err').style.display = 'none';" value="" class="self-stretch mb-2">
@@ -1193,6 +1193,10 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
       document.getElementById("fake-or-not").innerHTML = "To change your networking info, please restart your node.";
     }
 
+    const host = window.location.host;
+    const firstSubdomain = host.split('.')[0];
+    document.getElementById("node-and-domain").innerText = "${node}: " + firstSubdomain;
+
     async function login(password) {
       document.getElementById("signup-form").style.display = "none";
       document.getElementById("loading").style.display = "flex";
@@ -1207,7 +1211,8 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
       });
 
       if (result.status == 200) {
-        window.location.href = "/";
+        // reload page
+        window.location.reload();
       } else {
         document.getElementById("signup-form").style.display = "flex";
         document.getElementById("loading").style.display = "none";

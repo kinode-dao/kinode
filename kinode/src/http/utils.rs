@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use tokio::net::TcpListener;
 use warp::http::{header::HeaderName, header::HeaderValue, HeaderMap};
 
-use lib::types::http_server::*;
+use lib::{core::ProcessId, types::http_server::*};
 
 #[derive(Serialize, Deserialize)]
 pub struct RpcMessage {
@@ -66,11 +66,34 @@ pub fn auth_cookie_valid(our_node: &str, cookie: &str, jwt_secret: &[u8]) -> boo
     }
 }
 
-pub fn normalize_path(path: &str) -> String {
+pub fn normalize_path(path: &str) -> &str {
     match path.strip_suffix('/') {
-        Some(new) => new.to_string(),
-        None => path.to_string(),
+        Some(new) => new,
+        None => path,
     }
+}
+
+pub fn format_path_with_process(process: &ProcessId, path: &str) -> String {
+    let process = process.to_string();
+    if process != "homepage:homepage:sys" {
+        if path.starts_with('/') {
+            format!("/{}{}", process, normalize_path(path))
+        } else {
+            format!("/{}/{}", process, normalize_path(path))
+        }
+    } else {
+        normalize_path(path).to_string()
+    }
+}
+
+/// first strip the process name leaving just package ID, then
+/// convert all non-alphanumeric characters in the process ID to `-`
+pub fn generate_secure_subdomain(process: &ProcessId) -> String {
+    [process.package(), process.publisher()]
+        .join("-")
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
 }
 
 pub fn serialize_headers(headers: &HeaderMap) -> HashMap<String, String> {
