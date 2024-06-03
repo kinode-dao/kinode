@@ -19,11 +19,11 @@ export default function StorePage() {
   const { listedApps, getListedApps, rebuildIndex } = useAppsStore();
 
   const [resultsSort, setResultsSort] = useState<string>("Recently published");
-
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [displayedApps, setDisplayedApps] = useState<AppInfo[]>(listedApps);
   const [page, setPage] = useState(1);
   const [tags, setTags] = useState<string[]>([])
+  const [launchPaths, setLaunchPaths] = useState<{ [package_name: string]: string }>({})
 
   const pages = useMemo(
     () =>
@@ -108,6 +108,23 @@ export default function StorePage() {
 
   const isMobile = isMobileCheck()
 
+  useEffect(() => {
+    fetch('/apps').then(data => data.json())
+      .then((data: Array<{ package_name: string, path: string }>) => {
+        if (Array.isArray(data)) {
+          listedApps.forEach(app => {
+            const homepageAppData = data.find(otherApp => app.package === otherApp.package_name)
+            if (homepageAppData) {
+              setLaunchPaths({
+                ...launchPaths,
+                [app.package]: homepageAppData.path
+              })
+            }
+          })
+        }
+      })
+  }, [listedApps])
+
   return (
     <div className={classNames("flex flex-col w-full max-h-screen p-2", {
       'gap-4 max-w-screen': isMobile,
@@ -170,6 +187,7 @@ export default function StorePage() {
               key={appId(app) + (app.state?.our_version || "")}
               size={'medium'}
               app={app}
+              launchPath={launchPaths[app.package]}
               className={classNames("grow", {
                 'w-1/4': !isMobile,
                 'w-full': isMobile

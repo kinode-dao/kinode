@@ -15,9 +15,10 @@ interface AppEntryProps extends React.HTMLAttributes<HTMLDivElement> {
   size?: "small" | "medium" | "large";
   overrideImageSize?: "small" | "medium" | "large";
   showMoreActions?: boolean;
+  launchPath?: string;
 }
 
-export default function AppEntry({ app, size = "medium", overrideImageSize, showMoreActions, ...props }: AppEntryProps) {
+export default function AppEntry({ app, size = "medium", overrideImageSize, showMoreActions, launchPath, ...props }: AppEntryProps) {
   const isMobile = isMobileCheck()
   const navigate = useNavigate()
 
@@ -45,6 +46,7 @@ export default function AppEntry({ app, size = "medium", overrideImageSize, show
       })}>
         <ActionButton
           app={app}
+          launchPath={launchPath}
           isIcon={!showMoreActions && size !== 'large'}
           className={classNames({
             'bg-orange text-lg': size === 'large',
