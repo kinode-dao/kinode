@@ -37,8 +37,9 @@ rustup target add wasm32-wasi
 rustup target add wasm32-wasi --toolchain nightly
 cargo install cargo-wasi
 
-# Build the runtime, along with a number of "distro" WASM modules
-# OPTIONAL: --release flag
+# Build the runtime, along with a number of "distro" WASM modules.
+# The compiled binary will be at `kinode/target/debug/kinode`
+# OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`)
 
 cargo +nightly build -p kinode
 ```
