@@ -94,7 +94,7 @@ fn init(our: Address) {
 
     println!("indexing on contract address {}", CONTRACT_ADDRESS);
 
-    // create new provider for sepolia with request-timeout of 60s
+    // create new provider with request-timeout of 60s
     // can change, log requests can take quite a long time.
     let eth_provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);
 
@@ -121,45 +121,39 @@ fn init(our: Address) {
 /// of the message is allowed to send that kind of message to us.
 /// finally, fire a response if expected from a request.
 fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
-    match message {
-        Message::Request {
-            source,
-            expects_response,
-            body,
-            ..
-        } => match serde_json::from_slice::<Req>(&body)? {
+    if message.is_request() {
+        match serde_json::from_slice::<Req>(message.body())? {
             Req::LocalRequest(local_request) => {
                 if !message.is_local(&state.our) {
                     return Err(anyhow::anyhow!("local request from non-local node"));
                 }
                 let (body, blob) = handle_local_request(state, local_request);
-                if expects_response.is_some() {
-                    let response = Response::new().body(serde_json::to_vec(&body)?);
-                    if let Some(blob) = blob {
-                        response.blob(blob).send()?;
-                    } else {
-                        response.send()?;
-                    }
+                let response = Response::new().body(serde_json::to_vec(&body)?);
+                if let Some(blob) = blob {
+                    response.blob(blob).send()?;
+                } else {
+                    response.send()?;
                 }
             }
             Req::RemoteRequest(remote_request) => {
-                let resp = handle_remote_request(state, &source, remote_request);
-                if expects_response.is_some() {
-                    Response::new().body(serde_json::to_vec(&resp)?).send()?;
-                }
+                let resp = handle_remote_request(state, message.source(), remote_request);
+                Response::new().body(serde_json::to_vec(&resp)?).send()?;
             }
             Req::FTWorkerResult(FTWorkerResult::ReceiveSuccess(name)) => {
                 handle_receive_download(state, &name)?;
             }
             Req::FTWorkerCommand(_) => {
-                spawn_receive_transfer(&state.our, &body)?;
+                spawn_receive_transfer(&state.our, message.body())?;
             }
             Req::FTWorkerResult(r) => {
                 println!("got weird ft_worker result: {r:?}");
             }
             Req::Eth(eth_result) => {
-                if !message.is_local(&state.our) || source.process != "eth:distro:sys" {
-                    return Err(anyhow::anyhow!("eth sub event from weird addr: {source}"));
+                if !message.is_local(&state.our) || message.source().process != "eth:distro:sys" {
+                    return Err(anyhow::anyhow!(
+                        "eth sub event from weird addr: {}",
+                        message.source()
+                    ));
                 }
                 if let Ok(eth::EthSub { result, .. }) = eth_result {
                     handle_eth_sub_event(state, result)?;
@@ -170,18 +164,19 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                 }
             }
             Req::Http(incoming) => {
-                if !message.is_local(&state.our) || source.process != "http_server:distro:sys" {
+                if !message.is_local(&state.our)
+                    || message.source().process != "http_server:distro:sys"
+                {
                     return Err(anyhow::anyhow!("http_server from non-local node"));
                 }
                 if let http::HttpServerRequest::Http(req) = incoming {
                     http_api::handle_http_request(state, &req)?;
                 }
             }
-        },
-        Message::Response { body, context, .. } => {
-            // the only kind of response we care to handle here!
-            handle_ft_worker_result(body, context.as_ref().unwrap_or(&vec![]))?;
         }
+    } else {
+        // the only kind of response we care to handle here!
+        handle_ft_worker_result(message.body(), message.context().unwrap_or(&vec![]))?;
     }
     Ok(())
 }
@@ -567,7 +562,7 @@ fn handle_eth_sub_event(
     event: eth::SubscriptionResult,
 ) -> Result<(), AppStoreLogError> {
     let eth::SubscriptionResult::Log(log) = event else {
-        return Ok(());
+        return Err(AppStoreLogError::DecodeLogError);
     };
     state.ingest_contract_event(*log, true)
 }

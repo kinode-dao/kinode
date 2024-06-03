@@ -1,5 +1,5 @@
-use crate::utils;
 use crate::VFS_TIMEOUT;
+use crate::{utils, DownloadRequest, LocalRequest};
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
     eth, kernel_types as kt, net, println, vfs, Address, Message, NodeId, PackageId, Request,
@@ -319,8 +319,8 @@ impl State {
                         mirrored_from: None,
                         our_version,
                         installed: true,
-                        verified: true,      // implicity verified
-                        caps_approved: true, // since it's already installed this must be true
+                        verified: true,       // implicitly verified (TODO re-evaluate)
+                        caps_approved: false, // must re-approve if you want to do something
                         manifest_hash: Some(utils::generate_metadata_hash(&manifest_bytes)),
                         mirroring: false,
                         auto_update: false,
@@ -428,19 +428,6 @@ impl State {
                         });
                     }
                 };
-
-                // let api_hash = None; // TODO
-                // let api_download_request_result = start_download(
-                // state,
-                // PackageId::new(&package_name, &publisher_name),
-                // &publisher_name,
-                // api_hash,
-                // true,
-                // );
-                // match api_download_request_result {
-                // DownloadResponse::Failure => println!("failed to get API for {package_name}"),
-                // _ => {}
-                // }
             }
             AppMetadataUpdated::SIGNATURE_HASH => {
                 let upd = AppMetadataUpdated::decode_log_data(log.data(), false)
@@ -476,30 +463,27 @@ impl State {
                 // if we have this app installed, and we have auto_update set to true,
                 // we should try to download new version from the mirrored_from node
                 // and install it if successful.
-                // let package_id = PackageId::new(&current_listing.name, &current_listing.publisher);
-                // if let Some(package_state) = self.downloaded_packages.get(&package_id) {
-                //     if package_state.auto_update {
-                //         if let Some(mirrored_from) = &package_state.mirrored_from {
-                //             kinode_process_lib::print_to_terminal(
-                //                 1,
-                //                 &format!("auto-updating package {package_id} from {mirrored_from}"),
-                //             );
-                //             Request::to(&self.our)
-                //                 .body(serde_json::to_vec(&LocalRequest::Download(
-                //                     DownloadRequest {
-                //                         package_id: crate::kinode::process::main::PackageId::from_process_lib(
-                //                             package_id,
-                //                         ),
-                //                         download_from: mirrored_from.clone(),
-                //                         mirror: package_state.mirroring,
-                //                         auto_update: package_state.auto_update,
-                //                         desired_version_hash: None,
-                //                     },
-                //                 )).unwrap())
-                //                 .send().unwrap();
-                //         }
-                //     }
-                // }
+                let package_id = PackageId::new(&current_listing.name, &current_listing.publisher);
+                if let Some(package_state) = self.downloaded_packages.get(&package_id) {
+                    if package_state.auto_update {
+                        if let Some(mirrored_from) = &package_state.mirrored_from {
+                            println!("auto-updating package {package_id} from {mirrored_from}");
+                            Request::to(&self.our)
+                                .body(serde_json::to_vec(&LocalRequest::Download(
+                                    DownloadRequest {
+                                        package_id: crate::kinode::process::main::PackageId::from_process_lib(
+                                            package_id,
+                                        ),
+                                        download_from: mirrored_from.clone(),
+                                        mirror: package_state.mirroring,
+                                        auto_update: package_state.auto_update,
+                                        desired_version_hash: None,
+                                    },
+                                )).unwrap())
+                                .send().unwrap();
+                        }
+                    }
+                }
             }
             Transfer::SIGNATURE_HASH => {
                 let from = alloy_primitives::Address::from_word(log.topics()[1]);
