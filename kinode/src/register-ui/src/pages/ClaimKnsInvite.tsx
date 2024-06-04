@@ -9,6 +9,7 @@ import { ipToNumber } from "../utils/ipToNumber";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { KinodeTitle } from "../components/KinodeTitle";
 import { Tooltip } from "../components/Tooltip";
+import { getFetchUrl } from "../utils/fetch";
 
 const { useAccounts, useProvider } = hooks;
 
@@ -51,7 +52,7 @@ function ClaimOsInvite({
       if (invite !== "") {
         const url = process.env.REACT_APP_INVITE_GET + invite;
 
-        const response = await fetch(url, { method: "GET" });
+        const response = await fetch(getFetchUrl(url), { method: "GET", credentials: 'include' });
 
         if (response!.status === 200) {
           setInviteValidity("");
@@ -80,7 +81,7 @@ function ClaimOsInvite({
           routers
         }
       }
-    } = (await fetch("/generate-networking-info", { method: "POST" }).then(
+    } = (await fetch(getFetchUrl("/generate-networking-info"), { method: "POST", credentials: 'include' }).then(
       (res) => res.json()
     )) as NetworkingInfo;
 
@@ -106,9 +107,10 @@ function ClaimOsInvite({
     console.log("BUILDING", networking_key, ipAddress, ws_port, tcp_port, routers);
 
     try {
-      response = await fetch(process.env.REACT_APP_BUILD_USER_OP_POST!, {
+      response = await fetch(getFetchUrl(process.env.REACT_APP_BUILD_USER_OP_POST!), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: 'include',
         body: JSON.stringify({
           name: name + ".os",
           address: accounts![0],
@@ -143,9 +145,10 @@ function ClaimOsInvite({
     data.userOperation.signature = signature;
 
     try {
-      response = await fetch(process.env.REACT_APP_BROADCAST_USER_OP_POST!, {
+      response = await fetch(getFetchUrl(process.env.REACT_APP_BROADCAST_USER_OP_POST!), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: 'include',
         body: JSON.stringify({
           userOp: data.userOperation,
           code: invite,

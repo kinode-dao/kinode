@@ -13,6 +13,7 @@ import { KinodeTitle } from "../components/KinodeTitle";
 import { isMobileCheck } from "../utils/dimensions";
 import classNames from "classnames";
 import { generateNetworkingKeys, getNetworkName } from "../utils/chain";
+import { getFetchUrl } from "../utils/fetch";
 
 const { useProvider } = hooks;
 
@@ -51,7 +52,7 @@ function Login({
 
     (async () => {
       try {
-        const infoData = (await fetch("/info", { method: "GET" }).then((res) =>
+        const infoData = (await fetch(getFetchUrl("/info"), { method: "GET", credentials: 'include' }).then((res) =>
           res.json()
         )) as UnencryptedIdentity;
         setRouters(infoData.allowed_routers);
@@ -81,8 +82,9 @@ function Login({
           let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
 
           // Replace this with network key generation
-          const response = await fetch("/vet-keyfile", {
+          const response = await fetch(getFetchUrl("/vet-keyfile"), {
             method: "POST",
+            credentials: 'include',
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ password_hash: hashed_password, keyfile: "" }),
           });
@@ -119,9 +121,10 @@ function Login({
 
         // Login or confirm new keys
         const result = await fetch(
-          reset ? "confirm-change-network-keys" : "login",
+          getFetchUrl(reset ? "confirm-change-network-keys" : "login"),
           {
             method: "POST",
+            credentials: 'include',
             headers: { "Content-Type": "application/json" },
             body: reset
               ? JSON.stringify({ password_hash: hashed_password, direct })
@@ -139,7 +142,7 @@ function Login({
         }
 
         const interval = setInterval(async () => {
-          const res = await fetch("/");
+          const res = await fetch(getFetchUrl("/"), { credentials: 'include' });
           if (
             res.status < 300 &&
             Number(res.headers.get("content-length")) !== appSizeOnLoad

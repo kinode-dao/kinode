@@ -5,6 +5,7 @@ import Modal from "./Modal";
 import { getAppName } from "../utils/app";
 import Loader from "./Loader";
 import classNames from "classnames";
+import { FaU } from "react-icons/fa6";
 
 interface UpdateButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
@@ -55,10 +56,12 @@ export default function UpdateButton({ app, isIcon = false, ...props }: UpdateBu
       <button
         {...props}
         type="button"
-        className={classNames("text-sm self-start", props.className)}
+        className={classNames("text-sm self-start", props.className, {
+          'icon clear': isIcon
+        })}
         onClick={onClick}
       >
-        Update
+        {isIcon ? <FaU /> : 'Update'}
       </button>
       <Modal show={showModal} hide={() => setShowModal(false)}>
         {loading ? (

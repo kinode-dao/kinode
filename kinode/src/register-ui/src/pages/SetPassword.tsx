@@ -5,6 +5,7 @@ import { utils, providers } from "ethers";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import { Tooltip } from "../components/Tooltip";
 import { KinodeTitle } from "../components/KinodeTitle";
+import { getFetchUrl } from "../utils/fetch";
 
 type SetPasswordProps = {
   direct: boolean;
@@ -70,7 +71,7 @@ function SetPassword({
         let signature = await signer?.signMessage(utils.toUtf8Bytes(sig_data));
 
         try {
-          const result = await fetch("/boot", {
+          const result = await fetch(getFetchUrl("/boot"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
@@ -90,7 +91,7 @@ function SetPassword({
           downloadKeyfile(knsName, base64String);
 
           const interval = setInterval(async () => {
-            const res = await fetch("/");
+            const res = await fetch(getFetchUrl("/"), { credentials: 'include' });
 
             if (
               res.status < 300 &&

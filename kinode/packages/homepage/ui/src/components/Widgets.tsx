@@ -19,6 +19,7 @@ const Widgets = () => {
         package_name={package_name}
         widget={widget!}
         forceLarge={_appsWithWidgets.length === 1}
+        key={package_name}
       />)}
   </div>
 }
