@@ -1,7 +1,8 @@
 <p align="center">
-    <img width="551" alt="Screenshot 2024-05-08 at 2 38 11 PM" src="https://github.com/kinode-dao/kinode/assets/93405247/a833ba04-f07e-44e6-b66e-7c0c1e3794a3">
+    <img width="551" alt="Screenshot 2024-05-08 at 2 38 11 PM" src="https://github.com/kinode-dao/kinode/assets/93405247/24c7982b-9d76-419a-96dc-ec4a25dda562">
     <br />
     <img src="https://img.shields.io/twitter/follow/kinodeOS">
+
 </p>
 
 
