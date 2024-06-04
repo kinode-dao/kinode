@@ -22,6 +22,7 @@ export default function AppPage() {
   const navigate = useNavigate();
   const params = useParams();
   const [app, setApp] = useState<AppInfo | undefined>(undefined);
+  const [launchPath, setLaunchPath] = useState('');
 
   useEffect(() => {
     const myApp = myApps.local.find((a) => appId(a) === params.id);
@@ -91,6 +92,18 @@ export default function AppPage() {
     }
   ]
 
+  useEffect(() => {
+    fetch('/apps').then(data => data.json())
+      .then((data: Array<{ package_name: string, path: string }>) => {
+        if (Array.isArray(data)) {
+          const homepageAppData = data.find(otherApp => app?.package === otherApp.package_name)
+          if (homepageAppData) {
+            setLaunchPath(homepageAppData.path)
+          }
+        }
+      })
+  }, [app])
+
   return (
     <div className={classNames("flex flex-col w-full p-2",
       {
@@ -143,7 +156,12 @@ export default function AppPage() {
           <div className={classNames("flex-center gap-2", {
             'flex-col': isMobile,
           })}>
-            <ActionButton app={app} className={classNames("self-center bg-orange text-lg px-12")} permitMultiButton />
+            <ActionButton
+              app={app}
+              launchPath={launchPath}
+              className={classNames("self-center bg-orange text-lg px-12")}
+              permitMultiButton
+            />
           </div>
           {app.installed && app.state?.mirroring && (
             <button type="button" onClick={goToPublish}>
