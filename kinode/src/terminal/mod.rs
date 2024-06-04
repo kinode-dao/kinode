@@ -521,7 +521,7 @@ pub async fn terminal(
                                     cursor::MoveTo(cursor_col, win_rows),
                                 )?;
                             },
-                            KeyCode::Backspace => {
+                            KeyCode::Backspace | KeyCode::Delete => {
                                 if line_col == prompt_len {
                                     continue;
                                 }
