@@ -1,6 +1,12 @@
-# Kinode
+<p align="center">
+    <img width="551" alt="Screenshot 2024-05-08 at 2 38 11 PM" src="https://github.com/kinode-dao/kinode/assets/93405247/24c7982b-9d76-419a-96dc-ec4a25dda562">
+    <br />
+    <img src="https://img.shields.io/twitter/follow/kinodeOS">
 
-Kinode OS is a decentralized OS, built for crypto.
+</p>
+
+
+Kinode is a general-purpose sovereign cloud computer, built for crypto.
 
 This repo contains the core runtime and processes.
 Most developers need not build the runtime.
@@ -9,7 +15,8 @@ Instead, check out the [Kinode book](https://book.kinode.org/), and in particula
 If you want to get on the network, you can download a binary, rather than building it yourself, from [the releases page](https://github.com/kinode-dao/kinode/tags).
 Then follow the instructions to [install it](https://book.kinode.org/install.html) and [join the network](https://book.kinode.org/login.html).
 
-If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a question!
+If you have questions, join the [Kinode discord](https://discord.gg/TCgdca5Bjt) and drop us a line in `#dev-support`.
+
 
 ## Setup
 
@@ -31,8 +38,9 @@ rustup target add wasm32-wasi
 rustup target add wasm32-wasi --toolchain nightly
 cargo install cargo-wasi
 
-# Build the runtime, along with a number of "distro" WASM modules
-# OPTIONAL: --release flag
+# Build the runtime, along with a number of "distro" WASM modules.
+# The compiled binary will be at `kinode/target/debug/kinode`
+# OPTIONAL: --release flag (slower build; faster runtime; binary at `kinode/target/release/kinode`)
 
 cargo +nightly build -p kinode
 ```
@@ -61,9 +69,8 @@ You may also add a RPC provider or otherwise modify your configuration by sendin
 ```
 m our@eth:distro:sys '{"AddProvider": {"chain_id": <SOME_CHAIN_ID>, "trusted": true, "provider": {"RpcUrl": "<WS_RPC_URL>"}}}'
 ```
-We will soon add a settings GUI for this.
 
-You can also do the same thing by using the `--rpc` boot flag with an Optimism WebSockets RPC URL.
+You can also do the same thing by using the `--rpc` boot flag with an Optimism WebSockets RPC URL, or going to the Settings app once booted into a node.
 
 ## Distro and Runtime processes
 
