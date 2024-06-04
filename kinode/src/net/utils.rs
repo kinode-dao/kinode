@@ -51,7 +51,11 @@ pub async fn create_passthrough(
             let Ok(Ok(stream_2)) =
                 time::timeout(TIMEOUT, tokio::net::TcpStream::connect(tcp_url.to_string())).await
             else {
-                return Err(anyhow::anyhow!("failed to connect to target"));
+                return Err(anyhow::anyhow!(
+                    "failed to connect to {} for passthrough requested by {}",
+                    target_id.name,
+                    from_id.name
+                ));
             };
             tokio::spawn(maintain_passthrough(socket_1, PendingStream::Tcp(stream_2)));
             return Ok(());
@@ -62,7 +66,11 @@ pub async fn create_passthrough(
             let ws_url = make_conn_url(our_ip, ip, ws_port, WS_PROTOCOL)?;
             let Ok(Ok((socket_2, _response))) = time::timeout(TIMEOUT, connect_async(ws_url)).await
             else {
-                return Err(anyhow::anyhow!("failed to connect to target"));
+                return Err(anyhow::anyhow!(
+                    "failed to connect to {} for passthrough requested by {}",
+                    target_id.name,
+                    from_id.name
+                ));
             };
             tokio::spawn(maintain_passthrough(
                 socket_1,
@@ -72,11 +80,17 @@ pub async fn create_passthrough(
         }
     }
     // create passthrough to indirect node that we do routing for
-    let target_peer = peers
-        .get(&target_id.name)
-        .ok_or(anyhow::anyhow!("can't route to that node"))?;
+    let target_peer = peers.get(&target_id.name).ok_or(anyhow::anyhow!(
+        "can't route to {}, not a peer, for passthrough requested by {}",
+        target_id.name,
+        from_id.name
+    ))?;
     if !target_peer.routing_for {
-        return Err(anyhow::anyhow!("we don't route for that node"));
+        return Err(anyhow::anyhow!(
+            "we don't do routing for {}, for passthrough requested by {}",
+            target_id.name,
+            from_id.name
+        ));
     }
     // send their net:distro:sys process a message, notifying it to create a *matching*
     // passthrough request, which we can pair with this pending one.
