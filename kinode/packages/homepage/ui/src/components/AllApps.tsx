@@ -15,7 +15,7 @@ const AllApps: React.FC<{ expanded: boolean }> = ({ expanded }) => {
   })}>
     {apps.length === 0
       ? <div>Loading apps...</div>
-      : apps.map(app => <AppDisplay app={app} />)}
+      : apps.map(app => <AppDisplay key={app.package_name} app={app} />)}
   </div>
 }
 

@@ -11,6 +11,7 @@ import classNames from 'classnames'
 import WidgetsSettingsModal from '../components/WidgetsSettingsModal'
 
 import valetIcon from '../../public/valet-icon.png'
+import { getFetchUrl } from '../utils/fetch'
 
 interface AppStoreApp {
   package: string,
@@ -28,9 +29,9 @@ function Homepage() {
 
   const getAppPathsAndIcons = () => {
     Promise.all([
-      fetch('/apps').then(res => res.json() as any as HomepageApp[]),
-      fetch('/main:app_store:sys/apps').then(res => res.json()),
-      fetch('/version').then(res => res.text())
+      fetch(getFetchUrl('/apps'), { credentials: 'include' }).then(res => res.json() as any as HomepageApp[]).catch(() => []),
+      fetch(getFetchUrl('/main:app_store:sys/apps'), { credentials: 'include' }).then(res => res.json()).catch(() => []),
+      fetch(getFetchUrl('/version'), { credentials: 'include' }).then(res => res.text()).catch(() => '')
     ]).then(([appsData, appStoreData, version]) => {
       console.log({ appsData, appStoreData, version })
 
@@ -77,7 +78,7 @@ function Homepage() {
   }, [our]);
 
   useEffect(() => {
-    fetch('/our')
+    fetch(getFetchUrl('/our'), { credentials: 'include' })
       .then(res => res.text())
       .then(data => {
         if (data.match(/^[a-zA-Z0-9\-\.]+\.[a-zA-Z]+$/)) {

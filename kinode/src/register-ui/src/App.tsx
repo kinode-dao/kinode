@@ -36,6 +36,7 @@ import KinodeHome from "./pages/KinodeHome"
 import ResetNode from "./pages/ResetNode";
 import ImportKeyfile from "./pages/ImportKeyfile";
 import { UnencryptedIdentity } from "./lib/types";
+import { getFetchUrl } from "./utils/fetch";
 
 const {
   useProvider,
@@ -117,7 +118,7 @@ function App() {
   useEffect(() => {
     (async () => {
       try {
-        const infoResponse = await fetch('/info', { method: 'GET' })
+        const infoResponse = await fetch(getFetchUrl('/info'), { method: 'GET', credentials: 'include' })
 
         if (infoResponse.status > 399) {
           console.log('no info, unbooted')
@@ -136,7 +137,7 @@ function App() {
       }
 
       try {
-        const currentChainResponse = await fetch('/current-chain', { method: 'GET' })
+        const currentChainResponse = await fetch(getFetchUrl('/current-chain'), { method: 'GET', credentials: 'include' })
 
         if (currentChainResponse.status < 400) {
           const nodeChainId = await currentChainResponse.json()

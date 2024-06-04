@@ -95,7 +95,7 @@ fn make_widget() -> String {
     </div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            fetch('/main:app_store:sys/apps/listed')
+            fetch('/main:app_store:sys/apps/listed', { credentials: 'include' })
                 .then(response => response.json())
                 .then(data => {
                     const container = document.getElementById('latest-apps');

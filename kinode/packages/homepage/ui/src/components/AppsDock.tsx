@@ -5,6 +5,7 @@ import { useEffect, useState } from "react"
 import { isMobileCheck } from "../utils/dimensions"
 import classNames from "classnames"
 import { DragDropContext, Draggable, DropResult, Droppable } from 'react-beautiful-dnd'
+import { getFetchUrl } from "../utils/fetch"
 
 const AppsDock: React.FC = () => {
   const { apps } = useHomepageStore()
@@ -66,11 +67,12 @@ const AppsDock: React.FC = () => {
 
     console.log({ favoriteApps })
 
-    fetch('/order', {
+    fetch(getFetchUrl('/order'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
+      credentials: 'include',
       body: JSON.stringify(packageNames)
     })
       .then(data => {
