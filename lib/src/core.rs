@@ -993,6 +993,7 @@ pub struct ImportKeyfileInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoginInfo {
     pub password_hash: String,
+    pub subdomain: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -22,6 +22,9 @@ function api_call(body) {
 
 function shutdown() {
     api_call("Shutdown");
+    setTimeout(() => {
+        window.location.reload();
+    }, 1000);
 }
 
 function populate(data) {

@@ -194,5 +194,6 @@ pub struct WsRegisterResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct JwtClaims {
     pub username: String,
+    pub subdomain: Option<String>,
     pub expiration: u64,
 }

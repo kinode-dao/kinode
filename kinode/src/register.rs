@@ -785,7 +785,7 @@ async fn success_response(
     encoded_keyfile: Vec<u8>,
 ) -> Result<warp::reply::Response, Rejection> {
     let encoded_keyfile_str = base64_standard.encode(&encoded_keyfile);
-    let token = match keygen::generate_jwt(&decoded_keyfile.jwt_secret_bytes, &our.name) {
+    let token = match keygen::generate_jwt(&decoded_keyfile.jwt_secret_bytes, &our.name, &None) {
         Some(token) => token,
         None => {
             return Ok(warp::reply::with_status(
@@ -805,11 +805,9 @@ async fn success_response(
         warp::reply::with_status(warp::reply::json(&encoded_keyfile_str), StatusCode::FOUND)
             .into_response();
 
-    let headers = response.headers_mut();
-
-    match HeaderValue::from_str(&format!("kinode-auth_{}={};", &our.name, &token)) {
+    match HeaderValue::from_str(&format!("kinode-auth_{}={token};", our.name)) {
         Ok(v) => {
-            headers.append(SET_COOKIE, v);
+            response.headers_mut().append(SET_COOKIE, v);
         }
         Err(_) => {
             return Ok(warp::reply::with_status(

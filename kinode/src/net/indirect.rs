@@ -40,7 +40,14 @@ pub async fn connect_to_router(router_id: &Identity, ext: &IdentityExt, data: &N
     );
     if let Some((_ip, port)) = router_id.tcp_routing() {
         match tcp::init_direct(ext, data, &router_id, *port, true, peer_rx).await {
-            Ok(()) => return,
+            Ok(()) => {
+                utils::print_debug(
+                    &ext.print_tx,
+                    &format!("net: connected to router {} via tcp", router_id.name),
+                )
+                .await;
+                return;
+            }
             Err(peer_rx) => {
                 return connect::handle_failed_connection(ext, data, router_id, peer_rx).await;
             }
@@ -48,7 +55,14 @@ pub async fn connect_to_router(router_id: &Identity, ext: &IdentityExt, data: &N
     }
     if let Some((_ip, port)) = router_id.ws_routing() {
         match ws::init_direct(ext, data, &router_id, *port, true, peer_rx).await {
-            Ok(()) => return,
+            Ok(()) => {
+                utils::print_debug(
+                    &ext.print_tx,
+                    &format!("net: connected to router {} via ws", router_id.name),
+                )
+                .await;
+                return;
+            }
             Err(peer_rx) => {
                 return connect::handle_failed_connection(ext, data, router_id, peer_rx).await;
             }
