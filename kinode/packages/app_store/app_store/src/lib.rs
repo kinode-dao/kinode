@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 //! App Store:
 //! acts as both a local package manager and a protocol to share packages across the network.
 //! packages are apps; apps are packages. we use an onchain app listing contract to determine

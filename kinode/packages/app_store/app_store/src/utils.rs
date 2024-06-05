@@ -76,7 +76,7 @@ pub fn fetch_state(our: Address, provider: eth::Provider) -> State {
 pub fn app_store_filter(state: &State) -> eth::Filter {
     eth::Filter::new()
         .address(eth::Address::from_str(&state.contract_address).unwrap())
-        .from_block(state.last_saved_block - 1)
+        .from_block(state.last_saved_block)
         .events(EVENTS)
 }
 
