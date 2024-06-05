@@ -2,6 +2,7 @@ use alloy_sol_macro::sol;
 use sha3::{Digest, Keccak256};
 
 sol! {
+    #[allow(missing_docs)]
     #[sol(rpc)]
     contract RegisterHelpers {
         function register(
@@ -26,6 +27,42 @@ sol! {
         function ownerOf(uint256 node) returns (address);
 
         function multicall(bytes[] calldata data);
+
+        // new kimap contracts
+        function replicate (
+            address who,
+            bytes calldata name,
+            bytes calldata initialization,
+            bytes calldata erc721Data,
+            address implementation
+        ) external returns (
+            address tba
+        );
+
+        function get (
+            bytes32 node
+        ) external view returns (
+            address tba,
+            address owner,
+            bytes,
+        );
+
+        function note (
+            bytes calldata note,
+            bytes calldata data
+        ) external returns (
+            bytes32 notenode
+        );
+
+        // tba account
+        function execute(
+            address to,
+            uint256 value,
+            bytes calldata data,
+            uint8 operation
+        ) external payable returns (bytes memory returnData);
+
+        function token() external view returns (uint256,address,uint256);
     }
 }
 

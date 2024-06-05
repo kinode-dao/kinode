@@ -566,7 +566,7 @@ pub async fn simulate_node(
             let fakechain_port: u16 = fakechain_port.unwrap_or(8545);
             let ws_port = ws_networking.local_addr().unwrap().port();
 
-            fakenet::register_local(&name, ws_port, &pubkey, fakechain_port)
+            fakenet::mint_local(&name, ws_port, &pubkey, fakechain_port)
                 .await
                 .unwrap();
 

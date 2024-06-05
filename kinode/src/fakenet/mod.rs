@@ -17,11 +17,15 @@ pub use helpers::RegisterHelpers::*;
 pub use helpers::*;
 
 const FAKE_DOTDEV: &str = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
+const FAKE_DOTOS: &str = "0xC466dc53e3e2a29A296fE38Bdeab60a7C023A383";
+
+const KINO_ACCOUNT_IMPL: &str = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
+const KINOMAP: &str = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"; // "0x68B1D87F95878fE05B998F19b66F4baba5De1aed";
 
 /// Attempts to connect to a local anvil fakechain,
-/// registering a name with its KNS contract.
+/// registering a name with its KiMap contract.
 /// If name is already registered, resets it.
-pub async fn register_local(
+pub async fn mint_local(
     name: &str,
     ws_port: u16,
     pubkey: &str,
@@ -31,8 +35,8 @@ pub async fn register_local(
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     )?;
 
-    let dotdev = Address::from_str(FAKE_DOTDEV)?;
-    let kns = Address::from_str(KNS_ADDRESS)?;
+    let dotos = Address::from_str(FAKE_DOTOS)?;
+    let kimap = Address::from_str(KINOMAP)?;
 
     let endpoint = format!("ws://localhost:{}", fakechain_port);
     let ws = WsConnect {
@@ -43,84 +47,26 @@ pub async fn register_local(
     let client = ClientBuilder::default().ws(ws).await?;
     let provider = Provider::new_with_client(client);
 
-    let fqdn = dns_encode_fqdn(name);
     let namehash = encode_namehash(name);
-    // todo: find a better way?
-    let namehash_bint: B256 = namehash.into();
-    let namehash_uint: U256 = namehash_bint.into();
 
-    let ip: u128 = 0x7F000001; // localhost IP (127.0.0.1)
-
-    let set_ip = setAllIpCall {
-        _node: namehash.into(),
-        _ip: ip,
-        _ws: ws_port,
-        _wt: 0,
-        _tcp: 0,
-        _udp: 0,
+    // interesting, even if we have a minted name, this does not explicitly fail.
+    let replicate_call = replicateCall {
+        who: wallet.address(),
+        name: name.as_bytes().to_vec(),
+        initialization: vec![],
+        erc721Data: vec![],
+        implementation: Address::from_str(KINO_ACCOUNT_IMPL).unwrap(),
     }
     .abi_encode();
 
-    let set_key = setKeyCall {
-        _node: namehash.into(),
-        _key: pubkey.parse()?,
-    }
-    .abi_encode();
-
-    let exists_call = ownerOfCall {
-        node: namehash_uint,
-    }
-    .abi_encode();
-
-    let exists_tx = TransactionRequest::default()
-        .to(Some(dotdev))
-        .input(TransactionInput::new(exists_call.into()));
-
-    let exists = provider.call(exists_tx, None).await;
-
-    let (call_input, to) = match exists {
-        Err(_e) => {
-            // name is not taken, register normally
-            let register = registerCall {
-                _name: fqdn.into(),
-                _to: Address::from_str("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")?,
-                _data: vec![set_ip.into(), set_key.into()],
-            }
-            .abi_encode();
-
-            (register, dotdev)
-        }
-        Ok(_owner) => {
-            // name is taken, call setAllIp an setKey directly with multicall
-            let set_ip = setAllIpCall {
-                _node: namehash.into(),
-                _ip: ip,
-                _ws: ws_port,
-                _wt: 0,
-                _tcp: 0,
-                _udp: 0,
-            };
-            let set_key = setKeyCall {
-                _node: namehash.into(),
-                _key: pubkey.parse()?,
-            };
-
-            let multicall = multicallCall {
-                data: vec![set_ip.abi_encode(), set_key.abi_encode()],
-            }
-            .abi_encode();
-
-            (multicall, kns)
-        }
-    };
     let nonce = provider
         .get_transaction_count(wallet.address(), None)
         .await?;
 
     let mut tx = TxLegacy {
-        to: TxKind::Call(to),
+        to: TxKind::Call(dotos),
         nonce: nonce.to::<u64>(),
-        input: call_input.into(),
+        input: replicate_call.into(),
         chain_id: Some(31337),
         gas_limit: 3000000,
         gas_price: 100000000000,
@@ -133,6 +79,80 @@ pub async fn register_local(
     signed_tx.encode_signed(&mut buf);
 
     let _tx_hash = provider.send_raw_transaction(buf.into()).await?;
+
+    // try to get name, if there isn't one, replicate it from .dev
+    let get_call = getCall {
+        node: namehash.into(),
+    }
+    .abi_encode();
+
+    let get_tx = TransactionRequest::default()
+        .to(Some(kimap))
+        .input(TransactionInput::new(get_call.into()));
+
+    let exists = provider.call(get_tx, None).await?;
+    println!("exists: {:?}", exists);
+
+    // todo abi_decode() properly into getReturn.
+    // tba, owner.
+    // also note, should be (Address, Address, Bytes), but that fails on a normal node!?
+    // fix the sol Value decoding, update alloy deps. currently we do not need the note bytes but will in the future.
+    let decoded = <(Address, Address)>::abi_decode(&exists, false)?;
+
+    let tba = decoded.0;
+    let _owner = decoded.1;
+    // now set ip, port and pubkey
+    // multicall coming on contracts soon, will make it easier.
+
+    let port_call = noteCall {
+        note: "~wsport".as_bytes().to_vec(),
+        data: ws_port.to_string().as_bytes().to_vec(),
+    };
+
+    let ip_call = noteCall {
+        note: "~ip".as_bytes().to_vec(),
+        data: "127.0.0.1".as_bytes().to_vec(),
+    };
+
+    let pubkey_call = noteCall {
+        note: "~networkingkey".as_bytes().to_vec(),
+        data: pubkey.as_bytes().to_vec(),
+    };
+
+    let calls = vec![port_call, ip_call, pubkey_call];
+
+    for call in calls {
+        let note_call = call.abi_encode();
+
+        let execute_call = executeCall {
+            to: kimap,
+            value: U256::from(0),
+            data: note_call,
+            operation: 0,
+        }
+        .abi_encode();
+
+        let nonce = provider
+            .get_transaction_count(wallet.address(), None)
+            .await?;
+
+        let mut tx = TxLegacy {
+            to: TxKind::Call(tba),
+            nonce: nonce.to::<u64>(),
+            input: execute_call.into(),
+            chain_id: Some(31337),
+            gas_limit: 3000000,
+            gas_price: 100000000000,
+            ..Default::default()
+        };
+
+        let sig = wallet.sign_transaction_sync(&mut tx)?;
+        let signed_tx = tx.into_signed(sig);
+        let mut buf = vec![];
+        signed_tx.encode_signed(&mut buf);
+
+        let _tx_hash = provider.send_raw_transaction(buf.into()).await?;
+    }
 
     Ok(())
 }
