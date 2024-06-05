@@ -100,7 +100,18 @@ pub async fn init_direct(
             ));
             Ok(())
         }
-        _ => return Err(peer_rx),
+        Ok(Err(e)) => {
+            print_debug(
+                &ext.print_tx,
+                &format!("net: error in tcp::init_direct: {e}"),
+            )
+            .await;
+            return Err(peer_rx);
+        }
+        Err(_) => {
+            print_debug(&ext.print_tx, "net: tcp::init_direct timed out").await;
+            return Err(peer_rx);
+        }
     }
 }
 

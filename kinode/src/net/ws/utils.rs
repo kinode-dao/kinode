@@ -211,7 +211,7 @@ pub async fn recv(socket: &mut WebSocket) -> anyhow::Result<Vec<u8>> {
             }
             Some(Ok(tungstenite::Message::Pong(_))) => continue,
             Some(Ok(tungstenite::Message::Binary(bin))) => return Ok(bin),
-            _ => return Err(anyhow::anyhow!("websocket closed")),
+            _ => return Err(anyhow::anyhow!("invalid websocket message received")),
         }
     }
 }
