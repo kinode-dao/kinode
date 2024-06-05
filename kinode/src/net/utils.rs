@@ -288,25 +288,14 @@ pub fn build_initiator() -> (snow::HandshakeState, Vec<u8>) {
     )
 }
 
-pub fn make_conn_url(
-    our_ip: &str,
-    ip: &str,
-    port: &u16,
-    protocol: &str,
-) -> anyhow::Result<url::Url> {
+pub fn make_conn_url(our_ip: &str, ip: &str, port: &u16, protocol: &str) -> anyhow::Result<String> {
     // if we have the same public IP as target, route locally,
     // otherwise they will appear offline due to loopback stuff
     let ip = if our_ip == ip { "localhost" } else { ip };
     match protocol {
-        TCP_PROTOCOL => {
-            let url = url::Url::parse(&format!("{}:{}", ip, port))?;
-            Ok(url)
-        }
-        WS_PROTOCOL => {
-            let url = url::Url::parse(&format!("{}://{}:{}", protocol, ip, port))?;
-            Ok(url)
-        }
-        _ => Err(anyhow::anyhow!("unknown protocol")),
+        TCP_PROTOCOL => Ok(format!("{ip}:{port}")),
+        WS_PROTOCOL => Ok(format!("ws://{ip}:{port}")),
+        _ => Err(anyhow::anyhow!("unknown protocol: {}", protocol)),
     }
 }
 
