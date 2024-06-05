@@ -41,5 +41,8 @@ fn init(_our: Address) {
         println!("no file found at {}", file_path);
         return;
     };
-    println!("{}", String::from_utf8(blob.bytes).unwrap());
+    match String::from_utf8(blob.bytes) {
+        Ok(s) => println!("{s}"),
+        Err(_e) => println!("error: file at {file_path} could not be parsed as utf-8 string!"),
+    }
 }
