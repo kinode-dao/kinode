@@ -61,6 +61,8 @@ pub enum EthResponse {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub enum EthError {
+    /// RPC provider returned an error
+    RpcError(String),
     /// provider module cannot parse message
     MalformedRequest,
     /// No RPC provider for the chain

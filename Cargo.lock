@@ -3074,6 +3074,7 @@ dependencies = [
  "aes-gcm",
  "alloy-consensus 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "alloy-contract",
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=6f8ebb4)",
  "alloy-network",
  "alloy-primitives 0.6.4",
  "alloy-providers",

@@ -1,3 +1,4 @@
+use alloy_json_rpc::RpcError;
 use alloy_providers::provider::Provider;
 use alloy_pubsub::PubSubFrontend;
 use alloy_rpc_client::ClientBuilder;
@@ -618,6 +619,10 @@ async fn fulfill_request(
                 return EthResponse::Response { value };
             }
             Err(rpc_error) => {
+                // if rpc_error is of type ErrResponse, return to user!
+                if let RpcError::ErrorResp(err) = rpc_error {
+                    return EthResponse::Err(EthError::RpcError(err.to_string()));
+                }
                 verbose_print(
                     print_tx,
                     &format!(
