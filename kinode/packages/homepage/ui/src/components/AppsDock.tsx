@@ -27,7 +27,7 @@ const AppsDock: React.FC = () => {
 
     final = final.filter(a => a)
     unorderedApps.forEach(a => final.push(a))
-    console.log({ final })
+    // console.log({ final })
     setDockedApps(final)
   }, [apps, favoriteApps])
 
@@ -59,7 +59,7 @@ const AppsDock: React.FC = () => {
     const faves = { ...favoriteApps }
 
     packageNames.forEach((name, i) => {
-      console.log('setting order for', name, 'to', i)
+      // console.log('setting order for', name, 'to', i)
       faves[name].order = i
     })
 
@@ -75,9 +75,6 @@ const AppsDock: React.FC = () => {
       credentials: 'include',
       body: JSON.stringify(packageNames)
     })
-      .then(data => {
-        console.log({ data })
-      })
       .catch(e => console.error(e));
   }
 
@@ -95,23 +92,23 @@ const AppsDock: React.FC = () => {
             'flex-col': dockedApps.length === 0
           })}
         >
-          {dockedApps.length === 0
+          {/*dockedApps.length === 0
             ? <AppDisplay app={apps.find(app => app.package_name === 'app_store')!} />
-            : dockedApps.map(app => <Draggable
-              key={app.package_name}
-              draggableId={app.package_name}
-              index={dockedApps.indexOf(app)}
-            >
-              {(provided, _snapshot) => (
-                <div
-                  ref={provided.innerRef}
-                  {...provided.draggableProps}
-                  {...provided.dragHandleProps}
-                >
-                  <AppDisplay app={app} />
-                </div>
-              )}
-            </Draggable>)}
+            : */ dockedApps.map(app => <Draggable
+            key={app.package_name}
+            draggableId={app.package_name}
+            index={dockedApps.indexOf(app)}
+          >
+            {(provided, _snapshot) => (
+              <div
+                ref={provided.innerRef}
+                {...provided.draggableProps}
+                {...provided.dragHandleProps}
+              >
+                <AppDisplay app={app} />
+              </div>
+            )}
+          </Draggable>)}
           {provided.placeholder}
           {dockedApps.length === 0 && <div>Favorite an app to pin it to your dock.</div>}
         </div>

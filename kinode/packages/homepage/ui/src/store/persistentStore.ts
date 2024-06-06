@@ -34,9 +34,6 @@ const usePersistentStore = create<PersistentStore>()(
       setFavoriteApps: (favoriteApps: PersistentStore['favoriteApps']) => set({ favoriteApps }),
       toggleWidgetVisibility: (package_name: string) => {
         const { widgetSettings } = get()
-        if (!window.confirm(`Really hide this widget?`)) {
-          return
-        }
         set({
           widgetSettings: {
             ...widgetSettings,
