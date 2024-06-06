@@ -190,7 +190,7 @@ function Reset({
             <>
               <h3 className="flex flex-col w-full place-items-center mb-2">
                 <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2">
-                  Choose a name for your kinode
+                  Specify the node ID to reset
                   <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
                 </label>
                 <EnterKnsName {...{ name, setName, nameVets, dotOs, triggerNameCheck, nameValidities, setNameValidities, isReset: true }} />

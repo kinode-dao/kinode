@@ -117,8 +117,8 @@ function RegisterKnsName({
           <>
             <h3 className="flex flex-col w-full place-items-center my-8">
               <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2">
-                Choose a name for your kinode
-                <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
+                Choose a name for your Kinode
+                <Tooltip text={`Kinodes need an onchain node identity in order to communicate with other nodes in the network.`} />
               </label>
               <EnterKnsName {...enterOsNameProps} />
             </h3>
