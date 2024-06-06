@@ -77,7 +77,7 @@ pub async fn load_state(
         &mut reverse_cap_index,
     )
     .await
-    .unwrap();
+    .expect("bootstrapping filesystem failed!");
 
     Ok((process_map, db, reverse_cap_index))
 }
@@ -404,7 +404,7 @@ async fn bootstrap(
         let our_drive_name = [package_name, package_publisher].join(":");
         let pkg_path = format!("{}/vfs/{}/pkg", &home_directory_path, &our_drive_name);
         // delete anything currently residing in the pkg folder
-        fs::remove_dir_all(&pkg_path).await?;
+        let _ = fs::remove_dir_all(&pkg_path).await;
         fs::create_dir_all(&pkg_path)
             .await
             .expect("bootstrap vfs dir pkg creation failed!");
