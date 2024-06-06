@@ -1,6 +1,6 @@
 use crate::eth::*;
-use alloy_pubsub::RawSubscription;
-use alloy_rpc_types::pubsub::SubscriptionResult;
+use alloy::pubsub::RawSubscription;
+use alloy::rpc::types::eth::pubsub::SubscriptionResult;
 
 /// cleans itself up when the subscription is closed or fails.
 pub async fn create_new_subscription(
@@ -212,12 +212,11 @@ async fn build_subscription(
         let kind = serde_json::to_value(&kind).unwrap();
         let params = serde_json::to_value(&params).unwrap();
         match pubsub
-            .inner()
-            .prepare("eth_subscribe", [kind, params])
+            .subscribe::<[serde_json::Value; 2], serde_json::Value>([kind, params])
             .await
         {
-            Ok(id) => {
-                let rx = pubsub.inner().get_raw_subscription(id).await;
+            Ok(sub) => {
+                let rx = sub.into_raw();
                 let successful_provider = aps.urls.remove(index);
                 aps.urls.insert(0, successful_provider);
                 return Ok(Ok(rx));
