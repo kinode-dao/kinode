@@ -403,6 +403,8 @@ async fn bootstrap(
         // create a new package in VFS
         let our_drive_name = [package_name, package_publisher].join(":");
         let pkg_path = format!("{}/vfs/{}/pkg", &home_directory_path, &our_drive_name);
+        // delete anything currently residing in the pkg folder
+        fs::remove_dir_all(&pkg_path).await?;
         fs::create_dir_all(&pkg_path)
             .await
             .expect("bootstrap vfs dir pkg creation failed!");
