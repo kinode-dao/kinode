@@ -621,7 +621,7 @@ async fn fulfill_request(
             Err(rpc_error) => {
                 // if rpc_error is of type ErrResponse, return to user!
                 if let RpcError::ErrorResp(err) = rpc_error {
-                    return EthResponse::Err(EthError::RpcError(err.to_string()));
+                    return EthResponse::Err(EthError::RpcError(err));
                 }
                 verbose_print(
                     print_tx,
@@ -656,7 +656,7 @@ async fn fulfill_request(
         )
         .await;
         if let EthResponse::Err(e) = response {
-            if e == EthError::RpcMalformedResponse {
+            if let EthError::RpcMalformedResponse = e {
                 node_provider.usable = false;
             }
         } else {

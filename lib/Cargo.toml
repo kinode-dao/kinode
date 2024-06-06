@@ -18,6 +18,7 @@ tokio = "1.28"
 
 [dependencies]
 alloy-rpc-types = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
+alloy-json-rpc = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
 lazy_static = "1.4.0"
 rand = "0.8.4"
 ring = "0.17.8"
