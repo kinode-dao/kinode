@@ -253,6 +253,15 @@ pub fn create_package_drive(
         })?)
         .send_and_await_response(VFS_TIMEOUT)??;
 
+    // DELETE the /pkg folder in the package drive
+    // in order to replace with the fresh one
+    Request::to(("our", "vfs", "distro", "sys"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
+            path: drive_name.clone(),
+            action: vfs::VfsAction::RemoveDirAll,
+        })?)
+        .send_and_await_response(VFS_TIMEOUT)??;
+
     // convert the zip to a new package drive
     let response = Request::to(("our", "vfs", "distro", "sys"))
         .body(serde_json::to_vec(&vfs::VfsRequest {
