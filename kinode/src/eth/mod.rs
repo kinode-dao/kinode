@@ -1,8 +1,7 @@
-use alloy_json_rpc::RpcError;
-use alloy_providers::provider::Provider;
-use alloy_pubsub::PubSubFrontend;
-use alloy_rpc_client::ClientBuilder;
-use alloy_transport_ws::WsConnect;
+use alloy::providers::{Provider, ProviderBuilder, RootProvider};
+use alloy::pubsub::PubSubFrontend;
+use alloy::rpc::client::WsConnect;
+use alloy::rpc::json_rpc::RpcError;
 use anyhow::Result;
 use dashmap::DashMap;
 use lib::types::core::*;
@@ -42,7 +41,7 @@ struct ActiveProviders {
 struct UrlProvider {
     pub trusted: bool,
     pub url: String,
-    pub pubsub: Option<Provider<PubSubFrontend>>,
+    pub pubsub: Option<RootProvider<PubSubFrontend>>,
 }
 
 #[derive(Debug)]
@@ -612,17 +611,13 @@ async fn fulfill_request(
                 }
             }
         };
-        match pubsub.inner().prepare(method, params.clone()).await {
+        match pubsub.raw_request(method.into(), params.clone()).await {
             Ok(value) => {
                 let successful_provider = aps.urls.remove(index);
                 aps.urls.insert(0, successful_provider);
                 return EthResponse::Response { value };
             }
             Err(rpc_error) => {
-                // if rpc_error is of type ErrResponse, return to user!
-                if let RpcError::ErrorResp(err) = rpc_error {
-                    return EthResponse::Err(EthError::RpcError(err));
-                }
                 verbose_print(
                     print_tx,
                     &format!(
@@ -631,6 +626,10 @@ async fn fulfill_request(
                     ),
                 )
                 .await;
+                // if rpc_error is of type ErrResponse, return to user!
+                if let RpcError::ErrorResp(err) = rpc_error {
+                    return EthResponse::Err(EthError::RpcError(err));
+                }
                 // this provider failed and needs to be reset
                 url_provider.pubsub = None;
             }
@@ -858,16 +857,14 @@ async fn handle_eth_config_action(
 async fn activate_url_provider(provider: &mut UrlProvider) -> Result<()> {
     match Url::parse(&provider.url)?.scheme() {
         "ws" | "wss" => {
-            let connector = WsConnect {
-                url: provider.url.to_string(),
-                auth: None,
-            };
+            let ws = WsConnect::new(provider.url.to_string());
+
             let client = tokio::time::timeout(
                 std::time::Duration::from_secs(10),
-                ClientBuilder::default().ws(connector),
+                ProviderBuilder::new().on_ws(ws),
             )
             .await??;
-            provider.pubsub = Some(Provider::new_with_client(client));
+            provider.pubsub = Some(client);
             Ok(())
         }
         _ => Err(anyhow::anyhow!(

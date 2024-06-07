@@ -2,7 +2,6 @@ use alloy_sol_macro::sol;
 use sha3::{Digest, Keccak256};
 
 sol! {
-    #[sol(rpc)]
     contract RegisterHelpers {
         function register(
             bytes calldata _name,
