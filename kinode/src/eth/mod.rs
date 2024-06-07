@@ -1,6 +1,7 @@
 use alloy::providers::{Provider, ProviderBuilder, RootProvider};
 use alloy::pubsub::PubSubFrontend;
 use alloy::rpc::client::WsConnect;
+use alloy::rpc::json_rpc::RpcError;
 use anyhow::Result;
 use dashmap::DashMap;
 use lib::types::core::*;
@@ -617,6 +618,10 @@ async fn fulfill_request(
                 return EthResponse::Response { value };
             }
             Err(rpc_error) => {
+                // if rpc_error is of type ErrResponse, return to user!
+                if let RpcError::ErrorResp(err) = rpc_error {
+                    return EthResponse::Err(EthError::RpcError(err));
+                }
                 verbose_print(
                     print_tx,
                     &format!(
@@ -657,7 +662,7 @@ async fn fulfill_request(
         )
         .await;
         if let EthResponse::Err(e) = response {
-            if e == EthError::RpcMalformedResponse {
+            if let EthError::RpcMalformedResponse = e {
                 node_provider.usable = false;
             }
         } else {

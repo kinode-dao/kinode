@@ -78,7 +78,7 @@ name = "alias"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -738,7 +738,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -1271,7 +1271,7 @@ name = "cat"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -1334,7 +1334,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.0",
  "bincode",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "pleco",
  "serde",
  "serde_json",
@@ -2046,7 +2046,7 @@ name = "download"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2077,7 +2077,7 @@ name = "echo"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2297,7 +2297,7 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -2457,7 +2457,7 @@ dependencies = [
 name = "get_block"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2657,7 +2657,7 @@ checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 name = "hi"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2687,7 +2687,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -2778,7 +2778,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.4.10",
+ "socket2 0.5.7",
  "tokio",
  "tower-service",
  "tracing",
@@ -2998,7 +2998,7 @@ name = "install"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3159,7 +3159,7 @@ name = "kfetch"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -3171,7 +3171,7 @@ name = "kill"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -3258,7 +3258,7 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.8.0"
-source = "git+https://github.com/kinode-dao/process_lib?rev=7820481#78204816d1a2d5213555655c796950a32403eac6"
+source = "git+https://github.com/kinode-dao/process_lib?tag=v0.8.0#95a4b042939b760d58c4c4c4eb92f43e813fc1d2"
 dependencies = [
  "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=cad7935)",
  "alloy-primitives",
@@ -3281,28 +3281,6 @@ dependencies = [
 name = "kinode_process_lib"
 version = "0.8.0"
 source = "git+https://github.com/kinode-dao/process_lib.git?rev=7eb3a04#7eb3a04f9be79d1cc3a52fa460faeea7ba3008ed"
-dependencies = [
- "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=cad7935)",
- "alloy-primitives",
- "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=cad7935)",
- "alloy-transport 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=cad7935)",
- "anyhow",
- "bincode",
- "http 1.1.0",
- "mime_guess",
- "rand 0.8.5",
- "rmp-serde",
- "serde",
- "serde_json",
- "thiserror",
- "url",
- "wit-bindgen",
-]
-
-[[package]]
-name = "kinode_process_lib"
-version = "0.8.0"
-source = "git+https://github.com/kinode-dao/process_lib?rev=830a86c#830a86cbcb210ebff82b5df95eae39edd16f022b"
 dependencies = [
  "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy.git?rev=cad7935)",
  "alloy-primitives",
@@ -3365,7 +3343,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "hex",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -3394,6 +3372,7 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 name = "lib"
 version = "0.8.0"
 dependencies = [
+ "alloy-json-rpc 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=05f8162)",
  "alloy-rpc-types 0.1.0 (git+https://github.com/alloy-rs/alloy?rev=05f8162)",
  "anyhow",
  "kit",
@@ -3575,7 +3554,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "regex",
  "serde",
  "serde_json",
@@ -3707,7 +3686,7 @@ dependencies = [
 name = "namehash_to_name"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -3735,7 +3714,7 @@ dependencies = [
 name = "net_diagnostics"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4048,7 +4027,7 @@ dependencies = [
 name = "peer"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -4058,7 +4037,7 @@ dependencies = [
 name = "peers"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "rmp-serde",
  "serde",
  "wit-bindgen",
@@ -5082,7 +5061,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.0",
  "bincode",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=7820481)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "rmp-serde",
  "serde",
  "serde_json",
@@ -5300,7 +5279,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 name = "state"
 version = "0.1.0"
 dependencies = [
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -5476,7 +5455,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "rand 0.8.5",
  "regex",
  "serde",
@@ -5490,7 +5469,7 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "process_macros",
  "serde",
  "serde_json",
@@ -5746,7 +5725,7 @@ name = "top"
 version = "0.2.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -6069,7 +6048,7 @@ name = "uninstall"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "wit-bindgen",
@@ -6764,7 +6743,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bincode",
- "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?rev=830a86c)",
+ "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
  "url",

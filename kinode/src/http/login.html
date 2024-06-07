@@ -1194,7 +1194,11 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
     }
 
     const firstPathItem = window.location.pathname.split('/')[1];
-    document.getElementById("node-and-domain").innerText = "${node} " + firstPathItem;
+    if (firstPathItem === '') {
+      document.getElementById("node-and-domain").innerText = "${node} ";
+    } else {
+      document.getElementById("node-and-domain").innerText = "${node}: authenticate for secure subdomain app " + firstPathItem;
+    }
 
     async function login(password) {
       document.getElementById("signup-form").style.display = "none";

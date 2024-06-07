@@ -1,3 +1,4 @@
+use alloy_json_rpc::ErrorPayload;
 use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -59,8 +60,10 @@ pub enum EthResponse {
     Err(EthError),
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum EthError {
+    /// RPC provider returned an error
+    RpcError(ErrorPayload),
     /// provider module cannot parse message
     MalformedRequest,
     /// No RPC provider for the chain

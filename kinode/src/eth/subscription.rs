@@ -286,7 +286,7 @@ async fn build_subscription(
                 node_provider.usable = false;
             }
             EthResponse::Err(e) => {
-                if e == EthError::RpcMalformedResponse {
+                if let EthError::RpcMalformedResponse = e {
                     node_provider.usable = false;
                 }
             }
