@@ -59,6 +59,7 @@ async fn main() {
     create_home_directory(&home_directory_path).await;
     let http_server_port = set_http_server_port(matches.get_one::<u16>("port")).await;
     let ws_networking_port = matches.get_one::<u16>("ws-port");
+    #[cfg(not(feature = "simulation-mode"))]
     let tcp_networking_port = matches.get_one::<u16>("tcp-port");
     let verbose_mode = *matches
         .get_one::<u8>("verbosity")
@@ -167,6 +168,7 @@ async fn main() {
 
     let our_ip = find_public_ip().await;
     let (ws_tcp_handle, ws_flag_used) = setup_networking(ws_networking_port).await;
+    #[cfg(not(feature = "simulation-mode"))]
     let (tcp_tcp_handle, tcp_flag_used) = setup_networking(tcp_networking_port).await;
 
     #[cfg(feature = "simulation-mode")]
