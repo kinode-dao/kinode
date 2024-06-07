@@ -3184,7 +3184,6 @@ dependencies = [
  "aes-gcm",
  "alloy",
  "alloy-primitives",
- "alloy-signer",
  "alloy-sol-macro",
  "alloy-sol-types",
  "anyhow",
