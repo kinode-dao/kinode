@@ -167,6 +167,7 @@ async fn main() {
 
     let our_ip = find_public_ip().await;
     let (ws_tcp_handle, ws_flag_used) = setup_networking(ws_networking_port).await;
+    #[cfg(not(feature = "simulation-mode"))]
     let (tcp_tcp_handle, tcp_flag_used) = setup_networking(tcp_networking_port).await;
 
     #[cfg(feature = "simulation-mode")]
