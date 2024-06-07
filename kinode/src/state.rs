@@ -404,8 +404,8 @@ async fn bootstrap(
         let our_drive_name = [package_name, package_publisher].join(":");
         let pkg_path = format!("{}/vfs/{}/pkg", &home_directory_path, &our_drive_name);
         // delete anything currently residing in the pkg folder
-        let pkg_path = std::path::PathBuf::from(pkg_path);
-        if pkg_path.exists() {
+        let pkg_path_buf = std::path::PathBuf::from(&pkg_path);
+        if pkg_path_buf.exists() {
             fs::remove_dir_all(&pkg_path).await?;
         }
         fs::create_dir_all(&pkg_path)
