@@ -212,7 +212,7 @@ async fn build_subscription(
         let kind = serde_json::to_value(&kind).unwrap();
         let params = serde_json::to_value(&params).unwrap();
         match pubsub
-            .subscribe::<[serde_json::Value; 2], serde_json::Value>([kind, params])
+            .subscribe::<[serde_json::Value; 2], SubscriptionResult>([kind, params])
             .await
         {
             Ok(sub) => {

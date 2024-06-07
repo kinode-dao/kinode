@@ -127,7 +127,7 @@ pub async fn register_local(
         .input(input)
         .nonce(nonce)
         .with_chain_id(31337)
-        .with_gas_limit(21_000)
+        .with_gas_limit(500_000)
         .with_max_priority_fee_per_gas(1_000_000_000)
         .with_max_fee_per_gas(20_000_000_000);
 
