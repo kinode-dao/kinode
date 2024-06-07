@@ -618,10 +618,6 @@ async fn fulfill_request(
                 return EthResponse::Response { value };
             }
             Err(rpc_error) => {
-                // if rpc_error is of type ErrResponse, return to user!
-                if let RpcError::ErrorResp(err) = rpc_error {
-                    return EthResponse::Err(EthError::RpcError(err));
-                }
                 verbose_print(
                     print_tx,
                     &format!(
@@ -630,13 +626,10 @@ async fn fulfill_request(
                     ),
                 )
                 .await;
-                // if ErrorResp, return to user, this is a tx issue.
-                // match rpc_error {
-                //     RpcError::ErrorResp(_) => {
-                //         // this provider failed and needs to be reset
-                //         url_provider.pubsub = None;
-                //     }
-                // }
+                // if rpc_error is of type ErrResponse, return to user!
+                if let RpcError::ErrorResp(err) = rpc_error {
+                    return EthResponse::Err(EthError::RpcError(err));
+                }
                 // this provider failed and needs to be reset
                 url_provider.pubsub = None;
             }
