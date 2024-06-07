@@ -1,0 +1,42 @@
+interface notify {
+    variant priority {
+        default,
+        normal,
+        high
+    }
+
+    record notification {
+        /// required
+        to: list<string>,
+
+        /// optional
+        data: option<string>,
+        title: option<string>,
+        body: option<string>,
+        ttl: option<u64>,
+        expiration: option<u64>,
+        priority: option<priority>,
+        subtitle: option<string>,
+        sound: option<string>,
+        badge: option<u64>,
+        channel-id: option<string>,
+        category-id: option<string>,
+        mutable-content: option<bool>,
+    }
+
+    variant request {
+        push(notification),
+        /// history of notifications for given package
+        history(string),
+    }
+
+    variant response {
+        push,
+        history(list<notification>),
+    }
+}
+
+world notify-sys-v0 {
+    import notify;
+    include process;
+}

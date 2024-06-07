@@ -1,0 +1,17 @@
+{
+    "name": "notify",
+    "description": "",
+    "image": "",
+    "properties": {
+        "package_name": "notify",
+        "current_version": "0.1.0",
+        "publisher": "sys",
+        "mirrors": [],
+        "code_hashes": {
+            "0.1.0": ""
+        },
+        "dependencies": []
+    },
+    "external_url": "",
+    "animation_url": ""
+}
