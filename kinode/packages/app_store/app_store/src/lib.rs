@@ -212,7 +212,7 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
     let file_name = match &request {
         RemoteRequest::Download(_) => {
             // the file name of the zipped app
-            format!("{}.zip", package_id)
+            format!("/{}.zip", package_id)
         }
     };
 
@@ -220,7 +220,7 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
     let Ok(Ok(_)) = Request::to(("our", "vfs", "distro", "sys"))
         .body(
             serde_json::to_vec(&vfs::VfsRequest {
-                path: format!("/{}/pkg/{}", package_id, file_name),
+                path: format!("/{}/pkg{}", package_id, file_name),
                 action: vfs::VfsAction::Read,
             })
             .unwrap(),
