@@ -17,6 +17,7 @@ jobs:
         username: ${{ secrets.SSH_USER }}
         key: ${{ secrets.SSH_ED25519KEY }}
         port: ${{ secrets.SSH_PORT }}
+        command_timeout: 60m
         script: |
           cd ~
           ./build-kinode.sh
