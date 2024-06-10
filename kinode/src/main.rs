@@ -167,9 +167,9 @@ async fn main() {
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
 
     let our_ip = find_public_ip().await;
-    let (ws_tcp_handle, ws_flag_used) = setup_networking(ws_networking_port).await;
+    let (ws_tcp_handle, ws_flag_used) = setup_networking("ws", ws_networking_port).await;
     #[cfg(not(feature = "simulation-mode"))]
-    let (tcp_tcp_handle, tcp_flag_used) = setup_networking(tcp_networking_port).await;
+    let (tcp_tcp_handle, tcp_flag_used) = setup_networking("tcp", tcp_networking_port).await;
 
     #[cfg(feature = "simulation-mode")]
     let (our, encoded_keyfile, decoded_keyfile) = simulate_node(
@@ -500,6 +500,7 @@ async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
 /// If no port is provided, it searches for the first available port between 9000 and 65535.
 /// Returns a tuple containing the TcpListener and a boolean indicating if a specific port was used.
 async fn setup_networking(
+    protocol: &str,
     networking_port: Option<&u16>,
 ) -> (Option<tokio::net::TcpListener>, bool) {
     if let Some(0) = networking_port {
@@ -513,7 +514,8 @@ async fn setup_networking(
             (Some(listener), true)
         }
         None => {
-            let listener = http::utils::find_open_port(9000, 65535)
+            let min_port = if protocol == "ws" { 9000 } else { 10000 };
+            let listener = http::utils::find_open_port(min_port, 65535)
                 .await
                 .expect("no ports found in range 9000-65535 for kinode networking");
             (Some(listener), false)
