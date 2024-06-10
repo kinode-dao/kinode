@@ -43,8 +43,8 @@ pub async fn register(
     tx: RegistrationSender,
     kill_rx: oneshot::Receiver<bool>,
     ip: String,
-    ws_networking: (tokio::net::TcpListener, bool),
-    tcp_networking: (tokio::net::TcpListener, bool),
+    ws_networking: (Option<tokio::net::TcpListener>, bool),
+    tcp_networking: (Option<tokio::net::TcpListener>, bool),
     http_port: u16,
     keyfile: Option<Vec<u8>>,
     maybe_rpc: Option<String>,
@@ -54,10 +54,24 @@ pub async fn register(
     let net_keypair = Arc::new(serialized_networking_keypair.as_ref().to_vec());
     let tx = Arc::new(tx);
 
-    let ws_port = ws_networking.0.local_addr().unwrap().port();
+    let ws_port = match ws_networking.0 {
+        Some(listener) => listener.local_addr().unwrap().port(),
+        None => 0,
+    };
     let ws_flag_used = ws_networking.1;
-    let tcp_port = tcp_networking.0.local_addr().unwrap().port();
+    let tcp_port = match tcp_networking.0 {
+        Some(listener) => listener.local_addr().unwrap().port(),
+        None => 0,
+    };
     let tcp_flag_used = tcp_networking.1;
+
+    let mut ports_map = std::collections::BTreeMap::new();
+    if ws_port != 0 {
+        ports_map.insert("ws".to_string(), ws_port);
+    }
+    if tcp_port != 0 {
+        ports_map.insert("tcp".to_string(), tcp_port);
+    }
 
     // This is a **temporary** identity, passed to the UI.
     // If it is confirmed through a /boot or /confirm-change-network-keys,
@@ -67,10 +81,7 @@ pub async fn register(
         name: "".to_string(),
         routing: NodeRouting::Both {
             ip: ip.clone(),
-            ports: std::collections::BTreeMap::from([
-                ("ws".to_string(), ws_port),
-                ("tcp".to_string(), tcp_port),
-            ]),
+            ports: ports_map,
             routers: vec![
                 "default-router-1.os".into(),
                 "default-router-2.os".into(),
