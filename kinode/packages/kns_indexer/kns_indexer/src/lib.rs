@@ -59,7 +59,7 @@ struct Node {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct Note {
+struct IndexedNote {
     pub name: String,      // note full name
     pub hash: String,      // hex namehash of note (in key already?)
     pub node_hash: String, // hex namehash of node
@@ -68,10 +68,11 @@ struct Note {
 
 sol! {
     // Kimap events
-    event Name(bytes32 indexed parent, bytes32 indexed child, bytes label);
-    event NewNote(bytes32 indexed node, bytes32 indexed notehash, bytes note, bytes data);
-    event UpdateNote(bytes32 indexed note, bytes data);
-    event Zeroth(address zerotba);
+    event Mint(bytes32 indexed parenthash, bytes32 indexed childhash, bytes name);
+    event Fact(bytes32 indexed nodehash, bytes32 indexed facthash, bytes note, bytes data);
+    event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes note, bytes data);
+    event Edit(bytes32 indexed note, bytes data);
+    event Zero(address indexed zerotba);
 }
 
 fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth::Filter) {
@@ -121,10 +122,11 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         .from_block(state.block - 1)
         .to_block(eth::BlockNumberOrTag::Latest)
         .events(vec![
-            "Name(bytes32,bytes32,bytes)",
-            "NewNote(bytes32,bytes32,bytes,bytes)",
-            "UpdateNote(bytes32,bytes)",
-            "Zeroth(address)",
+            "Mint(bytes32,bytes32,bytes)",
+            "Fact(bytes32,bytes32,bytes,bytes)",
+            "Note(bytes32,bytes32,bytes,bytes)",
+            "Edit(bytes32,bytes)",
+            "Zero(address)",
         ]);
 
     // 60s timeout -- these calls can take a long time
@@ -321,32 +323,32 @@ fn get_full_name(state: &mut State, label: &str, parent_hash: &str) -> String {
 
 fn handle_log(_our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
     match log.topics()[0] {
-        Name::SIGNATURE_HASH => {
-            let decoded = Name::decode_log_data(log.data(), true).unwrap();
+        Mint::SIGNATURE_HASH => {
+            let decoded = Mint::decode_log_data(log.data(), true).unwrap();
 
-            let label = String::from_utf8(decoded.label.to_vec())?;
-            let parent_hash = decoded.parent.to_string();
-            let node_hash = decoded.child.to_string();
+            let name = String::from_utf8(decoded.name.to_vec())?;
+            let parent_hash = decoded.parenthash.to_string();
+            let node_hash = decoded.childhash.to_string();
 
             println!(
                 "got name, node_hash, parent_node: {:?}, {:?}, {:?}",
-                label, node_hash, parent_hash
+                name, node_hash, parent_hash
             );
 
-            let full_name = get_full_name(state, &label, &parent_hash);
+            let full_name = get_full_name(state, &name, &parent_hash);
 
             println!("got full hierarchical name: {:?}", full_name);
             state.names.insert(node_hash.clone(), full_name);
-            state.hashes.insert(node_hash, label);
+            state.hashes.insert(node_hash, name);
         }
-        NewNote::SIGNATURE_HASH => {
-            let decoded = NewNote::decode_log_data(log.data(), true).unwrap();
+        Note::SIGNATURE_HASH => {
+            let decoded = Note::decode_log_data(log.data(), true).unwrap();
 
             let note = String::from_utf8(decoded.note.to_vec())?;
             let _notehash: String = decoded.notehash.to_string();
-            let node = decoded.node.to_string();
+            let node_hash = decoded.nodehash.to_string();
 
-            let full_note_name = get_full_name(state, &note, &node);
+            let full_note_name = get_full_name(state, &note, &node_hash);
 
             println!("got full note name: {:?}", full_note_name);
 
@@ -358,23 +360,23 @@ fn handle_log(_our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resu
             // generalize, cleaner system
             match note.as_str() {
                 "~wsport" => {
-                    state.nodes.entry(node.clone()).and_modify(|node| {
+                    state.nodes.entry(node_hash.clone()).and_modify(|node| {
                         node.ports
                             .insert("ws".to_string(), note_value.parse().unwrap());
                     });
                 }
                 "~networkingkey" => {
-                    state.nodes.entry(node.clone()).and_modify(|node| {
+                    state.nodes.entry(node_hash.clone()).and_modify(|node| {
                         node.public_key = Some(note_value.clone());
                     });
                 }
                 "~routers" => {
-                    state.nodes.entry(node.clone()).and_modify(|node| {
+                    state.nodes.entry(node_hash.clone()).and_modify(|node| {
                         node.routers.push(note_value.clone());
                     });
                 }
                 "~ip" => {
-                    state.nodes.entry(node.clone()).and_modify(|node| {
+                    state.nodes.entry(node_hash.clone()).and_modify(|node| {
                         node.ips.push(note_value.clone());
                     });
                 }
@@ -383,15 +385,15 @@ fn handle_log(_our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resu
 
             // todo: update corresponding node info at right time and send to KNS.
         }
-        UpdateNote::SIGNATURE_HASH => {
-            let _decoded = UpdateNote::decode_log_data(log.data(), true).unwrap();
+        Edit::SIGNATURE_HASH => {
+            let _decoded = Edit::decode_log_data(log.data(), true).unwrap();
 
             println!("got updated note!");
             // state.notes.entry(note_hash).and_modify(|note| {
             //     note.value = note_data.clone();
             // });
         }
-        Zeroth::SIGNATURE_HASH => {
+        Zero::SIGNATURE_HASH => {
             // println!("got zeroth log: {:?}", log);
         }
         _ => {
