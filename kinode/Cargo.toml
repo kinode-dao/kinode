@@ -26,18 +26,25 @@ simulation-mode = []
 
 [dependencies]
 aes-gcm = "0.10.3"
-alloy-contract = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
-alloy-consensus = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
-alloy-pubsub = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
-alloy-rpc-types = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
-alloy-rpc-client = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4", features = ["ws"]}
-alloy-transport-ws = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
-alloy-providers = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
-alloy-network = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
-alloy-primitives = "0.6.2"
-alloy-sol-macro = "0.6.2"
-alloy-sol-types = "0.6.2"
-alloy-signer = { git = "https://github.com/alloy-rs/alloy", rev = "6f8ebb4" }
+alloy = { git = "https://github.com/alloy-rs/alloy", rev = "05f8162", features = [
+    "consensus",
+    "contract",
+    "json-rpc",
+    "network",
+    "provider-ws",
+    "providers",
+    "pubsub",
+    "rpc-client-ws",
+    "rpc-client",
+    "rpc-types-eth",
+    "rpc-types",
+    "signer-wallet",
+    "signers",
+] }
+
+alloy-primitives = "0.7.5"
+alloy-sol-macro = "0.7.5"
+alloy-sol-types = "0.7.5"
 anyhow = "1.0.71"
 async-trait = "0.1.71"
 base64 = "0.22.0"

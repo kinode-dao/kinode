@@ -1,14 +1,13 @@
 use crate::keygen;
 use crate::KNS_ADDRESS;
+use alloy::providers::{Provider, ProviderBuilder, RootProvider};
+use alloy::pubsub::PubSubFrontend;
+use alloy::rpc::client::WsConnect;
+use alloy::rpc::types::eth::{TransactionInput, TransactionRequest};
+use alloy::signers::Signature;
 use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
-use alloy_providers::provider::{Provider, TempProvider};
-use alloy_pubsub::PubSubFrontend;
-use alloy_rpc_client::ClientBuilder;
-use alloy_rpc_types::request::{TransactionInput, TransactionRequest};
-use alloy_signer::Signature;
 use alloy_sol_macro::sol;
 use alloy_sol_types::{SolCall, SolValue};
-use alloy_transport_ws::WsConnect;
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use lib::types::core::*;
 use ring::rand::SystemRandom;
@@ -44,8 +43,8 @@ pub async fn register(
     tx: RegistrationSender,
     kill_rx: oneshot::Receiver<bool>,
     ip: String,
-    ws_networking: (tokio::net::TcpListener, bool),
-    tcp_networking: (tokio::net::TcpListener, bool),
+    ws_networking: (Option<tokio::net::TcpListener>, bool),
+    tcp_networking: (Option<tokio::net::TcpListener>, bool),
     http_port: u16,
     keyfile: Option<Vec<u8>>,
     maybe_rpc: Option<String>,
@@ -55,10 +54,24 @@ pub async fn register(
     let net_keypair = Arc::new(serialized_networking_keypair.as_ref().to_vec());
     let tx = Arc::new(tx);
 
-    let ws_port = ws_networking.0.local_addr().unwrap().port();
+    let ws_port = match ws_networking.0 {
+        Some(listener) => listener.local_addr().unwrap().port(),
+        None => 0,
+    };
     let ws_flag_used = ws_networking.1;
-    let tcp_port = tcp_networking.0.local_addr().unwrap().port();
+    let tcp_port = match tcp_networking.0 {
+        Some(listener) => listener.local_addr().unwrap().port(),
+        None => 0,
+    };
     let tcp_flag_used = tcp_networking.1;
+
+    let mut ports_map = std::collections::BTreeMap::new();
+    if ws_port != 0 {
+        ports_map.insert("ws".to_string(), ws_port);
+    }
+    if tcp_port != 0 {
+        ports_map.insert("tcp".to_string(), tcp_port);
+    }
 
     // This is a **temporary** identity, passed to the UI.
     // If it is confirmed through a /boot or /confirm-change-network-keys,
@@ -68,10 +81,7 @@ pub async fn register(
         name: "".to_string(),
         routing: NodeRouting::Both {
             ip: ip.clone(),
-            ports: std::collections::BTreeMap::from([
-                ("ws".to_string(), ws_port),
-                ("tcp".to_string(), tcp_port),
-            ]),
+            ports: ports_map,
             routers: vec![
                 "default-router-1.os".into(),
                 "default-router-2.os".into(),
@@ -254,7 +264,7 @@ pub async fn register(
         .await;
 }
 
-pub async fn connect_to_provider(maybe_rpc: Option<String>) -> Provider<PubSubFrontend> {
+pub async fn connect_to_provider(maybe_rpc: Option<String>) -> RootProvider<PubSubFrontend> {
     // This ETH provider uses public rpc endpoints to verify registration signatures.
     let url = if let Some(rpc_url) = maybe_rpc {
         rpc_url
@@ -265,12 +275,10 @@ pub async fn connect_to_provider(maybe_rpc: Option<String>) -> Provider<PubSubFr
         "Connecting to Optimism RPC at {url}\n\
         Specify a different RPC URL with the --rpc flag."
     );
+    let ws = WsConnect::new(url);
     // this fails occasionally in certain networking environments. i'm not sure why.
     // frustratingly, the exact same call does not fail in the eth module. more investigation needed.
-    let Ok(client) = ClientBuilder::default()
-        .ws(WsConnect { url, auth: None })
-        .await
-    else {
+    let Ok(client) = ProviderBuilder::new().on_ws(ws).await else {
         panic!(
             "Error: runtime could not connect to ETH RPC.\n\
             This is necessary in order to verify node identity onchain.\n\
@@ -280,7 +288,7 @@ pub async fn connect_to_provider(maybe_rpc: Option<String>) -> Provider<PubSubFr
     };
     println!("Connected to Optimism RPC");
 
-    Provider::new_with_client(client)
+    client
 }
 
 async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Rejection> {
@@ -350,7 +358,7 @@ async fn handle_boot(
     our: Arc<Identity>,
     networking_keypair: Arc<Vec<u8>>,
     kns_address: EthAddress,
-    provider: Arc<Provider<PubSubFrontend>>,
+    provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     let mut our = our.as_ref().clone();
 
@@ -379,13 +387,13 @@ async fn handle_boot(
     }
 
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
+
     let tld_call = nodesCall { _0: namehash }.abi_encode();
     let tx_input = TransactionInput::new(Bytes::from(tld_call));
-    let tx = TransactionRequest {
-        to: Some(kns_address),
-        input: tx_input,
-        ..Default::default()
-    };
+
+    let tx = TransactionRequest::default()
+        .to(kns_address)
+        .input(tx_input);
 
     // this call can fail if the indexer has not caught up to the transaction
     // that just got confirmed on our frontend. for this reason, we retry
@@ -394,7 +402,7 @@ async fn handle_boot(
     let mut attempts = 0;
     let mut tld_result = Err(());
     while attempts < 5 {
-        match provider.call(tx.clone(), None).await {
+        match provider.call(&tx).await {
             Ok(tld) => {
                 tld_result = Ok(tld);
                 break;
@@ -428,13 +436,11 @@ async fn handle_boot(
     }
     .abi_encode();
     let tx_input = TransactionInput::new(Bytes::from(auth_call));
-    let tx = TransactionRequest {
-        to: Some(tld_address),
-        input: tx_input,
-        ..Default::default()
-    };
+    let tx = TransactionRequest::default()
+        .to(tld_address)
+        .input(tx_input);
 
-    let Ok(authed) = provider.call(tx, None).await else {
+    let Ok(authed) = provider.call(&tx).await else {
         return Ok(warp::reply::with_status(
             warp::reply::json(&"Failed to fetch associated address for username"),
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -503,7 +509,7 @@ async fn handle_import_keyfile(
     tcp_networking_port: (u16, bool),
     sender: Arc<RegistrationSender>,
     kns_address: EthAddress,
-    provider: Arc<Provider<PubSubFrontend>>,
+    provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
     let encoded_keyfile = match base64_standard.decode(info.keyfile.clone()) {
@@ -573,7 +579,7 @@ async fn handle_login(
     sender: Arc<RegistrationSender>,
     encoded_keyfile: Option<Vec<u8>>,
     kns_address: EthAddress,
-    provider: Arc<Provider<PubSubFrontend>>,
+    provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     if encoded_keyfile.is_none() {
         return Ok(warp::reply::with_status(
@@ -701,7 +707,7 @@ async fn confirm_change_network_keys(
 pub async fn assign_routing(
     our: &mut Identity,
     kns_address: EthAddress,
-    provider: Arc<Provider<PubSubFrontend>>,
+    provider: Arc<RootProvider<PubSubFrontend>>,
     ws_networking_port: (u16, bool),
     tcp_networking_port: (u16, bool),
 ) -> anyhow::Result<()> {
@@ -709,13 +715,11 @@ pub async fn assign_routing(
     let ip_call = ipCall { _0: namehash }.abi_encode();
     let key_call = keyCall { _0: namehash }.abi_encode();
     let tx_input = TransactionInput::new(Bytes::from(ip_call));
-    let tx = TransactionRequest {
-        to: Some(kns_address),
-        input: tx_input,
-        ..Default::default()
-    };
+    let tx = TransactionRequest::default()
+        .to(kns_address)
+        .input(tx_input);
 
-    let Ok(ip_data) = provider.call(tx, None).await else {
+    let Ok(ip_data) = provider.call(&tx).await else {
         return Err(anyhow::anyhow!("Failed to fetch node IP data from PKI"));
     };
 
@@ -725,13 +729,11 @@ pub async fn assign_routing(
     };
 
     let key_tx_input = TransactionInput::new(Bytes::from(key_call));
-    let key_tx = TransactionRequest {
-        to: Some(kns_address),
-        input: key_tx_input,
-        ..Default::default()
-    };
+    let key_tx = TransactionRequest::default()
+        .to(kns_address)
+        .input(key_tx_input);
 
-    let Ok(public_key) = provider.call(key_tx, None).await else {
+    let Ok(public_key) = provider.call(&key_tx).await else {
         return Err(anyhow::anyhow!("Failed to fetch node key from PKI"));
     };
 

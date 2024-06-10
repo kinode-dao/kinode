@@ -1,0 +1,23 @@
+name: rust release-candidate CI
+
+on:
+  push:
+    branches: [ release-candidate ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+    - name: build and deploy kinode
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_ED25519KEY }}
+        port: ${{ secrets.SSH_PORT }}
+        command_timeout: 60m
+        script: |
+          cd ~
+          ./build-kinode.sh

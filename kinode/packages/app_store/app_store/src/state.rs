@@ -1,6 +1,7 @@
 use crate::VFS_TIMEOUT;
 use crate::{utils, DownloadRequest, LocalRequest};
 use alloy_sol_types::{sol, SolEvent};
+use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
     eth, kernel_types as kt, net, println, vfs, Address, Message, NodeId, PackageId, Request,
 };
@@ -458,31 +459,16 @@ impl State {
 
                 current_listing.metadata_url = metadata_url;
                 current_listing.metadata_hash = metadata_hash;
-                current_listing.metadata = metadata;
 
-                // if we have this app installed, and we have auto_update set to true,
-                // we should try to download new version from the mirrored_from node
-                // and install it if successful.
-                let package_id = PackageId::new(&current_listing.name, &current_listing.publisher);
-                if let Some(package_state) = self.downloaded_packages.get(&package_id) {
-                    if package_state.auto_update {
-                        if let Some(mirrored_from) = &package_state.mirrored_from {
-                            println!("auto-updating package {package_id} from {mirrored_from}");
-                            Request::to(&self.our)
-                                .body(serde_json::to_vec(&LocalRequest::Download(
-                                    DownloadRequest {
-                                        package_id: crate::kinode::process::main::PackageId::from_process_lib(
-                                            package_id,
-                                        ),
-                                        download_from: mirrored_from.clone(),
-                                        mirror: package_state.mirroring,
-                                        auto_update: package_state.auto_update,
-                                        desired_version_hash: None,
-                                    },
-                                )).unwrap())
-                                .send().unwrap();
-                        }
+                if update_listings {
+                    current_listing.metadata = metadata.clone();
+                    let package_id =
+                        PackageId::new(&current_listing.name, &current_listing.publisher);
+                    if let Some(package_state) = self.downloaded_packages.get(&package_id) {
+                        auto_update(&self.our, package_id, &metadata.unwrap(), &package_state);
                     }
+                } else {
+                    current_listing.metadata = metadata;
                 }
             }
             Transfer::SIGNATURE_HASH => {
@@ -541,10 +527,59 @@ impl State {
                 if let Ok(metadata) =
                     utils::fetch_metadata_from_url(&listing.metadata_url, &listing.metadata_hash, 5)
                 {
+                    let package_id = PackageId::new(&listing.name, &listing.publisher);
+                    if let Some(package_state) = self.downloaded_packages.get(&package_id) {
+                        auto_update(&self.our, package_id, &metadata, &package_state);
+                    }
                     listing.metadata = Some(metadata);
                 }
             }
         }
         kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+    }
+}
+
+/// if we have this app installed, and we have auto_update set to true,
+/// we should try to download new version from the mirrored_from node
+/// and install it if successful.
+fn auto_update(
+    our: &Address,
+    package_id: PackageId,
+    metadata: &Erc721Metadata,
+    package_state: &PackageState,
+) {
+    if package_state.auto_update {
+        let latest_version_hash = metadata
+            .properties
+            .code_hashes
+            .get(&metadata.properties.current_version);
+        if let Some(mirrored_from) = &package_state.mirrored_from
+            && Some(&package_state.our_version) != latest_version_hash
+        {
+            println!(
+                "auto-updating package {package_id} from {} to {} using mirror {mirrored_from}",
+                metadata
+                    .properties
+                    .code_hashes
+                    .get(&package_state.our_version)
+                    .unwrap_or(&package_state.our_version),
+                metadata.properties.current_version,
+            );
+            Request::to(our)
+                .body(
+                    serde_json::to_vec(&LocalRequest::Download(DownloadRequest {
+                        package_id: crate::kinode::process::main::PackageId::from_process_lib(
+                            package_id,
+                        ),
+                        download_from: mirrored_from.clone(),
+                        mirror: package_state.mirroring,
+                        auto_update: package_state.auto_update,
+                        desired_version_hash: None,
+                    }))
+                    .unwrap(),
+                )
+                .send()
+                .unwrap();
+        }
     }
 }

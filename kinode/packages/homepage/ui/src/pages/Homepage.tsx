@@ -33,7 +33,7 @@ function Homepage() {
       fetch(getFetchUrl('/main:app_store:sys/apps'), { credentials: 'include' }).then(res => res.json()).catch(() => []),
       fetch(getFetchUrl('/version'), { credentials: 'include' }).then(res => res.text()).catch(() => '')
     ]).then(([appsData, appStoreData, version]) => {
-      console.log({ appsData, appStoreData, version })
+      // console.log({ appsData, appStoreData, version })
 
       setVersion(version)
 
@@ -98,7 +98,7 @@ function Homepage() {
         {isHosted && <img
           src={valetIcon}
           className='!w-12 !h-12 !p-1 button icon object-cover'
-          onClick={() => window.location.href = `https://${our.replace('.os', '')}.hosting.kinode.net/`}
+          onClick={() => window.location.href = `https://valet.kinode.org/`}
         />}
         <span>{our}</span>
         <span className='bg-white/10 rounded p-1'>v{version}</span>

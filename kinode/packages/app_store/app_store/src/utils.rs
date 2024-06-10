@@ -76,7 +76,7 @@ pub fn fetch_state(our: Address, provider: eth::Provider) -> State {
 pub fn app_store_filter(state: &State) -> eth::Filter {
     eth::Filter::new()
         .address(eth::Address::from_str(&state.contract_address).unwrap())
-        .from_block(state.last_saved_block - 1)
+        .from_block(state.last_saved_block)
         .events(EVENTS)
 }
 
@@ -250,6 +250,15 @@ pub fn create_package_drive(
         .body(serde_json::to_vec(&vfs::VfsRequest {
             path: drive_name.clone(),
             action: vfs::VfsAction::CreateDrive,
+        })?)
+        .send_and_await_response(VFS_TIMEOUT)??;
+
+    // DELETE the /pkg folder in the package drive
+    // in order to replace with the fresh one
+    Request::to(("our", "vfs", "distro", "sys"))
+        .body(serde_json::to_vec(&vfs::VfsRequest {
+            path: drive_name.clone(),
+            action: vfs::VfsAction::RemoveDirAll,
         })?)
         .send_and_await_response(VFS_TIMEOUT)??;
 
