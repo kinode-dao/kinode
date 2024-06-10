@@ -4,7 +4,7 @@ use alloy::pubsub::PubSubFrontend;
 use alloy::rpc::client::WsConnect;
 use alloy::rpc::types::eth::{TransactionInput, TransactionRequest};
 use alloy::signers::wallet::LocalWallet;
-use alloy_primitives::{Address, Bytes, FixedBytes, B256, U256};
+use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use alloy_sol_types::{SolCall, SolValue};
 use lib::core::{Identity, NodeRouting};
 use std::str::FromStr;
@@ -15,11 +15,14 @@ use crate::{keygen, KNS_ADDRESS};
 pub use helpers::RegisterHelpers::*;
 pub use helpers::*;
 
-const FAKE_DOTDEV: &str = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
-const FAKE_DOTOS: &str = "0xC466dc53e3e2a29A296fE38Bdeab60a7C023A383";
+const FAKE_DOTDEV_TBA: &str = "0xB624D86187c2495888D42AbE0a15b6f6aaa557CF";
+const FAKE_DOTOS_TBA: &str = "0xC466dc53e3e2a29A296fE38Bdeab60a7C023A383";
+const FAKE_ZEROTH_TBA: &str = "0x10AfFE8d293d5c07be2633a67917502FefAdEef6";
 
 const KINO_ACCOUNT_IMPL: &str = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
-const KINOMAP: &str = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"; // "0x68B1D87F95878fE05B998F19b66F4baba5De1aed";
+const KINO_MINTER_IMPL: &str = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
+
+const KINOMAP: &str = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"; // "0x68B1D87F95878fE05B998F19b66F4baba5De1aed";?
 
 /// Attempts to connect to a local anvil fakechain,
 /// registering a name with its KiMap contract.
@@ -38,7 +41,8 @@ pub async fn mint_local(
 
     let signer: EthereumSigner = wallet.into();
 
-    let dotos = Address::from_str(FAKE_DOTOS)?;
+    let dotos = Address::from_str(FAKE_DOTOS_TBA)?;
+    let dotdev = Address::from_str(FAKE_DOTDEV_TBA)?;
     let kimap = Address::from_str(KINOMAP)?;
 
     let endpoint = format!("ws://localhost:{}", fakechain_port);
@@ -49,28 +53,21 @@ pub async fn mint_local(
     let namehash = encode_namehash(name);
 
     // interesting, even if we have a minted name, this does not explicitly fail.
-    let replicate_call = replicateCall {
-        who: wallet.address(),
-        name: name.as_bytes().to_vec(),
-        initialization: vec![],
-        erc721Data: vec![],
+    // also note, fake.dev.os seems to currently work, need to gate dots from names?
+    let mint_call = mintCall {
+        who: wallet_address,
+        label: Bytes::from(name.as_bytes().to_vec()),
+        initialization: vec![].into(),
+        erc721Data: vec![].into(),
         implementation: Address::from_str(KINO_ACCOUNT_IMPL).unwrap(),
     }
     .abi_encode();
 
-    let nonce = provider
-        .get_transaction_count(wallet.address(), None)
-        .await?;
-
-    let tx = TransactionRequest::default()
-        .to(dotos)
-        .input(TransactionInput::new(replicate_call.into()));
-
     let nonce = provider.get_transaction_count(wallet_address).await?;
 
     let tx = TransactionRequest::default()
-        .to(to)
-        .input(input)
+        .to(dotos)
+        .input(TransactionInput::new(mint_call.into()))
         .nonce(nonce)
         .with_chain_id(31337)
         .with_gas_limit(500_000)
@@ -85,7 +82,7 @@ pub async fn mint_local(
 
     // Send the raw transaction and retrieve the transaction receipt.
     let _tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
-
+    println!("tx_hash: {:?}", _tx_hash);
     // try to get name, if there isn't one, replicate it from .dev
     let get_call = getCall {
         node: namehash.into(),
@@ -93,10 +90,10 @@ pub async fn mint_local(
     .abi_encode();
 
     let get_tx = TransactionRequest::default()
-        .to(Some(kimap))
+        .to(kimap)
         .input(TransactionInput::new(get_call.into()));
 
-    let exists = provider.call(get_tx, None).await?;
+    let exists = provider.call(&get_tx).await?;
     println!("exists: {:?}", exists);
 
     // todo abi_decode() properly into getReturn.
@@ -111,18 +108,18 @@ pub async fn mint_local(
     // multicall coming on contracts soon, will make it easier.
 
     let port_call = noteCall {
-        note: "~wsport".as_bytes().to_vec(),
-        data: ws_port.to_string().as_bytes().to_vec(),
+        note: "~wsport".into(),
+        data: ws_port.to_string().into(),
     };
 
     let ip_call = noteCall {
-        note: "~ip".as_bytes().to_vec(),
-        data: "127.0.0.1".as_bytes().to_vec(),
+        note: "~ip".into(),
+        data: "127.0.0.1".into(),
     };
 
     let pubkey_call = noteCall {
-        note: "~networkingkey".as_bytes().to_vec(),
-        data: pubkey.as_bytes().to_vec(),
+        note: "~networkingkey".into(),
+        data: Bytes::from(pubkey.as_bytes().to_vec()),
     };
 
     let calls = vec![port_call, ip_call, pubkey_call];
@@ -133,31 +130,25 @@ pub async fn mint_local(
         let execute_call = executeCall {
             to: kimap,
             value: U256::from(0),
-            data: note_call,
+            data: note_call.into(),
             operation: 0,
         }
         .abi_encode();
 
-        let nonce = provider
-            .get_transaction_count(wallet.address(), None)
-            .await?;
+        let nonce = provider.get_transaction_count(wallet_address).await?;
 
-        let mut tx = TxLegacy {
-            to: TxKind::Call(tba),
-            nonce: nonce.to::<u64>(),
-            input: execute_call.into(),
-            chain_id: Some(31337),
-            gas_limit: 3000000,
-            gas_price: 100000000000,
-            ..Default::default()
-        };
+        let tx = TransactionRequest::default()
+            .to(tba)
+            .input(TransactionInput::new(execute_call.into()))
+            .nonce(nonce)
+            .with_chain_id(31337)
+            .with_gas_limit(500_000)
+            .with_max_priority_fee_per_gas(1_000_000_000)
+            .with_max_fee_per_gas(20_000_000_000);
 
-        let sig = wallet.sign_transaction_sync(&mut tx)?;
-        let signed_tx = tx.into_signed(sig);
-        let mut buf = vec![];
-        signed_tx.encode_signed(&mut buf);
-
-        let _tx_hash = provider.send_raw_transaction(buf.into()).await?;
+        let tx_envelope = tx.build(&signer).await?;
+        let tx_encoded = tx_envelope.encoded_2718();
+        let _tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
     }
 
     Ok(())

@@ -3,6 +3,7 @@ use sha3::{Digest, Keccak256};
 
 sol! {
     contract RegisterHelpers {
+        // todo: remove old KNS helpers as we rewrite src/register and UI!
         function register(
             bytes calldata _name,
             address _to,
@@ -27,15 +28,16 @@ sol! {
         function multicall(bytes[] calldata data);
 
         // new kimap contracts
-        function replicate (
+        function mint (
             address who,
-            bytes calldata name,
+            bytes calldata label,
             bytes calldata initialization,
             bytes calldata erc721Data,
             address implementation
         ) external returns (
             address tba
         );
+
 
         function get (
             bytes32 node
@@ -52,6 +54,11 @@ sol! {
             bytes32 notenode
         );
 
+        function edit (
+            bytes32 _note,
+            bytes calldata _data
+        ) external;
+
         // tba account
         function execute(
             address to,
@@ -59,6 +66,15 @@ sol! {
             bytes calldata data,
             uint8 operation
         ) external payable returns (bytes memory returnData);
+
+        struct Call {
+            address target;
+            bytes callData;
+        }
+
+        function aggregate(
+            Call[] calldata calls
+        ) external payable returns (uint256 blockNumber, bytes[] memory returnData);
 
         function token() external view returns (uint256,address,uint256);
     }
