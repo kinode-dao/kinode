@@ -9,7 +9,9 @@
         "mirrors": [],
         "code_hashes": {
             "0.1.1": ""
-        }
+        },
+        "wit_version": 0,
+        "dependencies": []
     },
     "external_url": "https://kinode.org",
     "animation_url": ""

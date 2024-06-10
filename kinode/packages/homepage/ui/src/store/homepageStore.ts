@@ -6,11 +6,11 @@ export interface HomepageApp {
   path: string
   label: string,
   base64_icon?: string,
-  is_favorite: boolean,
   state?: {
     our_version: string
   }
   widget?: string
+  order?: number
 }
 
 export interface HomepageStore {

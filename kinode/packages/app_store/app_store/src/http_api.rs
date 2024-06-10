@@ -1,11 +1,136 @@
-use crate::{DownloadResponse, PackageListing, PackageState, RequestedPackage, State};
+use crate::state::{PackageListing, PackageState, State};
+use crate::DownloadResponse;
 use kinode_process_lib::{
-    eth,
-    http::{send_response, IncomingHttpRequest, Method, StatusCode},
-    Address, NodeId, PackageId,
+    http::{
+        bind_http_path, bind_ws_path, send_response, serve_ui, IncomingHttpRequest, Method,
+        StatusCode,
+    },
+    Address, NodeId, PackageId, Request,
 };
 use serde_json::json;
 use std::collections::HashMap;
+
+const ICON: &str = include_str!("icon");
+
+/// Bind static and dynamic HTTP paths for the app store,
+/// bind to our WS updates path, and add icon and widget to homepage.
+pub fn init_frontend(our: &Address) {
+    for path in [
+        "/apps",
+        "/apps/listed",
+        "/apps/:id",
+        "/apps/listed/:id",
+        "/apps/:id/caps",
+        "/apps/:id/mirror",
+        "/apps/:id/auto-update",
+        "/apps/rebuild-index",
+    ] {
+        bind_http_path(path, true, false).expect("failed to bind http path");
+    }
+    serve_ui(
+        &our,
+        "ui",
+        true,
+        false,
+        vec!["/", "/my-apps", "/app-details/:id", "/publish"],
+    )
+    .expect("failed to serve static UI");
+
+    bind_ws_path("/", true, true).expect("failed to bind ws path");
+
+    // add ourselves to the homepage
+    Request::to(("our", "homepage", "homepage", "sys"))
+        .body(
+            serde_json::json!({
+                "Add": {
+                    "label": "App Store",
+                    "icon": ICON,
+                    "path": "/",
+                    "widget": make_widget()
+                }
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
+        )
+        .send()
+        .unwrap();
+}
+
+fn make_widget() -> String {
+    return r#"<html>
+<head>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .app {
+            width: 100%;
+        }
+
+        .app-image {
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+
+        .app-info {
+            max-width: 67%
+        }
+
+        @media screen and (min-width: 500px) {
+            .app {
+                width: 49%;
+            }
+        }
+    </style>
+</head>
+<body class="text-white overflow-hidden">
+    <div
+        id="latest-apps"
+        class="flex flex-wrap p-2 gap-2 items-center backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto"
+        style="
+            scrollbar-color: transparent transparent;
+            scrollbar-width: none;
+        "
+    >
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/main:app_store:sys/apps/listed', { credentials: 'include' })
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('latest-apps');
+                    data.forEach(app => {
+                        if (app.metadata) {
+                            const a = document.createElement('a');
+                            a.className = 'app p-2 grow flex items-stretch rounded-lg shadow bg-white/10 hover:bg-white/20 font-sans cursor-pointer';
+                            a.href = `/main:app_store:sys/app-details/${app.package}:${app.publisher}`
+                            a.target = '_blank';
+                            a.rel = 'noopener noreferrer';
+                            const iconLetter = app.metadata_hash.replace('0x', '')[0].toUpperCase();
+                            a.innerHTML = `<div
+                                class="app-image rounded mr-2 grow"
+                                style="
+                                    background-image: url('${app.metadata.image || `/icons/${iconLetter}`}');
+                                    height: 92px;
+                                    width: 92px;
+                                    max-width: 33%;
+                                "
+                            ></div>
+                            <div class="app-info flex flex-col grow">
+                                <h2 class="font-bold">${app.metadata.name}</h2>
+                                <p>${app.metadata.description}</p>
+                            </div>`;
+                                container.appendChild(a);
+                        }
+                    });
+                })
+                .catch(error => console.error('Error fetching apps:', error));
+        });
+    </script>
+</body>
+</html>"#
+        .to_string();
+}
 
 /// Actions supported over HTTP:
 /// - get all downloaded apps: GET /apps
@@ -26,14 +151,8 @@ use std::collections::HashMap;
 /// - stop auto-updating a downloaded app: DELETE /apps/:id/auto-update
 ///
 /// - RebuildIndex: POST /apps/rebuild-index
-pub fn handle_http_request(
-    our: &Address,
-    state: &mut State,
-    eth_provider: &eth::Provider,
-    requested_packages: &mut HashMap<PackageId, RequestedPackage>,
-    req: &IncomingHttpRequest,
-) -> anyhow::Result<()> {
-    match serve_paths(our, state, eth_provider, requested_packages, req) {
+pub fn handle_http_request(state: &mut State, req: &IncomingHttpRequest) -> anyhow::Result<()> {
+    match serve_paths(state, req) {
         Ok((status_code, _headers, body)) => send_response(
             status_code,
             Some(HashMap::from([(
@@ -99,15 +218,12 @@ fn gen_package_info(
 }
 
 fn serve_paths(
-    our: &Address,
     state: &mut State,
-    eth_provider: &eth::Provider,
-    requested_packages: &mut HashMap<PackageId, RequestedPackage>,
     req: &IncomingHttpRequest,
 ) -> anyhow::Result<(StatusCode, Option<HashMap<String, String>>, Vec<u8>)> {
     let method = req.method()?;
 
-    let bound_path: &str = req.bound_path(Some(&our.process.to_string()));
+    let bound_path: &str = req.bound_path(Some(&state.our.process.to_string()));
     let url_params = req.url_params();
 
     match bound_path {
@@ -183,7 +299,7 @@ fn serve_paths(
                 }
                 Method::POST => {
                     // install an app
-                    crate::handle_install(our, state, &package_id)?;
+                    crate::handle_install(state, &package_id)?;
                     Ok((StatusCode::CREATED, None, format!("Installed").into_bytes()))
                 }
                 Method::PUT => {
@@ -201,20 +317,19 @@ fn serve_paths(
                         .ok_or(anyhow::anyhow!("No mirror for package {package_id}"))?
                         .to_string();
                     match crate::start_download(
-                        our,
-                        requested_packages,
-                        &package_id,
-                        &download_from,
+                        state,
+                        package_id,
+                        download_from,
                         pkg_state.mirroring,
                         pkg_state.auto_update,
-                        &None,
+                        None,
                     ) {
                         DownloadResponse::Started => Ok((
                             StatusCode::CREATED,
                             None,
                             format!("Downloading").into_bytes(),
                         )),
-                        DownloadResponse::Failure => Ok((
+                        _ => Ok((
                             StatusCode::SERVICE_UNAVAILABLE,
                             None,
                             format!("Failed to download").into_bytes(),
@@ -297,23 +412,22 @@ fn serve_paths(
                     let auto_update = false;
                     let desired_version_hash = None;
                     match crate::start_download(
-                        our,
-                        requested_packages,
-                        &package_id,
-                        &download_from,
+                        state,
+                        package_id,
+                        download_from,
                         mirror,
                         auto_update,
-                        &desired_version_hash,
+                        desired_version_hash,
                     ) {
                         DownloadResponse::Started => Ok((
                             StatusCode::CREATED,
                             None,
                             format!("Downloading").into_bytes(),
                         )),
-                        DownloadResponse::Failure => Ok((
+                        other => Ok((
                             StatusCode::SERVICE_UNAVAILABLE,
                             None,
-                            format!("Failed to download").into_bytes(),
+                            format!("Failed to download: {other:?}").into_bytes(),
                         )),
                     }
                 }
@@ -334,10 +448,9 @@ fn serve_paths(
                     format!("Missing id").into_bytes(),
                 ));
             };
-
             match method {
                 // return the capabilities for that app
-                Method::GET => Ok(match crate::fetch_package_manifest(&package_id) {
+                Method::GET => Ok(match crate::utils::fetch_package_manifest(&package_id) {
                     Ok(manifest) => (StatusCode::OK, None, serde_json::to_vec(&manifest)?),
                     Err(_) => (
                         StatusCode::NOT_FOUND,
@@ -432,7 +545,7 @@ fn serve_paths(
                     format!("Invalid method {method} for {bound_path}").into_bytes(),
                 ));
             }
-            crate::rebuild_index(our, state, eth_provider);
+            crate::rebuild_index(state);
             Ok((StatusCode::OK, None, vec![]))
         }
         _ => Ok((

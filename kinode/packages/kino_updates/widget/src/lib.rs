@@ -2,14 +2,10 @@ use kinode_process_lib::{call_init, http, timer, Address, Request};
 use serde::{Deserialize, Serialize};
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "process-v0",
 });
 
-/// Fetching OS version from main package.. LMK if there's a better way...
-const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
-/// A static message to display on the homepage.
-const MOTD: &str = "Welcome to Kinode!";
 /// 20 minutes
 const REFRESH_INTERVAL: u64 = 20 * 60 * 1000;
 
@@ -37,7 +33,7 @@ fn init(_our: Address) {
                 serde_json::json!({
                     "Add": {
                         "label": "KinoUpdates",
-                        "widget": create_widget(fetch_three_most_recent_blog_posts()),
+                        "widget": create_widget(fetch_most_recent_blog_posts(6)),
                     }
                 })
                 .to_string(),
@@ -79,12 +75,10 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         }}
     </style>
 </head>
-<body class="text-white overflow-hidden">
-    <p>Kinode {}: {}</p>
-    <p>Recent posts from kinode.org:</p>
+<body class="text-white overflow-hidden h-screen w-screen flex flex-col gap-2">
     <div
         id="latest-blog-posts"
-        class="flex flex-col p-2 gap-2 backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto"
+        class="flex flex-col p-2 gap-2 backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto self-stretch"
         style="
             scrollbar-color: transparent transparent;
             scrollbar-width: none;
@@ -94,8 +88,6 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     </div>
 </body>
 </html>"#,
-        version_from_cargo_toml(),
-        MOTD,
         posts
             .into_iter()
             .map(post_to_html_string)
@@ -103,22 +95,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     );
 }
 
-fn version_from_cargo_toml() -> String {
-    let version = CARGO_TOML
-        .lines()
-        .find(|line| line.starts_with("version = "))
-        .expect("Failed to find version in Cargo.toml");
-
-    version
-        .split('=')
-        .last()
-        .expect("Failed to parse version from Cargo.toml")
-        .trim()
-        .trim_matches('"')
-        .to_string()
-}
-
-fn fetch_three_most_recent_blog_posts() -> Vec<KinodeBlogPost> {
+fn fetch_most_recent_blog_posts(n: usize) -> Vec<KinodeBlogPost> {
     let blog_posts = match http::send_request_await_response(
         http::Method::GET,
         url::Url::parse("https://kinode.org/api/blog/posts").unwrap(),
@@ -131,13 +108,14 @@ fn fetch_three_most_recent_blog_posts() -> Vec<KinodeBlogPost> {
         Err(e) => panic!("Failed to fetch blog posts: {:?}", e),
     };
 
-    blog_posts.into_iter().rev().take(3).collect()
+    blog_posts.into_iter().rev().take(n as usize).collect()
 }
 
 /// Take first 100 chars of a blog post and append "..." to the end
 fn trim_content(content: &str) -> String {
-    if content.len() > 100 {
-        format!("{}...", &content[..100])
+    let len = 75;
+    if content.len() > len {
+        format!("{}...", &content[..len])
     } else {
         content.to_string()
     }
@@ -145,20 +123,24 @@ fn trim_content(content: &str) -> String {
 
 fn post_to_html_string(post: KinodeBlogPost) -> String {
     format!(
-        r#"<div class="post p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 font-sans w-full">
+        r#"<a 
+            class="post p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 hover:bg-white/20 font-sans w-full"
+            href="https://kinode.org/blog/post/{}"
+            target="_blank" 
+            rel="noopener noreferrer"
+        >
         <div
-            class="post-image rounded mr-2 grow"
+            class="post-image rounded mr-2 grow self-stretch h-full"
             style="background-image: url('https://kinode.org{}');"
         ></div>
         <div class="post-info flex flex-col grow">
             <h2 class="font-bold">{}</h2>
             <p>{}</p>
-            <a href="https://kinode.org/blog/post/{}" class="text-blue-500" target="_blank" rel="noopener noreferrer">Read more</a>
         </div>
-    </div>"#,
+    </a>"#,
+        post.slug,
         post.thumbnail_image,
         post.title,
         trim_content(&post.content),
-        post.slug,
     )
 }

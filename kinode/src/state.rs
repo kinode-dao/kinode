@@ -77,7 +77,7 @@ pub async fn load_state(
         &mut reverse_cap_index,
     )
     .await
-    .unwrap();
+    .expect("bootstrapping filesystem failed!");
 
     Ok((process_map, db, reverse_cap_index))
 }
@@ -297,7 +297,7 @@ async fn handle_request(
 
 /// function run only upon fresh boot.
 ///
-/// for each folder in /modules, looks for a package.zip file, extracts the contents,
+/// for each included package.zip file, extracts the contents,
 /// sends the contents to VFS, and reads the manifest.json.
 ///
 /// the manifest.json contains instructions for which processes to boot and what
@@ -358,7 +358,7 @@ async fn bootstrap(
         .entry(ProcessId::new(Some("kernel"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
-            wit_version: None,
+            wit_version: Some(crate::kernel::LATEST_WIT_VERSION),
             on_exit: OnExit::Restart,
             capabilities: runtime_caps.clone(),
             public: false,
@@ -368,7 +368,7 @@ async fn bootstrap(
         .entry(ProcessId::new(Some("net"), "distro", "sys"))
         .or_insert(PersistedProcess {
             wasm_bytes_handle: "".into(),
-            wit_version: None,
+            wit_version: Some(crate::kernel::LATEST_WIT_VERSION),
             on_exit: OnExit::Restart,
             capabilities: runtime_caps.clone(),
             public: false,
@@ -379,7 +379,7 @@ async fn bootstrap(
             .entry(runtime_module.0)
             .or_insert(PersistedProcess {
                 wasm_bytes_handle: "".into(),
-                wit_version: None,
+                wit_version: Some(crate::kernel::LATEST_WIT_VERSION),
                 on_exit: OnExit::Restart,
                 capabilities: runtime_caps.clone(),
                 public: runtime_module.3,
@@ -403,6 +403,11 @@ async fn bootstrap(
         // create a new package in VFS
         let our_drive_name = [package_name, package_publisher].join(":");
         let pkg_path = format!("{}/vfs/{}/pkg", &home_directory_path, &our_drive_name);
+        // delete anything currently residing in the pkg folder
+        let pkg_path_buf = std::path::PathBuf::from(&pkg_path);
+        if pkg_path_buf.exists() {
+            fs::remove_dir_all(&pkg_path).await?;
+        }
         fs::create_dir_all(&pkg_path)
             .await
             .expect("bootstrap vfs dir pkg creation failed!");
@@ -589,6 +594,7 @@ async fn bootstrap(
                 std::collections::hash_map::Entry::Occupied(p) => {
                     let p = p.into_mut();
                     p.wasm_bytes_handle = wasm_bytes_handle.clone();
+                    p.wit_version = package_metadata.properties.wit_version;
                     p.on_exit = entry.on_exit;
                     p.capabilities.extend(requested_caps);
                     p.public = public_process;
@@ -596,7 +602,7 @@ async fn bootstrap(
                 std::collections::hash_map::Entry::Vacant(v) => {
                     v.insert(PersistedProcess {
                         wasm_bytes_handle: wasm_bytes_handle.clone(),
-                        wit_version: None,
+                        wit_version: package_metadata.properties.wit_version,
                         on_exit: entry.on_exit,
                         capabilities: requested_caps,
                         public: public_process,
@@ -717,8 +723,6 @@ async fn get_zipped_packages() -> Vec<(
     Erc721Metadata,
     zip::ZipArchive<std::io::Cursor<&'static [u8]>>,
 )> {
-    // println!("fs: reading distro packages...\r");
-
     let mut packages = Vec::new();
 
     for (package_name, metadata_bytes, bytes) in BOOTSTRAPPED_PROCESSES.iter() {
@@ -727,7 +731,7 @@ async fn get_zipped_packages() -> Vec<(
                 packages.push((metadata, zip));
             } else {
                 println!(
-                    "fs: metadata for package {} is not valid Erc721Metadata",
+                    "fs: metadata for package {} is not valid Erc721Metadata\r",
                     package_name
                 );
             }

@@ -3,8 +3,8 @@ use kinode_process_lib::{
 };
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "process-v0",
 });
 
 call_init!(init);
@@ -41,5 +41,8 @@ fn init(_our: Address) {
         println!("no file found at {}", file_path);
         return;
     };
-    println!("{}", String::from_utf8(blob.bytes).unwrap());
+    match String::from_utf8(blob.bytes) {
+        Ok(s) => println!("{s}"),
+        Err(_e) => println!("error: file at {file_path} could not be parsed as utf-8 string!"),
+    }
 }

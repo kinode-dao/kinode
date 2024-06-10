@@ -1,8 +1,8 @@
 use kinode_process_lib::{await_next_message_body, call_init, println, Address};
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "process-v0",
 });
 
 call_init!(init);

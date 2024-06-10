@@ -22,6 +22,7 @@ export default function AppPage() {
   const navigate = useNavigate();
   const params = useParams();
   const [app, setApp] = useState<AppInfo | undefined>(undefined);
+  const [launchPath, setLaunchPath] = useState('');
 
   useEffect(() => {
     const myApp = myApps.local.find((a) => appId(a) === params.id);
@@ -55,19 +56,19 @@ export default function AppPage() {
   const isMobile = isMobileCheck()
 
   const appDetails: Array<{ top: ReactElement, middle: ReactElement, bottom: ReactElement }> = [
-    {
-      top: <div className={classNames({ 'text-sm': isMobile })}>0 ratings</div>,
-      middle: <span className="text-2xl">5.0</span>,
-      bottom: <div className={classNames("flex-center gap-1", {
-        'text-sm': isMobile
-      })}>
-        <FaStar />
-        <FaStar />
-        <FaStar />
-        <FaStar />
-        <FaStar />
-      </div>
-    },
+    // {
+    //   top: <div className={classNames({ 'text-sm': isMobile })}>0 ratings</div>,
+    //   middle: <span className="text-2xl">5.0</span>,
+    //   bottom: <div className={classNames("flex-center gap-1", {
+    //     'text-sm': isMobile
+    //   })}>
+    //     <FaStar />
+    //     <FaStar />
+    //     <FaStar />
+    //     <FaStar />
+    //     <FaStar />
+    //   </div>
+    // },
     {
       top: <div className={classNames({ 'text-sm': isMobile })}>Developer</div>,
       middle: <FaPeopleGroup size={36} />,
@@ -90,6 +91,18 @@ export default function AppPage() {
       </div>
     }
   ]
+
+  useEffect(() => {
+    fetch('/apps').then(data => data.json())
+      .then((data: Array<{ package_name: string, path: string }>) => {
+        if (Array.isArray(data)) {
+          const homepageAppData = data.find(otherApp => app?.package === otherApp.package_name)
+          if (homepageAppData) {
+            setLaunchPath(homepageAppData.path)
+          }
+        }
+      })
+  }, [app])
 
   return (
     <div className={classNames("flex flex-col w-full p-2",
@@ -140,7 +153,16 @@ export default function AppPage() {
                 )
               )}
             </div>}
-          <ActionButton app={app} className={classNames("self-center bg-orange text-lg px-12")} />
+          <div className={classNames("flex-center gap-2", {
+            'flex-col': isMobile,
+          })}>
+            <ActionButton
+              app={app}
+              launchPath={launchPath}
+              className={classNames("self-center bg-orange text-lg px-12")}
+              permitMultiButton
+            />
+          </div>
           {app.installed && app.state?.mirroring && (
             <button type="button" onClick={goToPublish}>
               Publish

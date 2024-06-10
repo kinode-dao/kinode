@@ -17,7 +17,7 @@ export default function InstallButton({ app, isIcon = false, ...props }: Install
     useAppsStore();
   const [showModal, setShowModal] = useState(false);
   const [caps, setCaps] = useState<string[]>([]);
-  const [loading, setLoading] = useState("");
+  const [installing, setInstalling] = useState("");
 
   const onClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -29,14 +29,14 @@ export default function InstallButton({ app, isIcon = false, ...props }: Install
 
   const install = useCallback(async () => {
     try {
-      setLoading(`Installing ${getAppName(app)}...`);
+      setInstalling(`Installing ${getAppName(app)}...`);
       await installApp(app);
 
       const interval = setInterval(() => {
         getMyApp(app)
           .then((app) => {
             if (!app.installed) return;
-            setLoading("");
+            setInstalling("");
             setShowModal(false);
             clearInterval(interval);
             getMyApps();
@@ -46,7 +46,7 @@ export default function InstallButton({ app, isIcon = false, ...props }: Install
     } catch (e) {
       console.error(e);
       window.alert(`Failed to install, please try again.`);
-      setLoading("");
+      setInstalling("");
     }
   }, [app, installApp, getMyApp]);
 
@@ -59,14 +59,24 @@ export default function InstallButton({ app, isIcon = false, ...props }: Install
           'icon clear': isIcon
         })}
         onClick={onClick}
+        disabled={!!installing}
       >
-        {isIcon ? <FaI /> : "Install"}
+        {isIcon
+          ? <FaI />
+          : installing
+            ? 'Installing...'
+            : "Install"}
       </button>
       <Modal show={showModal} hide={() => setShowModal(false)}>
-        {loading ? (
-          <Loader msg={loading} />
+        {installing ? (
+          <div className="flex-col-center gap-4">
+            <Loader msg={installing} />
+            <div className="text-center">
+              App is installing in the background. You can safely close this window.
+            </div>
+          </div>
         ) : (
-          <>
+          <div className="flex-col-center gap-2">
             <h4>Approve App Permissions</h4>
             <h5 className="m-0">
               {getAppName(app)} needs the following permissions:
@@ -79,7 +89,7 @@ export default function InstallButton({ app, isIcon = false, ...props }: Install
             <button type="button" onClick={install}>
               Approve & Install
             </button>
-          </>
+          </div>
         )}
       </Modal>
     </>

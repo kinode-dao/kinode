@@ -1,11 +1,10 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { namehash } from "ethers/lib/utils";
-import { BytesLike, utils } from "ethers";
+import { utils } from "ethers";
 import KinodeHeader from "../components/KnsHeader";
-import { NetworkingInfo, PageProps, UnencryptedIdentity } from "../lib/types";
+import { PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
 import { hooks } from "../connectors/metamask";
-import { ipToNumber } from "../utils/ipToNumber";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { useNavigate } from "react-router-dom";
@@ -13,6 +12,8 @@ import { Tooltip } from "../components/Tooltip";
 import { KinodeTitle } from "../components/KinodeTitle";
 import { isMobileCheck } from "../utils/dimensions";
 import classNames from "classnames";
+import { generateNetworkingKeys, getNetworkName } from "../utils/chain";
+import { getFetchUrl } from "../utils/fetch";
 
 const { useProvider } = hooks;
 
@@ -28,6 +29,10 @@ function Login({
   appSizeOnLoad,
   closeConnect,
   routers,
+  setNetworkingKey,
+  setIpAddress,
+  setWsPort,
+  setTcpPort,
   setRouters,
   knsName,
   setOsName,
@@ -47,7 +52,7 @@ function Login({
 
     (async () => {
       try {
-        const infoData = (await fetch("/info", { method: "GET" }).then((res) =>
+        const infoData = (await fetch(getFetchUrl("/info"), { method: "GET", credentials: 'include' }).then((res) =>
           res.json()
         )) as UnencryptedIdentity;
         setRouters(infoData.allowed_routers);
@@ -77,8 +82,9 @@ function Login({
           let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
 
           // Replace this with network key generation
-          const response = await fetch("/vet-keyfile", {
+          const response = await fetch(getFetchUrl("/vet-keyfile"), {
             method: "POST",
+            credentials: 'include',
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ password_hash: hashed_password, keyfile: "" }),
           });
@@ -88,43 +94,18 @@ function Login({
           }
 
           // Generate keys on server that are stored temporarily
-          const {
-            networking_key,
-            ws_routing: [ip_address, port],
-            allowed_routers,
-          } = (await fetch("/generate-networking-info", {
-            method: "POST",
-          }).then((res) => res.json())) as NetworkingInfo;
-
-          setLoading("Please confirm the transaction in your wallet");
-
-          const ipAddress = ipToNumber(ip_address);
-
-          const data: BytesLike[] = [
-            direct
-              ? (
-                await kns.populateTransaction.setAllIp(
-                  namehash(knsName),
-                  ipAddress,
-                  port,
-                  0,
-                  0,
-                  0
-                )
-              ).data!
-              : (
-                await kns.populateTransaction.setRouters(
-                  namehash(knsName),
-                  allowed_routers.map((x) => namehash(x))
-                )
-              ).data!,
-            (
-              await kns.populateTransaction.setKey(
-                namehash(knsName),
-                networking_key
-              )
-            ).data!,
-          ];
+          const data = await generateNetworkingKeys({
+            direct,
+            kns,
+            nodeChainId,
+            chainName: getNetworkName(nodeChainId),
+            nameToSet: namehash(knsName),
+            setNetworkingKey,
+            setIpAddress,
+            setWsPort,
+            setTcpPort,
+            setRouters,
+          })
 
           setLoading("Please confirm the transaction");
 
@@ -140,9 +121,10 @@ function Login({
 
         // Login or confirm new keys
         const result = await fetch(
-          reset ? "/confirm-change-network-keys" : "login",
+          getFetchUrl(reset ? "confirm-change-network-keys" : "login"),
           {
             method: "POST",
+            credentials: 'include',
             headers: { "Content-Type": "application/json" },
             body: reset
               ? JSON.stringify({ password_hash: hashed_password, direct })
@@ -160,7 +142,7 @@ function Login({
         }
 
         const interval = setInterval(async () => {
-          const res = await fetch("/");
+          const res = await fetch(getFetchUrl("/"), { credentials: 'include' });
           if (
             res.status < 300 &&
             Number(res.headers.get("content-length")) !== appSizeOnLoad

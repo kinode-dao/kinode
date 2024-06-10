@@ -193,7 +193,7 @@ pub async fn http_server(
     let rpc_bound_path = BoundPath {
         app: Some(ProcessId::new(Some("rpc"), "distro", "sys")),
         path: path.clone(),
-        secure_subdomain: None, // TODO maybe RPC should have subdomain?
+        secure_subdomain: None, // TODO maybe RPC *should* have subdomain?
         authenticated: false,
         local_only: true,
         static_content: None,
@@ -250,7 +250,7 @@ async fn serve(
     let _ = print_tx
         .send(Printout {
             verbosity: 0,
-            content: format!("http_server: running on port {}", our_port),
+            content: format!("http_server: running on port {our_port}"),
         })
         .await;
 
@@ -278,14 +278,18 @@ async fn serve(
     let fake_node = "false";
 
     // filter to receive and handle login requests
-    let login_html: &'static str = LOGIN_HTML
-        .replace("${node}", &our)
-        .replace("${fake}", fake_node)
-        .leak();
+    let login_html: Arc<String> = Arc::new(
+        LOGIN_HTML
+            .replace("${node}", &our)
+            .replace("${fake}", fake_node),
+    );
     let cloned_our = our.clone();
+    let cloned_login_html: &'static str = login_html.to_string().leak();
     let login = warp::path("login").and(warp::path::end()).and(
         warp::get()
-            .map(move || warp::reply::with_status(warp::reply::html(login_html), StatusCode::OK))
+            .map(move || {
+                warp::reply::with_status(warp::reply::html(cloned_login_html), StatusCode::OK)
+            })
             .or(warp::post()
                 .and(warp::body::content_length_limit(1024 * 16))
                 .and(warp::body::json())
@@ -308,6 +312,7 @@ async fn serve(
         .and(warp::any().map(move || jwt_secret_bytes.clone()))
         .and(warp::any().map(move || send_to_loop.clone()))
         .and(warp::any().map(move || print_tx.clone()))
+        .and(warp::any().map(move || login_html.clone()))
         .and_then(http_handler);
 
     let filter_with_ws = ws_route.or(login).or(filter);
@@ -318,7 +323,6 @@ async fn serve(
 
 /// handle non-GET requests on /login. if POST, validate password
 /// and return auth token, which will be stored in a cookie.
-/// then redirect to wherever they were trying to go.
 async fn login_handler(
     info: LoginInfo,
     our: Arc<String>,
@@ -327,16 +331,21 @@ async fn login_handler(
     #[cfg(feature = "simulation-mode")]
     let info = LoginInfo {
         password_hash: "secret".to_string(),
+        subdomain: info.subdomain,
     };
 
     match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
         Ok(keyfile) => {
-            let token = match keygen::generate_jwt(&keyfile.jwt_secret_bytes, our.as_ref()) {
+            let token = match keygen::generate_jwt(
+                &keyfile.jwt_secret_bytes,
+                our.as_ref(),
+                &info.subdomain,
+            ) {
                 Some(token) => token,
                 None => {
                     return Ok(warp::reply::with_status(
                         warp::reply::json(&"Failed to generate JWT"),
-                        StatusCode::SERVICE_UNAVAILABLE,
+                        StatusCode::INTERNAL_SERVER_ERROR,
                     )
                     .into_response())
                 }
@@ -348,20 +357,25 @@ async fn login_handler(
             )
             .into_response();
 
-            match HeaderValue::from_str(&format!("kinode-auth_{}={};", our.as_ref(), &token)) {
+            let cookie = match info.subdomain.unwrap_or_default().as_str() {
+                "" => format!("kinode-auth_{our}={token};"),
+                subdomain => format!("kinode-auth_{our}@{subdomain}={token};"),
+            };
+
+            match HeaderValue::from_str(&cookie) {
                 Ok(v) => {
                     response.headers_mut().append("set-cookie", v);
                     Ok(response)
                 }
-                Err(_) => Ok(warp::reply::with_status(
-                    warp::reply::json(&"Failed to generate Auth JWT"),
+                Err(e) => Ok(warp::reply::with_status(
+                    warp::reply::json(&format!("Failed to generate Auth JWT: {e}")),
                     StatusCode::INTERNAL_SERVER_ERROR,
                 )
                 .into_response()),
             }
         }
-        Err(_) => Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to decode keyfile"),
+        Err(e) => Ok(warp::reply::with_status(
+            warp::reply::json(&format!("Failed to decode keyfile: {e}")),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response()),
@@ -381,7 +395,7 @@ async fn ws_handler(
     send_to_loop: MessageSender,
     print_tx: PrintSender,
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    let original_path = normalize_path(path.as_str());
+    let original_path = normalize_path(path.as_str()).to_string();
     let _ = print_tx
         .send(Printout {
             verbosity: 2,
@@ -401,33 +415,36 @@ async fn ws_handler(
         return Err(warp::reject::not_found());
     };
 
-    if let Some(ref subdomain) = bound_path.secure_subdomain {
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 2,
-                content: format!(
-                    "http_server: ws request for {original_path} bound by subdomain {subdomain}"
-                ),
-            })
-            .await;
-        // assert that host matches what this app wants it to be
-        if host.is_none() {
-            return Err(warp::reject::not_found());
-        }
-        let host = host.as_ref().unwrap();
-        // parse out subdomain from host (there can only be one)
-        let request_subdomain = host.host().split('.').next().unwrap_or("");
-        if request_subdomain != subdomain {
-            return Err(warp::reject::not_found());
-        }
-    }
-
     if bound_path.authenticated {
         let Some(auth_token) = serialized_headers.get("cookie") else {
             return Err(warp::reject::not_found());
         };
-        if !auth_cookie_valid(&our, auth_token, &jwt_secret_bytes) {
-            return Err(warp::reject::not_found());
+
+        if let Some(ref subdomain) = bound_path.secure_subdomain {
+            let _ = print_tx
+                .send(Printout {
+                    verbosity: 2,
+                    content: format!(
+                        "http_server: ws request for {original_path} bound by subdomain {subdomain}"
+                    ),
+                })
+                .await;
+            // assert that host matches what this app wants it to be
+            let host = match host {
+                Some(host) => host,
+                None => return Err(warp::reject::not_found()),
+            };
+            // parse out subdomain from host (there can only be one)
+            let request_subdomain = host.host().split('.').next().unwrap_or("");
+            if request_subdomain != subdomain
+                || !auth_cookie_valid(&our, Some(&app), auth_token, &jwt_secret_bytes)
+            {
+                return Err(warp::reject::not_found());
+            }
+        } else {
+            if !auth_cookie_valid(&our, None, auth_token, &jwt_secret_bytes) {
+                return Err(warp::reject::not_found());
+            }
         }
     }
 
@@ -479,6 +496,7 @@ async fn http_handler(
     jwt_secret_bytes: Arc<Vec<u8>>,
     send_to_loop: MessageSender,
     print_tx: PrintSender,
+    login_html: Arc<String>,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     // trim trailing "/"
     let original_path = normalize_path(path.as_str());
@@ -507,53 +525,71 @@ async fn http_handler(
         return Ok(warp::reply::with_status(vec![], StatusCode::NOT_FOUND).into_response());
     };
 
-    if bound_path.authenticated
-        && !auth_cookie_valid(
-            &our,
-            serialized_headers.get("cookie").unwrap_or(&"".to_string()),
-            &jwt_secret_bytes,
-        )
-    {
-        // redirect to login page so they can get an auth token
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 2,
-                content: format!(
-                    "http_server: redirecting request from {socket_addr:?} to login page"
-                ),
-            })
-            .await;
-        return Ok(warp::http::Response::builder()
-            .status(StatusCode::TEMPORARY_REDIRECT)
-            .header(
-                "Location",
-                format!(
-                    "http://{}/login",
-                    host.unwrap_or(warp::host::Authority::from_static("localhost"))
-                ),
-            )
-            .body(vec![])
-            .into_response());
-    }
+    let host = host.unwrap_or(warp::host::Authority::from_static("localhost"));
 
-    if let Some(ref subdomain) = bound_path.secure_subdomain {
-        let _ = print_tx
-            .send(Printout {
-                verbosity: 2,
-                content: format!(
-                    "http_server: request for {original_path} bound by subdomain {subdomain}"
-                ),
-            })
-            .await;
-        // assert that host matches what this app wants it to be
-        if host.is_none() {
-            return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
-        }
-        let host = host.as_ref().unwrap();
-        // parse out subdomain from host (there can only be one)
-        let request_subdomain = host.host().split('.').next().unwrap_or("");
-        if request_subdomain != subdomain {
-            return Ok(warp::reply::with_status(vec![], StatusCode::UNAUTHORIZED).into_response());
+    if bound_path.authenticated {
+        if let Some(ref subdomain) = bound_path.secure_subdomain {
+            let _ = print_tx
+                .send(Printout {
+                    verbosity: 2,
+                    content: format!(
+                        "http_server: request for {original_path} bound by subdomain {subdomain}"
+                    ),
+                })
+                .await;
+            let request_subdomain = host.host().split('.').next().unwrap_or("");
+            // assert that host matches what this app wants it to be
+            if request_subdomain.is_empty() {
+                return Ok(warp::reply::with_status(
+                    "attempted to access secure subdomain without host",
+                    StatusCode::UNAUTHORIZED,
+                )
+                .into_response());
+            }
+            if request_subdomain != subdomain {
+                return Ok(warp::http::Response::builder()
+                    .status(StatusCode::TEMPORARY_REDIRECT)
+                    .header(
+                        "Location",
+                        format!(
+                            "{}://{}.{}{}",
+                            match headers.get("X-Forwarded-Proto") {
+                                Some(proto) => proto.to_str().unwrap_or("http"),
+                                None => "http",
+                            },
+                            subdomain,
+                            host,
+                            original_path,
+                        ),
+                    )
+                    .body(vec![])
+                    .into_response());
+            }
+            if !auth_cookie_valid(
+                &our,
+                Some(&app),
+                serialized_headers.get("cookie").unwrap_or(&"".to_string()),
+                &jwt_secret_bytes,
+            ) {
+                // redirect to login page so they can get an auth token
+                return Ok(warp::http::Response::builder()
+                    .status(StatusCode::OK)
+                    .body(login_html.to_string())
+                    .into_response());
+            }
+        } else {
+            if !auth_cookie_valid(
+                &our,
+                None,
+                serialized_headers.get("cookie").unwrap_or(&"".to_string()),
+                &jwt_secret_bytes,
+            ) {
+                // redirect to login page so they can get an auth token
+                return Ok(warp::http::Response::builder()
+                    .status(StatusCode::OK)
+                    .body(login_html.to_string())
+                    .into_response());
+            }
         }
     }
 
@@ -618,8 +654,8 @@ async fn http_handler(
                         source_socket_addr: socket_addr.map(|addr| addr.to_string()),
                         method: method.to_string(),
                         url: format!(
-                            "http://{}{}",
-                            host.unwrap_or(warp::host::Authority::from_static("localhost")),
+                            "http://{}{}", // note that protocol is being lost here
+                            host.host(),
                             original_path
                         ),
                         bound_path: bound_path.path.clone(),
@@ -657,7 +693,7 @@ async fn http_handler(
     }
 
     let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
-    http_response_senders.insert(id, (original_path, response_sender));
+    http_response_senders.insert(id, (original_path.to_string(), response_sender));
 
     match send_to_loop.send(message).await {
         Ok(_) => {}
@@ -1126,19 +1162,13 @@ async fn handle_app_message(
             };
             match message {
                 HttpServerAction::Bind {
-                    mut path,
+                    path,
                     authenticated,
                     local_only,
                     cache,
                 } => {
+                    let path = format_path_with_process(&km.source.process, &path);
                     let mut path_bindings = path_bindings.write().await;
-                    if km.source.process != "homepage:homepage:sys" {
-                        path = if path.starts_with('/') {
-                            format!("/{}{}", km.source.process, path)
-                        } else {
-                            format!("/{}/{}", km.source.process, path)
-                        };
-                    }
                     let _ = print_tx
                         .send(Printout {
                             verbosity: 2,
@@ -1157,7 +1187,7 @@ async fn handle_app_message(
                     if !cache {
                         // trim trailing "/"
                         path_bindings.add(
-                            &normalize_path(&path),
+                            &path,
                             BoundPath {
                                 app: Some(km.source.process.clone()),
                                 path: path.clone(),
@@ -1180,7 +1210,7 @@ async fn handle_app_message(
                         };
                         // trim trailing "/"
                         path_bindings.add(
-                            &normalize_path(&path),
+                            &path,
                             BoundPath {
                                 app: Some(km.source.process.clone()),
                                 path: path.clone(),
@@ -1193,18 +1223,21 @@ async fn handle_app_message(
                     }
                 }
                 HttpServerAction::SecureBind { path, cache } => {
-                    // the process ID is hashed to generate a unique subdomain
-                    // only the first 32 chars, or 128 bits are used.
-                    // we hash because the process ID can contain many more than
-                    // simply alphanumeric characters that will cause issues as a subdomain.
-                    let process_id_hash =
-                        format!("{:x}", Sha256::digest(km.source.process.to_string()));
-                    let subdomain = process_id_hash.split_at(32).0.to_owned();
+                    let path = format_path_with_process(&km.source.process, &path);
+                    let subdomain = generate_secure_subdomain(&km.source.process);
                     let mut path_bindings = path_bindings.write().await;
+                    let _ = print_tx
+                        .send(Printout {
+                            verbosity: 2,
+                            content: format!(
+                                "http: binding subdomain {subdomain} with path {path}, {}",
+                                if cache { "cached" } else { "dynamic" },
+                            ),
+                        })
+                        .await;
                     if !cache {
-                        // trim trailing "/"
                         path_bindings.add(
-                            &normalize_path(&path),
+                            &path,
                             BoundPath {
                                 app: Some(km.source.process.clone()),
                                 path: path.clone(),
@@ -1227,7 +1260,7 @@ async fn handle_app_message(
                         };
                         // trim trailing "/"
                         path_bindings.add(
-                            &normalize_path(&path),
+                            &path,
                             BoundPath {
                                 app: Some(km.source.process.clone()),
                                 path: path.clone(),
@@ -1239,17 +1272,11 @@ async fn handle_app_message(
                         );
                     }
                 }
-                HttpServerAction::Unbind { mut path } => {
+                HttpServerAction::Unbind { path } => {
+                    let path = format_path_with_process(&km.source.process, &path);
                     let mut path_bindings = path_bindings.write().await;
-                    if km.source.process != "homepage:homepage:sys" {
-                        path = if path.starts_with('/') {
-                            format!("/{}{}", km.source.process, path)
-                        } else {
-                            format!("/{}/{}", km.source.process, path)
-                        };
-                    }
                     path_bindings.add(
-                        &normalize_path(&path),
+                        &path,
                         BoundPath {
                             app: None,
                             path: path.clone(),
@@ -1261,19 +1288,15 @@ async fn handle_app_message(
                     );
                 }
                 HttpServerAction::WebSocketBind {
-                    mut path,
+                    path,
                     authenticated,
                     encrypted,
                     extension,
                 } => {
-                    path = if path.starts_with('/') {
-                        format!("/{}{}", km.source.process, path)
-                    } else {
-                        format!("/{}/{}", km.source.process, path)
-                    };
+                    let path = format_path_with_process(&km.source.process, &path);
                     let mut ws_path_bindings = ws_path_bindings.write().await;
                     ws_path_bindings.add(
-                        &normalize_path(&path),
+                        &path,
                         BoundWsPath {
                             app: Some(km.source.process.clone()),
                             secure_subdomain: None,
@@ -1284,21 +1307,15 @@ async fn handle_app_message(
                     );
                 }
                 HttpServerAction::WebSocketSecureBind {
-                    mut path,
+                    path,
                     encrypted,
                     extension,
                 } => {
-                    path = if path.starts_with('/') {
-                        format!("/{}{}", km.source.process, path)
-                    } else {
-                        format!("/{}/{}", km.source.process, path)
-                    };
-                    let process_id_hash =
-                        format!("{:x}", Sha256::digest(km.source.process.to_string()));
-                    let subdomain = process_id_hash.split_at(32).0.to_owned();
+                    let path = format_path_with_process(&km.source.process, &path);
+                    let subdomain = generate_secure_subdomain(&km.source.process);
                     let mut ws_path_bindings = ws_path_bindings.write().await;
                     ws_path_bindings.add(
-                        &normalize_path(&path),
+                        &path,
                         BoundWsPath {
                             app: Some(km.source.process.clone()),
                             secure_subdomain: Some(subdomain),
@@ -1309,14 +1326,10 @@ async fn handle_app_message(
                     );
                 }
                 HttpServerAction::WebSocketUnbind { mut path } => {
+                    let path = format_path_with_process(&km.source.process, &path);
                     let mut ws_path_bindings = ws_path_bindings.write().await;
-                    path = if path.starts_with('/') {
-                        format!("/{}{}", km.source.process, path)
-                    } else {
-                        format!("/{}/{}", km.source.process, path)
-                    };
                     ws_path_bindings.add(
-                        &normalize_path(&path),
+                        &path,
                         BoundWsPath {
                             app: None,
                             secure_subdomain: None,

@@ -1,13 +1,14 @@
+use crate::kinode::process::main::{DownloadResponse, LocalRequest, LocalResponse};
+use kinode::process::main::DownloadRequest;
 use kinode_process_lib::{
     await_next_message_body, call_init, println, Address, Message, NodeId, PackageId, Request,
 };
 
-mod api;
-use api::*;
-
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    generate_unused_types: true,
+    world: "app-store-sys-v0",
+    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
 });
 
 call_init!(init);
@@ -36,13 +37,16 @@ fn init(our: Address) {
     let Ok(Ok(Message::Response { body, .. })) =
         Request::to((our.node(), ("main", "app_store", "sys")))
             .body(
-                serde_json::to_vec(&LocalRequest::Download {
-                    package: package_id.clone(),
+                serde_json::to_vec(&LocalRequest::Download(DownloadRequest {
+                    package_id: crate::kinode::process::main::PackageId {
+                        package_name: package_id.package_name.clone(),
+                        publisher_node: package_id.publisher_node.clone(),
+                    },
                     download_from: download_from.clone(),
                     mirror: true,
                     auto_update: true,
                     desired_version_hash: None,
-                })
+                }))
                 .unwrap(),
             )
             .send_and_await_response(5)
@@ -60,7 +64,7 @@ fn init(our: Address) {
         LocalResponse::DownloadResponse(DownloadResponse::Started) => {
             println!("started downloading package {package_id} from {download_from}");
         }
-        LocalResponse::DownloadResponse(DownloadResponse::Failure) => {
+        LocalResponse::DownloadResponse(_) => {
             println!("failed to download package {package_id} from {download_from}");
         }
         _ => {

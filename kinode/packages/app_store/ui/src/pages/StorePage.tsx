@@ -19,26 +19,30 @@ export default function StorePage() {
   const { listedApps, getListedApps, rebuildIndex } = useAppsStore();
 
   const [resultsSort, setResultsSort] = useState<string>("Recently published");
-
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [displayedApps, setDisplayedApps] = useState<AppInfo[]>(listedApps);
   const [page, setPage] = useState(1);
   const [tags, setTags] = useState<string[]>([])
+  const [launchPaths, setLaunchPaths] = useState<{ [package_name: string]: string }>({})
 
   const pages = useMemo(
     () =>
       Array.from(
-        { length: Math.ceil(displayedApps.length / 10) },
+        {
+          length: Math.ceil(listedApps.length / 10)
+        },
         (_, index) => index + 1
       ),
-    [displayedApps]
+    [listedApps]
   );
+
+  const featuredPackageNames = ['dartfrog', 'kcal', 'memedeck', 'filter'];
 
   useEffect(() => {
     const start = (page - 1) * 10;
     const end = start + 10;
     setDisplayedApps(listedApps.slice(start, end));
-  }, [listedApps]);
+  }, [listedApps, page]);
 
   // GET on load
   useEffect(() => {
@@ -56,27 +60,6 @@ export default function StorePage() {
       })
       .catch((error) => console.error(error));
   }, []); // eslint-disable-line
-
-  // const pages = useMemo(
-  //   () => {
-  //     const displayedApps = query ? searchResults : latestApps;
-
-  //     return Array.from(
-  //       { length: Math.ceil((displayedApps.length - 2) / 10) },
-  //       (_, index) => index + 1
-  //     )
-  //   },
-  //   [query, searchResults, latestApps]
-  // );
-
-  // const featuredApps = useMemo(() => latestApps.slice(0, 2), [latestApps]);
-  // const displayedApps = useMemo(
-  //   () => {
-  //     const displayedApps = query ? searchResults : latestApps.slice(2);
-  //     return displayedApps.slice((page - 1) * 10, page * 10)
-  //   },
-  //   [latestApps, searchResults, page, query]
-  // );
 
   const sortApps = useCallback(async (sort: string) => {
     switch (sort) {
@@ -125,6 +108,23 @@ export default function StorePage() {
 
   const isMobile = isMobileCheck()
 
+  useEffect(() => {
+    fetch('/apps').then(data => data.json())
+      .then((data: Array<{ package_name: string, path: string }>) => {
+        if (Array.isArray(data)) {
+          listedApps.forEach(app => {
+            const homepageAppData = data.find(otherApp => app.package === otherApp.package_name)
+            if (homepageAppData) {
+              setLaunchPaths({
+                ...launchPaths,
+                [app.package]: homepageAppData.path
+              })
+            }
+          })
+        }
+      })
+  }, [listedApps])
+
   return (
     <div className={classNames("flex flex-col w-full max-h-screen p-2", {
       'gap-4 max-w-screen': isMobile,
@@ -162,7 +162,7 @@ export default function StorePage() {
             setResultsSort(e.target.value);
             sortApps(e.target.value);
           }}
-          className={classNames({
+          className={classNames('hidden', {
             'basis-1/5': !isMobile
           })}
         >
@@ -172,19 +172,22 @@ export default function StorePage() {
           <option>Recently updated</option>
         </select>
       </div>
-      {!searchQuery ? <div className={classNames("flex flex-col", {
+      {!searchQuery && <div className={classNames("flex flex-col", {
         'gap-4': !isMobile,
         'grow overflow-y-auto gap-2 items-center px-2': isMobile
       })}>
-        <h2>Top apps this week...</h2>
+        <h2>Featured Apps</h2>
         <div className={classNames("flex gap-2", {
           'flex-col': isMobile
         })}>
-          {displayedApps.slice(0, 4).map((app) => (
+          {listedApps.filter(app => {
+            return featuredPackageNames.indexOf(app.package) !== -1
+          }).map((app) => (
             <AppEntry
               key={appId(app) + (app.state?.our_version || "")}
               size={'medium'}
               app={app}
+              launchPath={launchPaths[app.package]}
               className={classNames("grow", {
                 'w-1/4': !isMobile,
                 'w-full': isMobile
@@ -192,55 +195,45 @@ export default function StorePage() {
             />
           ))}
         </div>
-        <h2>Must-have apps!</h2>
-        <div className={classNames("flex gap-2", {
-          'flex-col': isMobile
-        })}>
-          {displayedApps.slice(0, 5).map((app) => (
-            <AppEntry
-              key={appId(app) + (app.state?.our_version || "")}
-              size={isMobile ? 'medium' : 'small'}
-              app={app}
-              overrideImageSize={isMobile ? 'medium' : 'large'}
-              className={classNames("grow", {
-                'w-1/6': !isMobile,
-                'w-full': isMobile
-              })}
-            />
-          ))}
-        </div>
-      </div> : <div className={classNames("flex-col-center grow", {
+      </div>}
+      <h2>{searchQuery ? 'Search Results' : 'All Apps'}</h2>
+      <div className={classNames("flex flex-col grow overflow-y-auto", {
         'gap-2': isMobile,
         'gap-4': !isMobile,
       })}>
-        {displayedApps.map(app => <AppEntry
-          size='large'
-          app={app}
-          className="self-stretch items-center"
-          overrideImageSize="medium"
-        />)}
-      </div>}
-      <div className="flex flex-col gap-2 overflow-y-auto">
-        {pages.length > 1 && (
-          <div className="flex self-center">
-            {page !== pages[0] && (
-              <FaChevronLeft onClick={() => setPage(page - 1)} />
-            )}
-            {pages.map((p) => (
-              <div
-                key={`page-${p}`}
-                className={classNames('my-1 mx-2', { "font-bold": p === page })}
-                onClick={() => setPage(p)}
-              >
-                {p}
-              </div>
-            ))}
-            {page !== pages[pages.length - 1] && (
-              <FaChevronRight onClick={() => setPage(page + 1)} />
-            )}
-          </div>
-        )}
+        {displayedApps
+          .filter(app => searchQuery ? true : featuredPackageNames.indexOf(app.package) === -1)
+          .map(app => <AppEntry
+            key={appId(app) + (app.state?.our_version || "")}
+            size='large'
+            app={app}
+            className="self-stretch"
+            overrideImageSize="medium"
+          />)}
       </div>
+      {pages.length > 1 && <div className="flex flex-wrap self-center gap-2">
+        <button
+          className="icon"
+          onClick={() => page !== pages[0] && setPage(page - 1)}
+        >
+          <FaChevronLeft />
+        </button>
+        {pages.map((p) => (
+          <button
+            key={`page-${p}`}
+            className={classNames('icon', { "!bg-white/10": p === page })}
+            onClick={() => setPage(p)}
+          >
+            {p}
+          </button>
+        ))}
+        <button
+          className="icon"
+          onClick={() => page !== pages[pages.length - 1] && setPage(page + 1)}
+        >
+          <FaChevronRight />
+        </button>
+      </div>}
     </div>
   );
 }

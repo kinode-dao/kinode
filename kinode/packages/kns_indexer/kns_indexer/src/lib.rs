@@ -1,3 +1,6 @@
+use crate::kinode::process::kns_indexer::{
+    GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
+};
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
     await_message, call_init, eth, net, println, Address, Message, Request, Response,
@@ -9,8 +12,10 @@ use std::collections::{
 };
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "kns-indexer-sys-v0",
+    generate_unused_types: true,
+    additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
 #[cfg(not(feature = "simulation-mode"))]
@@ -37,64 +42,9 @@ struct State {
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
     // NOTE: not every namehash will have a node registered
-    nodes: HashMap<String, KnsUpdate>,
+    nodes: HashMap<String, net::KnsUpdate>,
     // last block we have an update from
     block: u64,
-}
-
-/// IndexerRequests are used to query discrete information from the indexer
-/// for example, if you want to know the human readable name for a namehash,
-/// you would send a NamehashToName request.
-/// If you want to know the most recent on-chain routing information for a
-/// human readable name, you would send a NodeInfo request.
-/// The block parameter specifies the recency of the data: the indexer will
-/// not respond until it has processed events up to the specified block.
-#[derive(Debug, Serialize, Deserialize)]
-pub enum IndexerRequests {
-    /// return the human readable name for a namehash
-    /// returns an Option<String>
-    NamehashToName { hash: String, block: u64 },
-    /// return the most recent on-chain routing information for a node name.
-    /// returns an Option<KnsUpdate>
-    /// set block to 0 if you just want to get the current state of the indexer
-    NodeInfo { name: String, block: u64 },
-    /// return the entire state of the indexer at the given block
-    /// set block to 0 if you just want to get the current state of the indexer
-    GetState { block: u64 },
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum NetAction {
-    KnsUpdate(KnsUpdate),
-    KnsBatchUpdate(Vec<KnsUpdate>),
-}
-
-impl TryInto<Vec<u8>> for NetAction {
-    type Error = anyhow::Error;
-    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        Ok(rmp_serde::to_vec(&self)?)
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct KnsUpdate {
-    pub name: String, // actual username / domain name
-    pub owner: String,
-    pub node: String, // hex namehash of node
-    pub public_key: String,
-    pub ip: String,
-    pub port: u16,
-    pub routers: Vec<String>,
-}
-
-impl KnsUpdate {
-    pub fn new(name: &String, node: &String) -> Self {
-        Self {
-            name: name.clone(),
-            node: node.clone(),
-            ..Default::default()
-        }
-    }
 }
 
 sol! {
@@ -183,6 +133,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             "KeyUpdate(bytes32,bytes32)",
             "IpUpdate(bytes32,uint128)",
             "WsUpdate(bytes32,uint16)",
+            "TcpUpdate(bytes32,uint16)",
             "RoutingUpdate(bytes32,bytes32[])",
         ]);
 
@@ -224,12 +175,12 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     }
 
     // shove initial state into net::net
-    Request::new()
-        .target((&our.node, "net", "distro", "sys"))
-        .try_body(NetAction::KnsBatchUpdate(
-            state.nodes.values().cloned().collect::<Vec<_>>(),
-        ))?
-        .send()?;
+    // Request::new()
+    //     .target((&our.node, "net", "distro", "sys"))
+    //     .body(rmp_serde::to_vec(&net::NetAction::KnsBatchUpdate(
+    //         state.nodes.values().cloned().collect::<Vec<_>>(),
+    //     ))?)
+    //     .send()?;
 
     // set_state(&bincode::serialize(&state)?);
 
@@ -262,7 +213,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             };
 
             match request {
-                IndexerRequests::NamehashToName { ref hash, block } => {
+                IndexerRequests::NamehashToName(NamehashToNameRequest { ref hash, block }) => {
                     if block <= state.block {
                         Response::new()
                             .body(serde_json::to_vec(&state.names.get(hash))?)
@@ -274,7 +225,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             .push(request);
                     }
                 }
-                IndexerRequests::NodeInfo { ref name, block } => {
+                IndexerRequests::NodeInfo(NodeInfoRequest { ref name, block }) => {
                     if block <= state.block {
                         Response::new()
                             .body(serde_json::to_vec(&state.nodes.get(name))?)
@@ -286,7 +237,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                             .push(request);
                     }
                 }
-                IndexerRequests::GetState { block } => {
+                IndexerRequests::GetState(GetStateRequest { block }) => {
                     if block <= state.block {
                         Response::new().body(serde_json::to_vec(&state)?).send()?;
                     } else {
@@ -337,19 +288,19 @@ fn handle_eth_message(
         if *block <= state.block {
             for request in requests.iter() {
                 match request {
-                    IndexerRequests::NamehashToName { hash, .. } => {
+                    IndexerRequests::NamehashToName(NamehashToNameRequest { hash, .. }) => {
                         Response::new()
                             .body(serde_json::to_vec(&state.names.get(hash))?)
                             .send()
                             .unwrap();
                     }
-                    IndexerRequests::NodeInfo { name, .. } => {
+                    IndexerRequests::NodeInfo(NodeInfoRequest { name, .. }) => {
                         Response::new()
                             .body(serde_json::to_vec(&state.nodes.get(name))?)
                             .send()
                             .unwrap();
                     }
-                    IndexerRequests::GetState { .. } => {
+                    IndexerRequests::GetState(GetStateRequest { .. }) => {
                         Response::new()
                             .body(serde_json::to_vec(&state)?)
                             .send()
@@ -381,7 +332,15 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     let node = state
         .nodes
         .entry(name.to_string())
-        .or_insert_with(|| KnsUpdate::new(name, &node_id.to_string()));
+        .or_insert_with(|| net::KnsUpdate {
+            name: name.to_string(),
+            owner: "".to_string(),
+            node: node_id.to_string(),
+            public_key: "".to_string(),
+            ips: vec![],
+            ports: BTreeMap::new(),
+            routers: vec![],
+        });
 
     let mut send = true;
 
@@ -394,19 +353,40 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
         }
         IpUpdate::SIGNATURE_HASH => {
             let ip = IpUpdate::decode_log_data(log.data(), true).unwrap().ip;
-            node.ip = format!(
+            node.ips = vec![format!(
                 "{}.{}.{}.{}",
                 (ip >> 24) & 0xFF,
                 (ip >> 16) & 0xFF,
                 (ip >> 8) & 0xFF,
                 ip & 0xFF
-            );
+            )];
             // when we get ip data, we should delete any router data,
             // since the assignment of ip indicates an direct node
             node.routers = vec![];
         }
-        WsUpdate::SIGNATURE_HASH => {
-            node.port = WsUpdate::decode_log_data(log.data(), true).unwrap().port;
+        WsUpdate::SIGNATURE_HASH
+        | TcpUpdate::SIGNATURE_HASH
+        | WtUpdate::SIGNATURE_HASH
+        | UdpUpdate::SIGNATURE_HASH => {
+            match log.topics()[0] {
+                WsUpdate::SIGNATURE_HASH => node.ports.insert(
+                    "ws".to_string(),
+                    WsUpdate::decode_log_data(log.data(), true).unwrap().port,
+                ),
+                TcpUpdate::SIGNATURE_HASH => node.ports.insert(
+                    "tcp".to_string(),
+                    TcpUpdate::decode_log_data(log.data(), true).unwrap().port,
+                ),
+                WtUpdate::SIGNATURE_HASH => node.ports.insert(
+                    "wt".to_string(),
+                    WtUpdate::decode_log_data(log.data(), true).unwrap().port,
+                ),
+                UdpUpdate::SIGNATURE_HASH => node.ports.insert(
+                    "udp".to_string(),
+                    UdpUpdate::decode_log_data(log.data(), true).unwrap().port,
+                ),
+                _ => None,
+            };
             // when we get port data, we should delete any router data,
             // since the assignment of port indicates an direct node
             node.routers = vec![];
@@ -420,8 +400,8 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
                 .collect::<Vec<String>>();
             // when we get routing data, we should delete any ws/ip data,
             // since the assignment of routers indicates an indirect node
-            node.ip = "".to_string();
-            node.port = 0;
+            node.ips = vec![];
+            node.ports.clear();
         }
         _ => {
             send = false;
@@ -429,12 +409,12 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     }
 
     if node.public_key != ""
-        && ((node.ip != "" && node.port != 0) || node.routers.len() > 0)
+        && ((!node.ips.is_empty() && !node.ports.is_empty()) || node.routers.len() > 0)
         && send
     {
         Request::new()
             .target((&our.node, "net", "distro", "sys"))
-            .try_body(NetAction::KnsUpdate(node.clone()))?
+            .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(node.clone()))?)
             .send()?;
     }
 

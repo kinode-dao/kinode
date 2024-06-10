@@ -73,7 +73,7 @@ pub async fn timer_service(
                             continue
                         }
                         let _ = print_tx.send(Printout {
-                            verbosity: 1,
+                            verbosity: 3,
                             content: format!("set timer to pop in {}ms", timer_millis),
                         }).await;
                         if !timer_map.contains(pop_time) {

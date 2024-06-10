@@ -1,13 +1,13 @@
+use crate::kinode::process::main::{LocalRequest, LocalResponse, UninstallResponse};
 use kinode_process_lib::{
     await_next_message_body, call_init, println, Address, Message, PackageId, Request,
 };
 
-mod api;
-use api::*;
-
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    generate_unused_types: true,
+    world: "app-store-sys-v0",
+    additional_derives: [PartialEq, serde::Deserialize, serde::Serialize],
 });
 
 call_init!(init);
@@ -33,7 +33,15 @@ fn init(our: Address) {
 
     let Ok(Ok(Message::Response { body, .. })) =
         Request::to((our.node(), ("main", "app_store", "sys")))
-            .body(serde_json::to_vec(&LocalRequest::Uninstall(package_id.clone())).unwrap())
+            .body(
+                serde_json::to_vec(&LocalRequest::Uninstall(
+                    crate::kinode::process::main::PackageId {
+                        package_name: package_id.package_name.clone(),
+                        publisher_node: package_id.publisher_node.clone(),
+                    },
+                ))
+                .unwrap(),
+            )
             .send_and_await_response(5)
     else {
         println!("uninstall: failed to get a response from app_store..!");

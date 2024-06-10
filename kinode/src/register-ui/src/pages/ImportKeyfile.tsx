@@ -9,6 +9,7 @@ import { utils } from "ethers";
 import KinodeHeader from "../components/KnsHeader";
 import { PageProps } from "../lib/types";
 import Loader from "../components/Loader";
+import { getFetchUrl } from "../utils/fetch";
 
 interface ImportKeyfileProps extends PageProps { }
 
@@ -36,8 +37,9 @@ function ImportKeyfile({
 
   // const handlePassword = useCallback(async () => {
   //   try {
-  //     const response = await fetch("/vet-keyfile", {
+  //     const response = await fetch(getFetchUrl("/vet-keyfile"), {
   //       method: "POST",
+  //       credentials: 'include',
   //       headers: { "Content-Type": "application/json" },
   //       body: JSON.stringify({
   //         keyfile: localKey,
@@ -127,8 +129,9 @@ function ImportKeyfile({
         if (keyErrs.length === 0 && localKey !== "") {
           let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
 
-          const response = await fetch("/vet-keyfile", {
+          const response = await fetch(getFetchUrl("/vet-keyfile"), {
             method: "POST",
+            credentials: 'include',
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               keyfile: localKey,
@@ -140,8 +143,9 @@ function ImportKeyfile({
             throw new Error("Incorrect password");
           }
 
-          const result = await fetch("/import-keyfile", {
+          const result = await fetch(getFetchUrl("/import-keyfile"), {
             method: "POST",
+            credentials: 'include',
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               keyfile: localKey,
@@ -154,7 +158,7 @@ function ImportKeyfile({
           }
 
           const interval = setInterval(async () => {
-            const res = await fetch("/");
+            const res = await fetch(getFetchUrl("/"), { credentials: 'include' });
             if (
               res.status < 300 &&
               Number(res.headers.get("content-length")) !== appSizeOnLoad

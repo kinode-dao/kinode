@@ -4,6 +4,7 @@ import { appId } from "../utils/app";
 import classNames from "classnames";
 import ColorDot from "./ColorDot";
 import { isMobileCheck } from "../utils/dimensions";
+import AppIconPlaceholder from './AppIconPlaceholder'
 
 interface AppHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   app: AppInfo;
@@ -54,9 +55,9 @@ export default function AppHeader({
           'h-20': imageSize === 'medium',
         })}
       />
-      : <ColorDot
-        num={app.metadata_hash || app.state?.our_version?.toString() || ''}
-        dotSize={imageSize}
+      : <AppIconPlaceholder
+        text={app.metadata_hash || app.state?.our_version?.toString() || ''}
+        size={imageSize}
       />}
     <div className={classNames("flex flex-col", {
       'gap-2': isMobile,

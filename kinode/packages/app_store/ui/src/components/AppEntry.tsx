@@ -15,9 +15,10 @@ interface AppEntryProps extends React.HTMLAttributes<HTMLDivElement> {
   size?: "small" | "medium" | "large";
   overrideImageSize?: "small" | "medium" | "large";
   showMoreActions?: boolean;
+  launchPath?: string;
 }
 
-export default function AppEntry({ app, size = "medium", overrideImageSize, showMoreActions, ...props }: AppEntryProps) {
+export default function AppEntry({ app, size = "medium", overrideImageSize, showMoreActions, launchPath, ...props }: AppEntryProps) {
   const isMobile = isMobileCheck()
   const navigate = useNavigate()
 
@@ -36,19 +37,25 @@ export default function AppEntry({ app, size = "medium", overrideImageSize, show
       }}
     >
       <AppHeader app={app} size={size} overrideImageSize={overrideImageSize} />
-      <ActionButton
-        app={app}
-        isIcon={!showMoreActions && size !== 'large'}
-        className={classNames({
-          'absolute': size !== 'large',
-          'top-2 right-2': size !== 'large' && showMoreActions,
-          'top-0 right-0': size !== 'large' && !showMoreActions,
-          'bg-orange text-lg min-w-1/5': size === 'large',
-          'ml-auto': size === 'large' && isMobile
-        })} />
-      {showMoreActions && <div className="absolute bottom-2 right-2">
-        <MoreActions app={app} />
-      </div>}
+      <div className={classNames("flex items-center", {
+        'absolute': size !== 'large',
+        'top-2 right-2': size !== 'large' && showMoreActions,
+        'top-0 right-0': size !== 'large' && !showMoreActions,
+        'ml-auto': size === 'large' && isMobile,
+        'min-w-1/5': size === 'large'
+      })}>
+        <ActionButton
+          app={app}
+          launchPath={launchPath}
+          isIcon={!showMoreActions && size !== 'large'}
+          className={classNames({
+            'bg-orange text-lg': size === 'large',
+            'mr-2': showMoreActions,
+            'w-full': size === 'large'
+          })}
+        />
+        {showMoreActions && <MoreActions app={app} className="self-stretch" />}
+      </div>
     </div>
   );
 }

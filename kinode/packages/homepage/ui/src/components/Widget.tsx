@@ -3,7 +3,7 @@ import { FaEye, FaEyeSlash } from "react-icons/fa6"
 import { useState } from "react"
 import usePersistentStore from "../store/persistentStore"
 import useHomepageStore from "../store/homepageStore"
-import { isMobileCheck } from "../utilities/dimensions"
+import { isMobileCheck } from "../utils/dimensions"
 
 interface WidgetProps {
   package_name: string,

@@ -13,12 +13,14 @@ use lib::types::core::{self as t, STATE_PROCESS_ID, VFS_PROCESS_ID};
 
 /// Manipulate a single process.
 pub mod process;
-/// Implement the functions served to processes by `kinode.wit`.
+/// Implement the functions served to processes by `wit-v0.7.0/kinode.wit`.
 mod standard_host;
+/// Implement the functions served to processes by `wit-v0.8.0/kinode.wit`.
+mod standard_host_v0;
 
 const PROCESS_CHANNEL_CAPACITY: usize = 100;
 
-const DEFAULT_WIT_VERSION: u32 = 0;
+pub const LATEST_WIT_VERSION: u32 = 0;
 
 #[derive(Serialize, Deserialize)]
 struct StartProcessMetadata {
@@ -518,52 +520,47 @@ async fn handle_kernel_request(
                 .await
                 .expect("event loop: fatal: sender died");
         }
-        t::KernelCommand::Debug(kind) => match kind {
-            t::KernelPrint::ProcessMap => {
-                let mut process_map_string = "".to_string();
-                for (id, process) in &mut *process_map {
-                    process_map_string.push_str(&format!("{}: {}\r\n", id, process));
-                }
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: format!("kernel process map:\r\n{process_map_string}\r\nfound {} running processes", process_map.len()),
-                    })
-                    .await;
-            }
-            t::KernelPrint::Process(process_id) => {
-                let Some(proc) = process_map.get(&process_id) else {
-                    let _ = send_to_terminal
-                        .send(t::Printout {
-                            verbosity: 0,
-                            content: format!("kernel: no such running process {}", process_id),
-                        })
-                        .await;
-                    return None;
-                };
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: format!("process info for {process_id}:\r\n{proc}",),
-                    })
-                    .await;
-            }
-            t::KernelPrint::HasCap { on, cap } => {
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: format!(
-                            "process {} has cap:\r\n{}",
-                            on,
-                            process_map
-                                .get(&on)
-                                .map(|p| p.capabilities.contains_key(&cap))
-                                .unwrap_or(false)
-                        ),
-                    })
-                    .await;
-            }
-        },
+        t::KernelCommand::Debug(kind) => {
+            let response = match kind {
+                t::KernelPrint::ProcessMap => t::KernelPrintResponse::ProcessMap(
+                    process_map
+                        .clone()
+                        .into_iter()
+                        .map(|(k, v)| (k, v.into()))
+                        .collect(),
+                ),
+                t::KernelPrint::Process(process_id) => t::KernelPrintResponse::Process(
+                    process_map.get(&process_id).cloned().map(|p| p.into()),
+                ),
+                t::KernelPrint::HasCap { on, cap } => t::KernelPrintResponse::HasCap(
+                    process_map
+                        .get(&on)
+                        .map(|p| p.capabilities.contains_key(&cap)),
+                ),
+            };
+            send_to_loop
+                .send(t::KernelMessage {
+                    id: km.id,
+                    source: t::Address {
+                        node: our_name.clone(),
+                        process: KERNEL_PROCESS_ID.clone(),
+                    },
+                    target: km.rsvp.unwrap_or(km.source),
+                    rsvp: None,
+                    message: t::Message::Response((
+                        t::Response {
+                            inherit: false,
+                            body: serde_json::to_vec(&t::KernelResponse::Debug(response)).unwrap(),
+                            metadata: None,
+                            capabilities: vec![],
+                        },
+                        None,
+                    )),
+                    lazy_load_blob: None,
+                })
+                .await
+                .expect("event loop: fatal: sender died");
+        }
     }
     None
 }
@@ -606,10 +603,7 @@ async fn start_process(
             process: id.clone(),
         },
         wasm_bytes_handle: process_metadata.persisted.wasm_bytes_handle.clone(),
-        wit_version: process_metadata
-            .persisted
-            .wit_version
-            .unwrap_or(DEFAULT_WIT_VERSION),
+        wit_version: process_metadata.persisted.wit_version,
         on_exit: process_metadata.persisted.on_exit.clone(),
         public: process_metadata.persisted.public,
     };

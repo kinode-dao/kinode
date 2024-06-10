@@ -9,6 +9,7 @@ import { ipToNumber } from "../utils/ipToNumber";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { KinodeTitle } from "../components/KinodeTitle";
 import { Tooltip } from "../components/Tooltip";
+import { getFetchUrl } from "../utils/fetch";
 
 const { useAccounts, useProvider } = hooks;
 
@@ -22,7 +23,8 @@ function ClaimOsInvite({
   openConnect,
   setNetworkingKey,
   setIpAddress,
-  setPort,
+  setWsPort,
+  setTcpPort,
   setRouters,
   closeConnect,
   nodeChainId,
@@ -50,7 +52,7 @@ function ClaimOsInvite({
       if (invite !== "") {
         const url = process.env.REACT_APP_INVITE_GET + invite;
 
-        const response = await fetch(url, { method: "GET" });
+        const response = await fetch(getFetchUrl(url), { method: "GET", credentials: 'include' });
 
         if (response!.status === 200) {
           setInviteValidity("");
@@ -69,9 +71,17 @@ function ClaimOsInvite({
 
     const {
       networking_key,
-      ws_routing: [ip_address, port],
-      allowed_routers,
-    } = (await fetch("/generate-networking-info", { method: "POST" }).then(
+      routing: {
+        Both: {
+          ip: ip_address,
+          ports: {
+            ws: ws_port,
+            tcp: tcp_port
+          },
+          routers
+        }
+      }
+    } = (await fetch(getFetchUrl("/generate-networking-info"), { method: "POST", credentials: 'include' }).then(
       (res) => res.json()
     )) as NetworkingInfo;
 
@@ -79,8 +89,9 @@ function ClaimOsInvite({
 
     setNetworkingKey(networking_key);
     setIpAddress(ipAddress);
-    setPort(port);
-    setRouters(allowed_routers);
+    setWsPort(ws_port || 0);
+    setTcpPort(tcp_port || 0);
+    setRouters(routers);
 
     if (nameValidities.length !== 0 || inviteValidity !== "") return;
     if (!name || !invite) {
@@ -93,19 +104,21 @@ function ClaimOsInvite({
     setLoaderMsg("...Building EIP-4337 User Operation");
     setIsLoading(true);
 
-    console.log("BUILDING", networking_key, ipAddress, port, allowed_routers);
+    console.log("BUILDING", networking_key, ipAddress, ws_port, tcp_port, routers);
 
     try {
-      response = await fetch(process.env.REACT_APP_BUILD_USER_OP_POST!, {
+      response = await fetch(getFetchUrl(process.env.REACT_APP_BUILD_USER_OP_POST!), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: 'include',
         body: JSON.stringify({
           name: name + ".os",
           address: accounts![0],
           networkingKey: networking_key,
           wsIp: ipAddress,
-          wsPort: port,
-          routers: allowed_routers,
+          wsPort: ws_port,
+          tcpPort: tcp_port,
+          routers: routers,
           direct: direct,
         }),
       });
@@ -132,9 +145,10 @@ function ClaimOsInvite({
     data.userOperation.signature = signature;
 
     try {
-      response = await fetch(process.env.REACT_APP_BROADCAST_USER_OP_POST!, {
+      response = await fetch(getFetchUrl(process.env.REACT_APP_BROADCAST_USER_OP_POST!), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: 'include',
         body: JSON.stringify({
           userOp: data.userOperation,
           code: invite,

@@ -59,7 +59,7 @@ fn build_and_zip_package(
 ) -> anyhow::Result<(String, String, Vec<u8>)> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        kit::build::execute(&entry_path, true, false, true, features)
+        kit::build::execute(&entry_path, true, false, true, features, None, None) // TODO
             .await
             .map_err(|e| anyhow::anyhow!("{:?}", e))?;
 
@@ -119,13 +119,17 @@ fn main() -> anyhow::Result<()> {
 
     let results: Vec<anyhow::Result<(String, String, Vec<u8>)>> = entries
         .par_iter()
-        .map(|entry_path| {
+        .filter_map(|entry_path| {
             let parent_pkg_path = entry_path.join("pkg");
-            build_and_zip_package(
+            if !parent_pkg_path.exists() {
+                // don't run on, e.g., `.DS_Store`
+                return None;
+            }
+            Some(build_and_zip_package(
                 entry_path.clone(),
                 parent_pkg_path.to_str().unwrap(),
                 &features,
-            )
+            ))
         })
         .collect();
 

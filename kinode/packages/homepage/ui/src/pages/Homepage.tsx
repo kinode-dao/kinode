@@ -2,13 +2,16 @@ import { useEffect, useState } from 'react'
 import KinodeText from '../components/KinodeText'
 import KinodeBird from '../components/KinodeBird'
 import useHomepageStore, { HomepageApp } from '../store/homepageStore'
-import { FaChevronDown, FaChevronUp, FaScrewdriverWrench, FaV } from 'react-icons/fa6'
+import { FaChevronDown, FaChevronUp, FaScrewdriverWrench } from 'react-icons/fa6'
 import AppsDock from '../components/AppsDock'
 import AllApps from '../components/AllApps'
 import Widgets from '../components/Widgets'
-import { isMobileCheck } from '../utilities/dimensions'
+import { isMobileCheck } from '../utils/dimensions'
 import classNames from 'classnames'
 import WidgetsSettingsModal from '../components/WidgetsSettingsModal'
+
+import valetIcon from '../../public/valet-icon.png'
+import { getFetchUrl } from '../utils/fetch'
 
 interface AppStoreApp {
   package: string,
@@ -19,16 +22,21 @@ interface AppStoreApp {
 }
 function Homepage() {
   const [our, setOur] = useState('')
+  const [version, setVersion] = useState('')
   const [allAppsExpanded, setAllAppsExpanded] = useState(false)
   const { setApps, isHosted, fetchHostedStatus, showWidgetsSettings, setShowWidgetsSettings } = useHomepageStore()
   const isMobile = isMobileCheck()
 
   const getAppPathsAndIcons = () => {
     Promise.all([
-      fetch('/apps').then(res => res.json() as any as HomepageApp[]),
-      fetch('/main:app_store:sys/apps').then(res => res.json())
-    ]).then(([appsData, appStoreData]) => {
-      console.log({ appsData, appStoreData })
+      fetch(getFetchUrl('/apps'), { credentials: 'include' }).then(res => res.json() as any as HomepageApp[]).catch(() => []),
+      fetch(getFetchUrl('/main:app_store:sys/apps'), { credentials: 'include' }).then(res => res.json()).catch(() => []),
+      fetch(getFetchUrl('/version'), { credentials: 'include' }).then(res => res.text()).catch(() => '')
+    ]).then(([appsData, appStoreData, version]) => {
+      // console.log({ appsData, appStoreData, version })
+
+      setVersion(version)
+
       const appz = appsData.map(app => ({
         ...app,
         is_favorite: false, // Assuming initial state for all apps
@@ -70,7 +78,7 @@ function Homepage() {
   }, [our]);
 
   useEffect(() => {
-    fetch('/our')
+    fetch(getFetchUrl('/our'), { credentials: 'include' })
       .then(res => res.text())
       .then(data => {
         if (data.match(/^[a-zA-Z0-9\-\.]+\.[a-zA-Z]+$/)) {
@@ -87,13 +95,13 @@ function Homepage() {
         'top-8 left-8 right-8': !isMobile,
         'top-2 left-2 right-2': isMobile
       })}>
-        {isHosted && <a
-          href={`https://${our.replace('.os', '')}.hosting.kinode.net/`}
-          className='button icon'
-        >
-          <FaV />
-        </a>}
-        {our}
+        {isHosted && <img
+          src={valetIcon}
+          className='!w-12 !h-12 !p-1 button icon object-cover'
+          onClick={() => window.location.href = `https://${our.replace('.os', '')}.hosting.kinode.net/`}
+        />}
+        <span>{our}</span>
+        <span className='bg-white/10 rounded p-1'>v{version}</span>
         <button
           className="icon ml-auto"
           onClick={() => setShowWidgetsSettings(true)}

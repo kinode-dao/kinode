@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "process-v0",
 });
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -72,6 +72,14 @@ fn init(our: Address) {
                     ProcessId::new(Some("hi"), "terminal", "sys"),
                 ),
                 (
+                    "kill".to_string(),
+                    ProcessId::new(Some("kill"), "terminal", "sys"),
+                ),
+                (
+                    "kfetch".to_string(),
+                    ProcessId::new(Some("kfetch"), "terminal", "sys"),
+                ),
+                (
                     "m".to_string(),
                     ProcessId::new(Some("m"), "terminal", "sys"),
                 ),
@@ -115,6 +123,7 @@ fn init(our: Address) {
                         Ok(()) => continue,
                         Err(e) => println!("{e}"),
                     }
+                // checks for a request from a terminal script (different process, same package)
                 } else if state.our.node == source.node && state.our.package() == source.package() {
                     let Ok(action) = serde_json::from_slice::<TerminalAction>(&body) else {
                         println!("failed to parse action from: {}", source);
@@ -152,7 +161,7 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
         return Err(anyhow::anyhow!("script not in scripts.json file"));
     };
     let wasm_path = if wasm_path.starts_with("/") {
-        wasm_path.clone()
+        wasm_path
     } else {
         format!("/{}", wasm_path)
     };
@@ -226,12 +235,14 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
             })?)
             .send()?;
     }
+    // inherits the blob from the previous request, `_bytes_response`,
+    // containing the wasm byte code of the process
     Request::new()
         .target(("our", "kernel", "distro", "sys"))
         .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
             id: parsed_new_process_id.clone(),
             wasm_bytes_handle: wasm_path.clone(),
-            wit_version: None,
+            wit_version: entry.wit_version,
             on_exit: kt::OnExit::None,
             initial_capabilities: HashSet::new(),
             public: entry.public,
@@ -297,10 +308,9 @@ fn handle_run(our: &Address, process: &ProcessId, args: String) -> anyhow::Resul
     print_to_terminal(
         3,
         &format!(
-            "{}: Process {{\n    wasm_bytes_handle: {},\n    wit_version: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
+            "{}: Process {{\n    wasm_bytes_handle: {},\n    on_exit: {:?},\n    public: {}\n    capabilities: {}\n}}",
             parsed_new_process_id.clone(),
             wasm_path.clone(),
-            "None",
             kt::OnExit::None,
             entry.public,
             {

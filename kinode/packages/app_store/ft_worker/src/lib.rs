@@ -6,8 +6,8 @@ mod ft_worker_lib;
 use ft_worker_lib::*;
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "process-v0",
 });
 
 /// internal worker protocol

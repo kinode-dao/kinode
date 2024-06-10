@@ -6,8 +6,10 @@ export interface PageProps {
   setNetworkingKey: React.Dispatch<React.SetStateAction<string>>,
   ipAddress: number,
   setIpAddress: React.Dispatch<React.SetStateAction<number>>,
-  port: number,
-  setPort: React.Dispatch<React.SetStateAction<number>>,
+  ws_port: number,
+  setWsPort: React.Dispatch<React.SetStateAction<number>>,
+  tcp_port: number,
+  setTcpPort: React.Dispatch<React.SetStateAction<number>>,
   routers: string[],
   setRouters: React.Dispatch<React.SetStateAction<string[]>>,
   direct: boolean,
@@ -38,12 +40,18 @@ export interface PageProps {
 }
 
 export type NetworkingInfo = {
+  name: string,
   networking_key: string,
-  ws_routing: [
-    ip_address: string,
-    port: number
-  ],
-  allowed_routers: string[]
+  routing: {
+    Both: {
+      ip: string,
+      ports: {
+        ws?: number,
+        tcp?: number
+      },
+      routers: string[]
+    }
+  },
 }
 
 export type UnencryptedIdentity = {

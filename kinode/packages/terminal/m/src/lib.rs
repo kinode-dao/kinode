@@ -5,8 +5,8 @@ use kinode_process_lib::{
 use regex::Regex;
 
 wit_bindgen::generate!({
-    path: "wit",
-    world: "process",
+    path: "target/wit",
+    world: "process-v0",
 });
 
 call_init!(init);

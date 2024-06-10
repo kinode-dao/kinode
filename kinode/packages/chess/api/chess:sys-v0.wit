@@ -1,0 +1,32 @@
+interface chess {
+    /// Our "chess protocol" request/response format. We'll always serialize these
+    /// to a byte vector and send them over IPC.
+
+    variant request {
+        new-game(new-game-request),
+        move(move-request),
+        resign(string),
+    }
+
+    variant response {
+        new-game-accepted,
+        new-game-rejected,
+        move-accepted,
+        move-rejected,
+    }
+
+    record new-game-request {
+        white: string,
+        black: string,
+    }
+
+    record move-request {
+        game-id: string,
+        move-str: string,
+    }
+}
+
+world chess-sys-v0 {
+    import chess;
+    include process-v0;
+}

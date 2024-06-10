@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 pub mod core;
 pub mod eth;
 mod http;
@@ -13,7 +15,17 @@ pub use kinode::process;
 pub use kinode::process::standard as wit;
 
 wasmtime::component::bindgen!({
-    path: "wit",
+    path: "wit-v0.7.0",
     world: "process",
     async: true,
 });
+
+pub mod v0 {
+    pub use kinode::process;
+    pub use kinode::process::standard as wit;
+    wasmtime::component::bindgen!({
+        path: "wit-v0.8.0",
+        world: "process-v0",
+        async: true,
+    });
+}

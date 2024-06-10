@@ -1,4 +1,8 @@
 import { SEPOLIA_OPT_HEX, OPTIMISM_OPT_HEX, MAINNET_OPT_HEX } from "../constants/chainId";
+import { NetworkingInfo } from "../lib/types";
+import { ipToNumber } from "./ipToNumber";
+import { KNSRegistryResolver } from "../abis/types";
+import { namehash } from "@ethersproject/hash";
 const CHAIN_NOT_FOUND = "4902"
 
 export interface Chain {
@@ -49,7 +53,7 @@ export const CHAIN_DETAILS: { [key: string]: Chain } = {
   }
 }
 
-export const getNetworkName = (networkId: string) => {
+export const getNetworkName = (networkId?: string) => {
   switch (networkId) {
     case '1':
     case '0x1':
@@ -74,8 +78,7 @@ export const setChain = async (chainId: string) => {
   networkId = '0x' + (typeof networkId === 'string' ? networkId.replace(/^0x/, '') : networkId.toString(16))
 
   if (!CHAIN_DETAILS[chainId]) {
-    console.error(`Invalid chain ID: ${chainId}`)
-    return
+    throw new Error(`Invalid chain ID: ${chainId}`)
   }
 
   if (chainId !== networkId) {
@@ -96,4 +99,86 @@ export const setChain = async (chainId: string) => {
       }
     }
   }
+}
+
+export const generateNetworkingKeys = async ({
+  direct,
+  kns,
+  nodeChainId,
+  chainName,
+  nameToSet,
+  setNetworkingKey,
+  setIpAddress,
+  setWsPort,
+  setTcpPort,
+  setRouters,
+}: {
+  direct: boolean,
+  kns: KNSRegistryResolver,
+  nodeChainId: string,
+  chainName: string,
+  nameToSet: string,
+  setNetworkingKey: (networkingKey: string) => void;
+  setIpAddress: (ipAddress: number) => void;
+  setWsPort: (wsPort: number) => void;
+  setTcpPort: (tcpPort: number) => void;
+  setRouters: (routers: string[]) => void;
+}) => {
+  const {
+    networking_key,
+    routing: {
+      Both: {
+        ip: ip_address,
+        ports: { ws: ws_port, tcp: tcp_port },
+        routers: allowed_routers
+      }
+    }
+  } = (await fetch("/generate-networking-info", { method: "POST" }).then(
+    (res) => res.json()
+  )) as NetworkingInfo;
+
+  const ipAddress = ipToNumber(ip_address);
+
+  setNetworkingKey(networking_key);
+  setIpAddress(ipAddress);
+  setWsPort(ws_port || 0);
+  setTcpPort(tcp_port || 0);
+  setRouters(allowed_routers);
+
+  const data = [
+    direct
+      ? (
+        await kns.populateTransaction.setAllIp(
+          nameToSet,
+          ipAddress,
+          ws_port || 0,  // ws
+          0,             // wt
+          tcp_port || 0, // tcp
+          0              // udp
+        )
+      ).data!
+      : (
+        await kns.populateTransaction.setRouters(
+          nameToSet,
+          allowed_routers.map((x) => namehash(x))
+        )
+      ).data!,
+    (
+      await kns.populateTransaction.setKey(
+        nameToSet,
+        networking_key
+      )
+    ).data!,
+  ];
+
+  try {
+    await setChain(nodeChainId);
+  } catch (error) {
+    window.alert(
+      `You must connect to the ${chainName} network to continue. Please connect and try again.`
+    );
+    throw new Error(`${chainName} not set`);
+  }
+
+  return data
 }

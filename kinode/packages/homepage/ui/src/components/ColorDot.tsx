@@ -1,7 +1,7 @@
 import classNames from 'classnames'
 import React from 'react'
 import { hexToRgb, hslToRgb, rgbToHex, rgbToHsl } from '../utils/colors'
-import { isMobileCheck } from '../utilities/dimensions'
+import { isMobileCheck } from '../utils/dimensions'
 
 interface ColorDotProps extends React.HTMLAttributes<HTMLSpanElement> {
   num: string,

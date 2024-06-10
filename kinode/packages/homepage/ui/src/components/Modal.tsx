@@ -1,5 +1,5 @@
 import { FaX } from "react-icons/fa6"
-import { isMobileCheck } from "../utilities/dimensions"
+import { isMobileCheck } from "../utils/dimensions"
 import classNames from "classnames"
 
 interface Props extends React.HTMLAttributes<HTMLDivElement> {

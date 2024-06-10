@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from "react";
 import { DotOsRegistrar } from "../abis/types";
 import isValidDomain from "is-valid-domain";
-import { hash } from "eth-ens-namehash";
+import hash from "@ensdomains/eth-ens-namehash";
 import { toAscii } from "idna-uts46-hx";
 
 type ClaimOsNameProps = {
@@ -9,7 +9,7 @@ type ClaimOsNameProps = {
   setName: React.Dispatch<React.SetStateAction<string>>;
   nameValidities: string[];
   setNameValidities: React.Dispatch<React.SetStateAction<string[]>>;
-  dotOs: DotOsRegistrar;
+  dotOs?: DotOsRegistrar;
   triggerNameCheck: boolean;
   isReset?: boolean;
 };
@@ -46,7 +46,7 @@ function EnterKnsName({
         if (index === -1) validities.push(NAME_LENGTH);
       } else if (index !== -1) validities.splice(index, 1);
 
-      let normalized: string;
+      let normalized = ''
       index = validities.indexOf(NAME_INVALID_PUNY);
       try {
         normalized = toAscii(name + ".os");
@@ -56,18 +56,21 @@ function EnterKnsName({
       }
 
       // only check if name is valid punycode
-      if (normalized! !== undefined) {
+      if (normalized && normalized !== '.os') {
         index = validities.indexOf(NAME_URL);
         if (name !== "" && !isValidDomain(normalized)) {
           if (index === -1) validities.push(NAME_URL);
         } else if (index !== -1) validities.splice(index, 1);
 
         index = validities.indexOf(NAME_CLAIMED);
-        if (validities.length === 0 || index !== -1) {
+
+        if (validities.length === 0 || index !== -1 && normalized.length > 2) {
           try {
-            await dotOs.ownerOf(hash(normalized));
-            if (index === -1) validities.push(NAME_CLAIMED);
+            const namehash = hash.hash(normalized)
+            const owner = await dotOs?.ownerOf(namehash);
+            if (owner && index === -1) validities.push(NAME_CLAIMED);
           } catch (e) {
+            console.error({ e })
             if (index !== -1) validities.splice(index, 1);
           }
         }

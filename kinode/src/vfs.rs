@@ -18,7 +18,8 @@ pub async fn vfs(
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: String,
 ) -> anyhow::Result<()> {
-    let vfs_path = format!("{}/vfs", &home_directory_path);
+    let our_node = Arc::new(our_node);
+    let vfs_path = format!("{home_directory_path}/vfs");
 
     if let Err(e) = fs::create_dir_all(&vfs_path).await {
         panic!("failed creating vfs dir! {:?}", e);
@@ -30,83 +31,82 @@ pub async fn vfs(
     let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
         HashMap::new();
 
-    loop {
-        tokio::select! {
-            Some(km) = recv_from_loop.recv() => {
-                if our_node.clone() != km.source.node {
-                    println!(
-                        "vfs: request must come from our_node={}, got: {}",
-                        our_node,
-                        km.source.node,
-                    );
-                    continue;
-                }
-
-                let queue = process_queues
-                    .entry(km.source.process.clone())
-                    .or_insert_with(|| Arc::new(Mutex::new(VecDeque::new())))
-                    .clone();
-
-                {
-                    let mut queue_lock = queue.lock().await;
-                    queue_lock.push_back(km.clone());
-                }
-
-                // clone Arcs
-                let our_node = our_node.clone();
-                let send_to_caps_oracle = send_to_caps_oracle.clone();
-                let send_to_terminal = send_to_terminal.clone();
-                let send_to_loop = send_to_loop.clone();
-                let open_files = open_files.clone();
-                let vfs_path = vfs_path.clone();
-
-                tokio::spawn(async move {
-                    let mut queue_lock = queue.lock().await;
-                    if let Some(km) = queue_lock.pop_front() {
-                        if let Err(e) = handle_request(
-                            our_node.clone(),
-                            km.clone(),
-                            open_files.clone(),
-                            send_to_loop.clone(),
-                            send_to_terminal.clone(),
-                            send_to_caps_oracle.clone(),
-                            vfs_path.clone(),
-                        )
-                        .await
-                        {
-                            let _ = send_to_loop
-                                .send(make_error_message(our_node.clone(), km.id, km.source, e))
-                                .await;
-                        }
-                    }
-                });
-            }
+    while let Some(km) = recv_from_loop.recv().await {
+        if *our_node != km.source.node {
+            let _ = send_to_terminal.send(Printout {
+                verbosity: 1,
+                content: format!(
+                    "vfs: got request from {}, but requests must come from our node {our_node}\r",
+                    km.source.node,
+                ),
+            });
+            continue;
         }
+
+        let queue = process_queues
+            .entry(km.source.process.clone())
+            .or_insert_with(|| Arc::new(Mutex::new(VecDeque::new())))
+            .clone();
+
+        {
+            let mut queue_lock = queue.lock().await;
+            queue_lock.push_back(km.clone());
+        }
+
+        // clone Arcs
+        let our_node = our_node.clone();
+        let send_to_caps_oracle = send_to_caps_oracle.clone();
+        let send_to_terminal = send_to_terminal.clone();
+        let send_to_loop = send_to_loop.clone();
+        let open_files = open_files.clone();
+        let vfs_path = vfs_path.clone();
+
+        tokio::spawn(async move {
+            let mut queue_lock = queue.lock().await;
+            if let Some(km) = queue_lock.pop_front() {
+                let (km_id, km_source) = (km.id.clone(), km.source.clone());
+
+                if let Err(e) = handle_request(
+                    &our_node,
+                    km,
+                    open_files.clone(),
+                    &send_to_loop,
+                    &send_to_terminal,
+                    &send_to_caps_oracle,
+                    &vfs_path,
+                )
+                .await
+                {
+                    let _ = send_to_loop
+                        .send(make_error_message(
+                            our_node.to_string(),
+                            km_id,
+                            km_source,
+                            e,
+                        ))
+                        .await;
+                }
+            }
+        });
     }
+    Ok(())
 }
 
 async fn handle_request(
-    our_node: String,
+    our_node: &str,
     km: KernelMessage,
     open_files: Arc<DashMap<PathBuf, Arc<Mutex<fs::File>>>>,
-    send_to_loop: MessageSender,
-    send_to_terminal: PrintSender,
-    send_to_caps_oracle: CapMessageSender,
-    vfs_path: PathBuf,
+    send_to_loop: &MessageSender,
+    send_to_terminal: &PrintSender,
+    send_to_caps_oracle: &CapMessageSender,
+    vfs_path: &PathBuf,
 ) -> Result<(), VfsError> {
-    let KernelMessage {
-        id,
-        source,
-        message,
-        lazy_load_blob: blob,
-        ..
-    } = km.clone();
     let Message::Request(Request {
         body,
         expects_response,
         metadata,
         ..
-    }) = message.clone()
+    }) = km.message
     else {
         return Err(VfsError::BadRequest {
             error: "not a request".into(),
@@ -116,7 +116,6 @@ async fn handle_request(
     let request: VfsRequest = match serde_json::from_slice(&body) {
         Ok(r) => r,
         Err(e) => {
-            println!("vfs: got invalid Request: {}", e);
             return Err(VfsError::BadJson {
                 error: e.to_string(),
             });
@@ -129,10 +128,10 @@ async fn handle_request(
         let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
         send_to_caps_oracle
             .send(CapMessage::Has {
-                on: source.process.clone(),
+                on: km.source.process.clone(),
                 cap: Capability {
                     issuer: Address {
-                        node: our_node.clone(),
+                        node: our_node.to_string(),
                         process: VFS_PROCESS_ID.clone(),
                     },
                     params: serde_json::to_string(&serde_json::json!({
@@ -161,12 +160,12 @@ async fn handle_request(
             }
 
             let response = KernelMessage {
-                id,
+                id: km.id,
                 source: Address {
-                    node: our_node.clone(),
+                    node: our_node.to_string(),
                     process: VFS_PROCESS_ID.clone(),
                 },
-                target: source,
+                target: km.source,
                 rsvp: None,
                 message: Message::Response((
                     Response {
@@ -196,10 +195,10 @@ async fn handle_request(
     let drive = format!("/{}/{}", package_id, drive);
     let path = PathBuf::from(request.path.clone());
 
-    if km.source.process != *KERNEL_PROCESS_ID {
+    if &km.source.process != &*KERNEL_PROCESS_ID {
         check_caps(
-            our_node.clone(),
-            source.clone(),
+            our_node,
+            km.source.clone(),
             send_to_caps_oracle.clone(),
             &request,
             path.clone(),
@@ -251,7 +250,7 @@ async fn handle_request(
         }
         VfsAction::WriteAll => {
             // doesn't create a file, writes at exact cursor.
-            let Some(blob) = blob else {
+            let Some(blob) = km.lazy_load_blob else {
                 return Err(VfsError::BadRequest {
                     error: "blob needs to exist for WriteAll".into(),
                 });
@@ -262,7 +261,7 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Write => {
-            let Some(blob) = blob else {
+            let Some(blob) = km.lazy_load_blob else {
                 return Err(VfsError::BadRequest {
                     error: "blob needs to exist for Write".into(),
                 });
@@ -271,7 +270,7 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Append => {
-            let Some(blob) = blob else {
+            let Some(blob) = km.lazy_load_blob else {
                 return Err(VfsError::BadRequest {
                     error: "blob needs to exist for Append".into(),
                 });
@@ -430,21 +429,11 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Hash(hash)).unwrap(), None)
         }
         VfsAction::AddZip => {
-            let Some(blob) = blob else {
+            let Some(blob) = km.lazy_load_blob else {
                 return Err(VfsError::BadRequest {
                     error: "blob needs to exist for AddZip".into(),
                 });
             };
-            let Some(mime) = blob.mime else {
-                return Err(VfsError::BadRequest {
-                    error: "blob mime type needs to exist for AddZip".into(),
-                });
-            };
-            if "application/zip" != mime {
-                return Err(VfsError::BadRequest {
-                    error: "blob mime type needs to be application/zip for AddZip".into(),
-                });
-            }
             let file = std::io::Cursor::new(&blob.bytes);
             let mut zip = match zip::ZipArchive::new(file) {
                 Ok(f) => f,
@@ -455,6 +444,8 @@ async fn handle_request(
                     })
                 }
             };
+
+            fs::create_dir_all(path.clone()).await?;
 
             // loop through items in archive; recursively add to root
             for i in 0..zip.len() {
@@ -480,7 +471,6 @@ async fn handle_request(
                 } else if is_dir {
                     fs::create_dir_all(local_path).await?;
                 } else {
-                    println!("vfs: zip with non-file non-dir");
                     return Err(VfsError::CreateDirError {
                         path: path.display().to_string(),
                         error: "vfs: zip with non-file non-dir".into(),
@@ -493,14 +483,14 @@ async fn handle_request(
 
     if let Some(target) = km.rsvp.or_else(|| {
         expects_response.map(|_| Address {
-            node: our_node.clone(),
-            process: source.process.clone(),
+            node: our_node.to_string(),
+            process: km.source.process.clone(),
         })
     }) {
         let response = KernelMessage {
-            id,
+            id: km.id,
             source: Address {
-                node: our_node.clone(),
+                node: our_node.to_string(),
                 process: VFS_PROCESS_ID.clone(),
             },
             target,
@@ -522,7 +512,6 @@ async fn handle_request(
 
         let _ = send_to_loop.send(response).await;
     } else {
-        println!("vfs: not sending response: ");
         send_to_terminal
             .send(Printout {
                 verbosity: 2,
@@ -548,11 +537,7 @@ async fn parse_package_and_drive(
     let normalized_path = normalize_path(&joined_path);
     if !normalized_path.starts_with(vfs_path) {
         return Err(VfsError::BadRequest {
-            error: format!(
-                "input path tries to escape parent vfs directory: {:?}",
-                path
-            )
-            .into(),
+            error: format!("input path tries to escape parent vfs directory: {path}"),
         })?;
     }
 
@@ -560,11 +545,7 @@ async fn parse_package_and_drive(
     let path = normalized_path
         .strip_prefix(vfs_path)
         .map_err(|_| VfsError::BadRequest {
-            error: format!(
-                "input path tries to escape parent vfs directory: {:?}",
-                path
-            )
-            .into(),
+            error: format!("input path tries to escape parent vfs directory: {path}"),
         })?
         .display()
         .to_string();
@@ -577,7 +558,7 @@ async fn parse_package_and_drive(
     if parts.len() < 2 {
         return Err(VfsError::ParseError {
             error: "malformed path".into(),
-            path: path.to_string(),
+            path,
         });
     }
 
@@ -586,7 +567,7 @@ async fn parse_package_and_drive(
         Err(e) => {
             return Err(VfsError::ParseError {
                 error: e.to_string(),
-                path: path.to_string(),
+                path,
             })
         }
     };
@@ -627,7 +608,7 @@ async fn open_file<P: AsRef<Path>>(
 }
 
 async fn check_caps(
-    our_node: String,
+    our_node: &str,
     source: Address,
     mut send_to_caps_oracle: CapMessageSender,
     request: &VfsRequest,
@@ -645,7 +626,7 @@ async fn check_caps(
             on: source.process.clone(),
             cap: Capability {
                 issuer: Address {
-                    node: our_node.clone(),
+                    node: our_node.to_string(),
                     process: VFS_PROCESS_ID.clone(),
                 },
                 params: serde_json::to_string(&serde_json::json!({
@@ -686,7 +667,7 @@ async fn check_caps(
                     on: source.process.clone(),
                     cap: Capability {
                         issuer: Address {
-                            node: our_node.clone(),
+                            node: our_node.to_string(),
                             process: VFS_PROCESS_ID.clone(),
                         },
                         params: serde_json::to_string(&serde_json::json!({
@@ -728,7 +709,7 @@ async fn check_caps(
                     on: source.process.clone(),
                     cap: Capability {
                         issuer: Address {
-                            node: our_node.clone(),
+                            node: our_node.to_string(),
                             process: VFS_PROCESS_ID.clone(),
                         },
                         params: serde_json::to_string(&serde_json::json!({
@@ -771,7 +752,7 @@ async fn check_caps(
                     on: source.process.clone(),
                     cap: Capability {
                         issuer: Address {
-                            node: our_node.clone(),
+                            node: our_node.to_string(),
                             process: VFS_PROCESS_ID.clone(),
                         },
                         params: serde_json::to_string(&serde_json::json!({
@@ -802,7 +783,7 @@ async fn check_caps(
                     on: source.process.clone(),
                     cap: Capability {
                         issuer: Address {
-                            node: our_node.clone(),
+                            node: our_node.to_string(),
                             process: VFS_PROCESS_ID.clone(),
                         },
                         params: serde_json::to_string(&serde_json::json!({

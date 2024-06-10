@@ -1,15 +1,23 @@
-use dashmap::DashMap;
-use futures::stream::{SplitSink, SplitStream};
-use lib::types::core::*;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::UnboundedSender;
-use tokio_tungstenite::{tungstenite, MaybeTlsStream, WebSocketStream};
+use lib::types::core::{
+    Identity, KernelMessage, MessageSender, NetworkErrorSender, NodeId, PrintSender,
+};
+use {
+    dashmap::DashMap,
+    ring::signature::Ed25519KeyPair,
+    serde::{Deserialize, Serialize},
+    std::sync::Arc,
+    tokio::net::TcpStream,
+    tokio::sync::mpsc::UnboundedSender,
+    tokio_tungstenite::{MaybeTlsStream, WebSocketStream},
+};
+
+pub const WS_PROTOCOL: &str = "ws";
+pub const TCP_PROTOCOL: &str = "tcp";
 
 /// Sent to a node when you want to connect directly to them.
 /// Sent in the 'e, ee, s, es' and 's, se' phases of XX noise protocol pattern.
+///
+/// Should always be serialized and deserialized using MessagePack.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HandshakePayload {
     pub protocol_version: u8,
@@ -18,9 +26,7 @@ pub struct HandshakePayload {
     // someone could reuse this signature, but then they will be unable
     // to encrypt messages to us.
     pub signature: Vec<u8>,
-    /// Set to true when you want them to act as a router for you, sending
-    /// messages from potentially many remote sources over this connection,
-    /// including from the router itself.
+    /// Set to true when you want them to act as a router for you.
     /// This is not relevant in a handshake sent from the receiver side.
     pub proxy_request: bool,
 }
@@ -36,6 +42,8 @@ pub struct HandshakePayload {
 /// they are willing to proxy for you.
 ///
 /// Sent in the 'e' phase of XX noise protocol pattern.
+///
+/// Should always be serialized and deserialized using MessagePack.
 #[derive(Debug, Deserialize, Serialize)]
 pub struct RoutingRequest {
     pub protocol_version: u8,
@@ -46,36 +54,24 @@ pub struct RoutingRequest {
     pub target: NodeId,
 }
 
-pub enum Connection {
-    Peer(PeerConnection),
-    Passthrough(PassthroughConnection),
-    PendingPassthrough(PendingPassthroughConnection),
-}
-
-pub struct PeerConnection {
-    pub noise: snow::TransportState,
-    pub buf: Vec<u8>,
-    pub write_stream: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-    pub read_stream: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-}
-
-pub struct PassthroughConnection {
-    pub write_stream_1: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-    pub read_stream_1: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-    pub write_stream_2: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-    pub read_stream_2: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-}
-
-pub struct PendingPassthroughConnection {
-    pub target: NodeId,
-    pub write_stream: SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::Message>,
-    pub read_stream: SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-}
-
 pub type Peers = Arc<DashMap<String, Peer>>;
 pub type PKINames = Arc<DashMap<String, NodeId>>;
 pub type OnchainPKI = Arc<DashMap<String, Identity>>;
-pub type PendingPassthroughs = HashMap<(NodeId, NodeId), PendingPassthroughConnection>;
+/// (from, target) -> from's socket
+pub type PendingPassthroughs = Arc<DashMap<(NodeId, NodeId), PendingStream>>;
+pub enum PendingStream {
+    WebSocket(WebSocketStream<MaybeTlsStream<TcpStream>>),
+    Tcp(TcpStream),
+}
+
+impl PendingStream {
+    pub fn is_ws(&self) -> bool {
+        matches!(self, PendingStream::WebSocket(_))
+    }
+    pub fn is_tcp(&self) -> bool {
+        matches!(self, PendingStream::Tcp(_))
+    }
+}
 
 #[derive(Clone)]
 pub struct Peer {
@@ -84,4 +80,24 @@ pub struct Peer {
     /// associated with them. We can send them prompts to establish Passthroughs.
     pub routing_for: bool,
     pub sender: UnboundedSender<KernelMessage>,
+}
+
+/// [`Identity`], with additional fields for networking.
+#[derive(Clone)]
+pub struct IdentityExt {
+    pub our: Arc<Identity>,
+    pub our_ip: Arc<String>,
+    pub keypair: Arc<Ed25519KeyPair>,
+    pub kernel_message_tx: MessageSender,
+    pub network_error_tx: NetworkErrorSender,
+    pub print_tx: PrintSender,
+    pub _reveal_ip: bool, // TODO use
+}
+
+#[derive(Clone)]
+pub struct NetData {
+    pub pki: OnchainPKI,
+    pub peers: Peers,
+    pub names: PKINames,
+    pub pending_passthroughs: PendingPassthroughs,
 }

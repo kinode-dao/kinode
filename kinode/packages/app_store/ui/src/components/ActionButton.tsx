@@ -10,9 +10,11 @@ import classNames from "classnames";
 interface ActionButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
   isIcon?: boolean;
+  permitMultiButton?: boolean;
+  launchPath?: string
 }
 
-export default function ActionButton({ app, isIcon = false, ...props }: ActionButtonProps) {
+export default function ActionButton({ app, launchPath = '', isIcon = false, permitMultiButton = false, ...props }: ActionButtonProps) {
   const { installed, downloaded, updatable } = useMemo(() => {
     const versions = Object.entries(app?.metadata?.properties?.code_hashes || {});
     const latestHash = (versions.find(([v]) => v === app.metadata?.properties?.current_version) || [])[1];
@@ -31,23 +33,10 @@ export default function ActionButton({ app, isIcon = false, ...props }: ActionBu
     };
   }, [app]);
 
-
-  const [launchPath, setLaunchPath] = useState('');
-
-  useEffect(() => {
-    fetch('/apps').then(data => data.json())
-      .then((data: Array<{ package_name: string, path: string }>) => {
-        if (Array.isArray(data)) {
-          const homepageAppData = data.find(otherApp => app.package === otherApp.package_name)
-          if (homepageAppData) {
-            setLaunchPath(homepageAppData.path)
-          }
-        }
-      })
-  }, [app])
-
   return (
     <>
+      {/* if it's got a UI and it's updatable, show both buttons if we have space (launch will otherwise push out update) */}
+      {permitMultiButton && installed && updatable && launchPath && <UpdateButton app={app} {...props} isIcon={isIcon} />}
       {(installed && launchPath)
         ? <LaunchButton app={app} {...props} isIcon={isIcon} launchPath={launchPath} />
         : (installed && updatable)

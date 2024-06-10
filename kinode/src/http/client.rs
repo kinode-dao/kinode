@@ -218,7 +218,14 @@ async fn connect_websocket(
     // Connect the WebSocket
     let ws_stream = match connect_async(req).await {
         Ok((ws_stream, _)) => ws_stream,
-        Err(_) => {
+        Err(e) => {
+            let _ = print_tx
+                .send(Printout {
+                    verbosity: 1,
+                    content: format!("http_client: underlying lib connection error {e:?}"),
+                })
+                .await;
+
             return Err(HttpClientError::WsOpenFailed {
                 url: url.to_string(),
             });
@@ -386,15 +393,28 @@ async fn handle_http_request(
         return;
     };
 
+    let Ok(url) = url::Url::parse(&req.url) else {
+        http_error_message(
+            our,
+            id,
+            target,
+            expects_response,
+            HttpClientError::BadUrl { url: req.url },
+            send_to_loop,
+        )
+        .await;
+        return;
+    };
+
     let _ = print_tx
         .send(Printout {
             verbosity: 2,
-            content: format!("http_client: building {req_method} request to {}", req.url),
+            content: format!("http_client: {req_method} request to {}", url),
         })
         .await;
 
     // Build the request
-    let mut request_builder = client.request(req_method, req.url);
+    let mut request_builder = client.request(req_method, url);
 
     if let Some(version) = req.version {
         request_builder = match version.as_str() {
@@ -445,12 +465,6 @@ async fn handle_http_request(
     // Send the HTTP request
     match client.execute(request).await {
         Ok(response) => {
-            let _ = print_tx
-                .send(Printout {
-                    verbosity: 2,
-                    content: "http_client: executed request, got response".to_string(),
-                })
-                .await;
             // Handle the response and forward to the target process
             let Ok(body) = serde_json::to_vec::<Result<HttpClientResponse, HttpClientError>>(&Ok(
                 HttpClientResponse::Http(HttpResponse {
