@@ -499,19 +499,24 @@ async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
 /// If a specific port is provided, it attempts to bind to it directly.
 /// If no port is provided, it searches for the first available port between 9000 and 65535.
 /// Returns a tuple containing the TcpListener and a boolean indicating if a specific port was used.
-async fn setup_networking(networking_port: Option<&u16>) -> (tokio::net::TcpListener, bool) {
+async fn setup_networking(
+    networking_port: Option<&u16>,
+) -> (Option<tokio::net::TcpListener>, bool) {
+    if let Some(0) = networking_port {
+        return (None, true);
+    }
     match networking_port {
         Some(port) => {
             let listener = http::utils::find_open_port(*port, port + 1)
                 .await
                 .expect("port selected with flag could not be bound");
-            (listener, true)
+            (Some(listener), true)
         }
         None => {
             let listener = http::utils::find_open_port(9000, 65535)
                 .await
                 .expect("no ports found in range 9000-65535 for kinode networking");
-            (listener, false)
+            (Some(listener), false)
         }
     }
 }
@@ -709,8 +714,8 @@ async fn find_public_ip() -> std::net::Ipv4Addr {
 async fn serve_register_fe(
     home_directory_path: &str,
     our_ip: String,
-    ws_networking: (tokio::net::TcpListener, bool),
-    tcp_networking: (tokio::net::TcpListener, bool),
+    ws_networking: (Option<tokio::net::TcpListener>, bool),
+    tcp_networking: (Option<tokio::net::TcpListener>, bool),
     http_server_port: u16,
     maybe_rpc: Option<String>,
 ) -> (Identity, Vec<u8>, Keyfile) {
@@ -754,8 +759,8 @@ async fn serve_register_fe(
 async fn login_with_password(
     home_directory_path: &str,
     our_ip: String,
-    ws_networking: (tokio::net::TcpListener, bool),
-    tcp_networking: (tokio::net::TcpListener, bool),
+    ws_networking: (Option<tokio::net::TcpListener>, bool),
+    tcp_networking: (Option<tokio::net::TcpListener>, bool),
     maybe_rpc: Option<String>,
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
@@ -795,14 +800,14 @@ async fn login_with_password(
         &mut our,
         kns_address,
         provider,
-        (
-            ws_networking.0.local_addr().unwrap().port(),
-            ws_networking.1,
-        ),
-        (
-            tcp_networking.0.local_addr().unwrap().port(),
-            tcp_networking.1,
-        ),
+        match ws_networking.0 {
+            Some(listener) => (listener.local_addr().unwrap().port(), ws_networking.1),
+            None => (0, ws_networking.1),
+        },
+        match tcp_networking.0 {
+            Some(listener) => (listener.local_addr().unwrap().port(), tcp_networking.1),
+            None => (0, tcp_networking.1),
+        },
     )
     .await
     .expect("information used to boot does not match information onchain");
