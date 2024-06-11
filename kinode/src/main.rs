@@ -736,8 +736,8 @@ async fn serve_register_fe(
                 tx,
                 kill_rx,
                 our_ip,
-                ws_networking,
-                tcp_networking,
+                (ws_networking.0.as_ref(), ws_networking.1),
+                (tcp_networking.0.as_ref(), tcp_networking.1),
                 http_server_port,
                 disk_keyfile,
                 maybe_rpc) => {
@@ -756,6 +756,9 @@ async fn serve_register_fe(
     .unwrap();
 
     let _ = kill_tx.send(true);
+
+    drop(ws_networking.0);
+    drop(tcp_networking.0);
 
     (our, encoded_keyfile, decoded_keyfile)
 }

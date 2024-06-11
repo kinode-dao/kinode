@@ -43,8 +43,8 @@ pub async fn register(
     tx: RegistrationSender,
     kill_rx: oneshot::Receiver<bool>,
     ip: String,
-    ws_networking: (Option<tokio::net::TcpListener>, bool),
-    tcp_networking: (Option<tokio::net::TcpListener>, bool),
+    ws_networking: (Option<&tokio::net::TcpListener>, bool),
+    tcp_networking: (Option<&tokio::net::TcpListener>, bool),
     http_port: u16,
     keyfile: Option<Vec<u8>>,
     maybe_rpc: Option<String>,
@@ -55,12 +55,12 @@ pub async fn register(
     let tx = Arc::new(tx);
 
     let ws_port = match ws_networking.0 {
-        Some(ref listener) => listener.local_addr().unwrap().port(),
+        Some(listener) => listener.local_addr().unwrap().port(),
         None => 0,
     };
     let ws_flag_used = ws_networking.1;
     let tcp_port = match tcp_networking.0 {
-        Some(ref listener) => listener.local_addr().unwrap().port(),
+        Some(listener) => listener.local_addr().unwrap().port(),
         None => 0,
     };
     let tcp_flag_used = tcp_networking.1;
@@ -258,8 +258,6 @@ pub async fn register(
     let _ = open::that(format!("http://localhost:{}/", http_port));
     warp::serve(routes)
         .bind_with_graceful_shutdown(([0, 0, 0, 0], http_port), async {
-            drop(ws_networking.0);
-            drop(tcp_networking.0);
             kill_rx.await.ok();
         })
         .1
