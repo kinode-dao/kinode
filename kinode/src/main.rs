@@ -503,7 +503,7 @@ async fn setup_networking(
     protocol: &str,
     networking_port: Option<&u16>,
 ) -> (Option<tokio::net::TcpListener>, bool) {
-    if let Some(0) = networking_port {
+    if let Some(&0) = networking_port {
         return (None, true);
     }
     match networking_port {
