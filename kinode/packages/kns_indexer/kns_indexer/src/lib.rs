@@ -2,7 +2,9 @@ use crate::kinode::process::kns_indexer::{
     GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
 use alloy_sol_types::{sol, SolEvent};
-use kinode_process_lib::{await_message, call_init, eth, println, Address, Message, Response};
+use kinode_process_lib::{
+    await_message, call_init, eth, net::KnsUpdate, println, Address, Message, Request, Response,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map::HashMap, BTreeMap},
@@ -334,11 +336,14 @@ fn handle_eth_message(
 fn get_full_name(state: &mut State, label: &str, parent_hash: &str) -> String {
     let mut current_hash = parent_hash;
     let mut full_name = label.to_string();
+    let mut visited_hashes = std::collections::HashSet::new();
 
-    // Traverse up the hierarchy by following the node hash to find its parent name
     while let Some(parent_name) = state.names.get(current_hash) {
+        if !visited_hashes.insert(current_hash) {
+            break;
+        }
+
         full_name = format!("{}.{}", full_name, parent_name);
-        // Update current_hash to the parent's hash for the next iteration
         if let Some(new_parent_hash) = state.hashes.get(parent_name) {
             current_hash = new_parent_hash;
         } else {
@@ -385,7 +390,9 @@ fn decode_routers(bytes: &[u8]) -> anyhow::Result<Vec<String>> {
     Ok(routers)
 }
 
-fn handle_log(_our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
+fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
+    let mut node: Option<String> = None;
+
     match log.topics()[0] {
         Mint::SIGNATURE_HASH => {
             let decoded = Mint::decode_log_data(log.data(), true).unwrap();
@@ -403,6 +410,7 @@ fn handle_log(_our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resu
 
             println!("got full hierarchical name: {:?}", full_name);
             state.names.insert(node_hash.clone(), full_name);
+            node = Some(node_hash.clone());
             state.hashes.insert(node_hash, name);
         }
         Note::SIGNATURE_HASH => {
@@ -429,12 +437,16 @@ fn handle_log(_our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resu
                     let port = decode_bytes_to_port(&decoded.data)?;
                     state.nodes.entry(node_hash.clone()).and_modify(|node| {
                         node.ports.insert("ws".to_string(), port);
+                        // port defined, -> direct
+                        node.routers = vec![];
                     });
                 }
                 "~tcp-port" => {
                     let port = decode_bytes_to_port(&decoded.data)?;
                     state.nodes.entry(node_hash.clone()).and_modify(|node| {
                         node.ports.insert("tcp".to_string(), port);
+                        // port defined, -> direct
+                        node.routers = vec![];
                     });
                 }
                 "~net-key" => {
@@ -447,6 +459,9 @@ fn handle_log(_our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resu
                     state.nodes.entry(node_hash.clone()).and_modify(|node| {
                         if let Ok(routers) = decode_routers(&decoded.data) {
                             node.routers = routers;
+                            // -> indirect
+                            node.ports = BTreeMap::new();
+                            node.ips = vec![];
                         }
                     });
                 }
@@ -454,27 +469,65 @@ fn handle_log(_our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resu
                     state.nodes.entry(node_hash.clone()).and_modify(|node| {
                         if let Ok(ip) = decode_bytes_to_ip(&decoded.data) {
                             node.ips.push(ip.to_string());
+                            // -> direct
+                            node.routers = vec![];
                         }
                     });
                 }
                 _ => {}
             }
-
-            // todo: update corresponding node info at right time and send to KNS.
         }
         Edit::SIGNATURE_HASH => {
             let _decoded = Edit::decode_log_data(log.data(), true).unwrap();
 
             println!("got updated note!");
-            // state.notes.entry(note_hash).and_modify(|note| {
-            //     note.value = note_data.clone();
-            // });
+            // todo get saved nodename etc and update if needed
+            // recursion?
         }
         Zero::SIGNATURE_HASH => {
             // println!("got zeroth log: {:?}", log);
         }
         _ => {
             println!("got other log: {:?}", log);
+        }
+    }
+
+    if let Some(node) = node {
+        if let Some(info) = state.nodes.get(&node) {
+            if let Some(pubkey) = &info.public_key {
+                // indirect case:
+                if !info.routers.is_empty() {
+                    // send to KNS
+                    let update = KnsUpdate {
+                        name: info.name.clone(),
+                        owner: "".to_string(),
+                        node: info.hash.clone(),
+                        routers: info.routers.clone(),
+                        public_key: pubkey.clone(),
+                        ips: info.ips.clone(),
+                        ports: info.ports.clone(),
+                    };
+                    Request::new()
+                        .target((&our.node, "net", "distro", "sys"))
+                        .body(rmp_serde::to_vec(&update)?)
+                        .send()?;
+                } else if info.ips.len() > 0 && info.ports.len() > 0 {
+                    // send to KNS
+                    let update = KnsUpdate {
+                        name: info.name.clone(),
+                        owner: "".to_string(),
+                        node: info.hash.clone(),
+                        routers: info.routers.clone(),
+                        public_key: pubkey.clone(),
+                        ips: info.ips.clone(),
+                        ports: info.ports.clone(),
+                    };
+                    Request::new()
+                        .target((&our.node, "net", "distro", "sys"))
+                        .body(rmp_serde::to_vec(&update)?)
+                        .send()?;
+                }
+            }
         }
     }
 
