@@ -176,7 +176,10 @@ async fn main() {
         fake_node_name.cloned(),
         password.cloned(),
         home_directory_path,
-        (ws_tcp_handle, ws_flag_used),
+        (
+            ws_tcp_handle.expect("need ws networking for simulation mode"),
+            ws_flag_used,
+        ),
         // NOTE: fakenodes only using WS protocol at the moment
         fakechain_port,
     )
