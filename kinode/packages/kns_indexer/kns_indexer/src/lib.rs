@@ -3,12 +3,12 @@ use crate::kinode::process::kns_indexer::{
 };
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message, call_init, eth, net, println, Address, Message, Request, Response,
+    await_message, call_init, eth, net::KnsUpdate, println, Address, Message, Request, Response,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{
-    hash_map::{Entry, HashMap},
-    BTreeMap,
+use std::{
+    collections::{hash_map::HashMap, BTreeMap},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
 wit_bindgen::generate!({
@@ -19,9 +19,9 @@ wit_bindgen::generate!({
 });
 
 #[cfg(not(feature = "simulation-mode"))]
-const KNS_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6"; // optimism
+const KIMAP_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6"; // optimism
 #[cfg(feature = "simulation-mode")]
-const KNS_ADDRESS: &'static str = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; // local
+const KIMAP_ADDRESS: &'static str = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"; // local
 
 #[cfg(not(feature = "simulation-mode"))]
 const CHAIN_ID: u64 = 10; // optimism
@@ -40,23 +40,44 @@ struct State {
     contract_address: String,
     // namehash to human readable name
     names: HashMap<String, String>,
-    // human readable name to most recent on-chain routing information as json
-    // NOTE: not every namehash will have a node registered
-    nodes: HashMap<String, net::KnsUpdate>,
+    // temporary hash->name mapping
+    hashes: HashMap<String, String>,
+    // notehash->note mapping
+    // note, do not need this here, adding relevant notes directly to KNS rn.
+    // notes: HashMap<String, Note>,
+    // NOTE: wip knsUpdates not 1-1 rn
+    nodes: HashMap<String, Node>,
     // last block we have an update from
     block: u64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Node {
+    pub name: String, // actual username / domain name
+    pub hash: String, // hex namehash of node
+    // pub tba: String, can query for this as events come in too.
+    pub parent_hash: String, // hex namehash of parent node, top level = 0x0?
+    pub public_key: Option<String>,
+    pub ips: Vec<String>,
+    pub ports: BTreeMap<String, u16>,
+    pub routers: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct IndexedNote {
+    pub name: String,      // note full name
+    pub hash: String,      // hex namehash of note (in key already?)
+    pub node_hash: String, // hex namehash of node
+    pub value: String,     // note value, hex/bytes instead?
+}
+
 sol! {
-    // Logged whenever a KNS node is created
-    event NodeRegistered(bytes32 indexed node, bytes name);
-    event KeyUpdate(bytes32 indexed node, bytes32 key);
-    event IpUpdate(bytes32 indexed node, uint128 ip);
-    event WsUpdate(bytes32 indexed node, uint16 port);
-    event WtUpdate(bytes32 indexed node, uint16 port);
-    event TcpUpdate(bytes32 indexed node, uint16 port);
-    event UdpUpdate(bytes32 indexed node, uint16 port);
-    event RoutingUpdate(bytes32 indexed node, bytes32[] routers);
+    // Kimap events
+    event Mint(bytes32 indexed parenthash, bytes32 indexed childhash, bytes name);
+    event Fact(bytes32 indexed nodehash, bytes32 indexed facthash, bytes note, bytes data);
+    event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes note, bytes data);
+    event Edit(bytes32 indexed note, bytes data);
+    event Zero(address indexed zerotba);
 }
 
 fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth::Filter) {
@@ -73,47 +94,49 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
     println!("subscribed to logs successfully");
 }
 
+// TEMP. Either remove when event reimitting working with anvil,
+// or refactor into better structure(!)
+fn add_temp_hardcoded_tlzs(state: &mut State) {
+    // add some hardcoded top level zones
+    state.names.insert(
+        "0xdeeac81ae11b64e7cab86d089c306e5d223552a630f02633ce170d2786ff1bbd".to_string(),
+        "os".to_string(),
+    );
+    state.hashes.insert(
+        "os".to_string(),
+        "0xdeeac81ae11b64e7cab86d089c306e5d223552a630f02633ce170d2786ff1bbd".to_string(),
+    );
+
+    state.names.insert(
+        "0x137d9e4cc0479164d40577620cb3b41b083c6e8dbf58f8523be76d207d6fd8ea".to_string(),
+        "dev".to_string(),
+    );
+    state.hashes.insert(
+        "dev".to_string(),
+        "0x137d9e4cc0479164d40577620cb3b41b083c6e8dbf58f8523be76d207d6fd8ea".to_string(),
+    );
+}
+
 call_init!(init);
 fn init(our: Address) {
-    println!("indexing on contract address {}", KNS_ADDRESS);
+    println!("indexing on contract address {}", KIMAP_ADDRESS);
 
     // we **can** persist PKI state between boots but with current size, it's
     // more robust just to reload the whole thing. the new contracts will allow
     // us to quickly verify we have the updated mapping with root hash, but right
     // now it's tricky to recover from missed events.
-    //
-    // let state: State = match get_typed_state(|bytes| Ok(bincode::deserialize::<State>(bytes)?)) {
-    //     Some(s) => {
-    //         // if chain id or contract address changed from a previous run, reset state
-    //         if s.chain_id != CHAIN_ID || s.contract_address != KNS_ADDRESS {
-    //             println!("resetting state because runtime contract address or chain ID changed");
-    //             State {
-    //                 chain_id: CHAIN_ID,
-    //                 contract_address: KNS_ADDRESS.to_string(),
-    //                 names: HashMap::new(),
-    //                 nodes: HashMap::new(),
-    //                 block: KNS_FIRST_BLOCK,
-    //             }
-    //         } else {
-    //             println!("loading in {} persisted PKI entries", s.nodes.len());
-    //             s
-    //         }
-    //     }
-    //     None => State {
-    //         chain_id: CHAIN_ID,
-    //         contract_address: KNS_ADDRESS.to_string(),
-    //         names: HashMap::new(),
-    //         nodes: HashMap::new(),
-    //         block: KNS_FIRST_BLOCK,
-    //     },
-    // };
-    let state = State {
+
+    let mut state = State {
         chain_id: CHAIN_ID,
-        contract_address: KNS_ADDRESS.to_string(),
+        contract_address: KIMAP_ADDRESS.to_string(),
         names: HashMap::new(),
+        hashes: HashMap::new(),
         nodes: HashMap::new(),
+        // notes: HashMap::new(),
         block: KNS_FIRST_BLOCK,
     };
+
+    add_temp_hardcoded_tlzs(&mut state);
 
     match main(our, state) {
         Ok(_) => {}
@@ -129,12 +152,11 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         .from_block(state.block - 1)
         .to_block(eth::BlockNumberOrTag::Latest)
         .events(vec![
-            "NodeRegistered(bytes32,bytes)",
-            "KeyUpdate(bytes32,bytes32)",
-            "IpUpdate(bytes32,uint128)",
-            "WsUpdate(bytes32,uint16)",
-            "TcpUpdate(bytes32,uint16)",
-            "RoutingUpdate(bytes32,bytes32[])",
+            "Mint(bytes32,bytes32,bytes)",
+            "Fact(bytes32,bytes32,bytes,bytes)",
+            "Note(bytes32,bytes32,bytes,bytes)",
+            "Edit(bytes32,bytes)",
+            "Zero(address)",
         ]);
 
     // 60s timeout -- these calls can take a long time
@@ -173,16 +195,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             }
         }
     }
-
-    // shove initial state into net::net
-    // Request::new()
-    //     .target((&our.node, "net", "distro", "sys"))
-    //     .body(rmp_serde::to_vec(&net::NetAction::KnsBatchUpdate(
-    //         state.nodes.values().cloned().collect::<Vec<_>>(),
-    //     ))?)
-    //     .send()?;
-
-    // set_state(&bincode::serialize(&state)?);
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -321,125 +333,203 @@ fn handle_eth_message(
     Ok(())
 }
 
-fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
-    let node_id = log.topics()[1];
+fn get_full_name(state: &mut State, label: &str, parent_hash: &str) -> String {
+    let mut current_hash = parent_hash;
+    let mut full_name = label.to_string();
+    let mut visited_hashes = std::collections::HashSet::new();
 
-    let name = match state.names.entry(node_id.to_string()) {
-        Entry::Occupied(o) => o.into_mut(),
-        Entry::Vacant(v) => v.insert(get_name(&log)?),
-    };
+    while let Some(parent_name) = state.names.get(current_hash) {
+        if !visited_hashes.insert(current_hash) {
+            break;
+        }
 
-    let node = state
-        .nodes
-        .entry(name.to_string())
-        .or_insert_with(|| net::KnsUpdate {
-            name: name.to_string(),
-            owner: "".to_string(),
-            node: node_id.to_string(),
-            public_key: "".to_string(),
-            ips: vec![],
-            ports: BTreeMap::new(),
-            routers: vec![],
-        });
-
-    let mut send = true;
-
-    match log.topics()[0] {
-        KeyUpdate::SIGNATURE_HASH => {
-            node.public_key = KeyUpdate::decode_log_data(log.data(), true)
-                .unwrap()
-                .key
-                .to_string();
-        }
-        IpUpdate::SIGNATURE_HASH => {
-            let ip = IpUpdate::decode_log_data(log.data(), true).unwrap().ip;
-            node.ips = vec![format!(
-                "{}.{}.{}.{}",
-                (ip >> 24) & 0xFF,
-                (ip >> 16) & 0xFF,
-                (ip >> 8) & 0xFF,
-                ip & 0xFF
-            )];
-            // when we get ip data, we should delete any router data,
-            // since the assignment of ip indicates an direct node
-            node.routers = vec![];
-        }
-        WsUpdate::SIGNATURE_HASH
-        | TcpUpdate::SIGNATURE_HASH
-        | WtUpdate::SIGNATURE_HASH
-        | UdpUpdate::SIGNATURE_HASH => {
-            match log.topics()[0] {
-                WsUpdate::SIGNATURE_HASH => node.ports.insert(
-                    "ws".to_string(),
-                    WsUpdate::decode_log_data(log.data(), true).unwrap().port,
-                ),
-                TcpUpdate::SIGNATURE_HASH => node.ports.insert(
-                    "tcp".to_string(),
-                    TcpUpdate::decode_log_data(log.data(), true).unwrap().port,
-                ),
-                WtUpdate::SIGNATURE_HASH => node.ports.insert(
-                    "wt".to_string(),
-                    WtUpdate::decode_log_data(log.data(), true).unwrap().port,
-                ),
-                UdpUpdate::SIGNATURE_HASH => node.ports.insert(
-                    "udp".to_string(),
-                    UdpUpdate::decode_log_data(log.data(), true).unwrap().port,
-                ),
-                _ => None,
-            };
-            // when we get port data, we should delete any router data,
-            // since the assignment of port indicates an direct node
-            node.routers = vec![];
-        }
-        RoutingUpdate::SIGNATURE_HASH => {
-            node.routers = RoutingUpdate::decode_log_data(log.data(), true)
-                .unwrap()
-                .routers
-                .iter()
-                .map(|r| r.to_string())
-                .collect::<Vec<String>>();
-            // when we get routing data, we should delete any ws/ip data,
-            // since the assignment of routers indicates an indirect node
-            node.ips = vec![];
-            node.ports.clear();
-        }
-        _ => {
-            send = false;
+        full_name = format!("{}.{}", full_name, parent_name);
+        if let Some(new_parent_hash) = state.hashes.get(parent_name) {
+            current_hash = new_parent_hash;
+        } else {
+            break;
         }
     }
 
-    if node.public_key != ""
-        && ((!node.ips.is_empty() && !node.ports.is_empty()) || node.routers.len() > 0)
-        && send
-    {
-        Request::new()
-            .target((&our.node, "net", "distro", "sys"))
-            .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(node.clone()))?)
-            .send()?;
-    }
-
-    // if new block is > 100 from last block, save state
-    // let block = log.block_number.expect("expect");
-    // if block > state.block + 100 {
-    //     kinode_process_lib::print_to_terminal(
-    //         1,
-    //         &format!(
-    //             "persisting {} PKI entries at block {}",
-    //             state.nodes.len(),
-    //             block
-    //         ),
-    //     );
-    //     state.block = block;
-    //     set_state(&bincode::serialize(state)?);
-    // }
-    Ok(())
+    full_name
 }
 
-fn get_name(log: &eth::Log) -> anyhow::Result<String> {
-    let decoded = NodeRegistered::decode_log_data(log.data(), false).map_err(|_e| {
-        anyhow::anyhow!(
-            "got event other than NodeRegistered without knowing about existing node name"
-        )
-    })?;
-    net::dnswire_decode(&decoded.name).map_err(|e| anyhow::anyhow!(e))
+/// Decodes bytes into an IP address, expecting either 4 bytes (IPv4) or 16 bytes (IPv6).
+fn decode_bytes_to_ip(bytes: &[u8]) -> anyhow::Result<IpAddr> {
+    match bytes.len() {
+        4 => Ok(IpAddr::V4(Ipv4Addr::new(
+            bytes[0], bytes[1], bytes[2], bytes[3],
+        ))),
+        16 => {
+            let addr = Ipv6Addr::from(
+                <[u8; 16]>::try_from(bytes)
+                    .map_err(|_| anyhow::anyhow!("Invalid length for IPv6"))?,
+            );
+            Ok(IpAddr::V6(addr))
+        }
+        _ => Err(anyhow::anyhow!("Invalid byte length for IP address")),
+    }
+}
+
+/// Decodes bytes into a u16 port number, expecting exactly 2 bytes.
+fn decode_bytes_to_port(bytes: &[u8]) -> anyhow::Result<u16> {
+    if bytes.len() == 2 {
+        Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+    } else {
+        Err(anyhow::anyhow!("Invalid byte length for port number"))
+    }
+}
+
+/// Decodes bytes into an array of node identities, expecting UTF-8 encoded strings separated by newlines.
+fn decode_routers(bytes: &[u8]) -> anyhow::Result<Vec<String>> {
+    let data = std::str::from_utf8(bytes).map_err(|_| anyhow::anyhow!("Invalid UTF-8 data"))?;
+    let routers = data
+        .lines() // Assuming each router is separated by a newline
+        .map(str::to_owned)
+        .collect();
+    Ok(routers)
+}
+
+fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
+    let mut node: Option<String> = None;
+
+    match log.topics()[0] {
+        Mint::SIGNATURE_HASH => {
+            let decoded = Mint::decode_log_data(log.data(), true).unwrap();
+
+            let name = String::from_utf8(decoded.name.to_vec())?;
+            let parent_hash = decoded.parenthash.to_string();
+            let node_hash = decoded.childhash.to_string();
+
+            println!(
+                "got name, node_hash, parent_node: {:?}, {:?}, {:?}",
+                name, node_hash, parent_hash
+            );
+
+            let full_name = get_full_name(state, &name, &parent_hash);
+
+            println!("got full hierarchical name: {:?}", full_name);
+            state.names.insert(node_hash.clone(), full_name);
+            node = Some(node_hash.clone());
+            state.hashes.insert(node_hash, name);
+        }
+        Note::SIGNATURE_HASH => {
+            let decoded = Note::decode_log_data(log.data(), true).unwrap();
+
+            let note = String::from_utf8(decoded.note.to_vec())?;
+            let _notehash: String = decoded.notehash.to_string();
+            let node_hash = decoded.nodehash.to_string();
+
+            let full_note_name = get_full_name(state, &note, &node_hash);
+
+            println!("got full note name: {:?}", full_note_name);
+
+            // println!("note hash: {:?}", _notehash);
+            // println!("node_hash: {:?}", node_hash);
+
+            // let note_value = String::from_utf8(decoded.data.to_vec())?;
+
+            // println!("got note value: {:?}", note_value);
+
+            // generalize, cleaner system
+            match note.as_str() {
+                "~ws-port" => {
+                    let port = decode_bytes_to_port(&decoded.data)?;
+                    state.nodes.entry(node_hash.clone()).and_modify(|node| {
+                        node.ports.insert("ws".to_string(), port);
+                        // port defined, -> direct
+                        node.routers = vec![];
+                    });
+                }
+                "~tcp-port" => {
+                    let port = decode_bytes_to_port(&decoded.data)?;
+                    state.nodes.entry(node_hash.clone()).and_modify(|node| {
+                        node.ports.insert("tcp".to_string(), port);
+                        // port defined, -> direct
+                        node.routers = vec![];
+                    });
+                }
+                "~net-key" => {
+                    state.nodes.entry(node_hash.clone()).and_modify(|node| {
+                        let pubkey = hex::encode(&decoded.data);
+                        node.public_key = Some(pubkey);
+                    });
+                }
+                "~routers" => {
+                    state.nodes.entry(node_hash.clone()).and_modify(|node| {
+                        if let Ok(routers) = decode_routers(&decoded.data) {
+                            node.routers = routers;
+                            // -> indirect
+                            node.ports = BTreeMap::new();
+                            node.ips = vec![];
+                        }
+                    });
+                }
+                "~ip" => {
+                    state.nodes.entry(node_hash.clone()).and_modify(|node| {
+                        if let Ok(ip) = decode_bytes_to_ip(&decoded.data) {
+                            node.ips.push(ip.to_string());
+                            // -> direct
+                            node.routers = vec![];
+                        }
+                    });
+                }
+                _ => {}
+            }
+        }
+        Edit::SIGNATURE_HASH => {
+            let _decoded = Edit::decode_log_data(log.data(), true).unwrap();
+
+            println!("got updated note!");
+            // todo get saved nodename etc and update if needed
+            // recursion?
+        }
+        Zero::SIGNATURE_HASH => {
+            // println!("got zeroth log: {:?}", log);
+        }
+        _ => {
+            println!("got other log: {:?}", log);
+        }
+    }
+
+    if let Some(node) = node {
+        if let Some(info) = state.nodes.get(&node) {
+            if let Some(pubkey) = &info.public_key {
+                // indirect case:
+                if !info.routers.is_empty() {
+                    // send to KNS
+                    let update = KnsUpdate {
+                        name: info.name.clone(),
+                        owner: "".to_string(),
+                        node: info.hash.clone(),
+                        routers: info.routers.clone(),
+                        public_key: pubkey.clone(),
+                        ips: info.ips.clone(),
+                        ports: info.ports.clone(),
+                    };
+                    Request::new()
+                        .target((&our.node, "net", "distro", "sys"))
+                        .body(rmp_serde::to_vec(&update)?)
+                        .send()?;
+                } else if info.ips.len() > 0 && info.ports.len() > 0 {
+                    // send to KNS
+                    let update = KnsUpdate {
+                        name: info.name.clone(),
+                        owner: "".to_string(),
+                        node: info.hash.clone(),
+                        routers: info.routers.clone(),
+                        public_key: pubkey.clone(),
+                        ips: info.ips.clone(),
+                        ports: info.ports.clone(),
+                    };
+                    Request::new()
+                        .target((&our.node, "net", "distro", "sys"))
+                        .body(rmp_serde::to_vec(&update)?)
+                        .send()?;
+                }
+            }
+        }
+    }
+
+    Ok(())
 }

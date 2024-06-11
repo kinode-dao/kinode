@@ -1,8 +1,20 @@
+use std::net::Ipv4Addr;
+
 use alloy_sol_macro::sol;
+use alloy_sol_types::{SolCall, SolValue};
 use sha3::{Digest, Keccak256};
 
+// sol!(
+//     #[allow(missing_docs)]
+//     #[sol(rpc)]
+//     IKiMap,
+//     "src/fakenet/IKiMap.json"
+// );
+
 sol! {
+    #[allow(missing_docs)]
     contract RegisterHelpers {
+        // todo: remove old KNS helpers as we rewrite src/register and UI!
         function register(
             bytes calldata _name,
             address _to,
@@ -24,8 +36,64 @@ sol! {
 
         function ownerOf(uint256 node) returns (address);
 
-        function multicall(bytes[] calldata data);
+        // new kimap contracts
+        function mint (
+            address who,
+            bytes calldata label,
+            bytes calldata initialization,
+            bytes calldata erc721Data,
+            address implementation
+        ) external returns (
+            address tba
+        );
+
+
+        function get (
+            bytes32 node
+        ) external view returns (
+            address tba,
+            address owner,
+            bytes,
+        );
+
+        function note (
+            bytes calldata note,
+            bytes calldata data
+        ) external returns (
+            bytes32 notenode
+        );
+
+        function edit (
+            bytes32 _note,
+            bytes calldata _data
+        ) external;
+
+        // tba account
+        function execute(
+            address to,
+            uint256 value,
+            bytes calldata data,
+            uint8 operation
+        ) external payable returns (bytes memory returnData);
+
+        struct Call {
+            address target;
+            bytes callData;
+        }
+
+        function aggregate(
+            Call[] calldata calls
+        ) external payable returns (uint256 blockNumber, bytes[] memory returnData);
+
+        function token() external view returns (uint256,address,uint256);
     }
+}
+
+/// Encodes an IPv4 address as a 128-bit big-endian integer.
+pub fn encode_ipv4_as_u128(ip: Ipv4Addr) -> [u8; 16] {
+    let mut bytes = [0u8; 16];
+    bytes[12..16].copy_from_slice(&ip.octets());
+    bytes
 }
 
 pub fn dns_encode_fqdn(name: &str) -> Vec<u8> {
