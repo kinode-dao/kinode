@@ -27,7 +27,10 @@ pub struct PeerConnection {
 pub type WebSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 pub async fn receiver(ext: IdentityExt, data: NetData) -> Result<()> {
-    let ws_port = ext.our.get_protocol_port(WS_PROTOCOL).unwrap();
+    let ws_port = ext
+        .our
+        .get_protocol_port(WS_PROTOCOL)
+        .expect("ws port not found");
     let ws = match TcpListener::bind(format!("0.0.0.0:{ws_port}")).await {
         Ok(ws) => ws,
         Err(_e) => {

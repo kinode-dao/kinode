@@ -68,7 +68,8 @@ def main():
     for feature in features:
         build_and_move(feature, tmp_dir, architecture, os_name)
 
-    print(f"Build and move process completed.\nFind release in {tmp_dir}.")
+    linked_dir = f"\033]8;;file://{tmp_dir}\033\\{tmp_dir}\033]8;;\033\\"
+    print(f"Build and move process completed.\nFind release in {linked_dir}.")
 
 if __name__ == "__main__":
     main()

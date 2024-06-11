@@ -83,10 +83,10 @@ pub async fn networking(
                     "net: fatal error: need at least one networking protocol"
                 ));
             }
-            if ports.contains_key(WS_PROTOCOL) {
+            if ext.our.ws_routing().is_some() {
                 tasks.spawn(ws::receiver(ext.clone(), net_data.clone()));
             }
-            if ports.contains_key(TCP_PROTOCOL) {
+            if ext.our.tcp_routing().is_some() {
                 tasks.spawn(tcp::receiver(ext.clone(), net_data.clone()));
             }
         }
