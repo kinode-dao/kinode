@@ -1,7 +1,18 @@
+use std::net::Ipv4Addr;
+
 use alloy_sol_macro::sol;
+use alloy_sol_types::{SolCall, SolValue};
 use sha3::{Digest, Keccak256};
 
+// sol!(
+//     #[allow(missing_docs)]
+//     #[sol(rpc)]
+//     IKiMap,
+//     "src/fakenet/IKiMap.json"
+// );
+
 sol! {
+    #[allow(missing_docs)]
     contract RegisterHelpers {
         // todo: remove old KNS helpers as we rewrite src/register and UI!
         function register(
@@ -24,8 +35,6 @@ sol! {
         function ip(bytes32) external view returns (uint128, uint16, uint16, uint16, uint16);
 
         function ownerOf(uint256 node) returns (address);
-
-        function multicall(bytes[] calldata data);
 
         // new kimap contracts
         function mint (
@@ -78,6 +87,13 @@ sol! {
 
         function token() external view returns (uint256,address,uint256);
     }
+}
+
+/// Encodes an IPv4 address as a 128-bit big-endian integer.
+pub fn encode_ipv4_as_u128(ip: Ipv4Addr) -> [u8; 16] {
+    let mut bytes = [0u8; 16];
+    bytes[12..16].copy_from_slice(&ip.octets());
+    bytes
 }
 
 pub fn dns_encode_fqdn(name: &str) -> Vec<u8> {

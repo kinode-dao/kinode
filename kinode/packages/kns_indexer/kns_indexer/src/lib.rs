@@ -4,7 +4,10 @@ use crate::kinode::process::kns_indexer::{
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{await_message, call_init, eth, println, Address, Message, Response};
 use serde::{Deserialize, Serialize};
-use std::collections::{hash_map::HashMap, BTreeMap};
+use std::{
+    collections::{hash_map::HashMap, BTreeMap},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+};
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -89,6 +92,29 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
     println!("subscribed to logs successfully");
 }
 
+// TEMP. Either remove when event reimitting working with anvil,
+// or refactor into better structure(!)
+fn add_temp_hardcoded_tlzs(state: &mut State) {
+    // add some hardcoded top level zones
+    state.names.insert(
+        "0xdeeac81ae11b64e7cab86d089c306e5d223552a630f02633ce170d2786ff1bbd".to_string(),
+        "os".to_string(),
+    );
+    state.hashes.insert(
+        "os".to_string(),
+        "0xdeeac81ae11b64e7cab86d089c306e5d223552a630f02633ce170d2786ff1bbd".to_string(),
+    );
+
+    state.names.insert(
+        "0x137d9e4cc0479164d40577620cb3b41b083c6e8dbf58f8523be76d207d6fd8ea".to_string(),
+        "dev".to_string(),
+    );
+    state.hashes.insert(
+        "dev".to_string(),
+        "0x137d9e4cc0479164d40577620cb3b41b083c6e8dbf58f8523be76d207d6fd8ea".to_string(),
+    );
+}
+
 call_init!(init);
 fn init(our: Address) {
     println!("indexing on contract address {}", KIMAP_ADDRESS);
@@ -98,7 +124,7 @@ fn init(our: Address) {
     // us to quickly verify we have the updated mapping with root hash, but right
     // now it's tricky to recover from missed events.
 
-    let state = State {
+    let mut state = State {
         chain_id: CHAIN_ID,
         contract_address: KIMAP_ADDRESS.to_string(),
         names: HashMap::new(),
@@ -107,6 +133,8 @@ fn init(our: Address) {
         // notes: HashMap::new(),
         block: KNS_FIRST_BLOCK,
     };
+
+    add_temp_hardcoded_tlzs(&mut state);
 
     match main(our, state) {
         Ok(_) => {}
@@ -321,6 +349,42 @@ fn get_full_name(state: &mut State, label: &str, parent_hash: &str) -> String {
     full_name
 }
 
+/// Decodes bytes into an IP address, expecting either 4 bytes (IPv4) or 16 bytes (IPv6).
+fn decode_bytes_to_ip(bytes: &[u8]) -> anyhow::Result<IpAddr> {
+    match bytes.len() {
+        4 => Ok(IpAddr::V4(Ipv4Addr::new(
+            bytes[0], bytes[1], bytes[2], bytes[3],
+        ))),
+        16 => {
+            let addr = Ipv6Addr::from(
+                <[u8; 16]>::try_from(bytes)
+                    .map_err(|_| anyhow::anyhow!("Invalid length for IPv6"))?,
+            );
+            Ok(IpAddr::V6(addr))
+        }
+        _ => Err(anyhow::anyhow!("Invalid byte length for IP address")),
+    }
+}
+
+/// Decodes bytes into a u16 port number, expecting exactly 2 bytes.
+fn decode_bytes_to_port(bytes: &[u8]) -> anyhow::Result<u16> {
+    if bytes.len() == 2 {
+        Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+    } else {
+        Err(anyhow::anyhow!("Invalid byte length for port number"))
+    }
+}
+
+/// Decodes bytes into an array of node identities, expecting UTF-8 encoded strings separated by newlines.
+fn decode_routers(bytes: &[u8]) -> anyhow::Result<Vec<String>> {
+    let data = std::str::from_utf8(bytes).map_err(|_| anyhow::anyhow!("Invalid UTF-8 data"))?;
+    let routers = data
+        .lines() // Assuming each router is separated by a newline
+        .map(str::to_owned)
+        .collect();
+    Ok(routers)
+}
+
 fn handle_log(_our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
     match log.topics()[0] {
         Mint::SIGNATURE_HASH => {
@@ -352,32 +416,45 @@ fn handle_log(_our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resu
 
             println!("got full note name: {:?}", full_note_name);
 
-            let note_value = String::from_utf8(decoded.data.to_vec())?;
+            // println!("note hash: {:?}", _notehash);
+            // println!("node_hash: {:?}", node_hash);
 
-            println!("got note: {:?}", note);
-            println!("got note value: {:?}", note_value);
+            // let note_value = String::from_utf8(decoded.data.to_vec())?;
+
+            // println!("got note value: {:?}", note_value);
 
             // generalize, cleaner system
             match note.as_str() {
-                "~wsport" => {
+                "~ws-port" => {
+                    let port = decode_bytes_to_port(&decoded.data)?;
                     state.nodes.entry(node_hash.clone()).and_modify(|node| {
-                        node.ports
-                            .insert("ws".to_string(), note_value.parse().unwrap());
+                        node.ports.insert("ws".to_string(), port);
                     });
                 }
-                "~networkingkey" => {
+                "~tcp-port" => {
+                    let port = decode_bytes_to_port(&decoded.data)?;
                     state.nodes.entry(node_hash.clone()).and_modify(|node| {
-                        node.public_key = Some(note_value.clone());
+                        node.ports.insert("tcp".to_string(), port);
+                    });
+                }
+                "~net-key" => {
+                    state.nodes.entry(node_hash.clone()).and_modify(|node| {
+                        let pubkey = hex::encode(&decoded.data);
+                        node.public_key = Some(pubkey);
                     });
                 }
                 "~routers" => {
                     state.nodes.entry(node_hash.clone()).and_modify(|node| {
-                        node.routers.push(note_value.clone());
+                        if let Ok(routers) = decode_routers(&decoded.data) {
+                            node.routers = routers;
+                        }
                     });
                 }
                 "~ip" => {
                     state.nodes.entry(node_hash.clone()).and_modify(|node| {
-                        node.ips.push(note_value.clone());
+                        if let Ok(ip) = decode_bytes_to_ip(&decoded.data) {
+                            node.ips.push(ip.to_string());
+                        }
                     });
                 }
                 _ => {}
