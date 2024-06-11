@@ -19,4 +19,4 @@ jobs:
         port: ${{ secrets.SSH_PORT }}
         command_timeout: 60m
         script: |
-          curl -X PUT http://localhost:8000/monitor/build-kinode
+          curl —max-time 3600 -X PUT http://localhost:8000/monitor/build-kinode
