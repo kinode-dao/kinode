@@ -779,7 +779,11 @@ async fn login_with_password(
     maybe_rpc: Option<String>,
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
-    use {alloy_primitives::Address as EthAddress, sha2::{Digest, Sha256}, ring::signature::KeyPair};
+    use {
+        alloy_primitives::Address as EthAddress,
+        ring::signature::KeyPair,
+        sha2::{Digest, Sha256},
+    };
 
     let disk_keyfile: Vec<u8> = tokio::fs::read(format!("{}/.keys", home_directory_path))
         .await
