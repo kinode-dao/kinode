@@ -43,8 +43,8 @@ pub async fn register(
     tx: RegistrationSender,
     kill_rx: oneshot::Receiver<bool>,
     ip: String,
-    ws_networking: (tokio::net::TcpListener, bool),
-    tcp_networking: (tokio::net::TcpListener, bool),
+    ws_networking: (Option<&tokio::net::TcpListener>, bool),
+    tcp_networking: (Option<&tokio::net::TcpListener>, bool),
     http_port: u16,
     keyfile: Option<Vec<u8>>,
     maybe_rpc: Option<String>,
@@ -54,10 +54,24 @@ pub async fn register(
     let net_keypair = Arc::new(serialized_networking_keypair.as_ref().to_vec());
     let tx = Arc::new(tx);
 
-    let ws_port = ws_networking.0.local_addr().unwrap().port();
+    let ws_port = match ws_networking.0 {
+        Some(listener) => listener.local_addr().unwrap().port(),
+        None => 0,
+    };
     let ws_flag_used = ws_networking.1;
-    let tcp_port = tcp_networking.0.local_addr().unwrap().port();
+    let tcp_port = match tcp_networking.0 {
+        Some(listener) => listener.local_addr().unwrap().port(),
+        None => 0,
+    };
     let tcp_flag_used = tcp_networking.1;
+
+    let mut ports_map = std::collections::BTreeMap::new();
+    if ws_port != 0 {
+        ports_map.insert("ws".to_string(), ws_port);
+    }
+    if tcp_port != 0 {
+        ports_map.insert("tcp".to_string(), tcp_port);
+    }
 
     // This is a **temporary** identity, passed to the UI.
     // If it is confirmed through a /boot or /confirm-change-network-keys,
@@ -67,10 +81,7 @@ pub async fn register(
         name: "".to_string(),
         routing: NodeRouting::Both {
             ip: ip.clone(),
-            ports: std::collections::BTreeMap::from([
-                ("ws".to_string(), ws_port),
-                ("tcp".to_string(), tcp_port),
-            ]),
+            ports: ports_map,
             routers: vec![
                 "default-router-1.os".into(),
                 "default-router-2.os".into(),
@@ -95,26 +106,25 @@ pub async fn register(
     let static_files = warp::path("assets").and(static_dir!("src/register-ui/build/assets/"));
 
     let react_app = warp::path::end()
+        .or(warp::path("login"))
+        .or(warp::path("register-name"))
+        .or(warp::path("claim-invite"))
+        .or(warp::path("reset"))
+        .or(warp::path("import-keyfile"))
+        .or(warp::path("set-password"))
         .and(warp::get())
-        .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
-        .or(warp::path("login")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("register-name")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("claim-invite")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("reset")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("import-keyfile")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("set-password")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .map(move |_| warp::reply::html(include_str!("register-ui/build/index.html")));
+
+    let boot_provider = provider.clone();
+    let login_provider = provider.clone();
+    let import_provider = provider.clone();
+
+    let api = warp::path("info")
+        .and(
+            warp::get()
+                .and(keyfile.clone())
+                .and_then(get_unencrypted_info),
+        )
         .or(warp::path("current-chain")
             .and(warp::get())
             .map(move || warp::reply::json(&"0xa")))
@@ -135,18 +145,7 @@ pub async fn register(
                 }
                 warp::reply::html(String::new())
             },
-        ));
-
-    let boot_provider = provider.clone();
-    let login_provider = provider.clone();
-    let import_provider = provider.clone();
-
-    let api = warp::path("info")
-        .and(
-            warp::get()
-                .and(keyfile.clone())
-                .and_then(get_unencrypted_info),
-        )
+        ))
         .or(warp::path("generate-networking-info").and(
             warp::post()
                 .and(our_temp_id.clone())

@@ -69,7 +69,7 @@ pub async fn vfs(
                 if let Err(e) = handle_request(
                     &our_node,
                     km,
-                    open_files.clone(),
+                    open_files,
                     &send_to_loop,
                     &send_to_terminal,
                     &send_to_caps_oracle,
@@ -230,13 +230,13 @@ async fn handle_request(
         VfsAction::CreateFile => {
             // create truncates any file that might've existed before
             open_files.remove(&path);
-            let _file = open_file(open_files.clone(), path, true, true).await?;
+            let _file = open_file(open_files, path, true, true).await?;
 
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::OpenFile { create } => {
             // open file opens an existing file, or creates a new one if create is true
-            let file = open_file(open_files.clone(), path, create, false).await?;
+            let file = open_file(open_files, path, create, false).await?;
             let mut file = file.lock().await;
             // extra in the case file was just created, todo refactor out.
             file.seek(SeekFrom::Start(0)).await?;
@@ -255,7 +255,7 @@ async fn handle_request(
                     error: "blob needs to exist for WriteAll".into(),
                 });
             };
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, path, false, false).await?;
             let mut file = file.lock().await;
             file.write_all(&blob.bytes).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
@@ -275,7 +275,7 @@ async fn handle_request(
                     error: "blob needs to exist for Append".into(),
                 });
             };
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, path, false, false).await?;
             let mut file = file.lock().await;
             file.seek(SeekFrom::End(0)).await?;
             file.write_all(&blob.bytes).await?;
@@ -283,7 +283,7 @@ async fn handle_request(
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::SyncAll => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, path, false, false).await?;
             let file = file.lock().await;
             file.sync_all().await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
@@ -297,7 +297,7 @@ async fn handle_request(
             )
         }
         VfsAction::ReadToEnd => {
-            let file = open_file(open_files.clone(), path.clone(), false, false).await?;
+            let file = open_file(open_files, path.clone(), false, false).await?;
             let mut file = file.lock().await;
             let mut contents = Vec::new();
 
@@ -309,7 +309,7 @@ async fn handle_request(
             )
         }
         VfsAction::ReadExact(length) => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, path, false, false).await?;
             let mut file = file.lock().await;
             let mut contents = vec![0; length as usize];
             file.read_exact(&mut contents).await?;
@@ -339,7 +339,7 @@ async fn handle_request(
             )
         }
         VfsAction::ReadToString => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, path, false, false).await?;
             let mut file = file.lock().await;
             let mut contents = String::new();
             file.read_to_string(&mut contents).await?;
@@ -349,7 +349,7 @@ async fn handle_request(
             )
         }
         VfsAction::Seek { seek_from } => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, path, false, false).await?;
             let mut file = file.lock().await;
             // same type, rust tingz
             let seek_from = match seek_from {
@@ -401,22 +401,23 @@ async fn handle_request(
             )
         }
         VfsAction::Len => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, path, false, false).await?;
             let file = file.lock().await;
             let len = file.metadata().await?.len();
             (serde_json::to_vec(&VfsResponse::Len(len)).unwrap(), None)
         }
         VfsAction::SetLen(len) => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, path, false, false).await?;
             let file = file.lock().await;
             file.set_len(len).await?;
             (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
         }
         VfsAction::Hash => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            use sha2::{Digest, Sha256};
+            let file = open_file(open_files, path, false, false).await?;
             let mut file = file.lock().await;
             file.seek(SeekFrom::Start(0)).await?;
-            let mut hasher = blake3::Hasher::new();
+            let mut hasher = Sha256::new();
             let mut buffer = [0; 1024];
             loop {
                 let bytes_read = file.read(&mut buffer).await?;

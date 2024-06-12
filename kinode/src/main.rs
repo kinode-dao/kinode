@@ -37,6 +37,9 @@ const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const WS_MIN_PORT: u16 = 9_000;
+const TCP_MIN_PORT: u16 = 10_000;
+const MAX_PORT: u16 = 65_535;
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
 #[cfg(not(feature = "simulation-mode"))]
@@ -167,16 +170,19 @@ async fn main() {
         mpsc::channel(TERMINAL_CHANNEL_CAPACITY);
 
     let our_ip = find_public_ip().await;
-    let (ws_tcp_handle, ws_flag_used) = setup_networking(ws_networking_port).await;
+    let (ws_tcp_handle, ws_flag_used) = setup_networking("ws", ws_networking_port).await;
     #[cfg(not(feature = "simulation-mode"))]
-    let (tcp_tcp_handle, tcp_flag_used) = setup_networking(tcp_networking_port).await;
+    let (tcp_tcp_handle, tcp_flag_used) = setup_networking("tcp", tcp_networking_port).await;
 
     #[cfg(feature = "simulation-mode")]
     let (our, encoded_keyfile, decoded_keyfile) = simulate_node(
         fake_node_name.cloned(),
         password.cloned(),
         home_directory_path,
-        (ws_tcp_handle, ws_flag_used),
+        (
+            ws_tcp_handle.expect("need ws networking for simulation mode"),
+            ws_flag_used,
+        ),
         // NOTE: fakenodes only using WS protocol at the moment
         fakechain_port,
     )
@@ -499,19 +505,30 @@ async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
 /// If a specific port is provided, it attempts to bind to it directly.
 /// If no port is provided, it searches for the first available port between 9000 and 65535.
 /// Returns a tuple containing the TcpListener and a boolean indicating if a specific port was used.
-async fn setup_networking(networking_port: Option<&u16>) -> (tokio::net::TcpListener, bool) {
+async fn setup_networking(
+    protocol: &str,
+    networking_port: Option<&u16>,
+) -> (Option<tokio::net::TcpListener>, bool) {
+    if let Some(&0) = networking_port {
+        return (None, true);
+    }
     match networking_port {
         Some(port) => {
             let listener = http::utils::find_open_port(*port, port + 1)
                 .await
                 .expect("port selected with flag could not be bound");
-            (listener, true)
+            (Some(listener), true)
         }
         None => {
-            let listener = http::utils::find_open_port(9000, 65535)
+            let min_port = if protocol == "ws" {
+                WS_MIN_PORT
+            } else {
+                TCP_MIN_PORT
+            };
+            let listener = http::utils::find_open_port(min_port, MAX_PORT)
                 .await
                 .expect("no ports found in range 9000-65535 for kinode networking");
-            (listener, false)
+            (Some(listener), false)
         }
     }
 }
@@ -638,7 +655,7 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(u16)),
         )
         .arg(
-            arg!(--"tcp-port" <PORT> "Kinode internal TCP protocol port [default: first unbound at or above 9000]")
+            arg!(--"tcp-port" <PORT> "Kinode internal TCP protocol port [default: first unbound at or above 10000]")
                 .alias("--tcp-port")
                 .value_parser(value_parser!(u16)),
         )
@@ -653,7 +670,7 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(bool)),
         )
         .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"))
-        .arg(arg!(--password <PASSWORD> "Node password"));
+        .arg(arg!(--password <PASSWORD> "Node password (in double quotes)"));
 
     #[cfg(feature = "simulation-mode")]
     let app = app
@@ -709,8 +726,8 @@ async fn find_public_ip() -> std::net::Ipv4Addr {
 async fn serve_register_fe(
     home_directory_path: &str,
     our_ip: String,
-    ws_networking: (tokio::net::TcpListener, bool),
-    tcp_networking: (tokio::net::TcpListener, bool),
+    ws_networking: (Option<tokio::net::TcpListener>, bool),
+    tcp_networking: (Option<tokio::net::TcpListener>, bool),
     http_server_port: u16,
     maybe_rpc: Option<String>,
 ) -> (Identity, Vec<u8>, Keyfile) {
@@ -726,8 +743,8 @@ async fn serve_register_fe(
                 tx,
                 kill_rx,
                 our_ip,
-                ws_networking,
-                tcp_networking,
+                (ws_networking.0.as_ref(), ws_networking.1),
+                (tcp_networking.0.as_ref(), tcp_networking.1),
                 http_server_port,
                 disk_keyfile,
                 maybe_rpc) => {
@@ -747,6 +764,9 @@ async fn serve_register_fe(
 
     let _ = kill_tx.send(true);
 
+    drop(ws_networking.0);
+    drop(tcp_networking.0);
+
     (our, encoded_keyfile, decoded_keyfile)
 }
 
@@ -754,18 +774,22 @@ async fn serve_register_fe(
 async fn login_with_password(
     home_directory_path: &str,
     our_ip: String,
-    ws_networking: (tokio::net::TcpListener, bool),
-    tcp_networking: (tokio::net::TcpListener, bool),
+    ws_networking: (Option<tokio::net::TcpListener>, bool),
+    tcp_networking: (Option<tokio::net::TcpListener>, bool),
     maybe_rpc: Option<String>,
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
-    use {alloy_primitives::Address as EthAddress, digest::Digest, ring::signature::KeyPair};
+    use {
+        alloy_primitives::Address as EthAddress,
+        ring::signature::KeyPair,
+        sha2::{Digest, Sha256},
+    };
 
     let disk_keyfile: Vec<u8> = tokio::fs::read(format!("{}/.keys", home_directory_path))
         .await
         .expect("could not read keyfile");
 
-    let password_hash = format!("0x{}", hex::encode(sha2::Sha256::digest(password)));
+    let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
 
     // KnsRegistrar contract address
     let kns_address: EthAddress = KNS_ADDRESS.parse().unwrap();
@@ -795,14 +819,14 @@ async fn login_with_password(
         &mut our,
         kns_address,
         provider,
-        (
-            ws_networking.0.local_addr().unwrap().port(),
-            ws_networking.1,
-        ),
-        (
-            tcp_networking.0.local_addr().unwrap().port(),
-            tcp_networking.1,
-        ),
+        match ws_networking.0 {
+            Some(listener) => (listener.local_addr().unwrap().port(), ws_networking.1),
+            None => (0, ws_networking.1),
+        },
+        match tcp_networking.0 {
+            Some(listener) => (listener.local_addr().unwrap().port(), tcp_networking.1),
+            None => (0, tcp_networking.1),
+        },
     )
     .await
     .expect("information used to boot does not match information onchain");

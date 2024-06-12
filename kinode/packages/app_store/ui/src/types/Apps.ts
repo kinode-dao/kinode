@@ -56,8 +56,8 @@ export interface PackageManifest {
     process_wasm_path: string
     on_exit: string
     request_networking: boolean
-    request_capabilities: string[]
-    grant_capabilities: string[]
+    request_capabilities: any[]
+    grant_capabilities: any[]
     public: boolean
 }
 
