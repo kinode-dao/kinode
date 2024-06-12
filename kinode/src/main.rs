@@ -520,7 +520,11 @@ async fn setup_networking(
             (Some(listener), true)
         }
         None => {
-            let min_port = if protocol == "ws" { WS_MIN_PORT } else { TCP_MIN_PORT };
+            let min_port = if protocol == "ws" {
+                WS_MIN_PORT
+            } else {
+                TCP_MIN_PORT
+            };
             let listener = http::utils::find_open_port(min_port, MAX_PORT)
                 .await
                 .expect("no ports found in range 9000-65535 for kinode networking");
@@ -775,13 +779,17 @@ async fn login_with_password(
     maybe_rpc: Option<String>,
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
-    use {alloy_primitives::Address as EthAddress, digest::Digest, ring::signature::KeyPair};
+    use {
+        alloy_primitives::Address as EthAddress,
+        ring::signature::KeyPair,
+        sha2::{Digest, Sha256},
+    };
 
     let disk_keyfile: Vec<u8> = tokio::fs::read(format!("{}/.keys", home_directory_path))
         .await
         .expect("could not read keyfile");
 
-    let password_hash = format!("0x{}", hex::encode(sha2::Sha256::digest(password)));
+    let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
 
     // KnsRegistrar contract address
     let kns_address: EthAddress = KNS_ADDRESS.parse().unwrap();
