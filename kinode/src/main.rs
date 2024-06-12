@@ -779,13 +779,13 @@ async fn login_with_password(
     maybe_rpc: Option<String>,
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
-    use {alloy_primitives::Address as EthAddress, digest::Digest, ring::signature::KeyPair};
+    use {alloy_primitives::Address as EthAddress, sha2::{Digest, Sha256}, ring::signature::KeyPair};
 
     let disk_keyfile: Vec<u8> = tokio::fs::read(format!("{}/.keys", home_directory_path))
         .await
         .expect("could not read keyfile");
 
-    let password_hash = format!("0x{}", hex::encode(sha2::Sha256::digest(password)));
+    let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
 
     // KnsRegistrar contract address
     let kns_address: EthAddress = KNS_ADDRESS.parse().unwrap();

@@ -4,7 +4,7 @@ use aes_gcm::{
 };
 use alloy_primitives::keccak256;
 use anyhow::Result;
-use digest::generic_array::GenericArray;
+use generic_array::GenericArray;
 use hmac::Hmac;
 use jwt::SignWithKey;
 use lib::types::core::Keyfile;

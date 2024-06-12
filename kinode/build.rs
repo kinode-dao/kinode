@@ -59,7 +59,7 @@ fn build_and_zip_package(
 ) -> anyhow::Result<(String, String, Vec<u8>)> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        kit::build::execute(&entry_path, true, false, true, features, None, None) // TODO
+        kit::build::execute(&entry_path, true, false, true, features, None, None, true)
             .await
             .map_err(|e| anyhow::anyhow!("{:?}", e))?;
 

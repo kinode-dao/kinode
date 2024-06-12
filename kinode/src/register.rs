@@ -106,26 +106,25 @@ pub async fn register(
     let static_files = warp::path("assets").and(static_dir!("src/register-ui/build/assets/"));
 
     let react_app = warp::path::end()
+        .or(warp::path("login"))
+        .or(warp::path("register-name"))
+        .or(warp::path("claim-invite"))
+        .or(warp::path("reset"))
+        .or(warp::path("import-keyfile"))
+        .or(warp::path("set-password"))
         .and(warp::get())
-        .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
-        .or(warp::path("login")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("register-name")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("claim-invite")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("reset")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("import-keyfile")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("set-password")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .map(move |_| warp::reply::html(include_str!("register-ui/build/index.html")));
+
+    let boot_provider = provider.clone();
+    let login_provider = provider.clone();
+    let import_provider = provider.clone();
+
+    let api = warp::path("info")
+        .and(
+            warp::get()
+                .and(keyfile.clone())
+                .and_then(get_unencrypted_info),
+        )
         .or(warp::path("current-chain")
             .and(warp::get())
             .map(move || warp::reply::json(&"0xa")))
@@ -146,18 +145,7 @@ pub async fn register(
                 }
                 warp::reply::html(String::new())
             },
-        ));
-
-    let boot_provider = provider.clone();
-    let login_provider = provider.clone();
-    let import_provider = provider.clone();
-
-    let api = warp::path("info")
-        .and(
-            warp::get()
-                .and(keyfile.clone())
-                .and_then(get_unencrypted_info),
-        )
+        ))
         .or(warp::path("generate-networking-info").and(
             warp::post()
                 .and(our_temp_id.clone())
