@@ -15,8 +15,10 @@ kit = { git = "https://github.com/kinode-dao/kit", rev = "d319c5b" }
 tokio = "1.28"
 
 [dependencies]
-alloy-rpc-types = { git = "https://github.com/alloy-rs/alloy", rev = "05f8162" }
-alloy-json-rpc = { git = "https://github.com/alloy-rs/alloy", rev = "05f8162" }
+alloy = { git = "https://github.com/alloy-rs/alloy", rev = "05f8162", features = [
+    "json-rpc",
+    "rpc-types",
+] }
 lazy_static = "1.4.0"
 rand = "0.8.4"
 ring = "0.17.8"
