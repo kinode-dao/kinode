@@ -37,6 +37,9 @@ const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const WS_MIN_PORT: u16 = 9_000;
+const TCP_MIN_PORT: u16 = 10_000;
+const MAX_PORT: u16 = 65_535;
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
 #[cfg(not(feature = "simulation-mode"))]
@@ -517,8 +520,8 @@ async fn setup_networking(
             (Some(listener), true)
         }
         None => {
-            let min_port = if protocol == "ws" { 9000 } else { 10000 };
-            let listener = http::utils::find_open_port(min_port, 65535)
+            let min_port = if protocol == "ws" { WS_MIN_PORT } else { TCP_MIN_PORT };
+            let listener = http::utils::find_open_port(min_port, MAX_PORT)
                 .await
                 .expect("no ports found in range 9000-65535 for kinode networking");
             (Some(listener), false)
@@ -648,7 +651,7 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(u16)),
         )
         .arg(
-            arg!(--"tcp-port" <PORT> "Kinode internal TCP protocol port [default: first unbound at or above 9000]")
+            arg!(--"tcp-port" <PORT> "Kinode internal TCP protocol port [default: first unbound at or above 10000]")
                 .alias("--tcp-port")
                 .value_parser(value_parser!(u16)),
         )
@@ -663,7 +666,7 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(bool)),
         )
         .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"))
-        .arg(arg!(--password <PASSWORD> "Node password"));
+        .arg(arg!(--password <PASSWORD> "Node password (in double quotes)"));
 
     #[cfg(feature = "simulation-mode")]
     let app = app
