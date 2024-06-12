@@ -154,7 +154,7 @@ fn send_notif_to_expo(notif: &mut Notif) -> anyhow::Result<()> {
     };
     let body = serde_json::to_vec(&HttpClientAction::Http(outgoing_request))?;
 
-    if let Some(state) = get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
+    if let Some(state) = get_typed_state(|bytes| Ok(bincode::deserialize::<NotifState>(bytes)?)) {
         notif.to = state.push_tokens.clone();
     }
 
