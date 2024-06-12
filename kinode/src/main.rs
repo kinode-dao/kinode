@@ -520,7 +520,11 @@ async fn setup_networking(
             (Some(listener), true)
         }
         None => {
-            let min_port = if protocol == "ws" { WS_MIN_PORT } else { TCP_MIN_PORT };
+            let min_port = if protocol == "ws" {
+                WS_MIN_PORT
+            } else {
+                TCP_MIN_PORT
+            };
             let listener = http::utils::find_open_port(min_port, MAX_PORT)
                 .await
                 .expect("no ports found in range 9000-65535 for kinode networking");
