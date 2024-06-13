@@ -1,4 +1,4 @@
-interface kns-indexer {
+interface kimap-indexer {
     /// IndexerRequests are used to query discrete information from the indexer
     /// for example, if you want to know the human readable name for a namehash,
     /// you would send a NamehashToName request.
@@ -34,7 +34,7 @@ interface kns-indexer {
     }
 }
 
-world kns-indexer-sys-v0 {
-    import kns-indexer;
+world kimap-indexer-sys-v0 {
+    import kimap-indexer;
     include process-v0;
 }

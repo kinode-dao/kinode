@@ -1,9 +1,9 @@
 {
-    "name": "KNS Indexer",
+    "name": "KiMap Indexer",
     "description": "Kinode OS PKI indexer",
     "image": "",
     "properties": {
-        "package_name": "kns_indexer",
+        "package_name": "kimap_indexer",
         "current_version": "0.2.1",
         "publisher": "sys",
         "mirrors": [],

@@ -1,6 +1,6 @@
 [package]
-name = "kns_indexer"
-version = "0.3.0"
+name = "kimap_indexer"
+version = "0.1.0"
 edition = "2021"
 
 [features]
