@@ -119,7 +119,7 @@ pub async fn mint_local(
     println!("tba, owner and bytes: {:?}, {:?}, {:?}", tba, _owner, bytes);
 
     let localhost = Ipv4Addr::new(127, 0, 0, 1);
-    let ip = helpers::encode_ipv4_as_u128(localhost);
+    // let ip = helpers::encode_ipv4_as_u128(localhost);
 
     let multicalls: Vec<Call> = vec![
         Call {
@@ -127,7 +127,7 @@ pub async fn mint_local(
             callData: Bytes::from(
                 noteCall {
                     note: "~ip".into(),
-                    data: ip.into(),
+                    data: localhost.to_string().into(),
                 }
                 .abi_encode(),
             ),
