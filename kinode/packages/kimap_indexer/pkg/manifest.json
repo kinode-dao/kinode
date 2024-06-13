@@ -1,7 +1,7 @@
 [
     {
         "process_name": "kimap_indexer",
-        "process_wasm_path": "/kimap.wasm",
+        "process_wasm_path": "/kimap_indexer.wasm",
         "on_exit": "Restart",
         "request_networking": false,
         "request_capabilities": [
