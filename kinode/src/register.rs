@@ -36,6 +36,7 @@ sol! {
     function key(bytes32) external view returns (bytes32);
     function nodes(bytes32) external view returns (address, uint96);
     function ip(bytes32) external view returns (uint128, uint16, uint16, uint16, uint16);
+    function routers(bytes32) external view returns (bytes32[]);
 }
 
 /// Serve the registration page and receive POSTs and PUTs from it
@@ -702,6 +703,7 @@ pub async fn assign_routing(
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
     let ip_call = ipCall { _0: namehash }.abi_encode();
     let key_call = keyCall { _0: namehash }.abi_encode();
+    let router_call = routersCall { _0: namehash }.abi_encode();
     let tx_input = TransactionInput::new(Bytes::from(ip_call));
     let tx = TransactionRequest::default()
         .to(kns_address)
@@ -731,6 +733,18 @@ pub async fn assign_routing(
         ));
     }
 
+    let router_tx_input = TransactionInput::new(Bytes::from(router_call));
+    let router_tx = TransactionRequest::default()
+        .to(kns_address)
+        .input(router_tx_input);
+
+    let Ok(routers) = provider.call(&router_tx).await else {
+        return Err(anyhow::anyhow!("Failed to fetch node routers from PKI"));
+    };
+    let Ok(routers) = <Vec<FixedBytes<32>>>::abi_decode(&routers, false) else {
+        return Err(anyhow::anyhow!("Failed to decode node routers from PKI"));
+    };
+
     let node_ip = format!(
         "{}.{}.{}.{}",
         (ip >> 24) & 0xFF,
@@ -739,6 +753,10 @@ pub async fn assign_routing(
         ip & 0xFF
     );
 
+    if !routers.is_empty() {
+        // indirect node
+        return Ok(());
+    }
     if node_ip != *"0.0.0.0" && (ws != 0 || tcp != 0) {
         // direct node
         let mut ports = std::collections::BTreeMap::new();
@@ -763,8 +781,6 @@ pub async fn assign_routing(
             ports.insert("tcp".to_string(), tcp);
         }
         our.routing = NodeRouting::Direct { ip: node_ip, ports };
-    } else {
-        // indirect node
     }
     Ok(())
 }

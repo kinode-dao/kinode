@@ -201,6 +201,9 @@ impl CommandHistory {
     /// yes this is O(n) to provide desired ordering, can revisit if slow
     pub fn search(&mut self, find: &str, depth: usize) -> Option<&str> {
         let mut skips = 0;
+        if find.is_empty() {
+            return None;
+        }
         // if there is at least one match, and we've skipped past it, return oldest match
         let mut last_match: Option<&str> = None;
         for line in self.lines.iter() {

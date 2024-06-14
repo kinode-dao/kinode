@@ -746,12 +746,9 @@ async fn serve_register_fe(
         }
     };
 
-    tokio::fs::write(
-        format!("{}/.keys", home_directory_path),
-        encoded_keyfile.clone(),
-    )
-    .await
-    .unwrap();
+    tokio::fs::write(format!("{}/.keys", home_directory_path), &encoded_keyfile)
+        .await
+        .unwrap();
 
     let _ = kill_tx.send(true);
 
@@ -822,12 +819,9 @@ async fn login_with_password(
     .await
     .expect("information used to boot does not match information onchain");
 
-    tokio::fs::write(
-        format!("{}/.keys", home_directory_path),
-        disk_keyfile.clone(),
-    )
-    .await
-    .unwrap();
+    tokio::fs::write(format!("{}/.keys", home_directory_path), &disk_keyfile)
+        .await
+        .unwrap();
 
     (our, disk_keyfile, k)
 }

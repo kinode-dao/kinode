@@ -386,9 +386,6 @@ pub async fn terminal(
                         }
                         search_mode = true;
                         let search_query = &current_line[prompt_len..];
-                        if search_query.is_empty() {
-                            continue;
-                        }
                         if let Some(result) = command_history.search(search_query, search_depth) {
                             let result_underlined = utils::underline(result, search_query);
                             execute!(
@@ -407,7 +404,11 @@ pub async fn terminal(
                                 stdout,
                                 cursor::MoveTo(0, win_rows),
                                 terminal::Clear(ClearType::CurrentLine),
-                                Print(utils::truncate_in_place(&current_line, prompt_len, win_cols, (line_col, cursor_col))),
+                                Print(utils::truncate_in_place(
+                                    &format!("{} * {}", our.name, &current_line[prompt_len..]),
+                                    prompt_len,
+                                    win_cols,
+                                    (line_col, cursor_col))),
                                 cursor::MoveTo(cursor_col, win_rows),
                             )?;
                         }
@@ -427,7 +428,11 @@ pub async fn terminal(
                             stdout,
                             cursor::MoveTo(0, win_rows),
                             terminal::Clear(ClearType::CurrentLine),
-                            Print(utils::truncate_in_place(&current_line, prompt_len, win_cols, (line_col, cursor_col))),
+                            Print(utils::truncate_in_place(
+                                &format!("{} > {}", our.name, &current_line[prompt_len..]),
+                                prompt_len,
+                                win_cols,
+                                (line_col, cursor_col))),
                             cursor::MoveTo(cursor_col, win_rows),
                         )?;
                     },
