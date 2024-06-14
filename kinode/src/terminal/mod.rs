@@ -405,7 +405,7 @@ pub async fn terminal(
                                 cursor::MoveTo(0, win_rows),
                                 terminal::Clear(ClearType::CurrentLine),
                                 Print(utils::truncate_in_place(
-                                    &format!("{} * {}", our.name, &current_line[prompt_len..]),
+                                    &format!("{} * {}: no results", our.name, &current_line[prompt_len..]),
                                     prompt_len,
                                     win_cols,
                                     (line_col, cursor_col))),
@@ -465,8 +465,20 @@ pub async fn terminal(
                                                 (line_col, cursor_col))),
                                             cursor::MoveTo(cursor_col, win_rows),
                                         )?;
-                                        continue;
+                                    } else {
+                                        execute!(
+                                            stdout,
+                                            cursor::MoveTo(0, win_rows),
+                                            terminal::Clear(ClearType::CurrentLine),
+                                            Print(utils::truncate_in_place(
+                                                &format!("{} * {}: no results", our.name, &current_line[prompt_len..]),
+                                                prompt_len,
+                                                win_cols,
+                                                (line_col, cursor_col))),
+                                            cursor::MoveTo(cursor_col, win_rows),
+                                        )?;
                                     }
+                                    continue;
                                 }
                                 execute!(
                                     stdout,
@@ -503,8 +515,20 @@ pub async fn terminal(
                                                 (line_col, cursor_col))),
                                             cursor::MoveTo(cursor_col, win_rows),
                                         )?;
-                                        continue;
+                                    } else {
+                                        execute!(
+                                            stdout,
+                                            cursor::MoveTo(0, win_rows),
+                                            terminal::Clear(ClearType::CurrentLine),
+                                            Print(utils::truncate_in_place(
+                                                &format!("{} * {}: no results", our.name, &current_line[prompt_len..]),
+                                                prompt_len,
+                                                win_cols,
+                                                (line_col, cursor_col))),
+                                            cursor::MoveTo(cursor_col, win_rows),
+                                        )?;
                                     }
+                                    continue;
                                 }
                                 execute!(
                                     stdout,
@@ -579,7 +603,7 @@ pub async fn terminal(
                                         command_history.search(
                                             &current_line[prompt_len..],
                                             search_depth
-                                        ).unwrap_or(&current_line[prompt_len..]).to_string()
+                                        ).unwrap_or_default().to_string()
                                     };
                                 let next = format!("{} > ", our.name);
                                 execute!(
