@@ -18,10 +18,12 @@ const Widget: React.FC<WidgetProps> = ({ package_name, widget, forceLarge }) => 
   const isMobile = isMobileCheck()
   const isLarge = forceLarge || widgetSettings[package_name]?.size === "large"
   const isSmall = !widgetSettings[package_name]?.size || widgetSettings[package_name]?.size === "small"
+  const screenIsTallerThanItIsWide = window.innerHeight > window.innerWidth
   return <div
     className={classNames("self-stretch flex-col-center shadow-lg rounded-lg relative", {
       "max-w-1/2 min-w-1/2": isLarge && !isMobile,
-      "max-w-1/4 min-w-1/4": isSmall && !isMobile,
+      "min-w-1/4": isSmall && !isMobile,
+      "max-w-1/4": isSmall && !screenIsTallerThanItIsWide,
       'w-full': isMobile
     })}
     onMouseEnter={() => setIsHovered(true)}
