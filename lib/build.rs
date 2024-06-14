@@ -12,21 +12,21 @@ fn main() {
 
     let pwd = std::env::current_dir().expect("Failed to get current directory");
 
-    let wit_file = pwd.join("wit-v0.7.0").join("kinode.wit");
+    // let wit_file = pwd.join("wit-v0.7.0").join("kinode.wit");
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        kit::build::download_file(KINODE_WIT_0_7_0_URL, &wit_file)
-            .await
-            .expect("Failed to download WIT 0.7");
-    });
+    // let rt = tokio::runtime::Runtime::new().unwrap();
+    // rt.block_on(async {
+    //     kit::build::download_file(KINODE_WIT_0_7_0_URL, &wit_file)
+    //         .await
+    //         .expect("Failed to download WIT 0.7");
+    // });
 
-    let wit_file = pwd.join("wit-v0.8.0").join("kinode.wit");
+    // let wit_file = pwd.join("wit-v0.8.0").join("kinode.wit");
 
-    let rt = tokio::runtime::Runtime::new().unwrap();
-    rt.block_on(async {
-        kit::build::download_file(KINODE_WIT_0_8_0_URL, &wit_file)
-            .await
-            .expect("Failed to download WIT 0.8");
-    })
+    // let rt = tokio::runtime::Runtime::new().unwrap();
+    // rt.block_on(async {
+    //     kit::build::download_file(KINODE_WIT_0_8_0_URL, &wit_file)
+    //         .await
+    //         .expect("Failed to download WIT 0.8");
+    // })
 }

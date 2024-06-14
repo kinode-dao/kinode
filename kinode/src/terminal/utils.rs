@@ -1,6 +1,137 @@
-use std::collections::VecDeque;
-use std::fs::File;
-use std::io::{BufWriter, Write};
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
+use lib::types::core::Identity;
+use std::{
+    collections::VecDeque,
+    fs::File,
+    io::{BufWriter, Stdout, Write},
+};
+
+pub struct RawMode;
+impl RawMode {
+    fn new() -> std::io::Result<Self> {
+        enable_raw_mode()?;
+        Ok(RawMode)
+    }
+}
+impl Drop for RawMode {
+    fn drop(&mut self) {
+        match disable_raw_mode() {
+            Ok(_) => {}
+            Err(e) => {
+                println!("terminal: failed to disable raw mode: {e:?}\r");
+            }
+        }
+    }
+}
+
+pub fn startup(
+    our: &Identity,
+    version: &str,
+    is_detached: bool,
+) -> std::io::Result<(Stdout, Option<RawMode>)> {
+    let mut stdout = std::io::stdout();
+    crossterm::execute!(
+        stdout,
+        crossterm::event::EnableBracketedPaste,
+        crossterm::terminal::SetTitle(format!("kinode {}", our.name))
+    )?;
+
+    let (win_cols, _) = crossterm::terminal::size().expect("terminal: couldn't fetch size");
+
+    // print initial splash screen, large if there's room, small otherwise
+    if win_cols >= 90 {
+        crossterm::execute!(
+            stdout,
+            crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta),
+            crossterm::style::Print(format!(
+                r#"
+     .`
+ `@@,,                     ,*    888    d8P  d8b                        888
+   `@%@@@,            ,~-##`     888   d8P   Y8P                        888
+     ~@@#@%#@@,      #####       888  d8P                               888
+       ~-%######@@@, #####       888d88K     888 88888b.   .d88b.   .d88888  .d88b.
+          -%%#######@#####,      8888888b    888 888 "88b d88""88b d88" 888 d8P  Y8b
+            ~^^%##########@      888  Y88b   888 888  888 888  888 888  888 88888888
+               >^#########@      888   Y88b  888 888  888 Y88..88P Y88b 888 Y8b.
+                 `>#######`      888    Y88b 888 888  888  "Y88P"   "Y88888  "Y8888
+                .>######%
+               /###%^#%          {} ({})
+             /##%@#  `           runtime version {}
+          ./######`              a general purpose sovereign cloud computer
+        /.^`.#^#^`
+       `   ,#`#`#,
+          ,/ /` `
+        .*`
+ networking public key: {}
+                    "#,
+                our.name,
+                if our.is_direct() {
+                    "direct"
+                } else {
+                    "indirect"
+                },
+                version,
+                our.networking_key,
+            )),
+            crossterm::style::ResetColor
+        )
+        .expect("terminal: couldn't print splash");
+    } else {
+        crossterm::execute!(
+            stdout,
+            crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta),
+            crossterm::style::Print(format!(
+                r#"
+ 888    d8P  d8b                        888
+ 888   d8P   Y8P                        888
+ 888  d8P                               888
+ 888d88K     888 88888b.   .d88b.   .d88888  .d88b.
+ 8888888b    888 888 "88b d88""88b d88" 888 d8P  Y8b
+ 888  Y88b   888 888  888 888  888 888  888 88888888
+ 888   Y88b  888 888  888 Y88..88P Y88b 888 Y8b.
+ 888    Y88b 888 888  888  "Y88P"   "Y88888  "Y8888
+
+ {} ({})
+ version {}
+ a general purpose sovereign cloud computer
+ net pubkey: {}
+                    "#,
+                our.name,
+                if our.is_direct() {
+                    "direct"
+                } else {
+                    "indirect"
+                },
+                version,
+                our.networking_key,
+            )),
+            crossterm::style::ResetColor
+        )?;
+    }
+
+    Ok((
+        stdout,
+        if is_detached {
+            None
+        } else {
+            Some(RawMode::new()?)
+        },
+    ))
+}
+
+pub fn cleanup(quit_msg: &str) {
+    let stdout = std::io::stdout();
+    let mut stdout = stdout.lock();
+    crossterm::execute!(
+        stdout,
+        crossterm::event::DisableBracketedPaste,
+        crossterm::terminal::SetTitle(""),
+        crossterm::style::SetForegroundColor(crossterm::style::Color::Red),
+        crossterm::style::Print(format!("\r\n{quit_msg}\r\n")),
+        crossterm::style::ResetColor,
+    )
+    .expect("failed to clean up terminal visual state! your terminal window might be funky now");
+}
 
 #[derive(Debug)]
 pub struct CommandHistory {
