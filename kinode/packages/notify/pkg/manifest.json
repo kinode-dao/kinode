@@ -7,7 +7,9 @@
         "request_capabilities": [
             "http_server:distro:sys"
         ],
-        "grant_capabilities": [],
+        "grant_capabilities": [
+            "http_server:distro:sys"
+        ],
         "public": false
     }
 ]
