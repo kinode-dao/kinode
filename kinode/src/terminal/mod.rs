@@ -54,14 +54,14 @@ pub async fn terminal(
     // the terminal stores the most recent 1000 lines entered by user
     // in history. TODO should make history size adjustable.
     let history_path = std::fs::canonicalize(&home_directory_path)
-        .unwrap()
+        .expect("terminal: could not get path for .terminal_history file")
         .join(".terminal_history");
     let history = read_to_string(&history_path).unwrap_or_default();
     let history_handle = OpenOptions::new()
         .append(true)
         .create(true)
         .open(&history_path)
-        .unwrap();
+        .expect("terminal: could not open/create .terminal_history");
     let history_writer = BufWriter::new(history_handle);
     let mut command_history = utils::CommandHistory::new(1000, history, history_writer);
 
@@ -69,13 +69,13 @@ pub async fn terminal(
     // will also be written with their full timestamp to the .terminal_log file.
     // logging mode is always off by default. TODO add a boot flag to change this.
     let log_path = std::fs::canonicalize(&home_directory_path)
-        .unwrap()
+        .expect("terminal: could not get path for .terminal_log file")
         .join(".terminal_log");
     let log_handle = OpenOptions::new()
         .append(true)
         .create(true)
         .open(&log_path)
-        .unwrap();
+        .expect("terminal: could not open/create .terminal_log");
     let mut log_writer = BufWriter::new(log_handle);
 
     // use to trigger cleanup if receive signal to kill process
@@ -299,6 +299,7 @@ pub async fn terminal(
                                 line_col = current_line.len();
                             },
                             None => {
+                                // the "no-no" ding
                                 print!("\x07");
                             },
                         }
@@ -326,6 +327,7 @@ pub async fn terminal(
                                 line_col = current_line.len();
                             },
                             None => {
+                                // the "no-no" ding
                                 print!("\x07");
                             },
                         }
@@ -346,7 +348,7 @@ pub async fn terminal(
                         ..
                     }) => {
                         line_col = prompt_len;
-                        cursor_col = prompt_len.try_into().unwrap();
+                        cursor_col = prompt_len as u16;
                         execute!(
                             stdout,
                             cursor::MoveTo(0, win_rows),
@@ -434,6 +436,9 @@ pub async fn terminal(
                     //
                     Event::Key(k) => {
                         match k.code {
+                            //
+                            //  CHAR: write a single character
+                            //
                             KeyCode::Char(c) => {
                                 current_line.insert(line_col, c);
                                 if cursor_col < win_cols {
@@ -466,6 +471,9 @@ pub async fn terminal(
                                     cursor::MoveTo(cursor_col, win_rows),
                                 )?;
                             },
+                            //
+                            //  BACKSPACE or DELETE: delete a single character at cursor
+                            //
                             KeyCode::Backspace | KeyCode::Delete => {
                                 if line_col == prompt_len {
                                     continue;
@@ -501,6 +509,9 @@ pub async fn terminal(
                                     cursor::MoveTo(cursor_col, win_rows),
                                 )?;
                             },
+                            //
+                            //  LEFT: move cursor one spot left
+                            //
                             KeyCode::Left => {
                                 if cursor_col as usize == prompt_len {
                                     if line_col == prompt_len {
@@ -526,6 +537,9 @@ pub async fn terminal(
                                     line_col -= 1;
                                 }
                             },
+                            //
+                            //  RIGHT: move cursor one spot right
+                            //
                             KeyCode::Right => {
                                 if line_col == current_line.len() {
                                     // at the very end of the current typed line
@@ -549,6 +563,9 @@ pub async fn terminal(
                                     )?;
                                 }
                             },
+                            //
+                            //  ENTER: send current input to terminal process, clearing input line
+                            //
                             KeyCode::Enter => {
                                 // if we were in search mode, pull command from that
                                 let command = if !search_mode {
@@ -572,7 +589,7 @@ pub async fn terminal(
                                 search_depth = 0;
                                 current_line = next;
                                 command_history.add(command.clone());
-                                cursor_col = prompt_len.try_into().unwrap();
+                                cursor_col = prompt_len as u16;
                                 line_col = prompt_len;
                                 event_loop.send(
                                     KernelMessage {
@@ -597,10 +614,14 @@ pub async fn terminal(
                                     }
                                 ).await.expect("terminal: couldn't execute command!");
                             },
-                            _ => {},
+                            _ => {
+                                // some keycode we don't care about, yet
+                            },
                         }
                     },
-                    _ => {},
+                    _ => {
+                        // some terminal event we don't care about, yet
+                    },
                 }
             }
             _ = sigalrm.recv() => return Err(anyhow::anyhow!("exiting due to SIGALRM")),
