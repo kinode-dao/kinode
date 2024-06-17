@@ -385,33 +385,16 @@ pub async fn terminal(
                             search_depth += 1;
                         }
                         search_mode = true;
-                        let search_query = &current_line[prompt_len..];
-                        if let Some(result) = command_history.search(search_query, search_depth) {
-                            let result_underlined = utils::underline(result, search_query);
-                            execute!(
-                                stdout,
-                                cursor::MoveTo(0, win_rows),
-                                terminal::Clear(ClearType::CurrentLine),
-                                Print(utils::truncate_in_place(
-                                    &format!("{} * {}", our.name, result_underlined),
-                                    prompt_len,
-                                    win_cols,
-                                    (line_col, cursor_col))),
-                                cursor::MoveTo(cursor_col, win_rows),
-                            )?;
-                        } else {
-                            execute!(
-                                stdout,
-                                cursor::MoveTo(0, win_rows),
-                                terminal::Clear(ClearType::CurrentLine),
-                                Print(utils::truncate_in_place(
-                                    &format!("{} * {}: no results", our.name, &current_line[prompt_len..]),
-                                    prompt_len,
-                                    win_cols,
-                                    (line_col, cursor_col))),
-                                cursor::MoveTo(cursor_col, win_rows),
-                            )?;
-                        }
+                        utils::execute_search(
+                            &our,
+                            &mut stdout,
+                            &current_line,
+                            prompt_len,
+                            (win_cols, win_rows),
+                            (line_col, cursor_col),
+                            &mut command_history,
+                            search_depth,
+                        )?;
                     },
                     //
                     //  CTRL+G: exit search mode
@@ -451,33 +434,16 @@ pub async fn terminal(
                                 }
                                 line_col += 1;
                                 if search_mode {
-                                    let search_query = &current_line[prompt_len..];
-                                    if let Some(result) = command_history.search(search_query, search_depth) {
-                                        let result_underlined = utils::underline(result, search_query);
-                                        execute!(
-                                            stdout,
-                                            cursor::MoveTo(0, win_rows),
-                                            terminal::Clear(ClearType::CurrentLine),
-                                            Print(utils::truncate_in_place(
-                                                &format!("{} * {}", our.name, result_underlined),
-                                                prompt_len,
-                                                win_cols,
-                                                (line_col, cursor_col))),
-                                            cursor::MoveTo(cursor_col, win_rows),
-                                        )?;
-                                    } else {
-                                        execute!(
-                                            stdout,
-                                            cursor::MoveTo(0, win_rows),
-                                            terminal::Clear(ClearType::CurrentLine),
-                                            Print(utils::truncate_in_place(
-                                                &format!("{} * {}: no results", our.name, &current_line[prompt_len..]),
-                                                prompt_len,
-                                                win_cols,
-                                                (line_col, cursor_col))),
-                                            cursor::MoveTo(cursor_col, win_rows),
-                                        )?;
-                                    }
+                                    utils::execute_search(
+                                        &our,
+                                        &mut stdout,
+                                        &current_line,
+                                        prompt_len,
+                                        (win_cols, win_rows),
+                                        (line_col, cursor_col),
+                                        &mut command_history,
+                                        search_depth,
+                                    )?;
                                     continue;
                                 }
                                 execute!(
@@ -501,33 +467,16 @@ pub async fn terminal(
                                 line_col -= 1;
                                 current_line.remove(line_col);
                                 if search_mode {
-                                    let search_query = &current_line[prompt_len..];
-                                    if let Some(result) = command_history.search(search_query, search_depth) {
-                                        let result_underlined = utils::underline(result, search_query);
-                                        execute!(
-                                            stdout,
-                                            cursor::MoveTo(0, win_rows),
-                                            terminal::Clear(ClearType::CurrentLine),
-                                            Print(utils::truncate_in_place(
-                                                &format!("{} * {}", our.name, result_underlined),
-                                                prompt_len,
-                                                win_cols,
-                                                (line_col, cursor_col))),
-                                            cursor::MoveTo(cursor_col, win_rows),
-                                        )?;
-                                    } else {
-                                        execute!(
-                                            stdout,
-                                            cursor::MoveTo(0, win_rows),
-                                            terminal::Clear(ClearType::CurrentLine),
-                                            Print(utils::truncate_in_place(
-                                                &format!("{} * {}: no results", our.name, &current_line[prompt_len..]),
-                                                prompt_len,
-                                                win_cols,
-                                                (line_col, cursor_col))),
-                                            cursor::MoveTo(cursor_col, win_rows),
-                                        )?;
-                                    }
+                                    utils::execute_search(
+                                        &our,
+                                        &mut stdout,
+                                        &current_line,
+                                        prompt_len,
+                                        (win_cols, win_rows),
+                                        (line_col, cursor_col),
+                                        &mut command_history,
+                                        search_depth,
+                                    )?;
                                     continue;
                                 }
                                 execute!(

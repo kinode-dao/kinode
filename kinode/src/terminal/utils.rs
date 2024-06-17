@@ -220,14 +220,56 @@ impl CommandHistory {
     }
 }
 
-pub fn underline(s: &str, to_underline: &str) -> String {
+pub fn execute_search(
+    our: &Identity,
+    stdout: &mut std::io::StdoutLock,
+    current_line: &str,
+    prompt_len: usize,
+    (win_cols, win_rows): (u16, u16),
+    (line_col, cursor_col): (usize, u16),
+    command_history: &mut CommandHistory,
+    search_depth: usize,
+) -> Result<(), std::io::Error> {
+    let search_query = &current_line[prompt_len..];
+    if let Some(result) = command_history.search(search_query, search_depth) {
+        let (result_underlined, u_end) = underline(result, search_query);
+        let search_cursor_col = u_end + prompt_len as u16;
+        crossterm::execute!(
+            stdout,
+            crossterm::cursor::MoveTo(0, win_rows),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
+            crossterm::style::Print(truncate_in_place(
+                &format!("{} * {}", our.name, result_underlined),
+                prompt_len,
+                win_cols,
+                (line_col, search_cursor_col)
+            )),
+            crossterm::cursor::MoveTo(search_cursor_col, win_rows),
+        )
+    } else {
+        crossterm::execute!(
+            stdout,
+            crossterm::cursor::MoveTo(0, win_rows),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
+            crossterm::style::Print(truncate_in_place(
+                &format!("{} * {}: no results", our.name, &current_line[prompt_len..]),
+                prompt_len,
+                win_cols,
+                (line_col, cursor_col)
+            )),
+            crossterm::cursor::MoveTo(cursor_col, win_rows),
+        )
+    }
+}
+
+pub fn underline(s: &str, to_underline: &str) -> (String, u16) {
     // format result string to have query portion underlined
     let mut result = s.to_string();
     let u_start = s.find(to_underline).unwrap();
     let u_end = u_start + to_underline.len();
     result.insert_str(u_end, "\x1b[24m");
     result.insert_str(u_start, "\x1b[4m");
-    result
+    (result, u_end as u16)
 }
 
 pub fn truncate_rightward(s: &str, prompt_len: usize, width: u16) -> String {
