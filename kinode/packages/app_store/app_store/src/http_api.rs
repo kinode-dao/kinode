@@ -126,6 +126,15 @@ fn make_widget() -> String {
                 })
                 .catch(error => console.error('Error fetching apps:', error));
         });
+
+        // listen for reload events from the mobile app
+        // we're in an iframe, so they will be posted messages
+        // the message will be 'reload' and we don't care about origin
+        window.addEventListener('message', function(event) {
+            if (event.data === 'reload') {
+                location.reload();
+            }
+        });
     </script>
 </body>
 </html>"#

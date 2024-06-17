@@ -86,6 +86,16 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     >
         {}
     </div>
+    <script>
+        // listen for reload events from the mobile app
+        // we're in an iframe, so they will be posted messages
+        // the message will be 'reload' and we don't care about origin
+        window.addEventListener('message', function(event) {
+            if (event.data === 'reload') {
+                location.reload();
+            }
+        });
+    </script>
 </body>
 </html>"#,
         posts
