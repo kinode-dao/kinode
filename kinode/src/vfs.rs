@@ -1,14 +1,19 @@
 use dashmap::DashMap;
+use lib::types::core::{
+    Address, CapMessage, CapMessageSender, Capability, DirEntry, FileMetadata, FileType,
+    KernelMessage, LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId, PrintSender,
+    Printout, ProcessId, Request, Response, VfsAction, VfsError, VfsRequest, VfsResponse,
+    KERNEL_PROCESS_ID, VFS_PROCESS_ID,
+};
 use std::collections::{HashMap, VecDeque};
-use std::io::prelude::*;
+use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use tokio::fs;
-use tokio::fs::OpenOptions;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
-use tokio::sync::Mutex;
-
-use lib::types::core::*;
+use tokio::{
+    fs,
+    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom},
+    sync::Mutex,
+};
 
 pub async fn vfs(
     our_node: String,
@@ -590,7 +595,7 @@ async fn open_file<P: AsRef<Path>>(
         Some(file) => Arc::clone(file.value()),
         None => {
             let file = Arc::new(Mutex::new(
-                OpenOptions::new()
+                tokio::fs::OpenOptions::new()
                     .read(true)
                     .write(true)
                     .create(create)
