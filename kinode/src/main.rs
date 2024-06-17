@@ -455,17 +455,8 @@ async fn main() {
 
     // abort all remaining tasks
     tasks.shutdown().await;
-    let stdout = std::io::stdout();
-    let mut stdout = stdout.lock();
-    crossterm::execute!(
-        stdout,
-        crossterm::event::DisableBracketedPaste,
-        crossterm::terminal::SetTitle(""),
-        crossterm::style::SetForegroundColor(crossterm::style::Color::Red),
-        crossterm::style::Print(format!("\r\n{quit_msg}\r\n")),
-        crossterm::style::ResetColor,
-    )
-    .expect("failed to clean up terminal visual state! your terminal window might be funky now");
+    // reset all modified aspects of terminal -- clean ourselves up
+    terminal::utils::cleanup(&quit_msg);
 }
 
 async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
@@ -755,12 +746,9 @@ async fn serve_register_fe(
         }
     };
 
-    tokio::fs::write(
-        format!("{}/.keys", home_directory_path),
-        encoded_keyfile.clone(),
-    )
-    .await
-    .unwrap();
+    tokio::fs::write(format!("{}/.keys", home_directory_path), &encoded_keyfile)
+        .await
+        .unwrap();
 
     let _ = kill_tx.send(true);
 
@@ -831,12 +819,9 @@ async fn login_with_password(
     .await
     .expect("information used to boot does not match information onchain");
 
-    tokio::fs::write(
-        format!("{}/.keys", home_directory_path),
-        disk_keyfile.clone(),
-    )
-    .await
-    .unwrap();
+    tokio::fs::write(format!("{}/.keys", home_directory_path), &disk_keyfile)
+        .await
+        .unwrap();
 
     (our, disk_keyfile, k)
 }

@@ -710,6 +710,9 @@ pub async fn kernel(
     let mut process_handles: ProcessHandles = HashMap::new();
 
     let mut is_debug: bool = false;
+    // this flag starts as true, and terminal will alert us if we can
+    // skip sending prints for every event.
+    let mut print_full_event_loop: bool = true;
     let mut reboot_processes: Vec<(t::ProcessId, StartProcessMetadata, Vec<u8>)> = vec![];
 
     // filter out OnExit::None processes from process_map
@@ -870,9 +873,17 @@ pub async fn kernel(
     loop {
         tokio::select! {
             // debug mode toggle: when on, this loop becomes a manual step-through
-            debug = recv_debug_in_loop.recv() => {
-                if let Some(t::DebugCommand::Toggle) = debug {
-                    is_debug = !is_debug;
+            Some(debug_command) = recv_debug_in_loop.recv() => {
+                match debug_command {
+                    t::DebugCommand::ToggleStepthrough => {
+                        is_debug = !is_debug;
+                    },
+                    t::DebugCommand::Step => {
+                        // can't step here, must be in stepthrough-mode
+                    },
+                    t::DebugCommand::ToggleEventLoop => {
+                        print_full_event_loop = !print_full_event_loop;
+                    }
                 }
             },
             // network error message receiver: handle `timeout` and `offline` errors
@@ -1042,17 +1053,20 @@ pub async fn kernel(
                 while is_debug {
                     let debug = recv_debug_in_loop.recv().await.expect("event loop: debug channel died");
                     match debug {
-                        t::DebugCommand::Toggle => is_debug = !is_debug,
+                        t::DebugCommand::ToggleStepthrough => is_debug = !is_debug,
                         t::DebugCommand::Step => break,
+                        t::DebugCommand::ToggleEventLoop => print_full_event_loop = !print_full_event_loop,
                     }
                 }
                 // display every single event when verbose
-                let _ = send_to_terminal.send(
+                if print_full_event_loop {
+                    let _ = send_to_terminal.send(
                         t::Printout {
                             verbosity: 3,
                             content: format!("{kernel_message}")
                         }
                     ).await;
+                }
 
                 if our.name != kernel_message.target.node {
                     send_to_net.send(kernel_message).await.expect("fatal: net module died");

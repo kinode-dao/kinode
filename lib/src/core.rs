@@ -1180,8 +1180,9 @@ pub type Rsvp = Option<Address>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DebugCommand {
-    Toggle,
+    ToggleStepthrough,
     Step,
+    ToggleEventLoop,
 }
 
 /// IPC format for requests sent to kernel runtime module

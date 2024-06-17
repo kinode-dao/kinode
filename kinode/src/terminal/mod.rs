@@ -1,41 +1,23 @@
-use anyhow::Result;
 use chrono::{Datelike, Local, Timelike};
 use crossterm::{
     cursor,
-    event::{
-        DisableBracketedPaste, EnableBracketedPaste, Event, EventStream, KeyCode, KeyEvent,
-        KeyModifiers,
-    },
+    event::{Event, EventStream, KeyCode, KeyEvent, KeyModifiers},
     execute, style,
     style::Print,
-    terminal::{self, disable_raw_mode, enable_raw_mode, ClearType},
+    terminal::{self, ClearType},
 };
 use futures::{future::FutureExt, StreamExt};
-use std::fs::{read_to_string, OpenOptions};
-use std::io::{stdout, BufWriter, Write};
+use lib::types::core::{
+    Address, DebugCommand, DebugSender, Identity, KernelMessage, Message, MessageSender,
+    PrintReceiver, PrintSender, Printout, Request, TERMINAL_PROCESS_ID,
+};
+use std::{
+    fs::{read_to_string, OpenOptions},
+    io::{BufWriter, Write},
+};
 use tokio::signal::unix::{signal, SignalKind};
 
-use lib::types::core::*;
-
-mod utils;
-
-struct RawMode;
-impl RawMode {
-    fn new() -> anyhow::Result<Self> {
-        enable_raw_mode()?;
-        Ok(RawMode)
-    }
-}
-impl Drop for RawMode {
-    fn drop(&mut self) {
-        match disable_raw_mode() {
-            Ok(_) => {}
-            Err(e) => {
-                println!("terminal: failed to disable raw mode: {e:?}\r");
-            }
-        }
-    }
-}
+pub mod utils;
 
 /*
  *  terminal driver
@@ -50,122 +32,50 @@ pub async fn terminal(
     mut print_rx: PrintReceiver,
     is_detached: bool,
     mut verbose_mode: u8,
-) -> Result<()> {
-    let mut stdout = stdout();
-    execute!(
-        stdout,
-        EnableBracketedPaste,
-        terminal::SetTitle(format!("{}", our.name))
-    )?;
+) -> anyhow::Result<()> {
+    let (stdout, _maybe_raw_mode) = utils::startup(&our, version, is_detached)?;
 
-    let (mut win_cols, mut win_rows) = terminal::size().unwrap();
-    // print initial splash screen, large if there's room, small otherwise
-    if win_cols >= 90 {
-        execute!(
-            stdout,
-            style::SetForegroundColor(style::Color::Magenta),
-            Print(format!(
-                r#"
-     .`
- `@@,,                     ,*    888    d8P  d8b                        888
-   `@%@@@,            ,~-##`     888   d8P   Y8P                        888
-     ~@@#@%#@@,      #####       888  d8P                               888
-       ~-%######@@@, #####       888d88K     888 88888b.   .d88b.   .d88888  .d88b.
-          -%%#######@#####,      8888888b    888 888 "88b d88""88b d88" 888 d8P  Y8b
-            ~^^%##########@      888  Y88b   888 888  888 888  888 888  888 88888888
-               >^#########@      888   Y88b  888 888  888 Y88..88P Y88b 888 Y8b.
-                 `>#######`      888    Y88b 888 888  888  "Y88P"   "Y88888  "Y8888
-                .>######%
-               /###%^#%          {} ({})
-             /##%@#  `           runtime version {}
-          ./######`              a general purpose sovereign cloud computer
-        /.^`.#^#^`
-       `   ,#`#`#,
-          ,/ /` `
-        .*`
- networking public key: {}
-                    "#,
-                our.name,
-                if our.is_direct() {
-                    "direct"
-                } else {
-                    "indirect"
-                },
-                version,
-                our.networking_key,
-            )),
-            style::ResetColor
-        )?;
-    } else {
-        execute!(
-            stdout,
-            style::SetForegroundColor(style::Color::Magenta),
-            Print(format!(
-                r#"
- 888    d8P  d8b                        888
- 888   d8P   Y8P                        888
- 888  d8P                               888
- 888d88K     888 88888b.   .d88b.   .d88888  .d88b.
- 8888888b    888 888 "88b d88""88b d88" 888 d8P  Y8b
- 888  Y88b   888 888  888 888  888 888  888 88888888
- 888   Y88b  888 888  888 Y88..88P Y88b 888 Y8b.
- 888    Y88b 888 888  888  "Y88P"   "Y88888  "Y8888
+    // mutable because we adjust them on window resize events
+    let (mut win_cols, mut win_rows) =
+        crossterm::terminal::size().expect("terminal: couldn't fetch size");
 
- {} ({})
- version {}
- a general purpose sovereign cloud computer
- net pubkey: {}
-                    "#,
-                our.name,
-                if our.is_direct() {
-                    "direct"
-                } else {
-                    "indirect"
-                },
-                version,
-                our.networking_key,
-            )),
-            style::ResetColor
-        )?;
-    }
-
-    let _raw_mode = if is_detached {
-        None
-    } else {
-        Some(RawMode::new()?)
-    };
-
-    let mut reader = EventStream::new();
     let mut current_line = format!("{} > ", our.name);
     let prompt_len: usize = our.name.len() + 3;
-    let mut cursor_col: u16 = prompt_len.try_into().unwrap();
+    let mut cursor_col: u16 = prompt_len as u16;
     let mut line_col: usize = cursor_col as usize;
+
     let mut in_step_through: bool = false;
+
     let mut search_mode: bool = false;
     let mut search_depth: usize = 0;
+
     let mut logging_mode: bool = false;
 
+    // the terminal stores the most recent 1000 lines entered by user
+    // in history. TODO should make history size adjustable.
     let history_path = std::fs::canonicalize(&home_directory_path)
-        .unwrap()
+        .expect("terminal: could not get path for .terminal_history file")
         .join(".terminal_history");
     let history = read_to_string(&history_path).unwrap_or_default();
     let history_handle = OpenOptions::new()
         .append(true)
         .create(true)
         .open(&history_path)
-        .unwrap();
+        .expect("terminal: could not open/create .terminal_history");
     let history_writer = BufWriter::new(history_handle);
-    // TODO make adjustable max history length
     let mut command_history = utils::CommandHistory::new(1000, history, history_writer);
 
+    // if CTRL+L is used to turn on logging, all prints to terminal
+    // will also be written with their full timestamp to the .terminal_log file.
+    // logging mode is always off by default. TODO add a boot flag to change this.
     let log_path = std::fs::canonicalize(&home_directory_path)
-        .unwrap()
+        .expect("terminal: could not get path for .terminal_log file")
         .join(".terminal_log");
     let log_handle = OpenOptions::new()
         .append(true)
         .create(true)
         .open(&log_path)
-        .unwrap();
+        .expect("terminal: could not open/create .terminal_log");
     let mut log_writer = BufWriter::new(log_handle);
 
     // use to trigger cleanup if receive signal to kill process
@@ -186,21 +96,32 @@ pub async fn terminal(
     let mut sigusr2 =
         signal(SignalKind::user_defined2()).expect("terminal: failed to set up SIGUSR2 handler");
 
-    loop {
-        let event = reader.next().fuse();
+    // if the verbosity boot flag was **not** set to "full event loop", tell kernel
+    // the kernel will try and print all events by default so that booting with
+    // verbosity mode 3 guarantees all events from boot are shown.
+    if verbose_mode != 3 {
+        let _ = debug_event_loop.send(DebugCommand::ToggleEventLoop).await;
+    }
 
+    let mut reader = EventStream::new();
+    let mut stdout = stdout.lock();
+
+    loop {
         tokio::select! {
             Some(printout) = print_rx.recv() => {
                 let now = Local::now();
+                // always write print to log if in logging mode
                 if logging_mode {
-                    let _ = writeln!(log_writer, "[{}] {}", now.to_rfc2822(), printout.content);
+                    writeln!(log_writer, "[{}] {}", now.to_rfc2822(), printout.content)?;
                 }
+                // skip writing print to terminal if it's of a greater
+                // verbosity level than our current mode
                 if printout.verbosity > verbose_mode {
                     continue;
                 }
-                let mut stdout = stdout.lock();
                 execute!(
                     stdout,
+                    // print goes immediately above the dedicated input line at bottom
                     cursor::MoveTo(0, win_rows - 1),
                     terminal::Clear(ClearType::CurrentLine),
                     Print(format!("{} {:02}:{:02} ",
@@ -208,41 +129,45 @@ pub async fn terminal(
                                    now.hour(),
                                    now.minute(),
                                  )),
-                )?;
-                let color = match printout.verbosity {
+                    style::SetForegroundColor(match printout.verbosity {
                         0 => style::Color::Reset,
                         1 => style::Color::Green,
                         2 => style::Color::Magenta,
                         _ => style::Color::Red,
-                };
+                    }),
+                )?;
                 for line in printout.content.lines() {
                     execute!(
                         stdout,
-                        style::SetForegroundColor(color),
                         Print(format!("{}\r\n", line)),
-                        style::ResetColor,
                     )?;
                 }
+                // reset color and re-display the current input line
+                // re-place cursor where user had it at input line
                 execute!(
                     stdout,
+                    style::ResetColor,
                     cursor::MoveTo(0, win_rows),
                     Print(utils::truncate_in_place(&current_line, prompt_len, win_cols, (line_col, cursor_col))),
                     cursor::MoveTo(cursor_col, win_rows),
                 )?;
             }
-            Some(Ok(event)) = event => {
-                let mut stdout = stdout.lock();
+            Some(Ok(event)) = reader.next().fuse() => {
                 match event {
-                    // resize is super annoying because this event trigger often
+                    //
+                    // RESIZE: resize is super annoying because this event trigger often
                     // comes "too late" to stop terminal from messing with the
                     // already-printed lines. TODO figure out the right way
                     // to compensate for this cross-platform and do this in a
                     // generally stable way.
+                    //
                     Event::Resize(width, height) => {
                         win_cols = width;
                         win_rows = height;
                     },
-                    // handle pasting of text from outside
+                    //
+                    // PASTE: handle pasting of text from outside
+                    //
                     Event::Paste(pasted) => {
                         // strip out control characters and newlines
                         let pasted = pasted.chars().filter(|c| !c.is_control() && !c.is_ascii_control()).collect::<String>();
@@ -256,7 +181,9 @@ pub async fn terminal(
                             cursor::MoveTo(cursor_col, win_rows),
                         )?;
                     }
+                    //
                     // CTRL+C, CTRL+D: turn off the node
+                    //
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('c'),
                         modifiers: KeyModifiers::CONTROL,
@@ -267,10 +194,18 @@ pub async fn terminal(
                         modifiers: KeyModifiers::CONTROL,
                         ..
                     }) => {
-                        execute!(stdout, DisableBracketedPaste, terminal::SetTitle(""))?;
+                        execute!(
+                            stdout,
+                            // print goes immediately above the dedicated input line at bottom
+                            cursor::MoveTo(0, win_rows - 1),
+                            terminal::Clear(ClearType::CurrentLine),
+                            Print("exit code received"),
+                        )?;
                         break;
                     },
+                    //
                     // CTRL+V: toggle through verbosity modes
+                    //
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('v'),
                         modifiers: KeyModifiers::CONTROL,
@@ -294,26 +229,34 @@ pub async fn terminal(
                                 }
                             }
                         ).await;
+                        if verbose_mode == 3 {
+                            let _ = debug_event_loop.send(DebugCommand::ToggleEventLoop).await;
+                        }
                     },
+                    //
                     // CTRL+J: toggle debug mode -- makes system-level event loop step-through
-                    // CTRL+S: step through system-level event loop
+                    //
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('j'),
                         modifiers: KeyModifiers::CONTROL,
                         ..
                     }) => {
+                        let _ = debug_event_loop.send(DebugCommand::ToggleStepthrough).await;
+                        in_step_through = !in_step_through;
                         let _ = print_tx.send(
                             Printout {
                                 verbosity: 0,
                                 content: match in_step_through {
-                                    true => "debug mode off".into(),
-                                    false => "debug mode on: use CTRL+S to step through events".into(),
+                                    false => "debug mode off".into(),
+                                    true => "debug mode on: use CTRL+S to step through events".into(),
                                 }
                             }
                         ).await;
-                        let _ = debug_event_loop.send(DebugCommand::Toggle).await;
-                        in_step_through = !in_step_through;
+
                     },
+                    //
+                    // CTRL+S: step through system-level event loop (when in step-through mode)
+                    //
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('s'),
                         modifiers: KeyModifiers::CONTROL,
@@ -342,7 +285,6 @@ pub async fn terminal(
                     },
                     //
                     //  UP / CTRL+P: go up one command in history
-                    //  DOWN / CTRL+N: go down one command in history
                     //
                     Event::Key(KeyEvent { code: KeyCode::Up, .. }) |
                     Event::Key(KeyEvent {
@@ -357,6 +299,7 @@ pub async fn terminal(
                                 line_col = current_line.len();
                             },
                             None => {
+                                // the "no-no" ding
                                 print!("\x07");
                             },
                         }
@@ -368,6 +311,9 @@ pub async fn terminal(
                             Print(utils::truncate_rightward(&current_line, prompt_len, win_cols)),
                         )?;
                     },
+                    //
+                    //  DOWN / CTRL+N: go down one command in history
+                    //
                     Event::Key(KeyEvent { code: KeyCode::Down, .. }) |
                     Event::Key(KeyEvent {
                         code: KeyCode::Char('n'),
@@ -381,6 +327,7 @@ pub async fn terminal(
                                 line_col = current_line.len();
                             },
                             None => {
+                                // the "no-no" ding
                                 print!("\x07");
                             },
                         }
@@ -401,7 +348,7 @@ pub async fn terminal(
                         ..
                     }) => {
                         line_col = prompt_len;
-                        cursor_col = prompt_len.try_into().unwrap();
+                        cursor_col = prompt_len as u16;
                         execute!(
                             stdout,
                             cursor::MoveTo(0, win_rows),
@@ -438,32 +385,16 @@ pub async fn terminal(
                             search_depth += 1;
                         }
                         search_mode = true;
-                        let search_query = &current_line[prompt_len..];
-                        if search_query.is_empty() {
-                            continue;
-                        }
-                        if let Some(result) = command_history.search(search_query, search_depth) {
-                            let result_underlined = utils::underline(result, search_query);
-                            execute!(
-                                stdout,
-                                cursor::MoveTo(0, win_rows),
-                                terminal::Clear(ClearType::CurrentLine),
-                                Print(utils::truncate_in_place(
-                                    &format!("{} * {}", our.name, result_underlined),
-                                    prompt_len,
-                                    win_cols,
-                                    (line_col, cursor_col))),
-                                cursor::MoveTo(cursor_col, win_rows),
-                            )?;
-                        } else {
-                            execute!(
-                                stdout,
-                                cursor::MoveTo(0, win_rows),
-                                terminal::Clear(ClearType::CurrentLine),
-                                Print(utils::truncate_in_place(&current_line, prompt_len, win_cols, (line_col, cursor_col))),
-                                cursor::MoveTo(cursor_col, win_rows),
-                            )?;
-                        }
+                        utils::execute_search(
+                            &our,
+                            &mut stdout,
+                            &current_line,
+                            prompt_len,
+                            (win_cols, win_rows),
+                            (line_col, cursor_col),
+                            &mut command_history,
+                            search_depth,
+                        )?;
                     },
                     //
                     //  CTRL+G: exit search mode
@@ -480,15 +411,22 @@ pub async fn terminal(
                             stdout,
                             cursor::MoveTo(0, win_rows),
                             terminal::Clear(ClearType::CurrentLine),
-                            Print(utils::truncate_in_place(&current_line, prompt_len, win_cols, (line_col, cursor_col))),
+                            Print(utils::truncate_in_place(
+                                &format!("{} > {}", our.name, &current_line[prompt_len..]),
+                                prompt_len,
+                                win_cols,
+                                (line_col, cursor_col))),
                             cursor::MoveTo(cursor_col, win_rows),
                         )?;
                     },
                     //
-                    //  handle keypress events
+                    //  KEY: handle keypress events
                     //
                     Event::Key(k) => {
                         match k.code {
+                            //
+                            //  CHAR: write a single character
+                            //
                             KeyCode::Char(c) => {
                                 current_line.insert(line_col, c);
                                 if cursor_col < win_cols {
@@ -496,22 +434,17 @@ pub async fn terminal(
                                 }
                                 line_col += 1;
                                 if search_mode {
-                                    let search_query = &current_line[prompt_len..];
-                                    if let Some(result) = command_history.search(search_query, search_depth) {
-                                        let result_underlined = utils::underline(result, search_query);
-                                        execute!(
-                                            stdout,
-                                            cursor::MoveTo(0, win_rows),
-                                            terminal::Clear(ClearType::CurrentLine),
-                                            Print(utils::truncate_in_place(
-                                                &format!("{} * {}", our.name, result_underlined),
-                                                prompt_len,
-                                                win_cols,
-                                                (line_col, cursor_col))),
-                                            cursor::MoveTo(cursor_col, win_rows),
-                                        )?;
-                                        continue;
-                                    }
+                                    utils::execute_search(
+                                        &our,
+                                        &mut stdout,
+                                        &current_line,
+                                        prompt_len,
+                                        (win_cols, win_rows),
+                                        (line_col, cursor_col),
+                                        &mut command_history,
+                                        search_depth,
+                                    )?;
+                                    continue;
                                 }
                                 execute!(
                                     stdout,
@@ -521,6 +454,9 @@ pub async fn terminal(
                                     cursor::MoveTo(cursor_col, win_rows),
                                 )?;
                             },
+                            //
+                            //  BACKSPACE or DELETE: delete a single character at cursor
+                            //
                             KeyCode::Backspace | KeyCode::Delete => {
                                 if line_col == prompt_len {
                                     continue;
@@ -531,22 +467,17 @@ pub async fn terminal(
                                 line_col -= 1;
                                 current_line.remove(line_col);
                                 if search_mode {
-                                    let search_query = &current_line[prompt_len..];
-                                    if let Some(result) = command_history.search(search_query, search_depth) {
-                                        let result_underlined = utils::underline(result, search_query);
-                                        execute!(
-                                            stdout,
-                                            cursor::MoveTo(0, win_rows),
-                                            terminal::Clear(ClearType::CurrentLine),
-                                            Print(utils::truncate_in_place(
-                                                &format!("{} * {}", our.name, result_underlined),
-                                                prompt_len,
-                                                win_cols,
-                                                (line_col, cursor_col))),
-                                            cursor::MoveTo(cursor_col, win_rows),
-                                        )?;
-                                        continue;
-                                    }
+                                    utils::execute_search(
+                                        &our,
+                                        &mut stdout,
+                                        &current_line,
+                                        prompt_len,
+                                        (win_cols, win_rows),
+                                        (line_col, cursor_col),
+                                        &mut command_history,
+                                        search_depth,
+                                    )?;
+                                    continue;
                                 }
                                 execute!(
                                     stdout,
@@ -556,6 +487,9 @@ pub async fn terminal(
                                     cursor::MoveTo(cursor_col, win_rows),
                                 )?;
                             },
+                            //
+                            //  LEFT: move cursor one spot left
+                            //
                             KeyCode::Left => {
                                 if cursor_col as usize == prompt_len {
                                     if line_col == prompt_len {
@@ -581,6 +515,9 @@ pub async fn terminal(
                                     line_col -= 1;
                                 }
                             },
+                            //
+                            //  RIGHT: move cursor one spot right
+                            //
                             KeyCode::Right => {
                                 if line_col == current_line.len() {
                                     // at the very end of the current typed line
@@ -604,6 +541,9 @@ pub async fn terminal(
                                     )?;
                                 }
                             },
+                            //
+                            //  ENTER: send current input to terminal process, clearing input line
+                            //
                             KeyCode::Enter => {
                                 // if we were in search mode, pull command from that
                                 let command = if !search_mode {
@@ -612,7 +552,7 @@ pub async fn terminal(
                                         command_history.search(
                                             &current_line[prompt_len..],
                                             search_depth
-                                        ).unwrap_or(&current_line[prompt_len..]).to_string()
+                                        ).unwrap_or_default().to_string()
                                     };
                                 let next = format!("{} > ", our.name);
                                 execute!(
@@ -627,7 +567,7 @@ pub async fn terminal(
                                 search_depth = 0;
                                 current_line = next;
                                 command_history.add(command.clone());
-                                cursor_col = prompt_len.try_into().unwrap();
+                                cursor_col = prompt_len as u16;
                                 line_col = prompt_len;
                                 event_loop.send(
                                     KernelMessage {
@@ -652,10 +592,14 @@ pub async fn terminal(
                                     }
                                 ).await.expect("terminal: couldn't execute command!");
                             },
-                            _ => {},
+                            _ => {
+                                // some keycode we don't care about, yet
+                            },
                         }
                     },
-                    _ => {},
+                    _ => {
+                        // some terminal event we don't care about, yet
+                    },
                 }
             }
             _ = sigalrm.recv() => return Err(anyhow::anyhow!("exiting due to SIGALRM")),
@@ -668,6 +612,5 @@ pub async fn terminal(
             _ = sigusr2.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR2")),
         }
     }
-    execute!(stdout.lock(), DisableBracketedPaste, terminal::SetTitle(""))?;
     Ok(())
 }
