@@ -33,7 +33,7 @@ fn init(_our: Address) {
                 serde_json::json!({
                     "Add": {
                         "label": "KinoUpdates",
-                        "widget": create_widget(fetch_most_recent_blog_posts(6)),
+                        "widget": create_widget(fetch_most_recent_blog_posts(12)),
                     }
                 })
                 .to_string(),
@@ -49,30 +49,83 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     return format!(
         r#"<html>
 <head>
-    <script src="https://cdn.tailwindcss.com"></script>
+    
     <style>
+    /* General body styles */
+    * {{
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }}
+    
+    a {{
+        text-decoration: none;
+        color: inherit;
+    }}
+
+    h2 {{
+        font-size: medium;
+    }}
+
+    body {{
+        color: white;
+        overflow: hidden;
+        height: 100vh;
+        width: 100vw;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        font-family: sans-serif;
+    }}
+    
+    /* Flex container for blog posts */
+    #latest-blog-posts {{
+        display: flex;
+        flex-direction: column;
+        padding: 0.5rem;
+        gap: 0.5rem;
+        backdrop-filter: brightness(1.25);
+        border-radius: 0.75rem;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        height: 100vh;
+        width: 100vw;
+        overflow-y: auto;
+        scrollbar-color: transparent transparent;
+        scrollbar-width: none;
+        align-self: stretch;
+    }}
+    
+    /* Individual blog post container */
+    .post {{
+        width: 100%;
+        display: flex;
+        gap: 8px;
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 0.5em;
+        padding: 0.5em;
+    }}
+    
+    /* Blog post image styling */
+    .post-image {{
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: center;
+        width: 100px;
+        height: 100px;
+        border-radius: 4px;
+    }}
+    
+    /* Blog post information styling */
+    .post-info {{
+        max-width: 67%;
+    }}
+    
+    /* Responsive design for larger screens */
+    @media screen and (min-width: 500px) {{
         .post {{
-            width: 100%;
+            width: 49%;
         }}
-
-        .post-image {{
-            background-size: cover;
-            background-repeat: no-repeat;
-            background-position: center;
-            width: 100px;
-            height: 100px;
-            border-radius: 16px;
-        }}
-
-        .post-info {{
-            max-width: 67%
-        }}
-
-        @media screen and (min-width: 500px) {{
-            .post {{
-                width: 49%;
-            }}
-        }}
+    }}
     </style>
 </head>
 <body class="text-white overflow-hidden h-screen w-screen flex flex-col gap-2">
