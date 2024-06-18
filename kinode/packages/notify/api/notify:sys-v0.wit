@@ -38,5 +38,5 @@ interface notify {
 
 world notify-sys-v0 {
     import notify;
-    include process;
+    include process-v0;
 }

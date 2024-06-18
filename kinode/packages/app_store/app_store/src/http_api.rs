@@ -85,7 +85,7 @@ fn make_widget() -> String {
             gap: 0.5rem;
             align-items: center;
             backdrop-filter: saturate(1.25);
-            border-radius: 0.75rem;
+            border-radius: 0.1rem;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             height: 100vh;
             width: 100vw;
@@ -99,7 +99,7 @@ fn make_widget() -> String {
             display: flex;
             flex-grow: 1;
             align-items: stretch;
-            border-radius: 0.75rem;
+            border-radius: 0.5rem;
             box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
             background-color: rgba(255, 255, 255, 0.1);
             cursor: pointer;

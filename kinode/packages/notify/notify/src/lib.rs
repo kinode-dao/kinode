@@ -37,7 +37,50 @@ struct NotifState {
 fn handle_message(our: &Address, state: &mut NotifState) -> anyhow::Result<()> {
     let message = await_message()?;
 
-    if message.is_request() {
+    if message.is_request()
+        && message.source().process == "http_server:distro:sys"
+        && let Ok(req) = serde_json::from_slice::<HttpServerRequest>(message.body())
+    {
+        match req {
+            HttpServerRequest::Http(incoming) => {
+                let path = incoming.bound_path(Some("notify:notify:sys"));
+                match path {
+                    "/add-token" => {
+                        if let Ok(Method::POST) = incoming.method()
+                            && let Some(body) = get_blob()
+                        {
+                            let token: String = serde_json::from_slice(&body.bytes).unwrap();
+                            state.push_tokens.push(token);
+                            set_state(&bincode::serialize(&state)?);
+                            send_response(StatusCode::CREATED, Some(HashMap::new()), vec![]);
+                        } else {
+                            send_response(StatusCode::BAD_REQUEST, Some(HashMap::new()), vec![]);
+                        }
+                    }
+                    "/notifs" => {
+                        let mut notifs_list: Vec<Notif> = vec![];
+                        for (_process, notifs) in state.archive.iter() {
+                            for notif in notifs {
+                                notifs_list.push(notif.clone());
+                            }
+                        }
+                        send_response(
+                            StatusCode::OK,
+                            Some(HashMap::from([(
+                                "Content-Type".to_string(),
+                                "text/html".to_string(),
+                            )])),
+                            serde_json::to_vec(&notifs_list)?,
+                        );
+                    }
+                    _ => {
+                        send_response(StatusCode::NOT_FOUND, None, vec![]);
+                    }
+                }
+            }
+            _ => {}
+        }
+    } else {
         let body = message.body();
         let source = message.source();
         match serde_json::from_slice(body)? {
@@ -83,51 +126,6 @@ fn handle_message(our: &Address, state: &mut NotifState) -> anyhow::Result<()> {
                     .unwrap();
             }
         }
-    } else if let Ok(req) = serde_json::from_slice::<HttpServerRequest>(message.body()) {
-        match req {
-            HttpServerRequest::Http(incoming) => {
-                let path = incoming.bound_path(None);
-                match path {
-                    "/add-token" => {
-                        if let Ok(Method::POST) = incoming.method()
-                            && let Some(body) = get_blob()
-                        {
-                            let token: String = serde_json::from_slice(&body.bytes).unwrap();
-                            state.push_tokens.push(token);
-                            set_state(&bincode::serialize(&state)?);
-                            send_response(StatusCode::CREATED, Some(HashMap::new()), vec![]);
-                        } else {
-                            send_response(StatusCode::BAD_REQUEST, Some(HashMap::new()), vec![]);
-                        }
-                    }
-                    "/notifs" => {
-                        let notifs_list: Vec<Notif> = vec![];
-                        for (process, notif) in state.archive.iter() {
-                            notifs_list.push(notif)
-                        }
-                        send_response(
-                            StatusCode::OK,
-                            Some(HashMap::from([(
-                                "Content-Type".to_string(),
-                                "text/html".to_string(),
-                            )])),
-                            notifs_list,
-                        );
-                    }
-                    _ => {
-                        send_response(
-                            StatusCode::OK,
-                            Some(HashMap::from([(
-                                "Content-Type".to_string(),
-                                "text/plain".to_string(),
-                            )])),
-                            "yes hello".as_bytes().to_vec(),
-                        );
-                    }
-                }
-            }
-            _ => {}
-        }
     }
     Ok(())
 }
@@ -148,7 +146,7 @@ fn init(our: Address) {
         },
     };
 
-    add_to_homepage("Notifications", None, None, Some(create_widget().as_str()));
+    add_to_homepage("Notifications", None, None, Some(create_widget()));
 
     loop {
         match handle_message(&our, &mut state) {
@@ -198,45 +196,48 @@ fn create_widget() -> &'static str {
     <title>Notifications</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        * {{
+        * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-        }}
+        }
 
-        body {{
+        body {
             font-family: sans-serif;
             border-radius: 1em;
             backdrop-filter: saturate(1.25);
-        }}
+            color: white;
+        }
 
-        .notifs {{
+        .notifs {
             display: flex;
             flex-direction: column;
             gap: 0.5em;
             padding: 0.5em;
-        }}
+        }
 
-        .notif {{
+        .notif {
             border-radius: 0.5em;
             padding: 0.5em;
             background: rgba(255, 255, 255, 0.1);
-        }}
+        }
 
-        .title {{
+        .title {
             font-weight: bold;
-        }}
+        }
 
-        .body {{
+        .body {
             font-size: 14px;
-        }}
+        }
     </style>
     </head>
         <body>
             <div class="notifs"></div>
             <script>
                 document.addEventListener('DOMContentLoaded', () => {
-                    fetch('/notifs').then(response => response.json()).then(data => {
+                    fetch('/notify:notify:sys/notifs')
+                    .then(response => response.json())
+                    .then(data => {
                         console.log(data)
                         if (!Array.isArray(data)) return;
                         data.forEach(notif => {
@@ -252,6 +253,8 @@ fn create_widget() -> &'static str {
                             notifElement.appendChild(body)
                             document.querySelector('.notifs').appendChild(notifElement);
                         });
+                    }).catch(e => {
+                        console.error(e);
                     });
                 });
             </script>
