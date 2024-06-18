@@ -10,9 +10,9 @@
         "code_hashes": {
             "0.1.0": ""
         },
-        "dependencies": []
+        "dependencies": [],
+        "wit_version": 0
     },
     "external_url": "",
-    "animation_url": "",
-    "wit_version": 0
+    "animation_url": ""
 }

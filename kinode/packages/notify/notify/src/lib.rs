@@ -100,6 +100,20 @@ fn handle_message(our: &Address, state: &mut NotifState) -> anyhow::Result<()> {
                             send_response(StatusCode::BAD_REQUEST, Some(HashMap::new()), vec![]);
                         }
                     }
+                    "/notifs" => {
+                        let notifs_list: Vec<Notif> = vec![];
+                        for (process, notif) in state.archive.iter() {
+                            notifs_list.push(notif)
+                        }
+                        send_response(
+                            StatusCode::OK,
+                            Some(HashMap::from([(
+                                "Content-Type".to_string(),
+                                "text/html".to_string(),
+                            )])),
+                            notifs_list,
+                        );
+                    }
                     _ => {
                         send_response(
                             StatusCode::OK,
@@ -123,6 +137,7 @@ fn init(our: Address) {
     println!("begin");
 
     bind_http_path("/add-token", false, false).expect("failed to bind /add-token");
+    bind_http_path("/notifs", true, false).expect("failed to bind /notifs");
 
     let mut state: NotifState = match get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
         Some(s) => s,
@@ -133,12 +148,7 @@ fn init(our: Address) {
         },
     };
 
-    add_to_homepage(
-        "Notifications",
-        None,
-        None,
-        Some(create_widget(&state.archive).as_str()),
-    );
+    add_to_homepage("Notifications", None, None, Some(create_widget().as_str()));
 
     loop {
         match handle_message(&our, &mut state) {
@@ -182,66 +192,69 @@ fn send_notif_to_expo(notif: &mut Notif) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn create_widget(notifs: &HashMap<String, Vec<Notif>>) -> String {
-    let mut notifs_templated = String::new();
-    for (_process, notifs) in notifs.iter() {
-        for notif in notifs.iter() {
-            notifs_templated.push_str(&format!(
-                r#"<div class="notif">
-                    <div class="title">{}</div>
-                    <div class="body">{}</div>
-                </div>"#,
-                notif.title.clone().unwrap_or("Title".to_string()),
-                notif.body.clone().unwrap_or("Body".to_string())
-            ));
-        }
-    }
-    format!(
-        r#"<html>
-        <head>
-        <title>Notifications</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-            * {{
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }}
-    
-            body {{
-                font-family: sans-serif;
-                border-radius: 16px;
-                backdrop-filter: saturate(1.25);
-            }}
-    
-            .notifs {{
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-            }}
-    
-            .notif {{
-                border: 1px solid #ccc;
-                border-radius: 5px;
-                padding: 10px;
-                background: rgba(255, 255, 255, 0.1);
-            }}
-    
-            .title {{
-                font-weight: bold;
-            }}
-    
-            .body {{
-                font-size: 14px;
-            }}
-        </style>
-        </head>
-            <body>
-                <div class="notifs">
-                    {}
-                </div>
-            </body>
-        </html>"#,
-        notifs_templated,
-    )
+fn create_widget() -> &'static str {
+    r#"<html>
+    <head>
+    <title>Notifications</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * {{
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }}
+
+        body {{
+            font-family: sans-serif;
+            border-radius: 1em;
+            backdrop-filter: saturate(1.25);
+        }}
+
+        .notifs {{
+            display: flex;
+            flex-direction: column;
+            gap: 0.5em;
+            padding: 0.5em;
+        }}
+
+        .notif {{
+            border-radius: 0.5em;
+            padding: 0.5em;
+            background: rgba(255, 255, 255, 0.1);
+        }}
+
+        .title {{
+            font-weight: bold;
+        }}
+
+        .body {{
+            font-size: 14px;
+        }}
+    </style>
+    </head>
+        <body>
+            <div class="notifs"></div>
+            <script>
+                document.addEventListener('DOMContentLoaded', () => {
+                    fetch('/notifs').then(response => response.json()).then(data => {
+                        console.log(data)
+                        if (!Array.isArray(data)) return;
+                        data.forEach(notif => {
+                            let notifElement = document.createElement('div');
+                            notifElement.classList.add('notif');
+                            const title = document.createElement('div')
+                            title.classList.add('title')
+                            title.innerText = notif.title;
+                            const body = document.createElement('div')
+                            body.classList.add('body')
+                            body.innerText = notif.body;
+                            notifElement.appendChild(title)
+                            notifElement.appendChild(body)
+                            document.querySelector('.notifs').appendChild(notifElement);
+                        });
+                    });
+                });
+            </script>
+        </body>
+    </html>"#
 }
