@@ -61,8 +61,6 @@ fn make_widget() -> String {
     return r#"<html>
 <head>
     <style>
-        /* General body styles */
-
         * {
             box-sizing: border-box;
             margin: 0;
@@ -73,13 +71,12 @@ fn make_widget() -> String {
             text-decoration: none;
             color: inherit;
         }
-        
+
         body {
             color: white;
             overflow: hidden;
         }
-        
-        /* Flex container for apps */
+
         #latest-apps {
             display: flex;
             flex-wrap: wrap;
@@ -95,8 +92,7 @@ fn make_widget() -> String {
             scrollbar-color: transparent transparent;
             scrollbar-width: none;
         }
-        
-        /* Individual app container */
+
         .app {
             padding: 0.5rem;
             display: flex;
@@ -109,39 +105,35 @@ fn make_widget() -> String {
             font-family: sans-serif;
             width: 100%;
         }
-        
+
         .app:hover {
             background-color: rgba(255, 255, 255, 0.2);
         }
-        
-        /* App image styling */
+
         .app-image {
             border-radius: 0.75rem;
             margin-right: 0.5rem;
             flex-grow: 1;
-            background-size: cover;
+            background-size: contain;
             background-repeat: no-repeat;
             background-position: center;
             height: 92px;
             width: 92px;
             max-width: 33%;
         }
-        
-        /* App information styling */
+
         .app-info {
             display: flex;
             flex-direction: column;
             flex-grow: 1;
             max-width: 67%;
         }
-        
-        /* Headings within app-info */
+
         .app-info h2 {
             font-weight: bold;
             font-size: medium;
         }
-        
-        /* Responsive design for larger screens */
+
         @media screen and (min-width: 500px) {
             .app {
                 width: 49%;
@@ -165,7 +157,7 @@ fn make_widget() -> String {
                             a.target = '_blank';
                             a.rel = 'noopener noreferrer';
                             const iconLetter = app.metadata_hash.replace('0x', '')[0].toUpperCase();
-                            a.innerHTML = `<div 
+                            a.innerHTML = `<div
                                 class="app-image"
                                 style="
                                     background-image: url('${app.metadata.image || `/icons/${iconLetter}`}');

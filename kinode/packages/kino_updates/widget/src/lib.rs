@@ -33,7 +33,7 @@ fn init(_our: Address) {
                 serde_json::json!({
                     "Add": {
                         "label": "KinoUpdates",
-                        "widget": create_widget(fetch_most_recent_blog_posts(12)),
+                        "widget": create_widget(fetch_most_recent_blog_posts(6)),
                     }
                 })
                 .to_string(),
@@ -49,15 +49,13 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     return format!(
         r#"<html>
 <head>
-    
     <style>
-    /* General body styles */
     * {{
         box-sizing: border-box;
         margin: 0;
         padding: 0;
     }}
-    
+
     a {{
         text-decoration: none;
         color: inherit;
@@ -77,8 +75,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         gap: 0.5rem;
         font-family: sans-serif;
     }}
-    
-    /* Flex container for blog posts */
+
     #latest-blog-posts {{
         display: flex;
         flex-direction: column;
@@ -94,8 +91,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         scrollbar-width: none;
         align-self: stretch;
     }}
-    
-    /* Individual blog post container */
+
     .post {{
         width: 100%;
         display: flex;
@@ -104,8 +100,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         border-radius: 0.5em;
         padding: 0.5em;
     }}
-    
-    /* Blog post image styling */
+
     .post-image {{
         background-size: cover;
         background-repeat: no-repeat;
@@ -114,13 +109,12 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         height: 100px;
         border-radius: 4px;
     }}
-    
-    /* Blog post information styling */
+
     .post-info {{
         max-width: 67%;
+        overflow: hidden;
     }}
-    
-    /* Responsive design for larger screens */
+
     @media screen and (min-width: 500px) {{
         .post {{
             width: 49%;
@@ -128,15 +122,13 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     }}
     </style>
 </head>
-<body class="text-white overflow-hidden h-screen w-screen flex flex-col gap-2">
+<body class="text-white overflow-hidden">
     <div
         id="latest-blog-posts"
-        class="flex flex-col p-2 gap-2 backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto self-stretch"
         style="
             scrollbar-color: transparent transparent;
             scrollbar-width: none;
-        "
-    >
+        ">
         {}
     </div>
 </body>
@@ -176,17 +168,17 @@ fn trim_content(content: &str) -> String {
 
 fn post_to_html_string(post: KinodeBlogPost) -> String {
     format!(
-        r#"<a 
-            class="post p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 hover:bg-white/20 font-sans w-full"
+        r#"<a
+            class="post"
             href="https://kinode.org/blog/post/{}"
-            target="_blank" 
+            target="_blank"
             rel="noopener noreferrer"
         >
         <div
-            class="post-image rounded mr-2 grow self-stretch h-full"
+            class="post-image"
             style="background-image: url('https://kinode.org{}');"
         ></div>
-        <div class="post-info flex flex-col grow">
+        <div class="post-info">
             <h2 class="font-bold">{}</h2>
             <p>{}</p>
         </div>
