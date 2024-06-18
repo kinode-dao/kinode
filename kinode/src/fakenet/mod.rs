@@ -17,16 +17,16 @@ pub use helpers::RegisterHelpers::*;
 pub use helpers::*;
 
 // TODO move these into contracts registry, doublecheck optimism deployments
-const FAKE_DOTDEV_TBA: &str = "0xB624D86187c2495888D42AbE0a15b6f6aaa557CF";
-const FAKE_DOTOS_TBA: &str = "0xC466dc53e3e2a29A296fE38Bdeab60a7C023A383";
-const FAKE_ZEROTH_TBA: &str = "0x10AfFE8d293d5c07be2633a67917502FefAdEef6";
+const FAKE_DOTDEV_TBA: &str = "0x69C30C0Cf0e9726f9eEF50bb74FA32711fA0B02D";
+const FAKE_DOTOS_TBA: &str = "0xB3244529432b9C6dB0Bdc5282cB8Fde8418E00a6";
+const FAKE_ZEROTH_TBA: &str = "0x4eB83AA047C717C2Bc94dF108675Fc44a2Ff9D12";
 
-const KINO_ACCOUNT_IMPL: &str = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
+const KINO_ACCOUNT_IMPL: &str = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
 const KINO_MINTER_IMPL: &str = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
 
 const MULTICALL: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
-const KINOMAP: &str = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707";
+const KINOMAP: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 
 /// Attempts to connect to a local anvil fakechain,
 /// registering a name with its KiMap contract.

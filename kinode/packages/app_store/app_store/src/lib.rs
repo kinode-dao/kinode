@@ -53,18 +53,14 @@ pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 #[cfg(not(feature = "simulation-mode"))]
 const CONTRACT_ADDRESS: &str = "0x52185B6a6017E6f079B994452F234f7C2533787B"; // optimism
 #[cfg(feature = "simulation-mode")]
-const CONTRACT_ADDRESS: &str = "0x5FC8d32690cc91D4c39d9d3abcBD16989F875707"; // note temp kimap address!
+const CONTRACT_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F"; // note temp kimap address!
 
 #[cfg(not(feature = "simulation-mode"))]
 const CONTRACT_FIRST_BLOCK: u64 = 118_590_088;
 #[cfg(feature = "simulation-mode")]
 const CONTRACT_FIRST_BLOCK: u64 = 1;
 
-const EVENTS: [&str; 3] = [
-    "AppRegistered(uint256,string,bytes,string,bytes32)",
-    "AppMetadataUpdated(uint256,string,bytes32)",
-    "Transfer(address,address,uint256)",
-];
+const EVENTS: [&str; 1] = ["Note(bytes32,bytes32,bytes,bytes)"];
 
 // internal types
 

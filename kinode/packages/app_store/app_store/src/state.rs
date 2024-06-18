@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 sol! {
+    event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes note, bytes data);
+    // old events here for now
     event AppRegistered(
         uint256 indexed package,
         string packageName,
@@ -64,9 +66,9 @@ pub type PackageHash = String;
 /// listing information derived from metadata hash in listing event
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PackageListing {
-    pub owner: String, // eth address
+    pub owner: String, // eth address,
     pub name: String,
-    pub publisher: NodeId,
+    pub publisher: NodeId, // this should be moved to metadata...
     pub metadata_url: String,
     pub metadata_hash: String,
     pub metadata: Option<kt::Erc721Metadata>,
@@ -368,7 +370,45 @@ impl State {
     ) -> Result<(), AppStoreLogError> {
         let block_number: u64 = log.block_number.ok_or(AppStoreLogError::NoBlockNumber)?;
 
+        // basic plan...
+        // when we get either metadata-uri or metadata-hash, we fetch the other one and see if they match.
+        // if they do, we update the metadata for the package.
         match log.topics()[0] {
+            Note::SIGNATURE_HASH => {
+                let note = Note::decode_log_data(log.data(), false)
+                    .map_err(|_| AppStoreLogError::DecodeLogError)?;
+
+                // get package_name from the api (add to process_lib)!
+                // let node_name = get_name(note.nodehash)?;
+
+                let note_str = String::from_utf8_lossy(&note.note).to_string();
+                match note_str.as_str() {
+                    "metadata-uri" => {
+                        let _metadata_url = String::from_utf8_lossy(&note.data).to_string();
+                        // generate ~metadata-hash notehash
+                        // let package_hash_note = get_notehash("~metadata-hash", nodehash);
+                        // let package_hash = kimap::get(&package_hash_note);
+
+                        // let metadata =
+                        //     utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
+
+                        // if this fails and doesn't check out, do nothing
+                    }
+                    "metadata-hash" => {
+                        let _metadata_hash = String::from_utf8_lossy(&note.data).to_string();
+                        // generate ~metadata-uri notehash
+                        // let package_uri_note = get_notehash("~metadata-uri", nodehash);
+                        // let package_uri = kimap::get(&package_uri_note);
+
+                        // let metadata =
+                        //     utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
+
+                        // if this fails and doesn't check out, do nothing
+                    }
+                    _ => {}
+                }
+            }
+
             AppRegistered::SIGNATURE_HASH => {
                 let app = AppRegistered::decode_log_data(log.data(), false)
                     .map_err(|_| AppStoreLogError::DecodeLogError)?;
