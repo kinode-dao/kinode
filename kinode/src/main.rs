@@ -280,6 +280,7 @@ async fn main() {
      *  if any of these modules fail, the program exits with an error.
      */
     let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
+    let our_name_arc = Arc::new(our.name.clone());
 
     let (kernel_process_map, db, reverse_cap_index) = state::load_state(
         our.name.clone(),
@@ -387,7 +388,7 @@ async fn main() {
         print_sender.clone(),
     ));
     tasks.spawn(vfs::vfs(
-        our.name.clone(),
+        our_name_arc,
         kernel_message_sender.clone(),
         print_sender.clone(),
         vfs_message_receiver,
