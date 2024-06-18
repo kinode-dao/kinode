@@ -39,6 +39,7 @@ alloy = { version = "0.1.1", features = [
     "rpc-types",
     "rpc-types-eth",
     "signers",
+    "signer-local",
 ] }
 alloy-primitives = "0.7.5"
 alloy-sol-macro = "0.7.5"
