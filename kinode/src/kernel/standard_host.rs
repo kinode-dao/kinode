@@ -101,7 +101,10 @@ impl process::ProcessState {
     ) -> Result<(wit::Address, wit::Message), (wit::SendError, Option<wit::Context>)> {
         let (mut km, context) = match incoming {
             Ok(mut km) => match km.message {
-                t::Message::Request(t::Request { ref expects_response, .. }) => {
+                t::Message::Request(t::Request {
+                    ref expects_response,
+                    ..
+                }) => {
                     self.last_blob = km.lazy_load_blob;
                     km.lazy_load_blob = None;
                     if expects_response.is_some() || km.rsvp.is_some() {
