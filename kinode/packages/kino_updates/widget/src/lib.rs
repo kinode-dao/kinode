@@ -176,7 +176,7 @@ fn post_to_html_string(post: KinodeBlogPost) -> String {
         >
         <div
             class="post-image"
-            style="background-image: url('https://kinode.org{}');"
+            style="background-image: url('https://kinode.org{}-medium');"
         ></div>
         <div class="post-info">
             <h2 class="font-bold">{}</h2>
