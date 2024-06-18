@@ -49,6 +49,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     return format!(
         r#"<html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
     * {{
         box-sizing: border-box;

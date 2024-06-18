@@ -60,6 +60,7 @@ pub fn init_frontend(our: &Address) {
 fn make_widget() -> String {
     return r#"<html>
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         * {
             box-sizing: border-box;

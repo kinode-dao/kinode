@@ -6,6 +6,7 @@ use crate::kinode::process::notify::{
 };
 use kinode_process_lib::{
     await_message, call_init, get_blob, get_typed_state,
+    homepage::add_to_homepage,
     http::{
         bind_http_path, send_response, HttpClientAction, HttpServerRequest, Method,
         OutgoingHttpRequest, StatusCode,
@@ -132,6 +133,13 @@ fn init(our: Address) {
         },
     };
 
+    add_to_homepage(
+        "Notifications",
+        None,
+        None,
+        Some(create_widget(&state.archive).as_str()),
+    );
+
     loop {
         match handle_message(&our, &mut state) {
             Ok(()) => {}
@@ -172,4 +180,68 @@ fn send_notif_to_expo(notif: &mut Notif) -> anyhow::Result<()> {
         .send()?;
 
     Ok(())
+}
+
+fn create_widget(notifs: &HashMap<String, Vec<Notif>>) -> String {
+    let mut notifs_templated = String::new();
+    for (_process, notifs) in notifs.iter() {
+        for notif in notifs.iter() {
+            notifs_templated.push_str(&format!(
+                r#"<div class="notif">
+                    <div class="title">{}</div>
+                    <div class="body">{}</div>
+                </div>"#,
+                notif.title.clone().unwrap_or("Title".to_string()),
+                notif.body.clone().unwrap_or("Body".to_string())
+            ));
+        }
+    }
+    format!(
+        r#"<html>
+        <head>
+        <title>Notifications</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+    
+            body {{
+                font-family: sans-serif;
+                border-radius: 16px;
+                backdrop-filter: saturate(1.25);
+            }}
+    
+            .notifs {{
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            }}
+    
+            .notif {{
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                padding: 10px;
+                background: rgba(255, 255, 255, 0.1);
+            }}
+    
+            .title {{
+                font-weight: bold;
+            }}
+    
+            .body {{
+                font-size: 14px;
+            }}
+        </style>
+        </head>
+            <body>
+                <div class="notifs">
+                    {}
+                </div>
+            </body>
+        </html>"#,
+        notifs_templated,
+    )
 }
