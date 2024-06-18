@@ -33,7 +33,7 @@ fn init(_our: Address) {
                 serde_json::json!({
                     "Add": {
                         "label": "KinoUpdates",
-                        "widget": create_widget(fetch_most_recent_blog_posts(6)),
+                        "widget": create_widget(fetch_most_recent_blog_posts(12)),
                     }
                 })
                 .to_string(),
