@@ -39,23 +39,14 @@ pub async fn timer_service(
                 // we only handle Requests
                 let Message::Request(req) = km.message else { continue };
                 let Ok(timer_action) = serde_json::from_slice::<TimerAction>(&req.body) else {
-                    let _ = print_tx.send(Printout {
-                        verbosity: 1,
-                        content: "timer service received a request with an invalid body".to_string(),
-                    }).await;
+                    Printout::new(1, "timer service received a request with an invalid body").send(&print_tx).await;
                     continue
                 };
                 match timer_action {
                     TimerAction::Debug => {
-                        let _ = print_tx.send(Printout {
-                            verbosity: 0,
-                            content: format!("timer service active timers ({}):", timer_map.timers.len()),
-                        }).await;
+                        Printout::new(0, format!("timer service active timers ({}):", timer_map.timers.len())).send(&print_tx).await;
                         for (k, v) in timer_map.timers.iter() {
-                            let _ = print_tx.send(Printout {
-                                verbosity: 0,
-                                content: format!("{}: {:?}", k, v),
-                            }).await;
+                            Printout::new(0, format!("{k}: {v:?}")).send(&print_tx).await;
                         }
                         continue
                     }
@@ -72,10 +63,7 @@ pub async fn timer_service(
                             send_response(&our, km.id, km.rsvp.unwrap_or(km.source), &kernel_message_sender).await;
                             continue
                         }
-                        let _ = print_tx.send(Printout {
-                            verbosity: 3,
-                            content: format!("set timer to pop in {}ms", timer_millis),
-                        }).await;
+                        Printout::new(3, format!("set timer to pop in {timer_millis}ms")).send(&print_tx).await;
                         if !timer_map.contains(pop_time) {
                             timer_tasks.spawn(async move {
                                 tokio::time::sleep(std::time::Duration::from_millis(timer_millis - 1)).await;
@@ -121,25 +109,21 @@ impl TimerMap {
 }
 
 async fn send_response(our_node: &str, id: u64, target: Address, send_to_loop: &MessageSender) {
-    let _ = send_to_loop
-        .send(KernelMessage {
-            id,
-            source: Address {
-                node: our_node.to_string(),
-                process: TIMER_PROCESS_ID.clone(),
+    KernelMessage::builder()
+        .id(id)
+        .source((our_node, TIMER_PROCESS_ID.clone()))
+        .target(target)
+        .message(Message::Response((
+            Response {
+                inherit: false,
+                body: vec![],
+                metadata: None,
+                capabilities: vec![],
             },
-            target,
-            rsvp: None,
-            message: Message::Response((
-                Response {
-                    inherit: false,
-                    body: vec![],
-                    metadata: None,
-                    capabilities: vec![],
-                },
-                None,
-            )),
-            lazy_load_blob: None,
-        })
+            None,
+        )))
+        .build()
+        .unwrap()
+        .send(send_to_loop)
         .await;
 }

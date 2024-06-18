@@ -361,20 +361,10 @@ pub async fn parse_hello_message(
 
 /// Create a terminal printout at verbosity level 0.
 pub async fn print_loud(print_tx: &PrintSender, content: &str) {
-    let _ = print_tx
-        .send(Printout {
-            verbosity: 0,
-            content: content.into(),
-        })
-        .await;
+    Printout::new(0, content).send(print_tx).await;
 }
 
 /// Create a terminal printout at verbosity level 2.
 pub async fn print_debug(print_tx: &PrintSender, content: &str) {
-    let _ = print_tx
-        .send(Printout {
-            verbosity: 2,
-            content: content.into(),
-        })
-        .await;
+    Printout::new(2, content).send(print_tx).await;
 }

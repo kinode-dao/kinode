@@ -36,15 +36,15 @@ pub async fn vfs(
 
     while let Some(km) = recv_from_loop.recv().await {
         if *our_node != km.source.node {
-            let _ = send_to_terminal
-                .send(Printout {
-                    verbosity: 1,
-                    content: format!(
-                    "vfs: got request from {}, but requests must come from our node {our_node}\r",
-                    km.source.node,
+            Printout::new(
+                1,
+                format!(
+                    "vfs: got request from {}, but requests must come from our node {our_node}",
+                    km.source.node
                 ),
-                })
-                .await;
+            )
+            .send(&send_to_terminal)
+            .await;
             continue;
         }
 
@@ -81,20 +81,10 @@ pub async fn vfs(
                 )
                 .await
                 {
-                    let _ = send_to_terminal
-                        .send(Printout {
-                            verbosity: 1,
-                            content: format!("vfs: {e}\r"),
-                        })
+                    Printout::new(1, format!("vfs: {e}"))
+                        .send(&send_to_terminal)
                         .await;
-                    let _ = send_to_loop
-                        .send(make_error_message(
-                            our_node.to_string(),
-                            km_id,
-                            km_source,
-                            e,
-                        ))
-                        .await;
+                    make_error_message(&our_node, km_id, km_source, e, &send_to_loop).await;
                 }
             }
         });
@@ -152,15 +142,11 @@ async fn handle_request(
                 entries.push(dir_entry);
             }
 
-            let response = KernelMessage {
-                id: km.id,
-                source: Address {
-                    node: our_node.to_string(),
-                    process: VFS_PROCESS_ID.clone(),
-                },
-                target: km.source,
-                rsvp: None,
-                message: Message::Response((
+            KernelMessage::builder()
+                .id(km.id)
+                .source((our_node, VFS_PROCESS_ID.clone()))
+                .target(km.source)
+                .message(Message::Response((
                     Response {
                         inherit: false,
                         body: serde_json::to_vec(&VfsResponse::ReadDir(entries)).unwrap(),
@@ -168,11 +154,11 @@ async fn handle_request(
                         capabilities: vec![],
                     },
                     None,
-                )),
-                lazy_load_blob: None,
-            };
-
-            let _ = send_to_loop.send(response).await;
+                )))
+                .build()
+                .unwrap()
+                .send(send_to_loop)
+                .await;
             return Ok(());
         } else {
             return Err(VfsError::NoCap {
@@ -451,29 +437,26 @@ async fn handle_request(
             process: km.source.process,
         })
     }) {
-        let _ = send_to_loop
-            .send(KernelMessage {
-                id: km.id,
-                source: Address {
-                    node: our_node.to_string(),
-                    process: VFS_PROCESS_ID.clone(),
+        KernelMessage::builder()
+            .id(km.id)
+            .source((our_node, VFS_PROCESS_ID.clone()))
+            .target(target)
+            .message(Message::Response((
+                Response {
+                    inherit: false,
+                    body: serde_json::to_vec(&response_body).unwrap(),
+                    metadata,
+                    capabilities: vec![],
                 },
-                target,
-                rsvp: None,
-                message: Message::Response((
-                    Response {
-                        inherit: false,
-                        body: serde_json::to_vec(&response_body).unwrap(),
-                        metadata,
-                        capabilities: vec![],
-                    },
-                    None,
-                )),
-                lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
-                    mime: Some("application/octet-stream".into()),
-                    bytes,
-                }),
-            })
+                None,
+            )))
+            .lazy_load_blob(bytes.map(|bytes| LazyLoadBlob {
+                mime: Some("application/octet-stream".into()),
+                bytes,
+            }))
+            .build()
+            .unwrap()
+            .send(send_to_loop)
             .await;
     }
 
@@ -822,21 +805,18 @@ fn join_paths_safely(base: &PathBuf, extension: &str) -> PathBuf {
     base.join(extension_path)
 }
 
-fn make_error_message(
-    our_node: String,
+async fn make_error_message(
+    our_node: &str,
     id: u64,
     source: Address,
     error: VfsError,
-) -> KernelMessage {
-    KernelMessage {
-        id,
-        source: Address {
-            node: our_node,
-            process: VFS_PROCESS_ID.clone(),
-        },
-        target: source,
-        rsvp: None,
-        message: Message::Response((
+    send_to_loop: &MessageSender,
+) {
+    KernelMessage::builder()
+        .id(id)
+        .source((our_node, VFS_PROCESS_ID.clone()))
+        .target(source)
+        .message(Message::Response((
             Response {
                 inherit: false,
                 body: serde_json::to_vec(&VfsResponse::Err(error)).unwrap(),
@@ -844,7 +824,9 @@ fn make_error_message(
                 capabilities: vec![],
             },
             None,
-        )),
-        lazy_load_blob: None,
-    }
+        )))
+        .build()
+        .unwrap()
+        .send(send_to_loop)
+        .await;
 }

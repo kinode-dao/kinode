@@ -218,17 +218,12 @@ pub async fn terminal(
                             2 => verbose_mode = 3,
                             _ => verbose_mode = 0,
                         }
-                        let _ = print_tx.send(
-                            Printout {
-                                verbosity: 0,
-                                content: match verbose_mode {
-                                    0 => "verbose mode: off".into(),
-                                    1 => "verbose mode: debug".into(),
-                                    2 => "verbose mode: super-debug".into(),
-                                    _ => "verbose mode: full event loop".into(),
-                                }
-                            }
-                        ).await;
+                        Printout::new(0, format!("verbose mode: {}", match verbose_mode {
+                                0 => "off",
+                                1 => "debug",
+                                2 => "super-debug",
+                                _ => "full event loop",
+                            })).send(&print_tx).await;
                         if verbose_mode == 3 {
                             let _ = debug_event_loop.send(DebugCommand::ToggleEventLoop).await;
                         }
@@ -243,15 +238,12 @@ pub async fn terminal(
                     }) => {
                         let _ = debug_event_loop.send(DebugCommand::ToggleStepthrough).await;
                         in_step_through = !in_step_through;
-                        let _ = print_tx.send(
-                            Printout {
-                                verbosity: 0,
-                                content: match in_step_through {
-                                    false => "debug mode off".into(),
-                                    true => "debug mode on: use CTRL+S to step through events".into(),
-                                }
-                            }
-                        ).await;
+                        Printout::new(0, format!("debug mode {}", match in_step_through {
+                                false => "off",
+                                true => "on: use CTRL+S to step through events",
+                            }))
+                            .send(&print_tx)
+                            .await;
 
                     },
                     //
@@ -273,15 +265,12 @@ pub async fn terminal(
                         ..
                     }) => {
                         logging_mode = !logging_mode;
-                        let _ = print_tx.send(
-                            Printout {
-                                verbosity: 0,
-                                content: match logging_mode {
-                                    true => "logging mode: on".into(),
-                                    false => "logging mode: off".into(),
-                                }
-                            }
-                        ).await;
+                        Printout::new(
+                            0,
+                            format!("logging mode: {}", if logging_mode { "on" } else { "off" })
+                        )
+                        .send(&print_tx)
+                        .await;
                     },
                     //
                     //  UP / CTRL+P: go up one command in history
