@@ -375,6 +375,9 @@ impl State {
         // basic plan...
         // when we get either metadata-uri or metadata-hash, we fetch the other one and see if they match.
         // if they do, we update the metadata for the package.
+
+        // TEMP WAIT while we solve kimap_indexer getting race condition
+        std::thread::sleep(std::time::Duration::from_millis(100));
         match log.topics()[0] {
             Note::SIGNATURE_HASH => {
                 let note = Note::decode_log_data(log.data(), false)
