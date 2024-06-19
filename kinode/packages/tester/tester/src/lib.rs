@@ -19,6 +19,9 @@ wit_bindgen::generate!({
     additional_derives: [PartialEq, serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
 
+const SETUP_PATH: &str = "/tester:sys/setup";
+const TESTS_PATH: &str = "/tester:sys/tests";
+
 fn make_vfs_address(our: &Address) -> anyhow::Result<Address> {
     Ok(Address {
         node: our.node.clone(),
@@ -193,51 +196,53 @@ fn handle_message(our: &Address, node_names: &mut Vec<String>) -> anyhow::Result
 call_init!(init);
 fn init(our: Address) {
     let mut node_names: Vec<String> = Vec::new();
-    match Request::new()
-        .target(make_vfs_address(&our).unwrap())
-        .body(
-            serde_json::to_vec(&vfs::VfsRequest {
-                path: "/tester:sys/tests".into(),
-                action: vfs::VfsAction::CreateDrive,
-            })
-            .unwrap(),
-        )
-        .send_and_await_response(5)
-    {
-        Err(_) => {
-            fail!("tester");
-        }
-        Ok(r) => {
-            if r.is_err() {
+    for path in [SETUP_PATH, TESTS_PATH] {
+        match Request::new()
+            .target(make_vfs_address(&our).unwrap())
+            .body(
+                serde_json::to_vec(&vfs::VfsRequest {
+                    path: path.into(),
+                    action: vfs::VfsAction::CreateDrive,
+                })
+                .unwrap(),
+            )
+            .send_and_await_response(5)
+        {
+            Err(_) => {
                 fail!("tester");
             }
+            Ok(r) => {
+                if r.is_err() {
+                    fail!("tester");
+                }
+            }
         }
-    }
 
-    // orchestrate tests using external scripts
-    //  -> must give drive cap to rpc
-    let sent = Request::new()
-        .target(("our", "kernel", "distro", "sys"))
-        .body(
-            serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                target: ProcessId::new(Some("http_server"), "distro", "sys"),
-                capabilities: vec![kt::Capability {
-                    issuer: Address::new(
-                        our.node.clone(),
-                        ProcessId::new(Some("vfs"), "distro", "sys"),
-                    ),
-                    params: serde_json::json!({
-                        "kind": "write",
-                        "drive": "/tester:sys/tests",
-                    })
-                    .to_string(),
-                }],
-            })
-            .unwrap(),
-        )
-        .send();
-    if sent.is_err() {
-        fail!("tester");
+        // orchestrate tests using external scripts
+        //  -> must give drive cap to rpc
+        let sent = Request::new()
+            .target(("our", "kernel", "distro", "sys"))
+            .body(
+                serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                    target: ProcessId::new(Some("http_server"), "distro", "sys"),
+                    capabilities: vec![kt::Capability {
+                        issuer: Address::new(
+                            our.node.clone(),
+                            ProcessId::new(Some("vfs"), "distro", "sys"),
+                        ),
+                        params: serde_json::json!({
+                            "kind": "write",
+                            "drive": path,
+                        })
+                        .to_string(),
+                    }],
+                })
+                .unwrap(),
+            )
+            .send();
+        if sent.is_err() {
+            fail!("tester");
+        }
     }
 
     loop {

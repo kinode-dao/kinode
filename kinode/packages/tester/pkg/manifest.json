@@ -5,10 +5,15 @@
         "on_exit": "Restart",
         "request_networking": true,
         "request_capabilities": [
+            "eth:distro:sys",
+            "http_client:distro:sys",
+            "http_server:distro:sys",
             "kernel:distro:sys",
             "kv:distro:sys",
-            "http_server:distro:sys",
             "sqlite:distro:sys",
+            "state:distro:sys",
+            "terminal:distro:sys",
+            "timer:distro:sys",
             "vfs:distro:sys"
         ],
         "grant_capabilities": [
