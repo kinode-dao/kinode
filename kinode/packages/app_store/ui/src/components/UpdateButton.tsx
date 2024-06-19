@@ -5,7 +5,7 @@ import Modal from "./Modal";
 import { getAppName } from "../utils/app";
 import Loader from "./Loader";
 import classNames from "classnames";
-import { FaU } from "react-icons/fa6";
+import { FaExclamation } from "react-icons/fa6";
 
 interface UpdateButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
@@ -61,7 +61,7 @@ export default function UpdateButton({ app, isIcon = false, ...props }: UpdateBu
         })}
         onClick={onClick}
       >
-        {isIcon ? <FaU /> : 'Update'}
+        {isIcon ? <FaExclamation /> : 'Update'}
       </button>
       <Modal show={showModal} hide={() => setShowModal(false)}>
         {loading ? (

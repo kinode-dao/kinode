@@ -222,6 +222,10 @@ fn create_widget() -> &'static str {
             background: rgba(255, 255, 255, 0.1);
         }
 
+        .notif:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
         .title {
             font-weight: bold;
         }
@@ -238,7 +242,6 @@ fn create_widget() -> &'static str {
                     fetch('/notify:notify:sys/notifs')
                     .then(response => response.json())
                     .then(data => {
-                        console.log(data)
                         if (!Array.isArray(data)) return;
                         data.forEach(notif => {
                             let notifElement = document.createElement('div');
