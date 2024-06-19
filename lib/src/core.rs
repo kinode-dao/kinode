@@ -1817,6 +1817,10 @@ pub enum TimerAction {
 // networking protocol types
 //
 
+// TODO: granular caps.
+// "root": ConnectionRequest, KnsUpdate, KnsBatchUpdate, AddName, Sign?
+// note: AddName is for no KnsEntry but still want to add a namehash
+
 /// Must be parsed from message pack vector.
 /// all Get actions must be sent from local process. used for debugging
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1829,6 +1833,8 @@ pub enum NetAction {
     /// in the future could get from remote provider
     KnsUpdate(KnsUpdate),
     KnsBatchUpdate(Vec<KnsUpdate>),
+    /// add a (namehash -> name) to our representation of the PKI
+    AddName(String, String),
     /// get a list of peers we are connected to
     GetPeers,
     /// get the [`Identity`] struct for a single peer

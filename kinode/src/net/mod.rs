@@ -172,6 +172,9 @@ async fn handle_local_request(
                 utils::ingest_log(log, &data.pki, &data.names);
             }
         }
+        Ok(NetAction::AddName(hash, name)) => {
+            data.names.insert(hash, name);
+        }
         Ok(gets) => {
             let (response_body, response_blob) = match gets {
                 NetAction::GetPeers => (

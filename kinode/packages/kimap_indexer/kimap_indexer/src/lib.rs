@@ -330,6 +330,13 @@ fn handle_log(
                     routers: Vec::new(),
                 });
 
+            Request::new()
+                .target((&our.node, "net", "distro", "sys"))
+                .body(rmp_serde::to_vec(&net::NetAction::AddName(
+                    child_hash,
+                    name.clone(),
+                ))?)
+                .send()?;
             node = Some(name);
         }
         Note::SIGNATURE_HASH => {

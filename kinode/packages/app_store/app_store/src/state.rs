@@ -3,7 +3,9 @@ use crate::{utils, DownloadRequest, LocalRequest};
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
-    eth, kernel_types as kt, net, println, vfs, Address, Message, NodeId, PackageId, Request,
+    eth, kernel_types as kt,
+    net::{self, get_name},
+    println, vfs, Address, Message, NodeId, PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -231,7 +233,7 @@ impl State {
         }
         self.downloaded_packages
             .insert(package_id.to_owned(), package_state);
-        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
 
@@ -249,7 +251,7 @@ impl State {
                 true
             })
             .unwrap_or(false);
-        kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+        // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
         res
     }
 
@@ -353,7 +355,7 @@ impl State {
     pub fn uninstall(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
         utils::uninstall(package_id)?;
         self.downloaded_packages.remove(package_id);
-        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         println!("uninstalled {package_id}");
         Ok(())
     }
@@ -379,9 +381,15 @@ impl State {
                     .map_err(|_| AppStoreLogError::DecodeLogError)?;
 
                 // get package_name from the api (add to process_lib)!
-                // let node_name = get_name(note.nodehash)?;
+                let name = get_name(&note.nodehash.to_string(), None).map_err(|e| {
+                    println!("Error decoding name: {:?}", e);
+                    AppStoreLogError::DecodeLogError
+                })?;
 
                 let note_str = String::from_utf8_lossy(&note.note).to_string();
+
+                println!("got note {note_str} for {name}");
+
                 match note_str.as_str() {
                     "metadata-uri" => {
                         let _metadata_url = String::from_utf8_lossy(&note.data).to_string();
@@ -553,7 +561,7 @@ impl State {
         }
         self.last_saved_block = block_number;
         if update_listings {
-            kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+            // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
         }
         Ok(())
     }
@@ -575,7 +583,7 @@ impl State {
                 }
             }
         }
-        kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+        // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
     }
 }
 
