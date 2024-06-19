@@ -4,7 +4,7 @@ use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
     eth, kernel_types as kt,
-    net::{self, get_name},
+    net::{self, get_name, namehash},
     println, vfs, Address, Message, NodeId, PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
@@ -392,29 +392,50 @@ impl State {
                 let note_str = String::from_utf8_lossy(&note.note).to_string();
 
                 println!("got note {note_str} for {name}");
+                // let notehash = note.notehash.to_string();
+
+                // let full_name = format!("{note_str}.{name}");
 
                 match note_str.as_str() {
-                    "metadata-uri" => {
-                        let _metadata_url = String::from_utf8_lossy(&note.data).to_string();
+                    "~metadata-uri" => {
+                        let metadata_url = String::from_utf8_lossy(&note.data).to_string();
                         // generate ~metadata-hash notehash
-                        // let package_hash_note = get_notehash("~metadata-hash", nodehash);
-                        // let package_hash = kimap::get(&package_hash_note);
+                        let meta_note_name = format!("~metadata-hash.{name}");
+                        let package_hash_note = namehash(&meta_note_name);
+                        let (_tba, _owner, data) =
+                            self.provider.get(&package_hash_note).map_err(|e| {
+                                println!("Error getting metadata hash: {:?}", e);
+                                AppStoreLogError::DecodeLogError
+                            })?;
 
-                        // let metadata =
-                        //     utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
+                        if let Some(hash_note) = data {
+                            let metadata_hash = String::from_utf8_lossy(&hash_note).to_string();
+                            println!("got metadata_url, and from that the hash {metadata_url} {metadata_hash}");
+                            // let metadata =
+                            //     utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
 
-                        // if this fails and doesn't check out, do nothing
+                            // if this fails and doesn't check out, do nothing
+                        }
                     }
-                    "metadata-hash" => {
-                        let _metadata_hash = String::from_utf8_lossy(&note.data).to_string();
+                    "~metadata-hash" => {
+                        let metadata_hash = String::from_utf8_lossy(&note.data).to_string();
                         // generate ~metadata-uri notehash
-                        // let package_uri_note = get_notehash("~metadata-uri", nodehash);
-                        // let package_uri = kimap::get(&package_uri_note);
+                        let meta_note_name = format!("~metadata-uri.{name}");
+                        let package_uri_note = namehash(&meta_note_name);
+                        let (_tba, _owner, data) =
+                            self.provider.get(&package_uri_note).map_err(|e| {
+                                println!("Error getting metadata uri: {:?}", e);
+                                AppStoreLogError::DecodeLogError
+                            })?;
 
-                        // let metadata =
-                        //     utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
+                        if let Some(uri_note) = data {
+                            let metadata_url = String::from_utf8_lossy(&uri_note).to_string();
+                            println!("got metadata_hash, and from that the url {metadata_hash} {metadata_url}");
+                            // let metadata =
+                            //     utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
 
-                        // if this fails and doesn't check out, do nothing
+                            // if this fails and doesn't check out, do nothing
+                        }
                     }
                     _ => {}
                 }
