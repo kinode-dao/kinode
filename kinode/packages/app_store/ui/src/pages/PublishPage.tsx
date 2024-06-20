@@ -1,10 +1,9 @@
 import React, { useState, useCallback, FormEvent, useEffect } from "react";
 import { useLocation } from "react-router-dom";
 
-import { BigNumber, utils } from "ethers";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit';
-
+import { kinohash } from '../utils/kinohash';
 
 // todo: some component indexes? 
 import SearchHeader from "../components/SearchHeader";
@@ -23,7 +22,7 @@ import classNames from "classnames";
 import { isMobileCheck } from "../utils/dimensions";
 
 import {
-  createPublicClient, createWalletClient, decodeAbiParameters, encodeAbiParameters,
+  createPublicClient, createWalletClient, decodeAbiParameters, encodeAbiParameters, keccak256, toBytes,
   encodePacked, stringToHex, parseAbi, parseAbiParameters, parseAbiItem, encodeFunctionData, http
 } from 'viem';
 
@@ -96,11 +95,17 @@ export default function PublishPage() {
   const { listedApps } = useAppsStore();
 
   const { address, isConnected, isConnecting } = useAccount();
-  const { data: hash, writeContract } = useWriteContract()
+  const { data: hash, writeContract } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed } =
     useWaitForTransactionReceipt({
       hash,
-    })
+    });
+  // const { data: getData, isLoading: isReading, } = useReadContract({
+  //   abi: kinomapAbi,
+  //   address: KINOMAP,
+  //   functionName: 'get',
+  //   args: [kinohash(window.our?.node || "") as `0x${string}`] // cleanup, + this should actually be the current app TBA!
+  // });
 
 
   const [loading, setLoading] = useState("");
@@ -142,7 +147,7 @@ export default function PublishPage() {
       const metadataResponse = await fetch(metadataUrl);
       const metadataText = await metadataResponse.text();
       JSON.parse(metadataText); // confirm it's valid JSON
-      const metadataHash = utils.keccak256(utils.toUtf8Bytes(metadataText));
+      const metadataHash = keccak256(toBytes(metadataText));
       setMetadataHash(metadataHash);
     } catch (error) {
       window.alert(
@@ -164,7 +169,7 @@ export default function PublishPage() {
           const metadataResponse = await fetch(metadataUrl);
           await metadataResponse.json(); // confirm it's valid JSON
           const metadataText = await metadataResponse.text(); // hash as text
-          metadata = utils.keccak256(utils.toUtf8Bytes(metadataText));
+          metadata = keccak256(toBytes(metadataText));
         }
 
         setLoading("Please confirm the transaction in your wallet");
@@ -180,6 +185,8 @@ export default function PublishPage() {
         writeContract({
           abi: mechAbi,
           address: KINOMAP, // ok nice, now here we need to get the current tba address!
+          // we have the hash of the node, but we need one more call to kinomap to get the tba. 
+          // now, should we have that info ready and stored somewhere in the register api? maybe? 
           functionName: 'execute',
           args: [
             KINOMAP,
