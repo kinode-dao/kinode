@@ -5,7 +5,6 @@ import { AppInfo, MyApps } from "../types/Apps";
 import useAppsStore from "../store/apps-store";
 import AppEntry from "../components/AppEntry";
 import SearchHeader from "../components/SearchHeader";
-import { PageProps } from "../types/Page";
 import { useNavigate } from "react-router-dom";
 import { appId } from "../utils/app";
 import { PUBLISH_PATH } from "../constants/path";

@@ -1,39 +1,107 @@
 import React, { useState, useCallback, FormEvent, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { BigNumber, utils } from "ethers";
-import { useWeb3React } from "@web3-react/core";
 
+import { BigNumber, utils } from "ethers";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+
+
+// todo: some component indexes? 
 import SearchHeader from "../components/SearchHeader";
-import { PageProps } from "../types/Page";
+import Jazzicon from "../components/Jazzicon";
 import { setChain } from "../utils/chain";
 import { OPTIMISM_OPT_HEX } from "../constants/chain";
-import { hooks, metaMask } from "../utils/metamask";
 import Loader from "../components/Loader";
 import { toDNSWireFormat } from "../utils/dnsWire";
 import useAppsStore from "../store/apps-store";
 import MetadataForm from "../components/MetadataForm";
 import { AppInfo } from "../types/Apps";
 import Checkbox from "../components/Checkbox";
-import Jazzicon from "../components/Jazzicon";
 import { Tooltip } from "../components/Tooltip";
 import HomeButton from "../components/HomeButton";
 import classNames from "classnames";
 import { isMobileCheck } from "../utils/dimensions";
 
-const { useIsActivating } = hooks;
+import {
+  createPublicClient, createWalletClient, decodeAbiParameters, encodeAbiParameters,
+  encodePacked, stringToHex, parseAbi, parseAbiParameters, parseAbiItem, encodeFunctionData, http
+} from 'viem';
 
-interface PublishPageProps extends PageProps { }
+import { multicallAbi, kinomapAbi, mechAbi, KINOMAP, MULTICALL, KINO_ACCOUNT_IMPL } from "../abis";
 
-export default function PublishPage({
-  provider,
-  packageAbi,
-}: PublishPageProps) {
+
+// move to helpers. 
+function encodeMulticalls(metadataUri: string, metadataHash: string) {
+  const metadataUriCall = encodeFunctionData({
+    abi: kinomapAbi,
+    functionName: 'note',
+    args: [
+      encodePacked(["bytes"], [stringToHex("~metadata-uri")]),
+      encodePacked(["bytes"], [stringToHex(metadataUri)]),
+    ]
+  })
+
+  const metadataHashCall = encodeFunctionData({
+    abi: kinomapAbi,
+    functionName: 'note',
+    args: [
+      encodePacked(["bytes"], [stringToHex("~metadata-hash")]),
+      encodePacked(["bytes"], [stringToHex(metadataHash)]),
+    ]
+  })
+
+  const calls = [
+    { target: KINOMAP, callData: metadataUriCall },
+    { target: KINOMAP, callData: metadataHashCall }
+  ];
+
+  const multicall = encodeFunctionData({
+    abi: multicallAbi,
+    functionName: 'aggregate',
+    args: [calls]
+  });
+  return multicall;
+}
+
+function encodeIntoMintCall(multicalls: `0x${string}`, our_address: `0x${string}`, app_name: string) {
+  const initCall = encodeFunctionData({
+    abi: mechAbi,
+    functionName: 'execute',
+    args: [
+      MULTICALL,
+      BigInt(0), // value
+      multicalls,
+      1
+    ]
+  });
+
+  const mintCall = encodeFunctionData({
+    abi: kinomapAbi,
+    functionName: 'mint',
+    args: [
+      our_address,
+      encodePacked(["bytes"], [stringToHex(app_name)]),
+      initCall,
+      "0x", // erc721 details? <- encode app_store here? actually might be a slick way to do it. 
+      KINO_ACCOUNT_IMPL,
+    ]
+  })
+  return mintCall;
+}
+
+
+export default function PublishPage() {
   // get state from router
   const { state } = useLocation();
   const { listedApps } = useAppsStore();
-  // TODO: figure out how to handle provider
-  const { account, isActive } = useWeb3React();
-  const isActivating = useIsActivating();
+
+  const { address, isConnected, isConnecting } = useAccount();
+  const { data: hash, writeContract } = useWriteContract()
+  const { isLoading: isConfirming, isSuccess: isConfirmed } =
+    useWaitForTransactionReceipt({
+      hash,
+    })
+
 
   const [loading, setLoading] = useState("");
   const [publishSuccess, setPublishSuccess] = useState<
@@ -60,19 +128,10 @@ export default function PublishPage({
 
   useEffect(() => {
     setMyPublishedApps(
-      listedApps.filter((app) => app.owner?.toLowerCase() === account?.toLowerCase())
+      listedApps.filter((app) => app.owner?.toLowerCase() === address?.toLowerCase())
     );
-  }, [listedApps, account])
+  }, [listedApps, address])
 
-  const connectWallet = useCallback(async () => {
-    await metaMask.activate().catch(() => { });
-
-    try {
-      setChain(OPTIMISM_OPT_HEX);
-    } catch (error) {
-      console.error(error);
-    }
-  }, []);
 
   const calculateMetadataHash = useCallback(async () => {
     if (!metadataUrl) {
@@ -114,28 +173,31 @@ export default function PublishPage({
 
         // TODO: have a checkbox to show if it's an update of an existing package
 
-        const tx = await (isUpdate
-          ? packageAbi?.updateMetadata(
-            BigNumber.from(
-              utils.solidityKeccak256(
-                ["string", "bytes"],
-                [packageName, publisherIdDnsWireFormat]
-              )
-            ),
-            metadataUrl,
-            metadata
-          )
-          : packageAbi?.registerApp(
-            packageName,
-            publisherIdDnsWireFormat,
-            metadataUrl,
-            metadata
-          ));
+        const multicall = encodeMulticalls(metadataUrl, metadata);
+
+        const args = isUpdate ? multicall : encodeIntoMintCall(multicall, address!, packageName);
+
+        writeContract({
+          abi: mechAbi,
+          address: KINOMAP, // ok nice, now here we need to get the current tba address!
+          functionName: 'execute',
+          args: [
+            KINOMAP,
+            BigInt(0),
+            args,
+            isUpdate ? 1 : 0
+          ]
+        });
 
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
         setLoading("Publishing package...");
-        await tx?.wait();
+
+        /// make reactive instead? not waiting for hash but something else? 
+        // wait for the hash thing.
+
+
+        //  await tx?.wait();
         setPublishSuccess({ packageName, publisherId });
         setPackageName("");
         setPublisherId(window.our?.node || publisherId);
@@ -157,7 +219,7 @@ export default function PublishPage({
       publisherId,
       metadataUrl,
       metadataHash,
-      packageAbi,
+      // packageAbi,
       setPublishSuccess,
       setPackageName,
       setPublisherId,
@@ -172,18 +234,26 @@ export default function PublishPage({
       try {
         await setChain(OPTIMISM_OPT_HEX);
 
-        const tx = await
-          packageAbi?.unlistPacakge(
-            utils.keccak256(utils.solidityPack(
-              ["string", "bytes"],
-              [packageName, toDNSWireFormat(publisherName)]
-            ))
-          );
+        // ok so based on this, get the appropriate tba, and set the keys to ""? 
+
+        const multicall = encodeMulticalls("", "");
+
+        writeContract({
+          abi: mechAbi,
+          address: KINOMAP, // get real TBA!
+          functionName: 'execute',
+          args: [
+            KINOMAP,
+            BigInt(0),
+            multicall,
+            1
+          ]
+        });
 
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
         setLoading("Unlisting package...");
-        await tx?.wait();
+        // await tx?.wait();
       } catch (error) {
         console.error(error);
         window.alert(
@@ -193,7 +263,7 @@ export default function PublishPage({
         setLoading("");
       }
     },
-    [packageAbi, setLoading]
+    [setLoading,] // packageAbi,
   );
 
   const checkIfUpdate = useCallback(async () => {
@@ -225,10 +295,9 @@ export default function PublishPage({
       />
       <div className="flex-center justify-between">
         <h4>Publish Package</h4>
-        {Boolean(account) && <div className="card flex-center">
+        {Boolean(address) && <div className="card flex-center">
           <span>Publishing as:</span>
-          <Jazzicon address={account!} className="mx-2" />
-          <span className="font-mono">{account?.slice(0, 4)}...{account?.slice(-4)}</span>
+          <span className="font-mono">{address?.slice(0, 4)}...{address?.slice(-4)}</span>
         </div>}
       </div>
 
@@ -254,14 +323,12 @@ export default function PublishPage({
         </div>
       ) : showMetadataForm ? (
         <MetadataForm {...{ packageName, publisherId, app: state?.app }} goBack={() => setShowMetadataForm(false)} />
-      ) : !account || !isActive ? (
+      ) : !address || !isConnected ? (
         <>
           <h4>Please connect your wallet {isMobile && <br />} to publish a package</h4>
-          <button className={`connect-wallet row`} onClick={connectWallet}>
-            Connect Wallet
-          </button>
+          <ConnectButton />
         </>
-      ) : isActivating ? (
+      ) : isConnecting ? (
         <Loader msg="Approve connection in your wallet" />
       ) : (
         <form

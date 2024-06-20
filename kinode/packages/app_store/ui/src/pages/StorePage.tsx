@@ -5,14 +5,12 @@ import { AppInfo } from "../types/Apps";
 import useAppsStore from "../store/apps-store";
 import AppEntry from "../components/AppEntry";
 import SearchHeader from "../components/SearchHeader";
-import { PageProps } from "../types/Page";
 import { appId } from "../utils/app";
 import classNames from 'classnames';
 import { FaArrowRotateRight } from "react-icons/fa6";
 import { isMobileCheck } from "../utils/dimensions";
 import HomeButton from "../components/HomeButton";
 
-interface StorePageProps extends PageProps { }
 
 export default function StorePage() {
   // eslint-disable-line

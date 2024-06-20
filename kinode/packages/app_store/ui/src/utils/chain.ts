@@ -1,6 +1,9 @@
 import { SEPOLIA_OPT_HEX, OPTIMISM_OPT_HEX } from "../constants/chain";
 const CHAIN_NOT_FOUND = "4902"
 
+// TODO: can remove all of this? 
+// 
+
 export interface Chain {
   chainId: string, // Replace with the correct chainId for Sepolia
   chainName: string,

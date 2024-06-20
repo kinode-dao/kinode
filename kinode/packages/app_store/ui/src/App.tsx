@@ -1,20 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
-import { Web3ReactProvider, Web3ReactHooks } from '@web3-react/core';
-import type { MetaMask } from '@web3-react/metamask'
 
-import { PackageStore, PackageStore__factory } from "./abis/types";
 import StorePage from "./pages/StorePage";
 import MyAppsPage from "./pages/MyAppsPage";
 import AppPage from "./pages/AppPage";
 import { APP_DETAILS_PATH, MY_APPS_PATH, PUBLISH_PATH, STORE_PATH } from "./constants/path";
 import { ChainId, PACKAGE_STORE_ADDRESSES } from "./constants/chain";
 import PublishPage from "./pages/PublishPage";
-import { hooks as metaMaskHooks, metaMask } from './utils/metamask'
-
-const connectors: [MetaMask, Web3ReactHooks][] = [
-  [metaMask, metaMaskHooks],
-]
 
 declare global {
   interface ImportMeta {
@@ -34,11 +26,6 @@ declare global {
   }
 }
 
-const {
-  useProvider,
-} = metaMaskHooks;
-
-const RPC_URL = import.meta.env.VITE_OPTIMISM_RPC_URL;
 const BASE_URL = import.meta.env.BASE_URL;
 if (window.our) window.our.process = BASE_URL?.replace("/", "");
 
@@ -51,49 +38,9 @@ const WEBSOCKET_URL = import.meta.env.DEV // eslint-disable-line
   : undefined;
 
 function App() {
-  const provider = useProvider();
+
   const [nodeConnected, setNodeConnected] = useState(true); // eslint-disable-line
 
-  const [packageAbi, setPackageAbi] = useState<PackageStore | undefined>(undefined);
-
-
-  useEffect(() => {
-    if (!provider) return;
-
-    const updatePackageAbi = async () => {
-      const network = await provider.getNetwork();
-      if (network.chainId === ChainId.OPTIMISM) {
-        setPackageAbi(PackageStore__factory.connect(
-          PACKAGE_STORE_ADDRESSES[ChainId.OPTIMISM],
-          provider.getSigner())
-        );
-      }
-    };
-
-    updatePackageAbi();
-
-  }, [provider])
-
-  useEffect(() => {
-    // if (window.our?.node && window.our?.process) {
-    //   const api = new KinodeClientApi({
-    //     uri: WEBSOCKET_URL,
-    //     nodeId: window.our.node,
-    //     processId: window.our.process,
-    //     onOpen: (_event, _api) => {
-    //       console.log("Connected to Kinode");
-    //       // api.send({ data: "Hello World" });
-    //     },
-    //     onMessage: (json, _api) => {
-    //       console.log('UNEXPECTED WEBSOCKET MESSAGE', json)
-    //     },
-    //   });
-
-    //   setApi(api);
-    // } else {
-    //   setNodeConnected(false);
-    // }
-  }, []);
 
   if (!nodeConnected) {
     return (
@@ -107,21 +54,18 @@ function App() {
     );
   }
 
-  const props = { provider, packageAbi };
 
   return (
     <div className="flex flex-col c h-screen w-screen max-h-screen max-w-screen overflow-x-hidden special-appstore-background">
-      <Web3ReactProvider connectors={connectors}>
-        <Router basename={BASE_URL}>
-          <Routes>
-            <Route path={STORE_PATH} element={<StorePage />} />
-            <Route path={MY_APPS_PATH} element={<MyAppsPage />} />
-            <Route path={`${APP_DETAILS_PATH}/:id`} element={<AppPage />} />
-            <Route path={PUBLISH_PATH} element={<PublishPage {...props} />} />
-          </Routes>
-        </Router>
-      </Web3ReactProvider>
-    </div>
+      <Router basename={BASE_URL}>
+        <Routes>
+          <Route path={STORE_PATH} element={<StorePage />} />
+          <Route path={MY_APPS_PATH} element={<MyAppsPage />} />
+          <Route path={`${APP_DETAILS_PATH}/:id`} element={<AppPage />} />
+          <Route path={PUBLISH_PATH} element={<PublishPage />} />
+        </Routes>
+      </Router>
+    </div >
   );
 }
 

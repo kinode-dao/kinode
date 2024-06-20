@@ -375,6 +375,7 @@ impl State {
         // basic plan...
         // when we get either metadata-uri or metadata-hash, we fetch the other one and see if they match.
         // if they do, we update the metadata for the package.
+        // note: if either of hash/uri doens't match//errors, we probably shouldn't throw errors except for in verbose mode.
 
         // TEMP WAIT while we solve kimap_indexer getting race condition
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -391,7 +392,7 @@ impl State {
 
                 let note_str = String::from_utf8_lossy(&note.note).to_string();
 
-                println!("got note {note_str} for {name}");
+                // println!("got note {note_str} for {name}");
                 // let notehash = note.notehash.to_string();
 
                 // let full_name = format!("{note_str}.{name}");
@@ -411,8 +412,10 @@ impl State {
                         if let Some(hash_note) = data {
                             let metadata_hash = String::from_utf8_lossy(&hash_note).to_string();
                             println!("got metadata_url, and from that the hash {metadata_url} {metadata_hash}");
-                            // let metadata =
-                            //     utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
+                            let metadata =
+                                utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
+
+                            println!("got metadata: {:?}", metadata);
 
                             // if this fails and doesn't check out, do nothing
                         }
@@ -431,10 +434,10 @@ impl State {
                         if let Some(uri_note) = data {
                             let metadata_url = String::from_utf8_lossy(&uri_note).to_string();
                             println!("got metadata_hash, and from that the url {metadata_hash} {metadata_url}");
-                            // let metadata =
-                            //     utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
+                            let metadata =
+                                utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
 
-                            // if this fails and doesn't check out, do nothing
+                            println!("got metadata: {:?}", metadata);
                         }
                     }
                     _ => {}
