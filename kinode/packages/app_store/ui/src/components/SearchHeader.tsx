@@ -99,8 +99,8 @@ export default function SearchHeader({
         })}
         onClick={() => (isMyAppsPage ? navigate(-1) : navigate(MY_APPS_PATH))}
       >
-        {!isMobile && <span>My Apps</span>}
-        <FaDownload />
+        <span>My Apps</span>
+        {!isMobile && <FaDownload />}
       </button>
     </div>
   );
