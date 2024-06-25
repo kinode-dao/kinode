@@ -120,22 +120,40 @@ The `sys` publisher is not a real node ID, but it's also not a special case valu
 - UpArrow/DownArrow or CTRL+P/CTRL+N to move up and down through command history
 - CTRL+R to search history, CTRL+R again to toggle through search results, CTRL+G to cancel search
 
+### Built-in terminal scripts
+
+The terminal package contains a number of built-in scripts.
+Users may also call scripts from other packages in the terminal by entering the (full) ID of the script process followed by any arguments.
+In order to call a script with shorthand, a user may apply an *alias* using the terminal `alias` script, like so:
+```
+alias <shorthand> <full_name>
+```
+Subsequent use of the shorthand will then be interpolated as the process ID.
+Aliases are not currently persisted between boots, although this may change.
+
+A list of the other terminal scripts included in this distro:
+
+- `cat <vfs-file-path>`: print the contents of a file in the terminal.
+    - Example: `cat /terminal:sys/pkg/scripts.json`
+- `echo <text>`: print text to the terminal.
+    - Example: `echo foo`
+- `hi <name> <string>`: send a text message to another node's command line.
+    - Example: `hi ben.os hello world`
+- `kfetch`: print system information a la neofetch. No arguments.
+- `kill <process-id>`: terminate a running process. This will bypass any restart behavior–use judiciously.
+    - Example: `kill chess:chess:sys`
 - `m <address> '<json>'`: send an inter-process message. <address> is formatted as <node>@<process_id>. <process_id> is formatted as <process_name>:<package_name>:<publisher_node>. JSON containing spaces must be wrapped in single-quotes (`''`).
     - Example: `m our@eth:distro:sys "SetPublic" -a 5`
     - the '-a' flag is used to expect a response with a given timeout
     - `our` will always be interpolated by the system as your node's name
-- `hi <name> <string>`: send a text message to another node's command line.
-    - Example: `hi ben.os hello world`
+- `namehash_to_name <namehash>`: print the name of a node given its namehash, if we have it indexed. Namehashes are used in the onchain PKI data structure.
+    - Example: `namehash_to_name 0x46dc6209a66b3a0ef4b72f5d26c0e81c77c7ac146a62e96babf1224484b46fa9`
+- `net_diagnostics`: print some useful networking diagnostic data.
+- `peer <name>`: print the peer's PKI info, if it exists.
+- `peers`: print the peers the node currently hold connections with.
 - `top <process_id>`: display kernel debugging info about a process. Leave the process ID blank to display info about all processes and get the total number of running processes.
     - Example: `top net:distro:sys`
     - Example: `top`
-- `cat <vfs-file-path>`: print the contents of a file in the terminal
-    - Example: `cat /terminal:sys/pkg/scripts.json`
-- `echo <text>`: print `text` to the terminal
-    - Example: `echo foo`
-- `net_diagnostics`: print some useful networking diagnostic data
-- `peers`: print the peers the node currently hold connections with
-- `peer <name>`: print the peer's PKI info, if it exists
 
 ## Running as a Docker container
 
