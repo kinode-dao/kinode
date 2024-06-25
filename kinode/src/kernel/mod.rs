@@ -942,7 +942,7 @@ pub async fn kernel(
                 if kernel_message.source.node == our.name
                   && kernel_message.target.node != our.name {
                     let Some(proc) = process_map.get(&kernel_message.source.process) else {
-                        continue
+                        continue;
                     };
                     if !proc.capabilities.contains_key(
                         &t::Capability {
@@ -1020,11 +1020,20 @@ pub async fn kernel(
                     {
                         let Some(persisted_source) = process_map.get(&kernel_message.source.process) else {
                             throw_timeout(&our.name, &senders, &kernel_message).await;
-                            continue
+                            continue;
                         };
                         let Some(persisted_target) = process_map.get(&kernel_message.target.process) else {
                             throw_timeout(&our.name, &senders, &kernel_message).await;
-                            continue
+                            let _ = send_to_terminal.send(
+                                t::Printout {
+                                    verbosity: 2,
+                                    content: format!(
+                                        "event loop: process {} sent message to non-existing {}; dropping message",
+                                        kernel_message.source.process, kernel_message.target.process
+                                    )
+                                }
+                            ).await;
+                            continue;
                         };
                         if !persisted_target.public && !persisted_source.capabilities.contains_key(&t::Capability {
                                 issuer: t::Address {
