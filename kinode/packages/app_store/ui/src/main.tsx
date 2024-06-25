@@ -7,7 +7,7 @@ import {
   getDefaultConfig,
   RainbowKitProvider,
 } from '@rainbow-me/rainbowkit';
-import { WagmiProvider } from 'wagmi';
+import { WagmiProvider, http } from 'wagmi';
 import {
   optimism,
   anvil
@@ -25,8 +25,11 @@ import './index.css'
 const config = getDefaultConfig({
   appName: 'Kinode App Store',
   projectId: 'YOUR_PROJECT_ID', // apparently need project_Id if using wallet_connect
-  chains: [anvil, optimism], // change back to OP main once ready
+  chains: [anvil], // change back to OP main once ready
   ssr: false, // If your dApp uses server side rendering (SSR)
+  transports: {
+    [anvil.id]: http("http://localhost:8545")
+  }
 });
 
 const queryClient = new QueryClient();

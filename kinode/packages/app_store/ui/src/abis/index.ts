@@ -1,5 +1,7 @@
 import { parseAbi } from "viem";
 
+export { encodeMulticalls, encodeIntoMintCall } from "./helpers";
+
 // move to constants? // also for anvil/optimism
 export const KINOMAP: `0x${string}` = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 export const MULTICALL: `0x${string}` = "0xcA11bde05977b3631167028862bE2a173976CA11";
@@ -21,6 +23,7 @@ export const mechAbi = parseAbi([
     "function execute(address to, uint256 value, bytes calldata data, uint8 operation) returns (bytes memory returnData)",
     "function token() external view returns (uint256,address,uint256)"
 ])
+
 
 
 // export const public_client =

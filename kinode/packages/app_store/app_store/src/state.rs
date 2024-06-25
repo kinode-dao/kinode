@@ -4,7 +4,7 @@ use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
     eth, kernel_types as kt,
-    net::{self, get_name, namehash},
+    net::{get_name, namehash},
     println, vfs, Address, Message, NodeId, PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
@@ -394,7 +394,6 @@ impl State {
 
                 // println!("got note {note_str} for {name}");
                 // let notehash = note.notehash.to_string();
-
                 // let full_name = format!("{note_str}.{name}");
 
                 match note_str.as_str() {
@@ -418,6 +417,52 @@ impl State {
                             println!("got metadata: {:?}", metadata);
 
                             // if this fails and doesn't check out, do nothing
+
+                            let (package_name, publisher_name) = name
+                                .split_once('.')
+                                .ok_or(AppStoreLogError::InvalidPublisherName)
+                                .and_then(|(package, publisher)| {
+                                    if package.is_empty() || publisher.is_empty() {
+                                        Err(AppStoreLogError::InvalidPublisherName)
+                                    } else {
+                                        Ok((package.to_string(), publisher.to_string()))
+                                    }
+                                })?;
+                            println!(
+                                "pkg_name and publisher_name: {package_name} {publisher_name}"
+                            );
+                            // do we need package hashes anymore? seems kinda unnecessary, use nodehashes instead?
+                            // not removing for now for state compatibility
+                            let package_hash = utils::generate_package_hash(
+                                &package_name,
+                                publisher_name.as_bytes(),
+                            );
+
+                            self.package_hashes.insert(
+                                PackageId::new(&package_name, &publisher_name),
+                                package_hash.clone(),
+                            );
+
+                            match self.listed_packages.entry(package_hash) {
+                                std::collections::hash_map::Entry::Occupied(mut listing) => {
+                                    let listing = listing.get_mut();
+                                    listing.name = package_name;
+                                    listing.publisher = publisher_name;
+                                    listing.metadata_url = metadata_url;
+                                    listing.metadata_hash = metadata_hash;
+                                    listing.metadata = Some(metadata);
+                                }
+                                std::collections::hash_map::Entry::Vacant(listing) => {
+                                    listing.insert(PackageListing {
+                                        owner: "".to_string(),
+                                        name: package_name,
+                                        publisher: publisher_name,
+                                        metadata_url,
+                                        metadata_hash,
+                                        metadata: Some(metadata),
+                                    });
+                                }
+                            };
                         }
                     }
                     "~metadata-hash" => {
@@ -438,150 +483,55 @@ impl State {
                                 utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
 
                             println!("got metadata: {:?}", metadata);
+
+                            let (package_name, publisher_name) = name
+                                .split_once('.')
+                                .ok_or(AppStoreLogError::InvalidPublisherName)
+                                .and_then(|(package, publisher)| {
+                                    if package.is_empty() || publisher.is_empty() {
+                                        Err(AppStoreLogError::InvalidPublisherName)
+                                    } else {
+                                        Ok((package.to_string(), publisher.to_string()))
+                                    }
+                                })?;
+                            println!(
+                                "pkg_name and publisher_name: {package_name} {publisher_name}"
+                            );
+                            // do we need package hashes anymore? seems kinda unnecessary, use nodehashes instead?
+                            // not removing for now for state compatibility
+                            let package_hash = utils::generate_package_hash(
+                                &package_name,
+                                publisher_name.as_bytes(),
+                            );
+
+                            self.package_hashes.insert(
+                                PackageId::new(&package_name, &publisher_name),
+                                package_hash.clone(),
+                            );
+
+                            match self.listed_packages.entry(package_hash) {
+                                std::collections::hash_map::Entry::Occupied(mut listing) => {
+                                    let listing = listing.get_mut();
+                                    listing.name = package_name;
+                                    listing.publisher = publisher_name;
+                                    listing.metadata_url = metadata_url;
+                                    listing.metadata_hash = metadata_hash;
+                                    listing.metadata = Some(metadata);
+                                }
+                                std::collections::hash_map::Entry::Vacant(listing) => {
+                                    listing.insert(PackageListing {
+                                        owner: "".to_string(),
+                                        name: package_name,
+                                        publisher: publisher_name,
+                                        metadata_url,
+                                        metadata_hash,
+                                        metadata: Some(metadata),
+                                    });
+                                }
+                            };
                         }
                     }
                     _ => {}
-                }
-            }
-
-            AppRegistered::SIGNATURE_HASH => {
-                let app = AppRegistered::decode_log_data(log.data(), false)
-                    .map_err(|_| AppStoreLogError::DecodeLogError)?;
-                let package_name = app.packageName;
-                let publisher_dnswire = app.publisherName;
-                let metadata_url = app.metadataUrl;
-                let metadata_hash = app.metadataHash;
-
-                let package_hash = log.topics()[1].to_string();
-                let metadata_hash = metadata_hash.to_string();
-
-                kinode_process_lib::print_to_terminal(
-                    1,
-                    &format!("new package {package_name} registered onchain"),
-                );
-
-                if utils::generate_package_hash(&package_name, &publisher_dnswire) != package_hash {
-                    return Err(AppStoreLogError::PackageHashMismatch);
-                }
-
-                let Ok(publisher_name) = net::dnswire_decode(&publisher_dnswire) else {
-                    return Err(AppStoreLogError::InvalidPublisherName);
-                };
-
-                let metadata = if update_listings {
-                    let metadata =
-                        utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
-                    if metadata.properties.publisher != publisher_name {
-                        return Err(AppStoreLogError::PublisherNameMismatch);
-                    }
-                    Some(metadata)
-                } else {
-                    None
-                };
-
-                self.package_hashes.insert(
-                    PackageId::new(&package_name, &publisher_name),
-                    package_hash.clone(),
-                );
-
-                match self.listed_packages.entry(package_hash) {
-                    std::collections::hash_map::Entry::Occupied(mut listing) => {
-                        let listing = listing.get_mut();
-                        listing.name = package_name;
-                        listing.publisher = publisher_name;
-                        listing.metadata_url = metadata_url;
-                        listing.metadata_hash = metadata_hash;
-                        listing.metadata = metadata;
-                    }
-                    std::collections::hash_map::Entry::Vacant(listing) => {
-                        listing.insert(PackageListing {
-                            owner: "".to_string(),
-                            name: package_name,
-                            publisher: publisher_name,
-                            metadata_url,
-                            metadata_hash,
-                            metadata,
-                        });
-                    }
-                };
-            }
-            AppMetadataUpdated::SIGNATURE_HASH => {
-                let upd = AppMetadataUpdated::decode_log_data(log.data(), false)
-                    .map_err(|_| AppStoreLogError::DecodeLogError)?;
-                let metadata_url = upd.metadataUrl;
-                let metadata_hash = upd.metadataHash;
-
-                let package_hash = log.topics()[1].to_string();
-                let metadata_hash = metadata_hash.to_string();
-
-                let Some(current_listing) =
-                    self.get_listing_with_hash_mut(&package_hash.to_string())
-                else {
-                    // package not found, so we can't update it
-                    // this will never happen if we're ingesting logs in order
-                    return Ok(());
-                };
-
-                let metadata = if update_listings {
-                    Some(utils::fetch_metadata_from_url(
-                        &metadata_url,
-                        &metadata_hash,
-                        5,
-                    )?)
-                } else {
-                    None
-                };
-
-                current_listing.metadata_url = metadata_url;
-                current_listing.metadata_hash = metadata_hash;
-
-                if update_listings {
-                    current_listing.metadata = metadata.clone();
-                    let package_id =
-                        PackageId::new(&current_listing.name, &current_listing.publisher);
-                    if let Some(package_state) = self.downloaded_packages.get(&package_id) {
-                        auto_update(&self.our, package_id, &metadata.unwrap(), &package_state);
-                    }
-                } else {
-                    current_listing.metadata = metadata;
-                }
-            }
-            Transfer::SIGNATURE_HASH => {
-                let from = alloy_primitives::Address::from_word(log.topics()[1]);
-                let to = alloy_primitives::Address::from_word(log.topics()[2]);
-                let package_hash = log.topics()[3].to_string();
-
-                if from == alloy_primitives::Address::ZERO {
-                    // this is a new package, set the owner
-                    match self.listed_packages.entry(package_hash) {
-                        std::collections::hash_map::Entry::Occupied(mut listing) => {
-                            let listing = listing.get_mut();
-                            listing.owner = to.to_string();
-                        }
-                        std::collections::hash_map::Entry::Vacant(listing) => {
-                            listing.insert(PackageListing {
-                                owner: to.to_string(),
-                                name: "".to_string(),
-                                publisher: "".to_string(),
-                                metadata_url: "".to_string(),
-                                metadata_hash: "".to_string(),
-                                metadata: None,
-                            });
-                        }
-                    };
-                } else if to == alloy_primitives::Address::ZERO {
-                    // this is a package deletion
-                    if let Some(old) = self.listed_packages.remove(&package_hash) {
-                        self.package_hashes
-                            .remove(&PackageId::new(&old.name, &old.publisher));
-                    }
-                } else {
-                    let Some(listing) = self.get_listing_with_hash_mut(&package_hash) else {
-                        // package not found, so we can't update it
-                        // this will never happen if we're ingesting logs in order
-                        return Ok(());
-                    };
-                    listing.owner = to.to_string();
                 }
             }
             _ => {}

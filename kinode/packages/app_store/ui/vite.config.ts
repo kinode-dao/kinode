@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite'
+import { nodePolyfills } from 'vite-plugin-node-polyfills'
 import react from '@vitejs/plugin-react'
 import UnoCSS from 'unocss/vite'
 import { transformerDirectives } from 'unocss'
@@ -27,6 +28,11 @@ console.log('process.env.VITE_NODE_URL', process.env.VITE_NODE_URL, PROXY_URL);
 
 export default defineConfig({
   plugins: [
+    nodePolyfills({
+      globals: {
+        Buffer: true,
+      }
+    }),
     UnoCSS({
       presets: [presetUno(), presetWind(), presetIcons()],
       shortcuts: [

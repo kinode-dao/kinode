@@ -26,67 +26,9 @@ import {
   encodePacked, stringToHex, parseAbi, parseAbiParameters, parseAbiItem, encodeFunctionData, http
 } from 'viem';
 
-import { multicallAbi, kinomapAbi, mechAbi, KINOMAP, MULTICALL, KINO_ACCOUNT_IMPL } from "../abis";
+import { mechAbi, KINOMAP, encodeIntoMintCall, encodeMulticalls, kinomapAbi } from "../abis";
+import { anvil } from "viem/chains";
 
-
-// move to helpers. 
-function encodeMulticalls(metadataUri: string, metadataHash: string) {
-  const metadataUriCall = encodeFunctionData({
-    abi: kinomapAbi,
-    functionName: 'note',
-    args: [
-      encodePacked(["bytes"], [stringToHex("~metadata-uri")]),
-      encodePacked(["bytes"], [stringToHex(metadataUri)]),
-    ]
-  })
-
-  const metadataHashCall = encodeFunctionData({
-    abi: kinomapAbi,
-    functionName: 'note',
-    args: [
-      encodePacked(["bytes"], [stringToHex("~metadata-hash")]),
-      encodePacked(["bytes"], [stringToHex(metadataHash)]),
-    ]
-  })
-
-  const calls = [
-    { target: KINOMAP, callData: metadataUriCall },
-    { target: KINOMAP, callData: metadataHashCall }
-  ];
-
-  const multicall = encodeFunctionData({
-    abi: multicallAbi,
-    functionName: 'aggregate',
-    args: [calls]
-  });
-  return multicall;
-}
-
-function encodeIntoMintCall(multicalls: `0x${string}`, our_address: `0x${string}`, app_name: string) {
-  const initCall = encodeFunctionData({
-    abi: mechAbi,
-    functionName: 'execute',
-    args: [
-      MULTICALL,
-      BigInt(0), // value
-      multicalls,
-      1
-    ]
-  });
-
-  const mintCall = encodeFunctionData({
-    abi: kinomapAbi,
-    functionName: 'mint',
-    args: [
-      our_address,
-      encodePacked(["bytes"], [stringToHex(app_name)]),
-      initCall,
-      "0x", // erc721 details? <- encode app_store here? actually might be a slick way to do it. 
-      KINO_ACCOUNT_IMPL,
-    ]
-  })
-  return mintCall;
-}
 
 
 export default function PublishPage() {
@@ -95,17 +37,22 @@ export default function PublishPage() {
   const { listedApps } = useAppsStore();
 
   const { address, isConnected, isConnecting } = useAccount();
-  const { data: hash, writeContract } = useWriteContract();
+  const { data: hash, writeContract, error } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed } =
     useWaitForTransactionReceipt({
       hash,
     });
-  // const { data: getData, isLoading: isReading, } = useReadContract({
-  //   abi: kinomapAbi,
-  //   address: KINOMAP,
-  //   functionName: 'get',
-  //   args: [kinohash(window.our?.node || "") as `0x${string}`] // cleanup, + this should actually be the current app TBA!
-  // });
+
+  // our node // for update existing app tba
+  const [node, setNode] = useState<string>(window.our?.node || "0x");
+
+
+  const { data: getData, isLoading: isReading, error: readError, failureReason } = useReadContract({
+    abi: kinomapAbi,
+    address: KINOMAP,
+    functionName: 'get',
+    args: [kinohash(node) as `0x${string}`] // cleanup, + this should actually be the current app TBA!
+  });
 
 
   const [loading, setLoading] = useState("");
@@ -143,6 +90,27 @@ export default function PublishPage() {
       setMetadataHash("");
       return;
     }
+    console.log('node:', window.our?.node, 'publisherId:', publisherId, 'address:', address, 'node:', node, 'getData:', getData)
+    console.log('nodehash:', kinohash(node))
+    console.log('isreading:', isReading)
+    console.log('readError:', readError)
+    console.log('node:', node)
+    console.log('failuyre:', failureReason)
+
+    const publicClient = createPublicClient({
+      chain: anvil,
+      transport: http()
+    });
+
+    let data = await publicClient.readContract({
+      abi: kinomapAbi,
+      address: KINOMAP,
+      functionName: 'get',
+      args: [kinohash(node) as `0x${string}`]
+    })
+
+    console.log('read data!', data)
+
     try {
       const metadataResponse = await fetch(metadataUrl);
       const metadataText = await metadataResponse.text();
@@ -162,6 +130,7 @@ export default function PublishPage() {
       e.stopPropagation();
 
       let metadata = metadataHash;
+      console.log('node:', window.our?.node, 'publisherId:', publisherId, 'address:', address, 'node:', node, 'getData:', getData)
 
       try {
         if (!metadata) {
@@ -174,17 +143,21 @@ export default function PublishPage() {
 
         setLoading("Please confirm the transaction in your wallet");
         const publisherIdDnsWireFormat = toDNSWireFormat(publisherId);
-        await setChain(OPTIMISM_OPT_HEX);
+        // await setChain(OPTIMISM_OPT_HEX);
 
         // TODO: have a checkbox to show if it's an update of an existing package
 
         const multicall = encodeMulticalls(metadataUrl, metadata);
 
+        console.log('pacckagename:', packageName)
+
         const args = isUpdate ? multicall : encodeIntoMintCall(multicall, address!, packageName);
+
+        const [tba, _owner, _data] = getData || []; //?
 
         writeContract({
           abi: mechAbi,
-          address: KINOMAP, // ok nice, now here we need to get the current tba address!
+          address: tba as `0x${string}`,
           // we have the hash of the node, but we need one more call to kinomap to get the tba. 
           // now, should we have that info ready and stored somewhere in the register api? maybe? 
           functionName: 'execute',
@@ -193,8 +166,11 @@ export default function PublishPage() {
             BigInt(0),
             args,
             isUpdate ? 1 : 0
-          ]
+          ],
+          gas: BigInt(1000000),
         });
+
+        console.log('write error:', error)
 
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -239,7 +215,7 @@ export default function PublishPage() {
   const unpublishPackage = useCallback(
     async (packageName: string, publisherName: string) => {
       try {
-        await setChain(OPTIMISM_OPT_HEX);
+        // await setChain(OPTIMISM_OPT_HEX);
 
         // ok so based on this, get the appropriate tba, and set the keys to ""? 
 

@@ -19,9 +19,9 @@
     "@rainbow-me/rainbowkit": "^2.1.2",
     "@szhsin/react-menu": "^4.1.0",
     "@tanstack/react-query": "^5.45.1",
+    "classnames": "^2.5.1",
     "idna-uts46-hx": "^6.0.4",
     "js-sha3": "^0.9.3",
-    "classnames": "^2.5.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^5.0.1",
@@ -29,6 +29,7 @@
     "tailwindcss": "^3.4.3",
     "unocss": "^0.59.0-beta.1",
     "viem": "^2.15.1",
+    "vite-plugin-node-polyfills": "^0.22.0",
     "wagmi": "^2.10.3",
     "zustand": "^4.4.7"
   },
