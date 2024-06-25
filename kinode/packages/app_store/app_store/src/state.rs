@@ -12,24 +12,6 @@ use std::collections::{HashMap, HashSet};
 
 sol! {
     event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes note, bytes data);
-    // old events here for now
-    event AppRegistered(
-        uint256 indexed package,
-        string packageName,
-        bytes publisherName,
-        string metadataUrl,
-        bytes32 metadataHash
-    );
-    event AppMetadataUpdated(
-        uint256 indexed package,
-        string metadataUrl,
-        bytes32 metadataHash
-    );
-    event Transfer(
-        address indexed from,
-        address indexed to,
-        uint256 indexed tokenId
-    );
 }
 
 //
