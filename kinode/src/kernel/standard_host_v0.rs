@@ -1,7 +1,6 @@
 use crate::kernel::process;
-use crate::KERNEL_PROCESS_ID;
-use crate::VFS_PROCESS_ID;
 use anyhow::Result;
+use lib::core::{KERNEL_PROCESS_ID, VFS_PROCESS_ID};
 use lib::types::core::{self as t, STATE_PROCESS_ID};
 pub use lib::v0::wit;
 pub use lib::v0::wit::Host as StandardHost;

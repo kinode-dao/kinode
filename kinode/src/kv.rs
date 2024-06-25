@@ -75,7 +75,6 @@ pub async fn kv(
                     open_kvs,
                     txs,
                     &send_to_loop,
-                    &send_to_terminal,
                     &send_to_caps_oracle,
                     &kv_path,
                 )
@@ -114,7 +113,6 @@ async fn handle_request(
     open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
     txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>>,
     send_to_loop: &MessageSender,
-    send_to_terminal: &PrintSender,
     send_to_caps_oracle: &CapMessageSender,
     kv_path: &str,
 ) -> Result<(), KvError> {
@@ -301,21 +299,12 @@ async fn handle_request(
         }
     };
 
-    if let Some(target) = km.rsvp.or_else(|| {
-        expects_response.map(|_| Address {
-            node: our_node.to_string(),
-            process: source.process.clone(),
-        })
-    }) {
-        let response = KernelMessage {
-            id,
-            source: Address {
-                node: our_node.to_string(),
-                process: KV_PROCESS_ID.clone(),
-            },
-            target,
-            rsvp: None,
-            message: Message::Response((
+    if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| source)) {
+        KernelMessage::builder()
+            .id(id)
+            .source((our_node, KV_PROCESS_ID.clone()))
+            .target(target)
+            .message(Message::Response((
                 Response {
                     inherit: false,
                     body,
@@ -323,25 +312,15 @@ async fn handle_request(
                     capabilities: vec![],
                 },
                 None,
-            )),
-            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
+            )))
+            .lazy_load_blob(bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
-            }),
-        };
-
-        let _ = send_to_loop.send(response).await;
-    } else {
-        send_to_terminal
-            .send(Printout {
-                verbosity: 2,
-                content: format!(
-                    "kv: not sending response: {:?}",
-                    serde_json::from_slice::<KvResponse>(&body)
-                ),
-            })
-            .await
-            .unwrap();
+            }))
+            .build()
+            .unwrap()
+            .send(send_to_loop)
+            .await;
     }
 
     Ok(())

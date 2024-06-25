@@ -1,3 +1,4 @@
+use crate::{keygen, KNS_ADDRESS};
 use alloy::network::{eip2718::Encodable2718, EthereumWallet, TransactionBuilder};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider};
 use alloy::pubsub::PubSubFrontend;
@@ -9,11 +10,7 @@ use alloy_sol_types::{SolCall, SolValue};
 use lib::core::{Identity, NodeRouting};
 use std::str::FromStr;
 
-pub mod helpers;
-
-use crate::{keygen, KNS_ADDRESS};
-pub use helpers::RegisterHelpers::*;
-pub use helpers::*;
+mod helpers;
 
 const FAKE_DOTDEV: &str = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
 

@@ -267,21 +267,12 @@ async fn handle_request(
         }
     };
 
-    if let Some(target) = rsvp.or_else(|| {
-        expects_response.map(|_| Address {
-            node: our_node.to_string(),
-            process: source.process.clone(),
-        })
-    }) {
-        let response = KernelMessage {
-            id,
-            source: Address {
-                node: our_node.to_string(),
-                process: STATE_PROCESS_ID.clone(),
-            },
-            target,
-            rsvp: None,
-            message: Message::Response((
+    if let Some(target) = rsvp.or_else(|| expects_response.map(|_| source)) {
+        KernelMessage::builder()
+            .id(id)
+            .source((our_node, STATE_PROCESS_ID.clone()))
+            .target(target)
+            .message(Message::Response((
                 Response {
                     inherit: false,
                     body,
@@ -289,14 +280,15 @@ async fn handle_request(
                     capabilities: vec![],
                 },
                 None,
-            )),
-            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
+            )))
+            .lazy_load_blob(bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
-            }),
-        };
-
-        let _ = send_to_loop.send(response).await;
+            }))
+            .build()
+            .unwrap()
+            .send(send_to_loop)
+            .await;
     };
 
     Ok(())

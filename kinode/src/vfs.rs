@@ -326,7 +326,6 @@ async fn handle_request(
         VfsAction::Seek { seek_from } => {
             let file = open_file(open_files, path, false, false).await?;
             let mut file = file.lock().await;
-            // same type, rust tingz
             let seek_from = match seek_from {
                 lib::types::core::SeekFrom::Start(offset) => std::io::SeekFrom::Start(offset),
                 lib::types::core::SeekFrom::End(offset) => std::io::SeekFrom::End(offset),
@@ -449,12 +448,7 @@ async fn handle_request(
         }
     };
 
-    if let Some(target) = km.rsvp.or_else(|| {
-        expects_response.map(|_| Address {
-            node: our_node.to_string(),
-            process: km.source.process,
-        })
-    }) {
+    if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| km.source)) {
         KernelMessage::builder()
             .id(km.id)
             .source((our_node, VFS_PROCESS_ID.clone()))

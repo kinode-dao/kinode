@@ -2,7 +2,12 @@
 #![feature(btree_extract_if)]
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
-use lib::types::core::*;
+use lib::types::core::{
+    CapMessageReceiver, CapMessageSender, DebugReceiver, DebugSender, Identity, KernelCommand,
+    KernelMessage, Keyfile, Message, MessageReceiver, MessageSender, NetworkErrorReceiver,
+    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, Request,
+    KERNEL_PROCESS_ID,
+};
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::env;
@@ -421,34 +426,24 @@ async fn main() {
             verbose_mode,
         ) => {
             match quit {
-                Ok(_) => match kernel_message_sender
-                    .send(KernelMessage {
-                        id: rand::random(),
-                        source: Address {
-                            node: our.name.clone(),
-                            process: KERNEL_PROCESS_ID.clone(),
-                        },
-                        target: Address {
-                            node: our.name.clone(),
-                            process: KERNEL_PROCESS_ID.clone(),
-                        },
-                        rsvp: None,
-                        message: Message::Request(Request {
+                Ok(()) => {
+                    KernelMessage::builder()
+                        .id(rand::random())
+                        .source((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
+                        .target((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
+                        .message(Message::Request(Request {
                             inherit: false,
                             expects_response: None,
                             body: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
                             metadata: None,
                             capabilities: vec![],
-                        }),
-                        lazy_load_blob: None,
-                    })
-                    .await
-                {
-                    Ok(()) => "graceful exit".into(),
-                    Err(_) => {
-                        "failed to gracefully shut down kernel".into()
-                    }
-                },
+                        }))
+                        .build()
+                        .unwrap()
+                        .send(&kernel_message_sender)
+                        .await;
+                    "graceful exit".into()
+                }
                 Err(e) => e.to_string(),
             }
         }

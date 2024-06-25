@@ -8,8 +8,8 @@ use crossterm::{
 };
 use futures::{future::FutureExt, StreamExt};
 use lib::types::core::{
-    Address, DebugCommand, DebugSender, Identity, KernelMessage, Message, MessageSender,
-    PrintReceiver, PrintSender, Printout, Request, TERMINAL_PROCESS_ID,
+    DebugCommand, DebugSender, Identity, KernelMessage, Message, MessageSender, PrintReceiver,
+    PrintSender, Printout, Request, TERMINAL_PROCESS_ID,
 };
 use std::{
     fs::{read_to_string, OpenOptions},
@@ -558,28 +558,21 @@ pub async fn terminal(
                                 command_history.add(command.clone());
                                 cursor_col = prompt_len as u16;
                                 line_col = prompt_len;
-                                event_loop.send(
-                                    KernelMessage {
-                                        id: rand::random(),
-                                        source: Address {
-                                            node: our.name.clone(),
-                                            process: TERMINAL_PROCESS_ID.clone(),
-                                        },
-                                        target: Address {
-                                            node: our.name.clone(),
-                                            process: TERMINAL_PROCESS_ID.clone(),
-                                        },
-                                        rsvp: None,
-                                        message: Message::Request(Request {
-                                            inherit: false,
-                                            expects_response: None,
-                                            body: command.into_bytes(),
-                                            metadata: None,
-                                            capabilities: vec![],
-                                        }),
-                                        lazy_load_blob: None,
-                                    }
-                                ).await.expect("terminal: couldn't execute command!");
+                                KernelMessage::builder()
+                                    .id(rand::random())
+                                    .source((our.name.as_str(), TERMINAL_PROCESS_ID.clone()))
+                                    .target((our.name.as_str(), TERMINAL_PROCESS_ID.clone()))
+                                    .message(Message::Request(Request {
+                                        inherit: false,
+                                        expects_response: None,
+                                        body: command.into_bytes(),
+                                        metadata: None,
+                                        capabilities: vec![],
+                                    }))
+                                    .build()
+                                    .unwrap()
+                                    .send(&event_loop)
+                                    .await;
                             },
                             _ => {
                                 // some keycode we don't care about, yet

@@ -3,9 +3,9 @@ use crate::net::types::{
     RoutingRequest, TCP_PROTOCOL, WS_PROTOCOL,
 };
 use lib::types::core::{
-    Address, Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction,
-    NetworkErrorSender, NodeRouting, PrintSender, Printout, ProcessId, Request, Response,
-    SendError, SendErrorKind, WrappedSendError,
+    Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction, NetworkErrorSender,
+    NodeRouting, PrintSender, Printout, Request, Response, SendError, SendErrorKind,
+    WrappedSendError,
 };
 use {
     futures::{SinkExt, StreamExt},
@@ -94,26 +94,21 @@ pub async fn create_passthrough(
     }
     // send their net:distro:sys process a message, notifying it to create a *matching*
     // passthrough request, which we can pair with this pending one.
-    target_peer.sender.send(KernelMessage {
-        id: rand::random(),
-        source: Address {
-            node: our.name.clone(),
-            process: ProcessId::new(Some("net"), "distro", "sys"),
-        },
-        target: Address {
-            node: target_id.name.clone(),
-            process: ProcessId::new(Some("net"), "distro", "sys"),
-        },
-        rsvp: None,
-        message: Message::Request(Request {
-            inherit: false,
-            expects_response: Some(5),
-            body: rmp_serde::to_vec(&NetAction::ConnectionRequest(from_id.name.clone()))?,
-            metadata: None,
-            capabilities: vec![],
-        }),
-        lazy_load_blob: None,
-    })?;
+    target_peer.sender.send(
+        KernelMessage::builder()
+            .id(rand::random())
+            .source((our.name.as_str(), "net", "distro", "sys"))
+            .target((target_id.name.as_str(), "net", "distro", "sys"))
+            .message(Message::Request(Request {
+                inherit: false,
+                expects_response: Some(5),
+                body: rmp_serde::to_vec(&NetAction::ConnectionRequest(from_id.name.clone()))?,
+                metadata: None,
+                capabilities: vec![],
+            }))
+            .build()
+            .unwrap(),
+    )?;
     // we'll remove this either if the above message gets a negative response,
     // or if the target node connects to us with a matching passthrough.
     // TODO it is currently possible to have dangling passthroughs in the map
@@ -335,28 +330,23 @@ pub async fn parse_hello_message(
         ),
     )
     .await;
-    kernel_message_tx
-        .send(KernelMessage {
-            id: km.id,
-            source: Address {
-                node: our.name.clone(),
-                process: ProcessId::new(Some("net"), "distro", "sys"),
+    KernelMessage::builder()
+        .id(km.id)
+        .source((our.name.as_str(), "net", "distro", "sys"))
+        .target(km.rsvp.as_ref().unwrap_or(&km.source).clone())
+        .message(Message::Response((
+            Response {
+                inherit: false,
+                body: "delivered".as_bytes().to_vec(),
+                metadata: None,
+                capabilities: vec![],
             },
-            target: km.rsvp.as_ref().unwrap_or(&km.source).clone(),
-            rsvp: None,
-            message: Message::Response((
-                Response {
-                    inherit: false,
-                    body: "delivered".as_bytes().to_vec(),
-                    metadata: None,
-                    capabilities: vec![],
-                },
-                None,
-            )),
-            lazy_load_blob: None,
-        })
-        .await
-        .expect("net: kernel_message_tx was dropped");
+            None,
+        )))
+        .build()
+        .unwrap()
+        .send(kernel_message_tx)
+        .await;
 }
 
 /// Create a terminal printout at verbosity level 0.

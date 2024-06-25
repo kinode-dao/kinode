@@ -1,5 +1,4 @@
 use crate::KERNEL_PROCESS_ID;
-use anyhow::Result;
 use lib::types::core as t;
 pub use lib::v0::ProcessV0;
 pub use lib::Process;
@@ -9,8 +8,7 @@ use std::sync::Arc;
 use tokio::fs;
 use tokio::task::JoinHandle;
 use wasi_common::sync::Dir;
-use wasmtime::component::ResourceTable as Table;
-use wasmtime::component::*;
+use wasmtime::component::{Component, Linker, ResourceTable as Table};
 use wasmtime::{Engine, Store};
 use wasmtime_wasi::{
     pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiView,
@@ -90,7 +88,7 @@ async fn make_component(
     wasm_bytes: &[u8],
     home_directory_path: String,
     process_state: ProcessState,
-) -> Result<(Process, Store<ProcessWasi>, MemoryOutputPipe)> {
+) -> anyhow::Result<(Process, Store<ProcessWasi>, MemoryOutputPipe)> {
     let component = Component::new(&engine, wasm_bytes.to_vec())
         .expect("make_process_loop: couldn't read file");
 
@@ -170,7 +168,7 @@ async fn make_component_v0(
     wasm_bytes: &[u8],
     home_directory_path: String,
     process_state: ProcessState,
-) -> Result<(ProcessV0, Store<ProcessWasiV0>, MemoryOutputPipe)> {
+) -> anyhow::Result<(ProcessV0, Store<ProcessWasiV0>, MemoryOutputPipe)> {
     let component = Component::new(&engine, wasm_bytes.to_vec())
         .expect("make_process_loop: couldn't read file");
 
@@ -257,7 +255,7 @@ pub async fn make_process_loop(
     caps_oracle: t::CapMessageSender,
     engine: Engine,
     home_directory_path: String,
-) -> Result<()> {
+) -> anyhow::Result<()> {
     // before process can be instantiated, need to await 'run' message from kernel
     let mut pre_boot_queue = Vec::<Result<t::KernelMessage, t::WrappedSendError>>::new();
     while let Some(message) = recv_in_process.recv().await {

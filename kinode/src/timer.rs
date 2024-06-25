@@ -1,9 +1,30 @@
-use anyhow::Result;
 use lib::types::core::{
     Address, KernelMessage, Message, MessageReceiver, MessageSender, PrintSender, Printout,
     Response, TimerAction, TIMER_PROCESS_ID,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Debug)]
+struct TimerMap {
+    // key: the unix timestamp in milliseconds at which the timer pops
+    // value: a vector of KernelMessage ids and who to send Response to
+    // this is because multiple processes can set timers for the same time
+    timers: nohash_hasher::IntMap<u64, Vec<(u64, Address)>>,
+}
+
+impl TimerMap {
+    fn insert(&mut self, pop_time: u64, id: u64, addr: Address) {
+        self.timers.entry(pop_time).or_default().push((id, addr));
+    }
+
+    fn contains(&mut self, pop_time: u64) -> bool {
+        self.timers.contains_key(&pop_time)
+    }
+
+    fn remove(&mut self, pop_time: u64) -> Option<Vec<(u64, Address)>> {
+        self.timers.remove(&pop_time)
+    }
+}
 
 /// A runtime module that allows processes to set timers. Interacting with the
 /// timer is done with a simple Request/Response pattern, and the timer module
@@ -11,8 +32,8 @@ use serde::{Deserialize, Serialize};
 /// requests made by other nodes.
 ///
 /// The interface of the timer module is as follows:
-/// One kind of request is accepted: TimerAction::SetTimer(u64), where the u64 is the time to wait
-///  in milliseconds. This request should always expect a Response.
+/// One kind of request is accepted: TimerAction::SetTimer(u64), where the u64 is the
+/// time to wait in milliseconds. This request should always expect a Response.
 /// If the request does not expect a Response, the timer will not be set.
 ///
 /// A proper Request will trigger the timer module to send a Response. The Response will be
@@ -24,8 +45,7 @@ pub async fn timer_service(
     kernel_message_sender: MessageSender,
     mut timer_message_receiver: MessageReceiver,
     print_tx: PrintSender,
-) -> Result<()> {
-    // if we have a persisted state file, load it
+) -> anyhow::Result<()> {
     let mut timer_map = TimerMap {
         timers: nohash_hasher::IntMap::default(),
     };
@@ -60,7 +80,22 @@ pub async fn timer_service(
                             .as_millis() as u64;
                         let pop_time = now + timer_millis;
                         if timer_millis == 0 {
-                            send_response(&our, km.id, km.rsvp.unwrap_or(km.source), &kernel_message_sender).await;
+                            KernelMessage::builder()
+                                .id(km.id)
+                                .source((our.as_str(), TIMER_PROCESS_ID.clone()))
+                                .target(km.rsvp.unwrap_or(km.source))
+                                .message(Message::Response((
+                                    Response {
+                                        inherit: false,
+                                        body: vec![],
+                                        metadata: None,
+                                        capabilities: vec![],
+                                    },
+                                    None,
+                                )))
+                                .build()
+                                .unwrap()
+                                .send(&kernel_message_sender).await;
                             continue
                         }
                         Printout::new(3, format!("set timer to pop in {timer_millis}ms")).send(&print_tx).await;
@@ -79,51 +114,24 @@ pub async fn timer_service(
                 // the timer(s), and then remove it from our persisted map
                 let Some(timers) = timer_map.remove(time) else { continue };
                 for (id, addr) in timers {
-                    send_response(&our, id, addr, &kernel_message_sender).await;
+                    KernelMessage::builder()
+                        .id(id)
+                        .source((our.as_str(), TIMER_PROCESS_ID.clone()))
+                        .target(addr)
+                        .message(Message::Response((
+                            Response {
+                                inherit: false,
+                                body: vec![],
+                                metadata: None,
+                                capabilities: vec![],
+                            },
+                            None,
+                        )))
+                        .build()
+                        .unwrap()
+                        .send(&kernel_message_sender).await;
                 }
             }
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct TimerMap {
-    // key: the unix timestamp in milliseconds at which the timer pops
-    // value: a vector of KernelMessage ids and who to send Response to
-    // this is because multiple processes can set timers for the same time
-    timers: nohash_hasher::IntMap<u64, Vec<(u64, Address)>>,
-}
-
-impl TimerMap {
-    fn insert(&mut self, pop_time: u64, id: u64, addr: Address) {
-        self.timers.entry(pop_time).or_default().push((id, addr));
-    }
-
-    fn contains(&mut self, pop_time: u64) -> bool {
-        self.timers.contains_key(&pop_time)
-    }
-
-    fn remove(&mut self, pop_time: u64) -> Option<Vec<(u64, Address)>> {
-        self.timers.remove(&pop_time)
-    }
-}
-
-async fn send_response(our_node: &str, id: u64, target: Address, send_to_loop: &MessageSender) {
-    KernelMessage::builder()
-        .id(id)
-        .source((our_node, TIMER_PROCESS_ID.clone()))
-        .target(target)
-        .message(Message::Response((
-            Response {
-                inherit: false,
-                body: vec![],
-                metadata: None,
-                capabilities: vec![],
-            },
-            None,
-        )))
-        .build()
-        .unwrap()
-        .send(send_to_loop)
-        .await;
 }
