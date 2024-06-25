@@ -5,10 +5,12 @@ use lib::types::core::{
     Printout, ProcessId, Request, Response, VfsAction, VfsError, VfsRequest, VfsResponse,
     KERNEL_PROCESS_ID, VFS_PROCESS_ID,
 };
-use std::collections::{HashMap, VecDeque};
-use std::io::Read;
-use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, VecDeque},
+    io::Read,
+    path::{Component, Path, PathBuf},
+    sync::Arc,
+};
 use tokio::{
     fs,
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom},
@@ -69,7 +71,8 @@ pub async fn vfs(
         tokio::spawn(async move {
             let mut queue_lock = queue.lock().await;
             if let Some(km) = queue_lock.pop_front() {
-                let (km_id, km_source) = (km.id.clone(), km.source.clone());
+                let (km_id, km_rsvp) =
+                    (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
 
                 if let Err(e) = handle_request(
                     &our_node,
@@ -84,7 +87,7 @@ pub async fn vfs(
                     Printout::new(1, format!("vfs: {e}"))
                         .send(&send_to_terminal)
                         .await;
-                    make_error_message(&our_node, km_id, km_source, e, &send_to_loop).await;
+                    make_error_message(&our_node, km_id, km_rsvp, e, &send_to_loop).await;
                 }
             }
         });
