@@ -87,7 +87,23 @@ pub async fn vfs(
                     Printout::new(1, format!("vfs: {e}"))
                         .send(&send_to_terminal)
                         .await;
-                    make_error_message(&our_node, km_id, km_rsvp, e, &send_to_loop).await;
+                    KernelMessage::builder()
+                        .id(km_id)
+                        .source((our_node.as_str(), VFS_PROCESS_ID.clone()))
+                        .target(km_rsvp)
+                        .message(Message::Response((
+                            Response {
+                                inherit: false,
+                                body: serde_json::to_vec(&VfsResponse::Err(e)).unwrap(),
+                                metadata: None,
+                                capabilities: vec![],
+                            },
+                            None,
+                        )))
+                        .build()
+                        .unwrap()
+                        .send(&send_to_loop)
+                        .await;
                 }
             }
         });
@@ -218,7 +234,6 @@ async fn handle_request(
             // open file opens an existing file, or creates a new one if create is true
             let file = open_file(open_files, path, create, false).await?;
             let mut file = file.lock().await;
-            // extra in the case file was just created, todo refactor out.
             file.seek(SeekFrom::Start(0)).await?;
             (VfsResponse::Ok, None)
         }
@@ -525,7 +540,7 @@ async fn open_file<P: AsRef<Path>>(
 ) -> Result<Arc<Mutex<fs::File>>, VfsError> {
     let path = path.as_ref().to_path_buf();
     Ok(match open_files.get(&path) {
-        Some(file) => Arc::clone(file.value()),
+        Some(file) => file.value().clone(),
         None => {
             let file = Arc::new(Mutex::new(
                 tokio::fs::OpenOptions::new()
@@ -540,7 +555,7 @@ async fn open_file<P: AsRef<Path>>(
                         path: path.display().to_string(),
                     })?,
             ));
-            open_files.insert(path.clone(), Arc::clone(&file));
+            open_files.insert(path, file.clone());
             file
         }
     })
@@ -806,30 +821,4 @@ fn join_paths_safely(base: &PathBuf, extension: &str) -> PathBuf {
 
     let extension_path = Path::new(extension_str);
     base.join(extension_path)
-}
-
-async fn make_error_message(
-    our_node: &str,
-    id: u64,
-    source: Address,
-    error: VfsError,
-    send_to_loop: &MessageSender,
-) {
-    KernelMessage::builder()
-        .id(id)
-        .source((our_node, VFS_PROCESS_ID.clone()))
-        .target(source)
-        .message(Message::Response((
-            Response {
-                inherit: false,
-                body: serde_json::to_vec(&VfsResponse::Err(error)).unwrap(),
-                metadata: None,
-                capabilities: vec![],
-            },
-            None,
-        )))
-        .build()
-        .unwrap()
-        .send(send_to_loop)
-        .await;
 }

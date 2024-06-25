@@ -1,16 +1,18 @@
-use anyhow::Result;
+use lib::types::core::{
+    Address, Capability, Erc721Metadata, KernelMessage, LazyLoadBlob, Message, MessageReceiver,
+    MessageSender, NetworkErrorSender, OnExit, PackageManifestEntry, PersistedProcess, PrintSender,
+    Printout, ProcessId, ProcessMap, Request, Response, ReverseCapIndex, StateAction, StateError,
+    StateResponse, KERNEL_PROCESS_ID, STATE_PROCESS_ID, VFS_PROCESS_ID,
+};
 use ring::signature;
-use rocksdb::checkpoint::Checkpoint;
-use rocksdb::{Options, DB};
-use std::collections::{HashMap, VecDeque};
-use std::io::Read;
-use std::path::Path;
-use std::sync::Arc;
-use tokio::fs;
-use tokio::io::AsyncWriteExt;
-use tokio::sync::Mutex;
-
-use lib::types::core::*;
+use rocksdb::{checkpoint::Checkpoint, Options, DB};
+use std::{
+    collections::{HashMap, VecDeque},
+    io::Read,
+    path::Path,
+    sync::Arc,
+};
+use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
 
 include!("bootstrapped_processes.rs");
 
@@ -20,27 +22,19 @@ pub async fn load_state(
     home_directory_path: String,
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
 ) -> Result<(ProcessMap, DB, ReverseCapIndex), StateError> {
-    let state_path = format!("{}/kernel", &home_directory_path);
-
+    let state_path = format!("{home_directory_path}/kernel");
     if let Err(e) = fs::create_dir_all(&state_path).await {
-        panic!("failed creating kernel state dir! {:?}", e);
+        panic!("failed creating kernel state dir! {e:?}");
     }
 
-    // more granular kernel_state in column families
-
-    // let mut options = Option::default().unwrap();
-    // options.create_if_missing(true);
-    //let db = DB::open_default(&state_directory_path_str).unwrap();
     let mut opts = Options::default();
     opts.create_if_missing(true);
-    // let cf_name = "kernel_state";
-    // let cf_descriptor = ColumnFamilyDescriptor::new(cf_name, Options::default());
     let db = DB::open_default(state_path).unwrap();
     let mut process_map: ProcessMap = HashMap::new();
     let mut reverse_cap_index: ReverseCapIndex = HashMap::new();
 
-    let kernel_id = process_to_vec(KERNEL_PROCESS_ID.clone());
-    match db.get(&kernel_id) {
+    let kernel_id_vec = process_to_vec(KERNEL_PROCESS_ID.clone());
+    match db.get(&kernel_id_vec) {
         Ok(Some(value)) => {
             process_map = bincode::deserialize::<ProcessMap>(&value).unwrap();
             // if our networking key changed, we need to re-sign all local caps
@@ -56,11 +50,11 @@ pub async fn load_state(
             });
         }
         Ok(None) => {
-            db.put(&kernel_id, bincode::serialize(&process_map).unwrap())
+            db.put(&kernel_id_vec, bincode::serialize(&process_map).unwrap())
                 .unwrap();
         }
         Err(e) => {
-            panic!("failed to load kernel state from db: {:?}", e);
+            panic!("failed to load kernel state from db: {e:?}");
         }
     }
 
@@ -71,7 +65,7 @@ pub async fn load_state(
     bootstrap(
         &our_name,
         keypair,
-        home_directory_path.clone(),
+        home_directory_path,
         runtime_extensions,
         &mut process_map,
         &mut reverse_cap_index,
@@ -83,7 +77,7 @@ pub async fn load_state(
 }
 
 pub async fn state_sender(
-    our_name: String,
+    our_node: Arc<String>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     mut recv_state: MessageReceiver,
@@ -91,68 +85,83 @@ pub async fn state_sender(
     home_directory_path: String,
 ) -> Result<(), anyhow::Error> {
     let db = Arc::new(db);
+    let home_directory_path = Arc::new(home_directory_path);
 
-    let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
-        HashMap::new();
+    let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> = HashMap::new();
 
-    loop {
-        tokio::select! {
-            Some(km) = recv_state.recv() => {
-                if our_name != km.source.node {
-                    println!(
-                        "state: request must come from our_name={}, got: {}",
-                        our_name, &km,
-                    );
-                    continue;
-                }
-
-                let queue = process_queues
-                    .entry(km.source.process.clone())
-                    .or_insert_with(|| Arc::new(Mutex::new(VecDeque::new())))
-                    .clone();
-
-                {
-                    let mut queue_lock = queue.lock().await;
-                    queue_lock.push_back(km.clone());
-                }
-
-                let db_clone = db.clone();
-                let send_to_loop = send_to_loop.clone();
-                let send_to_terminal = send_to_terminal.clone();
-                let our_name = our_name.clone();
-                let home_directory_path = home_directory_path.clone();
-
-                tokio::spawn(async move {
-                    let mut queue_lock = queue.lock().await;
-                    if let Some(km) = queue_lock.pop_front() {
-                        if let Err(e) = handle_request(
-                                our_name.clone(),
-                                km.clone(),
-                                db_clone,
-                                send_to_loop.clone(),
-                                send_to_terminal,
-                                home_directory_path,
-                            )
-                            .await
-                            {
-                                let _ = send_to_loop
-                                    .send(make_error_message(our_name.clone(), &km, e))
-                                    .await;
-                            }
-                        }
-                });
-            }
+    while let Some(km) = recv_state.recv().await {
+        if *our_node != km.source.node {
+            Printout::new(
+                1,
+                format!(
+                    "state: got request from {}, but requests must come from our node {our_node}",
+                    km.source.node
+                ),
+            )
+            .send(&send_to_terminal)
+            .await;
+            continue;
         }
+
+        let queue = process_queues
+            .get(&km.source.process)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(Mutex::new(VecDeque::new())));
+
+        {
+            let mut queue_lock = queue.lock().await;
+            queue_lock.push_back(km);
+        }
+
+        let our_node = our_node.clone();
+        let db_clone = db.clone();
+        let send_to_loop = send_to_loop.clone();
+        let send_to_terminal = send_to_terminal.clone();
+        let home_directory_path = home_directory_path.clone();
+
+        tokio::spawn(async move {
+            let mut queue_lock = queue.lock().await;
+            if let Some(km) = queue_lock.pop_front() {
+                let (km_id, km_rsvp) =
+                    (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
+
+                if let Err(e) =
+                    handle_request(&our_node, km, db_clone, &send_to_loop, &home_directory_path)
+                        .await
+                {
+                    Printout::new(1, format!("state: {e}"))
+                        .send(&send_to_terminal)
+                        .await;
+                    KernelMessage::builder()
+                        .id(km_id)
+                        .source((our_node.as_str(), STATE_PROCESS_ID.clone()))
+                        .target(km_rsvp)
+                        .message(Message::Response((
+                            Response {
+                                inherit: false,
+                                body: serde_json::to_vec(&StateResponse::Err(e)).unwrap(),
+                                metadata: None,
+                                capabilities: vec![],
+                            },
+                            None,
+                        )))
+                        .build()
+                        .unwrap()
+                        .send(&send_to_loop)
+                        .await;
+                }
+            }
+        });
     }
+    Ok(())
 }
 
 async fn handle_request(
-    our_name: String,
+    our_node: &str,
     kernel_message: KernelMessage,
     db: Arc<DB>,
-    send_to_loop: MessageSender,
-    _send_to_terminal: PrintSender,
-    home_directory_path: String,
+    send_to_loop: &MessageSender,
+    home_directory_path: &str,
 ) -> Result<(), StateError> {
     let KernelMessage {
         id,
@@ -178,7 +187,7 @@ async fn handle_request(
         Ok(r) => r,
         Err(e) => {
             return Err(StateError::BadJson {
-                error: format!("parse into StateAction failed: {:?}", e),
+                error: format!("parse into StateAction failed: {e:?}"),
             })
         }
     };
@@ -214,7 +223,6 @@ async fn handle_request(
                     });
                 }
                 Err(e) => {
-                    println!("get state error: {:?}", e);
                     return Err(StateError::RocksDBError {
                         action: "GetState".into(),
                         error: e.to_string(),
@@ -230,7 +238,6 @@ async fn handle_request(
                     None,
                 ),
                 Err(e) => {
-                    println!("delete state error: {:?}", e);
                     return Err(StateError::RocksDBError {
                         action: "DeleteState".into(),
                         error: e.to_string(),
@@ -239,7 +246,7 @@ async fn handle_request(
             }
         }
         StateAction::Backup => {
-            let checkpoint_dir = format!("{}/kernel/backup", &home_directory_path);
+            let checkpoint_dir = format!("{home_directory_path}/kernel/backup");
 
             if Path::new(&checkpoint_dir).exists() {
                 fs::remove_dir_all(&checkpoint_dir).await?;
@@ -262,14 +269,14 @@ async fn handle_request(
 
     if let Some(target) = rsvp.or_else(|| {
         expects_response.map(|_| Address {
-            node: our_name.clone(),
+            node: our_node.to_string(),
             process: source.process.clone(),
         })
     }) {
         let response = KernelMessage {
             id,
             source: Address {
-                node: our_name.clone(),
+                node: our_node.to_string(),
                 process: STATE_PROCESS_ID.clone(),
             },
             target,
@@ -310,9 +317,7 @@ async fn bootstrap(
     runtime_extensions: Vec<(ProcessId, MessageSender, Option<NetworkErrorSender>, bool)>,
     process_map: &mut ProcessMap,
     reverse_cap_index: &mut ReverseCapIndex,
-) -> Result<()> {
-    // println!("bootstrapping node...\r");
-
+) -> anyhow::Result<()> {
     let mut runtime_caps: HashMap<Capability, Vec<u8>> = HashMap::new();
     // kernel is a special case
     let k_cap = Capability {
@@ -730,40 +735,12 @@ async fn get_zipped_packages() -> Vec<(
             if let Ok(metadata) = serde_json::from_slice::<Erc721Metadata>(metadata_bytes) {
                 packages.push((metadata, zip));
             } else {
-                println!(
-                    "fs: metadata for package {} is not valid Erc721Metadata\r",
-                    package_name
-                );
+                println!("fs: metadata for package {package_name} is not valid Erc721Metadata!\r",);
             }
         }
     }
 
     packages
-}
-
-fn make_error_message(our_name: String, km: &KernelMessage, error: StateError) -> KernelMessage {
-    KernelMessage {
-        id: km.id,
-        source: Address {
-            node: our_name.clone(),
-            process: STATE_PROCESS_ID.clone(),
-        },
-        target: match &km.rsvp {
-            None => km.source.clone(),
-            Some(rsvp) => rsvp.clone(),
-        },
-        rsvp: None,
-        message: Message::Response((
-            Response {
-                inherit: false,
-                body: serde_json::to_vec(&StateResponse::Err(error)).unwrap(),
-                metadata: None,
-                capabilities: vec![],
-            },
-            None,
-        )),
-        lazy_load_blob: None,
-    }
 }
 
 fn process_to_vec(process: ProcessId) -> Vec<u8> {

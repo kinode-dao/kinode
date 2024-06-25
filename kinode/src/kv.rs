@@ -12,7 +12,7 @@ use std::{
 use tokio::{fs, sync::Mutex};
 
 pub async fn kv(
-    our_node: String,
+    our_node: Arc<String>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
@@ -84,7 +84,23 @@ pub async fn kv(
                     Printout::new(1, format!("kv: {e}"))
                         .send(&send_to_terminal)
                         .await;
-                    make_error_message(&our_node, km_id, km_rsvp, e, &send_to_loop).await;
+                    KernelMessage::builder()
+                        .id(km_id)
+                        .source((our_node.as_str(), KV_PROCESS_ID.clone()))
+                        .target(km_rsvp)
+                        .message(Message::Response((
+                            Response {
+                                inherit: false,
+                                body: serde_json::to_vec(&KvResponse::Err { error: e }).unwrap(),
+                                metadata: None,
+                                capabilities: vec![],
+                            },
+                            None,
+                        )))
+                        .build()
+                        .unwrap()
+                        .send(&send_to_loop)
+                        .await;
                 }
             }
         });
@@ -475,32 +491,6 @@ async fn add_capability(
         .await?;
     let _ = recv_cap_bool.await?;
     Ok(())
-}
-
-async fn make_error_message(
-    our_node: &str,
-    id: u64,
-    source: Address,
-    error: KvError,
-    send_to_loop: &MessageSender,
-) {
-    KernelMessage::builder()
-        .id(id)
-        .source((our_node, KV_PROCESS_ID.clone()))
-        .target(source)
-        .message(Message::Response((
-            Response {
-                inherit: false,
-                body: serde_json::to_vec(&KvResponse::Err { error }).unwrap(),
-                metadata: None,
-                capabilities: vec![],
-            },
-            None,
-        )))
-        .build()
-        .unwrap()
-        .send(send_to_loop)
-        .await;
 }
 
 fn rocks_to_kv_err(error: rocksdb::Error) -> KvError {

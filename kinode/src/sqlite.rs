@@ -21,7 +21,7 @@ lazy_static::lazy_static! {
 }
 
 pub async fn sqlite(
-    our_node: String,
+    our_node: Arc<String>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
@@ -92,7 +92,24 @@ pub async fn sqlite(
                     Printout::new(1, format!("sqlite: {e}"))
                         .send(&send_to_terminal)
                         .await;
-                    make_error_message(&our_node, km_id, km_rsvp, e, &send_to_loop).await;
+                    KernelMessage::builder()
+                        .id(km_id)
+                        .source((our_node.as_str(), SQLITE_PROCESS_ID.clone()))
+                        .target(km_rsvp)
+                        .message(Message::Response((
+                            Response {
+                                inherit: false,
+                                body: serde_json::to_vec(&SqliteResponse::Err { error: e })
+                                    .unwrap(),
+                                metadata: None,
+                                capabilities: vec![],
+                            },
+                            None,
+                        )))
+                        .build()
+                        .unwrap()
+                        .send(&send_to_loop)
+                        .await;
                 }
             }
         });
@@ -535,30 +552,4 @@ fn get_json_params(blob: Option<LazyLoadBlob>) -> Result<Vec<SqlValue>, SqliteEr
             _ => Err(SqliteError::InvalidParameters),
         },
     }
-}
-
-async fn make_error_message(
-    our_node: &str,
-    id: u64,
-    source: Address,
-    error: SqliteError,
-    send_to_loop: &MessageSender,
-) {
-    KernelMessage::builder()
-        .id(id)
-        .source((our_node, SQLITE_PROCESS_ID.clone()))
-        .target(source)
-        .message(Message::Response((
-            Response {
-                inherit: false,
-                body: serde_json::to_vec(&SqliteResponse::Err { error }).unwrap(),
-                metadata: None,
-                capabilities: vec![],
-            },
-            None,
-        )))
-        .build()
-        .unwrap()
-        .send(send_to_loop)
-        .await;
 }

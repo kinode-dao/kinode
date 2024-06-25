@@ -333,7 +333,7 @@ async fn main() {
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
     ));
     tasks.spawn(state::state_sender(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         state_receiver,
@@ -341,7 +341,7 @@ async fn main() {
         home_directory_path.clone(),
     ));
     tasks.spawn(kv::kv(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         kv_receiver,
@@ -349,7 +349,7 @@ async fn main() {
         home_directory_path.clone(),
     ));
     tasks.spawn(sqlite::sqlite(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         sqlite_receiver,
