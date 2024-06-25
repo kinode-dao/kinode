@@ -1,28 +1,52 @@
 import React from 'react';
-import ReactDOM from 'react-dom/client';
+import ReactDOM from 'react-dom/client'
+
 import App from './App';
-import { Web3ReactProvider, Web3ReactHooks } from '@web3-react/core';
-import { hooks as metaMaskHooks, metaMask } from './connectors/metamask'
-import type { MetaMask } from '@web3-react/metamask'
-import '@unocss/reset/tailwind.css'
+// import '@unocss/reset/tailwind.css'
+// import '@rainbow-me/rainbowkit/styles.css';
+
 import 'uno.css'
 import './index.css';
+
+import {
+  getDefaultConfig,
+  RainbowKitProvider,
+} from '@rainbow-me/rainbowkit';
+import { WagmiProvider, http } from 'wagmi';
+import {
+  optimism,
+  anvil
+} from 'wagmi/chains';
+import {
+  QueryClientProvider,
+  QueryClient,
+} from "@tanstack/react-query";
+
 
 import { Buffer } from 'buffer';
 window.Buffer = Buffer;
 
-const connectors: [MetaMask, Web3ReactHooks][] = [
-  [metaMask, metaMaskHooks],
-]
-const root = ReactDOM.createRoot(
-  document.getElementById('root') as HTMLElement
-);
-root.render(
+
+const config = getDefaultConfig({
+  appName: 'Kinode Register UI',
+  projectId: 'YOUR_PROJECT_ID', // apparently need project_Id if using wallet_connect
+  chains: [anvil], // change back to OP main once ready
+  ssr: false, // If your dApp uses server side rendering (SSR)
+  transports: {
+    [anvil.id]: http("http://localhost:8545")
+  }
+});
+
+const queryClient = new QueryClient();
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <Web3ReactProvider connectors={connectors}>
-      <div id="signup-page" className="flex flex-col place-items-center place-content-center h-screen w-screen">
-        <App />
-      </div>
-    </Web3ReactProvider>
-  </React.StrictMode>
-);
+    <WagmiProvider config={config}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider>
+          <App />
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
+  </React.StrictMode>,
+)

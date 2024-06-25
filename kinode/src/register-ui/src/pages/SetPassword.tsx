@@ -1,17 +1,16 @@
 import React, { useState, useEffect, FormEvent, useCallback } from "react";
-import KinodeHeader from "../components/KnsHeader";
 import Loader from "../components/Loader";
-import { utils, providers } from "ethers";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import { Tooltip } from "../components/Tooltip";
-import { KinodeTitle } from "../components/KinodeTitle";
+// import { KinodeTitle } from "../components/KinodeTitle";
 import { getFetchUrl } from "../utils/fetch";
+
+import { sha256, toBytes } from "viem";
 
 type SetPasswordProps = {
   direct: boolean;
   pw: string;
   reset: boolean;
-  provider?: providers.Web3Provider,
   knsName: string;
   setPw: React.Dispatch<React.SetStateAction<string>>;
   appSizeOnLoad: number;
@@ -24,11 +23,8 @@ function SetPassword({
   direct,
   pw,
   reset,
-  provider,
   setPw,
   appSizeOnLoad,
-  closeConnect,
-  nodeChainId,
 }: SetPasswordProps) {
   const [pw2, setPw2] = useState("");
   const [error, setError] = useState("");
@@ -53,22 +49,21 @@ function SetPassword({
 
       setTimeout(async () => {
         setLoading(true);
-        let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
-        let signer = await provider?.getSigner();
-        let owner = await signer?.getAddress();
-        let chain_id = await signer?.getChainId();
-        let timestamp = Date.now();
+        let hashed_password = sha256(toBytes(pw));
+        // let owner = await signer?.getAddress();
+        // let chain_id = await signer?.getChainId();
+        // let timestamp = Date.now();
 
-        let sig_data = JSON.stringify({
-          username: knsName,
-          password_hash: hashed_password,
-          timestamp,
-          direct,
-          reset,
-          chain_id,
-        });
+        // let sig_data = JSON.stringify({
+        //   username: knsName,
+        //   password_hash: hashed_password,
+        //   timestamp,
+        //   direct,
+        //   reset,
+        //   chain_id,
+        // });
 
-        let signature = await signer?.signMessage(utils.toUtf8Bytes(sig_data));
+        // let signature = await signer?.signMessage(utils.toUtf8Bytes(sig_data));
 
         try {
           const result = await fetch(getFetchUrl("/boot"), {
@@ -80,10 +75,10 @@ function SetPassword({
               reset,
               username: knsName,
               direct,
-              owner,
-              timestamp,
-              signature,
-              chain_id,
+              // owner,
+              // timestamp,
+              // signature,
+              // chain_id,
             }),
           });
           const base64String = await result.json();
@@ -113,12 +108,7 @@ function SetPassword({
 
   return (
     <>
-      <KinodeHeader
-        header={<KinodeTitle prefix="Set Password" showLogo />}
-        openConnect={() => { }}
-        closeConnect={closeConnect}
-        nodeChainId={nodeChainId}
-      />
+
       {loading ? (
         <Loader msg="Setting up node..." />
       ) : (

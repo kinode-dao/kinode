@@ -1,31 +1,8 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { Navigate, BrowserRouter as Router, Route, Routes, useParams } from 'react-router-dom';
-import { hooks } from "./connectors/metamask";
-import {
-  KNS_REGISTRY_ADDRESSES,
-  DOT_OS_ADDRESSES,
-  ENS_REGISTRY_ADDRESSES,
-  NAMEWRAPPER_ADDRESSES,
-  KNS_ENS_ENTRY_ADDRESSES,
-  KNS_ENS_EXIT_ADDRESSES,
-} from "./constants/addresses";
-import { ChainId } from "./constants/chainId";
-import {
-  KNSRegistryResolver,
-  KNSRegistryResolver__factory,
-  DotOsRegistrar,
-  DotOsRegistrar__factory,
-  KNSEnsEntry,
-  KNSEnsEntry__factory,
-  KNSEnsExit,
-  KNSEnsExit__factory,
-  NameWrapper,
-  NameWrapper__factory,
-  ENSRegistry,
-  ENSRegistry__factory
-} from "./abis/types";
-import { ethers } from "ethers";
-import ConnectWallet from "./components/ConnectWallet";
+
+import { ConnectButton } from '@rainbow-me/rainbowkit';
+
 import RegisterEthName from "./pages/RegisterEthName";
 import RegisterKnsName from "./pages/RegisterKnsName";
 import ClaimOsInvite from "./pages/ClaimKnsInvite";
@@ -38,12 +15,8 @@ import ImportKeyfile from "./pages/ImportKeyfile";
 import { UnencryptedIdentity } from "./lib/types";
 import { getFetchUrl } from "./utils/fetch";
 
-const {
-  useProvider,
-} = hooks;
 
 function App() {
-  const provider = useProvider();
   const params = useParams()
 
   const [pw, setPw] = useState<string>('');
@@ -67,49 +40,6 @@ function App() {
   const openConnect = () => setConnectOpen(true)
   const closeConnect = () => setConnectOpen(false)
 
-  const rpcUrl = useMemo(() => provider?.network?.chainId === ChainId.SEPOLIA ? import.meta.env.REACT_APP_SEPOLIA_RPC_URL : import.meta.env.REACT_APP_OPTIMISM_RPC_URL, [provider])
-
-  const [dotOs, setDotOs] = useState<DotOsRegistrar>();
-  const [kns, setKns] = useState<KNSRegistryResolver>();
-  const [knsEnsEntry, setKnsEnsEntry] = useState<KNSEnsEntry>();
-  const [knsEnsExit, setKnsEnsExit] = useState<KNSEnsExit>();
-  const [nameWrapper, setNameWrapper] = useState<NameWrapper>();
-  const [ensRegistry, setEnsRegistry] = useState<ENSRegistry>();
-
-  useEffect(() => {
-    if (rpcUrl) {
-      setDotOs(DotOsRegistrar__factory.connect(
-        provider?.network?.chainId === ChainId.SEPOLIA ? DOT_OS_ADDRESSES[ChainId.SEPOLIA] : DOT_OS_ADDRESSES[ChainId.OPTIMISM],
-        new ethers.providers.JsonRpcProvider(rpcUrl)
-      ))
-
-      setKns(KNSRegistryResolver__factory.connect(
-        provider?.network?.chainId === ChainId.SEPOLIA ? KNS_REGISTRY_ADDRESSES[ChainId.SEPOLIA] : KNS_REGISTRY_ADDRESSES[ChainId.OPTIMISM],
-        new ethers.providers.JsonRpcProvider(rpcUrl)
-      ))
-
-      setKnsEnsEntry(KNSEnsEntry__factory.connect(
-        provider?.network?.chainId === ChainId.SEPOLIA ? KNS_ENS_ENTRY_ADDRESSES[ChainId.SEPOLIA] : KNS_ENS_ENTRY_ADDRESSES[ChainId.MAINNET],
-        new ethers.providers.JsonRpcProvider(provider?.network?.chainId === ChainId.SEPOLIA ? import.meta.env.REACT_APP_SEPOLIA_RPC_URL : import.meta.env.REACT_APP_MAINNET_RPC_URL)
-      ))
-
-      setKnsEnsExit(KNSEnsExit__factory.connect(
-        provider?.network?.chainId === ChainId.SEPOLIA ? KNS_ENS_EXIT_ADDRESSES[ChainId.SEPOLIA] : KNS_ENS_EXIT_ADDRESSES[ChainId.OPTIMISM],
-        new ethers.providers.JsonRpcProvider(rpcUrl)
-      ))
-
-      setNameWrapper(NameWrapper__factory.connect(
-        provider?.network?.chainId === ChainId.SEPOLIA ? NAMEWRAPPER_ADDRESSES[ChainId.SEPOLIA] : NAMEWRAPPER_ADDRESSES[ChainId.MAINNET],
-        new ethers.providers.JsonRpcProvider(rpcUrl)
-      ))
-
-      setEnsRegistry(ENSRegistry__factory.connect(
-        provider?.network?.chainId === ChainId.SEPOLIA ? ENS_REGISTRY_ADDRESSES[ChainId.SEPOLIA] : ENS_REGISTRY_ADDRESSES[ChainId.MAINNET],
-        new ethers.providers.JsonRpcProvider(rpcUrl)
-      ))
-    }
-
-  }, [rpcUrl, provider])
 
   useEffect(() => setAppSizeOnLoad(
     (window.performance.getEntriesByType('navigation') as any)[0].transferSize
@@ -154,84 +84,16 @@ function App() {
 
   useEffect(() => setNavigateToLogin(false), [initialVisit])
 
-  useEffect(() => {
-    provider?.getNetwork().then(network => {
-      if (network.chainId === ChainId.SEPOLIA) {
-        setDotOs(DotOsRegistrar__factory.connect(
-          DOT_OS_ADDRESSES[ChainId.SEPOLIA],
-          provider!.getSigner()
-        ))
-        setKns(KNSRegistryResolver__factory.connect(
-          KNS_REGISTRY_ADDRESSES[ChainId.SEPOLIA],
-          provider!.getSigner()
-        ))
-        setKnsEnsEntry(KNSEnsEntry__factory.connect(
-          KNS_ENS_ENTRY_ADDRESSES[ChainId.SEPOLIA],
-          provider!.getSigner()
-        ))
-        setKnsEnsExit(KNSEnsExit__factory.connect(
-          KNS_ENS_EXIT_ADDRESSES[ChainId.SEPOLIA],
-          provider!.getSigner()
-        ))
-        setNameWrapper(NameWrapper__factory.connect(
-          NAMEWRAPPER_ADDRESSES[ChainId.SEPOLIA],
-          provider!.getSigner()
-        ))
-        setEnsRegistry(ENSRegistry__factory.connect(
-          ENS_REGISTRY_ADDRESSES[ChainId.SEPOLIA],
-          provider!.getSigner()
-        ))
-
-      } else if (network.chainId === ChainId.OPTIMISM || network.chainId === ChainId.MAINNET) {
-        setDotOs(DotOsRegistrar__factory.connect(
-          DOT_OS_ADDRESSES[ChainId.OPTIMISM],
-          provider!.getSigner())
-        )
-        setKns(KNSRegistryResolver__factory.connect(
-          KNS_REGISTRY_ADDRESSES[ChainId.OPTIMISM],
-          provider!.getSigner())
-        )
-        setKnsEnsExit(KNSEnsExit__factory.connect(
-          KNS_ENS_EXIT_ADDRESSES[ChainId.OPTIMISM],
-          provider!.getSigner()
-        ))
-        setKnsEnsEntry(KNSEnsEntry__factory.connect(
-          KNS_ENS_ENTRY_ADDRESSES[ChainId.MAINNET],
-          provider!.getSigner()
-        ))
-        setNameWrapper(NameWrapper__factory.connect(
-          NAMEWRAPPER_ADDRESSES[ChainId.MAINNET],
-          new ethers.providers.JsonRpcProvider(import.meta.env.REACT_APP_MAINNET_RPC_URL)
-        ))
-        setEnsRegistry(ENSRegistry__factory.connect(
-          ENS_REGISTRY_ADDRESSES[ChainId.MAINNET],
-          new ethers.providers.JsonRpcProvider(import.meta.env.REACT_APP_MAINNET_RPC_URL)
-        ))
-      }
-    })
-  }, [provider])
-
-  const knsEnsEntryNetwork = ChainId.SEPOLIA;
-  const knsEnsExitNetwork = ChainId.SEPOLIA;
 
   // just pass all the props each time since components won't mind extras
   const props = {
     direct, setDirect,
-    key,
+    key, appSizeOnLoad,
     keyFileName, setKeyFileName,
     reset, setReset,
     pw, setPw,
     knsName, setOsName,
-    dotOs: dotOs!,
-    kns: kns!,
-    knsEnsEntry: knsEnsEntry!,
-    knsEnsExit: knsEnsExit!,
-    nameWrapper: nameWrapper!,
-    ensRegistry: ensRegistry!,
-    knsEnsEntryNetwork,
-    knsEnsExitNetwork,
     connectOpen, openConnect, closeConnect,
-    provider, appSizeOnLoad,
     networkingKey, setNetworkingKey,
     ipAddress, setIpAddress,
     ws_port, setWsPort,
@@ -242,7 +104,8 @@ function App() {
 
   return (
     <>
-      <ConnectWallet {...props} />
+      <ConnectButton chainStatus="icon" accountStatus="avatar" />
+
       <Router>
         <Routes>
           <Route path="/" element={navigateToLogin

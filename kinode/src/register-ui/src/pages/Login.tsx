@@ -1,21 +1,17 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { namehash } from "ethers/lib/utils";
-import { utils } from "ethers";
-import KinodeHeader from "../components/KnsHeader";
 import { PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
-import { hooks } from "../connectors/metamask";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { useNavigate } from "react-router-dom";
 import { Tooltip } from "../components/Tooltip";
-import { KinodeTitle } from "../components/KinodeTitle";
 import { isMobileCheck } from "../utils/dimensions";
 import classNames from "classnames";
 import { generateNetworkingKeys, getNetworkName } from "../utils/chain";
 import { getFetchUrl } from "../utils/fetch";
 
-const { useProvider } = hooks;
+import { useAccount } from "wagmi";
+import { sha256, toBytes } from "viem";
 
 interface LoginProps extends PageProps { }
 
@@ -24,10 +20,8 @@ function Login({
   setDirect,
   pw,
   setPw,
-  kns,
   openConnect,
   appSizeOnLoad,
-  closeConnect,
   routers,
   setNetworkingKey,
   setIpAddress,
@@ -38,8 +32,8 @@ function Login({
   setOsName,
   nodeChainId,
 }: LoginProps) {
-  const provider = useProvider();
   const navigate = useNavigate()
+  const address = useAccount();
 
   const [keyErrs, setKeyErrs] = useState<string[]>([]);
   const [loading, setLoading] = useState<string>("");
@@ -71,7 +65,7 @@ function Login({
 
       try {
         if (reset) {
-          if (!provider) {
+          if (!address) {
             setKeyErrs(["Please connect your wallet and try again"]);
             setRestartFlow(true);
             return openConnect();
@@ -79,7 +73,7 @@ function Login({
 
           setLoading("Checking password...");
 
-          let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
+          let hashed_password = sha256(toBytes(pw));
 
           // Replace this with network key generation
           const response = await fetch(getFetchUrl("/vet-keyfile"), {
@@ -96,10 +90,10 @@ function Login({
           // Generate keys on server that are stored temporarily
           const data = await generateNetworkingKeys({
             direct,
-            kns,
+            kns: "kns here",
             nodeChainId,
             chainName: getNetworkName(nodeChainId),
-            nameToSet: namehash(knsName),
+            nameToSet: "namehash(knsName)",
             setNetworkingKey,
             setIpAddress,
             setWsPort,
@@ -107,17 +101,17 @@ function Login({
             setRouters,
           })
 
-          setLoading("Please confirm the transaction");
+          // setLoading("Please confirm the transaction");
 
-          const tx = await kns.multicall(data);
+          // const tx = await kns.multicall(data);
 
-          setLoading("Resetting Networking Information...");
+          // setLoading("Resetting Networking Information...");
 
-          await tx.wait();
+          // await tx.wait();
         }
 
         setLoading("Logging in...");
-        let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
+        let hashed_password = sha256(toBytes(pw));
 
         // Login or confirm new keys
         const result = await fetch(
@@ -163,7 +157,7 @@ function Login({
         setLoading("");
       }
     },
-    [pw, appSizeOnLoad, reset, direct, knsName, provider, openConnect, kns]
+    [pw, appSizeOnLoad, reset, direct, knsName, openConnect]
   );
 
   const isDirect = Boolean(routers?.length === 0);
@@ -172,13 +166,6 @@ function Login({
 
   return (
     <>
-      <KinodeHeader
-        header={<KinodeTitle prefix='Login to' showLogo />}
-        openConnect={openConnect}
-        closeConnect={closeConnect}
-        hideConnect={!showReset}
-        nodeChainId={nodeChainId}
-      />
       {loading ? (
         <Loader msg={loading} />
       ) : (

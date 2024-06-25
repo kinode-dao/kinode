@@ -5,21 +5,17 @@ import {
   useRef,
   useState,
 } from "react";
-import { utils } from "ethers";
-import KinodeHeader from "../components/KnsHeader";
 import { PageProps } from "../lib/types";
 import Loader from "../components/Loader";
 import { getFetchUrl } from "../utils/fetch";
+import { sha256, toBytes } from "viem";
 
 interface ImportKeyfileProps extends PageProps { }
 
 function ImportKeyfile({
   pw,
   setPw,
-  openConnect,
   appSizeOnLoad,
-  closeConnect,
-  nodeChainId,
 }: ImportKeyfileProps) {
 
   const [localKey, setLocalKey] = useState<string>("");
@@ -127,7 +123,7 @@ function ImportKeyfile({
 
       try {
         if (keyErrs.length === 0 && localKey !== "") {
-          let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
+          let hashed_password = sha256(toBytes(pw));
 
           const response = await fetch(getFetchUrl("/vet-keyfile"), {
             method: "POST",
@@ -178,13 +174,6 @@ function ImportKeyfile({
 
   return (
     <>
-      <KinodeHeader
-        header={<h1>Import Keyfile</h1>}
-        openConnect={openConnect}
-        closeConnect={closeConnect}
-        hideConnect
-        nodeChainId={nodeChainId}
-      />
       {loading ? (
         <Loader msg="Setting up node..." />
       ) : (

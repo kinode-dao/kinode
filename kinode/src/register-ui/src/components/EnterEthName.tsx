@@ -1,21 +1,14 @@
 import React, { useEffect, useRef } from "react";
-import { hooks } from "../connectors/metamask";
-import { NameWrapper, ENSRegistry } from "../abis/types";
 import isValidDomain from 'is-valid-domain'
-import { hash } from '@ensdomains/eth-ens-namehash';
 import { toAscii } from 'idna-uts46-hx'
 
-const {
-  useAccount,
-} = hooks;
+import { useAccount } from "wagmi";
 
 type ClaimOsNameProps = {
   name: string,
   setName: React.Dispatch<React.SetStateAction<string>>
   nameValidities: string[],
   setNameValidities: React.Dispatch<React.SetStateAction<string[]>>,
-  nameWrapper: NameWrapper,
-  ensRegistry: ENSRegistry,
   triggerNameCheck: boolean
 }
 
@@ -24,14 +17,12 @@ function EnterEthName({
   setName,
   nameValidities,
   setNameValidities,
-  nameWrapper,
-  ensRegistry,
   triggerNameCheck
 }: ClaimOsNameProps) {
 
-  const userAddress = useAccount()
+  const { address } = useAccount()
 
-  console.log("userAddress", userAddress)
+  console.log("userAddress", address)
 
   const NAME_URL = "Name must be a valid URL without subdomains (A-Z, a-z, 0-9, and punycode)"
   const NAME_NOT_OWNED = "Name is not owned by your wallet"
@@ -71,12 +62,13 @@ function EnterEthName({
         index = validities.indexOf(NAME_NOT_OWNED)
         if (validities.length == 0 || index != -1) {
 
-          let owner = await ensRegistry.owner(hash(normalized))
+          // TODO
+          let owner = "ensRegistry.owner(hash(normalized))" // await ensRegistry.owner(hash(normalized))
 
-          if (owner == nameWrapper.address)
-            owner = await nameWrapper.ownerOf(hash(normalized))
+          // if (owner == nameWrapper.address)
+          //   owner = await nameWrapper.ownerOf(hash(normalized))
 
-          if (owner != userAddress) {
+          if (owner != address) {
             if (index == -1) validities.push(NAME_NOT_OWNED)
           } else {
             validities.splice(index, 1)

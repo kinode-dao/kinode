@@ -1,11 +1,8 @@
 import { useState, useEffect, FormEvent, useCallback } from "react";
-import { hooks } from "../connectors/metamask";
 import { useNavigate } from "react-router-dom";
 import { toDNSWireFormat } from "../utils/dnsWire";
-import { utils } from "ethers";
 import EnterEthName from "../components/EnterEthName";
 import Loader from "../components/Loader";
-import KinodeHeader from "../components/KnsHeader";
 import { PageProps } from "../lib/types";
 import { generateNetworkingKeys, getNetworkName, setChain } from "../utils/chain";
 import { hash } from "@ensdomains/eth-ens-namehash";
@@ -13,7 +10,7 @@ import DirectCheckbox from "../components/DirectCheckbox";
 import { MAINNET_OPT_HEX, OPTIMISM_OPT_HEX } from "../constants/chainId";
 import { KinodeTitle } from "../components/KinodeTitle";
 
-const { useAccounts } = hooks;
+import { useAccount } from "wagmi";
 
 interface RegisterOsNameProps extends PageProps { }
 
@@ -21,12 +18,7 @@ function RegisterEthName({
   direct,
   setDirect,
   setOsName,
-  nameWrapper,
-  ensRegistry,
-  knsEnsEntry,
-  kns,
   openConnect,
-  provider,
   closeConnect,
   setNetworkingKey,
   setIpAddress,
@@ -35,7 +27,7 @@ function RegisterEthName({
   setRouters,
   nodeChainId,
 }: RegisterOsNameProps) {
-  let accounts = useAccounts();
+  let { address } = useAccount();
   let navigate = useNavigate();
   const chainName = getNetworkName(nodeChainId);
   const [loading, setLoading] = useState("");
@@ -49,15 +41,13 @@ function RegisterEthName({
     document.title = "Register";
   }, []);
 
-  useEffect(() => setTriggerNameCheck(!triggerNameCheck), [provider]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const enterEthNameProps = {
     name,
     setName,
     nameValidities,
     setNameValidities,
-    nameWrapper,
-    ensRegistry,
     triggerNameCheck,
   };
 
@@ -66,17 +56,16 @@ function RegisterEthName({
       e.preventDefault();
       e.stopPropagation();
 
-      if (!provider) return openConnect();
 
       setLoading("Please confirm the transaction in your wallet");
       try {
         const cleanedName = name.trim().replace(".eth", "");
-        const nameToSet = utils.namehash(`${cleanedName}.eth`);
+        const nameToSet = "namehash(`${cleanedName}.eth`)";
         const targetChainId = nodeChainId === OPTIMISM_OPT_HEX ? MAINNET_OPT_HEX : nodeChainId;
 
         const data = await generateNetworkingKeys({
           direct,
-          kns,
+          kns: "kns here",
           nodeChainId: targetChainId,
           chainName,
           nameToSet,
@@ -94,22 +83,22 @@ function RegisterEthName({
         const dnsFormat = toDNSWireFormat(`${cleanedName}.eth`);
         const hashedName = hash(`${cleanedName}.eth`);
 
-        const tx = await knsEnsEntry.setKNSRecords(dnsFormat, data, { gasLimit: 300000 });
+        // const tx = await knsEnsEntry.setKNSRecords(dnsFormat, data, { gasLimit: 300000 });
 
-        const onRegistered = (node: any, _name: any) => {
-          if (node === hashedName) {
-            kns.off("NodeRegistered", onRegistered);
-            setLoading("");
-            setOsName(`${cleanedName}.eth`);
-            navigate("/set-password");
-          }
-        };
+        // const onRegistered = (node: any, _name: any) => {
+        //   if (node === hashedName) {
+        //     kns.off("NodeRegistered", onRegistered);
+        //     setLoading("");
+        //     setOsName(`${cleanedName}.eth`);
+        //     navigate("/set-password");
+        //   }
+        // };
 
-        await setChain(nodeChainId);
+        // await setChain(nodeChainId);
 
-        setLoading(`Registering ${cleanedName}.eth on Kinode... this may take a few minutes.`);
-        kns.on("NodeRegistered", onRegistered);
-        await tx.wait();
+        // setLoading(`Registering ${cleanedName}.eth on Kinode... this may take a few minutes.`);
+        // kns.on("NodeRegistered", onRegistered);
+        // await tx.wait();
       } catch (error) {
         console.error("Registration Error:", error);
         setLoading("");
@@ -121,11 +110,8 @@ function RegisterEthName({
     [
       name,
       direct,
-      accounts,
-      kns,
       navigate,
       setOsName,
-      provider,
       openConnect,
       setNetworkingKey,
       setIpAddress,
@@ -139,13 +125,8 @@ function RegisterEthName({
 
   return (
     <>
-      <KinodeHeader
-        header={<KinodeTitle prefix="Register via ENS" />}
-        openConnect={openConnect}
-        closeConnect={closeConnect}
-        nodeChainId={nodeChainId === OPTIMISM_OPT_HEX ? MAINNET_OPT_HEX : nodeChainId}
-      />
-      {Boolean(provider) && (
+
+      {Boolean(address) && (
         <form id="signup-form" className="flex flex-col" onSubmit={handleRegister}>
           {loading ? (
             <Loader msg={loading} />

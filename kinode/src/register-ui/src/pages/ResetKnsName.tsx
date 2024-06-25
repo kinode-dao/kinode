@@ -5,13 +5,11 @@ import {
   useRef,
   useState,
 } from "react";
-import { hooks } from "../connectors/metamask";
 import { useNavigate } from "react-router-dom";
 import { toAscii } from "idna-uts46-hx";
 import { hash } from "@ensdomains/eth-ens-namehash";
 import isValidDomain from "is-valid-domain";
 import Loader from "../components/Loader";
-import KinodeHeader from "../components/KnsHeader";
 import { PageProps } from "../lib/types";
 import { generateNetworkingKeys, getNetworkName } from "../utils/chain";
 import { Tooltip } from "../components/Tooltip";
@@ -20,13 +18,14 @@ import EnterKnsName from "../components/EnterKnsName";
 import { KinodeTitle } from "../components/KinodeTitle";
 import { namehash } from "@ethersproject/hash";
 
+import { useAccount } from "wagmi";
+
 const NAME_INVALID_PUNY = "Unsupported punycode character";
 const NAME_NOT_OWNER = "Name does not belong to this wallet";
 const NAME_NOT_REGISTERED = "Name is not registered";
 const NAME_URL =
   "Name must be a valid URL without subdomains (A-Z, a-z, 0-9, and punycode)";
 
-const { useAccounts, useProvider } = hooks;
 
 interface ResetProps extends PageProps { }
 
@@ -36,8 +35,6 @@ function Reset({
   setReset,
   knsName,
   setOsName,
-  dotOs,
-  kns,
   openConnect,
   closeConnect,
   setNetworkingKey,
@@ -47,8 +44,7 @@ function Reset({
   setRouters,
   nodeChainId,
 }: ResetProps) {
-  const accounts = useAccounts();
-  const provider = useProvider();
+  const { address } = useAccount();
   const navigate = useNavigate();
 
   const chainName = getNetworkName(nodeChainId);
@@ -64,7 +60,7 @@ function Reset({
   }, []);
 
   // so inputs will validate once wallet is connected
-  useEffect(() => setTriggerNameCheck(!triggerNameCheck), [provider]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const nameDebouncer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
@@ -73,7 +69,6 @@ function Reset({
     nameDebouncer.current = setTimeout(async () => {
       setNameVets([]);
 
-      if (!provider) return;
 
       if (name === "") return;
 
@@ -97,12 +92,13 @@ function Reset({
         } else if (index !== -1) vets.splice(index, 1);
 
         try {
-          const owner = await dotOs?.ownerOf(hash(normalized));
+          // TODO
+          const owner = "dotOs.ownerOf(hash(normalized))" // await dotOs?.ownerOf(hash(normalized));
 
-          index = vets.indexOf(NAME_NOT_OWNER);
-          if (owner === accounts![0] && index !== -1) vets.splice(index, 1);
-          else if (index === -1 && owner !== accounts![0])
-            vets.push(NAME_NOT_OWNER);
+          // index = vets.indexOf(NAME_NOT_OWNER);
+          // if (owner === address && index !== -1) vets.splice(index, 1);
+          // else if (index === -1 && owner !== accounts![0])
+          //   vets.push(NAME_NOT_OWNER);
 
           index = vets.indexOf(NAME_NOT_REGISTERED);
           if (index !== -1) vets.splice(index, 1);
@@ -123,14 +119,14 @@ function Reset({
       e.preventDefault();
       e.stopPropagation();
 
-      if (!provider || !kns) return openConnect();
 
       setLoading("Please confirm the transaction in your wallet");
       try {
         const nameToSet = namehash(knsName);
+        // TODO
         const data = await generateNetworkingKeys({
           direct,
-          kns,
+          kns: "kns here",
           nodeChainId,
           chainName,
           nameToSet,
@@ -141,11 +137,11 @@ function Reset({
           setRouters,
         });
 
-        const tx = await kns.multicall(data);
+        // const tx = await kns.multicall(data);
 
         setLoading("Resetting Networking Information...");
 
-        await tx.wait();
+        // await tx.wait();
 
         setReset(true);
         setDirect(direct);
@@ -157,13 +153,11 @@ function Reset({
       }
     },
     [
-      provider,
       knsName,
       setReset,
       setDirect,
       navigate,
       openConnect,
-      kns,
       direct,
       setNetworkingKey,
       setIpAddress,
@@ -177,12 +171,8 @@ function Reset({
 
   return (
     <>
-      <KinodeHeader header={<KinodeTitle prefix="Reset KNS Name" />}
-        openConnect={openConnect}
-        closeConnect={closeConnect}
-        nodeChainId={nodeChainId}
-      />
-      {Boolean(provider) && (
+
+      {Boolean(address) && (
         <form id="signup-form" className="flex flex-col" onSubmit={handleResetRecords}>
           {loading ? (
             <Loader msg={loading} />
@@ -193,7 +183,7 @@ function Reset({
                   Specify the node ID to reset
                   <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
                 </label>
-                <EnterKnsName {...{ name, setName, nameVets, dotOs, triggerNameCheck, nameValidities, setNameValidities, isReset: true }} />
+                <EnterKnsName {...{ name, setName, nameVets, triggerNameCheck, nameValidities, setNameValidities, isReset: true }} />
               </h3>
 
               <DirectCheckbox {...{ direct, setDirect }} />

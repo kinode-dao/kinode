@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from "react";
-import { DotOsRegistrar } from "../abis/types";
 import isValidDomain from "is-valid-domain";
 import hash from "@ensdomains/eth-ens-namehash";
 import { toAscii } from "idna-uts46-hx";
@@ -9,7 +8,6 @@ type ClaimOsNameProps = {
   setName: React.Dispatch<React.SetStateAction<string>>;
   nameValidities: string[];
   setNameValidities: React.Dispatch<React.SetStateAction<string[]>>;
-  dotOs?: DotOsRegistrar;
   triggerNameCheck: boolean;
   isReset?: boolean;
 };
@@ -19,7 +17,6 @@ function EnterKnsName({
   setName,
   nameValidities,
   setNameValidities,
-  dotOs,
   triggerNameCheck,
   isReset = false,
 }: ClaimOsNameProps) {
@@ -67,7 +64,8 @@ function EnterKnsName({
         if (validities.length === 0 || index !== -1 && normalized.length > 2) {
           try {
             const namehash = hash.hash(normalized)
-            const owner = await dotOs?.ownerOf(namehash);
+            // TODO
+            const owner = "dotOs.ownerOf(namehash)" // await dotOs?.ownerOf(namehash);
             if (owner && index === -1) validities.push(NAME_CLAIMED);
           } catch (e) {
             console.error({ e })

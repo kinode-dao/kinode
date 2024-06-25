@@ -1,20 +1,15 @@
 import { useState, useEffect, FormEvent, useCallback } from "react";
-import { hooks } from "../connectors/metamask";
 import { Link, useNavigate } from "react-router-dom";
 import { toDNSWireFormat } from "../utils/dnsWire";
-import { utils } from 'ethers';
 import EnterKnsName from "../components/EnterKnsName";
 import Loader from "../components/Loader";
-import KinodeHeader from "../components/KnsHeader";
 import { PageProps } from "../lib/types";
 
 import { generateNetworkingKeys, getNetworkName } from "../utils/chain";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { Tooltip } from "../components/Tooltip";
 
-const {
-  useAccounts,
-} = hooks;
+import { useAccount } from "wagmi";
 
 interface RegisterOsNameProps extends PageProps { }
 
@@ -22,10 +17,7 @@ function RegisterKnsName({
   direct,
   setDirect,
   setOsName,
-  dotOs,
-  kns,
   openConnect,
-  provider,
   closeConnect,
   setNetworkingKey,
   setIpAddress,
@@ -34,7 +26,7 @@ function RegisterKnsName({
   setRouters,
   nodeChainId,
 }: RegisterOsNameProps) {
-  let accounts = useAccounts();
+  let { address } = useAccount();
   let navigate = useNavigate();
   const chainName = getNetworkName(nodeChainId);
   const [loading, setLoading] = useState('');
@@ -48,23 +40,23 @@ function RegisterKnsName({
     document.title = "Register"
   }, [])
 
-  useEffect(() => setTriggerNameCheck(!triggerNameCheck), [provider]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const enterOsNameProps = { name, setName, nameValidities, setNameValidities, dotOs, triggerNameCheck }
+  const enterOsNameProps = { name, setName, nameValidities, setNameValidities, triggerNameCheck }
 
   let handleRegister = useCallback(async (e: FormEvent) => {
     e.preventDefault()
     e.stopPropagation()
 
-    if (!provider || !kns) return openConnect()
 
     setLoading('Please confirm the transaction in your wallet');
     try {
-      const nameToSet = utils.namehash(`${name}.os`);
+      // TODO
+      const nameToSet = "namehash(`${name}.os`)" // utils.namehash(`${name}.os`);
 
       const data = await generateNetworkingKeys({
         direct,
-        kns,
+        kns: "kns here",
         nodeChainId,
         chainName,
         nameToSet,
@@ -76,16 +68,16 @@ function RegisterKnsName({
       });
 
       const dnsFormat = toDNSWireFormat(`${name}.os`);
-      const tx = await dotOs?.register(
-        dnsFormat,
-        accounts![0],
-        data
-      )
+      // const tx = await dotOs?.register(
+      //   dnsFormat,
+      //   accounts![0],
+      //   data
+      // )
 
       setLoading('Registering KNS ID...');
 
-      await tx?.wait();
-      setLoading('');
+      // await tx?.wait();
+      // setLoading('');
       setOsName(`${name}.os`);
       navigate("/set-password");
     } catch (error) {
@@ -93,20 +85,12 @@ function RegisterKnsName({
       setLoading('');
       alert('There was an error registering your dot-os-name, please try again.')
     }
-  }, [name, direct, accounts, dotOs, kns, navigate, setOsName, provider, openConnect, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, nodeChainId, chainName])
+  }, [name, direct, address, navigate, setOsName, openConnect, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, nodeChainId, chainName])
 
   return (
     <>
-      <KinodeHeader header={<h1
-        className="flex place-content-center place-items-center mb-4"
-      >
-        Register Kinode Name (KNS)
-      </h1>}
-        openConnect={openConnect}
-        closeConnect={closeConnect}
-        nodeChainId={nodeChainId}
-      />
-      {Boolean(provider) && <form
+
+      {Boolean(address) && <form
         id="signup-form"
         className="flex flex-col w-full max-w-[450px]"
         onSubmit={handleRegister}

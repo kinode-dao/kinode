@@ -1,8 +1,6 @@
 import { SEPOLIA_OPT_HEX, OPTIMISM_OPT_HEX, MAINNET_OPT_HEX } from "../constants/chainId";
 import { NetworkingInfo } from "../lib/types";
 import { ipToNumber } from "./ipToNumber";
-import { KNSRegistryResolver } from "../abis/types";
-import { namehash } from "@ethersproject/hash";
 const CHAIN_NOT_FOUND = "4902"
 
 export interface Chain {
@@ -114,7 +112,7 @@ export const generateNetworkingKeys = async ({
   setRouters,
 }: {
   direct: boolean,
-  kns: KNSRegistryResolver,
+  kns: string,
   nodeChainId: string,
   chainName: string,
   nameToSet: string,
@@ -145,40 +143,40 @@ export const generateNetworkingKeys = async ({
   setTcpPort(tcp_port || 0);
   setRouters(allowed_routers);
 
-  const data = [
-    direct
-      ? (
-        await kns.populateTransaction.setAllIp(
-          nameToSet,
-          ipAddress,
-          ws_port || 0,  // ws
-          0,             // wt
-          tcp_port || 0, // tcp
-          0              // udp
-        )
-      ).data!
-      : (
-        await kns.populateTransaction.setRouters(
-          nameToSet,
-          allowed_routers.map((x) => namehash(x))
-        )
-      ).data!,
-    (
-      await kns.populateTransaction.setKey(
-        nameToSet,
-        networking_key
-      )
-    ).data!,
-  ];
+  // const data = [
+  //   direct
+  //     ? (
+  //       await kns.populateTransaction.setAllIp(
+  //         nameToSet,
+  //         ipAddress,
+  //         ws_port || 0,  // ws
+  //         0,             // wt
+  //         tcp_port || 0, // tcp
+  //         0              // udp
+  //       )
+  //     ).data!
+  //     : (
+  //       await kns.populateTransaction.setRouters(
+  //         nameToSet,
+  //         allowed_routers.map((x) => namehash(x))
+  //       )
+  //     ).data!,
+  //   (
+  //     await kns.populateTransaction.setKey(
+  //       nameToSet,
+  //       networking_key
+  //     )
+  //   ).data!,
+  // ];
 
-  try {
-    await setChain(nodeChainId);
-  } catch (error) {
-    window.alert(
-      `You must connect to the ${chainName} network to continue. Please connect and try again.`
-    );
-    throw new Error(`${chainName} not set`);
-  }
+  // try {
+  //   await setChain(nodeChainId);
+  // } catch (error) {
+  //   window.alert(
+  //     `You must connect to the ${chainName} network to continue. Please connect and try again.`
+  //   );
+  //   throw new Error(`${chainName} not set`);
+  // }
 
-  return data
+  return []
 }

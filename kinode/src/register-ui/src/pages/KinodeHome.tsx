@@ -1,18 +1,13 @@
 import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import KinodeHeader from "../components/KnsHeader"
 import { OPTIMISM_OPT_HEX } from "../constants/chainId";
-import { KinodeTitle } from "../components/KinodeTitle";
 
 type OsHomeProps = {
-    openConnect: () => void
-    provider: any
     knsName: string
-    closeConnect: () => void
     nodeChainId: string
 }
 
-function KinodeHome({ openConnect, knsName, closeConnect, nodeChainId }: OsHomeProps) {
+function KinodeHome({ knsName, nodeChainId }: OsHomeProps) {
     const navigate = useNavigate()
     const inviteRedir = () => navigate('/claim-invite')
     const registerEthRedir = () => navigate('/register-eth-name')
@@ -31,7 +26,6 @@ function KinodeHome({ openConnect, knsName, closeConnect, nodeChainId }: OsHomeP
 
     return (
         <>
-            <KinodeHeader header={<KinodeTitle prefix="Welcome to" showLogo />} openConnect={openConnect} closeConnect={closeConnect} hideConnect nodeChainId={nodeChainId} nameLogo />
             <div className="flex flex-col max-w-[460px] w-full gap-4 mt-8">
                 {previouslyBooted ? (
                     <button onClick={loginRedir}> Login </button>
