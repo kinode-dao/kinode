@@ -1,13 +1,12 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use crate::kinode::process::tester::{
     FailResponse, Request as TesterRequest, Response as TesterResponse, RunRequest,
 };
 use kinode_process_lib::kernel_types as kt;
 use kinode_process_lib::{
-    await_message, call_init, our_capabilities, println, spawn, vfs, Address, Message, OnExit,
-    ProcessId, Request, Response,
+    await_message, call_init, our_capabilities, println, spawn, vfs, Address, Capability, Message,
+    OnExit, ProcessId, Request, Response,
 };
 
 mod tester_lib;
@@ -18,6 +17,9 @@ wit_bindgen::generate!({
     generate_unused_types: true,
     additional_derives: [PartialEq, serde::Deserialize, serde::Serialize, process_macros::SerdeJsonInto],
 });
+
+const SETUP_PATH: &str = "/tester:sys/setup";
+const TESTS_PATH: &str = "/tester:sys/tests";
 
 fn make_vfs_address(our: &Address) -> anyhow::Result<Address> {
     Ok(Address {
@@ -42,14 +44,16 @@ fn handle_response(message: &Message) -> anyhow::Result<()> {
 
 fn read_caps_by_child(
     dir_prefix: &str,
-    children: &mut Vec<vfs::DirEntry>,
-) -> anyhow::Result<HashMap<String, Vec<String>>> {
-    let caps_file_path = format!("{}/grant_capabilities.json", dir_prefix);
-    let caps_index = children.iter().position(|i| *i.path == *caps_file_path);
-    let caps_by_child: HashMap<String, Vec<String>> = match caps_index {
+    files: &mut Vec<vfs::DirEntry>,
+) -> anyhow::Result<HashMap<String, HashMap<String, Vec<String>>>> {
+    // find DirEntry with path caps_file_path
+    let caps_file_path = format!("{}/capabilities.json", dir_prefix);
+    let caps_index = files.iter().position(|i| *i.path == *caps_file_path);
+
+    let caps_by_child: HashMap<String, HashMap<String, Vec<String>>> = match caps_index {
         None => HashMap::new(),
         Some(caps_index) => {
-            children.remove(caps_index);
+            files.remove(caps_index);
             let file = vfs::file::open_file(&caps_file_path, false, None)?;
             let file_contents = file.read()?;
             serde_json::from_slice(&file_contents)?
@@ -124,21 +128,34 @@ fn handle_request(
 
     for test_name in test_names {
         let test_path = format!("{}/{}.wasm", dir_prefix, test_name);
-        let grant_caps = caps_by_child
+        let (mut request_caps, grant_caps) = caps_by_child
             .get(test_name)
-            .and_then(|caps| {
-                Some(
-                    caps.iter()
-                        .map(|cap| ProcessId::from_str(cap).unwrap())
+            .and_then(|caps_map| {
+                Some((
+                    caps_map["request_capabilities"]
+                        .iter()
+                        .map(|cap| {
+                            serde_json::from_str(cap).unwrap_or_else(|_| {
+                                Capability::new(
+                                    Address::new(our.node(), cap.parse::<ProcessId>().unwrap()),
+                                    "\"messaging\"",
+                                )
+                            })
+                        })
                         .collect(),
-                )
+                    caps_map["grant_capabilities"]
+                        .iter()
+                        .map(|cap| cap.parse().unwrap())
+                        .collect(),
+                ))
             })
-            .unwrap_or(vec![]);
+            .unwrap_or((vec![], vec![]));
+        request_caps.extend(our_capabilities());
         let child_process_id = match spawn(
             None,
             &test_path,
             OnExit::None, //  TODO: notify us
-            our_capabilities(),
+            request_caps,
             grant_caps,
             false, // not public
         ) {
@@ -193,51 +210,53 @@ fn handle_message(our: &Address, node_names: &mut Vec<String>) -> anyhow::Result
 call_init!(init);
 fn init(our: Address) {
     let mut node_names: Vec<String> = Vec::new();
-    match Request::new()
-        .target(make_vfs_address(&our).unwrap())
-        .body(
-            serde_json::to_vec(&vfs::VfsRequest {
-                path: "/tester:sys/tests".into(),
-                action: vfs::VfsAction::CreateDrive,
-            })
-            .unwrap(),
-        )
-        .send_and_await_response(5)
-    {
-        Err(_) => {
-            fail!("tester");
-        }
-        Ok(r) => {
-            if r.is_err() {
+    for path in [SETUP_PATH, TESTS_PATH] {
+        match Request::new()
+            .target(make_vfs_address(&our).unwrap())
+            .body(
+                serde_json::to_vec(&vfs::VfsRequest {
+                    path: path.into(),
+                    action: vfs::VfsAction::CreateDrive,
+                })
+                .unwrap(),
+            )
+            .send_and_await_response(5)
+        {
+            Err(_) => {
                 fail!("tester");
             }
+            Ok(r) => {
+                if r.is_err() {
+                    fail!("tester");
+                }
+            }
         }
-    }
 
-    // orchestrate tests using external scripts
-    //  -> must give drive cap to rpc
-    let sent = Request::new()
-        .target(("our", "kernel", "distro", "sys"))
-        .body(
-            serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                target: ProcessId::new(Some("http_server"), "distro", "sys"),
-                capabilities: vec![kt::Capability {
-                    issuer: Address::new(
-                        our.node.clone(),
-                        ProcessId::new(Some("vfs"), "distro", "sys"),
-                    ),
-                    params: serde_json::json!({
-                        "kind": "write",
-                        "drive": "/tester:sys/tests",
-                    })
-                    .to_string(),
-                }],
-            })
-            .unwrap(),
-        )
-        .send();
-    if sent.is_err() {
-        fail!("tester");
+        // orchestrate tests using external scripts
+        //  -> must give drive cap to rpc
+        let sent = Request::new()
+            .target(("our", "kernel", "distro", "sys"))
+            .body(
+                serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                    target: ProcessId::new(Some("http_server"), "distro", "sys"),
+                    capabilities: vec![kt::Capability {
+                        issuer: Address::new(
+                            our.node.clone(),
+                            ProcessId::new(Some("vfs"), "distro", "sys"),
+                        ),
+                        params: serde_json::json!({
+                            "kind": "write",
+                            "drive": path,
+                        })
+                        .to_string(),
+                    }],
+                })
+                .unwrap(),
+            )
+            .send();
+        if sent.is_err() {
+            fail!("tester");
+        }
     }
 
     loop {
