@@ -2,7 +2,6 @@ import React, { useState, useEffect, FormEvent, useCallback } from "react";
 import Loader from "../components/Loader";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import { Tooltip } from "../components/Tooltip";
-// import { KinodeTitle } from "../components/KinodeTitle";
 import { getFetchUrl } from "../utils/fetch";
 
 import { sha256, toBytes } from "viem";

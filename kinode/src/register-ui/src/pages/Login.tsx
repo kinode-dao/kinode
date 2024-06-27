@@ -7,7 +7,6 @@ import { useNavigate } from "react-router-dom";
 import { Tooltip } from "../components/Tooltip";
 import { isMobileCheck } from "../utils/dimensions";
 import classNames from "classnames";
-import { generateNetworkingKeys } from "../abis";
 import { getFetchUrl } from "../utils/fetch";
 
 import { useAccount } from "wagmi";

@@ -5,8 +5,6 @@ import Loader from "../components/Loader";
 import { PageProps } from "../lib/types";
 import { hash } from "@ensdomains/eth-ens-namehash";
 import DirectCheckbox from "../components/DirectCheckbox";
-import { MAINNET_OPT_HEX, OPTIMISM_OPT_HEX } from "../constants/chainId";
-import { KinodeTitle } from "../components/KinodeTitle";
 
 import { useAccount } from "wagmi";
 
@@ -57,7 +55,6 @@ function RegisterEthName({
       try {
         const cleanedName = name.trim().replace(".eth", "");
         const nameToSet = "namehash(`${cleanedName}.eth`)";
-        const targetChainId = nodeChainId === OPTIMISM_OPT_HEX ? MAINNET_OPT_HEX : nodeChainId;
 
         // const data = await generateNetworkingKeys({
         //   direct,

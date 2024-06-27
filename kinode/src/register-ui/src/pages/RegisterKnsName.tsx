@@ -9,7 +9,7 @@ import { Tooltip } from "../components/Tooltip";
 
 import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit"
-import { KINOMAP, kinomapAbi, generateNetworkingKeys, KINO_ACCOUNT_IMPL, DOTOS } from "../abis";
+import { kinomapAbi, generateNetworkingKeys, KINO_ACCOUNT_IMPL, DOTOS } from "../abis";
 import { encodePacked, stringToHex } from "viem";
 
 interface RegisterOsNameProps extends PageProps { }

@@ -1,6 +1,5 @@
 import { useEffect } from "react"
 import { useNavigate } from "react-router-dom"
-import { OPTIMISM_OPT_HEX } from "../constants/chainId";
 
 type OsHomeProps = {
     knsName: string
@@ -46,13 +45,13 @@ function KinodeHome({ knsName, nodeChainId }: OsHomeProps) {
                         <h4 className="self-start mx-auto">
                             Other options
                         </h4>
-                        {nodeChainId !== OPTIMISM_OPT_HEX && <button
+                        {/* {nodeChainId !== OPTIMISM_OPT_HEX && <button
                             disabled={!hasNetwork}
                             onClick={registerEthRedir}
                             className="alt"
                         >
                             Register ENS Name
-                        </button>}
+                        </button>} */}
                         <button
                             disabled={!hasNetwork}
                             onClick={inviteRedir}
