@@ -67,6 +67,7 @@ function RegisterKnsName({
       setWsPort,
       setTcpPort,
       setRouters,
+      reset: false,
     });
 
     writeContract({

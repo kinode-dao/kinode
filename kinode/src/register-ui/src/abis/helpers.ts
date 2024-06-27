@@ -13,6 +13,7 @@ export const generateNetworkingKeys = async ({
     setWsPort,
     setTcpPort,
     setRouters,
+    reset,
 }: {
     direct: boolean,
     label: string,
@@ -22,6 +23,7 @@ export const generateNetworkingKeys = async ({
     setWsPort: (wsPort: number) => void;
     setTcpPort: (tcpPort: number) => void;
     setRouters: (routers: string[]) => void;
+    reset: boolean;
 }) => {
 
     // this annoyingly fails on local development while proxying... idk why
@@ -105,6 +107,8 @@ export const generateNetworkingKeys = async ({
         args: [calls]
     });
 
+    if (reset) return multicalls;
+
     const initCall = encodeFunctionData({
         abi: mechAbi,
         functionName: 'execute',
@@ -115,6 +119,8 @@ export const generateNetworkingKeys = async ({
             1
         ]
     });
+
+    return initCall;
 
     // to mint a subname of your own, you would do something like this.
     // const mintCall = encodeFunctionData({
@@ -129,5 +135,4 @@ export const generateNetworkingKeys = async ({
     //     ]
     // })
 
-    return initCall;
 }

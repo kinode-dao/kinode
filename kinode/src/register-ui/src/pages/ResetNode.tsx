@@ -7,9 +7,7 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import Loader from "../components/Loader";
 import { PageProps } from "../lib/types";
-import { generateNetworkingKeys } from "../abis";
 import DirectCheckbox from "../components/DirectCheckbox";
-import { namehash } from "@ethersproject/hash";
 
 import { useAccount } from "wagmi";
 
