@@ -104,8 +104,9 @@ function App() {
 
   return (
     <>
-      <ConnectButton chainStatus="icon" accountStatus="avatar" />
-
+      <div className="absolute top-0 right-0 m-4">
+        <ConnectButton chainStatus="icon" accountStatus="full" />
+      </div>
       <Router>
         <Routes>
           <Route path="/" element={navigateToLogin

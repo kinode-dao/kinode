@@ -11,7 +11,7 @@ import { hash } from "@ensdomains/eth-ens-namehash";
 import isValidDomain from "is-valid-domain";
 import Loader from "../components/Loader";
 import { PageProps } from "../lib/types";
-import { generateNetworkingKeys, getNetworkName } from "../utils/chain";
+import { generateNetworkingKeys } from "../abis";
 import { Tooltip } from "../components/Tooltip";
 import DirectCheckbox from "../components/DirectCheckbox";
 import EnterKnsName from "../components/EnterKnsName";
@@ -35,8 +35,6 @@ function Reset({
   setReset,
   knsName,
   setOsName,
-  openConnect,
-  closeConnect,
   setNetworkingKey,
   setIpAddress,
   setWsPort,
@@ -47,7 +45,6 @@ function Reset({
   const { address } = useAccount();
   const navigate = useNavigate();
 
-  const chainName = getNetworkName(nodeChainId);
   const [name, setName] = useState<string>(knsName.slice(0, -3));
   const [nameVets, setNameVets] = useState<string[]>([]);
   const [nameValidities, setNameValidities] = useState<string[]>([])
@@ -124,18 +121,18 @@ function Reset({
       try {
         const nameToSet = namehash(knsName);
         // TODO
-        const data = await generateNetworkingKeys({
-          direct,
-          kns: "kns here",
-          nodeChainId,
-          chainName,
-          nameToSet,
-          setNetworkingKey,
-          setIpAddress,
-          setWsPort,
-          setTcpPort,
-          setRouters,
-        });
+        // const data = await generateNetworkingKeys({
+        //   direct,
+        //   kns: "kns here",
+        //   nodeChainId,
+        //   chainName,
+        //   nameToSet,
+        //   setNetworkingKey,
+        //   setIpAddress,
+        //   setWsPort,
+        //   setTcpPort,
+        //   setRouters,
+        // });
 
         // const tx = await kns.multicall(data);
 
@@ -157,7 +154,6 @@ function Reset({
       setReset,
       setDirect,
       navigate,
-      openConnect,
       direct,
       setNetworkingKey,
       setIpAddress,
@@ -165,7 +161,6 @@ function Reset({
       setTcpPort,
       setRouters,
       nodeChainId,
-      chainName,
     ]
   );
 

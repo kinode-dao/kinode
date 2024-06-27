@@ -1,10 +1,8 @@
 import { useState, useEffect, FormEvent, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { toDNSWireFormat } from "../utils/dnsWire";
 import EnterEthName from "../components/EnterEthName";
 import Loader from "../components/Loader";
 import { PageProps } from "../lib/types";
-import { generateNetworkingKeys, getNetworkName, setChain } from "../utils/chain";
 import { hash } from "@ensdomains/eth-ens-namehash";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { MAINNET_OPT_HEX, OPTIMISM_OPT_HEX } from "../constants/chainId";
@@ -18,8 +16,6 @@ function RegisterEthName({
   direct,
   setDirect,
   setOsName,
-  openConnect,
-  closeConnect,
   setNetworkingKey,
   setIpAddress,
   setWsPort,
@@ -29,7 +25,7 @@ function RegisterEthName({
 }: RegisterOsNameProps) {
   let { address } = useAccount();
   let navigate = useNavigate();
-  const chainName = getNetworkName(nodeChainId);
+
   const [loading, setLoading] = useState("");
 
   const [name, setName] = useState("");
@@ -63,24 +59,23 @@ function RegisterEthName({
         const nameToSet = "namehash(`${cleanedName}.eth`)";
         const targetChainId = nodeChainId === OPTIMISM_OPT_HEX ? MAINNET_OPT_HEX : nodeChainId;
 
-        const data = await generateNetworkingKeys({
-          direct,
-          kns: "kns here",
-          nodeChainId: targetChainId,
-          chainName,
-          nameToSet,
-          setNetworkingKey,
-          setIpAddress,
-          setWsPort,
-          setTcpPort,
-          setRouters,
-        });
+        // const data = await generateNetworkingKeys({
+        //   direct,
+        //   kns: "kns here",
+        //   nodeChainId: targetChainId,
+        //   chainName,
+        //   nameToSet,
+        //   setNetworkingKey,
+        //   setIpAddress,
+        //   setWsPort,
+        //   setTcpPort,
+        //   setRouters,
+        // });
 
         setLoading("Please confirm the transaction in your wallet");
 
         // console.log("node chain id", nodeChainId);
 
-        const dnsFormat = toDNSWireFormat(`${cleanedName}.eth`);
         const hashedName = hash(`${cleanedName}.eth`);
 
         // const tx = await knsEnsEntry.setKNSRecords(dnsFormat, data, { gasLimit: 300000 });
@@ -112,14 +107,12 @@ function RegisterEthName({
       direct,
       navigate,
       setOsName,
-      openConnect,
       setNetworkingKey,
       setIpAddress,
       setWsPort,
       setTcpPort,
       setRouters,
       nodeChainId,
-      chainName,
     ]
   );
 

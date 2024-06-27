@@ -2,9 +2,10 @@ import React from 'react';
 import ReactDOM from 'react-dom/client'
 
 import App from './App';
-// import '@unocss/reset/tailwind.css'
-// import '@rainbow-me/rainbowkit/styles.css';
+import '@unocss/reset/tailwind.css'
+import '@rainbow-me/rainbowkit/styles.css';
 
+import '@unocss/reset/tailwind.css'
 import 'uno.css'
 import './index.css';
 
@@ -15,7 +16,8 @@ import {
 import { WagmiProvider, http } from 'wagmi';
 import {
   optimism,
-  anvil
+  anvil,
+  mainnet
 } from 'wagmi/chains';
 import {
   QueryClientProvider,
@@ -33,18 +35,23 @@ const config = getDefaultConfig({
   chains: [anvil], // change back to OP main once ready
   ssr: false, // If your dApp uses server side rendering (SSR)
   transports: {
-    [anvil.id]: http("http://localhost:8545")
+    [anvil.id]: http(),
+    [optimism.id]: http(),
+    [mainnet.id]: http(),
   }
 });
 
 const queryClient = new QueryClient();
 
+// fix the separate div outside of <App>...
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider>
-          <App />
+        <div id="signup-page" className="flex flex-col place-items-center place-content-center h-screen w-screen">
+            <App />
+          </div>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>

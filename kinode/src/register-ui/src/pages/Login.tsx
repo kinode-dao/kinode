@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { Tooltip } from "../components/Tooltip";
 import { isMobileCheck } from "../utils/dimensions";
 import classNames from "classnames";
-import { generateNetworkingKeys, getNetworkName } from "../utils/chain";
+import { generateNetworkingKeys } from "../abis";
 import { getFetchUrl } from "../utils/fetch";
 
 import { useAccount } from "wagmi";
@@ -20,7 +20,6 @@ function Login({
   setDirect,
   pw,
   setPw,
-  openConnect,
   appSizeOnLoad,
   routers,
   setNetworkingKey,
@@ -68,7 +67,7 @@ function Login({
           if (!address) {
             setKeyErrs(["Please connect your wallet and try again"]);
             setRestartFlow(true);
-            return openConnect();
+            // return openConnect();
           }
 
           setLoading("Checking password...");
@@ -88,18 +87,18 @@ function Login({
           }
 
           // Generate keys on server that are stored temporarily
-          const data = await generateNetworkingKeys({
-            direct,
-            kns: "kns here",
-            nodeChainId,
-            chainName: getNetworkName(nodeChainId),
-            nameToSet: "namehash(knsName)",
-            setNetworkingKey,
-            setIpAddress,
-            setWsPort,
-            setTcpPort,
-            setRouters,
-          })
+          // const data = await generateNetworkingKeys({
+          //   direct,
+          //   kns: "kns here",
+          //   nodeChainId,
+          //   chainName: getNetworkName(nodeChainId),
+          //   nameToSet: "namehash(knsName)",
+          //   setNetworkingKey,
+          //   setIpAddress,
+          //   setWsPort,
+          //   setTcpPort,
+          //   setRouters,
+          // })
 
           // setLoading("Please confirm the transaction");
 
@@ -157,7 +156,7 @@ function Login({
         setLoading("");
       }
     },
-    [pw, appSizeOnLoad, reset, direct, knsName, openConnect]
+    [pw, appSizeOnLoad, reset, direct, knsName]
   );
 
   const isDirect = Boolean(routers?.length === 0);

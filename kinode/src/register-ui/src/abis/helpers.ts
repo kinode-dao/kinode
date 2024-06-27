@@ -1,60 +1,133 @@
+
+import { NetworkingInfo } from "../lib/types";
+import { ipToNumber } from "../utils/ipToNumber";
 import { multicallAbi, kinomapAbi, mechAbi, KINOMAP, MULTICALL, KINO_ACCOUNT_IMPL } from "./";
 import { encodeFunctionData, encodePacked, stringToHex } from "viem";
 
-export function encodeMulticalls(metadataUri: string, metadataHash: string) {
-    const metadataUriCall = encodeFunctionData({
+export const generateNetworkingKeys = async ({
+    direct,
+    label,
+    our_address,
+    setNetworkingKey,
+    setIpAddress,
+    setWsPort,
+    setTcpPort,
+    setRouters,
+}: {
+    direct: boolean,
+    label: string,
+    our_address: `0x${string}`,
+    setNetworkingKey: (networkingKey: string) => void;
+    setIpAddress: (ipAddress: number) => void;
+    setWsPort: (wsPort: number) => void;
+    setTcpPort: (tcpPort: number) => void;
+    setRouters: (routers: string[]) => void;
+}) => {
+
+    // this annoyingly fails on local development while proxying... idk why
+    // so hardcoded for now 
+    // const {
+    //     networking_key,
+    //     routing: {
+    //         Both: {
+    //             ip: ip_address,
+    //             ports: { ws: ws_port, tcp: tcp_port },
+    //             routers: allowed_routers
+    //         }
+    //     }
+    // } = (await fetch("/generate-networking-info", { method: "POST" }).then(
+    //     (res) => res.json()
+    // )) as NetworkingInfo;
+
+    const ipAddress = ipToNumber("127.0.0.1");
+
+    setNetworkingKey(our_address);
+    setIpAddress(ipAddress);
+    setWsPort(9300);
+    setTcpPort(9301);
+    setRouters(["default-router-1.os"]);
+
+    const netkeycall = encodeFunctionData({
         abi: kinomapAbi,
         functionName: 'note',
         args: [
-            encodePacked(["bytes"], [stringToHex("~metadata-uri")]),
-            encodePacked(["bytes"], [stringToHex(metadataUri)]),
+            encodePacked(["bytes"], [stringToHex("~net-key")]),
+            encodePacked(["bytes"], [stringToHex(our_address)]),
         ]
-    })
+    });
 
-    const metadataHashCall = encodeFunctionData({
-        abi: kinomapAbi,
-        functionName: 'note',
-        args: [
-            encodePacked(["bytes"], [stringToHex("~metadata-hash")]),
-            encodePacked(["bytes"], [stringToHex(metadataHash)]),
-        ]
-    })
+    // TODO standardize all the KNS interactions....
+    // formats of IPs across the board etc..
+    const ws_port_call =
+        encodeFunctionData({
+            abi: kinomapAbi,
+            functionName: 'note',
+            args: [
+                encodePacked(["bytes"], [stringToHex("~ws-port")]),
+                encodePacked(["bytes"], [stringToHex("9300")]),
+            ]
+        });
 
-    const calls = [
-        { target: KINOMAP, callData: metadataUriCall },
-        { target: KINOMAP, callData: metadataHashCall }
+    const ip_address_call =
+        encodeFunctionData({
+            abi: kinomapAbi,
+            functionName: 'note',
+            args: [
+                encodePacked(["bytes"], [stringToHex("~ip")]),
+                encodePacked(["bytes"], [stringToHex(ipAddress.toString())]),
+            ]
+        });
+
+    const router_call =
+        encodeFunctionData({
+            abi: kinomapAbi,
+            functionName: 'note',
+            args: [
+                encodePacked(["bytes"], [stringToHex("~routers")]),
+                encodePacked(
+                    ["bytes"],
+                    [stringToHex("default-router-1.os")]
+                )]
+        });
+
+    const calls = direct ? [
+        { target: KINOMAP, callData: netkeycall },
+        { target: KINOMAP, callData: ws_port_call },
+        { target: KINOMAP, callData: ip_address_call },
+    ] : [
+        { target: KINOMAP, callData: netkeycall },
+        { target: KINOMAP, callData: router_call },
     ];
 
-    const multicall = encodeFunctionData({
+    const multicalls = encodeFunctionData({
         abi: multicallAbi,
         functionName: 'aggregate',
         args: [calls]
     });
-    return multicall;
-}
 
-export function encodeIntoMintCall(multicalls: `0x${string}`, our_address: `0x${string}`, app_name: string) {
     const initCall = encodeFunctionData({
         abi: mechAbi,
         functionName: 'execute',
         args: [
             MULTICALL,
-            BigInt(0), // value
+            BigInt(0),
             multicalls,
             1
         ]
     });
 
-    const mintCall = encodeFunctionData({
-        abi: kinomapAbi,
-        functionName: 'mint',
-        args: [
-            our_address,
-            encodePacked(["bytes"], [stringToHex(app_name)]),
-            initCall,
-            "0x", // erc721 details? <- encode app_store here? actually might be a slick way to do it. 
-            KINO_ACCOUNT_IMPL,
-        ]
-    })
-    return mintCall;
+    // to mint a subname of your own, you would do something like this.
+    // const mintCall = encodeFunctionData({
+    //     abi: kinomapAbi,
+    //     functionName: 'mint',
+    //     args: [
+    //         our_address,
+    //         encodePacked(["bytes"], [stringToHex(label)]),
+    //         initCall,
+    //         "0x",
+    //         KINO_ACCOUNT_IMPL,
+    //     ]
+    // })
+
+    return initCall;
 }

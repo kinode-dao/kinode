@@ -7,7 +7,7 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import Loader from "../components/Loader";
 import { PageProps } from "../lib/types";
-import { generateNetworkingKeys, getNetworkName } from "../utils/chain";
+import { generateNetworkingKeys } from "../abis";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { namehash } from "@ethersproject/hash";
 
@@ -20,18 +20,15 @@ function ResetNode({
     setDirect,
     setReset,
     knsName,
-    openConnect,
     setNetworkingKey,
     setIpAddress,
     setWsPort,
     setTcpPort,
     setRouters,
-    nodeChainId,
 }: ResetProps) {
     const { address } = useAccount();
     const navigate = useNavigate();
 
-    const chainName = getNetworkName(nodeChainId);
     const [loading, setLoading] = useState<string>("");
 
 
@@ -49,18 +46,18 @@ function ResetNode({
             setLoading("Please confirm the transaction in your wallet");
             try {
                 // TODO
-                const data = await generateNetworkingKeys({
-                    direct,
-                    kns: "kns here",
-                    nodeChainId,
-                    chainName,
-                    nameToSet: namehash(knsName),
-                    setNetworkingKey,
-                    setIpAddress,
-                    setWsPort,
-                    setTcpPort,
-                    setRouters,
-                });
+                // const data = await generateNetworkingKeys({
+                //     direct,
+                //     kns: "kns here",
+                //     nodeChainId,
+                //     chainName,
+                //     nameToSet: namehash(knsName),
+                //     setNetworkingKey,
+                //     setIpAddress,
+                //     setWsPort,
+                //     setTcpPort,
+                //     setRouters,
+                // });
 
                 // const tx = await kns.multicall(data);
 
@@ -82,15 +79,12 @@ function ResetNode({
             setReset,
             setDirect,
             navigate,
-            openConnect,
             direct,
             setNetworkingKey,
             setIpAddress,
             setWsPort,
             setTcpPort,
             setRouters,
-            nodeChainId,
-            chainName,
         ]
     );
 

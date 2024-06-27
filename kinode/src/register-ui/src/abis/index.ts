@@ -1,11 +1,13 @@
 import { parseAbi } from "viem";
 
-export { encodeMulticalls, encodeIntoMintCall } from "./helpers";
+export { generateNetworkingKeys } from "./helpers";
 
 // move to constants? // also for anvil/optimism
 export const KINOMAP: `0x${string}` = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 export const MULTICALL: `0x${string}` = "0xcA11bde05977b3631167028862bE2a173976CA11";
 export const KINO_ACCOUNT_IMPL: `0x${string}` = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
+export const DOTOS: `0x${string}` = "0xB3244529432b9C6dB0Bdc5282cB8Fde8418E00a6";
+export const DOTDEV: `0x${string}` = "0x69C30C0Cf0e9726f9eEF50bb74FA32711fA0B02D";
 
 
 export const multicallAbi = parseAbi([
