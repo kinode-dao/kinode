@@ -10,7 +10,8 @@ import {
 import { WagmiProvider, http } from 'wagmi';
 import {
   optimism,
-  anvil
+  anvil,
+  mainnet
 } from 'wagmi/chains';
 import {
   QueryClientProvider,
@@ -28,7 +29,9 @@ const config = getDefaultConfig({
   chains: [anvil], // change back to OP main once ready
   ssr: false, // If your dApp uses server side rendering (SSR)
   transports: {
-    [anvil.id]: http("http://localhost:8545")
+    [anvil.id]: http(),
+    [optimism.id]: http(),
+    [mainnet.id]: http(),
   }
 });
 

@@ -1,7 +1,7 @@
 use crate::kinode::process::kimap_indexer::{
     GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
-use alloy_primitives::FixedBytes;
+use alloy_primitives::{keccak256, FixedBytes};
 use alloy_sol_types::{sol, SolCall, SolEvent};
 use kinode_process_lib::{
     await_message, call_init,
@@ -51,11 +51,8 @@ struct State {
 
 sol! {
     // Kimap events
-    event Mint(bytes32 indexed parenthash, bytes32 indexed childhash, bytes name);
-    event Fact(bytes32 indexed nodehash, bytes32 indexed facthash, bytes note, bytes data);
-    event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes note, bytes data);
-    // event Edit(bytes32 indexed note, bytes data);
-    event Zero(address indexed zerotba);
+    event Mint(bytes32 indexed parenthash, bytes32 indexed childhash,bytes indexed labelhash, bytes name);
+    event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes indexed labelhash, bytes note, bytes data);
 
     function get (
         bytes32 node
@@ -95,17 +92,24 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     #[cfg(feature = "simulation-mode")]
     add_temp_hardcoded_tlzs(&mut state);
 
+    let _notes = vec![
+        keccak256("~net-key"),
+        keccak256("~ws-port"),
+        keccak256("~routers"),
+        keccak256("~tcp-port"),
+        keccak256("~ip"),
+    ];
+
     let filter = eth::Filter::new()
         .address(state.contract_address.parse::<eth::Address>().unwrap())
         .from_block(state.block - 1)
         .to_block(eth::BlockNumberOrTag::Latest)
         .events(vec![
-            "Mint(bytes32,bytes32,bytes)",
-            "Fact(bytes32,bytes32,bytes,bytes)",
-            "Note(bytes32,bytes32,bytes,bytes)",
-            // "Edit(bytes32,bytes)",
-            "Zero(address)",
+            "Mint(bytes32,bytes32,bytes,bytes)",
+            "Note(bytes32,bytes32,bytes,bytes,bytes)",
         ]);
+    // .topic3(_notes);
+    // TODO: potentially remove labelhash from Mint event, then we can filter Notes while getting all Mint events?
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again

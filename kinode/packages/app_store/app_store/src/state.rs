@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 sol! {
-    event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes note, bytes data);
+    event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes indexed labelhash, bytes note, bytes data);
 }
 
 //

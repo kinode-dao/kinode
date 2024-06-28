@@ -60,7 +60,7 @@ const CONTRACT_FIRST_BLOCK: u64 = 118_590_088;
 #[cfg(feature = "simulation-mode")]
 const CONTRACT_FIRST_BLOCK: u64 = 1;
 
-const EVENTS: [&str; 1] = ["Note(bytes32,bytes32,bytes,bytes)"];
+const EVENTS: [&str; 1] = ["Note(bytes32,bytes32,bytes,bytes,bytes)"];
 
 // internal types
 

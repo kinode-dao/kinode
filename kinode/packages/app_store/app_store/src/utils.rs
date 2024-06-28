@@ -1,13 +1,15 @@
 use {
-    crate::kinode::process::main::OnchainMetadata,
-    crate::state::{AppStoreLogError, PackageState, SerializedState, State},
-    crate::{CONTRACT_ADDRESS, EVENTS, VFS_TIMEOUT},
+    crate::{
+        kinode::process::main::OnchainMetadata,
+        state::{AppStoreLogError, PackageState, SerializedState, State},
+        CONTRACT_ADDRESS, EVENTS, VFS_TIMEOUT,
+    },
+    alloy_primitives::keccak256,
     kinode_process_lib::{
         eth, get_blob, get_state, http, kernel_types as kt, println, vfs, Address, LazyLoadBlob,
         PackageId, ProcessId, Request,
     },
-    std::collections::HashSet,
-    std::str::FromStr,
+    std::{collections::HashSet, str::FromStr},
 };
 
 // quite annoyingly, we must convert from our gen'd version of PackageId
@@ -74,10 +76,13 @@ pub fn fetch_state(our: Address, provider: eth::Provider) -> State {
 }
 
 pub fn app_store_filter(state: &State) -> eth::Filter {
+    let notes = vec![keccak256("~metadata-uri"), keccak256("~metadata-hash")];
+
     eth::Filter::new()
         .address(eth::Address::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block)
         .events(EVENTS)
+        .topic3(notes)
 }
 
 /// create a filter to fetch app store event logs from chain and subscribe to new events
