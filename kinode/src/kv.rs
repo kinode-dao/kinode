@@ -1,101 +1,120 @@
-use anyhow::Result;
 use dashmap::DashMap;
-// use rocksdb::checkpoint::Checkpoint;
+use lib::types::core::{
+    Address, CapMessage, CapMessageSender, Capability, KernelMessage, KvAction, KvError, KvRequest,
+    KvResponse, LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId, PrintSender,
+    Printout, ProcessId, Request, Response, KV_PROCESS_ID,
+};
 use rocksdb::OptimisticTransactionDB;
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
-use tokio::fs;
-use tokio::sync::Mutex;
-
-use lib::types::core::*;
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
+use tokio::{fs, sync::Mutex};
 
 pub async fn kv(
-    our_node: String,
+    our_node: Arc<String>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: String,
 ) -> anyhow::Result<()> {
-    let kv_path = format!("{}/kv", &home_directory_path);
-
-    if let Err(e) = fs::create_dir_all(&kv_path).await {
-        panic!("failed creating kv dir! {:?}", e);
+    let kv_path = Arc::new(format!("{home_directory_path}/kv"));
+    if let Err(e) = fs::create_dir_all(&*kv_path).await {
+        panic!("failed creating kv dir! {e:?}");
     }
 
     let open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>> =
         Arc::new(DashMap::new());
     let txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>> = Arc::new(DashMap::new());
 
-    let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
-        HashMap::new();
+    let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> = HashMap::new();
 
-    loop {
-        tokio::select! {
-            Some(km) = recv_from_loop.recv() => {
-                if our_node.clone() != km.source.node {
-                    println!(
-                        "kv: request must come from our_node={}, got: {}",
-                        our_node,
-                        km.source.node,
-                    );
-                    continue;
-                }
-
-                let queue = process_queues
-                    .entry(km.source.process.clone())
-                    .or_insert_with(|| Arc::new(Mutex::new(VecDeque::new())))
-                    .clone();
-
-                {
-                    let mut queue_lock = queue.lock().await;
-                    queue_lock.push_back(km.clone());
-                }
-
-                // clone Arcs
-                let our_node = our_node.clone();
-                let send_to_caps_oracle = send_to_caps_oracle.clone();
-                let send_to_terminal = send_to_terminal.clone();
-                let send_to_loop = send_to_loop.clone();
-                let open_kvs = open_kvs.clone();
-                let txs = txs.clone();
-                let kv_path = kv_path.clone();
-
-                tokio::spawn(async move {
-                    let mut queue_lock = queue.lock().await;
-                    if let Some(km) = queue_lock.pop_front() {
-                        if let Err(e) = handle_request(
-                            our_node.clone(),
-                            km.clone(),
-                            open_kvs.clone(),
-                            txs.clone(),
-                            send_to_loop.clone(),
-                            send_to_terminal.clone(),
-                            send_to_caps_oracle.clone(),
-                            kv_path.clone(),
-                        )
-                        .await
-                        {
-                            let _ = send_to_loop
-                                .send(make_error_message(our_node.clone(), &km, e))
-                                .await;
-                        }
-                    }
-                });
-            }
+    while let Some(km) = recv_from_loop.recv().await {
+        if *our_node != km.source.node {
+            Printout::new(
+                1,
+                format!(
+                    "kv: got request from {}, but requests must come from our node {our_node}",
+                    km.source.node
+                ),
+            )
+            .send(&send_to_terminal)
+            .await;
+            continue;
         }
+
+        let queue = process_queues
+            .get(&km.source.process)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(Mutex::new(VecDeque::new())));
+
+        {
+            let mut queue_lock = queue.lock().await;
+            queue_lock.push_back(km);
+        }
+
+        // clone Arcs
+        let our_node = our_node.clone();
+        let send_to_loop = send_to_loop.clone();
+        let send_to_terminal = send_to_terminal.clone();
+        let send_to_caps_oracle = send_to_caps_oracle.clone();
+        let open_kvs = open_kvs.clone();
+        let txs = txs.clone();
+        let kv_path = kv_path.clone();
+
+        tokio::spawn(async move {
+            let mut queue_lock = queue.lock().await;
+            if let Some(km) = queue_lock.pop_front() {
+                let (km_id, km_rsvp) =
+                    (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
+
+                if let Err(e) = handle_request(
+                    &our_node,
+                    km,
+                    open_kvs,
+                    txs,
+                    &send_to_loop,
+                    &send_to_caps_oracle,
+                    &kv_path,
+                )
+                .await
+                {
+                    Printout::new(1, format!("kv: {e}"))
+                        .send(&send_to_terminal)
+                        .await;
+                    KernelMessage::builder()
+                        .id(km_id)
+                        .source((our_node.as_str(), KV_PROCESS_ID.clone()))
+                        .target(km_rsvp)
+                        .message(Message::Response((
+                            Response {
+                                inherit: false,
+                                body: serde_json::to_vec(&KvResponse::Err { error: e }).unwrap(),
+                                metadata: None,
+                                capabilities: vec![],
+                            },
+                            None,
+                        )))
+                        .build()
+                        .unwrap()
+                        .send(&send_to_loop)
+                        .await;
+                }
+            }
+        });
     }
+    Ok(())
 }
 
 async fn handle_request(
-    our_node: String,
+    our_node: &str,
     km: KernelMessage,
     open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
     txs: Arc<DashMap<u64, Vec<(KvAction, Option<Vec<u8>>)>>>,
-    send_to_loop: MessageSender,
-    send_to_terminal: PrintSender,
-    send_to_caps_oracle: CapMessageSender,
-    kv_path: String,
+    send_to_loop: &MessageSender,
+    send_to_caps_oracle: &CapMessageSender,
+    kv_path: &str,
 ) -> Result<(), KvError> {
     let KernelMessage {
         id,
@@ -103,13 +122,13 @@ async fn handle_request(
         message,
         lazy_load_blob: blob,
         ..
-    } = km.clone();
+    } = km;
     let Message::Request(Request {
         body,
         expects_response,
         metadata,
         ..
-    }) = message.clone()
+    }) = message
     else {
         return Err(KvError::InputError {
             error: "not a request".into(),
@@ -127,12 +146,12 @@ async fn handle_request(
     };
 
     check_caps(
-        our_node.clone(),
-        source.clone(),
-        open_kvs.clone(),
-        send_to_caps_oracle.clone(),
+        our_node,
+        &source,
+        &open_kvs,
+        send_to_caps_oracle,
         &request,
-        kv_path.clone(),
+        kv_path,
     )
     .await?;
 
@@ -280,21 +299,12 @@ async fn handle_request(
         }
     };
 
-    if let Some(target) = km.rsvp.or_else(|| {
-        expects_response.map(|_| Address {
-            node: our_node.clone(),
-            process: source.process.clone(),
-        })
-    }) {
-        let response = KernelMessage {
-            id,
-            source: Address {
-                node: our_node.clone(),
-                process: KV_PROCESS_ID.clone(),
-            },
-            target,
-            rsvp: None,
-            message: Message::Response((
+    if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| source)) {
+        KernelMessage::builder()
+            .id(id)
+            .source((our_node, KV_PROCESS_ID.clone()))
+            .target(target)
+            .message(Message::Response((
                 Response {
                     inherit: false,
                     body,
@@ -302,37 +312,27 @@ async fn handle_request(
                     capabilities: vec![],
                 },
                 None,
-            )),
-            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
+            )))
+            .lazy_load_blob(bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
-            }),
-        };
-
-        let _ = send_to_loop.send(response).await;
-    } else {
-        send_to_terminal
-            .send(Printout {
-                verbosity: 2,
-                content: format!(
-                    "kv: not sending response: {:?}",
-                    serde_json::from_slice::<KvResponse>(&body)
-                ),
-            })
-            .await
-            .unwrap();
+            }))
+            .build()
+            .unwrap()
+            .send(send_to_loop)
+            .await;
     }
 
     Ok(())
 }
 
 async fn check_caps(
-    our_node: String,
-    source: Address,
-    open_kvs: Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
-    mut send_to_caps_oracle: CapMessageSender,
+    our_node: &str,
+    source: &Address,
+    open_kvs: &Arc<DashMap<(PackageId, String), OptimisticTransactionDB>>,
+    send_to_caps_oracle: &CapMessageSender,
     request: &KvRequest,
-    kv_path: String,
+    kv_path: &str,
 ) -> Result<(), KvError> {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
@@ -347,7 +347,7 @@ async fn check_caps(
                     on: source.process.clone(),
                     cap: Capability {
                         issuer: Address {
-                            node: our_node.clone(),
+                            node: our_node.to_string(),
                             process: KV_PROCESS_ID.clone(),
                         },
                         params: serde_json::to_string(&serde_json::json!({
@@ -373,7 +373,7 @@ async fn check_caps(
                     on: source.process.clone(),
                     cap: Capability {
                         issuer: Address {
-                            node: our_node.clone(),
+                            node: our_node.to_string(),
                             process: KV_PROCESS_ID.clone(),
                         },
                         params: serde_json::to_string(&serde_json::json!({
@@ -405,7 +405,7 @@ async fn check_caps(
                 &request.db.to_string(),
                 &our_node,
                 &source,
-                &mut send_to_caps_oracle,
+                send_to_caps_oracle,
             )
             .await?;
             add_capability(
@@ -413,7 +413,7 @@ async fn check_caps(
                 &request.db.to_string(),
                 &our_node,
                 &source,
-                &mut send_to_caps_oracle,
+                send_to_caps_oracle,
             )
             .await?;
 
@@ -451,7 +451,7 @@ async fn add_capability(
     db: &str,
     our_node: &str,
     source: &Address,
-    send_to_caps_oracle: &mut CapMessageSender,
+    send_to_caps_oracle: &CapMessageSender,
 ) -> Result<(), KvError> {
     let cap = Capability {
         issuer: Address {
@@ -470,31 +470,6 @@ async fn add_capability(
         .await?;
     let _ = recv_cap_bool.await?;
     Ok(())
-}
-
-fn make_error_message(our_name: String, km: &KernelMessage, error: KvError) -> KernelMessage {
-    KernelMessage {
-        id: km.id,
-        source: Address {
-            node: our_name.clone(),
-            process: KV_PROCESS_ID.clone(),
-        },
-        target: match &km.rsvp {
-            None => km.source.clone(),
-            Some(rsvp) => rsvp.clone(),
-        },
-        rsvp: None,
-        message: Message::Response((
-            Response {
-                inherit: false,
-                body: serde_json::to_vec(&KvResponse::Err { error }).unwrap(),
-                metadata: None,
-                capabilities: vec![],
-            },
-            None,
-        )),
-        lazy_load_blob: None,
-    }
 }
 
 fn rocks_to_kv_err(error: rocksdb::Error) -> KvError {

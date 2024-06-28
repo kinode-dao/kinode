@@ -1138,6 +1138,75 @@ pub struct KernelMessage {
     pub lazy_load_blob: Option<LazyLoadBlob>,
 }
 
+impl KernelMessage {
+    pub fn builder() -> KernelMessageBuilder {
+        KernelMessageBuilder::default()
+    }
+
+    pub async fn send(self, sender: &MessageSender) {
+        sender.send(self).await.expect("kernel message sender died");
+    }
+}
+
+#[derive(Default)]
+pub struct KernelMessageBuilder {
+    id: u64,
+    source: Option<Address>,
+    target: Option<Address>,
+    rsvp: Rsvp,
+    message: Option<Message>,
+    lazy_load_blob: Option<LazyLoadBlob>,
+}
+
+impl KernelMessageBuilder {
+    pub fn id(mut self, id: u64) -> Self {
+        self.id = id;
+        self
+    }
+
+    pub fn source<T>(mut self, source: T) -> Self
+    where
+        T: Into<Address>,
+    {
+        self.source = Some(source.into());
+        self
+    }
+
+    pub fn target<T>(mut self, target: T) -> Self
+    where
+        T: Into<Address>,
+    {
+        self.target = Some(target.into());
+        self
+    }
+
+    pub fn rsvp(mut self, rsvp: Rsvp) -> Self {
+        self.rsvp = rsvp;
+        self
+    }
+
+    pub fn message(mut self, message: Message) -> Self {
+        self.message = Some(message);
+        self
+    }
+
+    pub fn lazy_load_blob(mut self, blob: Option<LazyLoadBlob>) -> Self {
+        self.lazy_load_blob = blob;
+        self
+    }
+
+    pub fn build(self) -> Result<KernelMessage, String> {
+        Ok(KernelMessage {
+            id: self.id,
+            source: self.source.ok_or("Source address is required")?,
+            target: self.target.ok_or("Target address is required")?,
+            rsvp: self.rsvp,
+            message: self.message.ok_or("Message is required")?,
+            lazy_load_blob: self.lazy_load_blob,
+        })
+    }
+}
+
 impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
@@ -1171,6 +1240,22 @@ pub struct WrappedSendError {
 pub struct Printout {
     pub verbosity: u8,
     pub content: String,
+}
+
+impl Printout {
+    pub fn new<T>(verbosity: u8, content: T) -> Self
+    where
+        T: Into<String>,
+    {
+        Self {
+            verbosity,
+            content: content.into(),
+        }
+    }
+
+    pub async fn send(self, sender: &PrintSender) {
+        sender.send(self).await.expect("print sender died");
+    }
 }
 
 //  kernel sets in case, e.g.,

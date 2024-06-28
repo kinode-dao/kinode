@@ -2,7 +2,12 @@
 #![feature(btree_extract_if)]
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
-use lib::types::core::*;
+use lib::types::core::{
+    CapMessageReceiver, CapMessageSender, DebugReceiver, DebugSender, Identity, KernelCommand,
+    KernelMessage, Keyfile, Message, MessageReceiver, MessageSender, NetworkErrorReceiver,
+    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, Request,
+    KERNEL_PROCESS_ID,
+};
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::env;
@@ -280,6 +285,7 @@ async fn main() {
      *  if any of these modules fail, the program exits with an error.
      */
     let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
+    let our_name_arc = Arc::new(our.name.clone());
 
     let (kernel_process_map, db, reverse_cap_index) = state::load_state(
         our.name.clone(),
@@ -332,7 +338,7 @@ async fn main() {
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
     ));
     tasks.spawn(state::state_sender(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         state_receiver,
@@ -340,7 +346,7 @@ async fn main() {
         home_directory_path.clone(),
     ));
     tasks.spawn(kv::kv(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         kv_receiver,
@@ -348,7 +354,7 @@ async fn main() {
         home_directory_path.clone(),
     ));
     tasks.spawn(sqlite::sqlite(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         sqlite_receiver,
@@ -387,7 +393,7 @@ async fn main() {
         print_sender.clone(),
     ));
     tasks.spawn(vfs::vfs(
-        our.name.clone(),
+        our_name_arc,
         kernel_message_sender.clone(),
         print_sender.clone(),
         vfs_message_receiver,
@@ -420,34 +426,24 @@ async fn main() {
             verbose_mode,
         ) => {
             match quit {
-                Ok(_) => match kernel_message_sender
-                    .send(KernelMessage {
-                        id: rand::random(),
-                        source: Address {
-                            node: our.name.clone(),
-                            process: KERNEL_PROCESS_ID.clone(),
-                        },
-                        target: Address {
-                            node: our.name.clone(),
-                            process: KERNEL_PROCESS_ID.clone(),
-                        },
-                        rsvp: None,
-                        message: Message::Request(Request {
+                Ok(()) => {
+                    KernelMessage::builder()
+                        .id(rand::random())
+                        .source((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
+                        .target((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
+                        .message(Message::Request(Request {
                             inherit: false,
                             expects_response: None,
                             body: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
                             metadata: None,
                             capabilities: vec![],
-                        }),
-                        lazy_load_blob: None,
-                    })
-                    .await
-                {
-                    Ok(()) => "graceful exit".into(),
-                    Err(_) => {
-                        "failed to gracefully shut down kernel".into()
-                    }
-                },
+                        }))
+                        .build()
+                        .unwrap()
+                        .send(&kernel_message_sender)
+                        .await;
+                    "graceful exit".into()
+                }
                 Err(e) => e.to_string(),
             }
         }

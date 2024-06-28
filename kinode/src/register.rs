@@ -1,22 +1,25 @@
-use crate::keygen;
-use crate::KNS_ADDRESS;
-use alloy::providers::{Provider, ProviderBuilder, RootProvider};
-use alloy::pubsub::PubSubFrontend;
-use alloy::rpc::client::WsConnect;
-use alloy::rpc::types::eth::{TransactionInput, TransactionRequest};
-use alloy::signers::Signature;
+use crate::{keygen, KNS_ADDRESS};
+use alloy::{
+    providers::{Provider, ProviderBuilder, RootProvider},
+    pubsub::PubSubFrontend,
+    rpc::client::WsConnect,
+    rpc::types::eth::{TransactionInput, TransactionRequest},
+    signers::Signature,
+};
 use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
 use alloy_sol_macro::sol;
 use alloy_sol_types::{SolCall, SolValue};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
-use lib::types::core::*;
-use ring::rand::SystemRandom;
-use ring::signature;
-use ring::signature::KeyPair;
-use static_dir::static_dir;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use lib::types::core::{
+    BootInfo, Identity, ImportKeyfileInfo, Keyfile, KeyfileVet, KeyfileVetted, LoginAndResetInfo,
+    LoginInfo, NodeRouting, UnencryptedIdentity,
+};
+use ring::{rand::SystemRandom, signature, signature::KeyPair};
+use std::{
+    str::FromStr,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::{mpsc, oneshot};
 use warp::{
     http::{
@@ -104,7 +107,8 @@ pub async fn register(
     let ws_port = warp::any().map(move || (ws_port, ws_flag_used));
     let tcp_port = warp::any().map(move || (tcp_port, tcp_flag_used));
 
-    let static_files = warp::path("assets").and(static_dir!("src/register-ui/build/assets/"));
+    let static_files =
+        warp::path("assets").and(static_dir::static_dir!("src/register-ui/build/assets/"));
 
     let react_app = warp::path::end()
         .or(warp::path("login"))

@@ -8,8 +8,8 @@ use crossterm::{
 };
 use futures::{future::FutureExt, StreamExt};
 use lib::types::core::{
-    Address, DebugCommand, DebugSender, Identity, KernelMessage, Message, MessageSender,
-    PrintReceiver, PrintSender, Printout, Request, TERMINAL_PROCESS_ID,
+    DebugCommand, DebugSender, Identity, KernelMessage, Message, MessageSender, PrintReceiver,
+    PrintSender, Printout, Request, TERMINAL_PROCESS_ID,
 };
 use std::{
     fs::{read_to_string, OpenOptions},
@@ -218,17 +218,12 @@ pub async fn terminal(
                             2 => verbose_mode = 3,
                             _ => verbose_mode = 0,
                         }
-                        let _ = print_tx.send(
-                            Printout {
-                                verbosity: 0,
-                                content: match verbose_mode {
-                                    0 => "verbose mode: off".into(),
-                                    1 => "verbose mode: debug".into(),
-                                    2 => "verbose mode: super-debug".into(),
-                                    _ => "verbose mode: full event loop".into(),
-                                }
-                            }
-                        ).await;
+                        Printout::new(0, format!("verbose mode: {}", match verbose_mode {
+                                0 => "off",
+                                1 => "debug",
+                                2 => "super-debug",
+                                _ => "full event loop",
+                            })).send(&print_tx).await;
                         if verbose_mode == 3 {
                             let _ = debug_event_loop.send(DebugCommand::ToggleEventLoop).await;
                         }
@@ -243,15 +238,12 @@ pub async fn terminal(
                     }) => {
                         let _ = debug_event_loop.send(DebugCommand::ToggleStepthrough).await;
                         in_step_through = !in_step_through;
-                        let _ = print_tx.send(
-                            Printout {
-                                verbosity: 0,
-                                content: match in_step_through {
-                                    false => "debug mode off".into(),
-                                    true => "debug mode on: use CTRL+S to step through events".into(),
-                                }
-                            }
-                        ).await;
+                        Printout::new(0, format!("debug mode {}", match in_step_through {
+                                false => "off",
+                                true => "on: use CTRL+S to step through events",
+                            }))
+                            .send(&print_tx)
+                            .await;
 
                     },
                     //
@@ -273,15 +265,12 @@ pub async fn terminal(
                         ..
                     }) => {
                         logging_mode = !logging_mode;
-                        let _ = print_tx.send(
-                            Printout {
-                                verbosity: 0,
-                                content: match logging_mode {
-                                    true => "logging mode: on".into(),
-                                    false => "logging mode: off".into(),
-                                }
-                            }
-                        ).await;
+                        Printout::new(
+                            0,
+                            format!("logging mode: {}", if logging_mode { "on" } else { "off" })
+                        )
+                        .send(&print_tx)
+                        .await;
                     },
                     //
                     //  UP / CTRL+P: go up one command in history
@@ -569,28 +558,21 @@ pub async fn terminal(
                                 command_history.add(command.clone());
                                 cursor_col = prompt_len as u16;
                                 line_col = prompt_len;
-                                event_loop.send(
-                                    KernelMessage {
-                                        id: rand::random(),
-                                        source: Address {
-                                            node: our.name.clone(),
-                                            process: TERMINAL_PROCESS_ID.clone(),
-                                        },
-                                        target: Address {
-                                            node: our.name.clone(),
-                                            process: TERMINAL_PROCESS_ID.clone(),
-                                        },
-                                        rsvp: None,
-                                        message: Message::Request(Request {
-                                            inherit: false,
-                                            expects_response: None,
-                                            body: command.into_bytes(),
-                                            metadata: None,
-                                            capabilities: vec![],
-                                        }),
-                                        lazy_load_blob: None,
-                                    }
-                                ).await.expect("terminal: couldn't execute command!");
+                                KernelMessage::builder()
+                                    .id(rand::random())
+                                    .source((our.name.as_str(), TERMINAL_PROCESS_ID.clone()))
+                                    .target((our.name.as_str(), TERMINAL_PROCESS_ID.clone()))
+                                    .message(Message::Request(Request {
+                                        inherit: false,
+                                        expects_response: None,
+                                        body: command.into_bytes(),
+                                        metadata: None,
+                                        capabilities: vec![],
+                                    }))
+                                    .build()
+                                    .unwrap()
+                                    .send(&event_loop)
+                                    .await;
                             },
                             _ => {
                                 // some keycode we don't care about, yet
