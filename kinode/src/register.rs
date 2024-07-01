@@ -258,7 +258,6 @@ pub async fn register(
 }
 
 pub async fn connect_to_provider(maybe_rpc: Option<String>) -> RootProvider<PubSubFrontend> {
-    // This ETH provider uses public rpc endpoints to verify registration signatures.
     let url = if let Some(rpc_url) = maybe_rpc {
         rpc_url
     } else {
@@ -268,19 +267,20 @@ pub async fn connect_to_provider(maybe_rpc: Option<String>) -> RootProvider<PubS
         "Connecting to Optimism RPC at {url}\n\
         Specify a different RPC URL with the --rpc flag."
     );
-    let ws = WsConnect::new(url);
-    // this fails occasionally in certain networking environments. i'm not sure why.
-    // frustratingly, the exact same call does not fail in the eth module. more investigation needed.
-    let Ok(client) = ProviderBuilder::new().on_ws(ws).await else {
-        panic!(
-            "Error: runtime could not connect to ETH RPC.\n\
-            This is necessary in order to verify node identity onchain.\n\
-            Please make sure you are using a valid WebSockets URL if using \
-            the --rpc flag, and you are connected to the internet."
-        );
-    };
-    println!("Connected to Optimism RPC");
 
+    let client = match ProviderBuilder::new().on_ws(WsConnect::new(url)).await {
+        Ok(client) => client,
+        Err(e) => {
+            panic!(
+                "Error: runtime could not connect to ETH RPC: {e}\n\
+                This is necessary in order to verify node identity onchain.\n\
+                Please make sure you are using a valid WebSockets URL if using \
+                the --rpc flag, and you are connected to the internet."
+            );
+        }
+    };
+
+    println!("Connected to Optimism RPC");
     client
 }
 
