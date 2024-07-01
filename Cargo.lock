@@ -5744,6 +5744,7 @@ name = "top"
 version = "0.2.0"
 dependencies = [
  "anyhow",
+ "clap",
  "kinode_process_lib 0.8.0 (git+https://github.com/kinode-dao/process_lib?tag=v0.8.0)",
  "serde",
  "serde_json",
