@@ -1,3 +1,4 @@
+use clap::{Arg, Command};
 use kinode_process_lib::kernel_types::{
     KernelCommand, KernelPrint, KernelPrintResponse, KernelResponse, PersistedProcess,
 };
@@ -12,31 +13,47 @@ wit_bindgen::generate!({
 
 call_init!(init);
 fn init(_our: Address) {
-    let Ok(args) = await_next_message_body() else {
+    let Ok(body) = await_next_message_body() else {
         println!("failed to get args");
         return;
     };
+    let body_string = format!("top {}", String::from_utf8(body).unwrap());
 
-    let Ok(proc_id) = String::from_utf8(args) else {
-        println!("failed to stringify arguments");
+    let Ok(parsed) = Command::new("top")
+        .disable_help_flag(true)
+        .arg(Arg::new("target").index(1))
+        .arg(
+            Arg::new("show-caps")
+                .short('c')
+                .long("show-caps")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .try_get_matches_from(body_string.split_whitespace())
+    else {
+        println!("failed to parse args");
         return;
     };
 
+    let target = parsed
+        .get_one::<String>("target")
+        .map(|s| s.parse::<ProcessId>());
+    let show_caps = parsed.get_flag("show-caps");
+
     let Ok(Message::Response { body, .. }) = Request::new()
         .target(("our", "kernel", "distro", "sys"))
-        .body(if proc_id.is_empty() {
-            serde_json::to_vec(&KernelCommand::Debug(KernelPrint::ProcessMap)).unwrap()
-        } else {
-            match proc_id.parse::<ProcessId>() {
+        .body(if let Some(target) = &target {
+            match target {
                 Ok(proc_id) => {
-                    serde_json::to_vec(&KernelCommand::Debug(KernelPrint::Process(proc_id)))
+                    serde_json::to_vec(&KernelCommand::Debug(KernelPrint::Process(proc_id.clone())))
                         .unwrap()
                 }
-                Err(_) => {
-                    println!("invalid process id");
+                Err(e) => {
+                    println!("invalid process id: {e}");
                     return;
                 }
             }
+        } else {
+            serde_json::to_vec(&KernelCommand::Debug(KernelPrint::ProcessMap)).unwrap()
         })
         .send_and_await_response(60)
         .unwrap()
@@ -56,18 +73,26 @@ fn init(_our: Address) {
             let len = process_map.len();
             let printout = process_map
                 .iter()
-                .map(|(proc_id, process)| print_process(proc_id, process))
+                .map(|(proc_id, process)| print_process(proc_id, process, show_caps))
                 .collect::<Vec<_>>()
                 .join("\r\n");
             println!("\r\n{printout}\r\n\r\ntop: {len} running processes");
         }
         KernelPrintResponse::Process(process) => match process {
             None => {
-                println!("process {} not running", proc_id);
+                println!(
+                    "process {} not running",
+                    target.map_or("(all)".to_string(), |t| t
+                        .map(|t| t.to_string())
+                        .unwrap_or_default())
+                );
                 return;
             }
             Some(process) => {
-                println!("{}", print_process(&proc_id.parse().unwrap(), &process));
+                println!(
+                    "{}",
+                    print_process(&target.unwrap().unwrap(), &process, show_caps)
+                );
             }
         },
         KernelPrintResponse::HasCap(_) => {
@@ -76,9 +101,9 @@ fn init(_our: Address) {
     }
 }
 
-fn print_process(id: &ProcessId, process: &PersistedProcess) -> String {
+fn print_process(id: &ProcessId, process: &PersistedProcess, show_caps: bool) -> String {
     format!(
-        "{}:\r\n    {}\r\n    wit: {}\r\n    on-exit: {:?}\r\n    public: {}\r\n    capabilities: {:?}",
+        "{}:\r\n    {}\r\n    wit: {}\r\n    on-exit: {:?}\r\n    public: {}\r\n    capabilities:\r\n        {}",
         id,
         if process.wasm_bytes_handle.is_empty() {
             "(runtime)"
@@ -88,10 +113,14 @@ fn print_process(id: &ProcessId, process: &PersistedProcess) -> String {
         process.wit_version.unwrap_or_default(),
         process.on_exit,
         process.public,
-        process
-            .capabilities
-            .iter()
-            .map(|c| c.to_string())
-            .collect::<Vec<_>>()
+        if show_caps {
+            process
+                .capabilities
+                .iter()
+                .map(|c| format!("{}\r\n        ", c.to_string()))
+                .collect::<String>()
+        } else {
+            format!("{}, use -c to display", process.capabilities.len())
+        }
     )
 }

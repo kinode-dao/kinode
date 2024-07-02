@@ -37,12 +37,13 @@ export default function AppEntry({ app, size = "medium", overrideImageSize, show
       }}
     >
       <AppHeader app={app} size={size} overrideImageSize={overrideImageSize} />
-      <div className={classNames("flex items-center", {
+      <div className={classNames("flex", {
+        'items-center': size !== 'large',
+        'items-start': size === 'large',
         'absolute': size !== 'large',
         'top-2 right-2': size !== 'large' && showMoreActions,
         'top-0 right-0': size !== 'large' && !showMoreActions,
         'ml-auto': size === 'large' && isMobile,
-        'min-w-1/5': size === 'large'
       })}>
         <ActionButton
           app={app}
@@ -54,7 +55,13 @@ export default function AppEntry({ app, size = "medium", overrideImageSize, show
             'w-full': size === 'large'
           })}
         />
-        {showMoreActions && <MoreActions app={app} className="self-stretch" />}
+        {showMoreActions && <MoreActions
+          app={app}
+          className={classNames("self-stretch", {
+            'self-start': size === 'large',
+
+          })}
+        />}
       </div>
     </div>
   );

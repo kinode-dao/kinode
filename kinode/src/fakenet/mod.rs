@@ -1,19 +1,19 @@
-use alloy::network::{eip2718::Encodable2718, EthereumSigner, TransactionBuilder};
+use crate::fakenet::helpers::RegisterHelpers::{
+    ipCall, multicallCall, ownerOfCall, registerCall, setAllIpCall, setKeyCall,
+};
+use crate::{keygen, KNS_ADDRESS};
+use alloy::network::{eip2718::Encodable2718, EthereumWallet, TransactionBuilder};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider};
 use alloy::pubsub::PubSubFrontend;
 use alloy::rpc::client::WsConnect;
 use alloy::rpc::types::eth::{TransactionInput, TransactionRequest};
-use alloy::signers::wallet::LocalWallet;
+use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{Address, Bytes, FixedBytes, B256, U256};
 use alloy_sol_types::{SolCall, SolValue};
 use lib::core::{Identity, NodeRouting};
 use std::str::FromStr;
 
 pub mod helpers;
-
-use crate::{keygen, KNS_ADDRESS};
-pub use helpers::RegisterHelpers::*;
-pub use helpers::*;
 
 const FAKE_DOTDEV: &str = "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9";
 
@@ -26,13 +26,13 @@ pub async fn register_local(
     pubkey: &str,
     fakechain_port: u16,
 ) -> Result<(), anyhow::Error> {
-    let wallet = LocalWallet::from_str(
+    let wallet = PrivateKeySigner::from_str(
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     )?;
 
     let wallet_address = wallet.address();
 
-    let signer: EthereumSigner = wallet.into();
+    let signer: EthereumWallet = wallet.into();
 
     let dotdev = Address::from_str(FAKE_DOTDEV)?;
     let kns = Address::from_str(KNS_ADDRESS)?;
@@ -42,8 +42,8 @@ pub async fn register_local(
 
     let provider: RootProvider<PubSubFrontend> = ProviderBuilder::default().on_ws(ws).await?;
 
-    let fqdn = dns_encode_fqdn(name);
-    let namehash = encode_namehash(name);
+    let fqdn = helpers::dns_encode_fqdn(name);
+    let namehash = helpers::encode_namehash(name);
     // todo: find a better way?
     let namehash_bint: B256 = namehash.into();
     let namehash_uint: U256 = namehash_bint.into();

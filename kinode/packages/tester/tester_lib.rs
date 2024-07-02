@@ -1,6 +1,5 @@
-use crate::kinode::process::tester::{
-    Response as TesterResponse, FailResponse,
-};
+#[allow(unused_imports)]
+use crate::kinode::process::tester::{FailResponse, Response as TesterResponse};
 
 #[macro_export]
 macro_rules! fail {

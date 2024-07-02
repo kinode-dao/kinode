@@ -49,10 +49,14 @@ fn load_chess_state() -> ChessState {
             games,
             clients: HashSet::new(),
         },
-        None => ChessState {
-            games: HashMap::new(),
-            clients: HashSet::new(),
-        },
+        None => {
+            let state = ChessState {
+                games: HashMap::new(),
+                clients: HashSet::new(),
+            };
+            save_chess_state(&state);
+            state
+        }
     }
 }
 

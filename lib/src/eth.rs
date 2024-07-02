@@ -1,5 +1,5 @@
-use alloy_json_rpc::ErrorPayload;
-use alloy_rpc_types::pubsub::{Params, SubscriptionKind, SubscriptionResult};
+use alloy::rpc::json_rpc::ErrorPayload;
+use alloy::rpc::types::eth::pubsub::{Params, SubscriptionKind, SubscriptionResult};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
