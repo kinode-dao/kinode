@@ -1,18 +1,13 @@
 use crate::kernel::process;
 use anyhow::Result;
-use lib::core::{KERNEL_PROCESS_ID, VFS_PROCESS_ID};
-use lib::types::core::{self as t, STATE_PROCESS_ID};
-pub use lib::wit;
-pub use lib::wit::Host as StandardHost;
+use lib::types::core::{self as t, KERNEL_PROCESS_ID, STATE_PROCESS_ID, VFS_PROCESS_ID};
+use lib::wit;
+use lib::wit::Host as StandardHost;
 use ring::signature::{self, KeyPair};
 
 async fn print_debug(proc: &process::ProcessState, content: &str) {
-    let _ = proc
-        .send_to_terminal
-        .send(t::Printout {
-            verbosity: 2,
-            content: format!("{}: {}", proc.metadata.our.process, content),
-        })
+    t::Printout::new(2, format!("{}: {}", proc.metadata.our.process, content))
+        .send(&proc.send_to_terminal)
         .await;
 }
 
@@ -295,34 +290,34 @@ impl process::ProcessState {
         // 1. whether this request expects a response -- if so, rsvp = our address, always
         // 2. whether this request inherits -- if so, rsvp = prompting message's rsvp
         // 3. if neither, rsvp = None
-        let kernel_message = t::KernelMessage {
-            id: request_id,
-            source,
-            target: t::Address::de_wit(target),
-            rsvp: match (
-                request.expects_response,
-                request.inherit,
-                &self.prompting_message,
-            ) {
-                (Some(_), _, _) => {
-                    // this request expects response, so receives any response
-                    // make sure to use the real source, not a fake injected-by-kernel source
-                    Some(self.metadata.our.clone())
-                }
-                (None, true, Some(ref prompt)) => {
-                    // this request inherits, so response will be routed to prompting message
-                    prompt.rsvp.clone()
-                }
-                _ => None,
-            },
-            message: t::Message::Request(request),
-            lazy_load_blob: blob,
-        };
-
-        self.send_to_loop
-            .send(kernel_message)
-            .await
-            .expect("fatal: kernel couldn't send request");
+        t::KernelMessage::builder()
+            .id(request_id)
+            .source(source)
+            .target(t::Address::de_wit(target))
+            .rsvp(
+                match (
+                    request.expects_response,
+                    request.inherit,
+                    &self.prompting_message,
+                ) {
+                    (Some(_), _, _) => {
+                        // this request expects response, so receives any response
+                        // make sure to use the real source, not a fake injected-by-kernel source
+                        Some(self.metadata.our.clone())
+                    }
+                    (None, true, Some(ref prompt)) => {
+                        // this request inherits, so response will be routed to prompting message
+                        prompt.rsvp.clone()
+                    }
+                    _ => None,
+                },
+            )
+            .message(t::Message::Request(request))
+            .lazy_load_blob(blob)
+            .build()
+            .unwrap()
+            .send(&self.send_to_loop)
+            .await;
 
         Ok(request_id)
     }
@@ -333,11 +328,11 @@ impl process::ProcessState {
 
         // the process requires a prompting_message in order to issue a response
         let Some(ref prompting_message) = self.prompting_message else {
-            process::print(
-                &self.send_to_terminal,
+            t::Printout::new(
                 0,
                 format!("kernel: need non-None prompting_message to handle Response {response:?}"),
             )
+            .send(&self.send_to_terminal)
             .await;
             return;
         };
@@ -377,21 +372,20 @@ impl process::ProcessState {
             };
         }
 
-        self.send_to_loop
-            .send(t::KernelMessage {
-                id,
-                source: self.metadata.our.clone(),
-                target,
-                rsvp: None,
-                message: t::Message::Response((
-                    response,
-                    // the context will be set by the process receiving this Response.
-                    None,
-                )),
-                lazy_load_blob: blob,
-            })
-            .await
-            .expect("fatal: kernel couldn't send response");
+        t::KernelMessage::builder()
+            .id(id)
+            .source(self.metadata.our.clone())
+            .target(target)
+            .message(t::Message::Response((
+                response,
+                // the context will be set by the process receiving this Response.
+                None,
+            )))
+            .lazy_load_blob(blob)
+            .build()
+            .unwrap()
+            .send(&self.send_to_loop)
+            .await;
     }
 }
 
@@ -679,11 +673,8 @@ impl StandardHost for process::ProcessWasi {
                     wit_version: self.process.metadata.wit_version,
                     on_exit: t::OnExit::de_wit(on_exit),
                     initial_capabilities: request_capabilities
-                        .iter()
-                        .map(|cap| t::Capability {
-                            issuer: t::Address::de_wit(cap.clone().issuer),
-                            params: cap.clone().params,
-                        })
+                        .into_iter()
+                        .map(|cap| t::de_wit_capability(cap).0)
                         .collect(),
                     public,
                 })
@@ -716,7 +707,7 @@ impl StandardHost for process::ProcessWasi {
                         },
                         params: "\"messaging\"".into(),
                     }],
-                    responder: tx,
+                    responder: Some(tx),
                 })
                 .await
                 .unwrap();
@@ -767,7 +758,7 @@ impl StandardHost for process::ProcessWasi {
                     issuer: self.process.metadata.our.clone(),
                     params: "\"messaging\"".into(),
                 }],
-                responder: tx,
+                responder: Some(tx),
             })
             .await
             .unwrap();
@@ -786,7 +777,7 @@ impl StandardHost for process::ProcessWasi {
                     },
                     params: "\"messaging\"".into(),
                 }],
-                responder: tx,
+                responder: Some(tx),
             })
             .await
             .unwrap();
@@ -810,7 +801,7 @@ impl StandardHost for process::ProcessWasi {
                     .iter()
                     .map(|cap| t::de_wit_capability(cap.clone()).0)
                     .collect(),
-                responder: tx,
+                responder: Some(tx),
             })
             .await?;
         let _ = rx.await?;
@@ -828,7 +819,7 @@ impl StandardHost for process::ProcessWasi {
                     .iter()
                     .map(|cap| t::de_wit_capability(cap.clone()).0)
                     .collect(),
-                responder: tx,
+                responder: Some(tx),
             })
             .await?;
         let _ = rx.await?;
@@ -848,10 +839,7 @@ impl StandardHost for process::ProcessWasi {
         let caps = rx.await?;
         Ok(caps
             .into_iter()
-            .map(|cap| wit::Capability {
-                issuer: t::Address::en_wit(&cap.0.issuer),
-                params: cap.0.params,
-            })
+            .map(|cap| t::en_wit_capability(cap))
             .collect())
     }
 

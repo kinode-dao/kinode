@@ -1,9 +1,8 @@
 use crate::kernel::process;
 use anyhow::Result;
-use lib::core::{KERNEL_PROCESS_ID, VFS_PROCESS_ID};
-use lib::types::core::{self as t, STATE_PROCESS_ID};
-pub use lib::v0::wit;
-pub use lib::v0::wit::Host as StandardHost;
+use lib::types::core::{self as t, KERNEL_PROCESS_ID, STATE_PROCESS_ID, VFS_PROCESS_ID};
+use lib::v0::wit;
+use lib::v0::wit::Host as StandardHost;
 use ring::signature::{self, KeyPair};
 
 async fn print_debug(proc: &process::ProcessState, content: &str) {
@@ -335,11 +334,11 @@ impl process::ProcessState {
 
         // the process requires a prompting_message in order to issue a response
         let Some(ref prompting_message) = self.prompting_message else {
-            process::print(
-                &self.send_to_terminal,
+            t::Printout::new(
                 0,
                 format!("kernel: need non-None prompting_message to handle Response {response:?}"),
             )
+            .send(&self.send_to_terminal)
             .await;
             return;
         };
@@ -685,11 +684,8 @@ impl StandardHost for process::ProcessWasiV0 {
                     wit_version: self.process.metadata.wit_version,
                     on_exit: t::OnExit::de_wit_v0(on_exit),
                     initial_capabilities: request_capabilities
-                        .iter()
-                        .map(|cap| t::Capability {
-                            issuer: t::Address::de_wit_v0(cap.clone().issuer),
-                            params: cap.clone().params,
-                        })
+                        .into_iter()
+                        .map(|cap| t::de_wit_capability_v0(cap).0)
                         .collect(),
                     public,
                 })
@@ -722,7 +718,7 @@ impl StandardHost for process::ProcessWasiV0 {
                         },
                         params: "\"messaging\"".into(),
                     }],
-                    responder: tx,
+                    responder: Some(tx),
                 })
                 .await
                 .unwrap();
@@ -773,7 +769,7 @@ impl StandardHost for process::ProcessWasiV0 {
                     issuer: self.process.metadata.our.clone(),
                     params: "\"messaging\"".into(),
                 }],
-                responder: tx,
+                responder: Some(tx),
             })
             .await
             .unwrap();
@@ -792,7 +788,7 @@ impl StandardHost for process::ProcessWasiV0 {
                     },
                     params: "\"messaging\"".into(),
                 }],
-                responder: tx,
+                responder: Some(tx),
             })
             .await
             .unwrap();
@@ -816,7 +812,7 @@ impl StandardHost for process::ProcessWasiV0 {
                     .iter()
                     .map(|cap| t::de_wit_capability_v0(cap.clone()).0)
                     .collect(),
-                responder: tx,
+                responder: Some(tx),
             })
             .await?;
         let _ = rx.await?;
@@ -834,7 +830,7 @@ impl StandardHost for process::ProcessWasiV0 {
                     .iter()
                     .map(|cap| t::de_wit_capability_v0(cap.clone()).0)
                     .collect(),
-                responder: tx,
+                responder: Some(tx),
             })
             .await?;
         let _ = rx.await?;
@@ -854,10 +850,7 @@ impl StandardHost for process::ProcessWasiV0 {
         let caps = rx.await?;
         Ok(caps
             .into_iter()
-            .map(|cap| wit::Capability {
-                issuer: t::Address::en_wit_v0(&cap.0.issuer),
-                params: cap.0.params,
-            })
+            .map(|cap| t::en_wit_capability_v0(cap))
             .collect())
     }
 

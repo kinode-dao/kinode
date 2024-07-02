@@ -391,16 +391,29 @@ async fn handle_request(
         }
         VfsAction::Rename { new_path } => {
             let new_path = join_paths_safely(vfs_path, &new_path);
-            fs::rename(&path, new_path).await?;
+            fs::rename(&path, new_path)
+                .await
+                .map_err(|e| VfsError::IOError {
+                    error: e.to_string(),
+                    path: request.path,
+                })?;
             (VfsResponse::Ok, None)
         }
         VfsAction::CopyFile { new_path } => {
             let new_path = join_paths_safely(vfs_path, &new_path);
-            fs::copy(&path, new_path).await?;
+            fs::copy(&path, new_path)
+                .await
+                .map_err(|e| VfsError::IOError {
+                    error: e.to_string(),
+                    path: request.path,
+                })?;
             (VfsResponse::Ok, None)
         }
         VfsAction::Metadata => {
-            let metadata = fs::metadata(&path).await?;
+            let metadata = fs::metadata(&path).await.map_err(|e| VfsError::IOError {
+                error: e.to_string(),
+                path: request.path,
+            })?;
             let file_type = get_file_type(&metadata);
             let meta = FileMetadata {
                 len: metadata.len(),
@@ -411,13 +424,23 @@ async fn handle_request(
         VfsAction::Len => {
             let file = open_file(open_files, &path, false, false).await?;
             let file = file.lock().await;
-            let len = file.metadata().await?.len();
+            let len = file
+                .metadata()
+                .await
+                .map_err(|e| VfsError::IOError {
+                    error: e.to_string(),
+                    path: request.path,
+                })?
+                .len();
             (VfsResponse::Len(len), None)
         }
         VfsAction::SetLen(len) => {
-            let file = open_file(open_files, path, false, false).await?;
+            let file = open_file(open_files, &path, false, false).await?;
             let file = file.lock().await;
-            file.set_len(len).await?;
+            file.set_len(len).await.map_err(|e| VfsError::IOError {
+                error: e.to_string(),
+                path: request.path,
+            })?;
             (VfsResponse::Ok, None)
         }
         VfsAction::Hash => {
@@ -464,7 +487,7 @@ async fn handle_request(
                 let (is_file, is_dir, local_path, file_contents) = {
                     let mut file = zip.by_index(i).map_err(|e| VfsError::IOError {
                         error: e.to_string(),
-                        path: "".into(),
+                        path: request.path.clone(),
                     })?;
                     let is_file = file.is_file();
                     let is_dir = file.is_dir();
@@ -754,20 +777,18 @@ async fn read_capability(
     send_to_caps_oracle: &CapMessageSender,
 ) -> bool {
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
+    let cap = Capability::new(
+        (our_node, VFS_PROCESS_ID.clone()),
+        if root {
+            "{\"root\":true}".to_string()
+        } else {
+            format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}")
+        },
+    );
     if let Err(_) = send_to_caps_oracle
         .send(CapMessage::Has {
             on: source.process.clone(),
-            cap: Capability {
-                issuer: Address {
-                    node: our_node.to_string(),
-                    process: VFS_PROCESS_ID.clone(),
-                },
-                params: if root {
-                    "{{\"root\": true}}".to_string()
-                } else {
-                    format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}")
-                },
-            },
+            cap,
             responder: send_cap_bool,
         })
         .await
@@ -784,19 +805,16 @@ async fn add_capability(
     source: &Address,
     send_to_caps_oracle: &CapMessageSender,
 ) -> Result<(), VfsError> {
-    let cap = Capability {
-        issuer: Address {
-            node: our_node.to_string(),
-            process: VFS_PROCESS_ID.clone(),
-        },
-        params: format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}"),
-    };
+    let cap = Capability::new(
+        (our_node, VFS_PROCESS_ID.clone()),
+        format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}"),
+    );
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     send_to_caps_oracle
         .send(CapMessage::Add {
             on: source.process.clone(),
             caps: vec![cap],
-            responder: send_cap_bool,
+            responder: Some(send_cap_bool),
         })
         .await?;
     match recv_cap_bool.await? {

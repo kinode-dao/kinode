@@ -36,7 +36,8 @@ pub async fn load_state(
     let kernel_id_vec = process_to_vec(KERNEL_PROCESS_ID.clone());
     match db.get(&kernel_id_vec) {
         Ok(Some(value)) => {
-            process_map = bincode::deserialize::<ProcessMap>(&value).unwrap();
+            process_map = bincode::deserialize::<ProcessMap>(&value)
+                .expect("failed to deserialize kernel process map");
             // if our networking key changed, we need to re-sign all local caps
             process_map.iter_mut().for_each(|(_id, process)| {
                 process.capabilities.iter_mut().for_each(|(cap, sig)| {
@@ -116,7 +117,6 @@ pub async fn state_sender(
         let our_node = our_node.clone();
         let db_clone = db.clone();
         let send_to_loop = send_to_loop.clone();
-        let send_to_terminal = send_to_terminal.clone();
         let home_directory_path = home_directory_path.clone();
 
         tokio::spawn(async move {
@@ -129,9 +129,6 @@ pub async fn state_sender(
                     handle_request(&our_node, km, db_clone, &send_to_loop, &home_directory_path)
                         .await
                 {
-                    Printout::new(1, format!("state: {e}"))
-                        .send(&send_to_terminal)
-                        .await;
                     KernelMessage::builder()
                         .id(km_id)
                         .source((our_node.as_str(), STATE_PROCESS_ID.clone()))
@@ -559,11 +556,11 @@ async fn bootstrap(
                     node: our_name.into(),
                     process: VFS_PROCESS_ID.clone(),
                 },
-                params: serde_json::to_string(&serde_json::json!({
+                params: serde_json::json!({
                     "kind": "read",
                     "drive": drive_path,
-                }))
-                .unwrap(),
+                })
+                .to_string(),
             };
             requested_caps.insert(read_cap.clone(), sign_cap(read_cap, keypair.clone()));
             let write_cap = Capability {
@@ -571,11 +568,11 @@ async fn bootstrap(
                     node: our_name.into(),
                     process: VFS_PROCESS_ID.clone(),
                 },
-                params: serde_json::to_string(&serde_json::json!({
+                params: serde_json::json!({
                     "kind": "write",
                     "drive": drive_path,
-                }))
-                .unwrap(),
+                })
+                .to_string(),
             };
             requested_caps.insert(write_cap.clone(), sign_cap(write_cap, keypair.clone()));
 
