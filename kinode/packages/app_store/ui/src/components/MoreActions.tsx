@@ -17,13 +17,15 @@ export default function MoreActions({ app, className }: MoreActionsProps) {
   const navigate = useNavigate();
 
   const downloaded = Boolean(app.state);
+  const menuClass = "flex flex-col bg-black p-2 rounded-lg relative z-10 border border-orange -mr-[1px]"
 
   if (!downloaded) {
     if (!app.metadata) return <></>;
 
+
     return (
       <Dropdown className={className}>
-        <div className="flex flex-col backdrop-blur-lg bg-black/10 p-2 rounded-lg relative z-10">
+        <div className={menuClass}>
           {app.metadata?.description && (
             <button
               className="my-1 whitespace-nowrap clear"
@@ -48,7 +50,7 @@ export default function MoreActions({ app, className }: MoreActionsProps) {
 
   return (
     <Dropdown className={className}>
-      <div className="flex flex-col p-2 rounded-lg backdrop-blur-lg relative z-10">
+      <div className={menuClass}>
         <button
           className="my-1 whitespace-nowrap clear"
           onClick={() => navigate(`/${APP_DETAILS_PATH}/${appId(app)}`)}

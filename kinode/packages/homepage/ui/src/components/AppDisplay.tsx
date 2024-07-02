@@ -38,7 +38,7 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
         size={'small'}
         className="h-16 w-16"
       />}
-    <h6>{app?.label}</h6>
+    <h6>{app?.label || app?.package_name}</h6>
     {app?.path && isHovered && <button
       className="absolute p-2 -top-2 -right-2 clear text-sm"
       onClick={(e) => {
