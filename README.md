@@ -129,7 +129,6 @@ In order to call a script with shorthand, a user may apply an *alias* using the 
 alias <shorthand> <full_name>
 ```
 Subsequent use of the shorthand will then be interpolated as the process ID.
-Aliases are not currently persisted between boots, although this may change.
 
 A list of the other terminal scripts included in this distro:
 

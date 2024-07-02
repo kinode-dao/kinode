@@ -1,15 +1,15 @@
 use crate::KERNEL_PROCESS_ID;
-use lib::types::core as t;
-pub use lib::v0::ProcessV0;
-pub use lib::Process;
-use ring::signature;
-use std::collections::{HashMap, VecDeque};
-use std::sync::Arc;
-use tokio::fs;
-use tokio::task::JoinHandle;
+use lib::{types::core as t, v0::ProcessV0, Process};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
+use tokio::{fs, task::JoinHandle};
 use wasi_common::sync::Dir;
-use wasmtime::component::{Component, Linker, ResourceTable as Table};
-use wasmtime::{Engine, Store};
+use wasmtime::{
+    component::{Component, Linker, ResourceTable as Table},
+    Engine, Store,
+};
 use wasmtime_wasi::{
     pipe::MemoryOutputPipe, DirPerms, FilePerms, WasiCtx, WasiCtxBuilder, WasiView,
 };
@@ -25,7 +25,7 @@ pub struct ProcessContext {
 
 pub struct ProcessState {
     /// our node's networking keypair
-    pub keypair: Arc<signature::Ed25519KeyPair>,
+    pub keypair: Arc<ring::signature::Ed25519KeyPair>,
     /// information about ourself
     pub metadata: t::ProcessMetadata,
     /// pipe from which we get messages from the main event loop
@@ -83,29 +83,18 @@ impl WasiView for ProcessWasiV0 {
     }
 }
 
-async fn make_component(
-    engine: Engine,
-    wasm_bytes: &[u8],
+async fn make_table_and_wasi(
     home_directory_path: String,
-    process_state: ProcessState,
-) -> anyhow::Result<(Process, Store<ProcessWasi>, MemoryOutputPipe)> {
-    let component = Component::new(&engine, wasm_bytes.to_vec())
-        .expect("make_process_loop: couldn't read file");
-
-    let mut linker = Linker::new(&engine);
-    Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
-
+    process_state: &ProcessState,
+) -> (Table, WasiCtx, MemoryOutputPipe) {
     let table = Table::new();
     let wasi_stderr = MemoryOutputPipe::new(STACK_TRACE_SIZE);
-
-    let our_process_id = process_state.metadata.our.process.clone();
-    let send_to_terminal = process_state.send_to_terminal.clone();
 
     let tmp_path = format!(
         "{}/vfs/{}:{}/tmp",
         home_directory_path,
-        our_process_id.package(),
-        our_process_id.publisher()
+        process_state.metadata.our.process.package(),
+        process_state.metadata.our.process.publisher()
     );
 
     let mut wasi = WasiCtxBuilder::new();
@@ -130,9 +119,25 @@ async fn make_component(
         }
     }
 
-    let wasi = wasi.stderr(wasi_stderr.clone()).build();
+    (table, wasi.stderr(wasi_stderr.clone()).build(), wasi_stderr)
+}
 
+async fn make_component(
+    engine: Engine,
+    wasm_bytes: &[u8],
+    home_directory_path: String,
+    process_state: ProcessState,
+) -> anyhow::Result<(Process, Store<ProcessWasi>, MemoryOutputPipe)> {
+    let component =
+        Component::new(&engine, wasm_bytes.to_vec()).expect("make_component: couldn't read file");
+
+    let mut linker = Linker::new(&engine);
+    Process::add_to_linker(&mut linker, |state: &mut ProcessWasi| state).unwrap();
+    let (table, wasi, wasi_stderr) = make_table_and_wasi(home_directory_path, &process_state).await;
     wasmtime_wasi::command::add_to_linker(&mut linker).unwrap();
+
+    let our_process_id = process_state.metadata.our.process.clone();
+    let send_to_terminal = process_state.send_to_terminal.clone();
 
     let mut store = Store::new(
         &engine,
@@ -147,15 +152,12 @@ async fn make_component(
         match Process::instantiate_async(&mut store, &component, &linker).await {
             Ok(b) => b,
             Err(e) => {
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: format!(
-                            "mk: process {:?} failed to instantiate: {:?}",
-                            our_process_id, e,
-                        ),
-                    })
-                    .await;
+                t::Printout::new(
+                    0,
+                    format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
+                )
+                .send(&send_to_terminal)
+                .await;
                 return Err(e);
             }
         };
@@ -169,50 +171,16 @@ async fn make_component_v0(
     home_directory_path: String,
     process_state: ProcessState,
 ) -> anyhow::Result<(ProcessV0, Store<ProcessWasiV0>, MemoryOutputPipe)> {
-    let component = Component::new(&engine, wasm_bytes.to_vec())
-        .expect("make_process_loop: couldn't read file");
+    let component =
+        Component::new(&engine, wasm_bytes.to_vec()).expect("make_component: couldn't read file");
 
     let mut linker = Linker::new(&engine);
     ProcessV0::add_to_linker(&mut linker, |state: &mut ProcessWasiV0| state).unwrap();
-
-    let table = Table::new();
-    let wasi_stderr = MemoryOutputPipe::new(STACK_TRACE_SIZE);
+    let (table, wasi, wasi_stderr) = make_table_and_wasi(home_directory_path, &process_state).await;
+    wasmtime_wasi::command::add_to_linker(&mut linker).unwrap();
 
     let our_process_id = process_state.metadata.our.process.clone();
     let send_to_terminal = process_state.send_to_terminal.clone();
-
-    let tmp_path = format!(
-        "{}/vfs/{}:{}/tmp",
-        home_directory_path,
-        our_process_id.package(),
-        our_process_id.publisher()
-    );
-
-    let mut wasi = WasiCtxBuilder::new();
-
-    // TODO make guarantees about this
-    if let Ok(Ok(())) = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        fs::create_dir_all(&tmp_path),
-    )
-    .await
-    {
-        if let Ok(wasi_tempdir) =
-            Dir::open_ambient_dir(tmp_path.clone(), wasi_common::sync::ambient_authority())
-        {
-            wasi.preopened_dir(
-                wasi_tempdir,
-                DirPerms::all(),
-                FilePerms::all(),
-                tmp_path.clone(),
-            )
-            .env("TEMP_DIR", tmp_path);
-        }
-    }
-
-    let wasi = wasi.stderr(wasi_stderr.clone()).build();
-
-    wasmtime_wasi::command::add_to_linker(&mut linker).unwrap();
 
     let mut store = Store::new(
         &engine,
@@ -227,15 +195,12 @@ async fn make_component_v0(
         match ProcessV0::instantiate_async(&mut store, &component, &linker).await {
             Ok(b) => b,
             Err(e) => {
-                let _ = send_to_terminal
-                    .send(t::Printout {
-                        verbosity: 0,
-                        content: format!(
-                            "mk: process {:?} failed to instantiate: {:?}",
-                            our_process_id, e,
-                        ),
-                    })
-                    .await;
+                t::Printout::new(
+                    0,
+                    format!("kernel: process {our_process_id} failed to instantiate: {e:?}"),
+                )
+                .send(&send_to_terminal)
+                .await;
                 return Err(e);
             }
         };
@@ -245,7 +210,7 @@ async fn make_component_v0(
 
 /// create a specific process, and generate a task that will run it.
 pub async fn make_process_loop(
-    keypair: Arc<signature::Ed25519KeyPair>,
+    keypair: Arc<ring::signature::Ed25519KeyPair>,
     metadata: t::ProcessMetadata,
     send_to_loop: t::MessageSender,
     send_to_terminal: t::PrintSender,
@@ -290,9 +255,12 @@ pub async fn make_process_loop(
         send_to_process.send(message).await?;
     }
 
+    let our = metadata.our.clone();
+    let wit_version = metadata.wit_version.clone();
+
     let process_state = ProcessState {
-        keypair: keypair.clone(),
-        metadata: metadata.clone(),
+        keypair,
+        metadata,
         recv_in_process,
         self_sender: send_to_process,
         send_to_loop: send_to_loop.clone(),
@@ -304,40 +272,28 @@ pub async fn make_process_loop(
         caps_oracle: caps_oracle.clone(),
     };
 
-    let metadata = match metadata.wit_version {
+    let metadata = match wit_version {
         // assume missing version is oldest wit version
         None => {
             let (bindings, mut store, wasi_stderr) =
                 make_component(engine, &wasm_bytes, home_directory_path, process_state).await?;
 
             // the process will run until it returns from init() or crashes
-            match bindings
-                .call_init(&mut store, &metadata.our.to_string())
-                .await
-            {
+            match bindings.call_init(&mut store, &our.to_string()).await {
                 Ok(()) => {
-                    let _ = send_to_terminal
-                        .send(t::Printout {
-                            verbosity: 1,
-                            content: format!(
-                                "process {} returned without error",
-                                metadata.our.process
-                            ),
-                        })
+                    t::Printout::new(1, format!("process {our} returned without error"))
+                        .send(&send_to_terminal)
                         .await;
                 }
                 Err(_) => {
                     let stderr = wasi_stderr.contents().into();
                     let stderr = String::from_utf8(stderr)?;
-                    let _ = send_to_terminal
-                        .send(t::Printout {
-                            verbosity: 0,
-                            content: format!(
-                                "\x1b[38;5;196mprocess {} ended with error:\x1b[0m\n{}",
-                                metadata.our.process, stderr,
-                            ),
-                        })
-                        .await;
+                    t::Printout::new(
+                        0,
+                        format!("\x1b[38;5;196mprocess {our} ended with error:\x1b[0m\n{stderr}",),
+                    )
+                    .send(&send_to_terminal)
+                    .await;
                 }
             };
 
@@ -351,33 +307,21 @@ pub async fn make_process_loop(
                 make_component_v0(engine, &wasm_bytes, home_directory_path, process_state).await?;
 
             // the process will run until it returns from init() or crashes
-            match bindings
-                .call_init(&mut store, &metadata.our.to_string())
-                .await
-            {
+            match bindings.call_init(&mut store, &our.to_string()).await {
                 Ok(()) => {
-                    let _ = send_to_terminal
-                        .send(t::Printout {
-                            verbosity: 1,
-                            content: format!(
-                                "process {} returned without error",
-                                metadata.our.process
-                            ),
-                        })
+                    t::Printout::new(1, format!("process {our} returned without error"))
+                        .send(&send_to_terminal)
                         .await;
                 }
                 Err(_) => {
                     let stderr = wasi_stderr.contents().into();
                     let stderr = String::from_utf8(stderr)?;
-                    let _ = send_to_terminal
-                        .send(t::Printout {
-                            verbosity: 0,
-                            content: format!(
-                                "\x1b[38;5;196mprocess {} ended with error:\x1b[0m\n{}",
-                                metadata.our.process, stderr,
-                            ),
-                        })
-                        .await;
+                    t::Printout::new(
+                        0,
+                        format!("\x1b[38;5;196mprocess {our} ended with error:\x1b[0m\n{stderr}",),
+                    )
+                    .send(&send_to_terminal)
+                    .await;
                 }
             };
 
@@ -390,19 +334,14 @@ pub async fn make_process_loop(
     // the process has completed, time to perform cleanup
     //
 
-    let our_kernel = t::Address {
-        node: metadata.our.node.clone(),
-        process: KERNEL_PROCESS_ID.clone(),
-    };
-
     // get caps before killing
     let (tx, rx) = tokio::sync::oneshot::channel();
-    let _ = caps_oracle
+    caps_oracle
         .send(t::CapMessage::GetAll {
             on: metadata.our.process.clone(),
             responder: tx,
         })
-        .await;
+        .await?;
     let initial_capabilities = rx
         .await?
         .iter()
@@ -412,164 +351,142 @@ pub async fn make_process_loop(
         })
         .collect();
 
+    t::Printout::new(
+        1,
+        format!(
+            "process {} has OnExit behavior {}",
+            metadata.our.process, metadata.on_exit
+        ),
+    )
+    .send(&send_to_terminal)
+    .await;
+
     // fulfill the designated OnExit behavior
     match metadata.on_exit {
         t::OnExit::None => {
-            send_to_loop
-                .send(t::KernelMessage {
-                    id: rand::random(),
-                    source: our_kernel.clone(),
-                    target: our_kernel.clone(),
-                    rsvp: None,
-                    message: t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&t::KernelCommand::KillProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }),
-                    lazy_load_blob: None,
-                })
-                .await?;
-            let _ = send_to_terminal
-                .send(t::Printout {
-                    verbosity: 1,
-                    content: format!("process {} had no OnExit behavior", metadata.our.process),
-                })
+            t::KernelMessage::builder()
+                .id(rand::random())
+                .source((&our.node, KERNEL_PROCESS_ID.clone()))
+                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .message(t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                        metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                    metadata: None,
+                    capabilities: vec![],
+                }))
+                .build()
+                .unwrap()
+                .send(&send_to_loop)
                 .await;
         }
         // if restart, tell ourselves to init the app again, with same capabilities
         t::OnExit::Restart => {
-            send_to_loop
-                .send(t::KernelMessage {
-                    id: rand::random(),
-                    source: our_kernel.clone(),
-                    target: our_kernel.clone(),
-                    rsvp: None,
-                    message: t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&t::KernelCommand::KillProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }),
-                    lazy_load_blob: None,
-                })
-                .await?;
-            let _ = send_to_terminal
-                .send(t::Printout {
-                    verbosity: 1,
-                    content: format!(
-                        "firing OnExit::Restart for process {}",
-                        metadata.our.process
-                    ),
-                })
+            // kill
+            t::KernelMessage::builder()
+                .id(rand::random())
+                .source((&our.node, KERNEL_PROCESS_ID.clone()))
+                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .message(t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                        metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                    metadata: None,
+                    capabilities: vec![],
+                }))
+                .build()
+                .unwrap()
+                .send(&send_to_loop)
                 .await;
-            send_to_loop
-                .send(t::KernelMessage {
-                    id: rand::random(),
-                    source: our_kernel.clone(),
-                    target: our_kernel.clone(),
-                    rsvp: None,
-                    message: t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
-                            id: metadata.our.process.clone(),
-                            wasm_bytes_handle: metadata.wasm_bytes_handle,
-                            wit_version: metadata.wit_version,
-                            on_exit: metadata.on_exit,
-                            initial_capabilities,
-                            public: metadata.public,
-                        })
-                        .unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }),
-                    lazy_load_blob: Some(t::LazyLoadBlob {
-                        mime: None,
-                        bytes: wasm_bytes,
-                    }),
-                })
-                .await?;
-            send_to_loop
-                .send(t::KernelMessage {
-                    id: rand::random(),
-                    source: our_kernel.clone(),
-                    target: our_kernel.clone(),
-                    rsvp: None,
-                    message: t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&t::KernelCommand::RunProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }),
-                    lazy_load_blob: None,
-                })
-                .await?;
+            // then re-initialize
+            t::KernelMessage::builder()
+                .id(rand::random())
+                .source((&our.node, KERNEL_PROCESS_ID.clone()))
+                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .message(t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&t::KernelCommand::InitializeProcess {
+                        id: metadata.our.process.clone(),
+                        wasm_bytes_handle: metadata.wasm_bytes_handle,
+                        wit_version: metadata.wit_version,
+                        on_exit: metadata.on_exit,
+                        initial_capabilities,
+                        public: metadata.public,
+                    })
+                    .unwrap(),
+                    metadata: None,
+                    capabilities: vec![],
+                }))
+                .lazy_load_blob(Some(t::LazyLoadBlob {
+                    mime: None,
+                    bytes: wasm_bytes,
+                }))
+                .build()
+                .unwrap()
+                .send(&send_to_loop)
+                .await;
+            // then run
+            t::KernelMessage::builder()
+                .id(rand::random())
+                .source((&our.node, KERNEL_PROCESS_ID.clone()))
+                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .message(t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&t::KernelCommand::RunProcess(
+                        metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                    metadata: None,
+                    capabilities: vec![],
+                }))
+                .build()
+                .unwrap()
+                .send(&send_to_loop)
+                .await;
         }
         // if requests, fire them
         // even in death, a process can only message processes it has capabilities for
         t::OnExit::Requests(requests) => {
-            send_to_terminal
-                .send(t::Printout {
-                    verbosity: 1,
-                    content: format!(
-                        "firing OnExit::Requests for process {}",
-                        metadata.our.process
-                    ),
-                })
-                .await?;
             for (address, mut request, blob) in requests {
                 request.expects_response = None;
-                send_to_loop
-                    .send(t::KernelMessage {
-                        id: rand::random(),
-                        source: metadata.our.clone(),
-                        target: address,
-                        rsvp: None,
-                        message: t::Message::Request(request),
-                        lazy_load_blob: blob,
-                    })
-                    .await?;
+                t::KernelMessage::builder()
+                    .id(rand::random())
+                    .source(metadata.our.clone())
+                    .target(address)
+                    .message(t::Message::Request(request))
+                    .lazy_load_blob(blob)
+                    .build()
+                    .unwrap()
+                    .send(&send_to_loop)
+                    .await;
             }
-            send_to_loop
-                .send(t::KernelMessage {
-                    id: rand::random(),
-                    source: our_kernel.clone(),
-                    target: our_kernel.clone(),
-                    rsvp: None,
-                    message: t::Message::Request(t::Request {
-                        inherit: false,
-                        expects_response: None,
-                        body: serde_json::to_vec(&t::KernelCommand::KillProcess(
-                            metadata.our.process.clone(),
-                        ))
-                        .unwrap(),
-                        metadata: None,
-                        capabilities: vec![],
-                    }),
-                    lazy_load_blob: None,
-                })
-                .await?;
+            t::KernelMessage::builder()
+                .id(rand::random())
+                .source((&our.node, KERNEL_PROCESS_ID.clone()))
+                .target((&our.node, KERNEL_PROCESS_ID.clone()))
+                .message(t::Message::Request(t::Request {
+                    inherit: false,
+                    expects_response: None,
+                    body: serde_json::to_vec(&t::KernelCommand::KillProcess(
+                        metadata.our.process.clone(),
+                    ))
+                    .unwrap(),
+                    metadata: None,
+                    capabilities: vec![],
+                }))
+                .build()
+                .unwrap()
+                .send(&send_to_loop)
+                .await;
         }
     }
     Ok(())
-}
-
-pub async fn print(sender: &t::PrintSender, verbosity: u8, content: String) {
-    let _ = sender
-        .send(t::Printout { verbosity, content })
-        .await
-        .expect("fatal: kernel terminal print pipe died!");
 }

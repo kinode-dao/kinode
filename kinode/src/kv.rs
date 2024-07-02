@@ -350,11 +350,11 @@ async fn check_caps(
                             node: our_node.to_string(),
                             process: KV_PROCESS_ID.clone(),
                         },
-                        params: serde_json::to_string(&serde_json::json!({
+                        params: serde_json::json!({
                             "kind": "write",
                             "db": request.db.to_string(),
-                        }))
-                        .unwrap(),
+                        })
+                        .to_string(),
                     },
                     responder: send_cap_bool,
                 })
@@ -376,11 +376,11 @@ async fn check_caps(
                             node: our_node.to_string(),
                             process: KV_PROCESS_ID.clone(),
                         },
-                        params: serde_json::to_string(&serde_json::json!({
+                        params: serde_json::json!({
                             "kind": "read",
                             "db": request.db.to_string(),
-                        }))
-                        .unwrap(),
+                        })
+                        .to_string(),
                     },
                     responder: send_cap_bool,
                 })
@@ -458,14 +458,14 @@ async fn add_capability(
             node: our_node.to_string(),
             process: KV_PROCESS_ID.clone(),
         },
-        params: serde_json::to_string(&serde_json::json!({ "kind": kind, "db": db })).unwrap(),
+        params: serde_json::json!({ "kind": kind, "db": db }).to_string(),
     };
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     send_to_caps_oracle
         .send(CapMessage::Add {
             on: source.process.clone(),
             caps: vec![cap],
-            responder: send_cap_bool,
+            responder: Some(send_cap_bool),
         })
         .await?;
     let _ = recv_cap_bool.await?;
