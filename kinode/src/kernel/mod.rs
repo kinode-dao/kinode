@@ -306,7 +306,9 @@ async fn handle_kernel_request(
                 .expect("event loop: fatal: sender died");
             None
         }
+        //
         // send 'run' message to a process that's already been initialized
+        //
         t::KernelCommand::RunProcess(process_id) => {
             let response =
                 if let Some(ProcessSender::Userspace(process_sender)) = senders.get(&process_id) {
@@ -355,10 +357,14 @@ async fn handle_kernel_request(
                 .await;
             None
         }
+        //
+        // brutal and savage killing: aborting the task.
+        // do not do this to a process if you don't want to risk
+        // dropped messages / un-replied-to-requests
+        // if you want to immediately restart a process or otherwise
+        // skip the capabilities-cleanup RevokeAll, pass "no-revoke" in the metadata
+        //
         t::KernelCommand::KillProcess(process_id) => {
-            // brutal and savage killing: aborting the task.
-            // do not do this to a process if you don't want to risk
-            // dropped messages / un-replied-to-requests / revoked caps
             senders.remove(&process_id);
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
@@ -371,13 +377,15 @@ async fn handle_kernel_request(
             };
             process_handle.abort();
             process_map.remove(&process_id);
-            caps_oracle
-                .send(t::CapMessage::RevokeAll {
-                    on: process_id.clone(),
-                    responder: None,
-                })
-                .await
-                .expect("event loop: fatal: sender died");
+            if request.metadata != Some("no-revoke".to_string()) {
+                caps_oracle
+                    .send(t::CapMessage::RevokeAll {
+                        on: process_id.clone(),
+                        responder: None,
+                    })
+                    .await
+                    .expect("event loop: fatal: sender died");
+            }
             if request.expects_response.is_none() {
                 t::Printout::new(2, format!("kernel: killing process {process_id}"))
                     .send(send_to_terminal)
@@ -919,7 +927,7 @@ pub async fn kernel(
             // capabilities oracle: handles all requests to add, drop, and check capabilities
             Some(cap_message) = caps_oracle_receiver.recv() => {
                 if print_full_event_loop {
-                    t::Printout::new(3, format!("{cap_message:?}")).send(&send_to_terminal).await;
+                    t::Printout::new(3, format!("{cap_message}")).send(&send_to_terminal).await;
                 }
                 match cap_message {
                     t::CapMessage::Add { on, caps, responder } => {
