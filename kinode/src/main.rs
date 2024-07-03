@@ -44,7 +44,7 @@ pub const CHAIN_ID: u64 = 10;
 #[cfg(feature = "simulation-mode")]
 pub const CHAIN_ID: u64 = 31337;
 #[cfg(not(feature = "simulation-mode"))]
-pub const KNS_ADDRESS: &str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
+pub const KNS_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 #[cfg(feature = "simulation-mode")]
 pub const KNS_ADDRESS: &str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 

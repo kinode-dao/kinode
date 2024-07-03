@@ -38,7 +38,7 @@
   "scripts": {
     "start": "vite",
     "dev": "vite --port 3000",
-    "build": "npm run tc && tsc && vite build && rm -rf build && mv dist build",
+    "build": "vite build && rm -rf build && mv dist build",
     "build:copy": "npm run build",
     "serve": "vite preview",
     "inline": "node ./add-inline-tags.js && cd build && inline-source ./index.html > ./inline-index.html && cd ..",

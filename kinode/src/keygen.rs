@@ -2,7 +2,7 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key,
 };
-use alloy_primitives::keccak256;
+use alloy_primitives::Keccak256;
 use anyhow::Result;
 use digest::generic_array::GenericArray;
 use hmac::Hmac;
@@ -142,16 +142,36 @@ pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>),
     Ok((username, routers))
 }
 
-pub fn namehash(name: &str) -> Vec<u8> {
-    let mut node = vec![0u8; 32];
+// pub fn namehash(name: &str) -> Vec<u8> {
+//     let mut node = vec![0u8; 32];
+//     if name.is_empty() {
+//         return node;
+//     }
+//     let mut labels: Vec<&str> = name.split(".").collect();
+//     labels.reverse();
+//     for label in labels.iter() {
+//         node.append(&mut keccak256(label.as_bytes()).to_vec());
+//         node = keccak256(node.as_slice()).to_vec();
+//     }
+//     node
+// }
+
+pub fn namehash(name: &str) -> [u8; 32] {
+    let mut node = [0u8; 32];
     if name.is_empty() {
         return node;
     }
-    let mut labels: Vec<&str> = name.split(".").collect();
+    let mut labels: Vec<&str> = name.split('.').collect();
     labels.reverse();
+
     for label in labels.iter() {
-        node.append(&mut keccak256(label.as_bytes()).to_vec());
-        node = keccak256(node.as_slice()).to_vec();
+        let mut hasher = Keccak256::new();
+        hasher.update(label.as_bytes());
+        let labelhash = hasher.finalize();
+        hasher = Keccak256::new();
+        hasher.update(&node);
+        hasher.update(labelhash);
+        node = hasher.finalize().into();
     }
     node
 }

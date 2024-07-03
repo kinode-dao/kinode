@@ -5,6 +5,8 @@ import { Tooltip } from "../components/Tooltip";
 import { getFetchUrl } from "../utils/fetch";
 
 import { sha256, toBytes } from "viem";
+import { useSignTypedData, useAccount, useChainId } from 'wagmi'
+import { KINOMAP } from "../abis";
 
 type SetPasswordProps = {
   direct: boolean;
@@ -29,6 +31,10 @@ function SetPassword({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState<boolean>(false);
 
+  const { signTypedDataAsync, data } = useSignTypedData();
+  const { address } = useAccount();
+  const chainId = useChainId();
+
   useEffect(() => {
     document.title = "Set Password";
   }, []);
@@ -49,20 +55,36 @@ function SetPassword({
       setTimeout(async () => {
         setLoading(true);
         let hashed_password = sha256(toBytes(pw));
-        // let owner = await signer?.getAddress();
-        // let chain_id = await signer?.getChainId();
-        // let timestamp = Date.now();
+        let owner = address;
+        let timestamp = Date.now();
 
-        // let sig_data = JSON.stringify({
-        //   username: knsName,
-        //   password_hash: hashed_password,
-        //   timestamp,
-        //   direct,
-        //   reset,
-        //   chain_id,
-        // });
-
-        // let signature = await signer?.signMessage(utils.toUtf8Bytes(sig_data));
+        const signature = await signTypedDataAsync({
+          domain: {
+            name: "Kimap",
+            version: "1",
+            chainId: chainId,
+            verifyingContract: KINOMAP,
+          },
+          types: {
+            Boot: [
+              { name: 'username', type: 'string' },
+              { name: 'password_hash', type: 'bytes32' },
+              { name: 'timestamp', type: 'uint256' },
+              { name: 'direct', type: 'bool' },
+              { name: 'reset', type: 'bool' },
+              { name: 'chain_id', type: 'uint256' },
+            ],
+          },
+          primaryType: 'Boot',
+          message: {
+            username: knsName,
+            password_hash: hashed_password,
+            timestamp: BigInt(timestamp),
+            direct,
+            reset,
+            chain_id: BigInt(chainId),
+          },
+        })
 
         try {
           const result = await fetch(getFetchUrl("/boot"), {
@@ -74,10 +96,10 @@ function SetPassword({
               reset,
               username: knsName,
               direct,
-              // owner,
-              // timestamp,
-              // signature,
-              // chain_id,
+              owner,
+              timestamp,
+              signature,
+              chain_id: chainId,
             }),
           });
           const base64String = await result.json();

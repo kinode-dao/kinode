@@ -7,7 +7,7 @@ use alloy::rpc::types::eth::{TransactionInput, TransactionRequest};
 use alloy::signers::Signature;
 use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
 use alloy_sol_macro::sol;
-use alloy_sol_types::{SolCall, SolValue};
+use alloy_sol_types::{eip712_domain, SolCall, SolStruct, SolValue};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use lib::types::core::*;
 use ring::rand::SystemRandom;
@@ -36,6 +36,23 @@ sol! {
     function key(bytes32) external view returns (bytes32);
     function nodes(bytes32) external view returns (address, uint96);
     function ip(bytes32) external view returns (uint128, uint16, uint16, uint16, uint16);
+
+    function get (
+        bytes32 node
+    ) external view returns (
+        address tba,
+        address owner,
+        bytes,
+    );
+
+    struct Boot {
+        string username;
+        bytes32 password_hash;
+        uint256 timestamp;
+        bool direct;
+        bool reset;
+        uint256 chain_id;
+    }
 }
 
 /// Serve the registration page and receive POSTs and PUTs from it
@@ -269,7 +286,9 @@ pub async fn connect_to_provider(maybe_rpc: Option<String>) -> RootProvider<PubS
     let url = if let Some(rpc_url) = maybe_rpc {
         rpc_url
     } else {
-        "wss://optimism-rpc.publicnode.com".to_string()
+        // todo switch back to optimism
+        //"wss://optimism-rpc.publicnode.com".to_string()
+        "ws://localhost:8545".to_string()
     };
     println!(
         "Connecting to Optimism RPC at {url}\n\
@@ -385,11 +404,18 @@ async fn handle_boot(
         )
         .into_response());
     }
+    let Ok(password_hash) = FixedBytes::<32>::from_str(&info.password_hash) else {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Invalid password hash"),
+            StatusCode::UNAUTHORIZED,
+        )
+        .into_response());
+    };
 
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
 
-    let tld_call = nodesCall { _0: namehash }.abi_encode();
-    let tx_input = TransactionInput::new(Bytes::from(tld_call));
+    let get_call = getCall { node: namehash }.abi_encode();
+    let tx_input = TransactionInput::new(Bytes::from(get_call));
 
     let tx = TransactionRequest::default()
         .to(kns_address)
@@ -398,13 +424,14 @@ async fn handle_boot(
     // this call can fail if the indexer has not caught up to the transaction
     // that just got confirmed on our frontend. for this reason, we retry
     // the call a few times before giving up.
+    // todo remove?
 
     let mut attempts = 0;
-    let mut tld_result = Err(());
+    let mut get_result = Err(());
     while attempts < 5 {
         match provider.call(&tx).await {
-            Ok(tld) => {
-                tld_result = Ok(tld);
+            Ok(get) => {
+                get_result = Ok(get);
                 break;
             }
             Err(_) => {
@@ -413,64 +440,48 @@ async fn handle_boot(
             }
         }
     }
-    let Ok(tld) = tld_result else {
+    let Ok(get) = get_result else {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to fetch TLD contract for username"),
+            warp::reply::json(&"Failed to fetch kimap entry for username"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
     };
 
-    let Ok((tld_address, _)) = <(EthAddress, U256)>::abi_decode(&tld, false) else {
+    let Ok(node_info) = getCall::abi_decode_returns(&get, false) else {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to decode TLD contract from return bytes"),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response());
-    };
-    let owner = EthAddress::from_str(&info.owner).map_err(|_| warp::reject())?;
-
-    let auth_call = authCall {
-        _node: namehash,
-        _sender: owner,
-    }
-    .abi_encode();
-    let tx_input = TransactionInput::new(Bytes::from(auth_call));
-    let tx = TransactionRequest::default()
-        .to(tld_address)
-        .input(tx_input);
-
-    let Ok(authed) = provider.call(&tx).await else {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to fetch associated address for username"),
+            warp::reply::json(&"Failed to decode kimap entry from return bytes"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
     };
 
-    let is_ok = bool::abi_decode(&authed, false).unwrap_or(false);
+    let owner = node_info.owner;
 
-    if !is_ok {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Address is not authorized for username!"),
-            StatusCode::UNAUTHORIZED,
-        )
-        .into_response());
+    // TODO change back to optimism
+    let chain_id: u64 = 31337;
+
+    let domain = eip712_domain! {
+        name: "Kimap",
+        version: "1",
+        chain_id: chain_id,
+        verifying_contract: kns_address,
     };
 
-    let chain_id: u64 = 10;
+    let boot = Boot {
+        username: our.name.clone(),
+        password_hash: password_hash,
+        timestamp: U256::from(info.timestamp),
+        direct: info.direct,
+        reset: info.reset,
+        chain_id: U256::from(chain_id),
+    };
 
-    // manual json creation to preserve order..
-    let sig_data_json = format!(
-        r#"{{"username":"{}","password_hash":"{}","timestamp":{},"direct":{},"reset":{},"chain_id":{}}}"#,
-        our.name, info.password_hash, info.timestamp, info.direct, info.reset, chain_id
-    );
-    let sig_data = sig_data_json.as_bytes();
-
+    let hash = boot.eip712_signing_hash(&domain);
     let sig = Signature::from_str(&info.signature).map_err(|_| warp::reject())?;
 
     let recovered_address = sig
-        .recover_address_from_msg(sig_data)
+        .recover_address_from_prehash(&hash)
         .map_err(|_| warp::reject())?;
 
     if recovered_address != owner {
@@ -711,6 +722,7 @@ pub async fn assign_routing(
     ws_networking_port: (u16, bool),
     tcp_networking_port: (u16, bool),
 ) -> anyhow::Result<()> {
+    return Ok(());
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
     let ip_call = ipCall { _0: namehash }.abi_encode();
     let key_call = keyCall { _0: namehash }.abi_encode();
