@@ -334,23 +334,6 @@ pub async fn make_process_loop(
     // the process has completed, time to perform cleanup
     //
 
-    // get caps before killing
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    caps_oracle
-        .send(t::CapMessage::GetAll {
-            on: metadata.our.process.clone(),
-            responder: tx,
-        })
-        .await?;
-    let initial_capabilities = rx
-        .await?
-        .iter()
-        .map(|c| t::Capability {
-            issuer: c.0.issuer.clone(),
-            params: c.0.params.clone(),
-        })
-        .collect();
-
     t::Printout::new(
         1,
         format!(
@@ -385,7 +368,23 @@ pub async fn make_process_loop(
         }
         // if restart, tell ourselves to init the app again, with same capabilities
         t::OnExit::Restart => {
-            // kill
+            // get caps before killing
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            caps_oracle
+                .send(t::CapMessage::GetAll {
+                    on: metadata.our.process.clone(),
+                    responder: tx,
+                })
+                .await?;
+            let initial_capabilities = rx
+                .await?
+                .iter()
+                .map(|c| t::Capability {
+                    issuer: c.0.issuer.clone(),
+                    params: c.0.params.clone(),
+                })
+                .collect();
+            // kill, **without** revoking capabilities from others!
             t::KernelMessage::builder()
                 .id(rand::random())
                 .source((&our.node, KERNEL_PROCESS_ID.clone()))
@@ -397,14 +396,14 @@ pub async fn make_process_loop(
                         metadata.our.process.clone(),
                     ))
                     .unwrap(),
-                    metadata: None,
+                    metadata: Some("no-revoke".to_string()),
                     capabilities: vec![],
                 }))
                 .build()
                 .unwrap()
                 .send(&send_to_loop)
                 .await;
-            // then re-initialize
+            // then re-initialize with same capabilities
             t::KernelMessage::builder()
                 .id(rand::random())
                 .source((&our.node, KERNEL_PROCESS_ID.clone()))
@@ -453,7 +452,6 @@ pub async fn make_process_loop(
                 .await;
         }
         // if requests, fire them
-        // even in death, a process can only message processes it has capabilities for
         t::OnExit::Requests(requests) => {
             for (address, mut request, blob) in requests {
                 request.expects_response = None;

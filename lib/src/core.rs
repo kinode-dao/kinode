@@ -1426,6 +1426,42 @@ pub enum CapMessage {
     },
 }
 
+impl std::fmt::Display for CapMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            CapMessage::Add { on, caps, .. } => write!(
+                f,
+                "caps: add {} on {on}",
+                caps.iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            CapMessage::Drop { on, caps, .. } => write!(
+                f,
+                "caps: drop {} on {on}",
+                caps.iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            CapMessage::Has { on, cap, .. } => write!(f, "caps: has {} on {on}", cap),
+            CapMessage::GetAll { on, .. } => write!(f, "caps: get all on {on}"),
+            CapMessage::RevokeAll { on, .. } => write!(f, "caps: revoke all on {on}"),
+            CapMessage::FilterCaps { on, caps, .. } => {
+                write!(
+                    f,
+                    "caps: filter for {} on {on}",
+                    caps.iter()
+                        .map(|c| c.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
+        }
+    }
+}
+
 pub type ReverseCapIndex = HashMap<ProcessId, HashMap<ProcessId, Vec<Capability>>>;
 
 pub type ProcessMap = HashMap<ProcessId, PersistedProcess>;
