@@ -143,7 +143,7 @@ async fn handle_kernel_request(
                 // fire an error back
                 t::KernelMessage::builder()
                     .id(km.id)
-                    .source(("our", KERNEL_PROCESS_ID.clone()))
+                    .source((our_name, KERNEL_PROCESS_ID.clone()))
                     .target(km.rsvp.unwrap_or(km.source))
                     .message(t::Message::Response((
                         t::Response {
@@ -780,6 +780,10 @@ pub async fn kernel(
                                 "event loop: process {} doesn't have capability to send networked messages",
                                 kernel_message.source.process
                             )
+                        ).send(&send_to_terminal).await;
+                        t::Printout::new(
+                            0,
+                            format!("their capabilities: {:?}", proc.capabilities)
                         ).send(&send_to_terminal).await;
                         throw_timeout(&our.name, &senders, kernel_message).await;
                         continue;

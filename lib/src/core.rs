@@ -513,7 +513,12 @@ impl Capability {
 
 impl std::fmt::Display for Capability {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}({})", self.issuer, self.params)
+        write!(
+            f,
+            "{}({})",
+            self.issuer,
+            serde_json::from_str::<serde_json::Value>(&self.params).unwrap_or_default()
+        )
     }
 }
 
@@ -884,7 +889,7 @@ pub fn de_wit_capability(wit: wit::Capability) -> (Capability, Vec<u8>) {
                     publisher_node: wit.issuer.process.publisher_node,
                 },
             },
-            params: serde_json::from_str(&wit.params).unwrap_or_default(),
+            params: wit.params,
         },
         vec![],
     )
@@ -901,7 +906,7 @@ pub fn de_wit_capability_v0(wit: crate::v0::wit::Capability) -> (Capability, Vec
                     publisher_node: wit.issuer.process.publisher_node,
                 },
             },
-            params: serde_json::from_str(&wit.params).unwrap_or_default(),
+            params: wit.params,
         },
         vec![],
     )
