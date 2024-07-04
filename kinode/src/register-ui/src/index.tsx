@@ -48,8 +48,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider>
-        <div id="signup-page" className="flex flex-col place-items-center place-content-center h-screen w-screen">
+        <RainbowKitProvider showRecentTransactions={true}>
+          <div id="signup-page" className="flex flex-col place-items-center place-content-center h-screen w-screen">
             <App />
           </div>
         </RainbowKitProvider>

@@ -10,7 +10,7 @@ import { getFetchUrl } from "../utils/fetch";
 import { useAccount, useSignMessage } from "wagmi";
 
 
-// Todo: further revamp!
+// Todo: are we using this? 
 
 interface ClaimOsNameProps extends PageProps { }
 

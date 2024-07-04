@@ -31,7 +31,7 @@ function SetPassword({
   const [error, setError] = useState("");
   const [loading, setLoading] = useState<boolean>(false);
 
-  const { signTypedDataAsync, data } = useSignTypedData();
+  const { signTypedDataAsync } = useSignTypedData();
   const { address } = useAccount();
   const chainId = useChainId();
 

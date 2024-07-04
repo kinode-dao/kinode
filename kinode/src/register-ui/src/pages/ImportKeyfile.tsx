@@ -31,66 +31,6 @@ function ImportKeyfile({
     document.title = "Import Keyfile";
   }, []);
 
-  // const handlePassword = useCallback(async () => {
-  //   try {
-  //     const response = await fetch(getFetchUrl("/vet-keyfile"), {
-  //       method: "POST",
-  //       credentials: 'include',
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({
-  //         keyfile: localKey,
-  //         password: pw,
-  //       }),
-  //     });
-
-  //     const data = await response.json();
-
-  //     setOsName(data.username);
-
-  //     setPwVet(true);
-
-  //     const errs = [...keyErrs];
-
-  //     const ws = await kns.ws(namehash(data.username));
-
-  //     let index = errs.indexOf(KEY_WRONG_NET_KEY);
-  //     if (ws.publicKey !== data.networking_key) {
-  //       if (index === -1) errs.push(KEY_WRONG_NET_KEY);
-  //     } else if (index !== -1) errs.splice(index, 1);
-
-  //     index = errs.indexOf(KEY_WRONG_IP);
-  //     if(ws.ip === 0)
-  //       setDirect(false)
-  //     else {
-  //       setDirect(true)
-  //       if (ws.ip !== ipAddress && index === -1)
-  //         errs.push(KEY_WRONG_IP);
-  //     }
-
-  //     setKeyErrs(errs);
-  //   } catch {
-  //     setPwVet(false);
-  //   }
-  //   setPwDebounced(true);
-  // }, [localKey, pw, keyErrs, ipAddress, kns, setOsName, setDirect]);
-
-  // const pwDebouncer = useRef<NodeJS.Timeout | null>(null);
-  // useEffect(() => {
-  //   if (pwDebouncer.current) clearTimeout(pwDebouncer.current);
-
-  //   pwDebouncer.current = setTimeout(async () => {
-  //     if (pw !== "") {
-  //       if (pw.length < 6)
-  //         setPwErr("Password must be at least 6 characters")
-  //       else {
-  //         setPwErr("")
-  //         handlePassword()
-  //       }
-  //     }
-  //   }, 500)
-
-  // }, [pw])
-
   // for if we check router validity in future
   // const KEY_BAD_ROUTERS = "Routers from records are offline"
 
