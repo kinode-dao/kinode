@@ -1,30 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 
 import StorePage from "./pages/StorePage";
 import MyAppsPage from "./pages/MyAppsPage";
 import AppPage from "./pages/AppPage";
 import { APP_DETAILS_PATH, MY_APPS_PATH, PUBLISH_PATH, STORE_PATH } from "./constants/path";
-import { ChainId, PACKAGE_STORE_ADDRESSES } from "./constants/chain";
 import PublishPage from "./pages/PublishPage";
 
-declare global {
-  interface ImportMeta {
-    env: {
-      VITE_OPTIMISM_RPC_URL: string;
-      VITE_SEPOLIA_RPC_URL: string;
-      BASE_URL: string;
-      VITE_NODE_URL?: string;
-      DEV: boolean;
-    };
-  }
-  interface Window {
-    our: {
-      node: string;
-      process: string;
-    };
-  }
-}
 
 const BASE_URL = import.meta.env.BASE_URL;
 if (window.our) window.our.process = BASE_URL?.replace("/", "");
@@ -38,9 +20,7 @@ const WEBSOCKET_URL = import.meta.env.DEV // eslint-disable-line
   : undefined;
 
 function App() {
-
   const [nodeConnected, setNodeConnected] = useState(true); // eslint-disable-line
-
 
   if (!nodeConnected) {
     return (
@@ -53,7 +33,6 @@ function App() {
       </div>
     );
   }
-
 
   return (
     <div className="flex flex-col c h-screen w-screen max-h-screen max-w-screen overflow-x-hidden special-appstore-background">
