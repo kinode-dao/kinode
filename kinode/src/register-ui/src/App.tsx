@@ -85,6 +85,7 @@ function App() {
 
 
   // just pass all the props each time since components won't mind extras
+  // todo, most of these can be removed...
   const props = {
     direct, setDirect,
     key, appSizeOnLoad,

@@ -1,8 +1,8 @@
 
 import { NetworkingInfo } from "../lib/types";
-import { ipToNumber } from "../utils/ipToNumber";
-import { multicallAbi, kinomapAbi, mechAbi, KINOMAP, MULTICALL, KINO_ACCOUNT_IMPL } from "./";
-import { encodeFunctionData, encodePacked, stringToHex } from "viem";
+import { ipToBytes, portToBytes } from "../utils/kns_encoding";
+import { multicallAbi, kinomapAbi, mechAbi, KINOMAP, MULTICALL } from "./";
+import { encodeFunctionData, encodePacked, stringToHex, bytesToHex } from "viem";
 
 export const generateNetworkingKeys = async ({
     direct,
@@ -25,48 +25,44 @@ export const generateNetworkingKeys = async ({
     setRouters: (routers: string[]) => void;
     reset: boolean;
 }) => {
+    const {
+        networking_key,
+        routing: {
+            Both: {
+                ip: ip_address,
+                ports: { ws: ws_port, tcp: tcp_port },
+                routers: allowed_routers
+            }
+        }
+    } = (await fetch("/generate-networking-info", { method: "POST" }).then(
+        (res) => res.json()
+    )) as NetworkingInfo;
 
-    // this annoyingly fails on local development while proxying... idk why
-    // so hardcoded for now 
-    // const {
-    //     networking_key,
-    //     routing: {
-    //         Both: {
-    //             ip: ip_address,
-    //             ports: { ws: ws_port, tcp: tcp_port },
-    //             routers: allowed_routers
-    //         }
-    //     }
-    // } = (await fetch("/generate-networking-info", { method: "POST" }).then(
-    //     (res) => res.json()
-    // )) as NetworkingInfo;
+    const ipAddress = ipToBytes(ip_address);
 
-    const ipAddress = ipToNumber("127.0.0.1");
-
-    setNetworkingKey(our_address);
-    setIpAddress(ipAddress);
-    setWsPort(9300);
-    setTcpPort(9301);
-    setRouters(["default-router-1.os"]);
+    // why are we doing these? TODO
+    setNetworkingKey(networking_key);
+    // setIpAddress(ipAddress);
+    setWsPort(ws_port || 0);
+    setTcpPort(tcp_port || 0);
+    setRouters(allowed_routers);
 
     const netkeycall = encodeFunctionData({
         abi: kinomapAbi,
         functionName: 'note',
         args: [
             encodePacked(["bytes"], [stringToHex("~net-key")]),
-            encodePacked(["bytes"], [stringToHex(our_address)]),
+            encodePacked(["bytes"], [stringToHex(networking_key)]),
         ]
     });
 
-    // TODO standardize all the KNS interactions....
-    // formats of IPs across the board etc..
     const ws_port_call =
         encodeFunctionData({
             abi: kinomapAbi,
             functionName: 'note',
             args: [
                 encodePacked(["bytes"], [stringToHex("~ws-port")]),
-                encodePacked(["bytes"], [stringToHex("9300")]),
+                encodePacked(["bytes"], [bytesToHex(portToBytes(ws_port || 0))]),
             ]
         });
 
@@ -76,7 +72,7 @@ export const generateNetworkingKeys = async ({
             functionName: 'note',
             args: [
                 encodePacked(["bytes"], [stringToHex("~ip")]),
-                encodePacked(["bytes"], [stringToHex(ipAddress.toString())]),
+                encodePacked(["bytes"], [bytesToHex(ipAddress)]),
             ]
         });
 
@@ -88,7 +84,7 @@ export const generateNetworkingKeys = async ({
                 encodePacked(["bytes"], [stringToHex("~routers")]),
                 encodePacked(
                     ["bytes"],
-                    [stringToHex("default-router-1.os")]
+                    [stringToHex(allowed_routers.join(","))]
                 )]
         });
 

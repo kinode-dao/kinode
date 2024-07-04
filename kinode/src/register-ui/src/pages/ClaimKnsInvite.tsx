@@ -3,11 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import EnterKnsName from "../components/EnterKnsName";
 import Loader from "../components/Loader";
 import { NetworkingInfo, PageProps } from "../lib/types";
-import { ipToNumber } from "../utils/ipToNumber";
 import DirectCheckbox from "../components/DirectCheckbox";
 import { Tooltip } from "../components/Tooltip";
 import { getFetchUrl } from "../utils/fetch";
 import { useAccount, useSignMessage } from "wagmi";
+import { ipToBytes } from "../utils/kns_encoding";
 
 
 // Todo: are we using this? 
@@ -80,10 +80,10 @@ function ClaimOsInvite({
       (res) => res.json()
     )) as NetworkingInfo;
 
-    const ipAddress = ipToNumber(ip_address);
+    const ipAddress = ipToBytes(ip_address);
 
     setNetworkingKey(networking_key);
-    setIpAddress(ipAddress);
+    // setIpAddress(ipAddress);
     setWsPort(ws_port || 0);
     setTcpPort(tcp_port || 0);
     setRouters(routers);

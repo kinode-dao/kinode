@@ -5,24 +5,22 @@ use alloy::rpc::client::WsConnect;
 use alloy::rpc::types::eth::{TransactionInput, TransactionRequest};
 use alloy::signers::wallet::LocalWallet;
 use alloy_primitives::{Address, Bytes, FixedBytes, U256};
-use alloy_sol_types::{SolCall, SolValue};
+use alloy_sol_types::SolCall;
 use lib::core::{Identity, NodeRouting};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 
 pub mod helpers;
 
-use crate::{keygen, KNS_ADDRESS};
-pub use helpers::RegisterHelpers::*;
+use crate::{keygen, KIMAP_ADDRESS, MULTICALL_ADDRESS};
 pub use helpers::*;
 
 // TODO move these into contracts registry, doublecheck optimism deployments
 const FAKE_DOTDEV_TBA: &str = "0x69C30C0Cf0e9726f9eEF50bb74FA32711fA0B02D";
 const FAKE_DOTOS_TBA: &str = "0xB3244529432b9C6dB0Bdc5282cB8Fde8418E00a6";
-const FAKE_ZEROTH_TBA: &str = "0x4eB83AA047C717C2Bc94dF108675Fc44a2Ff9D12";
+const _FAKE_ZEROTH_TBA: &str = "0x4eB83AA047C717C2Bc94dF108675Fc44a2Ff9D12";
 
 const KINO_ACCOUNT_IMPL: &str = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
-const KINO_MINTER_IMPL: &str = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
 
 const MULTICALL: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
@@ -95,7 +93,7 @@ pub async fn mint_local(
     let _tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
 
     // get tba to set KNS records
-    let namehash: [u8; 32] = encode_namehash(name);
+    let namehash: [u8; 32] = keygen::namehash(name);
 
     let get_call = getCall {
         node: namehash.into(),
@@ -113,13 +111,13 @@ pub async fn mint_local(
 
     let tba = decoded.tba;
     let _owner = decoded.owner;
-    let bytes = decoded._2;
+    let bytes = decoded.data;
     // now set ip, port and pubkey
 
     println!("tba, owner and bytes: {:?}, {:?}, {:?}", tba, _owner, bytes);
 
     let localhost = Ipv4Addr::new(127, 0, 0, 1);
-    // let ip = helpers::encode_ipv4_as_u128(localhost);
+    let ip = keygen::ip_to_bytes(localhost.into());
 
     let multicalls: Vec<Call> = vec![
         Call {
@@ -127,7 +125,7 @@ pub async fn mint_local(
             callData: Bytes::from(
                 noteCall {
                     note: "~ip".into(),
-                    data: localhost.to_string().into(),
+                    data: ip.into(),
                 }
                 .abi_encode(),
             ),
@@ -189,36 +187,64 @@ pub async fn assign_ws_local_helper(
     ws_port: u16,
     fakechain_port: u16,
 ) -> Result<(), anyhow::Error> {
-    let kns = Address::from_str(KNS_ADDRESS)?;
+    let kimap = Address::from_str(KIMAP_ADDRESS)?;
+    let multicall = Address::from_str(MULTICALL_ADDRESS)?;
+
     let endpoint = format!("ws://localhost:{}", fakechain_port);
     let ws = WsConnect::new(endpoint);
 
     let provider: RootProvider<PubSubFrontend> = ProviderBuilder::default().on_ws(ws).await?;
 
-    let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
-    let ip_call = ipCall { _0: namehash }.abi_encode();
-    let tx_input = TransactionInput::new(Bytes::from(ip_call));
-    let tx = TransactionRequest::default().to(kns).input(tx_input);
+    let netkey_hash = FixedBytes::<32>::from_slice(&keygen::namehash(&format!("~ip.{}", our.name)));
+    let ws_hash =
+        FixedBytes::<32>::from_slice(&keygen::namehash(&format!("~ws-port.{}", our.name)));
+    let ip_hash = FixedBytes::<32>::from_slice(&keygen::namehash(&format!("~ip.{}", our.name)));
 
-    let Ok(ip_data) = provider.call(&tx).await else {
-        return Err(anyhow::anyhow!("Failed to fetch node IP data from PKI"));
+    let multicalls = vec![
+        Call {
+            target: kimap,
+            callData: Bytes::from(getCall { node: netkey_hash }.abi_encode()),
+        },
+        Call {
+            target: kimap,
+            callData: Bytes::from(getCall { node: ws_hash }.abi_encode()),
+        },
+        Call {
+            target: kimap,
+            callData: Bytes::from(getCall { node: ip_hash }.abi_encode()),
+        },
+    ];
+
+    let multicall_call = aggregateCall { calls: multicalls }.abi_encode();
+
+    let tx_input = TransactionInput::new(Bytes::from(multicall_call));
+    let tx = TransactionRequest::default().to(multicall).input(tx_input);
+
+    let Ok(multicall_return) = provider.call(&tx).await else {
+        return Err(anyhow::anyhow!("Failed to fetch node IP data from kimap"));
     };
 
-    let Ok((ip, ws, _wt, _tcp, _udp)) = <(u128, u16, u16, u16, u16)>::abi_decode(&ip_data, false)
-    else {
-        return Err(anyhow::anyhow!("Failed to decode node IP data from PKI"));
+    let Ok(results) = aggregateCall::abi_decode_returns(&multicall_return, false) else {
+        return Err(anyhow::anyhow!("Failed to decode kimap multicall data"));
     };
 
-    let node_ip = format!(
-        "{}.{}.{}.{}",
-        (ip >> 24) & 0xFF,
-        (ip >> 16) & 0xFF,
-        (ip >> 8) & 0xFF,
-        ip & 0xFF
-    );
+    let netkey = getCall::abi_decode_returns(&results.returnData[0], false)?;
+    let _netkey_data = netkey.data;
 
-    if node_ip != *"0.0.0.0" || ws != 0 {
+    let ws = getCall::abi_decode_returns(&results.returnData[1], false)?;
+    let ws_data = ws.data;
+
+    let ip = getCall::abi_decode_returns(&results.returnData[2], false)?;
+    let ip_data = ip.data;
+
+    let ip = keygen::bytes_to_ip(&ip_data);
+    let ws = keygen::bytes_to_port(&ws_data);
+
+    // tweak
+    if ip.is_ok() && ws.is_ok() {
         // direct node
+        let ws = ws.unwrap();
+        let ip = ip.unwrap();
         if ws_port != ws {
             return Err(anyhow::anyhow!(
                 "Binary used --ws-port flag to set port to {}, but node is using port {} onchain.",
@@ -228,7 +254,7 @@ pub async fn assign_ws_local_helper(
         }
 
         our.routing = NodeRouting::Direct {
-            ip: node_ip,
+            ip: ip.to_string(),
             ports: std::collections::BTreeMap::from([("ws".to_string(), ws)]),
         };
     }

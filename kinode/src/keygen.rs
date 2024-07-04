@@ -14,7 +14,10 @@ use ring::rand::SystemRandom;
 use ring::signature::{self, KeyPair};
 use ring::{digest as ring_digest, rand::SecureRandom};
 use sha2::Sha256;
-use std::num::NonZeroU32;
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    num::NonZeroU32,
+};
 
 type DiskKey = [u8; CREDENTIAL_LEN];
 
@@ -142,20 +145,7 @@ pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>),
     Ok((username, routers))
 }
 
-// pub fn namehash(name: &str) -> Vec<u8> {
-//     let mut node = vec![0u8; 32];
-//     if name.is_empty() {
-//         return node;
-//     }
-//     let mut labels: Vec<&str> = name.split(".").collect();
-//     labels.reverse();
-//     for label in labels.iter() {
-//         node.append(&mut keccak256(label.as_bytes()).to_vec());
-//         node = keccak256(node.as_slice()).to_vec();
-//     }
-//     node
-// }
-
+/// kinohash
 pub fn namehash(name: &str) -> [u8; 32] {
     let mut node = [0u8; 32];
     if name.is_empty() {
@@ -174,6 +164,44 @@ pub fn namehash(name: &str) -> [u8; 32] {
         node = hasher.finalize().into();
     }
     node
+}
+
+pub fn bytes_to_ip(bytes: &[u8]) -> Result<IpAddr, String> {
+    match bytes.len() {
+        16 => {
+            let ip_num = u128::from_be_bytes(bytes.try_into().unwrap());
+            if ip_num < (1u128 << 32) {
+                // IPv4
+                Ok(IpAddr::V4(Ipv4Addr::from(ip_num as u32)))
+            } else {
+                // IPv6
+                Ok(IpAddr::V6(Ipv6Addr::from(ip_num)))
+            }
+        }
+        _ => Err("Invalid byte length for IP address".to_string()),
+    }
+}
+
+pub fn ip_to_bytes(ip: IpAddr) -> [u8; 16] {
+    match ip {
+        IpAddr::V4(ipv4) => {
+            let mut bytes = [0u8; 16];
+            bytes[12..].copy_from_slice(&ipv4.octets());
+            bytes
+        }
+        IpAddr::V6(ipv6) => ipv6.octets(),
+    }
+}
+
+pub fn bytes_to_port(bytes: &[u8]) -> Result<u16, String> {
+    match bytes.len() {
+        2 => Ok(u16::from_be_bytes([bytes[0], bytes[1]])),
+        _ => Err("Invalid byte length for port".to_string()),
+    }
+}
+
+pub fn port_to_bytes(port: u16) -> [u8; 2] {
+    port.to_be_bytes()
 }
 
 /// randomly generated key to encrypt file chunks,

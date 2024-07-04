@@ -17,7 +17,7 @@ import EnterKnsName from "../components/EnterKnsName";
 
 import { useAccount, usePublicClient, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
-import { kinohash } from "../utils/namehash";
+import { kinohash } from "../utils/kinohash";
 
 const NAME_INVALID_PUNY = "Unsupported punycode character";
 const NAME_NOT_OWNER = "Name does not belong to this wallet";

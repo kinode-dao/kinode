@@ -11,6 +11,7 @@ use kinode_process_lib::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map::HashMap, BTreeMap},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
     str::FromStr,
 };
 wit_bindgen::generate!({
@@ -358,14 +359,11 @@ fn handle_log(
             );
             match note.as_str() {
                 "~ws-port" => {
-                    let port_bytes = decoded.data.to_vec();
+                    let ws = bytes_to_port(&decoded.data);
 
-                    if port_bytes.len() != 2 {
-                        return Err(anyhow::anyhow!("Invalid data length for port number"));
-                    } else {
-                        let port = u16::from_be_bytes([port_bytes[0], port_bytes[1]]);
+                    if let Ok(ws) = ws {
                         state.nodes.entry(name.clone()).and_modify(|node| {
-                            node.ports.insert("ws".to_string(), port);
+                            node.ports.insert("ws".to_string(), ws);
                             // port defined, -> direct
                             node.routers = vec![];
                         });
@@ -373,23 +371,27 @@ fn handle_log(
                     }
                 }
                 "~tcp-port" => {
-                    let port_str: String = String::from_utf8(decoded.data.to_vec())?;
-                    // from be_bytes soon, for debugging now.
-                    let port = port_str.parse::<u16>()?;
-
-                    state.nodes.entry(name.clone()).and_modify(|node| {
-                        node.ports.insert("tcp".to_string(), port);
-                        // port defined, -> direct
-                        node.routers = vec![];
-                    });
-                    node = Some(name.clone());
+                    let tcp = bytes_to_port(&decoded.data);
+                    if let Ok(tcp) = tcp {
+                        state.nodes.entry(name.clone()).and_modify(|node| {
+                            node.ports.insert("tcp".to_string(), tcp);
+                            // port defined, -> direct
+                            node.routers = vec![];
+                        });
+                        node = Some(name.clone());
+                    }
                 }
                 "~net-key" => {
-                    state.nodes.entry(name.clone()).and_modify(|node| {
-                        let pubkey = hex::encode(&decoded.data);
-                        node.public_key = pubkey;
-                    });
-                    node = Some(name.clone());
+                    let netkey = std::str::from_utf8(&decoded.data);
+                    // note silent errors here...
+                    // print silently for debugging?
+                    if let Ok(netkey) = netkey {
+                        state.nodes.entry(name.clone()).and_modify(|node| {
+                            let pubkey = hex::encode(netkey);
+                            node.public_key = pubkey;
+                        });
+                        node = Some(name.clone());
+                    }
                 }
                 "~routers" => {
                     state.nodes.entry(name.clone()).and_modify(|node| {
@@ -403,14 +405,15 @@ fn handle_log(
                     node = Some(name.clone());
                 }
                 "~ip" => {
-                    // todo big-endian ipv6 encoding, current for debugging.
-                    let ip = String::from_utf8(decoded.data.to_vec())?;
-                    state.nodes.entry(name.clone()).and_modify(|node| {
-                        node.ips.push(ip);
-                        // -> direct
-                        node.routers = vec![];
-                    });
-                    node = Some(name.clone());
+                    let ip = bytes_to_ip(&decoded.data);
+                    if let Ok(ip) = ip {
+                        state.nodes.entry(name.clone()).and_modify(|node| {
+                            node.ips.push(ip.to_string());
+                            // -> direct
+                            node.routers = vec![];
+                        });
+                        node = Some(name.clone());
+                    }
                 }
                 _ => {}
             }
@@ -510,31 +513,28 @@ fn decode_routers(data: &[u8]) -> anyhow::Result<Vec<String>> {
     Ok(routers)
 }
 
-// /// Decodes bytes into an IP address, expecting either 4 bytes (IPv4) or 16 bytes (IPv6).
-// fn decode_bytes_to_ip(bytes: &[u8]) -> anyhow::Result<IpAddr> {
-//     match bytes.len() {
-//         4 => Ok(IpAddr::V4(Ipv4Addr::new(
-//             bytes[0], bytes[1], bytes[2], bytes[3],
-//         ))),
-//         16 => {
-//             let addr = Ipv6Addr::from(
-//                 <[u8; 16]>::try_from(bytes)
-//                     .map_err(|_| anyhow::anyhow!("Invalid length for IPv6"))?,
-//             );
-//             Ok(IpAddr::V6(addr))
-//         }
-//         _ => Err(anyhow::anyhow!("Invalid byte length for IP address")),
-//     }
-// }
+pub fn bytes_to_ip(bytes: &[u8]) -> Result<IpAddr, String> {
+    match bytes.len() {
+        16 => {
+            let ip_num = u128::from_be_bytes(bytes.try_into().unwrap());
+            if ip_num < (1u128 << 32) {
+                // IPv4
+                Ok(IpAddr::V4(Ipv4Addr::from(ip_num as u32)))
+            } else {
+                // IPv6
+                Ok(IpAddr::V6(Ipv6Addr::from(ip_num)))
+            }
+        }
+        _ => Err("Invalid byte length for IP address".to_string()),
+    }
+}
 
-// /// Decodes bytes into a u16 port number, expecting exactly 2 bytes.
-// fn decode_bytes_to_port(bytes: &[u8]) -> anyhow::Result<u16> {
-//     if bytes.len() == 2 {
-//         Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
-//     } else {
-//         Err(anyhow::anyhow!("Invalid byte length for port number"))
-//     }
-// }
+pub fn bytes_to_port(bytes: &[u8]) -> Result<u16, String> {
+    match bytes.len() {
+        2 => Ok(u16::from_be_bytes([bytes[0], bytes[1]])),
+        _ => Err("Invalid byte length for port".to_string()),
+    }
+}
 
 fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth::Filter) {
     loop {

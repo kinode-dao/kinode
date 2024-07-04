@@ -4,7 +4,7 @@ import { toAscii } from "idna-uts46-hx";
 import { usePublicClient } from 'wagmi'
 
 import { KINOMAP, kinomapAbi } from '../abis'
-import { kinohash } from "../utils/namehash";
+import { kinohash } from "../utils/kinohash";
 
 type ClaimOsNameProps = {
   name: string;

@@ -44,9 +44,10 @@ pub const CHAIN_ID: u64 = 10;
 #[cfg(feature = "simulation-mode")]
 pub const CHAIN_ID: u64 = 31337;
 #[cfg(not(feature = "simulation-mode"))]
-pub const KNS_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+pub const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 #[cfg(feature = "simulation-mode")]
-pub const KNS_ADDRESS: &str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+pub const KIMAP_ADDRESS: &str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 #[tokio::main]
 async fn main() {
@@ -775,9 +776,6 @@ async fn login_with_password(
 
     let password_hash = format!("0x{}", hex::encode(sha2::Sha256::digest(password)));
 
-    // KnsRegistrar contract address
-    let kns_address: EthAddress = KNS_ADDRESS.parse().unwrap();
-
     let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
 
     let k = keygen::decode_keyfile(&disk_keyfile, &password_hash)
@@ -801,7 +799,6 @@ async fn login_with_password(
 
     register::assign_routing(
         &mut our,
-        kns_address,
         provider,
         match ws_networking.0 {
             Some(listener) => (listener.local_addr().unwrap().port(), ws_networking.1),

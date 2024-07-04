@@ -198,7 +198,7 @@ async fn handle_local_request(
                     let mut printout = String::new();
                     printout.push_str(&format!(
                         "indexing from contract address {}\r\n",
-                        crate::KNS_ADDRESS
+                        crate::KIMAP_ADDRESS
                     ));
                     printout.push_str(&format!("our Identity: {:#?}\r\n", ext.our));
                     printout.push_str(&format!(
