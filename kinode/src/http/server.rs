@@ -193,7 +193,7 @@ pub async fn http_server(
     let rpc_bound_path = BoundPath {
         app: Some(ProcessId::new(Some("rpc"), "distro", "sys")),
         path: path.clone(),
-        secure_subdomain: None, // TODO maybe RPC *should* have subdomain?
+        secure_subdomain: None,
         authenticated: false,
         local_only: true,
         static_content: None,

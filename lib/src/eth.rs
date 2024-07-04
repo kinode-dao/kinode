@@ -84,9 +84,6 @@ pub enum EthError {
 
 /// The action type used for configuring eth:distro:sys. Only processes which have the "root"
 /// capability from eth:distro:sys can successfully send this action.
-///
-/// NOTE: changes to config will not be persisted between boots, they must be saved in .env
-/// to be reflected between boots. TODO: can change this
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EthConfigAction {
     /// Add a new provider to the list of providers.
