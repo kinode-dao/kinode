@@ -653,7 +653,25 @@ impl StandardHost for process::ProcessWasi {
             self.process.metadata.our.process.package(),
             self.process.metadata.our.process.publisher(),
         );
-        // TODO I think we need to kill this process first in case it already exists
+
+        let request_capabilities_filtered = {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            self.process
+                .caps_oracle
+                .send(t::CapMessage::FilterCaps {
+                    on: self.process.metadata.our.process.clone(),
+                    caps: request_capabilities
+                        .into_iter()
+                        .map(|cap| t::de_wit_capability(cap).0)
+                        .collect(),
+                    responder: tx,
+                })
+                .await
+                .expect("fatal: process couldn't access capabilities oracle");
+            rx.await
+                .expect("fatal: process couldn't receive capabilities")
+        };
+
         let Ok(Ok((_, _response))) = send_and_await_response(
             self,
             Some(t::Address {
@@ -672,9 +690,9 @@ impl StandardHost for process::ProcessWasi {
                     wasm_bytes_handle: wasm_path,
                     wit_version: self.process.metadata.wit_version,
                     on_exit: t::OnExit::de_wit(on_exit),
-                    initial_capabilities: request_capabilities
+                    initial_capabilities: request_capabilities_filtered
                         .into_iter()
-                        .map(|cap| t::de_wit_capability(cap).0)
+                        .map(|(cap, _sig)| cap)
                         .collect(),
                     public,
                 })
@@ -700,13 +718,10 @@ impl StandardHost for process::ProcessWasi {
                 .caps_oracle
                 .send(t::CapMessage::Add {
                     on: t::ProcessId::de_wit(process),
-                    caps: vec![t::Capability {
-                        issuer: t::Address {
-                            node: self.process.metadata.our.node.clone(),
-                            process: new_process_id.clone(),
-                        },
-                        params: "\"messaging\"".into(),
-                    }],
+                    caps: vec![t::Capability::messaging((
+                        self.process.metadata.our.node.clone(),
+                        new_process_id.clone(),
+                    ))],
                     responder: Some(tx),
                 })
                 .await
@@ -754,15 +769,12 @@ impl StandardHost for process::ProcessWasi {
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: new_process_id.clone(),
-                caps: vec![t::Capability {
-                    issuer: self.process.metadata.our.clone(),
-                    params: "\"messaging\"".into(),
-                }],
+                caps: vec![t::Capability::messaging(self.process.metadata.our.clone())],
                 responder: Some(tx),
             })
             .await
             .unwrap();
-        let _ = rx.await.unwrap();
+        rx.await.unwrap();
 
         // parent process is always able to Message child
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -770,18 +782,15 @@ impl StandardHost for process::ProcessWasi {
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: self.process.metadata.our.process.clone(),
-                caps: vec![t::Capability {
-                    issuer: t::Address {
-                        node: self.process.metadata.our.node.clone(),
-                        process: new_process_id.clone(),
-                    },
-                    params: "\"messaging\"".into(),
-                }],
+                caps: vec![t::Capability::messaging((
+                    self.process.metadata.our.node.clone(),
+                    new_process_id.clone(),
+                ))],
                 responder: Some(tx),
             })
             .await
             .unwrap();
-        let _ = rx.await.unwrap();
+        rx.await.unwrap();
         print_debug(&self.process, "spawned a new process").await;
         Ok(Ok(new_process_id.en_wit().to_owned()))
     }

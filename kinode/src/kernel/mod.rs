@@ -943,10 +943,10 @@ pub async fn kernel(
                             continue;
                         };
                         let signed_caps: Vec<(t::Capability, Vec<u8>)> =
-                            caps.iter().map(|cap| (
-                                cap.clone(),
-                                keypair.sign(&rmp_serde::to_vec(&cap).unwrap()).as_ref().to_vec()
-                            )).collect();
+                            caps.into_iter().map(|cap| {
+                                let sig = keypair.sign(&rmp_serde::to_vec(&cap).unwrap());
+                                (cap, sig.as_ref().to_vec())
+                            }).collect();
                         entry.capabilities.extend(signed_caps.clone());
                         // now we have to insert all caps into the reverse cap index
                         for (cap, _) in &signed_caps {
