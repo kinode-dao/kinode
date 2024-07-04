@@ -19,6 +19,7 @@ mod kv;
 mod net;
 #[cfg(not(feature = "simulation-mode"))]
 mod register;
+mod sol;
 mod sqlite;
 mod state;
 mod terminal;

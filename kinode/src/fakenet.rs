@@ -10,10 +10,7 @@ use lib::core::{Identity, NodeRouting};
 use std::net::Ipv4Addr;
 use std::str::FromStr;
 
-pub mod helpers;
-
-use crate::{keygen, KIMAP_ADDRESS, MULTICALL_ADDRESS};
-pub use helpers::*;
+use crate::{keygen, sol::*, KIMAP_ADDRESS, MULTICALL_ADDRESS};
 
 // TODO move these into contracts registry, doublecheck optimism deployments
 const FAKE_DOTDEV_TBA: &str = "0x69C30C0Cf0e9726f9eEF50bb74FA32711fA0B02D";

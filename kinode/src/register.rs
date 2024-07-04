@@ -1,4 +1,4 @@
-use crate::keygen;
+use crate::{keygen, sol::*};
 use crate::{KIMAP_ADDRESS, MULTICALL_ADDRESS};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider};
 use alloy::pubsub::PubSubFrontend;
@@ -27,34 +27,6 @@ use warp::{
 };
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
-
-sol! {
-    function get (
-        bytes32 node
-    ) external view returns (
-        address tba,
-        address owner,
-        bytes data,
-    );
-
-    struct Boot {
-        string username;
-        bytes32 password_hash;
-        uint256 timestamp;
-        bool direct;
-        bool reset;
-        uint256 chain_id;
-    }
-
-    struct Call {
-        address target;
-        bytes callData;
-    }
-
-    function aggregate(
-        Call[] calldata calls
-    ) external payable returns (uint256 blockNumber, bytes[] memory returnData);
-}
 
 /// Serve the registration page and receive POSTs and PUTs from it
 pub async fn register(

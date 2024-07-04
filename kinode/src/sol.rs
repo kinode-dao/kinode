@@ -1,8 +1,5 @@
 use alloy_sol_macro::sol;
 
-// TODO: ! move these to a universal location :)
-// perhaps its own file, solidity.rs?
-
 sol! {
     function mint (
         address who,
@@ -13,7 +10,6 @@ sol! {
     ) external returns (
         address tba
     );
-
 
     function get (
         bytes32 node
@@ -42,6 +38,15 @@ sol! {
         bytes calldata data,
         uint8 operation
     ) external payable returns (bytes memory returnData);
+
+    struct Boot {
+        string username;
+        bytes32 password_hash;
+        uint256 timestamp;
+        bool direct;
+        bool reset;
+        uint256 chain_id;
+    }
 
     struct Call {
         address target;
