@@ -33,7 +33,7 @@ fn init(_our: Address) {
                 serde_json::json!({
                     "Add": {
                         "label": "KinoUpdates",
-                        "widget": create_widget(fetch_most_recent_blog_posts(6)),
+                        "widget": create_widget(fetch_most_recent_blog_posts(12)),
                     }
                 })
                 .to_string(),
@@ -49,41 +49,87 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     return format!(
         r#"<html>
 <head>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
+    * {{
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }}
+
+    a {{
+        text-decoration: none;
+        color: inherit;
+    }}
+
+    h2 {{
+        font-size: medium;
+    }}
+
+    body {{
+        color: white;
+        overflow: hidden;
+        height: 100vh;
+        width: 100vw;
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        font-family: sans-serif;
+    }}
+
+    #latest-blog-posts {{
+        display: flex;
+        flex-direction: column;
+        padding: 0.5rem;
+        gap: 0.5rem;
+        backdrop-filter: brightness(1.25);
+        border-radius: 0.75rem;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        height: 100vh;
+        width: 100vw;
+        overflow-y: auto;
+        scrollbar-color: transparent transparent;
+        scrollbar-width: none;
+        align-self: stretch;
+    }}
+
+    .post {{
+        width: 100%;
+        display: flex;
+        gap: 8px;
+        background-color: rgba(255, 255, 255, 0.1);
+        border-radius: 0.5em;
+        padding: 0.5em;
+    }}
+
+    .post-image {{
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-position: center;
+        width: 100px;
+        height: 100px;
+        border-radius: 4px;
+    }}
+
+    .post-info {{
+        max-width: 67%;
+        overflow: hidden;
+    }}
+
+    @media screen and (min-width: 500px) {{
         .post {{
-            width: 100%;
+            width: 49%;
         }}
-
-        .post-image {{
-            background-size: cover;
-            background-repeat: no-repeat;
-            background-position: center;
-            width: 100px;
-            height: 100px;
-            border-radius: 16px;
-        }}
-
-        .post-info {{
-            max-width: 67%
-        }}
-
-        @media screen and (min-width: 500px) {{
-            .post {{
-                width: 49%;
-            }}
-        }}
+    }}
     </style>
 </head>
-<body class="text-white overflow-hidden h-screen w-screen flex flex-col gap-2">
+<body class="text-white overflow-hidden">
     <div
         id="latest-blog-posts"
-        class="flex flex-col p-2 gap-2 backdrop-brightness-125 rounded-xl shadow-lg h-screen w-screen overflow-y-auto self-stretch"
         style="
             scrollbar-color: transparent transparent;
             scrollbar-width: none;
-        "
-    >
+        ">
         {}
     </div>
 </body>
@@ -105,7 +151,10 @@ fn fetch_most_recent_blog_posts(n: usize) -> Vec<KinodeBlogPost> {
     ) {
         Ok(response) => serde_json::from_slice::<Vec<KinodeBlogPost>>(response.body())
             .expect("Invalid UTF-8 from kinode.org"),
-        Err(e) => panic!("Failed to fetch blog posts: {:?}", e),
+        Err(e) => {
+            println!("Failed to fetch blog posts: {e:?}");
+            vec![]
+        }
     };
 
     blog_posts.into_iter().rev().take(n as usize).collect()
@@ -123,17 +172,17 @@ fn trim_content(content: &str) -> String {
 
 fn post_to_html_string(post: KinodeBlogPost) -> String {
     format!(
-        r#"<a 
-            class="post p-2 grow self-stretch flex items-stretch rounded-lg shadow bg-white/10 hover:bg-white/20 font-sans w-full"
+        r#"<a
+            class="post"
             href="https://kinode.org/blog/post/{}"
-            target="_blank" 
+            target="_blank"
             rel="noopener noreferrer"
         >
         <div
-            class="post-image rounded mr-2 grow self-stretch h-full"
-            style="background-image: url('https://kinode.org{}');"
+            class="post-image"
+            style="background-image: url('https://kinode.org{}-thumbnail');"
         ></div>
-        <div class="post-info flex flex-col grow">
+        <div class="post-info">
             <h2 class="font-bold">{}</h2>
             <p>{}</p>
         </div>

@@ -1,22 +1,25 @@
-use crate::keygen;
-use crate::KNS_ADDRESS;
-use alloy::providers::{Provider, ProviderBuilder, RootProvider};
-use alloy::pubsub::PubSubFrontend;
-use alloy::rpc::client::WsConnect;
-use alloy::rpc::types::eth::{TransactionInput, TransactionRequest};
-use alloy::signers::Signature;
+use crate::{keygen, KNS_ADDRESS};
+use alloy::{
+    providers::{Provider, ProviderBuilder, RootProvider},
+    pubsub::PubSubFrontend,
+    rpc::client::WsConnect,
+    rpc::types::eth::{TransactionInput, TransactionRequest},
+    signers::Signature,
+};
 use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
 use alloy_sol_macro::sol;
 use alloy_sol_types::{SolCall, SolValue};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
-use lib::types::core::*;
-use ring::rand::SystemRandom;
-use ring::signature;
-use ring::signature::KeyPair;
-use static_dir::static_dir;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use lib::types::core::{
+    BootInfo, Identity, ImportKeyfileInfo, Keyfile, KeyfileVet, KeyfileVetted, LoginAndResetInfo,
+    LoginInfo, NodeRouting, UnencryptedIdentity,
+};
+use ring::{rand::SystemRandom, signature, signature::KeyPair};
+use std::{
+    str::FromStr,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::{mpsc, oneshot};
 use warp::{
     http::{
@@ -36,6 +39,7 @@ sol! {
     function key(bytes32) external view returns (bytes32);
     function nodes(bytes32) external view returns (address, uint96);
     function ip(bytes32) external view returns (uint128, uint16, uint16, uint16, uint16);
+    function routers(bytes32) external view returns (bytes32[]);
 }
 
 /// Serve the registration page and receive POSTs and PUTs from it
@@ -103,29 +107,29 @@ pub async fn register(
     let ws_port = warp::any().map(move || (ws_port, ws_flag_used));
     let tcp_port = warp::any().map(move || (tcp_port, tcp_flag_used));
 
-    let static_files = warp::path("assets").and(static_dir!("src/register-ui/build/assets/"));
+    let static_files =
+        warp::path("assets").and(static_dir::static_dir!("src/register-ui/build/assets/"));
 
     let react_app = warp::path::end()
+        .or(warp::path("login"))
+        .or(warp::path("register-name"))
+        .or(warp::path("claim-invite"))
+        .or(warp::path("reset"))
+        .or(warp::path("import-keyfile"))
+        .or(warp::path("set-password"))
         .and(warp::get())
-        .map(move || warp::reply::html(include_str!("register-ui/build/index.html")))
-        .or(warp::path("login")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("register-name")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("claim-invite")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("reset")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("import-keyfile")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
-        .or(warp::path("set-password")
-            .and(warp::get())
-            .map(move || warp::reply::html(include_str!("register-ui/build/index.html"))))
+        .map(move |_| warp::reply::html(include_str!("register-ui/build/index.html")));
+
+    let boot_provider = provider.clone();
+    let login_provider = provider.clone();
+    let import_provider = provider.clone();
+
+    let api = warp::path("info")
+        .and(
+            warp::get()
+                .and(keyfile.clone())
+                .and_then(get_unencrypted_info),
+        )
         .or(warp::path("current-chain")
             .and(warp::get())
             .map(move || warp::reply::json(&"0xa")))
@@ -146,18 +150,7 @@ pub async fn register(
                 }
                 warp::reply::html(String::new())
             },
-        ));
-
-    let boot_provider = provider.clone();
-    let login_provider = provider.clone();
-    let import_provider = provider.clone();
-
-    let api = warp::path("info")
-        .and(
-            warp::get()
-                .and(keyfile.clone())
-                .and_then(get_unencrypted_info),
-        )
+        ))
         .or(warp::path("generate-networking-info").and(
             warp::post()
                 .and(our_temp_id.clone())
@@ -265,7 +258,6 @@ pub async fn register(
 }
 
 pub async fn connect_to_provider(maybe_rpc: Option<String>) -> RootProvider<PubSubFrontend> {
-    // This ETH provider uses public rpc endpoints to verify registration signatures.
     let url = if let Some(rpc_url) = maybe_rpc {
         rpc_url
     } else {
@@ -275,19 +267,20 @@ pub async fn connect_to_provider(maybe_rpc: Option<String>) -> RootProvider<PubS
         "Connecting to Optimism RPC at {url}\n\
         Specify a different RPC URL with the --rpc flag."
     );
-    let ws = WsConnect::new(url);
-    // this fails occasionally in certain networking environments. i'm not sure why.
-    // frustratingly, the exact same call does not fail in the eth module. more investigation needed.
-    let Ok(client) = ProviderBuilder::new().on_ws(ws).await else {
-        panic!(
-            "Error: runtime could not connect to ETH RPC.\n\
-            This is necessary in order to verify node identity onchain.\n\
-            Please make sure you are using a valid WebSockets URL if using \
-            the --rpc flag, and you are connected to the internet."
-        );
-    };
-    println!("Connected to Optimism RPC");
 
+    let client = match ProviderBuilder::new().on_ws(WsConnect::new(url)).await {
+        Ok(client) => client,
+        Err(e) => {
+            panic!(
+                "Error: runtime could not connect to ETH RPC: {e}\n\
+                This is necessary in order to verify node identity onchain.\n\
+                Please make sure you are using a valid WebSockets URL if using \
+                the --rpc flag, and you are connected to the internet."
+            );
+        }
+    };
+
+    println!("Connected to Optimism RPC");
     client
 }
 
@@ -714,6 +707,7 @@ pub async fn assign_routing(
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
     let ip_call = ipCall { _0: namehash }.abi_encode();
     let key_call = keyCall { _0: namehash }.abi_encode();
+    let router_call = routersCall { _0: namehash }.abi_encode();
     let tx_input = TransactionInput::new(Bytes::from(ip_call));
     let tx = TransactionRequest::default()
         .to(kns_address)
@@ -743,6 +737,18 @@ pub async fn assign_routing(
         ));
     }
 
+    let router_tx_input = TransactionInput::new(Bytes::from(router_call));
+    let router_tx = TransactionRequest::default()
+        .to(kns_address)
+        .input(router_tx_input);
+
+    let Ok(routers) = provider.call(&router_tx).await else {
+        return Err(anyhow::anyhow!("Failed to fetch node routers from PKI"));
+    };
+    let Ok(routers) = <Vec<FixedBytes<32>>>::abi_decode(&routers, false) else {
+        return Err(anyhow::anyhow!("Failed to decode node routers from PKI"));
+    };
+
     let node_ip = format!(
         "{}.{}.{}.{}",
         (ip >> 24) & 0xFF,
@@ -751,6 +757,10 @@ pub async fn assign_routing(
         ip & 0xFF
     );
 
+    if !routers.is_empty() {
+        // indirect node
+        return Ok(());
+    }
     if node_ip != *"0.0.0.0" && (ws != 0 || tcp != 0) {
         // direct node
         let mut ports = std::collections::BTreeMap::new();
@@ -775,8 +785,6 @@ pub async fn assign_routing(
             ports.insert("tcp".to_string(), tcp);
         }
         our.routing = NodeRouting::Direct { ip: node_ip, ports };
-    } else {
-        // indirect node
     }
     Ok(())
 }

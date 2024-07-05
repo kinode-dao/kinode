@@ -2,7 +2,12 @@
 #![feature(btree_extract_if)]
 use anyhow::Result;
 use clap::{arg, value_parser, Command};
-use lib::types::core::*;
+use lib::types::core::{
+    CapMessageReceiver, CapMessageSender, DebugReceiver, DebugSender, Identity, KernelCommand,
+    KernelMessage, Keyfile, Message, MessageReceiver, MessageSender, NetworkErrorReceiver,
+    NetworkErrorSender, NodeRouting, PrintReceiver, PrintSender, ProcessId, Request,
+    KERNEL_PROCESS_ID,
+};
 #[cfg(feature = "simulation-mode")]
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::env;
@@ -37,6 +42,9 @@ const CAP_CHANNEL_CAPACITY: usize = 1_000;
 const KV_CHANNEL_CAPACITY: usize = 1_000;
 const SQLITE_CHANNEL_CAPACITY: usize = 1_000;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const WS_MIN_PORT: u16 = 9_000;
+const TCP_MIN_PORT: u16 = 10_000;
+const MAX_PORT: u16 = 65_535;
 /// default routers as a eth-provider fallback
 const DEFAULT_ETH_PROVIDERS: &str = include_str!("eth/default_providers_mainnet.json");
 #[cfg(not(feature = "simulation-mode"))]
@@ -277,6 +285,7 @@ async fn main() {
      *  if any of these modules fail, the program exits with an error.
      */
     let networking_keypair_arc = Arc::new(decoded_keyfile.networking_keypair);
+    let our_name_arc = Arc::new(our.name.clone());
 
     let (kernel_process_map, db, reverse_cap_index) = state::load_state(
         our.name.clone(),
@@ -329,7 +338,7 @@ async fn main() {
         *matches.get_one::<bool>("reveal-ip").unwrap_or(&true),
     ));
     tasks.spawn(state::state_sender(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         state_receiver,
@@ -337,7 +346,7 @@ async fn main() {
         home_directory_path.clone(),
     ));
     tasks.spawn(kv::kv(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         kv_receiver,
@@ -345,7 +354,7 @@ async fn main() {
         home_directory_path.clone(),
     ));
     tasks.spawn(sqlite::sqlite(
-        our.name.clone(),
+        our_name_arc.clone(),
         kernel_message_sender.clone(),
         print_sender.clone(),
         sqlite_receiver,
@@ -384,7 +393,7 @@ async fn main() {
         print_sender.clone(),
     ));
     tasks.spawn(vfs::vfs(
-        our.name.clone(),
+        our_name_arc,
         kernel_message_sender.clone(),
         print_sender.clone(),
         vfs_message_receiver,
@@ -417,34 +426,24 @@ async fn main() {
             verbose_mode,
         ) => {
             match quit {
-                Ok(_) => match kernel_message_sender
-                    .send(KernelMessage {
-                        id: rand::random(),
-                        source: Address {
-                            node: our.name.clone(),
-                            process: KERNEL_PROCESS_ID.clone(),
-                        },
-                        target: Address {
-                            node: our.name.clone(),
-                            process: KERNEL_PROCESS_ID.clone(),
-                        },
-                        rsvp: None,
-                        message: Message::Request(Request {
+                Ok(()) => {
+                    KernelMessage::builder()
+                        .id(rand::random())
+                        .source((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
+                        .target((our.name.as_str(), KERNEL_PROCESS_ID.clone()))
+                        .message(Message::Request(Request {
                             inherit: false,
                             expects_response: None,
                             body: serde_json::to_vec(&KernelCommand::Shutdown).unwrap(),
                             metadata: None,
                             capabilities: vec![],
-                        }),
-                        lazy_load_blob: None,
-                    })
-                    .await
-                {
-                    Ok(()) => "graceful exit".into(),
-                    Err(_) => {
-                        "failed to gracefully shut down kernel".into()
-                    }
-                },
+                        }))
+                        .build()
+                        .unwrap()
+                        .send(&kernel_message_sender)
+                        .await;
+                    "graceful exit".into()
+                }
                 Err(e) => e.to_string(),
             }
         }
@@ -452,17 +451,8 @@ async fn main() {
 
     // abort all remaining tasks
     tasks.shutdown().await;
-    let stdout = std::io::stdout();
-    let mut stdout = stdout.lock();
-    crossterm::execute!(
-        stdout,
-        crossterm::event::DisableBracketedPaste,
-        crossterm::terminal::SetTitle(""),
-        crossterm::style::SetForegroundColor(crossterm::style::Color::Red),
-        crossterm::style::Print(format!("\r\n{quit_msg}\r\n")),
-        crossterm::style::ResetColor,
-    )
-    .expect("failed to clean up terminal visual state! your terminal window might be funky now");
+    // reset all modified aspects of terminal -- clean ourselves up
+    terminal::utils::cleanup(&quit_msg);
 }
 
 async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
@@ -517,8 +507,12 @@ async fn setup_networking(
             (Some(listener), true)
         }
         None => {
-            let min_port = if protocol == "ws" { 9000 } else { 10000 };
-            let listener = http::utils::find_open_port(min_port, 65535)
+            let min_port = if protocol == "ws" {
+                WS_MIN_PORT
+            } else {
+                TCP_MIN_PORT
+            };
+            let listener = http::utils::find_open_port(min_port, MAX_PORT)
                 .await
                 .expect("no ports found in range 9000-65535 for kinode networking");
             (Some(listener), false)
@@ -648,7 +642,7 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(u16)),
         )
         .arg(
-            arg!(--"tcp-port" <PORT> "Kinode internal TCP protocol port [default: first unbound at or above 9000]")
+            arg!(--"tcp-port" <PORT> "Kinode internal TCP protocol port [default: first unbound at or above 10000]")
                 .alias("--tcp-port")
                 .value_parser(value_parser!(u16)),
         )
@@ -663,7 +657,7 @@ fn build_command() -> Command {
                 .value_parser(value_parser!(bool)),
         )
         .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"))
-        .arg(arg!(--password <PASSWORD> "Node password"));
+        .arg(arg!(--password <PASSWORD> "Node password (in double quotes)"));
 
     #[cfg(feature = "simulation-mode")]
     let app = app
@@ -748,12 +742,9 @@ async fn serve_register_fe(
         }
     };
 
-    tokio::fs::write(
-        format!("{}/.keys", home_directory_path),
-        encoded_keyfile.clone(),
-    )
-    .await
-    .unwrap();
+    tokio::fs::write(format!("{}/.keys", home_directory_path), &encoded_keyfile)
+        .await
+        .unwrap();
 
     let _ = kill_tx.send(true);
 
@@ -772,13 +763,17 @@ async fn login_with_password(
     maybe_rpc: Option<String>,
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
-    use {alloy_primitives::Address as EthAddress, digest::Digest, ring::signature::KeyPair};
+    use {
+        alloy_primitives::Address as EthAddress,
+        ring::signature::KeyPair,
+        sha2::{Digest, Sha256},
+    };
 
     let disk_keyfile: Vec<u8> = tokio::fs::read(format!("{}/.keys", home_directory_path))
         .await
         .expect("could not read keyfile");
 
-    let password_hash = format!("0x{}", hex::encode(sha2::Sha256::digest(password)));
+    let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
 
     // KnsRegistrar contract address
     let kns_address: EthAddress = KNS_ADDRESS.parse().unwrap();
@@ -820,12 +815,9 @@ async fn login_with_password(
     .await
     .expect("information used to boot does not match information onchain");
 
-    tokio::fs::write(
-        format!("{}/.keys", home_directory_path),
-        disk_keyfile.clone(),
-    )
-    .await
-    .unwrap();
+    tokio::fs::write(format!("{}/.keys", home_directory_path), &disk_keyfile)
+        .await
+        .unwrap();
 
     (our, disk_keyfile, k)
 }

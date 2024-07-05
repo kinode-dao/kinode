@@ -2,23 +2,15 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key,
 };
-use alloy_primitives::keccak256;
-use anyhow::Result;
-use digest::generic_array::GenericArray;
-use hmac::Hmac;
-use jwt::SignWithKey;
 use lib::types::core::Keyfile;
 use ring::pbkdf2;
-use ring::pkcs8::Document;
 use ring::rand::SystemRandom;
 use ring::signature::{self, KeyPair};
-use ring::{digest as ring_digest, rand::SecureRandom};
-use sha2::Sha256;
 use std::num::NonZeroU32;
 
 type DiskKey = [u8; CREDENTIAL_LEN];
 
-pub const CREDENTIAL_LEN: usize = ring_digest::SHA256_OUTPUT_LEN;
+pub const CREDENTIAL_LEN: usize = ring::digest::SHA256_OUTPUT_LEN;
 pub const ITERATIONS: u32 = 1_000_000;
 pub static PBKDF2_ALG: pbkdf2::Algorithm = pbkdf2::PBKDF2_HMAC_SHA256; // TODO maybe look into Argon2
 
@@ -30,8 +22,9 @@ pub fn encode_keyfile(
     jwt: &[u8],
     file_key: &[u8],
 ) -> Vec<u8> {
-    let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
+    use ring::rand::SecureRandom;
 
+    let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
     let rng = SystemRandom::new();
     let mut salt = [0u8; 32]; // generate a unique salt
     rng.fill(&mut salt).unwrap();
@@ -67,6 +60,8 @@ pub fn encode_keyfile(
 }
 
 pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'static str> {
+    use generic_array::GenericArray;
+
     let (username, routers, salt, key_enc, jwt_enc, file_enc) =
         bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
             .map_err(|_| "failed to deserialize keyfile")?;
@@ -117,8 +112,11 @@ pub fn generate_jwt(
     username: &str,
     subdomain: &Option<String>,
 ) -> Option<String> {
-    let jwt_secret: Hmac<Sha256> = Hmac::new_from_slice(jwt_secret_bytes).ok()?;
+    use hmac::Hmac;
+    use jwt::SignWithKey;
+    use sha2::Sha256;
 
+    let jwt_secret: Hmac<Sha256> = Hmac::new_from_slice(jwt_secret_bytes).ok()?;
     let subdomain = match subdomain.clone().unwrap_or_default().as_str() {
         "" => None,
         subdomain => Some(subdomain.to_string()),
@@ -143,6 +141,8 @@ pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>),
 }
 
 pub fn namehash(name: &str) -> Vec<u8> {
+    use alloy_primitives::keccak256;
+
     let mut node = vec![0u8; 32];
     if name.is_empty() {
         return node;
@@ -158,6 +158,8 @@ pub fn namehash(name: &str) -> Vec<u8> {
 
 /// randomly generated key to encrypt file chunks,
 pub fn generate_file_key() -> Vec<u8> {
+    use ring::rand::SecureRandom;
+
     let mut key = [0u8; 32];
     let rng = SystemRandom::new();
     rng.fill(&mut key).unwrap();
@@ -166,7 +168,7 @@ pub fn generate_file_key() -> Vec<u8> {
 
 /// # Returns
 /// a pair of (public key (encoded as a hex string), serialized key as a pkcs8 Document)
-pub fn generate_networking_key() -> (String, Document) {
+pub fn generate_networking_key() -> (String, ring::pkcs8::Document) {
     let seed = SystemRandom::new();
     let doc = signature::Ed25519KeyPair::generate_pkcs8(&seed).unwrap();
     let keys = signature::Ed25519KeyPair::from_pkcs8(doc.as_ref()).unwrap();
