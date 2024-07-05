@@ -13,11 +13,10 @@ jobs:
     - name: build and deploy kinode
       uses: appleboy/ssh-action@master
       with:
-        host: ${{ secrets.SSH_HOST }}
+        host: ${{ secrets.SSH_API_HOST }}
         username: ${{ secrets.SSH_USER }}
-        key: ${{ secrets.SSH_ED25519KEY }}
+        key: ${{ secrets.SSH_API_ED25519KEY }}
         port: ${{ secrets.SSH_PORT }}
         command_timeout: 60m
         script: |
-          cd ~
-          ./build-kinode.sh
+          curl -X PUT http://localhost:8000/monitor/build-kinode

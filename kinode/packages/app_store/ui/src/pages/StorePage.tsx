@@ -10,6 +10,8 @@ import classNames from 'classnames';
 import { FaArrowRotateRight } from "react-icons/fa6";
 import { isMobileCheck } from "../utils/dimensions";
 import HomeButton from "../components/HomeButton";
+import Modal from "../components/Modal";
+import Loader from "../components/Loader";
 
 
 export default function StorePage() {
@@ -22,6 +24,7 @@ export default function StorePage() {
   const [page, setPage] = useState(1);
   const [tags, setTags] = useState<string[]>([])
   const [launchPaths, setLaunchPaths] = useState<{ [package_name: string]: string }>({})
+  const [isRebuildingIndex, setIsRebuildingIndex] = useState(false);
 
   const pages = useMemo(
     () =>
@@ -95,12 +98,18 @@ export default function StorePage() {
   );
 
   const tryRebuildIndex = useCallback(async () => {
+    if (!window.confirm('Are you sure you want to rebuild the app index? This may take a few seconds.')) {
+      return;
+    }
+
+    setIsRebuildingIndex(true);
     try {
       await rebuildIndex();
-      alert("Index rebuilt successfully.");
       await getListedApps();
     } catch (error) {
       console.error(error);
+    } finally {
+      setIsRebuildingIndex(false);
     }
   }, [rebuildIndex]);
 
@@ -125,6 +134,7 @@ export default function StorePage() {
 
   return (
     <div className={classNames("flex flex-col w-full max-h-screen p-2", {
+      isMobile,
       'gap-4 max-w-screen': isMobile,
       'gap-6 max-w-[900px]': !isMobile
     })}>
@@ -172,41 +182,44 @@ export default function StorePage() {
       </div>
       {!searchQuery && <div className={classNames("flex flex-col", {
         'gap-4': !isMobile,
-        'grow overflow-y-auto gap-2 items-center px-2': isMobile
+        'gap-2 items-center': isMobile
       })}>
         <h2>Featured Apps</h2>
         <div className={classNames("flex gap-2", {
-          'flex-col': isMobile
+          'flex-wrap': isMobile
         })}>
           {listedApps.filter(app => {
             return featuredPackageNames.indexOf(app.package) !== -1
           }).map((app) => (
             <AppEntry
               key={appId(app) + (app.state?.our_version || "")}
-              size={'medium'}
+              size={isMobile ? 'small' : 'medium'}
               app={app}
               launchPath={launchPaths[app.package]}
               className={classNames("grow", {
                 'w-1/4': !isMobile,
-                'w-full': isMobile
+                'w-1/3': isMobile
               })}
             />
           ))}
         </div>
       </div>}
-      <h2>{searchQuery ? 'Search Results' : 'All Apps'}</h2>
-      <div className={classNames("flex flex-col grow overflow-y-auto", {
+      <h2 className={classNames({
+        'text-center': isMobile
+      })}>{searchQuery ? 'Search Results' : 'All Apps'}</h2>
+      <div className={classNames("flex flex-col grow", {
         'gap-2': isMobile,
-        'gap-4': !isMobile,
+        'gap-4 overflow-y-auto': !isMobile,
       })}>
         {displayedApps
           .filter(app => searchQuery ? true : featuredPackageNames.indexOf(app.package) === -1)
           .map(app => <AppEntry
             key={appId(app) + (app.state?.our_version || "")}
-            size='large'
+            size={isMobile ? 'medium' : 'large'}
             app={app}
             className="self-stretch"
             overrideImageSize="medium"
+            showMoreActions={!isMobile}
           />)}
       </div>
       {pages.length > 1 && <div className="flex flex-wrap self-center gap-2">
@@ -232,6 +245,9 @@ export default function StorePage() {
           <FaChevronRight />
         </button>
       </div>}
+      <Modal title="Rebuilding index..." show={isRebuildingIndex} hide={() => { }}>
+        <Loader msg="This may take a few seconds." />
+      </Modal>
     </div>
   );
 }

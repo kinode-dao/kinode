@@ -1,10 +1,8 @@
 use crate::kernel::process;
-use crate::KERNEL_PROCESS_ID;
-use crate::VFS_PROCESS_ID;
 use anyhow::Result;
-use lib::types::core::{self as t, STATE_PROCESS_ID};
-pub use lib::v0::wit;
-pub use lib::v0::wit::Host as StandardHost;
+use lib::types::core::{self as t, KERNEL_PROCESS_ID, STATE_PROCESS_ID, VFS_PROCESS_ID};
+use lib::v0::wit;
+use lib::v0::wit::Host as StandardHost;
 use ring::signature::{self, KeyPair};
 
 async fn print_debug(proc: &process::ProcessState, content: &str) {
@@ -101,10 +99,16 @@ impl process::ProcessState {
     ) -> Result<(wit::Address, wit::Message), (wit::SendError, Option<wit::Context>)> {
         let (mut km, context) = match incoming {
             Ok(mut km) => match km.message {
-                t::Message::Request(_) => {
+                t::Message::Request(t::Request {
+                    ref expects_response,
+                    ..
+                }) => {
                     self.last_blob = km.lazy_load_blob;
                     km.lazy_load_blob = None;
-                    self.prompting_message = Some(km.clone());
+                    if expects_response.is_some() || km.rsvp.is_some() {
+                        // update prompting_message iff there is someone to reply to
+                        self.prompting_message = Some(km.clone());
+                    }
                     (km, None)
                 }
                 t::Message::Response(_) => match self.contexts.remove(&km.id) {
@@ -330,11 +334,11 @@ impl process::ProcessState {
 
         // the process requires a prompting_message in order to issue a response
         let Some(ref prompting_message) = self.prompting_message else {
-            process::print(
-                &self.send_to_terminal,
+            t::Printout::new(
                 0,
                 format!("kernel: need non-None prompting_message to handle Response {response:?}"),
             )
+            .send(&self.send_to_terminal)
             .await;
             return;
         };
@@ -660,7 +664,25 @@ impl StandardHost for process::ProcessWasiV0 {
             self.process.metadata.our.process.package(),
             self.process.metadata.our.process.publisher(),
         );
-        // TODO I think we need to kill this process first in case it already exists
+
+        let request_capabilities_filtered = {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            self.process
+                .caps_oracle
+                .send(t::CapMessage::FilterCaps {
+                    on: self.process.metadata.our.process.clone(),
+                    caps: request_capabilities
+                        .into_iter()
+                        .map(|cap| t::de_wit_capability_v0(cap).0)
+                        .collect(),
+                    responder: tx,
+                })
+                .await
+                .expect("fatal: process couldn't access capabilities oracle");
+            rx.await
+                .expect("fatal: process couldn't receive capabilities")
+        };
+
         let Ok(Ok((_, _response))) = send_and_await_response(
             self,
             Some(t::Address {
@@ -679,12 +701,9 @@ impl StandardHost for process::ProcessWasiV0 {
                     wasm_bytes_handle: wasm_path,
                     wit_version: self.process.metadata.wit_version,
                     on_exit: t::OnExit::de_wit_v0(on_exit),
-                    initial_capabilities: request_capabilities
-                        .iter()
-                        .map(|cap| t::Capability {
-                            issuer: t::Address::de_wit_v0(cap.clone().issuer),
-                            params: cap.clone().params,
-                        })
+                    initial_capabilities: request_capabilities_filtered
+                        .into_iter()
+                        .map(|(cap, _sig)| cap)
                         .collect(),
                     public,
                 })
@@ -710,14 +729,11 @@ impl StandardHost for process::ProcessWasiV0 {
                 .caps_oracle
                 .send(t::CapMessage::Add {
                     on: t::ProcessId::de_wit_v0(process),
-                    caps: vec![t::Capability {
-                        issuer: t::Address {
-                            node: self.process.metadata.our.node.clone(),
-                            process: new_process_id.clone(),
-                        },
-                        params: "\"messaging\"".into(),
-                    }],
-                    responder: tx,
+                    caps: vec![t::Capability::messaging((
+                        self.process.metadata.our.node.clone(),
+                        new_process_id.clone(),
+                    ))],
+                    responder: Some(tx),
                 })
                 .await
                 .unwrap();
@@ -764,15 +780,12 @@ impl StandardHost for process::ProcessWasiV0 {
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: new_process_id.clone(),
-                caps: vec![t::Capability {
-                    issuer: self.process.metadata.our.clone(),
-                    params: "\"messaging\"".into(),
-                }],
-                responder: tx,
+                caps: vec![t::Capability::messaging(self.process.metadata.our.clone())],
+                responder: Some(tx),
             })
             .await
             .unwrap();
-        let _ = rx.await.unwrap();
+        rx.await.unwrap();
 
         // parent process is always able to Message child
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -780,18 +793,15 @@ impl StandardHost for process::ProcessWasiV0 {
             .caps_oracle
             .send(t::CapMessage::Add {
                 on: self.process.metadata.our.process.clone(),
-                caps: vec![t::Capability {
-                    issuer: t::Address {
-                        node: self.process.metadata.our.node.clone(),
-                        process: new_process_id.clone(),
-                    },
-                    params: "\"messaging\"".into(),
-                }],
-                responder: tx,
+                caps: vec![t::Capability::messaging((
+                    self.process.metadata.our.node.clone(),
+                    new_process_id.clone(),
+                ))],
+                responder: Some(tx),
             })
             .await
             .unwrap();
-        let _ = rx.await.unwrap();
+        rx.await.unwrap();
         print_debug(&self.process, "spawned a new process").await;
         Ok(Ok(new_process_id.en_wit_v0().to_owned()))
     }
@@ -811,7 +821,7 @@ impl StandardHost for process::ProcessWasiV0 {
                     .iter()
                     .map(|cap| t::de_wit_capability_v0(cap.clone()).0)
                     .collect(),
-                responder: tx,
+                responder: Some(tx),
             })
             .await?;
         let _ = rx.await?;
@@ -829,7 +839,7 @@ impl StandardHost for process::ProcessWasiV0 {
                     .iter()
                     .map(|cap| t::de_wit_capability_v0(cap.clone()).0)
                     .collect(),
-                responder: tx,
+                responder: Some(tx),
             })
             .await?;
         let _ = rx.await?;
@@ -849,10 +859,7 @@ impl StandardHost for process::ProcessWasiV0 {
         let caps = rx.await?;
         Ok(caps
             .into_iter()
-            .map(|cap| wit::Capability {
-                issuer: t::Address::en_wit_v0(&cap.0.issuer),
-                params: cap.0.params,
-            })
+            .map(|cap| t::en_wit_capability_v0(cap))
             .collect())
     }
 

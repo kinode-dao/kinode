@@ -908,16 +908,7 @@ async fn check_for_root_cap(
     caps_oracle
         .send(CapMessage::Has {
             on: process.clone(),
-            cap: Capability {
-                issuer: Address {
-                    node: our.to_string(),
-                    process: ETH_PROCESS_ID.clone(),
-                },
-                params: serde_json::to_string(&serde_json::json!({
-                    "root": true,
-                }))
-                .unwrap(),
-            },
+            cap: Capability::new((our, ETH_PROCESS_ID.clone()), "{\"root\":true}"),
             responder: send_cap_bool,
         })
         .await

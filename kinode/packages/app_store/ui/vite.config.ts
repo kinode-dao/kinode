@@ -88,6 +88,11 @@ export default defineConfig({
         target: PROXY_URL,
         changeOrigin: true,
       },
+      '/api/*': {
+        target: PROXY_URL,
+        changeOrigin: true,
+        rewrite: (path) => path.replace('/api', ''),
+      },
       // '/example': {
       //   target: PROXY_URL,
       //   changeOrigin: true,

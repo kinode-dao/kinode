@@ -1,6 +1,6 @@
 use lib::types::core::{
-    Address, Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
-    NetworkErrorSender, NodeRouting, PrintSender, ProcessId,
+    Identity, KernelMessage, MessageReceiver, MessageSender, NetAction, NetResponse,
+    NetworkErrorSender, NodeRouting, PrintSender,
 };
 use types::{
     IdentityExt, NetData, OnchainPKI, PKINames, Peers, PendingPassthroughs, TCP_PROTOCOL,
@@ -83,10 +83,10 @@ pub async fn networking(
                     "net: fatal error: need at least one networking protocol"
                 ));
             }
-            if ports.contains_key(WS_PROTOCOL) {
+            if ext.our.ws_routing().is_some() {
                 tasks.spawn(ws::receiver(ext.clone(), net_data.clone()));
             }
-            if ports.contains_key(TCP_PROTOCOL) {
+            if ext.our.tcp_routing().is_some() {
                 tasks.spawn(tcp::receiver(ext.clone(), net_data.clone()));
             }
         }
@@ -274,29 +274,25 @@ async fn handle_local_request(
                     return;
                 }
             };
-            ext.kernel_message_tx
-                .send(KernelMessage {
-                    id: km.id,
-                    source: Address {
-                        node: ext.our.name.clone(),
-                        process: ProcessId::new(Some("net"), "distro", "sys"),
+            KernelMessage::builder()
+                .id(km.id)
+                .source((ext.our.name.as_str(), "net", "distro", "sys"))
+                .target(km.rsvp.as_ref().unwrap_or(&km.source).clone())
+                .message(lib::core::Message::Response((
+                    lib::core::Response {
+                        inherit: false,
+                        body: rmp_serde::to_vec(&response_body)
+                            .expect("net: failed to serialize response"),
+                        metadata: None,
+                        capabilities: vec![],
                     },
-                    target: km.rsvp.as_ref().unwrap_or(&km.source).clone(),
-                    rsvp: None,
-                    message: lib::core::Message::Response((
-                        lib::core::Response {
-                            inherit: false,
-                            body: rmp_serde::to_vec(&response_body)
-                                .expect("net: failed to serialize response"),
-                            metadata: None,
-                            capabilities: vec![],
-                        },
-                        None,
-                    )),
-                    lazy_load_blob: response_blob,
-                })
-                .await
-                .expect("net: kernel channel was dropped");
+                    None,
+                )))
+                .lazy_load_blob(response_blob)
+                .build()
+                .unwrap()
+                .send(&ext.kernel_message_tx)
+                .await;
         }
     }
 }

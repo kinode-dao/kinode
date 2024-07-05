@@ -1,89 +1,142 @@
 use dashmap::DashMap;
-use std::collections::{HashMap, VecDeque};
-use std::io::prelude::*;
-use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
-use tokio::fs;
-use tokio::fs::OpenOptions;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
-use tokio::sync::Mutex;
+use lib::types::core::{
+    Address, CapMessage, CapMessageSender, Capability, DirEntry, FileMetadata, FileType,
+    KernelMessage, LazyLoadBlob, Message, MessageReceiver, MessageSender, PackageId, PrintSender,
+    Printout, ProcessId, Request, Response, VfsAction, VfsError, VfsRequest, VfsResponse,
+    KERNEL_PROCESS_ID, VFS_PROCESS_ID,
+};
+use std::{
+    collections::{HashMap, VecDeque},
+    io::Read,
+    path::{Component, Path, PathBuf},
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tokio::{
+    fs,
+    io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom},
+    sync::Mutex,
+    time::interval,
+};
 
-use lib::types::core::*;
+// Constants for file cleanup
+const FILE_CLEANUP_INTERVAL: Duration = Duration::from_secs(60);
+const FILE_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// The main VFS service function.
+///
+/// This function sets up the VFS, handles incoming requests, and manages file operations.
+/// It also implements a file cleanup mechanism to close idle files.
+///
+/// # Arguments
+/// * `our_node` - The identifier for the current node
+/// * `send_to_loop` - Sender for kernel messages
+/// * `send_to_terminal` - Sender for print messages
+/// * `recv_from_loop` - Receiver for incoming messages
+/// * `send_to_caps_oracle` - Sender for capability messages
+/// * `home_directory_path` - Path to the home directory
+///
+/// # Returns
+/// * `anyhow::Result<()>` - Should never return Ok, but will return fatal errors.
 pub async fn vfs(
-    our_node: String,
+    our_node: Arc<String>,
     send_to_loop: MessageSender,
     send_to_terminal: PrintSender,
     mut recv_from_loop: MessageReceiver,
     send_to_caps_oracle: CapMessageSender,
     home_directory_path: String,
 ) -> anyhow::Result<()> {
-    let our_node = Arc::new(our_node);
     let vfs_path = format!("{home_directory_path}/vfs");
 
-    if let Err(e) = fs::create_dir_all(&vfs_path).await {
-        panic!("failed creating vfs dir! {:?}", e);
-    }
-    let vfs_path = fs::canonicalize(&vfs_path).await?;
+    fs::create_dir_all(&vfs_path)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed creating vfs dir! {e:?}"))?;
+    let vfs_path = Arc::new(fs::canonicalize(&vfs_path).await?);
 
-    let open_files: Arc<DashMap<PathBuf, Arc<Mutex<fs::File>>>> = Arc::new(DashMap::new());
+    let open_files: Arc<DashMap<PathBuf, (Arc<Mutex<fs::File>>, Instant)>> =
+        Arc::new(DashMap::new());
 
-    let mut process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
-        HashMap::new();
+    let process_queues: HashMap<ProcessId, Arc<Mutex<VecDeque<KernelMessage>>>> =
+        HashMap::default();
+
+    // Start the file cleanup task
+    let cleanup_open_files = open_files.clone();
+    tokio::spawn(async move {
+        let mut interval = interval(FILE_CLEANUP_INTERVAL);
+        loop {
+            interval.tick().await;
+            cleanup_open_files
+                .retain(|_, (_, last_accessed)| last_accessed.elapsed() < FILE_IDLE_TIMEOUT);
+        }
+    });
 
     while let Some(km) = recv_from_loop.recv().await {
         if *our_node != km.source.node {
-            let _ = send_to_terminal.send(Printout {
-                verbosity: 1,
-                content: format!(
-                    "vfs: got request from {}, but requests must come from our node {our_node}\r",
-                    km.source.node,
+            Printout::new(
+                1,
+                format!(
+                    "vfs: got request from {}, but requests must come from our node {our_node}",
+                    km.source.node
                 ),
-            });
+            )
+            .send(&send_to_terminal)
+            .await;
             continue;
         }
 
         let queue = process_queues
-            .entry(km.source.process.clone())
-            .or_insert_with(|| Arc::new(Mutex::new(VecDeque::new())))
-            .clone();
+            .get(&km.source.process)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(Mutex::new(VecDeque::new())));
 
         {
             let mut queue_lock = queue.lock().await;
-            queue_lock.push_back(km.clone());
+            queue_lock.push_back(km);
         }
 
-        // clone Arcs
+        // Clone Arcs for the new task
         let our_node = our_node.clone();
-        let send_to_caps_oracle = send_to_caps_oracle.clone();
-        let send_to_terminal = send_to_terminal.clone();
         let send_to_loop = send_to_loop.clone();
+        let send_to_terminal = send_to_terminal.clone();
+        let send_to_caps_oracle = send_to_caps_oracle.clone();
         let open_files = open_files.clone();
         let vfs_path = vfs_path.clone();
 
         tokio::spawn(async move {
             let mut queue_lock = queue.lock().await;
             if let Some(km) = queue_lock.pop_front() {
-                let (km_id, km_source) = (km.id.clone(), km.source.clone());
+                let (km_id, km_rsvp) =
+                    (km.id.clone(), km.rsvp.clone().unwrap_or(km.source.clone()));
 
                 if let Err(e) = handle_request(
                     &our_node,
                     km,
-                    open_files.clone(),
+                    open_files,
                     &send_to_loop,
-                    &send_to_terminal,
                     &send_to_caps_oracle,
                     &vfs_path,
                 )
                 .await
                 {
-                    let _ = send_to_loop
-                        .send(make_error_message(
-                            our_node.to_string(),
-                            km_id,
-                            km_source,
-                            e,
-                        ))
+                    Printout::new(1, format!("vfs: {e}"))
+                        .send(&send_to_terminal)
+                        .await;
+                    KernelMessage::builder()
+                        .id(km_id)
+                        .source((our_node.as_str(), VFS_PROCESS_ID.clone()))
+                        .target(km_rsvp)
+                        .message(Message::Response((
+                            Response {
+                                inherit: false,
+                                body: serde_json::to_vec(&VfsResponse::Err(e)).unwrap(),
+                                metadata: None,
+                                capabilities: vec![],
+                            },
+                            None,
+                        )))
+                        .build()
+                        .unwrap()
+                        .send(&send_to_loop)
                         .await;
                 }
             }
@@ -92,12 +145,25 @@ pub async fn vfs(
     Ok(())
 }
 
+/// Handles individual VFS requests.
+///
+/// This function processes various VFS actions such as file operations, directory listings, etc.
+///
+/// # Arguments
+/// * `our_node` - The identifier for the current node
+/// * `km` - The incoming kernel message
+/// * `open_files` - A map of currently open files
+/// * `send_to_loop` - Sender for kernel messages
+/// * `send_to_caps_oracle` - Sender for capability messages
+/// * `vfs_path` - The base path for the VFS
+///
+/// # Returns
+/// * `Result<(), VfsError>` - Result indicating success or a VFS-specific error
 async fn handle_request(
     our_node: &str,
     km: KernelMessage,
-    open_files: Arc<DashMap<PathBuf, Arc<Mutex<fs::File>>>>,
+    open_files: Arc<DashMap<PathBuf, (Arc<Mutex<fs::File>>, Instant)>>,
     send_to_loop: &MessageSender,
-    send_to_terminal: &PrintSender,
     send_to_caps_oracle: &CapMessageSender,
     vfs_path: &PathBuf,
 ) -> Result<(), VfsError> {
@@ -113,38 +179,17 @@ async fn handle_request(
         });
     };
 
-    let request: VfsRequest = match serde_json::from_slice(&body) {
-        Ok(r) => r,
-        Err(e) => {
-            return Err(VfsError::BadJson {
-                error: e.to_string(),
-            });
-        }
-    };
+    let request: VfsRequest = serde_json::from_slice(&body).map_err(|e| VfsError::BadJson {
+        error: e.to_string(),
+    })?;
 
     // special case for root reading list of all drives.
     if request.action == VfsAction::ReadDir && request.path == "/" {
         // check if src has root
-        let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-        send_to_caps_oracle
-            .send(CapMessage::Has {
-                on: km.source.process.clone(),
-                cap: Capability {
-                    issuer: Address {
-                        node: our_node.to_string(),
-                        process: VFS_PROCESS_ID.clone(),
-                    },
-                    params: serde_json::to_string(&serde_json::json!({
-                        "root": true,
-                    }))
-                    .unwrap(),
-                },
-                responder: send_cap_bool,
-            })
-            .await?;
-        let has_root_cap = recv_cap_bool.await?;
+        let has_root_cap =
+            read_capability("", "", true, our_node, &km.source, send_to_caps_oracle).await;
         if has_root_cap {
-            let mut dir = fs::read_dir(vfs_path.clone()).await?;
+            let mut dir = fs::read_dir(&vfs_path).await?;
             let mut entries = Vec::new();
             while let Some(entry) = dir.next_entry().await? {
                 let entry_path = entry.path();
@@ -159,15 +204,11 @@ async fn handle_request(
                 entries.push(dir_entry);
             }
 
-            let response = KernelMessage {
-                id: km.id,
-                source: Address {
-                    node: our_node.to_string(),
-                    process: VFS_PROCESS_ID.clone(),
-                },
-                target: km.source,
-                rsvp: None,
-                message: Message::Response((
+            KernelMessage::builder()
+                .id(km.id)
+                .source((our_node, VFS_PROCESS_ID.clone()))
+                .target(km.source)
+                .message(Message::Response((
                     Response {
                         inherit: false,
                         body: serde_json::to_vec(&VfsResponse::ReadDir(entries)).unwrap(),
@@ -175,36 +216,36 @@ async fn handle_request(
                         capabilities: vec![],
                     },
                     None,
-                )),
-                lazy_load_blob: None,
-            };
-
-            let _ = send_to_loop.send(response).await;
+                )))
+                .build()
+                .unwrap()
+                .send(send_to_loop)
+                .await;
             return Ok(());
         } else {
-            let no_cap_error = VfsError::NoCap {
+            return Err(VfsError::NoCap {
                 action: request.action.to_string(),
-                path: request.path.clone(),
-            };
-            return Err(no_cap_error);
+                path: request.path,
+            });
         }
     }
 
     // current prepend to filepaths needs to be: /package_id/drive/path
     let (package_id, drive, rest) = parse_package_and_drive(&request.path, &vfs_path).await?;
-    let drive = format!("/{}/{}", package_id, drive);
-    let path = PathBuf::from(request.path.clone());
+    let drive = format!("/{package_id}/{drive}");
+    let action = request.action;
+    let path = PathBuf::from(&request.path);
 
-    if &km.source.process != &*KERNEL_PROCESS_ID {
+    if km.source.process != *KERNEL_PROCESS_ID {
         check_caps(
             our_node,
-            km.source.clone(),
-            send_to_caps_oracle.clone(),
-            &request,
-            path.clone(),
-            drive.clone(),
-            package_id,
-            vfs_path.clone(),
+            &km.source,
+            &send_to_caps_oracle,
+            &action,
+            &path,
+            &drive,
+            &package_id,
+            vfs_path,
         )
         .await?;
     }
@@ -212,41 +253,36 @@ async fn handle_request(
     let base_drive = join_paths_safely(&vfs_path, &drive);
     let path = join_paths_safely(&base_drive, &rest);
 
-    let (body, bytes) = match request.action {
+    let (response_body, bytes) = match action {
         VfsAction::CreateDrive => {
-            // handled in check_caps.
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            let drive_path = join_paths_safely(vfs_path, &drive);
+            fs::create_dir_all(drive_path).await?;
+            (VfsResponse::Ok, None)
         }
         VfsAction::CreateDir => {
-            // check error mapping
-            //     fs::create_dir_all(path).await.map_err(|e| VfsError::IOError { source: e, path: path.clone() })?;
-            fs::create_dir(path).await?;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            fs::create_dir(&path).await?;
+            (VfsResponse::Ok, None)
         }
         VfsAction::CreateDirAll => {
-            fs::create_dir_all(path).await?;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            fs::create_dir_all(&path).await?;
+            (VfsResponse::Ok, None)
         }
         VfsAction::CreateFile => {
             // create truncates any file that might've existed before
             open_files.remove(&path);
-            let _file = open_file(open_files.clone(), path, true, true).await?;
-
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            let _file = open_file(open_files, &path, true, true).await?;
+            (VfsResponse::Ok, None)
         }
         VfsAction::OpenFile { create } => {
-            // open file opens an existing file, or creates a new one if create is true
-            let file = open_file(open_files.clone(), path, create, false).await?;
+            let file = open_file(open_files, &path, create, false).await?;
             let mut file = file.lock().await;
-            // extra in the case file was just created, todo refactor out.
             file.seek(SeekFrom::Start(0)).await?;
-
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            (VfsResponse::Ok, None)
         }
         VfsAction::CloseFile => {
             // removes file from scope, resets file_handle and cursor.
             open_files.remove(&path);
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            (VfsResponse::Ok, None)
         }
         VfsAction::WriteAll => {
             // doesn't create a file, writes at exact cursor.
@@ -255,10 +291,10 @@ async fn handle_request(
                     error: "blob needs to exist for WriteAll".into(),
                 });
             };
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, &path, false, false).await?;
             let mut file = file.lock().await;
             file.write_all(&blob.bytes).await?;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            (VfsResponse::Ok, None)
         }
         VfsAction::Write => {
             let Some(blob) = km.lazy_load_blob else {
@@ -266,8 +302,8 @@ async fn handle_request(
                     error: "blob needs to exist for Write".into(),
                 });
             };
-            fs::write(path, &blob.bytes).await?;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            fs::write(&path, &blob.bytes).await?;
+            (VfsResponse::Ok, None)
         }
         VfsAction::Append => {
             let Some(blob) = km.lazy_load_blob else {
@@ -275,55 +311,42 @@ async fn handle_request(
                     error: "blob needs to exist for Append".into(),
                 });
             };
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, &path, false, false).await?;
             let mut file = file.lock().await;
             file.seek(SeekFrom::End(0)).await?;
             file.write_all(&blob.bytes).await?;
-
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            (VfsResponse::Ok, None)
         }
         VfsAction::SyncAll => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, &path, false, false).await?;
             let file = file.lock().await;
             file.sync_all().await?;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            (VfsResponse::Ok, None)
         }
         VfsAction::Read => {
             let contents = fs::read(&path).await?;
-
-            (
-                serde_json::to_vec(&VfsResponse::Read).unwrap(),
-                Some(contents),
-            )
+            (VfsResponse::Read, Some(contents))
         }
         VfsAction::ReadToEnd => {
-            let file = open_file(open_files.clone(), path.clone(), false, false).await?;
+            let file = open_file(open_files, &path, false, false).await?;
             let mut file = file.lock().await;
             let mut contents = Vec::new();
-
             file.read_to_end(&mut contents).await?;
-
-            (
-                serde_json::to_vec(&VfsResponse::Read).unwrap(),
-                Some(contents),
-            )
+            (VfsResponse::Read, Some(contents))
         }
         VfsAction::ReadExact(length) => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, &path, false, false).await?;
             let mut file = file.lock().await;
             let mut contents = vec![0; length as usize];
             file.read_exact(&mut contents).await?;
-            (
-                serde_json::to_vec(&VfsResponse::Read).unwrap(),
-                Some(contents),
-            )
+            (VfsResponse::Read, Some(contents))
         }
         VfsAction::ReadDir => {
-            let mut dir = fs::read_dir(path).await?;
+            let mut dir = fs::read_dir(&path).await?;
             let mut entries = Vec::new();
             while let Some(entry) = dir.next_entry().await? {
                 let entry_path = entry.path();
-                let relative_path = entry_path.strip_prefix(&vfs_path).unwrap_or(&entry_path);
+                let relative_path = entry_path.strip_prefix(vfs_path).unwrap_or(&entry_path);
 
                 let metadata = entry.metadata().await?;
                 let file_type = get_file_type(&metadata);
@@ -333,90 +356,99 @@ async fn handle_request(
                 };
                 entries.push(dir_entry);
             }
-            (
-                serde_json::to_vec(&VfsResponse::ReadDir(entries)).unwrap(),
-                None,
-            )
+            (VfsResponse::ReadDir(entries), None)
         }
         VfsAction::ReadToString => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, &path, false, false).await?;
             let mut file = file.lock().await;
             let mut contents = String::new();
             file.read_to_string(&mut contents).await?;
-            (
-                serde_json::to_vec(&VfsResponse::ReadToString(contents)).unwrap(),
-                None,
-            )
+            (VfsResponse::ReadToString(contents), None)
         }
         VfsAction::Seek { seek_from } => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, &path, false, false).await?;
             let mut file = file.lock().await;
-            // same type, rust tingz
             let seek_from = match seek_from {
                 lib::types::core::SeekFrom::Start(offset) => std::io::SeekFrom::Start(offset),
                 lib::types::core::SeekFrom::End(offset) => std::io::SeekFrom::End(offset),
                 lib::types::core::SeekFrom::Current(offset) => std::io::SeekFrom::Current(offset),
             };
             let response = file.seek(seek_from).await?;
-            (
-                serde_json::to_vec(&VfsResponse::SeekFrom(response)).unwrap(),
-                None,
-            )
+            (VfsResponse::SeekFrom(response), None)
         }
         VfsAction::RemoveFile => {
             fs::remove_file(&path).await?;
             open_files.remove(&path);
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            (VfsResponse::Ok, None)
         }
         VfsAction::RemoveDir => {
-            fs::remove_dir(path).await?;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            fs::remove_dir(&path).await?;
+            (VfsResponse::Ok, None)
         }
         VfsAction::RemoveDirAll => {
-            fs::remove_dir_all(path).await?;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            fs::remove_dir_all(&path).await?;
+            (VfsResponse::Ok, None)
         }
         VfsAction::Rename { new_path } => {
-            let new_path = join_paths_safely(&vfs_path, &new_path);
-            fs::rename(path, new_path).await?;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            let new_path = join_paths_safely(vfs_path, &new_path);
+            fs::rename(&path, new_path)
+                .await
+                .map_err(|e| VfsError::IOError {
+                    error: e.to_string(),
+                    path: request.path,
+                })?;
+            (VfsResponse::Ok, None)
         }
         VfsAction::CopyFile { new_path } => {
-            let new_path = join_paths_safely(&vfs_path, &new_path);
-            fs::copy(path, new_path).await?;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            let new_path = join_paths_safely(vfs_path, &new_path);
+            fs::copy(&path, new_path)
+                .await
+                .map_err(|e| VfsError::IOError {
+                    error: e.to_string(),
+                    path: request.path,
+                })?;
+            (VfsResponse::Ok, None)
         }
         VfsAction::Metadata => {
-            let metadata = fs::metadata(&path).await?;
-
+            let metadata = fs::metadata(&path).await.map_err(|e| VfsError::IOError {
+                error: e.to_string(),
+                path: request.path,
+            })?;
             let file_type = get_file_type(&metadata);
             let meta = FileMetadata {
                 len: metadata.len(),
                 file_type,
             };
-
-            (
-                serde_json::to_vec(&VfsResponse::Metadata(meta)).unwrap(),
-                None,
-            )
+            (VfsResponse::Metadata(meta), None)
         }
         VfsAction::Len => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, &path, false, false).await?;
             let file = file.lock().await;
-            let len = file.metadata().await?.len();
-            (serde_json::to_vec(&VfsResponse::Len(len)).unwrap(), None)
+            let len = file
+                .metadata()
+                .await
+                .map_err(|e| VfsError::IOError {
+                    error: e.to_string(),
+                    path: request.path,
+                })?
+                .len();
+            (VfsResponse::Len(len), None)
         }
         VfsAction::SetLen(len) => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            let file = open_file(open_files, &path, false, false).await?;
             let file = file.lock().await;
-            file.set_len(len).await?;
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            file.set_len(len).await.map_err(|e| VfsError::IOError {
+                error: e.to_string(),
+                path: request.path,
+            })?;
+            (VfsResponse::Ok, None)
         }
         VfsAction::Hash => {
-            let file = open_file(open_files.clone(), path, false, false).await?;
+            use sha2::{Digest, Sha256};
+            let file = open_file(open_files, path, false, false).await?;
             let mut file = file.lock().await;
             file.seek(SeekFrom::Start(0)).await?;
-            let mut hasher = blake3::Hasher::new();
+            let mut hasher = Sha256::new();
             let mut buffer = [0; 1024];
             loop {
                 let bytes_read = file.read(&mut buffer).await?;
@@ -426,7 +458,7 @@ async fn handle_request(
                 hasher.update(&buffer[..bytes_read]);
             }
             let hash: [u8; 32] = hasher.finalize().into();
-            (serde_json::to_vec(&VfsResponse::Hash(hash)).unwrap(), None)
+            (VfsResponse::Hash(hash), None)
         }
         VfsAction::AddZip => {
             let Some(blob) = km.lazy_load_blob else {
@@ -455,7 +487,7 @@ async fn handle_request(
                 let (is_file, is_dir, local_path, file_contents) = {
                     let mut file = zip.by_index(i).map_err(|e| VfsError::IOError {
                         error: e.to_string(),
-                        path: "".into(),
+                        path: request.path.clone(),
                     })?;
                     let is_file = file.is_file();
                     let is_dir = file.is_dir();
@@ -477,51 +509,32 @@ async fn handle_request(
                     });
                 };
             }
-            (serde_json::to_vec(&VfsResponse::Ok).unwrap(), None)
+            (VfsResponse::Ok, None)
         }
     };
 
-    if let Some(target) = km.rsvp.or_else(|| {
-        expects_response.map(|_| Address {
-            node: our_node.to_string(),
-            process: km.source.process.clone(),
-        })
-    }) {
-        let response = KernelMessage {
-            id: km.id,
-            source: Address {
-                node: our_node.to_string(),
-                process: VFS_PROCESS_ID.clone(),
-            },
-            target,
-            rsvp: None,
-            message: Message::Response((
+    if let Some(target) = km.rsvp.or_else(|| expects_response.map(|_| km.source)) {
+        KernelMessage::builder()
+            .id(km.id)
+            .source((our_node, VFS_PROCESS_ID.clone()))
+            .target(target)
+            .message(Message::Response((
                 Response {
                     inherit: false,
-                    body,
+                    body: serde_json::to_vec(&response_body).unwrap(),
                     metadata,
                     capabilities: vec![],
                 },
                 None,
-            )),
-            lazy_load_blob: bytes.map(|bytes| LazyLoadBlob {
+            )))
+            .lazy_load_blob(bytes.map(|bytes| LazyLoadBlob {
                 mime: Some("application/octet-stream".into()),
                 bytes,
-            }),
-        };
-
-        let _ = send_to_loop.send(response).await;
-    } else {
-        send_to_terminal
-            .send(Printout {
-                verbosity: 2,
-                content: format!(
-                    "vfs: not sending response: {:?}",
-                    serde_json::from_slice::<VfsResponse>(&body)
-                ),
-            })
-            .await
-            .unwrap();
+            }))
+            .build()
+            .unwrap()
+            .send(send_to_loop)
+            .await;
     }
 
     Ok(())
@@ -579,17 +592,17 @@ async fn parse_package_and_drive(
 }
 
 async fn open_file<P: AsRef<Path>>(
-    open_files: Arc<DashMap<PathBuf, Arc<Mutex<fs::File>>>>,
+    open_files: Arc<DashMap<PathBuf, (Arc<Mutex<fs::File>>, Instant)>>,
     path: P,
     create: bool,
     truncate: bool,
 ) -> Result<Arc<Mutex<fs::File>>, VfsError> {
     let path = path.as_ref().to_path_buf();
     Ok(match open_files.get(&path) {
-        Some(file) => Arc::clone(file.value()),
+        Some(file) => file.value().0.clone(),
         None => {
             let file = Arc::new(Mutex::new(
-                OpenOptions::new()
+                tokio::fs::OpenOptions::new()
                     .read(true)
                     .write(true)
                     .create(create)
@@ -601,7 +614,7 @@ async fn open_file<P: AsRef<Path>>(
                         path: path.display().to_string(),
                     })?,
             ));
-            open_files.insert(path.clone(), Arc::clone(&file));
+            open_files.insert(path, (file.clone(), Instant::now()));
             file
         }
     })
@@ -609,37 +622,20 @@ async fn open_file<P: AsRef<Path>>(
 
 async fn check_caps(
     our_node: &str,
-    source: Address,
-    mut send_to_caps_oracle: CapMessageSender,
-    request: &VfsRequest,
-    path: PathBuf,
-    drive: String,
-    package_id: PackageId,
-    vfs_dir: PathBuf,
+    source: &Address,
+    send_to_caps_oracle: &CapMessageSender,
+    action: &VfsAction,
+    path: &PathBuf,
+    drive: &str,
+    package_id: &PackageId,
+    vfs_path: &PathBuf,
 ) -> Result<(), VfsError> {
     let src_package_id = PackageId::new(source.process.package(), source.process.publisher());
 
-    let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-    // check for root cap (todo make temp buffer so this is more efficient?)
-    send_to_caps_oracle
-        .send(CapMessage::Has {
-            on: source.process.clone(),
-            cap: Capability {
-                issuer: Address {
-                    node: our_node.to_string(),
-                    process: VFS_PROCESS_ID.clone(),
-                },
-                params: serde_json::to_string(&serde_json::json!({
-                    "root": true,
-                }))
-                .unwrap(),
-            },
-            responder: send_cap_bool,
-        })
-        .await?;
-    let has_root_cap = recv_cap_bool.await?;
-
-    match &request.action {
+    // every action is valid if package has vfs root cap, but this should only be
+    // checked for *after* non-root caps are checked, because 99% of the time,
+    // package will have regular read/write cap regardless of root status.
+    match &action {
         VfsAction::CreateDir
         | VfsAction::CreateDirAll
         | VfsAction::CreateFile
@@ -654,35 +650,18 @@ async fn check_caps(
         | VfsAction::RemoveDirAll
         | VfsAction::AddZip
         | VfsAction::SetLen(_) => {
-            if src_package_id == package_id {
+            if &src_package_id == package_id {
                 return Ok(());
             }
-
-            if has_root_cap {
-                return Ok(());
-            }
-            let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-            send_to_caps_oracle
-                .send(CapMessage::Has {
-                    on: source.process.clone(),
-                    cap: Capability {
-                        issuer: Address {
-                            node: our_node.to_string(),
-                            process: VFS_PROCESS_ID.clone(),
-                        },
-                        params: serde_json::to_string(&serde_json::json!({
-                            "kind": "write",
-                            "drive": drive,
-                        }))
-                        .unwrap(),
-                    },
-                    responder: send_cap_bool,
-                })
-                .await?;
-            let has_cap = recv_cap_bool.await?;
+            let has_cap =
+                read_capability("write", drive, false, our_node, source, send_to_caps_oracle).await;
             if !has_cap {
+                // check for root cap
+                if read_capability("", "", true, our_node, source, send_to_caps_oracle).await {
+                    return Ok(());
+                }
                 return Err(VfsError::NoCap {
-                    action: request.action.to_string(),
+                    action: action.to_string(),
                     path: path.display().to_string(),
                 });
             }
@@ -697,34 +676,18 @@ async fn check_caps(
         | VfsAction::Hash
         | VfsAction::Metadata
         | VfsAction::Len => {
-            if src_package_id == package_id {
+            if &src_package_id == package_id {
                 return Ok(());
             }
-            if has_root_cap {
-                return Ok(());
-            }
-            let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-            send_to_caps_oracle
-                .send(CapMessage::Has {
-                    on: source.process.clone(),
-                    cap: Capability {
-                        issuer: Address {
-                            node: our_node.to_string(),
-                            process: VFS_PROCESS_ID.clone(),
-                        },
-                        params: serde_json::to_string(&serde_json::json!({
-                            "kind": "read",
-                            "drive": drive,
-                        }))
-                        .unwrap(),
-                    },
-                    responder: send_cap_bool,
-                })
-                .await?;
-            let has_cap = recv_cap_bool.await?;
+            let has_cap =
+                read_capability("read", drive, false, our_node, source, send_to_caps_oracle).await;
             if !has_cap {
+                // check for root cap
+                if read_capability("", "", true, our_node, source, send_to_caps_oracle).await {
+                    return Ok(());
+                }
                 return Err(VfsError::NoCap {
-                    action: request.action.to_string(),
+                    action: action.to_string(),
                     path: path.display().to_string(),
                 });
             }
@@ -732,42 +695,32 @@ async fn check_caps(
         }
         VfsAction::CopyFile { new_path } | VfsAction::Rename { new_path } => {
             // these have 2 paths to validate
-            if has_root_cap {
-                return Ok(());
-            }
-
             let (new_package_id, new_drive, _rest) =
-                parse_package_and_drive(new_path, &vfs_dir).await?;
+                parse_package_and_drive(new_path, &vfs_path).await?;
 
-            let new_drive = format!("/{}/{}", new_package_id, new_drive);
+            let new_drive = format!("/{new_package_id}/{new_drive}");
             // if both new and old path are within the package_id path, ok
-            if (src_package_id == package_id) && (src_package_id == new_package_id) {
+            if (&src_package_id == package_id) && (src_package_id == new_package_id) {
                 return Ok(());
             }
 
             // otherwise check write caps.
-            let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-            send_to_caps_oracle
-                .send(CapMessage::Has {
-                    on: source.process.clone(),
-                    cap: Capability {
-                        issuer: Address {
-                            node: our_node.to_string(),
-                            process: VFS_PROCESS_ID.clone(),
-                        },
-                        params: serde_json::to_string(&serde_json::json!({
-                            "kind": "write",
-                            "drive": drive,
-                        }))
-                        .unwrap(),
-                    },
-                    responder: send_cap_bool,
-                })
-                .await?;
-            let has_cap = recv_cap_bool.await?;
+            let has_cap = read_capability(
+                "write",
+                &drive,
+                false,
+                our_node,
+                source,
+                send_to_caps_oracle,
+            )
+            .await;
             if !has_cap {
+                // check for root cap
+                if read_capability("", "", true, our_node, source, send_to_caps_oracle).await {
+                    return Ok(());
+                }
                 return Err(VfsError::NoCap {
-                    action: request.action.to_string(),
+                    action: action.to_string(),
                     path: path.display().to_string(),
                 });
             }
@@ -777,57 +730,72 @@ async fn check_caps(
                 return Ok(());
             }
 
-            let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
-            send_to_caps_oracle
-                .send(CapMessage::Has {
-                    on: source.process.clone(),
-                    cap: Capability {
-                        issuer: Address {
-                            node: our_node.to_string(),
-                            process: VFS_PROCESS_ID.clone(),
-                        },
-                        params: serde_json::to_string(&serde_json::json!({
-                            "kind": "write",
-                            "drive": new_drive,
-                        }))
-                        .unwrap(),
-                    },
-                    responder: send_cap_bool,
-                })
-                .await?;
-            let has_cap = recv_cap_bool.await?;
+            let has_cap = read_capability(
+                "write",
+                &new_drive,
+                false,
+                our_node,
+                source,
+                send_to_caps_oracle,
+            )
+            .await;
             if !has_cap {
+                // check for root cap
+                if read_capability("", "", true, our_node, source, send_to_caps_oracle).await {
+                    return Ok(());
+                }
                 return Err(VfsError::NoCap {
-                    action: request.action.to_string(),
+                    action: action.to_string(),
                     path: path.display().to_string(),
                 });
             }
-
             Ok(())
         }
         VfsAction::CreateDrive => {
-            if src_package_id != package_id && !has_root_cap {
-                return Err(VfsError::NoCap {
-                    action: request.action.to_string(),
-                    path: path.display().to_string(),
-                });
+            if &src_package_id != package_id {
+                // check for root cap
+                if !read_capability("", "", true, our_node, source, send_to_caps_oracle).await {
+                    return Err(VfsError::NoCap {
+                        action: action.to_string(),
+                        path: path.display().to_string(),
+                    });
+                }
             }
-
-            add_capability("read", &drive, &our_node, &source, &mut send_to_caps_oracle).await?;
-            add_capability(
-                "write",
-                &drive,
-                &our_node,
-                &source,
-                &mut send_to_caps_oracle,
-            )
-            .await?;
-
-            let drive_path = join_paths_safely(&vfs_dir, &drive);
-            fs::create_dir_all(drive_path).await?;
+            add_capability("read", &drive, &our_node, &source, send_to_caps_oracle).await?;
+            add_capability("write", &drive, &our_node, &source, send_to_caps_oracle).await?;
             Ok(())
         }
     }
+}
+
+async fn read_capability(
+    kind: &str,
+    drive: &str,
+    root: bool,
+    our_node: &str,
+    source: &Address,
+    send_to_caps_oracle: &CapMessageSender,
+) -> bool {
+    let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
+    let cap = Capability::new(
+        (our_node, VFS_PROCESS_ID.clone()),
+        if root {
+            "{\"root\":true}".to_string()
+        } else {
+            format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}")
+        },
+    );
+    if let Err(_) = send_to_caps_oracle
+        .send(CapMessage::Has {
+            on: source.process.clone(),
+            cap,
+            responder: send_cap_bool,
+        })
+        .await
+    {
+        return false;
+    }
+    recv_cap_bool.await.unwrap_or(false)
 }
 
 async fn add_capability(
@@ -835,26 +803,27 @@ async fn add_capability(
     drive: &str,
     our_node: &str,
     source: &Address,
-    send_to_caps_oracle: &mut CapMessageSender,
+    send_to_caps_oracle: &CapMessageSender,
 ) -> Result<(), VfsError> {
-    let cap = Capability {
-        issuer: Address {
-            node: our_node.to_string(),
-            process: VFS_PROCESS_ID.clone(),
-        },
-        params: serde_json::to_string(&serde_json::json!({ "kind": kind, "drive": drive }))
-            .unwrap(),
-    };
+    let cap = Capability::new(
+        (our_node, VFS_PROCESS_ID.clone()),
+        format!("{{\"kind\": \"{kind}\", \"drive\": \"{drive}\"}}"),
+    );
     let (send_cap_bool, recv_cap_bool) = tokio::sync::oneshot::channel();
     send_to_caps_oracle
         .send(CapMessage::Add {
             on: source.process.clone(),
             caps: vec![cap],
-            responder: send_cap_bool,
+            responder: Some(send_cap_bool),
         })
         .await?;
-    let _ = recv_cap_bool.await?;
-    Ok(())
+    match recv_cap_bool.await? {
+        true => Ok(()),
+        false => Err(VfsError::NoCap {
+            action: "add_capability".to_string(),
+            path: drive.to_string(),
+        }),
+    }
 }
 
 fn get_file_type(metadata: &std::fs::Metadata) -> FileType {
@@ -906,31 +875,4 @@ fn join_paths_safely(base: &PathBuf, extension: &str) -> PathBuf {
 
     let extension_path = Path::new(extension_str);
     base.join(extension_path)
-}
-
-fn make_error_message(
-    our_node: String,
-    id: u64,
-    source: Address,
-    error: VfsError,
-) -> KernelMessage {
-    KernelMessage {
-        id,
-        source: Address {
-            node: our_node,
-            process: VFS_PROCESS_ID.clone(),
-        },
-        target: source,
-        rsvp: None,
-        message: Message::Response((
-            Response {
-                inherit: false,
-                body: serde_json::to_vec(&VfsResponse::Err(error)).unwrap(),
-                metadata: None,
-                capabilities: vec![],
-            },
-            None,
-        )),
-        lazy_load_blob: None,
-    }
 }

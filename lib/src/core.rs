@@ -279,12 +279,13 @@ pub struct Address {
 }
 
 impl Address {
-    pub fn new<T>(node: &str, process: T) -> Address
+    pub fn new<T, U>(node: T, process: U) -> Address
     where
-        T: Into<ProcessId>,
+        T: Into<String>,
+        U: Into<ProcessId>,
     {
         Address {
-            node: node.to_string(),
+            node: node.into(),
             process: process.into(),
         }
     }
@@ -399,11 +400,12 @@ impl From<(&str, &str, &str, &str)> for Address {
     }
 }
 
-impl<T> From<(&str, T)> for Address
+impl<T, U> From<(T, U)> for Address
 where
-    T: Into<ProcessId>,
+    T: Into<String>,
+    U: Into<ProcessId>,
 {
-    fn from(input: (&str, T)) -> Self {
+    fn from(input: (T, U)) -> Self {
         Address::new(input.0, input.1)
     }
 }
@@ -468,10 +470,45 @@ pub enum Message {
     Response((Response, Option<Context>)),
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Hash, Serialize, Deserialize)]
 pub struct Capability {
     pub issuer: Address,
-    pub params: String, // JSON-string
+    pub params: String,
+}
+
+impl Eq for Capability {}
+
+impl PartialEq for Capability {
+    fn eq(&self, other: &Self) -> bool {
+        let self_json_params: serde_json::Value =
+            serde_json::from_str(&self.params).unwrap_or_default();
+        let other_json_params: serde_json::Value =
+            serde_json::from_str(&other.params).unwrap_or_default();
+        self.issuer == other.issuer && self_json_params == other_json_params
+    }
+}
+
+impl Capability {
+    pub fn new<T, U>(issuer: T, params: U) -> Self
+    where
+        T: Into<Address>,
+        U: Into<String>,
+    {
+        Capability {
+            issuer: issuer.into(),
+            params: params.into(),
+        }
+    }
+
+    pub fn messaging<T>(issuer: T) -> Self
+    where
+        T: Into<Address>,
+    {
+        Capability {
+            issuer: issuer.into(),
+            params: "\"messaging\"".into(),
+        }
+    }
 }
 
 impl std::fmt::Display for Capability {
@@ -480,8 +517,7 @@ impl std::fmt::Display for Capability {
             f,
             "{}({})",
             self.issuer,
-            serde_json::from_str::<serde_json::Value>(&self.params)
-                .unwrap_or(serde_json::json!("invalid JSON in capability"))
+            serde_json::from_str::<serde_json::Value>(&self.params).unwrap_or_default()
         )
     }
 }
@@ -594,6 +630,20 @@ impl OnExit {
                     .collect(),
             ),
         }
+    }
+}
+
+impl std::fmt::Display for OnExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                OnExit::None => "None",
+                OnExit::Restart => "Restart",
+                OnExit::Requests(_) => "Requests",
+            }
+        )
     }
 }
 
@@ -865,14 +915,14 @@ pub fn de_wit_capability_v0(wit: crate::v0::wit::Capability) -> (Capability, Vec
 pub fn en_wit_capability(cap: (Capability, Vec<u8>)) -> wit::Capability {
     wit::Capability {
         issuer: cap.0.issuer.en_wit(),
-        params: cap.0.params,
+        params: cap.0.params.to_string(),
     }
 }
 
 pub fn en_wit_capability_v0(cap: (Capability, Vec<u8>)) -> crate::v0::wit::Capability {
     crate::v0::wit::Capability {
         issuer: cap.0.issuer.en_wit_v0(),
-        params: cap.0.params,
+        params: cap.0.params.to_string(),
     }
 }
 
@@ -1138,6 +1188,75 @@ pub struct KernelMessage {
     pub lazy_load_blob: Option<LazyLoadBlob>,
 }
 
+impl KernelMessage {
+    pub fn builder() -> KernelMessageBuilder {
+        KernelMessageBuilder::default()
+    }
+
+    pub async fn send(self, sender: &MessageSender) {
+        sender.send(self).await.expect("kernel message sender died");
+    }
+}
+
+#[derive(Default)]
+pub struct KernelMessageBuilder {
+    id: u64,
+    source: Option<Address>,
+    target: Option<Address>,
+    rsvp: Rsvp,
+    message: Option<Message>,
+    lazy_load_blob: Option<LazyLoadBlob>,
+}
+
+impl KernelMessageBuilder {
+    pub fn id(mut self, id: u64) -> Self {
+        self.id = id;
+        self
+    }
+
+    pub fn source<T>(mut self, source: T) -> Self
+    where
+        T: Into<Address>,
+    {
+        self.source = Some(source.into());
+        self
+    }
+
+    pub fn target<T>(mut self, target: T) -> Self
+    where
+        T: Into<Address>,
+    {
+        self.target = Some(target.into());
+        self
+    }
+
+    pub fn rsvp(mut self, rsvp: Rsvp) -> Self {
+        self.rsvp = rsvp;
+        self
+    }
+
+    pub fn message(mut self, message: Message) -> Self {
+        self.message = Some(message);
+        self
+    }
+
+    pub fn lazy_load_blob(mut self, blob: Option<LazyLoadBlob>) -> Self {
+        self.lazy_load_blob = blob;
+        self
+    }
+
+    pub fn build(self) -> Result<KernelMessage, String> {
+        Ok(KernelMessage {
+            id: self.id,
+            source: self.source.ok_or("Source address is required")?,
+            target: self.target.ok_or("Target address is required")?,
+            rsvp: self.rsvp,
+            message: self.message.ok_or("Message is required")?,
+            lazy_load_blob: self.lazy_load_blob,
+        })
+    }
+}
+
 impl std::fmt::Display for KernelMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
@@ -1173,6 +1292,22 @@ pub struct Printout {
     pub content: String,
 }
 
+impl Printout {
+    pub fn new<T>(verbosity: u8, content: T) -> Self
+    where
+        T: Into<String>,
+    {
+        Self {
+            verbosity,
+            content: content.into(),
+        }
+    }
+
+    pub async fn send(self, sender: &PrintSender) {
+        sender.send(self).await.expect("print sender died");
+    }
+}
+
 //  kernel sets in case, e.g.,
 //   A requests response from B does not request response from C
 //   -> kernel sets `Some(A) = Rsvp` for B's request to C
@@ -1180,8 +1315,9 @@ pub type Rsvp = Option<Address>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DebugCommand {
-    Toggle,
+    ToggleStepthrough,
     Step,
+    ToggleEventLoop,
 }
 
 /// IPC format for requests sent to kernel runtime module
@@ -1261,13 +1397,13 @@ pub enum CapMessage {
     Add {
         on: ProcessId,
         caps: Vec<Capability>,
-        responder: tokio::sync::oneshot::Sender<bool>,
+        responder: Option<tokio::sync::oneshot::Sender<bool>>,
     },
     /// root delete: uncritically remove all `caps` from `on`
     Drop {
         on: ProcessId,
         caps: Vec<Capability>,
-        responder: tokio::sync::oneshot::Sender<bool>,
+        responder: Option<tokio::sync::oneshot::Sender<bool>>,
     },
     /// does `on` have `cap` in its store?
     Has {
@@ -1284,7 +1420,7 @@ pub enum CapMessage {
     /// Remove all caps issued by `on` from every process on the entire system
     RevokeAll {
         on: ProcessId,
-        responder: tokio::sync::oneshot::Sender<bool>,
+        responder: Option<tokio::sync::oneshot::Sender<bool>>,
     },
     /// before `on` sends a message, filter out any bogus caps it may have attached, sign any new
     /// caps it may have created, and retreive the signature for the caps in its store.
@@ -1293,6 +1429,42 @@ pub enum CapMessage {
         caps: Vec<Capability>,
         responder: tokio::sync::oneshot::Sender<Vec<(Capability, Vec<u8>)>>,
     },
+}
+
+impl std::fmt::Display for CapMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            CapMessage::Add { on, caps, .. } => write!(
+                f,
+                "caps: add {} on {on}",
+                caps.iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            CapMessage::Drop { on, caps, .. } => write!(
+                f,
+                "caps: drop {} on {on}",
+                caps.iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            CapMessage::Has { on, cap, .. } => write!(f, "caps: has {} on {on}", cap),
+            CapMessage::GetAll { on, .. } => write!(f, "caps: get all on {on}"),
+            CapMessage::RevokeAll { on, .. } => write!(f, "caps: revoke all on {on}"),
+            CapMessage::FilterCaps { on, caps, .. } => {
+                write!(
+                    f,
+                    "caps: filter for {} on {on}",
+                    caps.iter()
+                        .map(|c| c.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
+        }
+    }
 }
 
 pub type ReverseCapIndex = HashMap<ProcessId, HashMap<ProcessId, Vec<Capability>>>;
@@ -1406,19 +1578,19 @@ pub enum StateResponse {
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum StateError {
-    #[error("kernel_state: rocksdb internal error: {error}")]
+    #[error("rocksdb internal error: {error}")]
     RocksDBError { action: String, error: String },
-    #[error("kernel_state: startup error")]
+    #[error("startup error")]
     StartupError { action: String },
-    #[error("kernel_state: bytes blob required for {action}")]
+    #[error("bytes blob required for {action}")]
     BadBytes { action: String },
-    #[error("kernel_state: bad request error: {error}")]
+    #[error("bad request error: {error}")]
     BadRequest { error: String },
-    #[error("kernel_state: Bad JSON blob: {error}")]
+    #[error("Bad JSON blob: {error}")]
     BadJson { error: String },
-    #[error("kernel_state: state not found for ProcessId {process_id}")]
+    #[error("state not found for ProcessId {process_id}")]
     NotFound { process_id: ProcessId },
-    #[error("kernel_state: IO error: {error}")]
+    #[error("IO error: {error}")]
     IOError { error: String },
 }
 
@@ -1515,23 +1687,23 @@ pub enum VfsResponse {
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum VfsError {
-    #[error("vfs: No capability for action {action} at path {path}")]
+    #[error("No capability for action {action} at path {path}")]
     NoCap { action: String, path: String },
-    #[error("vfs: Bytes blob required for {action} at path {path}")]
+    #[error("Bytes blob required for {action} at path {path}")]
     BadBytes { action: String, path: String },
-    #[error("vfs: bad request error: {error}")]
+    #[error("bad request error: {error}")]
     BadRequest { error: String },
-    #[error("vfs: error parsing path: {path}: {error}")]
+    #[error("error parsing path: {path}: {error}")]
     ParseError { error: String, path: String },
-    #[error("vfs: IO error: {error}, at path {path}")]
+    #[error("IO error: {error}, at path {path}")]
     IOError { error: String, path: String },
-    #[error("vfs: kernel capability channel error: {error}")]
+    #[error("kernel capability channel error: {error}")]
     CapChannelFail { error: String },
-    #[error("vfs: Bad JSON blob: {error}")]
+    #[error("Bad JSON blob: {error}")]
     BadJson { error: String },
-    #[error("vfs: File not found at path {path}")]
+    #[error("File not found at path {path}")]
     NotFound { path: String },
-    #[error("vfs: Creating directory failed at path: {path}: {error}")]
+    #[error("Creating directory failed at path: {path}: {error}")]
     CreateDirError { path: String, error: String },
 }
 
@@ -1581,19 +1753,19 @@ pub enum KvResponse {
 
 #[derive(Debug, Serialize, Deserialize, Error)]
 pub enum KvError {
-    #[error("kv: DbDoesNotExist")]
+    #[error("DbDoesNotExist")]
     NoDb,
-    #[error("kv: KeyNotFound")]
+    #[error("KeyNotFound")]
     KeyNotFound,
-    #[error("kv: no Tx found")]
+    #[error("no Tx found")]
     NoTx,
-    #[error("kv: No capability: {error}")]
+    #[error("No capability: {error}")]
     NoCap { error: String },
-    #[error("kv: rocksdb internal error: {error}")]
+    #[error("rocksdb internal error: {error}")]
     RocksDBError { action: String, error: String },
-    #[error("kv: input bytes/json/key error: {error}")]
+    #[error("input bytes/json/key error: {error}")]
     InputError { error: String },
-    #[error("kv: IO error: {error}")]
+    #[error("IO error: {error}")]
     IOError { error: String },
 }
 

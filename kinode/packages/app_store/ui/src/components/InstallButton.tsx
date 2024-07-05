@@ -16,7 +16,7 @@ export default function InstallButton({ app, isIcon = false, ...props }: Install
   const { installApp, getCaps, getMyApp, getMyApps } =
     useAppsStore();
   const [showModal, setShowModal] = useState(false);
-  const [caps, setCaps] = useState<string[]>([]);
+  const [caps, setCaps] = useState<any[]>([]);
   const [installing, setInstalling] = useState("");
 
   const onClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -83,7 +83,7 @@ export default function InstallButton({ app, isIcon = false, ...props }: Install
             </h5>
             <ul className="flex flex-col items-start">
               {caps.map((cap) => (
-                <li key={cap}>{cap}</li>
+                <li>{JSON.stringify(cap)}</li>
               ))}
             </ul>
             <button type="button" onClick={install}>

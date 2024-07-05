@@ -62,11 +62,11 @@ export default function MyAppsPage() { // eslint-disable-line
         'gap-4 max-w-screen': isMobile,
         'gap-8 max-w-[900px]': !isMobile,
       })}>
-      <HomeButton />
+      {!isMobile && <HomeButton />}
       <SearchHeader value={searchQuery} onChange={searchMyApps} />
       <div className="flex justify-between items-center mt-2">
         <h3>My Packages</h3>
-        <button onClick={() => navigate(PUBLISH_PATH)}>
+        <button className="alt" onClick={() => navigate(PUBLISH_PATH)}>
           <FaUpload className="mr-2" />
           Publish Package
         </button>
