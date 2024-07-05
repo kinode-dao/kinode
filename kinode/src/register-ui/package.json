@@ -4,48 +4,32 @@
   "private": true,
   "proxy": "http://localhost:8080",
   "dependencies": {
-    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
-    "@ensdomains/eth-ens-namehash": "^2.0.15",
-    "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
-    "@ethersproject/hash": "^5.7.0",
-    "@unocss/vite": "^0.59.4",
-    "@vitejs/plugin-react": "^4.2.1",
     "@rainbow-me/rainbowkit": "^2.1.2",
     "@szhsin/react-menu": "^4.1.0",
     "@tanstack/react-query": "^5.45.1",
-    "buffer": "^6.0.3",
-    "js-sha3": "^0.9.3",
     "classnames": "^2.5.1",
-    "eslint-config-react-app": "^7.0.1",
     "idna-uts46-hx": "^6.0.4",
     "is-valid-domain": "^0.1.6",
     "jazzicon": "^1.5.0",
-    "punycode": "^2.3.1",
+    "js-sha3": "^0.9.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-icons": "^5.0.1",
     "react-modal": "^3.16.1",
     "react-router-dom": "^6.16.0",
-    "tailwindcss": "^3.4.1",
-    "typechain": "^8.3.1",
-    "typescript": "^5.3.3",
-    "unocss": "^0.59.4",
-    "vite": "^5.2.10",
     "viem": "^2.15.1",
-    "vite-plugin-svgr": "^4.2.0",
     "wagmi": "^2.10.3"
   },
   "scripts": {
     "start": "vite",
     "dev": "vite --port 3000",
-    "build": "vite build && rm -rf build && mv dist build",
+    "build": "tsc && vite build && rm -rf build && mv dist build",
     "build:copy": "npm run build",
     "serve": "vite preview",
     "inline": "node ./add-inline-tags.js && cd build && inline-source ./index.html > ./inline-index.html && cd ..",
     "build-inline": "npm run build && npm run inline",
     "test": "react-scripts test",
-    "eject": "react-scripts eject",
-    "tc": "typechain --target ethers-v5 --out-dir src/abis/types/ \"./src/abis/**/*.json\""
+    "eject": "react-scripts eject"
   },
   "eslintConfig": {
     "extends": [
@@ -66,10 +50,23 @@
     ]
   },
   "devDependencies": {
+    "@babel/plugin-proposal-private-property-in-object": "^7.21.11",
+    "@esbuild-plugins/node-globals-polyfill": "^0.2.3",
     "@types/node": "^20.10.4",
+    "@types/react-dom": "^18.2.17",
     "@types/react-modal": "^3.16.2",
+    "@unocss/vite": "^0.59.4",
+    "@vitejs/plugin-react": "^4.2.1",
+    "eslint-config-react-app": "^7.0.1",
     "inline-source-cli": "^2.0.0",
-    "@types/react-dom": "^18.2.17"
+    "rollup-plugin-visualizer": "^5.12.0",
+    "tailwindcss": "^3.4.1",
+    "terser": "^5.31.1",
+    "typescript": "^5.3.3",
+    "unocss": "^0.59.4",
+    "vite": "^5.2.10",
+    "vite-plugin-compression": "^0.5.1",
+    "vite-plugin-svgr": "^4.2.0"
   },
   "type": "module"
 }
