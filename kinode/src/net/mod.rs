@@ -172,6 +172,9 @@ async fn handle_local_request(
                 utils::ingest_log(log, &data.pki, &data.names);
             }
         }
+        Ok(NetAction::AddName(hash, name)) => {
+            data.names.insert(hash, name);
+        }
         Ok(gets) => {
             let (response_body, response_blob) = match gets {
                 NetAction::GetPeers => (
@@ -195,7 +198,7 @@ async fn handle_local_request(
                     let mut printout = String::new();
                     printout.push_str(&format!(
                         "indexing from contract address {}\r\n",
-                        crate::KNS_ADDRESS
+                        crate::KIMAP_ADDRESS
                     ));
                     printout.push_str(&format!("our Identity: {:#?}\r\n", ext.our));
                     printout.push_str(&format!(

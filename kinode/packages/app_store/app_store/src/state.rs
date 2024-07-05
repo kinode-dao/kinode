@@ -1,31 +1,18 @@
-use crate::VFS_TIMEOUT;
 use crate::{utils, DownloadRequest, LocalRequest};
+use crate::{KIMAP_ADDRESS, VFS_TIMEOUT};
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
-    eth, kernel_types as kt, net, println, vfs, Address, Message, NodeId, PackageId, Request,
+    eth, kernel_types as kt,
+    net::{get_name, namehash},
+    println, vfs, Address, Message, NodeId, PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 
 sol! {
-    event AppRegistered(
-        uint256 indexed package,
-        string packageName,
-        bytes publisherName,
-        string metadataUrl,
-        bytes32 metadataHash
-    );
-    event AppMetadataUpdated(
-        uint256 indexed package,
-        string metadataUrl,
-        bytes32 metadataHash
-    );
-    event Transfer(
-        address indexed from,
-        address indexed to,
-        uint256 indexed tokenId
-    );
+    event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes indexed labelhash, bytes note, bytes data);
 }
 
 //
@@ -64,9 +51,9 @@ pub type PackageHash = String;
 /// listing information derived from metadata hash in listing event
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PackageListing {
-    pub owner: String, // eth address
+    pub owner: String, // eth address,
     pub name: String,
-    pub publisher: NodeId,
+    pub publisher: NodeId, // this should be moved to metadata...
     pub metadata_url: String,
     pub metadata_hash: String,
     pub metadata: Option<kt::Erc721Metadata>,
@@ -186,7 +173,7 @@ impl State {
             our,
             provider,
             contract_address,
-            last_saved_block: crate::CONTRACT_FIRST_BLOCK,
+            last_saved_block: crate::KIMAP_FIRST_BLOCK,
             package_hashes: HashMap::new(),
             listed_packages: HashMap::new(),
             downloaded_packages: HashMap::new(),
@@ -229,7 +216,7 @@ impl State {
         }
         self.downloaded_packages
             .insert(package_id.to_owned(), package_state);
-        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
 
@@ -247,7 +234,7 @@ impl State {
                 true
             })
             .unwrap_or(false);
-        kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+        // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
         res
     }
 
@@ -351,7 +338,7 @@ impl State {
     pub fn uninstall(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
         utils::uninstall(package_id)?;
         self.downloaded_packages.remove(package_id);
-        kinode_process_lib::set_state(&serde_json::to_vec(self)?);
+        // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         println!("uninstalled {package_id}");
         Ok(())
     }
@@ -368,152 +355,168 @@ impl State {
     ) -> Result<(), AppStoreLogError> {
         let block_number: u64 = log.block_number.ok_or(AppStoreLogError::NoBlockNumber)?;
 
+        // basic plan...
+        // when we get either metadata-uri or metadata-hash, we fetch the other one and see if they match.
+        // if they do, we update the metadata for the package.
+        // note: if either of hash/uri doens't match//errors, we probably shouldn't throw errors except for in verbose mode.
+
+        // TEMP WAIT while we solve kimap_indexer getting race condition
+        std::thread::sleep(std::time::Duration::from_millis(100));
         match log.topics()[0] {
-            AppRegistered::SIGNATURE_HASH => {
-                let app = AppRegistered::decode_log_data(log.data(), false)
+            Note::SIGNATURE_HASH => {
+                let note = Note::decode_log_data(log.data(), false)
                     .map_err(|_| AppStoreLogError::DecodeLogError)?;
-                let package_name = app.packageName;
-                let publisher_dnswire = app.publisherName;
-                let metadata_url = app.metadataUrl;
-                let metadata_hash = app.metadataHash;
 
-                let package_hash = log.topics()[1].to_string();
-                let metadata_hash = metadata_hash.to_string();
+                // get package_name from the api (add to process_lib)!
+                let name = get_name(&note.nodehash.to_string(), None).map_err(|e| {
+                    println!("Error decoding name: {:?}", e);
+                    AppStoreLogError::DecodeLogError
+                })?;
 
-                kinode_process_lib::print_to_terminal(
-                    1,
-                    &format!("new package {package_name} registered onchain"),
-                );
+                let note_str = String::from_utf8_lossy(&note.note).to_string();
 
-                if utils::generate_package_hash(&package_name, &publisher_dnswire) != package_hash {
-                    return Err(AppStoreLogError::PackageHashMismatch);
-                }
+                let kimap = self
+                    .provider
+                    .kimap_with_address(eth::Address::from_str(KIMAP_ADDRESS).unwrap());
+                // println!("got note {note_str} for {name}");
+                // let notehash = note.notehash.to_string();
+                // let full_name = format!("{note_str}.{name}");
 
-                let Ok(publisher_name) = net::dnswire_decode(&publisher_dnswire) else {
-                    return Err(AppStoreLogError::InvalidPublisherName);
-                };
+                match note_str.as_str() {
+                    "~metadata-uri" => {
+                        let metadata_url = String::from_utf8_lossy(&note.data).to_string();
+                        // generate ~metadata-hash notehash
+                        let meta_note_name = format!("~metadata-hash.{name}");
+                        let package_hash_note = namehash(&meta_note_name);
+                        let (_tba, _owner, data) = kimap.get(&package_hash_note).map_err(|e| {
+                            println!("Error getting metadata hash: {:?}", e);
+                            AppStoreLogError::DecodeLogError
+                        })?;
 
-                let metadata = if update_listings {
-                    let metadata =
-                        utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
-                    if metadata.properties.publisher != publisher_name {
-                        return Err(AppStoreLogError::PublisherNameMismatch);
-                    }
-                    Some(metadata)
-                } else {
-                    None
-                };
+                        if let Some(hash_note) = data {
+                            let metadata_hash = String::from_utf8_lossy(&hash_note).to_string();
+                            let metadata =
+                                utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
 
-                self.package_hashes.insert(
-                    PackageId::new(&package_name, &publisher_name),
-                    package_hash.clone(),
-                );
+                            // if this fails and doesn't check out, do nothing
 
-                match self.listed_packages.entry(package_hash) {
-                    std::collections::hash_map::Entry::Occupied(mut listing) => {
-                        let listing = listing.get_mut();
-                        listing.name = package_name;
-                        listing.publisher = publisher_name;
-                        listing.metadata_url = metadata_url;
-                        listing.metadata_hash = metadata_hash;
-                        listing.metadata = metadata;
-                    }
-                    std::collections::hash_map::Entry::Vacant(listing) => {
-                        listing.insert(PackageListing {
-                            owner: "".to_string(),
-                            name: package_name,
-                            publisher: publisher_name,
-                            metadata_url,
-                            metadata_hash,
-                            metadata,
-                        });
-                    }
-                };
-            }
-            AppMetadataUpdated::SIGNATURE_HASH => {
-                let upd = AppMetadataUpdated::decode_log_data(log.data(), false)
-                    .map_err(|_| AppStoreLogError::DecodeLogError)?;
-                let metadata_url = upd.metadataUrl;
-                let metadata_hash = upd.metadataHash;
+                            let (package_name, publisher_name) = name
+                                .split_once('.')
+                                .ok_or(AppStoreLogError::InvalidPublisherName)
+                                .and_then(|(package, publisher)| {
+                                    if package.is_empty() || publisher.is_empty() {
+                                        Err(AppStoreLogError::InvalidPublisherName)
+                                    } else {
+                                        Ok((package.to_string(), publisher.to_string()))
+                                    }
+                                })?;
+                            println!(
+                                "pkg_name and publisher_name: {package_name} {publisher_name}"
+                            );
+                            // do we need package hashes anymore? seems kinda unnecessary, use nodehashes instead?
+                            // not removing for now for state compatibility
+                            let package_hash = utils::generate_package_hash(
+                                &package_name,
+                                publisher_name.as_bytes(),
+                            );
 
-                let package_hash = log.topics()[1].to_string();
-                let metadata_hash = metadata_hash.to_string();
+                            self.package_hashes.insert(
+                                PackageId::new(&package_name, &publisher_name),
+                                package_hash.clone(),
+                            );
 
-                let Some(current_listing) =
-                    self.get_listing_with_hash_mut(&package_hash.to_string())
-                else {
-                    // package not found, so we can't update it
-                    // this will never happen if we're ingesting logs in order
-                    return Ok(());
-                };
-
-                let metadata = if update_listings {
-                    Some(utils::fetch_metadata_from_url(
-                        &metadata_url,
-                        &metadata_hash,
-                        5,
-                    )?)
-                } else {
-                    None
-                };
-
-                current_listing.metadata_url = metadata_url;
-                current_listing.metadata_hash = metadata_hash;
-
-                if update_listings {
-                    current_listing.metadata = metadata.clone();
-                    let package_id =
-                        PackageId::new(&current_listing.name, &current_listing.publisher);
-                    if let Some(package_state) = self.downloaded_packages.get(&package_id) {
-                        auto_update(&self.our, package_id, &metadata.unwrap(), &package_state);
-                    }
-                } else {
-                    current_listing.metadata = metadata;
-                }
-            }
-            Transfer::SIGNATURE_HASH => {
-                let from = alloy_primitives::Address::from_word(log.topics()[1]);
-                let to = alloy_primitives::Address::from_word(log.topics()[2]);
-                let package_hash = log.topics()[3].to_string();
-
-                if from == alloy_primitives::Address::ZERO {
-                    // this is a new package, set the owner
-                    match self.listed_packages.entry(package_hash) {
-                        std::collections::hash_map::Entry::Occupied(mut listing) => {
-                            let listing = listing.get_mut();
-                            listing.owner = to.to_string();
+                            match self.listed_packages.entry(package_hash) {
+                                std::collections::hash_map::Entry::Occupied(mut listing) => {
+                                    let listing = listing.get_mut();
+                                    listing.name = package_name;
+                                    listing.publisher = publisher_name;
+                                    listing.metadata_url = metadata_url;
+                                    listing.metadata_hash = metadata_hash;
+                                    listing.metadata = Some(metadata);
+                                }
+                                std::collections::hash_map::Entry::Vacant(listing) => {
+                                    listing.insert(PackageListing {
+                                        owner: "".to_string(),
+                                        name: package_name,
+                                        publisher: publisher_name,
+                                        metadata_url,
+                                        metadata_hash,
+                                        metadata: Some(metadata),
+                                    });
+                                }
+                            };
                         }
-                        std::collections::hash_map::Entry::Vacant(listing) => {
-                            listing.insert(PackageListing {
-                                owner: to.to_string(),
-                                name: "".to_string(),
-                                publisher: "".to_string(),
-                                metadata_url: "".to_string(),
-                                metadata_hash: "".to_string(),
-                                metadata: None,
-                            });
-                        }
-                    };
-                } else if to == alloy_primitives::Address::ZERO {
-                    // this is a package deletion
-                    if let Some(old) = self.listed_packages.remove(&package_hash) {
-                        self.package_hashes
-                            .remove(&PackageId::new(&old.name, &old.publisher));
                     }
-                } else {
-                    let Some(listing) = self.get_listing_with_hash_mut(&package_hash) else {
-                        // package not found, so we can't update it
-                        // this will never happen if we're ingesting logs in order
-                        return Ok(());
-                    };
-                    listing.owner = to.to_string();
+                    "~metadata-hash" => {
+                        let metadata_hash = String::from_utf8_lossy(&note.data).to_string();
+                        // generate ~metadata-uri notehash
+                        let meta_note_name = format!("~metadata-uri.{name}");
+                        let package_uri_note = namehash(&meta_note_name);
+                        let (_tba, _owner, data) = kimap.get(&package_uri_note).map_err(|e| {
+                            println!("Error getting metadata uri: {:?}", e);
+                            AppStoreLogError::DecodeLogError
+                        })?;
+
+                        if let Some(uri_note) = data {
+                            let metadata_url = String::from_utf8_lossy(&uri_note).to_string();
+                            let metadata =
+                                utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
+
+                            let (package_name, publisher_name) = name
+                                .split_once('.')
+                                .ok_or(AppStoreLogError::InvalidPublisherName)
+                                .and_then(|(package, publisher)| {
+                                    if package.is_empty() || publisher.is_empty() {
+                                        Err(AppStoreLogError::InvalidPublisherName)
+                                    } else {
+                                        Ok((package.to_string(), publisher.to_string()))
+                                    }
+                                })?;
+                            println!(
+                                "pkg_name and publisher_name: {package_name} {publisher_name}"
+                            );
+                            // do we need package hashes anymore? seems kinda unnecessary, use nodehashes instead?
+                            // not removing for now for state compatibility
+                            let package_hash = utils::generate_package_hash(
+                                &package_name,
+                                publisher_name.as_bytes(),
+                            );
+
+                            self.package_hashes.insert(
+                                PackageId::new(&package_name, &publisher_name),
+                                package_hash.clone(),
+                            );
+
+                            match self.listed_packages.entry(package_hash) {
+                                std::collections::hash_map::Entry::Occupied(mut listing) => {
+                                    let listing = listing.get_mut();
+                                    listing.name = package_name;
+                                    listing.publisher = publisher_name;
+                                    listing.metadata_url = metadata_url;
+                                    listing.metadata_hash = metadata_hash;
+                                    listing.metadata = Some(metadata);
+                                }
+                                std::collections::hash_map::Entry::Vacant(listing) => {
+                                    listing.insert(PackageListing {
+                                        owner: "".to_string(),
+                                        name: package_name,
+                                        publisher: publisher_name,
+                                        metadata_url,
+                                        metadata_hash,
+                                        metadata: Some(metadata),
+                                    });
+                                }
+                            };
+                        }
+                    }
+                    _ => {}
                 }
             }
             _ => {}
         }
         self.last_saved_block = block_number;
         if update_listings {
-            kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+            // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
         }
         Ok(())
     }
@@ -535,7 +538,7 @@ impl State {
                 }
             }
         }
-        kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+        // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
     }
 }
 

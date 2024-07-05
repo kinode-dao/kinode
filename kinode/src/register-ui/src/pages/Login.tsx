@@ -1,51 +1,27 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { namehash } from "ethers/lib/utils";
-import { utils } from "ethers";
-import KinodeHeader from "../components/KnsHeader";
 import { PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
-import { hooks } from "../connectors/metamask";
-import { downloadKeyfile } from "../utils/download-keyfile";
-import DirectCheckbox from "../components/DirectCheckbox";
 import { useNavigate } from "react-router-dom";
-import { Tooltip } from "../components/Tooltip";
-import { KinodeTitle } from "../components/KinodeTitle";
 import { isMobileCheck } from "../utils/dimensions";
 import classNames from "classnames";
-import { generateNetworkingKeys, getNetworkName } from "../utils/chain";
 import { getFetchUrl } from "../utils/fetch";
-
-const { useProvider } = hooks;
+import { sha256, toBytes } from "viem";
 
 interface LoginProps extends PageProps { }
 
 function Login({
-  direct,
-  setDirect,
   pw,
   setPw,
-  kns,
-  openConnect,
   appSizeOnLoad,
-  closeConnect,
   routers,
-  setNetworkingKey,
-  setIpAddress,
-  setWsPort,
-  setTcpPort,
   setRouters,
   knsName,
   setOsName,
-  nodeChainId,
 }: LoginProps) {
-  const provider = useProvider();
-  const navigate = useNavigate()
+  const navigate = useNavigate();
 
   const [keyErrs, setKeyErrs] = useState<string[]>([]);
   const [loading, setLoading] = useState<string>("");
-  const [showReset, setShowReset] = useState<boolean>(false);
-  const [reset, setReset] = useState<boolean>(false);
-  const [_restartFlow, setRestartFlow] = useState<boolean>(false);
 
   useEffect(() => {
     document.title = "Login";
@@ -61,84 +37,27 @@ function Login({
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // for if we check router validity in future
-  // const KEY_BAD_ROUTERS = "Routers from records are offline"
-
   const handleLogin = useCallback(
     async (e?: FormEvent) => {
       e?.preventDefault();
       e?.stopPropagation();
 
       try {
-        if (reset) {
-          if (!provider) {
-            setKeyErrs(["Please connect your wallet and try again"]);
-            setRestartFlow(true);
-            return openConnect();
-          }
-
-          setLoading("Checking password...");
-
-          let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
-
-          // Replace this with network key generation
-          const response = await fetch(getFetchUrl("/vet-keyfile"), {
-            method: "POST",
-            credentials: 'include',
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password_hash: hashed_password, keyfile: "" }),
-          });
-
-          if (response.status > 399) {
-            throw new Error("Incorrect password");
-          }
-
-          // Generate keys on server that are stored temporarily
-          const data = await generateNetworkingKeys({
-            direct,
-            kns,
-            nodeChainId,
-            chainName: getNetworkName(nodeChainId),
-            nameToSet: namehash(knsName),
-            setNetworkingKey,
-            setIpAddress,
-            setWsPort,
-            setTcpPort,
-            setRouters,
-          })
-
-          setLoading("Please confirm the transaction");
-
-          const tx = await kns.multicall(data);
-
-          setLoading("Resetting Networking Information...");
-
-          await tx.wait();
-        }
-
         setLoading("Logging in...");
-        let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
+        let hashed_password = sha256(toBytes(pw));
 
-        // Login or confirm new keys
         const result = await fetch(
-          getFetchUrl(reset ? "confirm-change-network-keys" : "login"),
+          getFetchUrl("login"),
           {
             method: "POST",
             credentials: 'include',
             headers: { "Content-Type": "application/json" },
-            body: reset
-              ? JSON.stringify({ password_hash: hashed_password, direct })
-              : JSON.stringify({ password_hash: hashed_password }),
+            body: JSON.stringify({ password_hash: hashed_password }),
           }
         );
 
         if (result.status > 399) {
           throw new Error(await result.text());
-        }
-
-        if (reset) {
-          const base64String = await result.json();
-          downloadKeyfile(knsName, base64String);
         }
 
         const interval = setInterval(async () => {
@@ -152,33 +71,18 @@ function Login({
           }
         }, 2000);
       } catch (err: any) {
-        const errorString = String(err);
-        if (errorString.includes("Object")) {
-          setKeyErrs([
-            "There was an error with the transaction, or it was cancelled.",
-          ]);
-        } else {
-          setKeyErrs([errorString]);
-        }
+        setKeyErrs([String(err)]);
         setLoading("");
       }
     },
-    [pw, appSizeOnLoad, reset, direct, knsName, provider, openConnect, kns]
+    [pw, appSizeOnLoad]
   );
 
   const isDirect = Boolean(routers?.length === 0);
-
-  const isMobile = isMobileCheck()
+  const isMobile = isMobileCheck();
 
   return (
     <>
-      <KinodeHeader
-        header={<KinodeTitle prefix='Login to' showLogo />}
-        openConnect={openConnect}
-        closeConnect={closeConnect}
-        hideConnect={!showReset}
-        nodeChainId={nodeChainId}
-      />
       {loading ? (
         <Loader msg={loading} />
       ) : (
@@ -220,62 +124,18 @@ function Login({
             ))}
           </div>}
 
-          <button type="submit" className="w-full mb-2"> {reset ? "Reset & " : ""} Login </button>
+          <button type="submit" className="w-full mb-2">Login</button>
 
           <div className="flex flex-col w-full self-stretch place-content-center place-items-center">
             <button
               className="clear self-stretch mb-1"
-              onClick={() => {
-                setShowReset(!showReset);
-                setReset(!showReset);
-              }}
+              onClick={() => navigate('/reset')}
             >
-              {showReset ? 'Cancel' : 'Reset Networking Info'}
+              Reset Node & Networking Info
             </button>
-            <button
-              className="clear self-stretch"
-              onClick={() => {
-                navigate('/reset-node')
-              }}
-            >
-              Reset Node & Password
-            </button>
-            {showReset && (
-              <div
-                className="flex flex-col w-full gap-2 mt-4"
-              >
-                <div className="flex w-full place-items-center">
-                  <div className="relative flex">
-                    <input
-                      type="checkbox"
-                      id="reset"
-                      name="reset"
-                      checked={reset}
-                      onChange={(e) => setReset(e.target.checked)}
-                      autoFocus
-                      className="mr-2"
-                    />
-                    {reset && (
-                      <span
-                        onClick={() => setReset(false)}
-                        className="checkmark"
-                      >
-                        &#10003;
-                      </span>
-                    )}
-                  </div>
-                  <label htmlFor="reset" className="direct-node-message">
-                    Reset networking keys and publish on-chain
-                  </label>
-                  <Tooltip text={`This will update your networking keys and publish the new info on-chain`} />
-                </div>
-                <DirectCheckbox {...{ direct, setDirect }} />
-              </div>
-            )}
           </div>
-        </form >
-      )
-      }
+        </form>
+      )}
     </>
   );
 }

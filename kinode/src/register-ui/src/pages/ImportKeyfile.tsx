@@ -5,21 +5,17 @@ import {
   useRef,
   useState,
 } from "react";
-import { utils } from "ethers";
-import KinodeHeader from "../components/KnsHeader";
 import { PageProps } from "../lib/types";
 import Loader from "../components/Loader";
 import { getFetchUrl } from "../utils/fetch";
+import { sha256, toBytes } from "viem";
 
 interface ImportKeyfileProps extends PageProps { }
 
 function ImportKeyfile({
   pw,
   setPw,
-  openConnect,
   appSizeOnLoad,
-  closeConnect,
-  nodeChainId,
 }: ImportKeyfileProps) {
 
   const [localKey, setLocalKey] = useState<string>("");
@@ -34,66 +30,6 @@ function ImportKeyfile({
   useEffect(() => {
     document.title = "Import Keyfile";
   }, []);
-
-  // const handlePassword = useCallback(async () => {
-  //   try {
-  //     const response = await fetch(getFetchUrl("/vet-keyfile"), {
-  //       method: "POST",
-  //       credentials: 'include',
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({
-  //         keyfile: localKey,
-  //         password: pw,
-  //       }),
-  //     });
-
-  //     const data = await response.json();
-
-  //     setOsName(data.username);
-
-  //     setPwVet(true);
-
-  //     const errs = [...keyErrs];
-
-  //     const ws = await kns.ws(namehash(data.username));
-
-  //     let index = errs.indexOf(KEY_WRONG_NET_KEY);
-  //     if (ws.publicKey !== data.networking_key) {
-  //       if (index === -1) errs.push(KEY_WRONG_NET_KEY);
-  //     } else if (index !== -1) errs.splice(index, 1);
-
-  //     index = errs.indexOf(KEY_WRONG_IP);
-  //     if(ws.ip === 0)
-  //       setDirect(false)
-  //     else {
-  //       setDirect(true)
-  //       if (ws.ip !== ipAddress && index === -1)
-  //         errs.push(KEY_WRONG_IP);
-  //     }
-
-  //     setKeyErrs(errs);
-  //   } catch {
-  //     setPwVet(false);
-  //   }
-  //   setPwDebounced(true);
-  // }, [localKey, pw, keyErrs, ipAddress, kns, setOsName, setDirect]);
-
-  // const pwDebouncer = useRef<NodeJS.Timeout | null>(null);
-  // useEffect(() => {
-  //   if (pwDebouncer.current) clearTimeout(pwDebouncer.current);
-
-  //   pwDebouncer.current = setTimeout(async () => {
-  //     if (pw !== "") {
-  //       if (pw.length < 6)
-  //         setPwErr("Password must be at least 6 characters")
-  //       else {
-  //         setPwErr("")
-  //         handlePassword()
-  //       }
-  //     }
-  //   }, 500)
-
-  // }, [pw])
 
   // for if we check router validity in future
   // const KEY_BAD_ROUTERS = "Routers from records are offline"
@@ -127,7 +63,7 @@ function ImportKeyfile({
 
       try {
         if (keyErrs.length === 0 && localKey !== "") {
-          let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
+          let hashed_password = sha256(toBytes(pw));
 
           const response = await fetch(getFetchUrl("/vet-keyfile"), {
             method: "POST",
@@ -178,13 +114,6 @@ function ImportKeyfile({
 
   return (
     <>
-      <KinodeHeader
-        header={<h1>Import Keyfile</h1>}
-        openConnect={openConnect}
-        closeConnect={closeConnect}
-        hideConnect
-        nodeChainId={nodeChainId}
-      />
       {loading ? (
         <Loader msg="Setting up node..." />
       ) : (

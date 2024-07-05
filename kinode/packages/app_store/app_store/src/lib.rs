@@ -51,20 +51,16 @@ pub const VFS_TIMEOUT: u64 = 5; // 5s
 pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 
 #[cfg(not(feature = "simulation-mode"))]
-const CONTRACT_ADDRESS: &str = "0x52185B6a6017E6f079B994452F234f7C2533787B"; // optimism
+const KIMAP_ADDRESS: &str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559"; // optimism
 #[cfg(feature = "simulation-mode")]
-const CONTRACT_ADDRESS: &str = "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318"; // local
+const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F"; // note temp kimap address!
 
 #[cfg(not(feature = "simulation-mode"))]
-const CONTRACT_FIRST_BLOCK: u64 = 118_590_088;
+const KIMAP_FIRST_BLOCK: u64 = 118_590_088;
 #[cfg(feature = "simulation-mode")]
-const CONTRACT_FIRST_BLOCK: u64 = 1;
+const KIMAP_FIRST_BLOCK: u64 = 1;
 
-const EVENTS: [&str; 3] = [
-    "AppRegistered(uint256,string,bytes,string,bytes32)",
-    "AppMetadataUpdated(uint256,string,bytes32)",
-    "Transfer(address,address,uint256)",
-];
+const EVENTS: [&str; 1] = ["Note(bytes32,bytes32,bytes,bytes,bytes)"];
 
 // internal types
 
@@ -93,7 +89,7 @@ fn init(our: Address) {
 
     http_api::init_frontend(&our);
 
-    println!("indexing on contract address {}", CONTRACT_ADDRESS);
+    println!("indexing on contract address {}", KIMAP_ADDRESS);
 
     // create new provider with request-timeout of 60s
     // can change, log requests can take quite a long time.

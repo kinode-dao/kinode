@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 mod eth;
-#[cfg(feature = "simulation-mode")]
+//#[cfg(feature = "simulation-mode")]
 mod fakenet;
 mod http;
 mod kernel;
@@ -24,6 +24,7 @@ mod kv;
 mod net;
 #[cfg(not(feature = "simulation-mode"))]
 mod register;
+mod sol;
 mod sqlite;
 mod state;
 mod terminal;
@@ -52,9 +53,10 @@ pub const CHAIN_ID: u64 = 10;
 #[cfg(feature = "simulation-mode")]
 pub const CHAIN_ID: u64 = 31337;
 #[cfg(not(feature = "simulation-mode"))]
-pub const KNS_ADDRESS: &str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6";
+pub const KIMAP_ADDRESS: &str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559";
 #[cfg(feature = "simulation-mode")]
-pub const KNS_ADDRESS: &str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+pub const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 #[tokio::main]
 async fn main() {
@@ -572,7 +574,7 @@ pub async fn simulate_node(
             let fakechain_port: u16 = fakechain_port.unwrap_or(8545);
             let ws_port = ws_networking.local_addr().unwrap().port();
 
-            fakenet::register_local(&name, ws_port, &pubkey, fakechain_port)
+            fakenet::mint_local(&name, ws_port, &pubkey, fakechain_port)
                 .await
                 .unwrap();
 
@@ -775,9 +777,6 @@ async fn login_with_password(
 
     let password_hash = format!("0x{}", hex::encode(Sha256::digest(password)));
 
-    // KnsRegistrar contract address
-    let kns_address: EthAddress = KNS_ADDRESS.parse().unwrap();
-
     let provider = Arc::new(register::connect_to_provider(maybe_rpc).await);
 
     let k = keygen::decode_keyfile(&disk_keyfile, &password_hash)
@@ -801,7 +800,6 @@ async fn login_with_password(
 
     register::assign_routing(
         &mut our,
-        kns_address,
         provider,
         match ws_networking.0 {
             Some(listener) => (listener.local_addr().unwrap().port(), ws_networking.1),

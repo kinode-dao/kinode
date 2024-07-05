@@ -1,17 +1,16 @@
 import { useState, useEffect, FormEvent } from "react";
-import { hooks } from "../connectors/metamask";
 import { Link, useNavigate } from "react-router-dom";
 import EnterKnsName from "../components/EnterKnsName";
 import Loader from "../components/Loader";
-import KinodeHeader from "../components/KnsHeader";
 import { NetworkingInfo, PageProps } from "../lib/types";
-import { ipToNumber } from "../utils/ipToNumber";
 import DirectCheckbox from "../components/DirectCheckbox";
-import { KinodeTitle } from "../components/KinodeTitle";
 import { Tooltip } from "../components/Tooltip";
 import { getFetchUrl } from "../utils/fetch";
+import { useAccount, useSignMessage } from "wagmi";
+import { ipToBytes } from "../utils/kns_encoding";
 
-const { useAccounts, useProvider } = hooks;
+
+// Todo: are we using this? 
 
 interface ClaimOsNameProps extends PageProps { }
 
@@ -19,19 +18,16 @@ function ClaimOsInvite({
   direct,
   setDirect,
   setOsName,
-  dotOs,
-  openConnect,
   setNetworkingKey,
   setIpAddress,
   setWsPort,
   setTcpPort,
   setRouters,
-  closeConnect,
-  nodeChainId,
 }: ClaimOsNameProps) {
-  const accounts = useAccounts();
-  const provider = useProvider();
+  const { address } = useAccount();
   const navigate = useNavigate();
+  const { data: signMessageData, error, signMessage, variables } = useSignMessage()
+
 
   const [isLoading, setIsLoading] = useState(false);
   const [loaderMsg, setLoaderMsg] = useState("");
@@ -45,7 +41,7 @@ function ClaimOsInvite({
     document.title = "Claim Invite";
   }, []);
 
-  useEffect(() => setTriggerNameCheck(!triggerNameCheck), [provider]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     (async () => {
@@ -67,7 +63,6 @@ function ClaimOsInvite({
     e.preventDefault();
     e.stopPropagation();
 
-    if (!provider) return openConnect();
 
     const {
       networking_key,
@@ -85,10 +80,10 @@ function ClaimOsInvite({
       (res) => res.json()
     )) as NetworkingInfo;
 
-    const ipAddress = ipToNumber(ip_address);
+    const ipAddress = ipToBytes(ip_address);
 
     setNetworkingKey(networking_key);
-    setIpAddress(ipAddress);
+    // setIpAddress(ipAddress);
     setWsPort(ws_port || 0);
     setTcpPort(tcp_port || 0);
     setRouters(routers);
@@ -113,7 +108,7 @@ function ClaimOsInvite({
         credentials: 'include',
         body: JSON.stringify({
           name: name + ".os",
-          address: accounts![0],
+          address,
           networkingKey: networking_key,
           wsIp: ipAddress,
           wsPort: ws_port,
@@ -137,10 +132,12 @@ function ClaimOsInvite({
 
     const data = await response.json();
 
-    const uint8Array = new Uint8Array(Object.values(data.message));
-
-    const signer = await provider?.getSigner();
-    const signature = await signer?.signMessage(uint8Array);
+    // const uint8Array = new Uint8Array(Object.values(data.message));
+    // doublecheck and fix this
+    signMessage({
+      message: data,
+    });
+    const signature = signMessageData;
 
     data.userOperation.signature = signature;
 
@@ -153,7 +150,7 @@ function ClaimOsInvite({
           userOp: data.userOperation,
           code: invite,
           name: name + ".os",
-          eoa: accounts![0],
+          eoa: address,
         }),
       });
     } catch (e) {
@@ -175,66 +172,57 @@ function ClaimOsInvite({
     setName,
     nameValidities,
     setNameValidities,
-    dotOs,
     triggerNameCheck,
   };
 
   return (
     <>
-      <KinodeHeader
-        header={<KinodeTitle prefix="Claim Invite" />}
-        openConnect={openConnect}
-        closeConnect={closeConnect}
-        nodeChainId={nodeChainId}
-      />
-      {Boolean(provider) && (
-        <form id="signup-form" className="flex flex-col" onSubmit={handleRegister}>
-          {isLoading ? (
-            <Loader msg={loaderMsg} />
-          ) : (
-            <>
-              <div className="flex c mb-2">
-                <h5>Set up your Kinode with a .os name</h5>
-                <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
-              </div>
 
-              <div className="flex flex-col mb-2">
-                <input
-                  value={invite}
-                  onChange={(e) => setInvite(e.target.value)}
-                  type="text"
-                  required
-                  name="nec-invite"
-                  placeholder="invite code"
-                  className="self-stretch"
-                />
-                {inviteValidity !== "" && (
-                  <div className="invite-validity">{inviteValidity}</div>
-                )}
-              </div>
+      <form id="signup-form" className="flex flex-col" onSubmit={handleRegister}>
+        {isLoading ? (
+          <Loader msg={loaderMsg} />
+        ) : (
+          <>
+            <div className="flex c mb-2">
+              <h5>Set up your Kinode with a .os name</h5>
+              <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
+            </div>
 
-              <h3 className="mb-2">
-                <EnterKnsName {...enterOsNameProps} />
-              </h3>
+            <div className="flex flex-col mb-2">
+              <input
+                value={invite}
+                onChange={(e) => setInvite(e.target.value)}
+                type="text"
+                required
+                name="nec-invite"
+                placeholder="invite code"
+                className="self-stretch"
+              />
+              {inviteValidity !== "" && (
+                <div className="invite-validity">{inviteValidity}</div>
+              )}
+            </div>
 
-              <DirectCheckbox {...{ direct, setDirect }} />
+            <h3 className="mb-2">
+              <EnterKnsName {...enterOsNameProps} />
+            </h3>
 
-              <button
-                disabled={nameValidities.length !== 0 || inviteValidity !== ""}
-                type="submit"
-                className="self-stretch mt-2"
-              >
-                Register .os name
-              </button>
+            <DirectCheckbox {...{ direct, setDirect }} />
 
-              <Link to="/reset" className="button clear">
-                already have a .os?
-              </Link>
-            </>
-          )}
-        </form >
-      )
-      }
+            <button
+              disabled={nameValidities.length !== 0 || inviteValidity !== ""}
+              type="submit"
+              className="self-stretch mt-2"
+            >
+              Register .os name
+            </button>
+
+            <Link to="/reset" className="button clear">
+              already have a .os?
+            </Link>
+          </>
+        )}
+      </form >
     </>
   );
 }

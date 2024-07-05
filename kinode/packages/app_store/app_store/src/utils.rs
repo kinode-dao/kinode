@@ -1,13 +1,15 @@
 use {
-    crate::kinode::process::main::OnchainMetadata,
-    crate::state::{AppStoreLogError, PackageState, SerializedState, State},
-    crate::{CONTRACT_ADDRESS, EVENTS, VFS_TIMEOUT},
+    crate::{
+        kinode::process::main::OnchainMetadata,
+        state::{AppStoreLogError, PackageState, SerializedState, State},
+        EVENTS, KIMAP_ADDRESS, VFS_TIMEOUT,
+    },
+    alloy_primitives::keccak256,
     kinode_process_lib::{
         eth, get_blob, get_state, http, kernel_types as kt, println, vfs, Address, LazyLoadBlob,
         PackageId, ProcessId, Request,
     },
-    std::collections::HashSet,
-    std::str::FromStr,
+    std::{collections::HashSet, str::FromStr},
 };
 
 // quite annoyingly, we must convert from our gen'd version of PackageId
@@ -58,26 +60,29 @@ pub fn fetch_state(our: Address, provider: eth::Provider) -> State {
     if let Some(state_bytes) = get_state() {
         match serde_json::from_slice::<SerializedState>(&state_bytes) {
             Ok(state) => {
-                if state.contract_address == CONTRACT_ADDRESS {
+                if state.contract_address == KIMAP_ADDRESS {
                     return State::from_serialized(our, provider, state);
                 } else {
                     println!(
                         "state contract address mismatch! expected {}, got {}",
-                        CONTRACT_ADDRESS, state.contract_address
+                        KIMAP_ADDRESS, state.contract_address
                     );
                 }
             }
             Err(e) => println!("failed to deserialize saved state: {e}"),
         }
     }
-    State::new(our, provider, CONTRACT_ADDRESS.to_string()).expect("state creation failed")
+    State::new(our, provider, KIMAP_ADDRESS.to_string()).expect("state creation failed")
 }
 
 pub fn app_store_filter(state: &State) -> eth::Filter {
+    let notes = vec![keccak256("~metadata-uri"), keccak256("~metadata-hash")];
+
     eth::Filter::new()
         .address(eth::Address::from_str(&state.contract_address).unwrap())
         .from_block(state.last_saved_block)
         .events(EVENTS)
+        .topic3(notes)
 }
 
 /// create a filter to fetch app store event logs from chain and subscribe to new events

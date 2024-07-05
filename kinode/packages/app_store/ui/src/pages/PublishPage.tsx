@@ -1,51 +1,51 @@
 import React, { useState, useCallback, FormEvent, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { BigNumber, utils } from "ethers";
-import { useWeb3React } from "@web3-react/core";
 
-import SearchHeader from "../components/SearchHeader";
-import { PageProps } from "../types/Page";
-import { setChain } from "../utils/chain";
-import { OPTIMISM_OPT_HEX } from "../constants/chain";
-import { hooks, metaMask } from "../utils/metamask";
-import Loader from "../components/Loader";
-import { toDNSWireFormat } from "../utils/dnsWire";
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
+import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit';
+import { keccak256, toBytes } from 'viem';
+import { mechAbi, KINOMAP, encodeIntoMintCall, encodeMulticalls, kinomapAbi, MULTICALL } from "../abis";
+import { kinohash } from '../utils/kinohash';
+
+import {
+  SearchHeader,
+  Jazzicon,
+  Loader,
+  MetadataForm,
+  Checkbox,
+  Tooltip,
+  HomeButton,
+  MessagePopup
+} from "../components";
 import useAppsStore from "../store/apps-store";
-import MetadataForm from "../components/MetadataForm";
 import { AppInfo } from "../types/Apps";
-import Checkbox from "../components/Checkbox";
-import Jazzicon from "../components/Jazzicon";
-import { Tooltip } from "../components/Tooltip";
-import HomeButton from "../components/HomeButton";
 import classNames from "classnames";
 import { isMobileCheck } from "../utils/dimensions";
 
-const { useIsActivating } = hooks;
 
-interface PublishPageProps extends PageProps { }
-
-export default function PublishPage({
-  provider,
-  packageAbi,
-}: PublishPageProps) {
-  // get state from router
+export default function PublishPage() {
   const { state } = useLocation();
+  const { openConnectModal } = useConnectModal();
   const { listedApps } = useAppsStore();
-  // TODO: figure out how to handle provider
-  const { account, isActive } = useWeb3React();
-  const isActivating = useIsActivating();
+  const publicClient = usePublicClient();
 
-  const [loading, setLoading] = useState("");
-  const [publishSuccess, setPublishSuccess] = useState<
-    { packageName: string; publisherId: string } | undefined
-  >();
+  const { address, isConnected, isConnecting } = useAccount();
+  const { data: hash, writeContract, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess: isConfirmed } =
+    useWaitForTransactionReceipt({
+      hash,
+    });
+
+  // single state for displaying messages
   const [showMetadataForm, setShowMetadataForm] = useState<boolean>(false);
+
   const [packageName, setPackageName] = useState<string>("");
   const [publisherId, setPublisherId] = useState<string>(
     window.our?.node || ""
-  ); // BytesLike
+  );
+
   const [metadataUrl, setMetadataUrl] = useState<string>("");
-  const [metadataHash, setMetadataHash] = useState<string>(""); // BytesLike
+  const [metadataHash, setMetadataHash] = useState<string>("");
   const [isUpdate, setIsUpdate] = useState<boolean>(false);
   const [myPublishedApps, setMyPublishedApps] = useState<AppInfo[]>([]);
 
@@ -60,30 +60,22 @@ export default function PublishPage({
 
   useEffect(() => {
     setMyPublishedApps(
-      listedApps.filter((app) => app.owner?.toLowerCase() === account?.toLowerCase())
+      listedApps.filter((app) => app.owner?.toLowerCase() === address?.toLowerCase())
     );
-  }, [listedApps, account])
-
-  const connectWallet = useCallback(async () => {
-    await metaMask.activate().catch(() => { });
-
-    try {
-      setChain(OPTIMISM_OPT_HEX);
-    } catch (error) {
-      console.error(error);
-    }
-  }, []);
+  }, [listedApps, address])
 
   const calculateMetadataHash = useCallback(async () => {
     if (!metadataUrl) {
       setMetadataHash("");
       return;
     }
+
+
     try {
       const metadataResponse = await fetch(metadataUrl);
       const metadataText = await metadataResponse.text();
       JSON.parse(metadataText); // confirm it's valid JSON
-      const metadataHash = utils.keccak256(utils.toUtf8Bytes(metadataText));
+      const metadataHash = keccak256(toBytes(metadataText));
       setMetadataHash(metadataHash);
     } catch (error) {
       window.alert(
@@ -92,73 +84,90 @@ export default function PublishPage({
     }
   }, [metadataUrl]);
 
+
+
+
+
   const publishPackage = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       e.stopPropagation();
 
+      if (!publicClient) {
+        openConnectModal?.();
+        return;
+      }
+
+      let node = window.our?.node || "0x";
       let metadata = metadataHash;
 
+
+      if (isUpdate) {
+        node = `${packageName}.${window.our?.node || "0x"}`;
+      }
+
+      console.log('we are publishing... with node, and isUpdate: ', node, isUpdate)
+
+
       try {
+        let data = await publicClient.readContract({
+          abi: kinomapAbi,
+          address: KINOMAP,
+          functionName: 'get',
+          args: [kinohash(node)]
+        });
+
+        console.log('node:', node, 'publisherId:', publisherId, 'address:', address, 'node:', node, 'data:', data);
+
         if (!metadata) {
-          // https://pongo-uploads.s3.us-east-2.amazonaws.com/chat_metadata.json
           const metadataResponse = await fetch(metadataUrl);
           await metadataResponse.json(); // confirm it's valid JSON
           const metadataText = await metadataResponse.text(); // hash as text
-          metadata = utils.keccak256(utils.toUtf8Bytes(metadataText));
+          metadata = keccak256(toBytes(metadataText));
         }
 
-        setLoading("Please confirm the transaction in your wallet");
-        const publisherIdDnsWireFormat = toDNSWireFormat(publisherId);
-        await setChain(OPTIMISM_OPT_HEX);
+        const multicall = encodeMulticalls(metadataUrl, metadata);
+        const args = isUpdate ? multicall : encodeIntoMintCall(multicall, address!, packageName);
 
-        // TODO: have a checkbox to show if it's an update of an existing package
+        const [tba, _owner, _data] = data || [];
 
-        const tx = await (isUpdate
-          ? packageAbi?.updateMetadata(
-            BigNumber.from(
-              utils.solidityKeccak256(
-                ["string", "bytes"],
-                [packageName, publisherIdDnsWireFormat]
-              )
-            ),
-            metadataUrl,
-            metadata
-          )
-          : packageAbi?.registerApp(
-            packageName,
-            publisherIdDnsWireFormat,
-            metadataUrl,
-            metadata
-          ));
+        console.log('tba: ', tba);
 
-        await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        setLoading("Publishing package...");
-        await tx?.wait();
-        setPublishSuccess({ packageName, publisherId });
+        writeContract({
+          abi: mechAbi,
+          address: tba as `0x${string}`,
+          functionName: 'execute',
+          args: [
+            isUpdate ? MULTICALL : KINOMAP,
+            BigInt(0),
+            args,
+            isUpdate ? 1 : 0
+          ],
+          gas: BigInt(1000000),
+        });
+
+        // Reset form fields
         setPackageName("");
-        setPublisherId(window.our?.node || publisherId);
+        setPublisherId(window.our?.node || "");
         setMetadataUrl("");
         setMetadataHash("");
         setIsUpdate(false);
+
       } catch (error) {
         console.error(error);
-        window.alert(
-          "Error publishing package. Please ensure the package name and publisher ID are valid, and the metadata is in JSON format."
-        );
-      } finally {
-        setLoading("");
       }
     },
     [
+      publicClient,
+      openConnectModal,
       packageName,
-      isUpdate,
       publisherId,
+      address,
       metadataUrl,
       metadataHash,
-      packageAbi,
-      setPublishSuccess,
+      isUpdate,
+      writeContract,
       setPackageName,
       setPublisherId,
       setMetadataUrl,
@@ -170,31 +179,46 @@ export default function PublishPage({
   const unpublishPackage = useCallback(
     async (packageName: string, publisherName: string) => {
       try {
-        await setChain(OPTIMISM_OPT_HEX);
+        if (!publicClient) {
+          openConnectModal?.();
+          return;
+        }
 
-        const tx = await
-          packageAbi?.unlistPacakge(
-            utils.keccak256(utils.solidityPack(
-              ["string", "bytes"],
-              [packageName, toDNSWireFormat(publisherName)]
-            ))
-          );
+        const node = `${packageName}.${window.our?.node || "0x"}`;
+        const nodehash = kinohash(node);
 
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const data = await publicClient.readContract({
+          abi: kinomapAbi,
+          address: KINOMAP,
+          functionName: 'get',
+          args: [nodehash]
+        });
 
-        setLoading("Unlisting package...");
-        await tx?.wait();
+        const [tba, _owner, _data] = data || [];
+        console.log('node:', window.our?.node, 'publisherId:', publisherId, 'address:', address, 'node:', node, 'data:', data);
+
+        const multicall = encodeMulticalls("", "");
+
+        writeContract({
+          abi: mechAbi,
+          address: tba as `0x${string}`,
+          functionName: 'execute',
+          args: [
+            KINOMAP,
+            BigInt(0),
+            multicall,
+            1
+          ]
+        });
+
+
       } catch (error) {
         console.error(error);
-        window.alert(
-          "Error unlisting package"
-        );
-      } finally {
-        setLoading("");
       }
     },
-    [packageAbi, setLoading]
+    [publicClient, openConnectModal, writeContract, publisherId, address]
   );
+
 
   const checkIfUpdate = useCallback(async () => {
     if (isUpdate) return;
@@ -211,7 +235,6 @@ export default function PublishPage({
   }, [listedApps, packageName, publisherId, isUpdate, setIsUpdate]);
 
   const isMobile = isMobileCheck()
-
   return (
     <div className={classNames("w-full flex flex-col gap-2", {
       'max-w-[900px]': !isMobile,
@@ -223,45 +246,45 @@ export default function PublishPage({
         hidePublish
         onBack={showMetadataForm ? () => setShowMetadataForm(false) : undefined}
       />
+      {isConfirming && (
+        <MessagePopup
+          type="info"
+          content="Transaction submitted. Waiting for confirmation..."
+          onClose={() => { }}
+        />
+      )}
+      {isConfirmed && (
+        <MessagePopup
+          type="success"
+          content={`Package ${isUpdate ? 'updated' : 'published'} successfully!`}
+          onClose={() => { }}
+        />
+      )}
+      {error && (
+        <MessagePopup
+          type="error"
+          content={`Error: ${error.message}`}
+          onClose={() => { }}
+        />
+      )}
       <div className="flex-center justify-between">
         <h4>Publish Package</h4>
-        {Boolean(account) && <div className="card flex-center">
+        {Boolean(address) && <div className="card flex-center">
           <span>Publishing as:</span>
-          <Jazzicon address={account!} className="mx-2" />
-          <span className="font-mono">{account?.slice(0, 4)}...{account?.slice(-4)}</span>
+          <span className="font-mono">{address?.slice(0, 4)}...{address?.slice(-4)}</span>
         </div>}
       </div>
 
-      {loading ? (
-        <div className="flex-col-center">
-          <Loader msg={loading} />
-        </div>
-      ) : publishSuccess ? (
-        <div className="flex-col-center gap-2">
-          <h4>Package Published!</h4>
-          <div>
-            <strong>Package Name:</strong> {publishSuccess.packageName}
-          </div>
-          <div>
-            <strong>Publisher ID:</strong> {publishSuccess.publisherId}
-          </div>
-          <button
-            className={`flex ml-2`}
-            onClick={() => setPublishSuccess(undefined)}
-          >
-            Publish Another Package
-          </button>
-        </div>
+      {isConfirming ? (
+        <Loader msg="Publishing package..." />
       ) : showMetadataForm ? (
         <MetadataForm {...{ packageName, publisherId, app: state?.app }} goBack={() => setShowMetadataForm(false)} />
-      ) : !account || !isActive ? (
+      ) : !address || !isConnected ? (
         <>
           <h4>Please connect your wallet {isMobile && <br />} to publish a package</h4>
-          <button className={`connect-wallet row`} onClick={connectWallet}>
-            Connect Wallet
-          </button>
+          <ConnectButton />
         </>
-      ) : isActivating ? (
+      ) : isConnecting ? (
         <Loader msg="Approve connection in your wallet" />
       ) : (
         <form
@@ -337,8 +360,8 @@ export default function PublishPage({
               placeholder="Calculated automatically from metadata URL"
             />
           </div>
-          <button type="submit">
-            Publish
+          <button type="submit" disabled={isConfirming}>
+            {isConfirming ? 'Publishing...' : 'Publish'}
           </button>
         </form>
       )}

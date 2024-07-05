@@ -2,7 +2,8 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import UnoCSS from '@unocss/vite'
 import { presetUno, presetWind, presetIcons, transformerDirectives } from 'unocss'
-import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill';
+import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill'
+// import viteCompression from 'vite-plugin-compression'
 
 export default defineConfig({
   plugins: [
@@ -16,8 +17,6 @@ export default defineConfig({
           'flex-center': 'flex justify-center items-center',
           'flex-col-center': 'flex flex-col justify-center items-center',
         },
-      ],
-      rules: [
       ],
       theme: {
         colors: {
@@ -40,8 +39,24 @@ export default defineConfig({
       ],
     }),
     react(),
+    // viteCompression({
+    //   algorithm: 'gzip',
+    //   verbose: false,
+    //   threshold: 10240,
+    //   ext: '.gz',
+    // }),
   ],
-  // ...
+  build: {
+    minify: 'terser',
+    // rollupOptions: {
+    //   output: {
+    //     manualChunks: {
+    //       // vendor: ['react', 'react-dom', 'react-router-dom'],
+    //     },
+    //   },
+    // },
+    cssCodeSplit: true,
+  },
   server: {
     proxy: {
       '/api': {

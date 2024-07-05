@@ -1,14 +1,13 @@
-use crate::{keygen, KNS_ADDRESS};
-use alloy::{
-    providers::{Provider, ProviderBuilder, RootProvider},
-    pubsub::PubSubFrontend,
-    rpc::client::WsConnect,
-    rpc::types::eth::{TransactionInput, TransactionRequest},
-    signers::Signature,
-};
+use crate::{keygen, sol::*};
+use crate::{KIMAP_ADDRESS, MULTICALL_ADDRESS};
+use alloy::providers::{Provider, ProviderBuilder, RootProvider};
+use alloy::pubsub::PubSubFrontend;
+use alloy::rpc::client::WsConnect;
+use alloy::rpc::types::eth::{TransactionInput, TransactionRequest};
+use alloy::signers::Signature;
 use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
 use alloy_sol_macro::sol;
-use alloy_sol_types::{SolCall, SolValue};
+use alloy_sol_types::{eip712_domain, SolCall, SolStruct, SolValue};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use lib::types::core::{
     BootInfo, Identity, ImportKeyfileInfo, Keyfile, KeyfileVet, KeyfileVetted, LoginAndResetInfo,
@@ -30,17 +29,6 @@ use warp::{
 };
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
-
-sol! {
-    function auth(
-        bytes32 _node,
-        address _sender
-    ) public view virtual returns (bool authed);
-    function key(bytes32) external view returns (bytes32);
-    function nodes(bytes32) external view returns (address, uint96);
-    function ip(bytes32) external view returns (uint128, uint16, uint16, uint16, uint16);
-    function routers(bytes32) external view returns (bytes32[]);
-}
 
 /// Serve the registration page and receive POSTs and PUTs from it
 pub async fn register(
@@ -93,9 +81,6 @@ pub async fn register(
             ],
         },
     });
-
-    // KnsRegistrar contract address
-    let kns_address = EthAddress::from_str(KNS_ADDRESS).unwrap();
 
     let provider = Arc::new(connect_to_provider(maybe_rpc).await);
 
@@ -172,14 +157,7 @@ pub async fn register(
                 .and(net_keypair.clone())
                 .and_then(move |boot_info, tx, our_temp_id, net_keypair| {
                     let boot_provider = boot_provider.clone();
-                    handle_boot(
-                        boot_info,
-                        tx,
-                        our_temp_id,
-                        net_keypair,
-                        kns_address,
-                        boot_provider,
-                    )
+                    handle_boot(boot_info, tx, our_temp_id, net_keypair, boot_provider)
                 }),
         ))
         .or(warp::path("import-keyfile").and(
@@ -192,15 +170,7 @@ pub async fn register(
                 .and(tx.clone())
                 .and_then(move |boot_info, ip, ws_port, tcp_port, tx| {
                     let import_provider = import_provider.clone();
-                    handle_import_keyfile(
-                        boot_info,
-                        ip,
-                        ws_port,
-                        tcp_port,
-                        tx,
-                        kns_address,
-                        import_provider,
-                    )
+                    handle_import_keyfile(boot_info, ip, ws_port, tcp_port, tx, import_provider)
                 }),
         ))
         .or(warp::path("login").and(
@@ -221,7 +191,6 @@ pub async fn register(
                         tcp_port,
                         tx,
                         keyfile,
-                        kns_address,
                         login_provider,
                     )
                 }),
@@ -350,9 +319,9 @@ async fn handle_boot(
     sender: Arc<RegistrationSender>,
     our: Arc<Identity>,
     networking_keypair: Arc<Vec<u8>>,
-    kns_address: EthAddress,
     provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
+    let kimap = EthAddress::from_str(KIMAP_ADDRESS).unwrap();
     let mut our = our.as_ref().clone();
 
     our.name = info.username;
@@ -378,26 +347,32 @@ async fn handle_boot(
         )
         .into_response());
     }
+    let Ok(password_hash) = FixedBytes::<32>::from_str(&info.password_hash) else {
+        return Ok(warp::reply::with_status(
+            warp::reply::json(&"Invalid password hash"),
+            StatusCode::UNAUTHORIZED,
+        )
+        .into_response());
+    };
 
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
 
-    let tld_call = nodesCall { _0: namehash }.abi_encode();
-    let tx_input = TransactionInput::new(Bytes::from(tld_call));
+    let get_call = getCall { node: namehash }.abi_encode();
+    let tx_input = TransactionInput::new(Bytes::from(get_call));
 
-    let tx = TransactionRequest::default()
-        .to(kns_address)
-        .input(tx_input);
+    let tx = TransactionRequest::default().to(kimap).input(tx_input);
 
     // this call can fail if the indexer has not caught up to the transaction
     // that just got confirmed on our frontend. for this reason, we retry
     // the call a few times before giving up.
+    // todo remove?
 
     let mut attempts = 0;
-    let mut tld_result = Err(());
+    let mut get_result = Err(());
     while attempts < 5 {
         match provider.call(&tx).await {
-            Ok(tld) => {
-                tld_result = Ok(tld);
+            Ok(get) => {
+                get_result = Ok(get);
                 break;
             }
             Err(_) => {
@@ -406,64 +381,47 @@ async fn handle_boot(
             }
         }
     }
-    let Ok(tld) = tld_result else {
+    let Ok(get) = get_result else {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to fetch TLD contract for username"),
+            warp::reply::json(&"Failed to fetch kimap entry for username"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
     };
 
-    let Ok((tld_address, _)) = <(EthAddress, U256)>::abi_decode(&tld, false) else {
+    let Ok(node_info) = getCall::abi_decode_returns(&get, false) else {
         return Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to decode TLD contract from return bytes"),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response());
-    };
-    let owner = EthAddress::from_str(&info.owner).map_err(|_| warp::reject())?;
-
-    let auth_call = authCall {
-        _node: namehash,
-        _sender: owner,
-    }
-    .abi_encode();
-    let tx_input = TransactionInput::new(Bytes::from(auth_call));
-    let tx = TransactionRequest::default()
-        .to(tld_address)
-        .input(tx_input);
-
-    let Ok(authed) = provider.call(&tx).await else {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Failed to fetch associated address for username"),
+            warp::reply::json(&"Failed to decode kimap entry from return bytes"),
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response());
     };
 
-    let is_ok = bool::abi_decode(&authed, false).unwrap_or(false);
-
-    if !is_ok {
-        return Ok(warp::reply::with_status(
-            warp::reply::json(&"Address is not authorized for username!"),
-            StatusCode::UNAUTHORIZED,
-        )
-        .into_response());
-    };
+    let owner = node_info.owner;
 
     let chain_id: u64 = 10;
 
-    // manual json creation to preserve order..
-    let sig_data_json = format!(
-        r#"{{"username":"{}","password_hash":"{}","timestamp":{},"direct":{},"reset":{},"chain_id":{}}}"#,
-        our.name, info.password_hash, info.timestamp, info.direct, info.reset, chain_id
-    );
-    let sig_data = sig_data_json.as_bytes();
+    let domain = eip712_domain! {
+        name: "Kimap",
+        version: "1",
+        chain_id: chain_id,
+        verifying_contract: kimap,
+    };
 
+    let boot = Boot {
+        username: our.name.clone(),
+        password_hash: password_hash,
+        timestamp: U256::from(info.timestamp),
+        direct: info.direct,
+        reset: info.reset,
+        chain_id: U256::from(chain_id),
+    };
+
+    let hash = boot.eip712_signing_hash(&domain);
     let sig = Signature::from_str(&info.signature).map_err(|_| warp::reject())?;
 
     let recovered_address = sig
-        .recover_address_from_msg(sig_data)
+        .recover_address_from_prehash(&hash)
         .map_err(|_| warp::reject())?;
 
     if recovered_address != owner {
@@ -501,7 +459,6 @@ async fn handle_import_keyfile(
     ws_networking_port: (u16, bool),
     tcp_networking_port: (u16, bool),
     sender: Arc<RegistrationSender>,
-    kns_address: EthAddress,
     provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
@@ -546,14 +503,8 @@ async fn handle_import_keyfile(
             }
         };
 
-    if let Err(e) = assign_routing(
-        &mut our,
-        kns_address,
-        provider,
-        ws_networking_port,
-        tcp_networking_port,
-    )
-    .await
+    if let Err(e) =
+        assign_routing(&mut our, provider, ws_networking_port, tcp_networking_port).await
     {
         return Ok(warp::reply::with_status(
             warp::reply::json(&e.to_string()),
@@ -571,7 +522,6 @@ async fn handle_login(
     tcp_networking_port: (u16, bool),
     sender: Arc<RegistrationSender>,
     encoded_keyfile: Option<Vec<u8>>,
-    kns_address: EthAddress,
     provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     if encoded_keyfile.is_none() {
@@ -613,14 +563,8 @@ async fn handle_login(
             }
         };
 
-    if let Err(e) = assign_routing(
-        &mut our,
-        kns_address,
-        provider,
-        ws_networking_port,
-        tcp_networking_port,
-    )
-    .await
+    if let Err(e) =
+        assign_routing(&mut our, provider, ws_networking_port, tcp_networking_port).await
     {
         return Ok(warp::reply::with_status(
             warp::reply::json(&e.to_string()),
@@ -699,72 +643,80 @@ async fn confirm_change_network_keys(
 
 pub async fn assign_routing(
     our: &mut Identity,
-    kns_address: EthAddress,
     provider: Arc<RootProvider<PubSubFrontend>>,
     ws_networking_port: (u16, bool),
     tcp_networking_port: (u16, bool),
 ) -> anyhow::Result<()> {
-    let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
-    let ip_call = ipCall { _0: namehash }.abi_encode();
-    let key_call = keyCall { _0: namehash }.abi_encode();
-    let router_call = routersCall { _0: namehash }.abi_encode();
-    let tx_input = TransactionInput::new(Bytes::from(ip_call));
-    let tx = TransactionRequest::default()
-        .to(kns_address)
-        .input(tx_input);
+    let multicall = EthAddress::from_str(MULTICALL_ADDRESS)?;
+    let kimap = EthAddress::from_str(KIMAP_ADDRESS)?;
 
-    let Ok(ip_data) = provider.call(&tx).await else {
-        return Err(anyhow::anyhow!("Failed to fetch node IP data from PKI"));
+    let netkey_hash =
+        FixedBytes::<32>::from_slice(&keygen::namehash(&format!("~net-key.{}", our.name)));
+    let ws_hash =
+        FixedBytes::<32>::from_slice(&keygen::namehash(&format!("~ws-port.{}", our.name)));
+    let tcp_hash =
+        FixedBytes::<32>::from_slice(&keygen::namehash(&format!("~tcp-port.{}", our.name)));
+    let ip_hash = FixedBytes::<32>::from_slice(&keygen::namehash(&format!("~ip.{}", our.name)));
+
+    let multicalls = vec![
+        Call {
+            target: kimap,
+            callData: Bytes::from(getCall { node: netkey_hash }.abi_encode()),
+        },
+        Call {
+            target: kimap,
+            callData: Bytes::from(getCall { node: ws_hash }.abi_encode()),
+        },
+        Call {
+            target: kimap,
+            callData: Bytes::from(getCall { node: tcp_hash }.abi_encode()),
+        },
+        Call {
+            target: kimap,
+            callData: Bytes::from(getCall { node: ip_hash }.abi_encode()),
+        },
+    ];
+
+    let multicall_call = aggregateCall { calls: multicalls }.abi_encode();
+    let tx_input = TransactionInput::new(Bytes::from(multicall_call));
+    let tx = TransactionRequest::default().to(multicall).input(tx_input);
+
+    let Ok(multicall_return) = provider.call(&tx).await else {
+        return Err(anyhow::anyhow!("Failed to fetch node IP data from kimap"));
     };
 
-    let Ok((ip, ws, _wt, tcp, _udp)) = <(u128, u16, u16, u16, u16)>::abi_decode(&ip_data, false)
-    else {
-        return Err(anyhow::anyhow!("Failed to decode node IP data from PKI"));
+    let Ok(results) = aggregateCall::abi_decode_returns(&multicall_return, false) else {
+        return Err(anyhow::anyhow!("Failed to decode kimap multicall data"));
     };
 
-    let key_tx_input = TransactionInput::new(Bytes::from(key_call));
-    let key_tx = TransactionRequest::default()
-        .to(kns_address)
-        .input(key_tx_input);
+    let netkey = getCall::abi_decode_returns(&results.returnData[0], false)?;
+    let netkey_data = netkey.data;
 
-    let Ok(public_key) = provider.call(&key_tx).await else {
-        return Err(anyhow::anyhow!("Failed to fetch node key from PKI"));
-    };
+    let ws = getCall::abi_decode_returns(&results.returnData[1], false)?;
+    let ws_data = ws.data;
 
-    if format!("0x{}", hex::encode(&public_key)) != our.networking_key {
+    let tcp = getCall::abi_decode_returns(&results.returnData[2], false)?;
+    let tcp_data = tcp.data;
+
+    let ip = getCall::abi_decode_returns(&results.returnData[3], false)?;
+    let ip_data = ip.data;
+
+    let net_key = std::str::from_utf8(&netkey_data)?;
+
+    let ip = keygen::bytes_to_ip(&ip_data);
+    let ws = keygen::bytes_to_port(&ws_data);
+    let tcp = keygen::bytes_to_port(&tcp_data);
+
+    if net_key.to_string() != our.networking_key {
         return Err(anyhow::anyhow!(
             "Networking key from PKI does not match our saved networking key"
         ));
     }
 
-    let router_tx_input = TransactionInput::new(Bytes::from(router_call));
-    let router_tx = TransactionRequest::default()
-        .to(kns_address)
-        .input(router_tx_input);
-
-    let Ok(routers) = provider.call(&router_tx).await else {
-        return Err(anyhow::anyhow!("Failed to fetch node routers from PKI"));
-    };
-    let Ok(routers) = <Vec<FixedBytes<32>>>::abi_decode(&routers, false) else {
-        return Err(anyhow::anyhow!("Failed to decode node routers from PKI"));
-    };
-
-    let node_ip = format!(
-        "{}.{}.{}.{}",
-        (ip >> 24) & 0xFF,
-        (ip >> 16) & 0xFF,
-        (ip >> 8) & 0xFF,
-        ip & 0xFF
-    );
-
-    if !routers.is_empty() {
-        // indirect node
-        return Ok(());
-    }
-    if node_ip != *"0.0.0.0" && (ws != 0 || tcp != 0) {
+    if ip.is_ok() && (ws.is_ok() || tcp.is_ok()) {
         // direct node
         let mut ports = std::collections::BTreeMap::new();
-        if ws != 0 {
+        if let Ok(ws) = ws {
             if ws_networking_port.1 && ws != ws_networking_port.0 {
                 return Err(anyhow::anyhow!(
                     "Binary used --ws-port flag to set port to {}, but node is using port {} onchain.",
@@ -774,7 +726,7 @@ pub async fn assign_routing(
             }
             ports.insert("ws".to_string(), ws);
         }
-        if tcp != 0 {
+        if let Ok(tcp) = tcp {
             if tcp_networking_port.1 && tcp != tcp_networking_port.0 {
                 return Err(anyhow::anyhow!(
                     "Binary used --tcp-port flag to set port to {}, but node is using port {} onchain.",
@@ -784,7 +736,12 @@ pub async fn assign_routing(
             }
             ports.insert("tcp".to_string(), tcp);
         }
-        our.routing = NodeRouting::Direct { ip: node_ip, ports };
+        our.routing = NodeRouting::Direct {
+            ip: ip.unwrap().to_string(),
+            ports,
+        };
+    } else {
+        // indirect node
     }
     Ok(())
 }

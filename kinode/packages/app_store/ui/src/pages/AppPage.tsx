@@ -6,7 +6,6 @@ import useAppsStore from "../store/apps-store";
 import ActionButton from "../components/ActionButton";
 import AppHeader from "../components/AppHeader";
 import SearchHeader from "../components/SearchHeader";
-import { PageProps } from "../types/Page";
 import { appId } from "../utils/app";
 import { PUBLISH_PATH } from "../constants/path";
 import HomeButton from "../components/HomeButton";
@@ -14,7 +13,6 @@ import classNames from "classnames";
 import { isMobileCheck } from "../utils/dimensions";
 import { FaGlobe, FaPeopleGroup, FaStar } from "react-icons/fa6";
 
-interface AppPageProps extends PageProps { }
 
 export default function AppPage() {
   // eslint-disable-line
