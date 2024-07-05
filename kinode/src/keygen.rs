@@ -2,17 +2,12 @@ use aes_gcm::{
     aead::{Aead, AeadCore, KeyInit, OsRng},
     Aes256Gcm, Key,
 };
-use alloy_primitives::Keccak256;
+use alloy_primitives::{keccak256, B256};
 use anyhow::Result;
-use digest::generic_array::GenericArray;
-use hmac::Hmac;
-use jwt::SignWithKey;
 use lib::types::core::Keyfile;
 use ring::pbkdf2;
 use ring::rand::SystemRandom;
 use ring::signature::{self, KeyPair};
-use ring::{digest as ring_digest, rand::SecureRandom};
-use sha2::Sha256;
 use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     num::NonZeroU32,
@@ -152,24 +147,39 @@ pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>),
 
 /// kinohash
 pub fn namehash(name: &str) -> [u8; 32] {
-    let mut node = [0u8; 32];
-    if name.is_empty() {
-        return node;
-    }
-    let mut labels: Vec<&str> = name.split('.').collect();
-    labels.reverse();
+    let mut node = B256::default();
 
-    for label in labels.iter() {
-        let mut hasher = Keccak256::new();
-        hasher.update(label.as_bytes());
-        let labelhash = hasher.finalize();
-        hasher = Keccak256::new();
-        hasher.update(&node);
-        hasher.update(labelhash);
-        node = hasher.finalize().into();
+    if name.is_empty() {
+        return node.into();
     }
-    node
+    let mut labels: Vec<&str> = name.split(".").collect();
+    labels.reverse();
+    for label in labels.iter() {
+        let label_hash = keccak256(label.as_bytes());
+        node = keccak256([node, label_hash].concat());
+    }
+    node.into()
 }
+
+// pub fn namehash(name: &str) -> [u8; 32] {
+//     let mut node = [0u8; 32];
+//     if name.is_empty() {
+//         return node;
+//     }
+//     let mut labels: Vec<&str> = name.split('.').collect();
+//     labels.reverse();
+
+//     for label in labels.iter() {
+//         let mut hasher = Keccak256::new();
+//         hasher.update(label.as_bytes());
+//         let labelhash = hasher.finalize();
+//         hasher = Keccak256::new();
+//         hasher.update(&node);
+//         hasher.update(labelhash);
+//         node = hasher.finalize().into();
+//     }
+//     node
+// }
 
 pub fn bytes_to_ip(bytes: &[u8]) -> Result<IpAddr, String> {
     match bytes.len() {

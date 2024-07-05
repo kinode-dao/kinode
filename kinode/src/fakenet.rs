@@ -1,9 +1,9 @@
-use alloy::network::{eip2718::Encodable2718, EthereumSigner, TransactionBuilder};
+use alloy::network::{eip2718::Encodable2718, EthereumWallet, TransactionBuilder};
 use alloy::providers::{Provider, ProviderBuilder, RootProvider};
 use alloy::pubsub::PubSubFrontend;
 use alloy::rpc::client::WsConnect;
 use alloy::rpc::types::eth::{TransactionInput, TransactionRequest};
-use alloy::signers::wallet::LocalWallet;
+use alloy::signers::local::PrivateKeySigner;
 use alloy_primitives::{Address, Bytes, FixedBytes, U256};
 use alloy_sol_types::SolCall;
 use lib::core::{Identity, NodeRouting};
@@ -32,13 +32,13 @@ pub async fn mint_local(
     pubkey: &str,
     fakechain_port: u16,
 ) -> Result<(), anyhow::Error> {
-    let wallet = LocalWallet::from_str(
+    let privkey_signer = PrivateKeySigner::from_str(
         "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
     )?;
 
-    let wallet_address = wallet.address();
+    let wallet_address = privkey_signer.address();
 
-    let signer: EthereumSigner = wallet.into();
+    let wallet: EthereumWallet = privkey_signer.into();
 
     let multicall_address = Address::from_str(MULTICALL)?;
     let dotos = Address::from_str(FAKE_DOTOS_TBA)?;
@@ -81,7 +81,7 @@ pub async fn mint_local(
         .with_max_fee_per_gas(300_000_000_000);
 
     // Build the transaction using the `EthereumSigner` with the provided signer.
-    let tx_envelope = tx.build(&signer).await?;
+    let tx_envelope = tx.build(&wallet).await?;
 
     // Encode the transaction using EIP-2718 encoding.
     let tx_encoded = tx_envelope.encoded_2718();
@@ -170,7 +170,7 @@ pub async fn mint_local(
         .with_max_priority_fee_per_gas(200_000_000_000)
         .with_max_fee_per_gas(300_000_000_000);
 
-    let tx_envelope = tx.build(&signer).await?;
+    let tx_envelope = tx.build(&wallet).await?;
     let tx_encoded = tx_envelope.encoded_2718();
     let _tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
 

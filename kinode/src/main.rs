@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 mod eth;
-#[cfg(feature = "simulation-mode")]
+//#[cfg(feature = "simulation-mode")]
 mod fakenet;
 mod http;
 mod kernel;
