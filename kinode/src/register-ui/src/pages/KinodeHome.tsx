@@ -9,15 +9,13 @@ type OsHomeProps = {
 function KinodeHome({ knsName, nodeChainId }: OsHomeProps) {
     const navigate = useNavigate()
     const inviteRedir = () => navigate('/claim-invite')
-    const registerEthRedir = () => navigate('/register-eth-name')
+    // const registerEthRedir = () => navigate('/register-eth-name')
     const registerRedir = () => navigate('/register-name')
     const resetRedir = () => navigate('/reset')
     const importKeyfileRedir = () => navigate('/import-keyfile')
     const loginRedir = () => navigate('/login')
 
     const previouslyBooted = Boolean(knsName)
-
-    const hasNetwork = Boolean(window.ethereum)
 
     useEffect(() => {
         document.title = "Welcome | Kinode"
@@ -30,14 +28,10 @@ function KinodeHome({ knsName, nodeChainId }: OsHomeProps) {
                     <button onClick={loginRedir}> Login </button>
                 ) : (
                     <>
-                        {!hasNetwork && <h4 className="self-start mx-auto">
-                            You must install a Web3 wallet extension like Metamask in order to register or reset a username.
-                        </h4>}
-                        {hasNetwork && <h4 className="self-start mx-auto">
+                        {<h4 className="self-start mx-auto">
                             New here? Register a username to get started
                         </h4>}
                         <button
-                            disabled={!hasNetwork}
                             onClick={registerRedir}
                         >
                             Register Kinode Name
@@ -53,14 +47,12 @@ function KinodeHome({ knsName, nodeChainId }: OsHomeProps) {
                             Register ENS Name
                         </button>} */}
                         <button
-                            disabled={!hasNetwork}
                             onClick={inviteRedir}
                             className="alt"
                         >
                             Claim Kinode Invite
                         </button>
                         <button
-                            disabled={!hasNetwork}
                             onClick={resetRedir}
                             className="alt"
                         >

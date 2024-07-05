@@ -45,9 +45,9 @@ pub const CHAIN_ID: u64 = 10;
 #[cfg(feature = "simulation-mode")]
 pub const CHAIN_ID: u64 = 31337;
 #[cfg(not(feature = "simulation-mode"))]
-pub const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+pub const KIMAP_ADDRESS: &str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559";
 #[cfg(feature = "simulation-mode")]
-pub const KIMAP_ADDRESS: &str = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+pub const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
 #[tokio::main]

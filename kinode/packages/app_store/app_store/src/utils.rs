@@ -2,7 +2,7 @@ use {
     crate::{
         kinode::process::main::OnchainMetadata,
         state::{AppStoreLogError, PackageState, SerializedState, State},
-        CONTRACT_ADDRESS, EVENTS, VFS_TIMEOUT,
+        EVENTS, KIMAP_ADDRESS, VFS_TIMEOUT,
     },
     alloy_primitives::keccak256,
     kinode_process_lib::{
@@ -60,19 +60,19 @@ pub fn fetch_state(our: Address, provider: eth::Provider) -> State {
     if let Some(state_bytes) = get_state() {
         match serde_json::from_slice::<SerializedState>(&state_bytes) {
             Ok(state) => {
-                if state.contract_address == CONTRACT_ADDRESS {
+                if state.contract_address == KIMAP_ADDRESS {
                     return State::from_serialized(our, provider, state);
                 } else {
                     println!(
                         "state contract address mismatch! expected {}, got {}",
-                        CONTRACT_ADDRESS, state.contract_address
+                        KIMAP_ADDRESS, state.contract_address
                     );
                 }
             }
             Err(e) => println!("failed to deserialize saved state: {e}"),
         }
     }
-    State::new(our, provider, CONTRACT_ADDRESS.to_string()).expect("state creation failed")
+    State::new(our, provider, KIMAP_ADDRESS.to_string()).expect("state creation failed")
 }
 
 pub fn app_store_filter(state: &State) -> eth::Filter {

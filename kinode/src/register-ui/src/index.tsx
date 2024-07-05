@@ -32,8 +32,8 @@ window.Buffer = Buffer;
 const config = getDefaultConfig({
   appName: 'Kinode Register UI',
   projectId: 'YOUR_PROJECT_ID', // apparently need project_Id if using wallet_connect
-  chains: [anvil], // change back to OP main once ready
-  ssr: false, // If your dApp uses server side rendering (SSR)
+  chains: [optimism],
+  ssr: false,
   transports: {
     [anvil.id]: http(),
     [optimism.id]: http(),

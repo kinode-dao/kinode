@@ -240,9 +240,7 @@ pub async fn connect_to_provider(maybe_rpc: Option<String>) -> RootProvider<PubS
     let url = if let Some(rpc_url) = maybe_rpc {
         rpc_url
     } else {
-        // todo switch back to optimism
-        //"wss://optimism-rpc.publicnode.com".to_string()
-        "ws://localhost:8545".to_string()
+        "wss://optimism-rpc.publicnode.com".to_string()
     };
     println!(
         "Connecting to Optimism RPC at {url}\n\
@@ -410,8 +408,7 @@ async fn handle_boot(
 
     let owner = node_info.owner;
 
-    // TODO change back to optimism
-    let chain_id: u64 = 31337;
+    let chain_id: u64 = 10;
 
     let domain = eip712_domain! {
         name: "Kimap",
@@ -713,7 +710,6 @@ pub async fn assign_routing(
     let ip = getCall::abi_decode_returns(&results.returnData[3], false)?;
     let ip_data = ip.data;
 
-    // TODO: final formats.
     let net_key = std::str::from_utf8(&netkey_data)?;
 
     let ip = keygen::bytes_to_ip(&ip_data);

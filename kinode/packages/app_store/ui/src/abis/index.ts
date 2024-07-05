@@ -23,7 +23,3 @@ export const mechAbi = parseAbi([
     "function execute(address to, uint256 value, bytes calldata data, uint8 operation) returns (bytes memory returnData)",
     "function token() external view returns (uint256,address,uint256)"
 ])
-
-
-
-// export const public_client =

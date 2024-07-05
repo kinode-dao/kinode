@@ -22,7 +22,7 @@ wit_bindgen::generate!({
 });
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &'static str = "0xca5b5811c0c40aab3295f932b1b5112eb7bb4bd6"; // optimism
+const KIMAP_ADDRESS: &'static str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559"; // optimism
 #[cfg(feature = "simulation-mode")]
 const KIMAP_ADDRESS: &'static str = "0x0165878A594ca255338adfa4d48449f69242Eb8F"; // local
 
@@ -51,7 +51,6 @@ struct State {
 }
 
 sol! {
-    // Kimap events
     event Mint(bytes32 indexed parenthash, bytes32 indexed childhash,bytes indexed labelhash, bytes name);
     event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes indexed labelhash, bytes note, bytes data);
 
@@ -111,6 +110,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ]);
     // .topic3(_notes);
     // TODO: potentially remove labelhash from Mint event, then we can filter Notes while getting all Mint events?
+    // do this with 2 subscriptions, for now, get all Note events.
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again

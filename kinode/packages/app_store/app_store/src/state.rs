@@ -172,7 +172,7 @@ impl State {
             our,
             provider,
             contract_address,
-            last_saved_block: crate::CONTRACT_FIRST_BLOCK,
+            last_saved_block: crate::KIMAP_FIRST_BLOCK,
             package_hashes: HashMap::new(),
             listed_packages: HashMap::new(),
             downloaded_packages: HashMap::new(),

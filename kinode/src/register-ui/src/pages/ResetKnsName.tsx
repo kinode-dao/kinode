@@ -28,7 +28,7 @@ const NAME_URL =
 
 interface ResetProps extends PageProps { }
 
-function Reset({
+function ResetKnsName({
   direct,
   setDirect,
   setReset,
@@ -235,4 +235,4 @@ function Reset({
     </>
   );
 }
-export default Reset;
+export default ResetKnsName;

@@ -26,8 +26,8 @@ import './index.css'
 const config = getDefaultConfig({
   appName: 'Kinode App Store',
   projectId: 'YOUR_PROJECT_ID', // apparently need project_Id if using wallet_connect
-  chains: [anvil], // change back to OP main once ready
-  ssr: false, // If your dApp uses server side rendering (SSR)
+  chains: [anvil, optimism], // change back to OP main once ready
+  ssr: false,
   transports: {
     [anvil.id]: http(),
     [optimism.id]: http(),
