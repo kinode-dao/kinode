@@ -197,6 +197,7 @@ pub fn bytes_to_ip(bytes: &[u8]) -> Result<IpAddr, String> {
     }
 }
 
+#[cfg(feature = "simulation-mode")]
 pub fn ip_to_bytes(ip: IpAddr) -> [u8; 16] {
     match ip {
         IpAddr::V4(ipv4) => {
@@ -213,10 +214,6 @@ pub fn bytes_to_port(bytes: &[u8]) -> Result<u16, String> {
         2 => Ok(u16::from_be_bytes([bytes[0], bytes[1]])),
         _ => Err("Invalid byte length for port".to_string()),
     }
-}
-
-pub fn port_to_bytes(port: u16) -> [u8; 2] {
-    port.to_be_bytes()
 }
 
 /// randomly generated key to encrypt file chunks,

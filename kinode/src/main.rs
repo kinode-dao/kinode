@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 mod eth;
-//#[cfg(feature = "simulation-mode")]
+#[cfg(feature = "simulation-mode")]
 mod fakenet;
 mod http;
 mod kernel;
@@ -766,7 +766,6 @@ async fn login_with_password(
     password: &str,
 ) -> (Identity, Vec<u8>, Keyfile) {
     use {
-        alloy_primitives::Address as EthAddress,
         ring::signature::KeyPair,
         sha2::{Digest, Sha256},
     };

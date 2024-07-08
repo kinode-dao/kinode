@@ -14,6 +14,7 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
     str::FromStr,
 };
+
 wit_bindgen::generate!({
     path: "target/wit",
     world: "kimap-indexer-sys-v0",
@@ -65,7 +66,7 @@ sol! {
 
 call_init!(init);
 fn init(our: Address) {
-    println!("indexing on contract address {}", KIMAP_ADDRESS);
+    println!("indexing on contract address {KIMAP_ADDRESS}");
 
     // we **can** persist PKI state between boots but with current size, it's
     // more robust just to reload the whole thing. the new contracts will allow
@@ -83,7 +84,7 @@ fn init(our: Address) {
     match main(our, state) {
         Ok(_) => {}
         Err(e) => {
-            println!("error: {:?}", e);
+            println!("error: {e:?}");
         }
     }
 }
@@ -130,7 +131,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             Ok(logs) => {
                 for log in logs {
                     match handle_log(&our, &mut state, &log, &eth_provider) {
-                        Ok(_) => {}
+                        Ok(()) => {}
                         Err(e) => {
                             println!("log-handling error! {e:?}");
                         }
@@ -139,10 +140,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 break;
             }
             Err(e) => {
-                println!(
-                    "got eth error while fetching logs: {:?}, trying again in 5s...",
-                    e
-                );
+                println!("got eth error while fetching logs: {e:?}, trying again in 5s...");
                 std::thread::sleep(std::time::Duration::from_secs(5));
                 continue;
             }
@@ -162,7 +160,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         };
 
-        if source.process == "eth:distro:sys" {
+        if source.process() == "eth:distro:sys" {
             handle_eth_message(
                 &our,
                 &mut state,
@@ -179,17 +177,20 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
             match request {
                 // IndexerRequests, especially NamehashToName, relevant anymore? if they're mostly queried from the net runtime?
-                IndexerRequests::NamehashToName(NamehashToNameRequest { ref hash, block }) => {
-                    // if block <= state.block {
-                    //     Response::new()
-                    //         .body(serde_json::to_vec(&state.names.get(hash))?)
-                    //         .send()?;
-                    // } else {
-                    //     pending_requests
-                    //         .entry(block)
-                    //         .or_insert(vec![])
-                    //         .push(request);
-                    // }
+                IndexerRequests::NamehashToName(NamehashToNameRequest {
+                    ref block,
+                    ref hash,
+                }) => {
+                    if *block <= state.block {
+                        Response::new()
+                            .body(serde_json::to_vec(&state.names.get(hash))?)
+                            .send()?;
+                    } else {
+                        pending_requests
+                            .entry(*block)
+                            .or_insert(vec![])
+                            .push(request);
+                    }
                 }
                 IndexerRequests::NodeInfo(NodeInfoRequest { ref name, block }) => {
                     if block <= state.block {
@@ -234,15 +235,15 @@ fn handle_eth_message(
         Ok(eth::EthSub { result, .. }) => {
             if let eth::SubscriptionResult::Log(log) = result {
                 match handle_log(our, state, &log, eth_provider) {
-                    Ok(_) => {}
+                    Ok(()) => {}
                     Err(e) => {
                         println!("log-handling error! {e:?}");
                     }
                 }
             }
         }
-        Err(_e) => {
-            println!("got eth subscription error");
+        Err(e) => {
+            println!("got eth subscription error ({e:?}), resubscribing");
             subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
         }
     }
@@ -317,10 +318,7 @@ fn handle_log(
             let get_return = getCall::abi_decode_returns(&res, false)?;
             let tba = get_return.tokenBoundAccount.to_string();
             state.names.insert(child_hash.clone(), name.clone());
-            println!(
-                "got mint, name: {}, child_hash: {}, tba: {}",
-                name, child_hash, tba
-            );
+            println!("got mint, name: {name}, child_hash: {child_hash}, tba: {tba}",);
             state
                 .nodes
                 .entry(name.clone())
@@ -353,10 +351,7 @@ fn handle_log(
 
             let name = get_node_name(state, &node_hash);
 
-            println!(
-                "got note, from name: {}, note: {}, note_hash: {}",
-                name, note, node_hash
-            );
+            println!("got note, from name: {name}, note: {note}, note_hash: {node_hash}",);
             match note.as_str() {
                 "~ws-port" => {
                     let ws = bytes_to_port(&decoded.data);
@@ -468,7 +463,7 @@ fn get_node_name(state: &mut State, parent_hash: &str) -> String {
 }
 
 /// note, unlike get_node_name, includes the label.
-/// e.g label "testing" with parenthash_resolved = "parent.os" would return "testing.parent.os"   
+/// e.g label "testing" with parenthash_resolved = "parent.os" would return "testing.parent.os"
 fn get_full_name(state: &mut State, label: &str, parent_hash: &str) -> String {
     let mut current_hash = parent_hash;
     let mut full_name = label.to_string();

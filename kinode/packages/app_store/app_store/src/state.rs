@@ -190,13 +190,6 @@ impl State {
             .get(self.package_hashes.get(package_id)?)
     }
 
-    fn get_listing_with_hash_mut(
-        &mut self,
-        package_hash: &PackageHash,
-    ) -> Option<&mut PackageListing> {
-        self.listed_packages.get_mut(package_hash)
-    }
-
     pub fn get_downloaded_package(&self, package_id: &PackageId) -> Option<PackageState> {
         self.downloaded_packages.get(package_id).cloned()
     }

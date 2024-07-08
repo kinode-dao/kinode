@@ -6,8 +6,7 @@ use alloy::rpc::client::WsConnect;
 use alloy::rpc::types::eth::{TransactionInput, TransactionRequest};
 use alloy::signers::Signature;
 use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
-use alloy_sol_macro::sol;
-use alloy_sol_types::{eip712_domain, SolCall, SolStruct, SolValue};
+use alloy_sol_types::{eip712_domain, SolCall, SolStruct};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use lib::types::core::{
     BootInfo, Identity, ImportKeyfileInfo, Keyfile, KeyfileVet, KeyfileVetted, LoginAndResetInfo,
@@ -27,6 +26,8 @@ use warp::{
     },
     Filter, Rejection, Reply,
 };
+#[cfg(feature = "simulation-mode")]
+use {alloy_sol_macro::sol, alloy_sol_types::SolValue};
 
 type RegistrationSender = mpsc::Sender<(Identity, Keyfile, Vec<u8>)>;
 
