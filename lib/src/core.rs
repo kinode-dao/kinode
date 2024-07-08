@@ -3,6 +3,7 @@ use ring::signature;
 use rusqlite::types::{FromSql, FromSqlError, ToSql, ValueRef};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::hash::{Hash, Hasher};
 use thiserror::Error;
 
 lazy_static::lazy_static! {
@@ -470,7 +471,7 @@ pub enum Message {
     Response((Response, Option<Context>)),
 }
 
-#[derive(Clone, Debug, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Capability {
     pub issuer: Address,
     pub params: String,
@@ -485,6 +486,15 @@ impl PartialEq for Capability {
         let other_json_params: serde_json::Value =
             serde_json::from_str(&other.params).unwrap_or_default();
         self.issuer == other.issuer && self_json_params == other_json_params
+    }
+}
+
+impl Hash for Capability {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.issuer.hash(state);
+        let params: serde_json::Value =
+            serde_json::from_str(&self.params).unwrap_or_default();
+        params.hash(state);
     }
 }
 
