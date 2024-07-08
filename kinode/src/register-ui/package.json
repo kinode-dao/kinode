@@ -4,6 +4,7 @@
   "private": true,
   "proxy": "http://localhost:8080",
   "dependencies": {
+    "@ensdomains/eth-ens-namehash": "^2.0.15",
     "@rainbow-me/rainbowkit": "^2.1.2",
     "@szhsin/react-menu": "^4.1.0",
     "@tanstack/react-query": "^5.45.1",

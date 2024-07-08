@@ -3211,24 +3211,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "kimap_indexer"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "alloy-sol-types",
- "anyhow",
- "bincode",
- "hex",
- "kinode_process_lib 0.8.3 (git+https://github.com/kinode-dao/process_lib?rev=c8442ef)",
- "rmp-serde",
- "serde",
- "serde_json",
- "wit-bindgen",
-]
-
-[[package]]
 name = "kinode"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "aes-gcm",
  "alloy",
@@ -3285,7 +3269,7 @@ dependencies = [
 
 [[package]]
 name = "kinode_lib"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "lib",
 ]
@@ -3416,6 +3400,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "kns_indexer"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "hex",
+ "kinode_process_lib 0.8.3 (git+https://github.com/kinode-dao/process_lib?rev=c8442ef)",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3435,7 +3435,7 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
 name = "lib"
-version = "0.8.2"
+version = "0.9.0"
 dependencies = [
  "alloy",
  "kit",

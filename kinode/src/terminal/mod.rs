@@ -104,11 +104,13 @@ pub async fn terminal(
     }
 
     let mut reader = EventStream::new();
-    let mut stdout = stdout.lock();
 
     loop {
         tokio::select! {
             Some(printout) = print_rx.recv() => {
+                // lock here so that runtime can still use println! without freezing..
+                // can lock before loop later if we want to reduce overhead
+                let mut stdout = stdout.lock();
                 let now = Local::now();
                 // always write print to log if in logging mode
                 if logging_mode {
@@ -153,6 +155,9 @@ pub async fn terminal(
                 )?;
             }
             Some(Ok(event)) = reader.next().fuse() => {
+                // lock here so that runtime can still use println! without freezing..
+                // can lock before loop later if we want to reduce overhead
+                let mut stdout = stdout.lock();
                 match event {
                     //
                     // RESIZE: resize is super annoying because this event trigger often

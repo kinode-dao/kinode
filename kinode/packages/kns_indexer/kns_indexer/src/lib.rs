@@ -1,4 +1,4 @@
-use crate::kinode::process::kimap_indexer::{
+use crate::kinode::process::kns_indexer::{
     GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
 use alloy_primitives::{keccak256, FixedBytes};
@@ -17,7 +17,7 @@ use std::{
 
 wit_bindgen::generate!({
     path: "target/wit",
-    world: "kimap-indexer-sys-v0",
+    world: "kns-indexer-sys-v0",
     generate_unused_types: true,
     additional_derives: [serde::Deserialize, serde::Serialize],
 });
@@ -318,7 +318,7 @@ fn handle_log(
             let get_return = getCall::abi_decode_returns(&res, false)?;
             let tba = get_return.tokenBoundAccount.to_string();
             state.names.insert(child_hash.clone(), name.clone());
-            println!("got mint, name: {name}, child_hash: {child_hash}, tba: {tba}",);
+            // println!("got mint, name: {name}, child_hash: {child_hash}, tba: {tba}",);
             state
                 .nodes
                 .entry(name.clone())
@@ -351,7 +351,7 @@ fn handle_log(
 
             let name = get_node_name(state, &node_hash);
 
-            println!("got note, from name: {name}, note: {note}, note_hash: {node_hash}",);
+            // println!("got note, from name: {name}, note: {note}, note_hash: {node_hash}",);
             match note.as_str() {
                 "~ws-port" => {
                     let ws = bytes_to_port(&decoded.data);
@@ -377,16 +377,14 @@ fn handle_log(
                     }
                 }
                 "~net-key" => {
-                    let netkey = std::str::from_utf8(&decoded.data);
+                    println!("decoded.data: {:?}\r", decoded.data);
                     // note silent errors here...
                     // print silently for debugging?
-                    if let Ok(netkey) = netkey {
-                        state.nodes.entry(name.clone()).and_modify(|node| {
-                            let pubkey = hex::encode(netkey);
-                            node.public_key = pubkey;
-                        });
-                        node = Some(name.clone());
-                    }
+                    state.nodes.entry(name.clone()).and_modify(|node| {
+                        node.public_key = decoded.data.to_string();
+                        println!("node.public_key: {}", node.public_key);
+                    });
+                    node = Some(name);
                 }
                 "~routers" => {
                     state.nodes.entry(name.clone()).and_modify(|node| {

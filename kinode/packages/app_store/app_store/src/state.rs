@@ -353,7 +353,7 @@ impl State {
         // if they do, we update the metadata for the package.
         // note: if either of hash/uri doens't match//errors, we probably shouldn't throw errors except for in verbose mode.
 
-        // TEMP WAIT while we solve kimap_indexer getting race condition
+        // TEMP WAIT while we solve kns_indexer getting race condition
         std::thread::sleep(std::time::Duration::from_millis(100));
         match log.topics()[0] {
             Note::SIGNATURE_HASH => {

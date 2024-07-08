@@ -47,12 +47,14 @@ export const generateNetworkingKeys = async ({
     setTcpPort(tcp_port || 0);
     setRouters(allowed_routers);
 
+    console.log("networking_key: ", networking_key);
+
     const netkeycall = encodeFunctionData({
         abi: kinomapAbi,
         functionName: 'note',
         args: [
             encodePacked(["bytes"], [stringToHex("~net-key")]),
-            encodePacked(["bytes"], [stringToHex(networking_key)]),
+            encodePacked(["bytes"], [networking_key as `0x${string}`]),
         ]
     });
 
