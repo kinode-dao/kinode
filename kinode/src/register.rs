@@ -691,22 +691,15 @@ pub async fn assign_routing(
     };
 
     let netkey = getCall::abi_decode_returns(&results.returnData[0], false)?;
-    let net_key = netkey.data;
-
     let ws = getCall::abi_decode_returns(&results.returnData[1], false)?;
-    let ws_data = ws.data;
-
     let tcp = getCall::abi_decode_returns(&results.returnData[2], false)?;
-    let tcp_data = tcp.data;
-
     let ip = getCall::abi_decode_returns(&results.returnData[3], false)?;
-    let ip_data = ip.data;
 
-    let ip = keygen::bytes_to_ip(&ip_data);
-    let ws = keygen::bytes_to_port(&ws_data);
-    let tcp = keygen::bytes_to_port(&tcp_data);
+    let ip = keygen::bytes_to_ip(&ip.data);
+    let ws = keygen::bytes_to_port(&ws.data);
+    let tcp = keygen::bytes_to_port(&tcp.data);
 
-    if net_key.to_string() != our.networking_key {
+    if netkey.data.to_string() != our.networking_key {
         return Err(anyhow::anyhow!(
             "Networking key from PKI does not match our saved networking key"
         ));
@@ -744,6 +737,7 @@ pub async fn assign_routing(
     }
     Ok(())
 }
+
 async fn success_response(
     sender: Arc<RegistrationSender>,
     our: Identity,

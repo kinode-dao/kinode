@@ -161,26 +161,6 @@ pub fn namehash(name: &str) -> [u8; 32] {
     node.into()
 }
 
-// pub fn namehash(name: &str) -> [u8; 32] {
-//     let mut node = [0u8; 32];
-//     if name.is_empty() {
-//         return node;
-//     }
-//     let mut labels: Vec<&str> = name.split('.').collect();
-//     labels.reverse();
-
-//     for label in labels.iter() {
-//         let mut hasher = Keccak256::new();
-//         hasher.update(label.as_bytes());
-//         let labelhash = hasher.finalize();
-//         hasher = Keccak256::new();
-//         hasher.update(&node);
-//         hasher.update(labelhash);
-//         node = hasher.finalize().into();
-//     }
-//     node
-// }
-
 pub fn bytes_to_ip(bytes: &[u8]) -> Result<IpAddr, String> {
     match bytes.len() {
         16 => {
@@ -193,7 +173,7 @@ pub fn bytes_to_ip(bytes: &[u8]) -> Result<IpAddr, String> {
                 Ok(IpAddr::V6(Ipv6Addr::from(ip_num)))
             }
         }
-        _ => Err("Invalid byte length for IP address".to_string()),
+        other => Err(format!("Invalid byte length for IP address: {other}")),
     }
 }
 
@@ -212,7 +192,7 @@ pub fn ip_to_bytes(ip: IpAddr) -> [u8; 16] {
 pub fn bytes_to_port(bytes: &[u8]) -> Result<u16, String> {
     match bytes.len() {
         2 => Ok(u16::from_be_bytes([bytes[0], bytes[1]])),
-        _ => Err("Invalid byte length for port".to_string()),
+        other => Err(format!("Invalid byte length for port: {other}")),
     }
 }
 

@@ -39,6 +39,8 @@ sol! {
         uint8 operation
     ) external payable returns (bytes memory returnData);
 
+    /// The data structure signed by user to bootstrap the node.
+    /// Never posted onchain or across network.
     struct Boot {
         string username;
         bytes32 password_hash;

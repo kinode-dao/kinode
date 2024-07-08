@@ -409,10 +409,8 @@ async fn main() {
     let quit_msg: String = tokio::select! {
         Some(Ok(res)) = tasks.join_next() => {
             match res {
-                Ok(_) => "graceful exit".into(),
-                Err(e) => format!(
-                    "runtime crash: {e:?}"
-                ),
+                Ok(()) => "graceful exit".into(),
+                Err(e) => format!("runtime crash: {e:?}"),
             }
 
         }
@@ -462,10 +460,9 @@ async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
         match http::utils::find_open_port(*port, port + 1).await {
             Some(bound) => bound.local_addr().unwrap().port(),
             None => {
-                println!(
-                    "error: couldn't bind {}; first available port found was {}. \
+                panic!(
+                    "error: couldn't bind {port}; first available port found was {}. \
                         Set an available port with `--port` and try again.",
-                    port,
                     http::utils::find_open_port(*port, port + 1000)
                         .await
                         .expect("no ports found in range")
@@ -473,7 +470,6 @@ async fn set_http_server_port(set_port: Option<&u16>) -> u16 {
                         .unwrap()
                         .port(),
                 );
-                panic!();
             }
         }
     } else {
@@ -538,7 +534,7 @@ pub async fn simulate_node(
                     panic!("Fake node must be booted with either a --fake-node-name, --password, or both.");
                 }
                 Some(password) => {
-                    let keyfile = tokio::fs::read(format!("{}/.keys", home_directory_path))
+                    let keyfile = tokio::fs::read(format!("{home_directory_path}/.keys"))
                         .await
                         .expect("could not read keyfile");
                     let decoded = keygen::decode_keyfile(&keyfile, &password)
@@ -608,7 +604,7 @@ pub async fn simulate_node(
             );
 
             tokio::fs::write(
-                format!("{}/.keys", home_directory_path),
+                format!("{home_directory_path}/.keys"),
                 encoded_keyfile.clone(),
             )
             .await
@@ -621,9 +617,9 @@ pub async fn simulate_node(
 
 async fn create_home_directory(home_directory_path: &str) {
     if let Err(e) = tokio::fs::create_dir_all(home_directory_path).await {
-        panic!("failed to create home directory: {:?}", e);
+        panic!("failed to create home directory: {e:?}");
     }
-    println!("home at {}\r", home_directory_path);
+    println!("home at {home_directory_path}\r");
 }
 
 /// build the command line interface for kinode
@@ -689,7 +685,7 @@ async fn find_public_ip() -> std::net::Ipv4Addr {
         println!("Finding public IP address...");
         match tokio::time::timeout(std::time::Duration::from_secs(5), public_ip::addr_v4()).await {
             Ok(Some(ip)) => {
-                println!("Public IP found: {}", ip);
+                println!("Public IP found: {ip}");
                 ip
             }
             _ => {
@@ -744,7 +740,7 @@ async fn serve_register_fe(
         }
     };
 
-    tokio::fs::write(format!("{}/.keys", home_directory_path), &encoded_keyfile)
+    tokio::fs::write(format!("{home_directory_path}/.keys"), &encoded_keyfile)
         .await
         .unwrap();
 
@@ -812,7 +808,7 @@ async fn login_with_password(
     .await
     .expect("information used to boot does not match information onchain");
 
-    tokio::fs::write(format!("{}/.keys", home_directory_path), &disk_keyfile)
+    tokio::fs::write(format!("{home_directory_path}/.keys"), &disk_keyfile)
         .await
         .unwrap();
 
