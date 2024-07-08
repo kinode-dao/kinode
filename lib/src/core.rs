@@ -492,8 +492,7 @@ impl PartialEq for Capability {
 impl Hash for Capability {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.issuer.hash(state);
-        let params: serde_json::Value =
-            serde_json::from_str(&self.params).unwrap_or_default();
+        let params: serde_json::Value = serde_json::from_str(&self.params).unwrap_or_default();
         params.hash(state);
     }
 }
