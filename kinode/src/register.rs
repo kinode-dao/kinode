@@ -411,7 +411,7 @@ async fn handle_boot(
 
     let boot = Boot {
         username: our.name.clone(),
-        password_hash: password_hash,
+        password_hash,
         timestamp: U256::from(info.timestamp),
         direct: info.direct,
         reset: info.reset,
