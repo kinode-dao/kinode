@@ -547,7 +547,8 @@ async fn http_handler(
             }
             if request_subdomain != subdomain {
                 let query_string = if !query_params.is_empty() {
-                    let params: Vec<String> = query_params.iter()
+                    let params: Vec<String> = query_params
+                        .iter()
                         .map(|(key, value)| format!("{}={}", key, value))
                         .collect();
                     format!("?{}", params.join("&"))
