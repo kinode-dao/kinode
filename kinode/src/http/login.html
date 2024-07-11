@@ -1194,10 +1194,13 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
     }
 
     const firstPathItem = window.location.pathname.split('/')[1];
-    if (firstPathItem === '') {
-      document.getElementById("node-and-domain").innerText = "${node} ";
-    } else {
+    const expectedSecureSubdomain = generateSecureSubdomain(firstPathItem);
+    const maybeSecureSubdomain = window.location.host.split('.')[0];
+    const isSecureSubdomain = expectedSecureSubdomain === maybeSecureSubdomain;
+    if (isSecureSubdomain) {
       document.getElementById("node-and-domain").innerText = "${node}: authenticate for secure subdomain app " + firstPathItem;
+    } else {
+      document.getElementById("node-and-domain").innerText = "${node} ";
     }
 
     async function login(password) {
@@ -1210,7 +1213,10 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
       const result = await fetch("/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password_hash: hashHex, subdomain: firstPathItem }),
+        body: JSON.stringify({
+          password_hash: hashHex,
+          subdomain: isSecureSubdomain ? firstPathItem : '',
+        }),
       });
 
       if (result.status == 200) {
@@ -1224,6 +1230,17 @@ Constrain images and videos to the parent width and preserve their intrinsic asp
         document.getElementById("password").focus();
         return;
       }
+    }
+
+    function generateSecureSubdomain(processString) {
+      const parts = processString.split(':');
+      const package = parts[1];
+      const publisher = parts[2];
+      const subdomain = [package, publisher].join("-")
+        .split("")
+        .map(c => c.match(/[a-zA-Z0-9]/) ? c : '-')
+        .join("");
+      return subdomain;
     }
 
     document.addEventListener("DOMContentLoaded", () => {

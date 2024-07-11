@@ -157,9 +157,12 @@ fn initialize(our: Address) {
         .unwrap();
 
     // Serve the index.html and other UI files found in pkg/ui at the root path.
-    http::serve_ui(&our, "ui", true, false, vec!["/"]).unwrap();
-    http::bind_http_path("/ask", true, false).unwrap();
-    http::bind_ws_path("/", true, false).unwrap();
+    //http::serve_ui(&our, "ui", true, false, vec!["/"]).unwrap();
+    //http::bind_http_path("/ask", true, false).unwrap();
+    //http::bind_ws_path("/", true, false).unwrap();
+    http::secure_serve_ui(&our, "ui", vec!["/"]).unwrap();
+    http::secure_bind_http_path("/ask").unwrap();
+    http::secure_bind_ws_path("/", false).unwrap();
 
     // Grab our state, then enter the main event loop.
     let mut state: SettingsState = SettingsState::new(our);

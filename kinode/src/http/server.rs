@@ -584,28 +584,10 @@ async fn http_handler(
                 &jwt_secret_bytes,
             ) {
                 // redirect to login page so they can get an auth token
-                if original_path == "" {
-                    return Ok(warp::http::Response::builder()
-                        .status(StatusCode::OK)
-                        .body(login_html.to_string())
-                        .into_response());
-                } else {
-                    return Ok(warp::http::Response::builder()
-                        .status(StatusCode::TEMPORARY_REDIRECT)
-                        .header(
-                            "Location",
-                            format!(
-                                "{}://{}",
-                                match headers.get("X-Forwarded-Proto") {
-                                    Some(proto) => proto.to_str().unwrap_or("http"),
-                                    None => "http",
-                                },
-                                host,
-                            ),
-                        )
-                        .body(vec![])
-                        .into_response());
-                }
+                return Ok(warp::http::Response::builder()
+                    .status(StatusCode::OK)
+                    .body(login_html.to_string())
+                    .into_response());
             }
         }
     }
