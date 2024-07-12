@@ -157,7 +157,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             continue;
         };
 
-        if source.process() == "eth:distro:sys" {
+        if source.process == "eth:distro:sys" {
             handle_eth_message(
                 &our,
                 &mut state,
