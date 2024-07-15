@@ -224,8 +224,6 @@ async fn main() {
         }
     };
 
-    println!("our: {:?}\r", our);
-
     // the boolean flag determines whether the runtime module is *public* or not,
     // where public means that any process can always message it.
     #[allow(unused_mut)]
