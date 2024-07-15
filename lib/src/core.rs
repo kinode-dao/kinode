@@ -2005,14 +2005,10 @@ pub enum NetAction {
     /// in the future could get from remote provider
     KnsUpdate(KnsUpdate),
     KnsBatchUpdate(Vec<KnsUpdate>),
-    /// add a (namehash -> name) to our representation of the PKI
-    AddName(String, String),
     /// get a list of peers we are connected to
     GetPeers,
     /// get the [`Identity`] struct for a single peer
     GetPeer(String),
-    /// get the [`NodeId`] associated with a given namehash, if any
-    GetName(String),
     /// get a user-readable diagnostics string containing networking inforamtion
     GetDiagnostics,
     /// sign the attached blob payload, sign with our node's networking key.

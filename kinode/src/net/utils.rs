@@ -1,6 +1,6 @@
 use crate::net::types::{
-    HandshakePayload, OnchainPKI, PKINames, Peers, PendingPassthroughs, PendingStream,
-    RoutingRequest, TCP_PROTOCOL, WS_PROTOCOL,
+    HandshakePayload, OnchainPKI, Peers, PendingPassthroughs, PendingStream, RoutingRequest,
+    TCP_PROTOCOL, WS_PROTOCOL,
 };
 use lib::types::core::{
     Identity, KernelMessage, KnsUpdate, Message, MessageSender, NetAction, NetworkErrorSender,
@@ -175,7 +175,7 @@ pub async fn maintain_passthrough(socket_1: PendingStream, socket_2: PendingStre
     }
 }
 
-pub fn ingest_log(log: KnsUpdate, pki: &OnchainPKI, names: &PKINames) {
+pub fn ingest_log(log: KnsUpdate, pki: &OnchainPKI) {
     pki.insert(
         log.name.clone(),
         Identity {
@@ -191,7 +191,6 @@ pub fn ingest_log(log: KnsUpdate, pki: &OnchainPKI, names: &PKINames) {
             },
         },
     );
-    names.insert(log.node, log.name);
 }
 
 pub fn validate_signature(from: &str, signature: &[u8], message: &[u8], pki: &OnchainPKI) -> bool {

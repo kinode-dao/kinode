@@ -101,11 +101,7 @@ async fn connect_via_router(
         routers.shuffle(&mut rand::thread_rng());
         routers
     };
-    for router_namehash in &routers_shuffled {
-        let Some(router_name) = data.names.get(router_namehash) else {
-            // router does not exist in PKI that we know of
-            continue;
-        };
+    for router_name in &routers_shuffled {
         if router_name.as_ref() == ext.our.name {
             // we can't route through ourselves
             continue;
