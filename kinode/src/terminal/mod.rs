@@ -587,7 +587,7 @@ pub async fn terminal(
             _ = sigalrm.recv() => return Err(anyhow::anyhow!("exiting due to SIGALRM")),
             _ = sighup.recv() =>  return Err(anyhow::anyhow!("exiting due to SIGHUP")),
             _ = sigint.recv() =>  return Err(anyhow::anyhow!("exiting due to SIGINT")),
-            _ = sigpipe.recv() => return Err(anyhow::anyhow!("exiting due to SIGPIPE")),
+            _ = sigpipe.recv() => continue, // IGNORE SIGPIPE!
             _ = sigquit.recv() => return Err(anyhow::anyhow!("exiting due to SIGQUIT")),
             _ = sigterm.recv() => return Err(anyhow::anyhow!("exiting due to SIGTERM")),
             _ = sigusr1.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR1")),
