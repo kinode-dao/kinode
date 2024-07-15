@@ -149,8 +149,13 @@ fn fetch_most_recent_blog_posts(n: usize) -> Vec<KinodeBlogPost> {
         60,
         vec![],
     ) {
-        Ok(response) => serde_json::from_slice::<Vec<KinodeBlogPost>>(response.body())
-            .expect("Invalid UTF-8 from kinode.org"),
+        Ok(response) => match serde_json::from_slice::<Vec<KinodeBlogPost>>(response.body()) {
+            Ok(posts) => posts,
+            Err(e) => {
+                println!("Failed to parse blog posts: {e:?}");
+                vec![]
+            }
+        },
         Err(e) => {
             println!("Failed to fetch blog posts: {e:?}");
             vec![]
