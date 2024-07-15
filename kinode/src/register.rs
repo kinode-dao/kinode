@@ -707,7 +707,6 @@ pub async fn assign_routing(
     let namehash = FixedBytes::<32>::from_slice(&keygen::namehash(&our.name));
     let ip_call = ipCall { _0: namehash }.abi_encode();
     let key_call = keyCall { _0: namehash }.abi_encode();
-    let router_call = routersCall { _0: namehash }.abi_encode();
     let tx_input = TransactionInput::new(Bytes::from(ip_call));
     let tx = TransactionRequest::default()
         .to(kns_address)
@@ -737,18 +736,6 @@ pub async fn assign_routing(
         ));
     }
 
-    let router_tx_input = TransactionInput::new(Bytes::from(router_call));
-    let router_tx = TransactionRequest::default()
-        .to(kns_address)
-        .input(router_tx_input);
-
-    let Ok(routers) = provider.call(&router_tx).await else {
-        return Err(anyhow::anyhow!("Failed to fetch node routers from PKI"));
-    };
-    let Ok(routers) = <Vec<FixedBytes<32>>>::abi_decode(&routers, false) else {
-        return Err(anyhow::anyhow!("Failed to decode node routers from PKI"));
-    };
-
     let node_ip = format!(
         "{}.{}.{}.{}",
         (ip >> 24) & 0xFF,
@@ -757,7 +744,7 @@ pub async fn assign_routing(
         ip & 0xFF
     );
 
-    if !routers.is_empty() {
+    if !our.is_direct() {
         // indirect node
         return Ok(());
     }
