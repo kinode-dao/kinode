@@ -14,8 +14,7 @@ path = "src/main.rs"
 
 [build-dependencies]
 anyhow = "1.0.71"
-kit = { git = "https://github.com/kinode-dao/kit", tag = "v0.6.2" }
-rayon = "1.8.1"
+kit = { git = "https://github.com/kinode-dao/kit", rev = "4a8999f" }
 tokio = "1.28"
 walkdir = "2.4"
 zip = "0.6"

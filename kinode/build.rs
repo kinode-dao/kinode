@@ -1,4 +1,3 @@
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
     collections::HashSet,
     fs::{self, File},
@@ -16,37 +15,30 @@ fn get_features() -> String {
                 .to_lowercase()
                 .replace("_", "-");
             features.push_str(&feature);
-            //println!("cargo:rustc-cfg=feature=\"{}\"", feature);
-            //println!("- {}", feature);
         }
     }
     features
 }
 
 fn output_reruns(dir: &Path, rerun_files: &HashSet<String>) {
-    if rerun_files.contains(dir.to_str().unwrap()) {
-        // Output for all files in the directory if the directory itself is specified in rerun_files
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-                println!("cargo:rerun-if-changed={}", path.display());
-            }
-        }
-    } else {
-        // Check files individually
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries.filter_map(|e| e.ok()) {
-                let path = entry.path();
-                if path.is_dir() {
-                    // If the entry is a directory, recursively walk it
-                    output_reruns(&path, rerun_files);
-                } else if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                    // Check if the current file is in our list of interesting files
-                    if rerun_files.contains(filename) {
-                        // If so, print a `cargo:rerun-if-changed=PATH` line for it
-                        println!("cargo:rerun-if-changed={}", path.display());
-                    }
+    // Check files individually
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.filter_map(|e| e.ok()) {
+            let path = entry.path();
+            if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+                // Check if the current file is in our list of interesting files
+                if filename == "ui" {
+                    continue;
                 }
+                if rerun_files.contains(filename) {
+                    // If so, print a `cargo:rerun-if-changed=PATH` line for it
+                    println!("cargo::rerun-if-changed={}", path.display());
+                    continue;
+                }
+            }
+            if path.is_dir() {
+                // If the entry is a directory not in rerun_files, recursively walk it
+                output_reruns(&path, rerun_files);
             }
         }
     }
@@ -59,13 +51,13 @@ fn build_and_zip_package(
 ) -> anyhow::Result<(String, String, Vec<u8>)> {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async {
-        kit::build::execute(&entry_path, true, false, true, features, None, None, true)
+        kit::build::execute(&entry_path, true, false, true, features, None, None, None, true)
             .await
             .map_err(|e| anyhow::anyhow!("{:?}", e))?;
 
         let mut writer = Cursor::new(Vec::new());
         let options = FileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored)
+            .compression_method(zip::CompressionMethod::Deflated)
             .unix_permissions(0o755);
         {
             let mut zip = zip::ZipWriter::new(&mut writer);
@@ -111,14 +103,14 @@ fn main() -> anyhow::Result<()> {
     let rerun_files: HashSet<String> = HashSet::from([
         "Cargo.lock".to_string(),
         "Cargo.toml".to_string(),
-        "src/".to_string(),
+        "src".to_string(),
     ]);
     output_reruns(&parent_dir, &rerun_files);
 
     let features = get_features();
 
     let results: Vec<anyhow::Result<(String, String, Vec<u8>)>> = entries
-        .par_iter()
+        .iter()
         .filter_map(|entry_path| {
             let parent_pkg_path = entry_path.join("pkg");
             if !parent_pkg_path.exists() {
@@ -160,7 +152,11 @@ fn main() -> anyhow::Result<()> {
     }
 
     writeln!(bootstrapped_processes, "];")?;
-    let bootstrapped_processes_path = pwd.join("src/bootstrapped_processes.rs");
+    let target_dir = pwd.join("../target");
+    if !target_dir.exists() {
+        fs::create_dir_all(&target_dir)?;
+    }
+    let bootstrapped_processes_path = target_dir.join("bootstrapped_processes.rs");
     fs::write(&bootstrapped_processes_path, bootstrapped_processes)?;
 
     Ok(())
