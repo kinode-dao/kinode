@@ -757,6 +757,11 @@ pub async fn assign_routing(
         ip & 0xFF
     );
 
+    println!("routers: {:?}\r", routers);
+    println!("node_ip: {:?}\r", node_ip);
+    println!("ws: {:?}\r", ws);
+    println!("tcp: {:?}\r", tcp);
+
     if !routers.is_empty() {
         // indirect node
         return Ok(());
