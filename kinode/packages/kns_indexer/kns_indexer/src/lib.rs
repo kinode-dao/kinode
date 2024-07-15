@@ -167,7 +167,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }) => {
                     if *block <= state.block {
                         Response::new()
-                            .body(serde_json::to_vec(&state.names.get(hash))?)
+                            .body(rmp_serde::to_vec(&crate::net::NetResponse::Name(
+                                state.names.get(hash).cloned(),
+                            ))?)
                             .send()?;
                     } else {
                         pending_requests
@@ -390,6 +392,10 @@ fn handle_log(
             }
         }
         _ => {}
+    }
+
+    if let Some(block) = log.block_number {
+        state.block = block;
     }
 
     if let Some(node) = node {

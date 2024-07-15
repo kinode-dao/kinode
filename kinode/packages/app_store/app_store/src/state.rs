@@ -3,9 +3,8 @@ use crate::{KIMAP_ADDRESS, VFS_TIMEOUT};
 use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
-    eth, kernel_types as kt,
-    net::{get_name, namehash},
-    println, vfs, Address, Message, NodeId, PackageId, Request,
+    eth, kernel_types as kt, kimap::Kimap, net::get_name, println, vfs, Address, Message, NodeId,
+    PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -96,6 +95,8 @@ pub struct State {
     pub our: Address,
     /// the eth provider we are using -- not persisted
     pub provider: eth::Provider,
+    /// the kimap helper we are using -- not persisted
+    pub kimap: Kimap,
     /// the address of the contract we are using to read package listings
     pub contract_address: String,
     /// the last block at which we saved the state of the listings to disk.
@@ -151,7 +152,8 @@ impl State {
     pub fn from_serialized(our: Address, provider: eth::Provider, s: SerializedState) -> Self {
         State {
             our,
-            provider,
+            provider: provider.clone(),
+            kimap: Kimap::new(provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap()),
             contract_address: s.contract_address,
             last_saved_block: s.last_saved_block,
             package_hashes: s.package_hashes,
@@ -171,7 +173,8 @@ impl State {
     ) -> anyhow::Result<Self> {
         let mut state = State {
             our,
-            provider,
+            provider: provider.clone(),
+            kimap: Kimap::new(provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap()),
             contract_address,
             last_saved_block: crate::KIMAP_FIRST_BLOCK,
             package_hashes: HashMap::new(),
@@ -348,30 +351,21 @@ impl State {
     ) -> Result<(), AppStoreLogError> {
         let block_number: u64 = log.block_number.ok_or(AppStoreLogError::NoBlockNumber)?;
 
-        // basic plan...
-        // when we get either metadata-uri or metadata-hash, we fetch the other one and see if they match.
-        // if they do, we update the metadata for the package.
-        // note: if either of hash/uri doens't match//errors, we probably shouldn't throw errors except for in verbose mode.
-
-        // TEMP WAIT while we solve kns_indexer getting race condition
-        std::thread::sleep(std::time::Duration::from_millis(100));
         match log.topics()[0] {
             Note::SIGNATURE_HASH => {
                 let note = Note::decode_log_data(log.data(), false)
                     .map_err(|_| AppStoreLogError::DecodeLogError)?;
 
-                // get package_name from the api (add to process_lib)!
-                let name = get_name(&note.nodehash.to_string(), None).map_err(|e| {
-                    println!("Error decoding name: {:?}", e);
-                    AppStoreLogError::DecodeLogError
-                })?;
+                let name =
+                    get_name(&note.nodehash.to_string(), log.block_number, None).map_err(|e| {
+                        println!("Error decoding name: {:?}", e);
+                        AppStoreLogError::DecodeLogError
+                    })?;
 
                 let note_str = String::from_utf8_lossy(&note.note).to_string();
 
-                let kimap = self
-                    .provider
-                    .kimap_with_address(eth::Address::from_str(KIMAP_ADDRESS).unwrap());
                 // println!("got note {note_str} for {name}");
+                // let notehash = note.notehash.to_string();
                 // let notehash = note.notehash.to_string();
                 // let full_name = format!("{note_str}.{name}");
 
@@ -380,11 +374,12 @@ impl State {
                         let metadata_url = String::from_utf8_lossy(&note.data).to_string();
                         // generate ~metadata-hash notehash
                         let meta_note_name = format!("~metadata-hash.{name}");
-                        let package_hash_note = namehash(&meta_note_name);
-                        let (_tba, _owner, data) = kimap.get(&package_hash_note).map_err(|e| {
-                            println!("Error getting metadata hash: {:?}", e);
-                            AppStoreLogError::DecodeLogError
-                        })?;
+
+                        let (_tba, _owner, data) =
+                            self.kimap.get(&meta_note_name).map_err(|e| {
+                                println!("Error getting metadata hash: {:?}", e);
+                                AppStoreLogError::DecodeLogError
+                            })?;
 
                         if let Some(hash_note) = data {
                             let metadata_hash = String::from_utf8_lossy(&hash_note).to_string();
@@ -444,11 +439,11 @@ impl State {
                         let metadata_hash = String::from_utf8_lossy(&note.data).to_string();
                         // generate ~metadata-uri notehash
                         let meta_note_name = format!("~metadata-uri.{name}");
-                        let package_uri_note = namehash(&meta_note_name);
-                        let (_tba, _owner, data) = kimap.get(&package_uri_note).map_err(|e| {
-                            println!("Error getting metadata uri: {:?}", e);
-                            AppStoreLogError::DecodeLogError
-                        })?;
+                        let (_tba, _owner, data) =
+                            self.kimap.get(&meta_note_name).map_err(|e| {
+                                println!("Error getting metadata uri: {:?}", e);
+                                AppStoreLogError::DecodeLogError
+                            })?;
 
                         if let Some(uri_note) = data {
                             let metadata_url = String::from_utf8_lossy(&uri_note).to_string();
