@@ -14,7 +14,7 @@ use std::{
 };
 use tokio::{fs, io::AsyncWriteExt, sync::Mutex};
 
-include!("bootstrapped_processes.rs");
+include!("../../target/bootstrapped_processes.rs");
 
 pub async fn load_state(
     our_name: String,
