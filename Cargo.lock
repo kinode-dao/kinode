@@ -753,7 +753,7 @@ dependencies = [
  "alloy-sol-types",
  "anyhow",
  "bincode",
- "kinode_process_lib 0.8.3",
+ "kinode_process_lib 0.8.3 (git+https://github.com/kinode-dao/process_lib?rev=ce53825)",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -3321,6 +3321,28 @@ dependencies = [
 [[package]]
 name = "kinode_process_lib"
 version = "0.8.3"
+source = "git+https://github.com/kinode-dao/process_lib?branch=bp/kimap#d781c4d3609ae80d4f2a1aadbba3c0b97a81284b"
+dependencies = [
+ "alloy",
+ "alloy-primitives",
+ "alloy-sol-macro",
+ "alloy-sol-types",
+ "anyhow",
+ "bincode",
+ "http 1.1.0",
+ "mime_guess",
+ "rand 0.8.5",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "url",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "kinode_process_lib"
+version = "0.8.3"
 source = "git+https://github.com/kinode-dao/process_lib?rev=ce53825#ce53825d26be79c09edc175480364bd4a31ae100"
 dependencies = [
  "alloy",
@@ -3386,7 +3408,7 @@ dependencies = [
  "anyhow",
  "bincode",
  "hex",
- "kinode_process_lib 0.8.3",
+ "kinode_process_lib 0.8.3 (git+https://github.com/kinode-dao/process_lib?branch=bp/kimap)",
  "rmp-serde",
  "serde",
  "serde_json",

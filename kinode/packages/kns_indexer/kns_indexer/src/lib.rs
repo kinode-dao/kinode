@@ -2,10 +2,10 @@ use crate::kinode::process::kns_indexer::{
     GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
 use alloy_primitives::keccak256;
-use alloy_sol_types::{sol, SolEvent};
+use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
-    await_message, call_init, eth, net, print_to_terminal, println, Address, Message, Request,
-    Response,
+    await_message, call_init, eth, kimap, net, print_to_terminal, println, Address, Message,
+    Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -39,14 +39,14 @@ const KIMAP_FIRST_BLOCK: u64 = 1; // local
 struct State {
     chain_id: u64,
     // what contract this state pertains to
-    contract_address: String,
+    contract_address: eth::Address,
     // namehash to human readable name
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
     // TODO: optional params knsUpdate? also include tba.
     nodes: HashMap<String, net::KnsUpdate>,
     // last block we have an update from
-    block: u64,
+    last_block: u64,
 }
 
 // note: not defined in wit api right now like IndexerRequests.
@@ -55,19 +55,6 @@ enum IndexerResponses {
     Name(Option<String>),
     NodeInfo(Option<net::KnsUpdate>),
     GetState(State),
-}
-
-sol! {
-    event Mint(bytes32 indexed parenthash, bytes32 indexed childhash,bytes indexed labelhash, bytes name);
-    event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes indexed labelhash, bytes note, bytes data);
-
-    function get (
-        bytes32 node
-    ) external view returns (
-        address tokenBoundAccount,
-        address tokenOwner,
-        bytes memory note
-    );
 }
 
 call_init!(init);
@@ -81,10 +68,10 @@ fn init(our: Address) {
 
     let state = State {
         chain_id: CHAIN_ID,
-        contract_address: KIMAP_ADDRESS.to_string(),
+        contract_address: KIMAP_ADDRESS.parse::<eth::Address>().unwrap(),
         nodes: HashMap::new(),
         names: HashMap::new(),
-        block: KIMAP_FIRST_BLOCK,
+        last_block: KIMAP_FIRST_BLOCK,
     };
 
     if let Err(e) = main(our, state) {
@@ -106,13 +93,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
     // sub_id: 1
     let mints_filter = eth::Filter::new()
-        .address(state.contract_address.parse::<eth::Address>().unwrap())
+        .address(state.contract_address)
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Mint(bytes32,bytes32,bytes,bytes)");
 
     // sub_id: 2
     let notes_filter = eth::Filter::new()
-        .address(state.contract_address.parse::<eth::Address>().unwrap())
+        .address(state.contract_address)
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Note(bytes32,bytes32,bytes,bytes,bytes)")
         .topic3(notes);
@@ -125,7 +112,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         1,
         &format!(
             "subscribing, state.block: {}, chain_id: {}",
-            state.block - 1,
+            state.last_block - 1,
             state.chain_id
         ),
     );
@@ -165,10 +152,10 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
 
             match request {
                 IndexerRequests::NamehashToName(NamehashToNameRequest {
-                    ref block,
                     ref hash,
+                    ref block,
                 }) => {
-                    if *block <= state.block {
+                    if *block <= state.last_block {
                         Response::new()
                             .body(serde_json::to_vec(&IndexerResponses::Name(
                                 state.names.get(hash).cloned(),
@@ -182,7 +169,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     }
                 }
                 IndexerRequests::NodeInfo(NodeInfoRequest { ref name, block }) => {
-                    if block <= state.block {
+                    if block <= state.last_block {
                         Response::new()
                             .body(serde_json::to_vec(&IndexerResponses::NodeInfo(
                                 state.nodes.get(name).cloned(),
@@ -196,10 +183,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     }
                 }
                 IndexerRequests::GetState(GetStateRequest { block }) => {
-                    if block <= state.block {
-                        Response::new()
-                            .body(serde_json::to_vec(&state.clone())?)
-                            .send()?;
+                    if block <= state.last_block {
+                        Response::new().body(serde_json::to_vec(&state)?).send()?;
                     } else {
                         pending_requests
                             .entry(block)
@@ -221,12 +206,8 @@ fn handle_eth_message(
     mints_filter: &eth::Filter,
     notes_filter: &eth::Filter,
 ) -> anyhow::Result<()> {
-    let Ok(eth_result) = serde_json::from_slice::<eth::EthSubResult>(body) else {
-        return Err(anyhow::anyhow!("got invalid message"));
-    };
-
-    match eth_result {
-        Ok(eth::EthSub { result, .. }) => {
+    match serde_json::from_slice::<eth::EthSubResult>(body) {
+        Ok(Ok(eth::EthSub { result, .. })) => {
             if let eth::SubscriptionResult::Log(log) = result {
                 if let Err(e) = handle_log(our, state, &log) {
                     // print errors at verbosity=1
@@ -234,7 +215,7 @@ fn handle_eth_message(
                 }
             }
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             println!("got eth subscription error ({e:?}), resubscribing");
             if e.id == 1 {
                 subscribe_to_logs(&eth_provider, mints_filter.clone(), 1);
@@ -242,13 +223,16 @@ fn handle_eth_message(
                 subscribe_to_logs(&eth_provider, notes_filter.clone(), 2);
             }
         }
+        Err(e) => {
+            return Err(e.into());
+        }
     }
 
     // check the pending_requests btreemap to see if there are any requests that
     // can be handled now that the state block has been updated
     let mut blocks_to_remove = vec![];
     for (block, requests) in pending_requests.iter() {
-        if *block <= state.block {
+        if *block <= state.last_block {
             for request in requests.iter() {
                 match request {
                     IndexerRequests::NamehashToName(NamehashToNameRequest { hash, .. }) => {
@@ -287,16 +271,16 @@ fn handle_eth_message(
 fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
     let mut node: Option<String> = None;
     match log.topics()[0] {
-        Mint::SIGNATURE_HASH => {
-            let decoded = Mint::decode_log_data(log.data(), true).unwrap();
+        kimap::contract::Mint::SIGNATURE_HASH => {
+            let decoded = kimap::contract::Mint::decode_log_data(log.data(), true).unwrap();
             let parent_hash = decoded.parenthash.to_string();
             let child_hash = decoded.childhash.to_string();
             let label = String::from_utf8(decoded.name.to_vec())?;
 
-            let name = get_full_name(state, &label, &parent_hash);
+            let name = format!("{}.{}", label, get_parent_name(state, &parent_hash));
 
             state.names.insert(child_hash.clone(), name.clone());
-            // println!("got mint, name: {name}, child_hash: {child_hash}, tba: {tba}",);
+
             state
                 .nodes
                 .entry(name.clone())
@@ -310,16 +294,15 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
 
             node = Some(name);
         }
-        Note::SIGNATURE_HASH => {
-            let decoded = Note::decode_log_data(log.data(), true).unwrap();
+        kimap::contract::Note::SIGNATURE_HASH => {
+            let decoded = kimap::contract::Note::decode_log_data(log.data(), true).unwrap();
 
             let note = String::from_utf8(decoded.note.to_vec())?;
             let _note_hash: String = decoded.notehash.to_string();
             let node_hash = decoded.nodehash.to_string();
 
-            let name = get_node_name(state, &node_hash);
+            let name = get_parent_name(state, &node_hash);
 
-            // println!("got note, from name: {name}, note: {note}, note_hash: {node_hash}",);
             match note.as_str() {
                 "~ws-port" => {
                     let ws = bytes_to_port(&decoded.data)?;
@@ -374,7 +357,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
     }
 
     if let Some(block) = log.block_number {
-        state.block = block;
+        state.last_block = block;
     }
 
     if let Some(node) = node {
@@ -404,7 +387,7 @@ fn fetch_and_process_logs(
     state: &mut State,
     filter: eth::Filter,
 ) {
-    let filter = filter.from_block(state.block - 1);
+    let filter = filter.from_block(state.last_block - 1);
     loop {
         match eth_provider.get_logs(&filter) {
             Ok(logs) => {
@@ -423,7 +406,7 @@ fn fetch_and_process_logs(
     }
 }
 
-fn get_node_name(state: &mut State, parent_hash: &str) -> String {
+fn get_parent_name(state: &mut State, parent_hash: &str) -> String {
     let mut current_hash = parent_hash;
     let mut components = Vec::new(); // Collect components in a vector
     let mut visited_hashes = std::collections::HashSet::new();
@@ -445,30 +428,6 @@ fn get_node_name(state: &mut State, parent_hash: &str) -> String {
 
     components.reverse();
     components.join(".")
-}
-
-/// note, unlike get_node_name, includes the label.
-/// e.g label "testing" with parenthash_resolved = "parent.os" would return "testing.parent.os"
-fn get_full_name(state: &mut State, label: &str, parent_hash: &str) -> String {
-    let mut current_hash = parent_hash;
-    let mut full_name = label.to_string();
-    let mut visited_hashes = std::collections::HashSet::new();
-
-    while let Some(parent_name) = state.names.get(current_hash) {
-        if !visited_hashes.insert(current_hash) {
-            break;
-        }
-
-        full_name = format!("{}.{}", full_name, parent_name);
-        // Update current_hash to the parent's hash for the next iteration
-        if let Some(new_parent_hash) = state.names.get(parent_name) {
-            current_hash = new_parent_hash;
-        } else {
-            break;
-        }
-    }
-
-    full_name
 }
 
 // TEMP. Either remove when event reimitting working with anvil,
