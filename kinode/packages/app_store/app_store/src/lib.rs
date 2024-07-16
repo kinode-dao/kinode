@@ -56,7 +56,7 @@ const KIMAP_ADDRESS: &str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559"; // opt
 const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F"; // note temp kimap address!
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_FIRST_BLOCK: u64 = 118_590_088;
+const KIMAP_FIRST_BLOCK: u64 = 122_295_937;
 #[cfg(feature = "simulation-mode")]
 const KIMAP_FIRST_BLOCK: u64 = 1;
 

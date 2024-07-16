@@ -1,18 +1,16 @@
 use crate::kinode::process::kns_indexer::{
     GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
-use alloy_primitives::{keccak256, FixedBytes};
-use alloy_sol_types::{sol, SolCall, SolEvent};
+use alloy_primitives::keccak256;
+use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message, call_init,
-    eth::{self, Provider, TransactionInput, TransactionRequest},
-    net, print_to_terminal, println, Address, Message, Request, Response,
+    await_message, call_init, eth, net, print_to_terminal, println, Address, Message, Request,
+    Response,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map::HashMap, BTreeMap},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    str::FromStr,
 };
 
 wit_bindgen::generate!({
@@ -33,7 +31,7 @@ const CHAIN_ID: u64 = 10; // optimism
 const CHAIN_ID: u64 = 31337; // local
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_FIRST_BLOCK: u64 = 114_923_786; // optimism, adjust
+const KIMAP_FIRST_BLOCK: u64 = 114_923_786; // optimism
 #[cfg(feature = "simulation-mode")]
 const KIMAP_FIRST_BLOCK: u64 = 1; // local
 
@@ -49,6 +47,14 @@ struct State {
     nodes: HashMap<String, net::KnsUpdate>,
     // last block we have an update from
     block: u64,
+}
+
+// note: not defined in wit api right now like IndexerRequests.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+enum IndexerResponses {
+    Name(Option<String>),
+    NodeInfo(Option<net::KnsUpdate>),
+    GetState(State),
 }
 
 sol! {
@@ -90,7 +96,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     #[cfg(feature = "simulation-mode")]
     add_temp_hardcoded_tlzs(&mut state);
 
-    let _notes = vec![
+    let notes = vec![
         keccak256("~net-key"),
         keccak256("~ws-port"),
         keccak256("~routers"),
@@ -98,17 +104,18 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         keccak256("~ip"),
     ];
 
-    let filter = eth::Filter::new()
+    // sub_id: 1
+    let mints_filter = eth::Filter::new()
         .address(state.contract_address.parse::<eth::Address>().unwrap())
-        .from_block(state.block - 1)
         .to_block(eth::BlockNumberOrTag::Latest)
-        .events(vec![
-            "Mint(bytes32,bytes32,bytes,bytes)",
-            "Note(bytes32,bytes32,bytes,bytes,bytes)",
-        ]);
-    // .topic3(_notes);
-    // TODO: potentially remove labelhash from Mint event, then we can filter Notes while getting all Mint events?
-    // do this with 2 subscriptions, for now, get all Note events.
+        .event("Mint(bytes32,bytes32,bytes,bytes)");
+
+    // sub_id: 2
+    let notes_filter = eth::Filter::new()
+        .address(state.contract_address.parse::<eth::Address>().unwrap())
+        .to_block(eth::BlockNumberOrTag::Latest)
+        .event("Note(bytes32,bytes32,bytes,bytes,bytes)")
+        .topic3(notes);
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
@@ -123,27 +130,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ),
     );
 
-    subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
+    subscribe_to_logs(&eth_provider, mints_filter.clone(), 1);
+    subscribe_to_logs(&eth_provider, notes_filter.clone(), 2);
+    println!("subscribed to logs successfully");
 
     // if block in state is < current_block, get logs from that part.
-    loop {
-        match eth_provider.get_logs(&filter) {
-            Ok(logs) => {
-                for log in logs {
-                    if let Err(e) = handle_log(&our, &mut state, &log, &eth_provider) {
-                        // print errors at verbosity=1
-                        print_to_terminal(1, &format!("log-handling error! {e:?}"));
-                    }
-                }
-                break;
-            }
-            Err(e) => {
-                println!("got eth error while fetching logs: {e:?}, trying again in 5s...");
-                std::thread::sleep(std::time::Duration::from_secs(5));
-                continue;
-            }
-        }
-    }
+    fetch_and_process_logs(&eth_provider, &our, &mut state, mints_filter.clone());
+    fetch_and_process_logs(&eth_provider, &our, &mut state, notes_filter.clone());
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -164,20 +157,22 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 &eth_provider,
                 &mut pending_requests,
                 &body,
-                &filter,
+                &mints_filter,
+                &notes_filter,
             )?;
         } else {
             let request = serde_json::from_slice(&body)?;
 
             match request {
-                // IndexerRequests, especially NamehashToName, relevant anymore? if they're mostly queried from the net runtime?
                 IndexerRequests::NamehashToName(NamehashToNameRequest {
                     ref block,
                     ref hash,
                 }) => {
                     if *block <= state.block {
                         Response::new()
-                            .body(serde_json::to_vec(&state.names.get(hash))?)
+                            .body(serde_json::to_vec(&IndexerResponses::Name(
+                                state.names.get(hash).cloned(),
+                            ))?)
                             .send()?;
                     } else {
                         pending_requests
@@ -189,7 +184,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 IndexerRequests::NodeInfo(NodeInfoRequest { ref name, block }) => {
                     if block <= state.block {
                         Response::new()
-                            .body(serde_json::to_vec(&state.nodes.get(name))?)
+                            .body(serde_json::to_vec(&IndexerResponses::NodeInfo(
+                                state.nodes.get(name).cloned(),
+                            ))?)
                             .send()?;
                     } else {
                         pending_requests
@@ -200,7 +197,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
                 IndexerRequests::GetState(GetStateRequest { block }) => {
                     if block <= state.block {
-                        Response::new().body(serde_json::to_vec(&state)?).send()?;
+                        Response::new()
+                            .body(serde_json::to_vec(&state.clone())?)
+                            .send()?;
                     } else {
                         pending_requests
                             .entry(block)
@@ -219,7 +218,8 @@ fn handle_eth_message(
     eth_provider: &eth::Provider,
     pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
     body: &[u8],
-    filter: &eth::Filter,
+    mints_filter: &eth::Filter,
+    notes_filter: &eth::Filter,
 ) -> anyhow::Result<()> {
     let Ok(eth_result) = serde_json::from_slice::<eth::EthSubResult>(body) else {
         return Err(anyhow::anyhow!("got invalid message"));
@@ -228,7 +228,7 @@ fn handle_eth_message(
     match eth_result {
         Ok(eth::EthSub { result, .. }) => {
             if let eth::SubscriptionResult::Log(log) = result {
-                if let Err(e) = handle_log(our, state, &log, eth_provider) {
+                if let Err(e) = handle_log(our, state, &log) {
                     // print errors at verbosity=1
                     print_to_terminal(1, &format!("log-handling error! {e:?}"));
                 }
@@ -236,7 +236,11 @@ fn handle_eth_message(
         }
         Err(e) => {
             println!("got eth subscription error ({e:?}), resubscribing");
-            subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
+            if e.id == 1 {
+                subscribe_to_logs(&eth_provider, mints_filter.clone(), 1);
+            } else if e.id == 2 {
+                subscribe_to_logs(&eth_provider, notes_filter.clone(), 2);
+            }
         }
     }
 
@@ -280,12 +284,7 @@ fn handle_eth_message(
     Ok(())
 }
 
-fn handle_log(
-    our: &Address,
-    state: &mut State,
-    log: &eth::Log,
-    eth_provider: &Provider,
-) -> anyhow::Result<()> {
+fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
     let mut node: Option<String> = None;
     match log.topics()[0] {
         Mint::SIGNATURE_HASH => {
@@ -296,19 +295,6 @@ fn handle_log(
 
             let name = get_full_name(state, &label, &parent_hash);
 
-            let get_call = getCall {
-                node: FixedBytes::<32>::from_str(&child_hash).unwrap(),
-            }
-            .abi_encode();
-            let get_tx = TransactionRequest::default()
-                .to(state.contract_address.parse::<eth::Address>().unwrap())
-                .input(TransactionInput::new(get_call.into()));
-            let res = eth_provider
-                .call(get_tx, None)
-                .map_err(|e| anyhow::anyhow!("tba get_call error: {:?}", e))?;
-
-            let get_return = getCall::abi_decode_returns(&res, false)?;
-            let tba = get_return.tokenBoundAccount.to_string();
             state.names.insert(child_hash.clone(), name.clone());
             // println!("got mint, name: {name}, child_hash: {child_hash}, tba: {tba}",);
             state
@@ -316,22 +302,12 @@ fn handle_log(
                 .entry(name.clone())
                 .or_insert_with(|| net::KnsUpdate {
                     name: name.clone(),
-                    // tbh owner should be a separate one from tba. (although we won't index transfers so won't be up to date)
-                    owner: tba,
-                    node: child_hash.clone(),
                     public_key: String::new(),
                     ips: Vec::new(),
                     ports: BTreeMap::new(),
                     routers: Vec::new(),
                 });
 
-            Request::new()
-                .target((&our.node, "net", "distro", "sys"))
-                .body(rmp_serde::to_vec(&net::NetAction::AddName(
-                    child_hash,
-                    name.clone(),
-                ))?)
-                .send()?;
             node = Some(name);
         }
         Note::SIGNATURE_HASH => {
@@ -397,6 +373,10 @@ fn handle_log(
         _ => {}
     }
 
+    if let Some(block) = log.block_number {
+        state.block = block;
+    }
+
     if let Some(node) = node {
         if let Some(node_info) = state.nodes.get(&node) {
             if node_info.public_key != ""
@@ -417,6 +397,31 @@ fn handle_log(
 }
 
 // helpers
+
+fn fetch_and_process_logs(
+    eth_provider: &eth::Provider,
+    our: &Address,
+    state: &mut State,
+    filter: eth::Filter,
+) {
+    let filter = filter.from_block(state.block - 1);
+    loop {
+        match eth_provider.get_logs(&filter) {
+            Ok(logs) => {
+                for log in logs {
+                    if let Err(e) = handle_log(our, state, &log) {
+                        print_to_terminal(1, &format!("log-handling error! {e:?}"));
+                    }
+                }
+                return ();
+            }
+            Err(e) => {
+                println!("got eth error while fetching logs: {e:?}, trying again in 5s...");
+                std::thread::sleep(std::time::Duration::from_secs(5));
+            }
+        }
+    }
+}
 
 fn get_node_name(state: &mut State, parent_hash: &str) -> String {
     let mut current_hash = parent_hash;
@@ -511,9 +516,9 @@ pub fn bytes_to_port(bytes: &[u8]) -> anyhow::Result<u16> {
     }
 }
 
-fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth::Filter) {
+fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter, sub_id: u64) {
     loop {
-        match eth_provider.subscribe(1, filter.clone().from_block(from_block)) {
+        match eth_provider.subscribe(sub_id, filter.clone()) {
             Ok(()) => break,
             Err(_) => {
                 println!("failed to subscribe to chain! trying again in 5s...");
@@ -522,5 +527,4 @@ fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth:
             }
         }
     }
-    println!("subscribed to logs successfully");
 }
