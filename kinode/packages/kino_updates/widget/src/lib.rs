@@ -6,8 +6,8 @@ wit_bindgen::generate!({
     world: "process-v0",
 });
 
-/// 20 minutes
-const REFRESH_INTERVAL: u64 = 20 * 60 * 1000;
+/// 2 hours
+const REFRESH_INTERVAL: u64 = 120 * 60 * 1000;
 
 #[derive(Serialize, Deserialize)]
 struct KinodeBlogPost {
