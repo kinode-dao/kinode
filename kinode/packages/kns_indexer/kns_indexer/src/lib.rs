@@ -277,7 +277,10 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             let child_hash = decoded.childhash.to_string();
             let label = String::from_utf8(decoded.name.to_vec())?;
 
-            let name = format!("{}.{}", label, get_parent_name(state, &parent_hash));
+            let name = match get_parent_name(&state.names, &parent_hash) {
+                Some(parent_name) => format!("{}.{}", label, parent_name),
+                None => label,
+            };
 
             state.names.insert(child_hash.clone(), name.clone());
 
@@ -298,57 +301,58 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             let decoded = kimap::contract::Note::decode_log_data(log.data(), true).unwrap();
 
             let note = String::from_utf8(decoded.note.to_vec())?;
-            let _note_hash: String = decoded.notehash.to_string();
             let node_hash = decoded.nodehash.to_string();
 
-            let name = get_parent_name(state, &node_hash);
+            let Some(node_name) = get_parent_name(&state.names, &node_hash) else {
+                return Err(anyhow::anyhow!("parent node for note not found"));
+            };
 
             match note.as_str() {
                 "~ws-port" => {
                     let ws = bytes_to_port(&decoded.data)?;
-                    state.nodes.entry(name.clone()).and_modify(|node| {
+                    state.nodes.entry(node_name.clone()).and_modify(|node| {
                         node.ports.insert("ws".to_string(), ws);
                         // port defined, -> direct
                         node.routers = vec![];
                     });
-                    node = Some(name.clone());
+                    node = Some(node_name);
                 }
                 "~tcp-port" => {
                     let tcp = bytes_to_port(&decoded.data)?;
-                    state.nodes.entry(name.clone()).and_modify(|node| {
+                    state.nodes.entry(node_name.clone()).and_modify(|node| {
                         node.ports.insert("tcp".to_string(), tcp);
                         // port defined, -> direct
                         node.routers = vec![];
                     });
-                    node = Some(name.clone());
+                    node = Some(node_name);
                 }
                 "~net-key" => {
                     if decoded.data.len() != 32 {
                         return Err(anyhow::anyhow!("invalid net-key length"));
                     }
-                    state.nodes.entry(name.clone()).and_modify(|node| {
+                    state.nodes.entry(node_name.clone()).and_modify(|node| {
                         node.public_key = decoded.data.to_string();
                     });
-                    node = Some(name);
+                    node = Some(node_name);
                 }
                 "~routers" => {
                     let routers = decode_routers(&decoded.data)?;
-                    state.nodes.entry(name.clone()).and_modify(|node| {
+                    state.nodes.entry(node_name.clone()).and_modify(|node| {
                         node.routers = routers;
                         // -> indirect
                         node.ports = BTreeMap::new();
                         node.ips = vec![];
                     });
-                    node = Some(name.clone());
+                    node = Some(node_name);
                 }
                 "~ip" => {
                     let ip = bytes_to_ip(&decoded.data)?;
-                    state.nodes.entry(name.clone()).and_modify(|node| {
+                    state.nodes.entry(node_name.clone()).and_modify(|node| {
                         node.ips.push(ip.to_string());
                         // -> direct
                         node.routers = vec![];
                     });
-                    node = Some(name.clone());
+                    node = Some(node_name);
                 }
                 _ => {}
             }
@@ -406,28 +410,34 @@ fn fetch_and_process_logs(
     }
 }
 
-fn get_parent_name(state: &mut State, parent_hash: &str) -> String {
+fn get_parent_name(names: &HashMap<String, String>, parent_hash: &str) -> Option<String> {
     let mut current_hash = parent_hash;
     let mut components = Vec::new(); // Collect components in a vector
     let mut visited_hashes = std::collections::HashSet::new();
 
-    while let Some(parent_name) = state.names.get(current_hash) {
+    while let Some(parent_name) = names.get(current_hash) {
         if !visited_hashes.insert(current_hash) {
             break;
         }
 
-        components.push(parent_name.clone());
+        if !parent_name.is_empty() {
+            components.push(parent_name.clone());
+        }
 
         // Update current_hash to the parent's hash for the next iteration
-        if let Some(new_parent_hash) = state.names.get(parent_name) {
+        if let Some(new_parent_hash) = names.get(parent_name) {
             current_hash = new_parent_hash;
         } else {
             break;
         }
     }
 
+    if components.is_empty() {
+        return None;
+    }
+
     components.reverse();
-    components.join(".")
+    Some(components.join("."))
 }
 
 // TEMP. Either remove when event reimitting working with anvil,
