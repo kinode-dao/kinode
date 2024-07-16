@@ -1,4 +1,4 @@
-use kinode_process_lib::{call_init, net, println, Address, Message, Request};
+use kinode_process_lib::{call_init, eth, net, println, Address, Message, Request};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -12,14 +12,14 @@ wit_bindgen::generate!({
 struct State {
     chain_id: u64,
     // what contract this state pertains to
-    contract_address: String,
+    contract_address: eth::Address,
     // namehash to human readable name
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
-    // NOTE: not every namehash will have a node registered
+    // TODO: optional params knsUpdate? also include tba.
     nodes: HashMap<String, net::KnsUpdate>,
     // last block we have an update from
-    block: u64,
+    last_block: u64,
 }
 
 call_init!(init);
@@ -51,7 +51,7 @@ fn init(_our: Address) {
         state.chain_id,
         state.contract_address,
         names.len(),
-        state.block,
+        state.last_block,
         names.join("\n     ")
     );
 }
