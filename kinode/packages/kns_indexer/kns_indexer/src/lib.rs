@@ -1,18 +1,16 @@
 use crate::kinode::process::kns_indexer::{
     GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
-use alloy_primitives::{keccak256, FixedBytes};
-use alloy_sol_types::{sol, SolCall, SolEvent};
+use alloy_primitives::keccak256;
+use alloy_sol_types::{sol, SolEvent};
 use kinode_process_lib::{
-    await_message, call_init,
-    eth::{self, Provider, TransactionInput, TransactionRequest},
-    net, print_to_terminal, println, Address, Message, Request, Response,
+    await_message, call_init, eth, net, print_to_terminal, println, Address, Message, Request,
+    Response,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{hash_map::HashMap, BTreeMap},
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
-    str::FromStr,
 };
 
 wit_bindgen::generate!({
@@ -49,6 +47,14 @@ struct State {
     nodes: HashMap<String, net::KnsUpdate>,
     // last block we have an update from
     block: u64,
+}
+
+// note: not defined in wit api right now like IndexerRequests.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+enum IndexerResponses {
+    Name(Option<String>),
+    NodeInfo(Option<net::KnsUpdate>),
+    GetState(State),
 }
 
 sol! {
@@ -158,14 +164,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
             let request = serde_json::from_slice(&body)?;
 
             match request {
-                // IndexerRequests, especially NamehashToName, relevant anymore? if they're mostly queried from the net runtime?
                 IndexerRequests::NamehashToName(NamehashToNameRequest {
                     ref block,
                     ref hash,
                 }) => {
                     if *block <= state.block {
                         Response::new()
-                            .body(rmp_serde::to_vec(&crate::net::NetResponse::Name(
+                            .body(serde_json::to_vec(&IndexerResponses::Name(
                                 state.names.get(hash).cloned(),
                             ))?)
                             .send()?;
@@ -179,7 +184,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 IndexerRequests::NodeInfo(NodeInfoRequest { ref name, block }) => {
                     if block <= state.block {
                         Response::new()
-                            .body(serde_json::to_vec(&state.nodes.get(name))?)
+                            .body(serde_json::to_vec(&IndexerResponses::NodeInfo(
+                                state.nodes.get(name).cloned(),
+                            ))?)
                             .send()?;
                     } else {
                         pending_requests
@@ -190,7 +197,9 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                 }
                 IndexerRequests::GetState(GetStateRequest { block }) => {
                     if block <= state.block {
-                        Response::new().body(serde_json::to_vec(&state)?).send()?;
+                        Response::new()
+                            .body(serde_json::to_vec(&state.clone())?)
+                            .send()?;
                     } else {
                         pending_requests
                             .entry(block)
@@ -219,7 +228,7 @@ fn handle_eth_message(
     match eth_result {
         Ok(eth::EthSub { result, .. }) => {
             if let eth::SubscriptionResult::Log(log) = result {
-                if let Err(e) = handle_log(our, state, &log, eth_provider) {
+                if let Err(e) = handle_log(our, state, &log) {
                     // print errors at verbosity=1
                     print_to_terminal(1, &format!("log-handling error! {e:?}"));
                 }
@@ -275,12 +284,7 @@ fn handle_eth_message(
     Ok(())
 }
 
-fn handle_log(
-    our: &Address,
-    state: &mut State,
-    log: &eth::Log,
-    eth_provider: &Provider,
-) -> anyhow::Result<()> {
+fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
     let mut node: Option<String> = None;
     match log.topics()[0] {
         Mint::SIGNATURE_HASH => {
@@ -291,19 +295,6 @@ fn handle_log(
 
             let name = get_full_name(state, &label, &parent_hash);
 
-            let get_call = getCall {
-                node: FixedBytes::<32>::from_str(&child_hash).unwrap(),
-            }
-            .abi_encode();
-            let get_tx = TransactionRequest::default()
-                .to(state.contract_address.parse::<eth::Address>().unwrap())
-                .input(TransactionInput::new(get_call.into()));
-            let res = eth_provider
-                .call(get_tx, None)
-                .map_err(|e| anyhow::anyhow!("tba get_call error: {:?}", e))?;
-
-            let get_return = getCall::abi_decode_returns(&res, false)?;
-            let tba = get_return.tokenBoundAccount.to_string();
             state.names.insert(child_hash.clone(), name.clone());
             // println!("got mint, name: {name}, child_hash: {child_hash}, tba: {tba}",);
             state
@@ -311,22 +302,12 @@ fn handle_log(
                 .entry(name.clone())
                 .or_insert_with(|| net::KnsUpdate {
                     name: name.clone(),
-                    // tbh owner should be a separate one from tba. (although we won't index transfers so won't be up to date)
-                    owner: tba,
-                    node: child_hash.clone(),
                     public_key: String::new(),
                     ips: Vec::new(),
                     ports: BTreeMap::new(),
                     routers: Vec::new(),
                 });
 
-            Request::new()
-                .target((&our.node, "net", "distro", "sys"))
-                .body(rmp_serde::to_vec(&net::NetAction::AddName(
-                    child_hash,
-                    name.clone(),
-                ))?)
-                .send()?;
             node = Some(name);
         }
         Note::SIGNATURE_HASH => {
@@ -428,7 +409,7 @@ fn fetch_and_process_logs(
         match eth_provider.get_logs(&filter) {
             Ok(logs) => {
                 for log in logs {
-                    if let Err(e) = handle_log(our, state, &log, eth_provider) {
+                    if let Err(e) = handle_log(our, state, &log) {
                         print_to_terminal(1, &format!("log-handling error! {e:?}"));
                     }
                 }

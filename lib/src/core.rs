@@ -2035,8 +2035,6 @@ pub enum NetResponse {
     Peers(Vec<Identity>),
     /// response to [`NetAction::GetPeer`]
     Peer(Option<Identity>),
-    /// response to [`NetAction::GetName`]
-    Name(Option<String>),
     /// response to [`NetAction::GetDiagnostics`]. a user-readable string.
     Diagnostics(String),
     /// response to [`NetAction::Sign`]. contains the signature in blob
@@ -2048,11 +2046,13 @@ pub enum NetResponse {
     Verified(bool),
 }
 
+//
+// KNS parts of the networking protocol
+//
+
 #[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct KnsUpdate {
-    pub name: String, // actual username / domain name
-    pub owner: String,
-    pub node: String, // hex namehash of node
+    pub name: String,
     pub public_key: String,
     pub ips: Vec<String>,
     pub ports: BTreeMap<String, u16>,
@@ -2063,4 +2063,22 @@ impl KnsUpdate {
     pub fn get_protocol_port(&self, protocol: &str) -> Option<&u16> {
         self.ports.get(protocol)
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum IndexerRequests {
+    NamehashToName(NamehashToNameRequest),
+    // other KNS requests are not used in process_lib, can be found in the kns api.
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
+pub struct NamehashToNameRequest {
+    pub hash: String,
+    pub block: Option<u64>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum IndexerResponses {
+    Name(Option<String>),
+    // other KNS responses are not used in process_lib, can be found in the kns api.
 }
