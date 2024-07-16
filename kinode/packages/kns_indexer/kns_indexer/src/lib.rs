@@ -101,14 +101,12 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     // sub_id: 1
     let mints_filter = eth::Filter::new()
         .address(state.contract_address.parse::<eth::Address>().unwrap())
-        .from_block(state.block - 1)
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Mint(bytes32,bytes32,bytes,bytes)");
 
     // sub_id: 2
     let notes_filter = eth::Filter::new()
         .address(state.contract_address.parse::<eth::Address>().unwrap())
-        .from_block(state.block - 1)
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Note(bytes32,bytes32,bytes,bytes,bytes)")
         .topic3(notes);
@@ -126,13 +124,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ),
     );
 
-    subscribe_to_logs(&eth_provider, state.block - 1, mints_filter.clone(), 1);
-    subscribe_to_logs(&eth_provider, state.block - 1, notes_filter.clone(), 2);
+    subscribe_to_logs(&eth_provider, mints_filter.clone(), 1);
+    subscribe_to_logs(&eth_provider, notes_filter.clone(), 2);
     println!("subscribed to logs successfully");
 
     // if block in state is < current_block, get logs from that part.
-    fetch_and_process_logs(&eth_provider, &our, &mut state, &mints_filter);
-    fetch_and_process_logs(&eth_provider, &our, &mut state, &notes_filter);
+    fetch_and_process_logs(&eth_provider, &our, &mut state, mints_filter.clone());
+    fetch_and_process_logs(&eth_provider, &our, &mut state, notes_filter.clone());
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -230,9 +228,9 @@ fn handle_eth_message(
         Err(e) => {
             println!("got eth subscription error ({e:?}), resubscribing");
             if e.id == 1 {
-                subscribe_to_logs(&eth_provider, state.block - 1, mints_filter.clone(), 1);
+                subscribe_to_logs(&eth_provider, mints_filter.clone(), 1);
             } else if e.id == 2 {
-                subscribe_to_logs(&eth_provider, state.block - 1, notes_filter.clone(), 2);
+                subscribe_to_logs(&eth_provider, notes_filter.clone(), 2);
             }
         }
     }
@@ -423,10 +421,11 @@ fn fetch_and_process_logs(
     eth_provider: &eth::Provider,
     our: &Address,
     state: &mut State,
-    filter: &eth::Filter,
+    filter: eth::Filter,
 ) {
+    let filter = filter.from_block(state.block - 1);
     loop {
-        match eth_provider.get_logs(filter) {
+        match eth_provider.get_logs(&filter) {
             Ok(logs) => {
                 for log in logs {
                     if let Err(e) = handle_log(our, state, &log, eth_provider) {
@@ -536,14 +535,9 @@ pub fn bytes_to_port(bytes: &[u8]) -> anyhow::Result<u16> {
     }
 }
 
-fn subscribe_to_logs(
-    eth_provider: &eth::Provider,
-    from_block: u64,
-    filter: eth::Filter,
-    sub_id: u64,
-) {
+fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter, sub_id: u64) {
     loop {
-        match eth_provider.subscribe(sub_id, filter.clone().from_block(from_block)) {
+        match eth_provider.subscribe(sub_id, filter.clone()) {
             Ok(()) => break,
             Err(_) => {
                 println!("failed to subscribe to chain! trying again in 5s...");
