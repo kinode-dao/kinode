@@ -80,7 +80,6 @@ pub fn app_store_filter(state: &State) -> eth::Filter {
 
     eth::Filter::new()
         .address(eth::Address::from_str(&state.contract_address).unwrap())
-        .from_block(state.last_saved_block)
         .events(EVENTS)
         .topic3(notes)
 }
@@ -89,7 +88,10 @@ pub fn app_store_filter(state: &State) -> eth::Filter {
 pub fn fetch_and_subscribe_logs(state: &mut State) {
     let filter = app_store_filter(state);
     // get past logs, subscribe to new ones.
-    for log in fetch_logs(&state.provider, &filter) {
+    for log in fetch_logs(
+        &state.provider,
+        &filter.clone().from_block(state.last_saved_block),
+    ) {
         if let Err(e) = state.ingest_contract_event(log, false) {
             println!("error ingesting log: {e:?}");
         };

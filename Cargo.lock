@@ -3233,14 +3233,13 @@ dependencies = [
  "hmac",
  "http 1.1.0",
  "jwt",
- "kit",
+ "kit 0.6.7",
  "lazy_static",
  "lib",
  "nohash-hasher",
  "open",
  "public-ip",
  "rand 0.8.5",
- "rayon",
  "reqwest 0.12.5",
  "ring",
  "rmp-serde",
@@ -3378,6 +3377,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "kit"
+version = "0.6.7"
+source = "git+https://github.com/kinode-dao/kit?rev=4a8999f#4a8999f90b69381e94d11fb5aa1b62215a9db95b"
+dependencies = [
+ "anyhow",
+ "base64 0.21.7",
+ "clap",
+ "color-eyre",
+ "dirs 5.0.1",
+ "fs-err",
+ "git2",
+ "hex",
+ "kinode_process_lib 0.8.0",
+ "nix",
+ "regex",
+ "reqwest 0.11.27",
+ "semver 1.0.23",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-appender",
+ "tracing-error",
+ "tracing-subscriber",
+ "walkdir",
+ "wit-bindgen",
+ "zip 0.6.6",
+]
+
+[[package]]
 name = "kns_indexer"
 version = "0.2.0"
 dependencies = [
@@ -3416,7 +3447,7 @@ name = "lib"
 version = "0.9.0"
 dependencies = [
  "alloy",
- "kit",
+ "kit 0.6.2",
  "lazy_static",
  "rand 0.8.5",
  "ring",

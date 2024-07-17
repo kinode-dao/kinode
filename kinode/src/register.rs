@@ -705,6 +705,11 @@ pub async fn assign_routing(
         ));
     }
 
+    if !our.is_direct() {
+        // indirect node
+        return Ok(());
+    }
+
     if ip.is_ok() && (ws.is_ok() || tcp.is_ok()) {
         // direct node
         let mut ports = std::collections::BTreeMap::new();

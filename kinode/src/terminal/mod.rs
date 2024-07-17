@@ -449,9 +449,9 @@ pub async fn terminal(
                                 )?;
                             },
                             //
-                            //  BACKSPACE or DELETE: delete a single character at cursor
+                            //  BACKSPACE: delete a single character at cursor
                             //
-                            KeyCode::Backspace | KeyCode::Delete => {
+                            KeyCode::Backspace => {
                                 if line_col == prompt_len {
                                     continue;
                                 }
@@ -481,6 +481,35 @@ pub async fn terminal(
                                     cursor::MoveTo(cursor_col, win_rows),
                                 )?;
                             },
+                            //
+                            //  DELETE: delete a single character at right of cursor
+                            //
+                            KeyCode::Delete => {
+                                if line_col == current_line.len() {
+                                    continue;
+                                }
+                                current_line.remove(line_col);
+                                if search_mode {
+                                    utils::execute_search(
+                                        &our,
+                                        &mut stdout,
+                                        &current_line,
+                                        prompt_len,
+                                        (win_cols, win_rows),
+                                        (line_col, cursor_col),
+                                        &mut command_history,
+                                        search_depth,
+                                    )?;
+                                    continue;
+                                }
+                                execute!(
+                                    stdout,
+                                    cursor::MoveTo(0, win_rows),
+                                    terminal::Clear(ClearType::CurrentLine),
+                                    Print(utils::truncate_in_place(&current_line, prompt_len, win_cols, (line_col, cursor_col))),
+                                    cursor::MoveTo(cursor_col, win_rows),
+                                )?;
+                            }
                             //
                             //  LEFT: move cursor one spot left
                             //
@@ -592,7 +621,7 @@ pub async fn terminal(
             _ = sigalrm.recv() => return Err(anyhow::anyhow!("exiting due to SIGALRM")),
             _ = sighup.recv() =>  return Err(anyhow::anyhow!("exiting due to SIGHUP")),
             _ = sigint.recv() =>  return Err(anyhow::anyhow!("exiting due to SIGINT")),
-            _ = sigpipe.recv() => return Err(anyhow::anyhow!("exiting due to SIGPIPE")),
+            _ = sigpipe.recv() => continue, // IGNORE SIGPIPE!
             _ = sigquit.recv() => return Err(anyhow::anyhow!("exiting due to SIGQUIT")),
             _ = sigterm.recv() => return Err(anyhow::anyhow!("exiting due to SIGTERM")),
             _ = sigusr1.recv() => return Err(anyhow::anyhow!("exiting due to SIGUSR1")),
