@@ -23,7 +23,7 @@ use ft_worker_lib::{
 };
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob, http, println, vfs, Address, LazyLoadBlob, Message,
-    NodeId, PackageId, Request, Response,
+    PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{AppStoreLogError, PackageState, RequestedPackage, State};
@@ -81,6 +81,7 @@ pub enum Resp {
     LocalResponse(LocalResponse),
     RemoteResponse(RemoteResponse),
     FTWorkerResult(FTWorkerResult),
+    HttpClient(Result<http::HttpClientResponse, http::HttpClientError>),
 }
 
 call_init!(init);
@@ -172,8 +173,28 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
             }
         }
     } else {
-        // the only kind of response we care to handle here!
-        handle_ft_worker_result(message.body(), message.context().unwrap_or(&vec![]))?;
+        match serde_json::from_slice::<Resp>(message.body())? {
+            Resp::HttpClient(resp) => {
+                let name = match message.context() {
+                    Some(context) => std::str::from_utf8(context).unwrap_or_default(),
+                    None => return Err(anyhow::anyhow!("http_client response without context")),
+                };
+                if let Ok(http::HttpClientResponse::Http(http::HttpResponse { status, .. })) = resp
+                {
+                    if status == 200 {
+                        handle_receive_download(state, &name)?;
+                    }
+                } else {
+                    println!("got http_client error: {resp:?}");
+                }
+            }
+            Resp::FTWorkerResult(ft_worker_result) => {
+                handle_ft_worker_result(ft_worker_result, message.context().unwrap_or(&vec![]))?;
+            }
+            Resp::LocalResponse(_) | Resp::RemoteResponse(_) => {
+                // don't need to handle these at the moment
+            }
+        }
     }
     Ok(())
 }
@@ -387,10 +408,11 @@ pub fn rebuild_index(state: &mut State) -> LocalResponse {
     LocalResponse::RebuildIndexResponse(RebuildIndexResponse::Success)
 }
 
+/// `from`: the node OR url to download from
 pub fn start_download(
     state: &mut State,
     package_id: PackageId,
-    from: NodeId,
+    from: String,
     mirror: bool,
     auto_update: bool,
     desired_version_hash: Option<String>,
@@ -399,22 +421,44 @@ pub fn start_download(
         package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id.clone()),
         desired_version_hash: desired_version_hash.clone(),
     };
-    if let Ok(Ok(Message::Response { body, .. })) =
-        Request::to((from.as_str(), state.our.process.clone()))
-            .body(serde_json::to_vec(&RemoteRequest::Download(download_request)).unwrap())
-            .send_and_await_response(VFS_TIMEOUT)
-    {
-        if let Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) =
-            serde_json::from_slice::<Resp>(&body)
+    // if `from` is a node, send a request to it
+    // but if it is a url, use http_client to GET it
+    if from.starts_with("http") {
+        // use http_client to GET it
+        Request::to(("our", "http_client", "distro", "sys"))
+            .body(
+                serde_json::to_vec(&http::HttpClientAction::Http(http::OutgoingHttpRequest {
+                    method: "GET".to_string(),
+                    version: None,
+                    url: from.clone(),
+                    headers: std::collections::HashMap::new(),
+                }))
+                .unwrap(),
+            )
+            .context(package_id.to_string().as_bytes())
+            .expects_response(60)
+            .send()
+            .unwrap();
+
+        return DownloadResponse::Started;
+    } else {
+        if let Ok(Ok(Message::Response { body, .. })) =
+            Request::to((from.as_str(), state.our.process.clone()))
+                .body(serde_json::to_vec(&RemoteRequest::Download(download_request)).unwrap())
+                .send_and_await_response(VFS_TIMEOUT)
         {
-            let requested = RequestedPackage {
-                from,
-                mirror,
-                auto_update,
-                desired_version_hash,
-            };
-            state.requested_packages.insert(package_id, requested);
-            return DownloadResponse::Started;
+            if let Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) =
+                serde_json::from_slice::<Resp>(&body)
+            {
+                let requested = RequestedPackage {
+                    from,
+                    mirror,
+                    auto_update,
+                    desired_version_hash,
+                };
+                state.requested_packages.insert(package_id, requested);
+                return DownloadResponse::Started;
+            }
         }
     }
     DownloadResponse::BadResponse
@@ -535,23 +579,21 @@ fn handle_receive_download_package(
     Ok(())
 }
 
-fn handle_ft_worker_result(body: &[u8], context: &[u8]) -> anyhow::Result<()> {
-    if let Ok(Resp::FTWorkerResult(ft_worker_result)) = serde_json::from_slice::<Resp>(body) {
-        let context = serde_json::from_slice::<FileTransferContext>(context)?;
-        if let FTWorkerResult::SendSuccess = ft_worker_result {
-            println!(
-                "successfully shared {} in {:.4}s",
-                context.file_name,
-                std::time::SystemTime::now()
-                    .duration_since(context.start_time)
-                    .unwrap()
-                    .as_secs_f64(),
-            );
-        } else {
-            return Err(anyhow::anyhow!("failed to share app"));
-        }
+fn handle_ft_worker_result(ft_worker_result: FTWorkerResult, context: &[u8]) -> anyhow::Result<()> {
+    let context = serde_json::from_slice::<FileTransferContext>(context)?;
+    if let FTWorkerResult::SendSuccess = ft_worker_result {
+        println!(
+            "successfully shared {} in {:.4}s",
+            context.file_name,
+            std::time::SystemTime::now()
+                .duration_since(context.start_time)
+                .unwrap()
+                .as_secs_f64(),
+        );
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("failed to share app"))
     }
-    Ok(())
 }
 
 fn handle_eth_sub_event(
