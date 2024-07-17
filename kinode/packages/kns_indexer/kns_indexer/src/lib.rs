@@ -59,9 +59,9 @@ sol! {
     event RoutingUpdate(bytes32 indexed node, bytes32[] routers);
 }
 
-fn subscribe_to_logs(eth_provider: &eth::Provider, from_block: u64, filter: eth::Filter) {
+fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
     loop {
-        match eth_provider.subscribe(1, filter.clone().from_block(from_block)) {
+        match eth_provider.subscribe(1, filter.clone()) {
             Ok(()) => break,
             Err(_) => {
                 println!("failed to subscribe to chain! trying again in 5s...");
@@ -126,7 +126,6 @@ fn init(our: Address) {
 fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     let filter = eth::Filter::new()
         .address(state.contract_address.parse::<eth::Address>().unwrap())
-        .from_block(state.block - 1)
         .to_block(eth::BlockNumberOrTag::Latest)
         .events(vec![
             "NodeRegistered(bytes32,bytes)",
@@ -147,11 +146,11 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         state.chain_id
     );
 
-    subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
+    subscribe_to_logs(&eth_provider, filter.clone());
 
     // if block in state is < current_block, get logs from that part.
     loop {
-        match eth_provider.get_logs(&filter) {
+        match eth_provider.get_logs(&filter.clone().from_block(state.block - 1)) {
             Ok(logs) => {
                 for log in logs {
                     match handle_log(&our, &mut state, &log) {
@@ -277,7 +276,7 @@ fn handle_eth_message(
         }
         Err(_e) => {
             println!("got eth subscription error");
-            subscribe_to_logs(&eth_provider, state.block - 1, filter.clone());
+            subscribe_to_logs(&eth_provider, filter.clone());
         }
     }
 
