@@ -347,14 +347,14 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
                         node.routers = vec![];
                     };
                 }
-                other => {
-                    println!("unknown note: {other}");
+                _other => {
+                    // println!("unknown note: {other}");
                 }
             }
             node_name
         }
-        _ => {
-            println!("unknown log: {log:?}");
+        _log => {
+            // println!("unknown log: {log:?}");
             return Ok(());
         }
     };
@@ -371,7 +371,6 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             && ((!node_info.ips.is_empty() && !node_info.ports.is_empty())
                 || node_info.routers.len() > 0)
         {
-            println!("sending update for {node_name}: {node_info:?}");
             return Request::new()
                 .target((&our.node, "net", "distro", "sys"))
                 .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(
@@ -380,8 +379,6 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
                 .send();
         }
     }
-
-    println!("**not** sending update for {node_name}");
     Ok(())
 }
 
