@@ -63,6 +63,7 @@ pub fn startup(
           ,/ /` `
         .*`
  networking public key: {}
+ {}
                     "#,
                 our.name,
                 if our.is_direct() {
@@ -72,6 +73,7 @@ pub fn startup(
                 },
                 version,
                 our.networking_key,
+                if is_detached { "(detached)" } else { "" }
             )),
             crossterm::style::ResetColor
         )
@@ -95,6 +97,7 @@ pub fn startup(
  version {}
  a general purpose sovereign cloud computer
  net pubkey: {}
+ {}
                     "#,
                 our.name,
                 if our.is_direct() {
@@ -104,6 +107,7 @@ pub fn startup(
                 },
                 version,
                 our.networking_key,
+                if is_detached { "(detached)" } else { "" }
             )),
             crossterm::style::ResetColor
         )?;
