@@ -22,7 +22,7 @@ function ImportKeyfile({
   nodeChainId,
 }: ImportKeyfileProps) {
 
-  const [localKey, setLocalKey] = useState<string>("");
+  const [localKey, setLocalKey] = useState<Uint8Array | null>(null);
   const [localKeyFileName, setLocalKeyFileName] = useState<string>("");
   const [keyErrs, _setKeyErrs] = useState<string[]>([]);
 
@@ -35,84 +35,23 @@ function ImportKeyfile({
     document.title = "Import Keyfile";
   }, []);
 
-  // const handlePassword = useCallback(async () => {
-  //   try {
-  //     const response = await fetch(getFetchUrl("/vet-keyfile"), {
-  //       method: "POST",
-  //       credentials: 'include',
-  //       headers: { "Content-Type": "application/json" },
-  //       body: JSON.stringify({
-  //         keyfile: localKey,
-  //         password: pw,
-  //       }),
-  //     });
-
-  //     const data = await response.json();
-
-  //     setOsName(data.username);
-
-  //     setPwVet(true);
-
-  //     const errs = [...keyErrs];
-
-  //     const ws = await kns.ws(namehash(data.username));
-
-  //     let index = errs.indexOf(KEY_WRONG_NET_KEY);
-  //     if (ws.publicKey !== data.networking_key) {
-  //       if (index === -1) errs.push(KEY_WRONG_NET_KEY);
-  //     } else if (index !== -1) errs.splice(index, 1);
-
-  //     index = errs.indexOf(KEY_WRONG_IP);
-  //     if(ws.ip === 0)
-  //       setDirect(false)
-  //     else {
-  //       setDirect(true)
-  //       if (ws.ip !== ipAddress && index === -1)
-  //         errs.push(KEY_WRONG_IP);
-  //     }
-
-  //     setKeyErrs(errs);
-  //   } catch {
-  //     setPwVet(false);
-  //   }
-  //   setPwDebounced(true);
-  // }, [localKey, pw, keyErrs, ipAddress, kns, setOsName, setDirect]);
-
-  // const pwDebouncer = useRef<NodeJS.Timeout | null>(null);
-  // useEffect(() => {
-  //   if (pwDebouncer.current) clearTimeout(pwDebouncer.current);
-
-  //   pwDebouncer.current = setTimeout(async () => {
-  //     if (pw !== "") {
-  //       if (pw.length < 6)
-  //         setPwErr("Password must be at least 6 characters")
-  //       else {
-  //         setPwErr("")
-  //         handlePassword()
-  //       }
-  //     }
-  //   }, 500)
-
-  // }, [pw])
-
-  // for if we check router validity in future
-  // const KEY_BAD_ROUTERS = "Routers from records are offline"
-
-  const handleKeyfile = useCallback((e: any) => {
+  const handleKeyfile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     e.preventDefault();
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onloadend = () => {
-      setLocalKey(reader.result as string);
-      setLocalKeyFileName(file.name);
+      if (reader.result instanceof ArrayBuffer) {
+        setLocalKey(new Uint8Array(reader.result));
+        setLocalKeyFileName(file.name);
+      }
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }, []);
 
   const keyfileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleKeyUploadClick = useCallback(async (e: any) => {
+  const handleKeyUploadClick = useCallback(async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     keyfileInputRef.current?.click();
@@ -126,7 +65,7 @@ function ImportKeyfile({
       setLoading(true);
 
       try {
-        if (keyErrs.length === 0 && localKey !== "") {
+        if (keyErrs.length === 0 && localKey !== null) {
           let hashed_password = utils.sha256(utils.toUtf8Bytes(pw));
 
           const response = await fetch(getFetchUrl("/vet-keyfile"), {
@@ -134,7 +73,7 @@ function ImportKeyfile({
             credentials: 'include',
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              keyfile: localKey,
+              keyfile: Buffer.from(localKey).toString('base64'),
               password_hash: hashed_password,
             }),
           });
@@ -148,7 +87,7 @@ function ImportKeyfile({
             credentials: 'include',
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              keyfile: localKey,
+              keyfile: Buffer.from(localKey).toString('base64'),
               password_hash: hashed_password,
             }),
           });
