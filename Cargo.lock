@@ -3233,7 +3233,7 @@ dependencies = [
  "hmac",
  "http 1.1.0",
  "jwt",
- "kit 0.6.7",
+ "kit 0.6.8",
  "lazy_static",
  "lib",
  "nohash-hasher",
@@ -3356,8 +3356,8 @@ dependencies = [
 
 [[package]]
 name = "kit"
-version = "0.6.7"
-source = "git+https://github.com/kinode-dao/kit?rev=4a8999f#4a8999f90b69381e94d11fb5aa1b62215a9db95b"
+version = "0.6.8"
+source = "git+https://github.com/kinode-dao/kit?rev=ee064e1#ee064e1a0dcd99abf22c0cd1473295ed6a4efa86"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
