@@ -237,7 +237,6 @@ async fn build_subscription(
                         None => aps.urls.insert(0, url_provider.clone()),
                         Some(_) => aps.urls.insert(0, old_provider),
                     }
-
                 });
                 if !is_replacement_successful {
                     verbose_print(
