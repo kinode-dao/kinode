@@ -3203,7 +3203,7 @@ dependencies = [
 
 [[package]]
 name = "kinode"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "aes-gcm",
  "alloy",
@@ -3259,7 +3259,7 @@ dependencies = [
 
 [[package]]
 name = "kinode_lib"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "lib",
 ]
@@ -3376,7 +3376,7 @@ checksum = "884e2677b40cc8c339eaefcb701c32ef1fd2493d71118dc0ca4b6a736c93bd67"
 
 [[package]]
 name = "lib"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "alloy",
  "kit",
