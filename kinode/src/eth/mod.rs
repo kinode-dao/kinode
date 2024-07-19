@@ -618,19 +618,17 @@ async fn fulfill_request(
         match pubsub.raw_request(method.into(), params.clone()).await {
             Ok(value) => {
                 let mut is_replacement_successful = true;
-                providers
-                    .entry(chain_id)
-                    .and_modify(|aps| {
-                        let Some(index) = find_index(
-                            &aps.urls.iter().map(|u| u.url.as_str()).collect(),
-                            &url_provider.url) else
-                        {
-                            is_replacement_successful = false;
-                            return ();
-                        };
-                        aps.urls.remove(index);
-                        aps.urls.insert(0, url_provider.clone());
-                    });
+                providers.entry(chain_id).and_modify(|aps| {
+                    let Some(index) = find_index(
+                        &aps.urls.iter().map(|u| u.url.as_str()).collect(),
+                        &url_provider.url,
+                    ) else {
+                        is_replacement_successful = false;
+                        return ();
+                    };
+                    aps.urls.remove(index);
+                    aps.urls.insert(0, url_provider.clone());
+                });
                 if !is_replacement_successful {
                     verbose_print(
                         print_tx,
@@ -655,20 +653,18 @@ async fn fulfill_request(
                 }
                 // this provider failed and needs to be reset
                 let mut is_reset_successful = true;
-                providers
-                    .entry(chain_id)
-                    .and_modify(|aps| {
-                        let Some(index) = find_index(
-                            &aps.urls.iter().map(|u| u.url.as_str()).collect(),
-                            &url_provider.url) else
-                        {
-                            is_reset_successful = false;
-                            return ();
-                        };
-                        let mut url = aps.urls.remove(index);
-                        url.pubsub = None;
-                        aps.urls.insert(index, url);
-                    });
+                providers.entry(chain_id).and_modify(|aps| {
+                    let Some(index) = find_index(
+                        &aps.urls.iter().map(|u| u.url.as_str()).collect(),
+                        &url_provider.url,
+                    ) else {
+                        is_reset_successful = false;
+                        return ();
+                    };
+                    let mut url = aps.urls.remove(index);
+                    url.pubsub = None;
+                    aps.urls.insert(index, url);
+                });
                 if !is_reset_successful {
                     verbose_print(
                         print_tx,
@@ -713,7 +709,8 @@ async fn fulfill_request(
                     &chain_id,
                     &node_provider.kns_update.name,
                     print_tx,
-                ).await;
+                )
+                .await;
             }
         } else {
             return response;
@@ -1046,13 +1043,15 @@ async fn kernel_message<T: Serialize>(
 }
 
 fn find_index(vec: &Vec<&str>, item: &str) -> Option<usize> {
-    vec.iter().enumerate().find_map(|(index, value)| {
-        if *value == item {
-            Some(index)
-        } else {
-            None
-        }
-    })
+    vec.iter().enumerate().find_map(
+        |(index, value)| {
+            if *value == item {
+                Some(index)
+            } else {
+                None
+            }
+        },
+    )
 }
 
 async fn set_node_unusable(
@@ -1062,20 +1061,21 @@ async fn set_node_unusable(
     print_tx: &PrintSender,
 ) -> bool {
     let mut is_replacement_successful = true;
-    providers
-        .entry(chain_id.clone())
-        .and_modify(|aps| {
-            let Some(index) = find_index(
-                &aps.nodes.iter().map(|n| n.kns_update.name.as_str()).collect(),
-                &node_name
-            ) else {
-                is_replacement_successful = false;
-                return ();
-            };
-            let mut node = aps.nodes.remove(index);
-            node.usable = false;
-            aps.nodes.insert(index, node);
-        });
+    providers.entry(chain_id.clone()).and_modify(|aps| {
+        let Some(index) = find_index(
+            &aps.nodes
+                .iter()
+                .map(|n| n.kns_update.name.as_str())
+                .collect(),
+            &node_name,
+        ) else {
+            is_replacement_successful = false;
+            return ();
+        };
+        let mut node = aps.nodes.remove(index);
+        node.usable = false;
+        aps.nodes.insert(index, node);
+    });
     if !is_replacement_successful {
         verbose_print(
             print_tx,
