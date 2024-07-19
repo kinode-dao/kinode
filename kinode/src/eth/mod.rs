@@ -626,8 +626,11 @@ async fn fulfill_request(
                         is_replacement_successful = false;
                         return ();
                     };
-                    aps.urls.remove(index);
-                    aps.urls.insert(0, url_provider.clone());
+                    let old_provider = aps.urls.remove(index);
+                    match old_provider.pubsub {
+                        None => aps.urls.insert(0, url_provider.clone()),
+                        Some(_) => aps.urls.insert(0, old_provider),
+                    }
                 });
                 if !is_replacement_successful {
                     verbose_print(
