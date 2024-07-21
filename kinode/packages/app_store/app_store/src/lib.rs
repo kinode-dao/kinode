@@ -22,12 +22,12 @@ use ft_worker_lib::{
     spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
 };
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, http, println, vfs, Address, LazyLoadBlob, Message,
-    NodeId, PackageId, Request, Response,
+    await_message, call_init, eth, get_blob, http, kimap, println, vfs, Address, LazyLoadBlob,
+    Message, NodeId, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{AppStoreLogError, PackageState, RequestedPackage, State};
-use utils::{fetch_and_subscribe_logs, fetch_state, subscribe_to_logs};
+use utils::{fetch_and_subscribe_logs, fetch_state};
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -42,7 +42,7 @@ pub mod state;
 pub mod utils;
 
 #[cfg(not(feature = "simulation-mode"))]
-const CHAIN_ID: u64 = 10; // optimism
+const CHAIN_ID: u64 = kimap::KIMAP_CHAIN_ID;
 #[cfg(feature = "simulation-mode")]
 const CHAIN_ID: u64 = 31337; // local
 
@@ -51,16 +51,14 @@ pub const VFS_TIMEOUT: u64 = 5; // 5s
 pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559"; // optimism
+const KIMAP_ADDRESS: &str = kimap::KIMAP_ADDRESS;
 #[cfg(feature = "simulation-mode")]
 const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F"; // note temp kimap address!
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_FIRST_BLOCK: u64 = 122_295_937;
+const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK;
 #[cfg(feature = "simulation-mode")]
 const KIMAP_FIRST_BLOCK: u64 = 1;
-
-const EVENTS: [&str; 1] = ["Note(bytes32,bytes32,bytes,bytes,bytes)"];
 
 // internal types
 
@@ -155,9 +153,10 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                 if let Ok(eth::EthSub { result, .. }) = eth_result {
                     handle_eth_sub_event(state, result)?;
                 } else {
-                    println!("got eth subscription error");
                     // attempt to resubscribe
-                    subscribe_to_logs(&state.provider, utils::app_store_filter(state));
+                    state
+                        .provider
+                        .subscribe_loop(1, utils::app_store_filter(state));
                 }
             }
             Req::Http(incoming) => {
