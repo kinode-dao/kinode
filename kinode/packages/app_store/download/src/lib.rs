@@ -1,7 +1,7 @@
 use crate::kinode::process::main::{DownloadResponse, LocalRequest, LocalResponse};
 use kinode::process::main::DownloadRequest;
 use kinode_process_lib::{
-    await_next_message_body, call_init, println, Address, Message, NodeId, PackageId, Request,
+    await_next_message_body, call_init, println, Address, Message, PackageId, Request,
 };
 
 wit_bindgen::generate!({
@@ -26,7 +26,7 @@ fn init(our: Address) {
         return;
     };
 
-    let download_from: NodeId = arg1.to_string();
+    let download_from: String = arg1.to_string();
 
     let Ok(package_id) = arg2.parse::<PackageId>() else {
         println!("download: invalid package id, make sure to include package name and publisher");
