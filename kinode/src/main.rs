@@ -77,14 +77,12 @@ async fn main() {
     let rpc = matches.get_one::<String>("rpc");
     let password = matches.get_one::<String>("password");
 
-    // if we are in sim-mode, detached determines whether terminal is interactive
-    #[cfg(not(feature = "simulation-mode"))]
-    let is_detached = false;
+    // detached determines whether terminal is interactive
+    let is_detached = *matches.get_one::<bool>("detached").unwrap();
 
     #[cfg(feature = "simulation-mode")]
-    let (fake_node_name, is_detached, fakechain_port) = (
+    let (fake_node_name, fakechain_port) = (
         matches.get_one::<String>("fake-node-name"),
-        *matches.get_one::<bool>("detached").unwrap(),
         matches.get_one::<u16>("fakechain-port").cloned(),
     );
 
@@ -654,6 +652,10 @@ fn build_command() -> Command {
                 .default_value("true")
                 .value_parser(value_parser!(bool)),
         )
+        .arg(
+            arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
+                .action(clap::ArgAction::SetTrue),
+        )
         .arg(arg!(--rpc <RPC> "Add a WebSockets RPC URL at boot"))
         .arg(arg!(--password <PASSWORD> "Node password (in double quotes)"));
 
@@ -663,10 +665,6 @@ fn build_command() -> Command {
         .arg(
             arg!(--"fakechain-port" <FAKECHAIN_PORT> "Port to bind to for fakechain")
                 .value_parser(value_parser!(u16)),
-        )
-        .arg(
-            arg!(--detached <IS_DETACHED> "Run in detached mode (don't accept input)")
-                .action(clap::ArgAction::SetTrue),
         );
     app
 }

@@ -260,12 +260,9 @@ impl State {
 
     /// saves state
     pub fn populate_packages_from_filesystem(&mut self) -> anyhow::Result<()> {
-        let Message::Response { body, .. } = Request::to(("our", "vfs", "distro", "sys"))
-            .body(serde_json::to_vec(&vfs::VfsRequest {
-                path: "/".to_string(),
-                action: vfs::VfsAction::ReadDir,
-            })?)
-            .send_and_await_response(VFS_TIMEOUT)??
+        let Message::Response { body, .. } =
+            utils::vfs_request("/".to_string(), vfs::VfsAction::ReadDir)
+                .send_and_await_response(VFS_TIMEOUT)??
         else {
             return Err(anyhow::anyhow!("vfs: bad response"));
         };
@@ -313,16 +310,9 @@ impl State {
                     None,
                 )?;
 
-                if let Ok(Ok(_)) = Request::new()
-                    .target(("our", "vfs", "distro", "sys"))
-                    .body(
-                        serde_json::to_vec(&vfs::VfsRequest {
-                            path: format!("/{package_id}/pkg/api"),
-                            action: vfs::VfsAction::Metadata,
-                        })
-                        .unwrap(),
-                    )
-                    .send_and_await_response(VFS_TIMEOUT)
+                if let Ok(Ok(_)) =
+                    utils::vfs_request(format!("/{package_id}/pkg/api"), vfs::VfsAction::Metadata)
+                        .send_and_await_response(VFS_TIMEOUT)
                 {
                     self.downloaded_apis.insert(package_id.to_owned());
                 }

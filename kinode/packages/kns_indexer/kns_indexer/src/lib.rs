@@ -269,8 +269,7 @@ fn handle_eth_message(
 }
 
 fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Result<()> {
-    let mut node: Option<String> = None;
-    match log.topics()[0] {
+    let node_name = match log.topics()[0] {
         kimap::contract::Mint::SIGNATURE_HASH => {
             let decoded = kimap::contract::Mint::decode_log_data(log.data(), true).unwrap();
             let parent_hash = decoded.parenthash.to_string();
@@ -284,18 +283,17 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
 
             state.names.insert(child_hash.clone(), name.clone());
 
-            state
-                .nodes
-                .entry(name.clone())
-                .or_insert_with(|| net::KnsUpdate {
+            state.nodes.insert(
+                name.clone(),
+                net::KnsUpdate {
                     name: name.clone(),
                     public_key: String::new(),
                     ips: Vec::new(),
                     ports: BTreeMap::new(),
                     routers: Vec::new(),
-                });
-
-            node = Some(name);
+                },
+            );
+            name
         }
         kimap::contract::Note::SIGNATURE_HASH => {
             let decoded = kimap::contract::Note::decode_log_data(log.data(), true).unwrap();
@@ -310,76 +308,77 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             match note.as_str() {
                 "~ws-port" => {
                     let ws = bytes_to_port(&decoded.data)?;
-                    state.nodes.entry(node_name.clone()).and_modify(|node| {
+                    if let Some(node) = state.nodes.get_mut(&node_name) {
                         node.ports.insert("ws".to_string(), ws);
                         // port defined, -> direct
                         node.routers = vec![];
-                    });
-                    node = Some(node_name);
+                    }
                 }
                 "~tcp-port" => {
                     let tcp = bytes_to_port(&decoded.data)?;
-                    state.nodes.entry(node_name.clone()).and_modify(|node| {
+                    if let Some(node) = state.nodes.get_mut(&node_name) {
                         node.ports.insert("tcp".to_string(), tcp);
                         // port defined, -> direct
                         node.routers = vec![];
-                    });
-                    node = Some(node_name);
+                    }
                 }
                 "~net-key" => {
                     if decoded.data.len() != 32 {
                         return Err(anyhow::anyhow!("invalid net-key length"));
                     }
-                    state.nodes.entry(node_name.clone()).and_modify(|node| {
+                    if let Some(node) = state.nodes.get_mut(&node_name) {
                         node.public_key = decoded.data.to_string();
-                    });
-                    node = Some(node_name);
+                    }
                 }
                 "~routers" => {
                     let routers = decode_routers(&decoded.data)?;
-                    state.nodes.entry(node_name.clone()).and_modify(|node| {
+                    if let Some(node) = state.nodes.get_mut(&node_name) {
                         node.routers = routers;
                         // -> indirect
                         node.ports = BTreeMap::new();
                         node.ips = vec![];
-                    });
-                    node = Some(node_name);
+                    };
                 }
                 "~ip" => {
                     let ip = bytes_to_ip(&decoded.data)?;
-                    state.nodes.entry(node_name.clone()).and_modify(|node| {
-                        node.ips.push(ip.to_string());
+                    if let Some(node) = state.nodes.get_mut(&node_name) {
+                        node.ips = vec![ip.to_string()];
                         // -> direct
                         node.routers = vec![];
-                    });
-                    node = Some(node_name);
+                    };
                 }
-                _ => {}
+                _other => {
+                    // println!("unknown note: {other}");
+                }
             }
+            node_name
         }
-        _ => {}
-    }
+        _log => {
+            // println!("unknown log: {log:?}");
+            return Ok(());
+        }
+    };
 
     if let Some(block) = log.block_number {
         state.last_block = block;
     }
 
-    if let Some(node) = node {
-        if let Some(node_info) = state.nodes.get(&node) {
-            if node_info.public_key != ""
-                && ((!node_info.ips.is_empty() && !node_info.ports.is_empty())
-                    || node_info.routers.len() > 0)
-            {
-                Request::new()
-                    .target((&our.node, "net", "distro", "sys"))
-                    .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(
-                        node_info.clone(),
-                    ))?)
-                    .send()?;
-            }
+    // only send an update if we have a *full* set of data for networking:
+    // a node name, plus either <routers> or <ip, port(s)>
+
+    if let Some(node_info) = state.nodes.get(&node_name) {
+        if !node_info.public_key.is_empty()
+            && ((!node_info.ips.is_empty() && !node_info.ports.is_empty())
+                || node_info.routers.len() > 0)
+        {
+            return Request::new()
+                .target((&our.node, "net", "distro", "sys"))
+                .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(
+                    node_info.clone(),
+                ))?)
+                .send();
         }
     }
-
     Ok(())
 }
 
@@ -391,7 +390,7 @@ fn fetch_and_process_logs(
     state: &mut State,
     filter: eth::Filter,
 ) {
-    let filter = filter.from_block(state.last_block - 1);
+    let filter = filter.from_block(KIMAP_FIRST_BLOCK);
     loop {
         match eth_provider.get_logs(&filter) {
             Ok(logs) => {

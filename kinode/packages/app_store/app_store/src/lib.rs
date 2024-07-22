@@ -22,12 +22,12 @@ use ft_worker_lib::{
     spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
 };
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, http, println, vfs, Address, LazyLoadBlob, Message,
-    PackageId, Request, Response,
+    await_message, call_init, eth, get_blob, http, kimap, println, vfs, Address, LazyLoadBlob,
+    Message, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{AppStoreLogError, PackageState, RequestedPackage, State};
-use utils::{fetch_and_subscribe_logs, fetch_state, subscribe_to_logs};
+use utils::{fetch_and_subscribe_logs, fetch_state};
 
 wit_bindgen::generate!({
     path: "target/wit",
@@ -42,7 +42,7 @@ pub mod state;
 pub mod utils;
 
 #[cfg(not(feature = "simulation-mode"))]
-const CHAIN_ID: u64 = 10; // optimism
+const CHAIN_ID: u64 = kimap::KIMAP_CHAIN_ID;
 #[cfg(feature = "simulation-mode")]
 const CHAIN_ID: u64 = 31337; // local
 
@@ -51,16 +51,14 @@ pub const VFS_TIMEOUT: u64 = 5; // 5s
 pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559"; // optimism
+const KIMAP_ADDRESS: &str = kimap::KIMAP_ADDRESS;
 #[cfg(feature = "simulation-mode")]
 const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F"; // note temp kimap address!
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_FIRST_BLOCK: u64 = 122_295_937;
+const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK;
 #[cfg(feature = "simulation-mode")]
 const KIMAP_FIRST_BLOCK: u64 = 1;
-
-const EVENTS: [&str; 1] = ["Note(bytes32,bytes32,bytes,bytes,bytes)"];
 
 // internal types
 
@@ -156,9 +154,10 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                 if let Ok(eth::EthSub { result, .. }) = eth_result {
                     handle_eth_sub_event(state, result)?;
                 } else {
-                    println!("got eth subscription error");
                     // attempt to resubscribe
-                    subscribe_to_logs(&state.provider, utils::app_store_filter(state));
+                    state
+                        .provider
+                        .subscribe_loop(1, utils::app_store_filter(state));
                 }
             }
             Req::Http(incoming) => {
@@ -201,21 +200,22 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
 
 /// fielding requests to download packages and APIs from us
 fn handle_remote_request(state: &mut State, source: &Address, request: RemoteRequest) -> Resp {
-    let (package_id, desired_version_hash) = match &request {
+    let (package_id, desired_version_hash) = match request {
         RemoteRequest::Download(RemoteDownloadRequest {
             package_id,
             desired_version_hash,
-        }) => (package_id, desired_version_hash),
+        }) => (package_id.to_process_lib(), desired_version_hash),
     };
 
-    let package_id = package_id.to_owned().to_process_lib();
     let Some(package_state) = state.get_downloaded_package(&package_id) else {
         return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NoPackage));
     };
+
     if !package_state.mirroring {
         return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NotMirroring));
     }
-    if let Some(hash) = desired_version_hash.clone() {
+
+    if let Some(hash) = desired_version_hash {
         if package_state.our_version != hash {
             return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::HashMismatch(
                 HashMismatch {
@@ -226,26 +226,17 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
         }
     }
 
-    let file_name = match &request {
-        RemoteRequest::Download(_) => {
-            // the file name of the zipped app
-            format!("/{}.zip", package_id)
-        }
-    };
+    let file_name = format!("/{package_id}.zip");
 
     // get the .zip from VFS and attach as blob to response
-    let Ok(Ok(_)) = Request::to(("our", "vfs", "distro", "sys"))
-        .body(
-            serde_json::to_vec(&vfs::VfsRequest {
-                path: format!("/{}/pkg{}", package_id, file_name),
-                action: vfs::VfsAction::Read,
-            })
-            .unwrap(),
-        )
-        .send_and_await_response(VFS_TIMEOUT)
-    else {
+    let Ok(Ok(_)) = utils::vfs_request(
+        format!("/{}/pkg{}", package_id, file_name),
+        vfs::VfsAction::Read,
+    )
+    .send_and_await_response(VFS_TIMEOUT) else {
         return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::FileNotFound));
     };
+
     // transfer will *inherit* the blob bytes we receive from VFS
     match spawn_transfer(&state.our, &file_name, None, APP_SHARE_TIMEOUT, &source) {
         Ok(()) => Resp::RemoteResponse(RemoteResponse::DownloadApproved),
@@ -356,15 +347,7 @@ pub fn get_api(state: &mut State, package_id: &PackageId) -> (LocalResponse, Opt
     if !state.downloaded_apis.contains(package_id) {
         return (LocalResponse::GetApiResponse(GetApiResponse::Failure), None);
     }
-    let Ok(Ok(_)) = Request::new()
-        .target(("our", "vfs", "distro", "sys"))
-        .body(
-            serde_json::to_vec(&vfs::VfsRequest {
-                path: format!("/{package_id}/pkg/api.zip"),
-                action: vfs::VfsAction::Read,
-            })
-            .unwrap(),
-        )
+    let Ok(Ok(_)) = utils::vfs_request(format!("/{package_id}/pkg/api.zip"), vfs::VfsAction::Read)
         .send_and_await_response(VFS_TIMEOUT)
     else {
         return (LocalResponse::GetApiResponse(GetApiResponse::Failure), None);
@@ -450,13 +433,15 @@ pub fn start_download(
             if let Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) =
                 serde_json::from_slice::<Resp>(&body)
             {
-                let requested = RequestedPackage {
-                    from,
-                    mirror,
-                    auto_update,
-                    desired_version_hash,
-                };
-                state.requested_packages.insert(package_id, requested);
+                state.requested_packages.insert(
+                    package_id,
+                    RequestedPackage {
+                        from,
+                        mirror,
+                        auto_update,
+                        desired_version_hash,
+                    },
+                );
                 return DownloadResponse::Started;
             }
         }

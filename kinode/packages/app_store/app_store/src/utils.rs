@@ -2,12 +2,13 @@ use {
     crate::{
         kinode::process::main::OnchainMetadata,
         state::{AppStoreLogError, PackageState, SerializedState, State},
-        EVENTS, KIMAP_ADDRESS, VFS_TIMEOUT,
+        KIMAP_ADDRESS, VFS_TIMEOUT,
     },
     alloy_primitives::keccak256,
+    alloy_sol_types::SolEvent,
     kinode_process_lib::{
-        eth, get_blob, get_state, http, kernel_types as kt, println, vfs, Address, LazyLoadBlob,
-        PackageId, ProcessId, Request,
+        eth, get_blob, get_state, http, kernel_types as kt, kimap, println, vfs, Address,
+        LazyLoadBlob, PackageId, ProcessId, Request,
     },
     std::{collections::HashSet, str::FromStr},
 };
@@ -80,8 +81,7 @@ pub fn app_store_filter(state: &State) -> eth::Filter {
 
     eth::Filter::new()
         .address(eth::Address::from_str(&state.contract_address).unwrap())
-        .from_block(state.last_saved_block)
-        .events(EVENTS)
+        .events([kimap::contract::Note::SIGNATURE])
         .topic3(notes)
 }
 
@@ -89,28 +89,16 @@ pub fn app_store_filter(state: &State) -> eth::Filter {
 pub fn fetch_and_subscribe_logs(state: &mut State) {
     let filter = app_store_filter(state);
     // get past logs, subscribe to new ones.
-    for log in fetch_logs(&state.provider, &filter) {
+    for log in fetch_logs(
+        &state.provider,
+        &filter.clone().from_block(state.last_saved_block),
+    ) {
         if let Err(e) = state.ingest_contract_event(log, false) {
             println!("error ingesting log: {e:?}");
         };
     }
     state.update_listings();
-    subscribe_to_logs(&state.provider, filter);
-}
-
-/// subscribe to logs from the chain with a given filter
-pub fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter) {
-    loop {
-        match eth_provider.subscribe(1, filter.clone()) {
-            Ok(()) => break,
-            Err(_) => {
-                println!("failed to subscribe to chain! trying again in 5s...");
-                std::thread::sleep(std::time::Duration::from_secs(5));
-                continue;
-            }
-        }
-    }
-    println!("subscribed to logs successfully");
+    state.provider.subscribe_loop(1, filter);
 }
 
 /// fetch logs from the chain with a given filter
@@ -179,12 +167,11 @@ pub fn generate_version_hash(zip_bytes: &[u8]) -> String {
 pub fn fetch_package_manifest(
     package_id: &PackageId,
 ) -> anyhow::Result<Vec<kt::PackageManifestEntry>> {
-    Request::to(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: format!("/{package_id}/pkg/manifest.json"),
-            action: vfs::VfsAction::Read,
-        })?)
-        .send_and_await_response(VFS_TIMEOUT)??;
+    vfs_request(
+        format!("/{package_id}/pkg/manifest.json"),
+        vfs::VfsAction::Read,
+    )
+    .send_and_await_response(VFS_TIMEOUT)??;
     let Some(blob) = get_blob() else {
         return Err(anyhow::anyhow!("no blob"));
     };
@@ -219,17 +206,9 @@ pub fn new_package(
     };
 
     let drive_path = format!("/{package_id}/pkg");
-    let result = Request::new()
-        .target(("our", "vfs", "distro", "sys"))
-        .body(
-            serde_json::to_vec(&vfs::VfsRequest {
-                path: format!("{}/api", drive_path),
-                action: vfs::VfsAction::Metadata,
-            })
-            .unwrap(),
-        )
-        .send_and_await_response(VFS_TIMEOUT);
-    if let Ok(Ok(_)) = result {
+    if let Ok(Ok(_)) = vfs_request(format!("{}/api", drive_path), vfs::VfsAction::Metadata)
+        .send_and_await_response(VFS_TIMEOUT)
+    {
         state.downloaded_apis.insert(package_id.to_owned());
     };
     Ok(())
@@ -251,31 +230,22 @@ pub fn create_package_drive(
 
     // create a new drive for this package in VFS
     // this is possible because we have root access
-    Request::to(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: drive_name.clone(),
-            action: vfs::VfsAction::CreateDrive,
-        })?)
+    vfs_request(drive_name.clone(), vfs::VfsAction::CreateDrive)
         .send_and_await_response(VFS_TIMEOUT)??;
 
     // DELETE the /pkg folder in the package drive
     // in order to replace with the fresh one
-    Request::to(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: drive_name.clone(),
-            action: vfs::VfsAction::RemoveDirAll,
-        })?)
+    vfs_request(drive_name.clone(), vfs::VfsAction::RemoveDirAll)
         .send_and_await_response(VFS_TIMEOUT)??;
 
     // convert the zip to a new package drive
-    let response = Request::to(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: drive_name.clone(),
-            action: vfs::VfsAction::AddZip,
-        })?)
-        .blob(blob.clone())
-        .send_and_await_response(VFS_TIMEOUT)??;
-    let vfs::VfsResponse::Ok = serde_json::from_slice::<vfs::VfsResponse>(response.body())? else {
+    let vfs::VfsResponse::Ok = serde_json::from_slice::<vfs::VfsResponse>(
+        vfs_request(drive_name.clone(), vfs::VfsAction::AddZip)
+            .blob(blob.clone())
+            .send_and_await_response(VFS_TIMEOUT)??
+            .body(),
+    )?
+    else {
         return Err(anyhow::anyhow!(
             "cannot add NewPackage: do not have capability to access vfs"
         ));
@@ -284,11 +254,7 @@ pub fn create_package_drive(
     // save the zip file itself in VFS for sharing with other nodes
     // call it <package_id>.zip
     let zip_path = format!("{}/{}.zip", drive_name, package_id);
-    Request::to(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: zip_path,
-            action: vfs::VfsAction::Write,
-        })?)
+    vfs_request(zip_path, vfs::VfsAction::Write)
         .blob(blob)
         .send_and_await_response(VFS_TIMEOUT)??;
 
@@ -302,30 +268,26 @@ pub fn create_package_drive(
 
 pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
     // get `pkg/api.zip` if it exists
-    let api_response = Request::to(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: format!("/{package_id}/pkg/api.zip"),
-            action: vfs::VfsAction::Read,
-        })?)
-        .send_and_await_response(VFS_TIMEOUT)??;
-    if let Ok(vfs::VfsResponse::Read) = serde_json::from_slice(api_response.body()) {
+    if let vfs::VfsResponse::Read = serde_json::from_slice(
+        vfs_request(format!("/{package_id}/pkg/api.zip"), vfs::VfsAction::Read)
+            .send_and_await_response(VFS_TIMEOUT)??
+            .body(),
+    )? {
         // unzip api.zip into /api
         // blob inherited from Read request
-        let response = Request::to(("our", "vfs", "distro", "sys"))
-            .body(serde_json::to_vec(&vfs::VfsRequest {
-                path: format!("/{package_id}/pkg/api"),
-                action: vfs::VfsAction::AddZip,
-            })?)
-            .inherit(true)
-            .send_and_await_response(VFS_TIMEOUT)??;
-        if let Ok(vfs::VfsResponse::Ok) = serde_json::from_slice(response.body()) {
+        if let vfs::VfsResponse::Ok = serde_json::from_slice(
+            vfs_request(format!("/{package_id}/pkg/api"), vfs::VfsAction::AddZip)
+                .inherit(true)
+                .send_and_await_response(VFS_TIMEOUT)??
+                .body(),
+        )? {
             return Ok(true);
         }
     }
     Ok(false)
 }
 
-/// given a package id, interact with VFS and kernel to get manifest,
+/// given a `PackageId`, interact with VFS and kernel to get manifest,
 /// grant the capabilities in manifest, then initialize and start
 /// the processes in manifest.
 ///
@@ -352,90 +314,44 @@ pub fn install(
             format!("/{}", entry.process_wasm_path)
         };
         let wasm_path = format!("{}{}", drive_path, wasm_path);
-        let process_id = format!("{}:{}", entry.process_name, package_id);
-        let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
-            return Err(anyhow::anyhow!("invalid process id!"));
-        };
-        // kill process if it already exists
-        Request::to(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::KillProcess(
-                parsed_new_process_id.clone(),
-            ))?)
-            .send()?;
 
-        if let Ok(vfs::VfsResponse::Err(_)) = serde_json::from_slice(
-            Request::to(("our", "vfs", "distro", "sys"))
-                .body(serde_json::to_vec(&vfs::VfsRequest {
-                    path: wasm_path.clone(),
-                    action: vfs::VfsAction::Read,
-                })?)
+        let process_id = ProcessId::new(
+            Some(&entry.process_name),
+            package_id.package(),
+            package_id.publisher(),
+        );
+
+        // kill process if it already exists
+        kernel_request(kt::KernelCommand::KillProcess(process_id.clone())).send()?;
+
+        // read wasm file from VFS, bytes of which will be stored in blob
+        if let Ok(vfs::VfsResponse::Err(e)) = serde_json::from_slice(
+            vfs_request(&wasm_path, vfs::VfsAction::Read)
                 .send_and_await_response(VFS_TIMEOUT)??
                 .body(),
         ) {
-            return Err(anyhow::anyhow!("failed to read process file"));
+            return Err(anyhow::anyhow!("failed to read process file: {e}"));
         };
 
+        // use inherited blob to initialize process in kernel
         let Ok(kt::KernelResponse::InitializedProcess) = serde_json::from_slice(
-            Request::new()
-                .target(("our", "kernel", "distro", "sys"))
-                .body(serde_json::to_vec(&kt::KernelCommand::InitializeProcess {
-                    id: parsed_new_process_id.clone(),
-                    wasm_bytes_handle: wasm_path,
-                    wit_version,
-                    on_exit: entry.on_exit.clone(),
-                    initial_capabilities: HashSet::new(),
-                    public: entry.public,
-                })?)
-                .inherit(true)
-                .send_and_await_response(VFS_TIMEOUT)??
-                .body(),
+            kernel_request(kt::KernelCommand::InitializeProcess {
+                id: process_id.clone(),
+                wasm_bytes_handle: wasm_path,
+                wit_version,
+                on_exit: entry.on_exit.clone(),
+                initial_capabilities: HashSet::new(),
+                public: entry.public,
+            })
+            .inherit(true)
+            .send_and_await_response(VFS_TIMEOUT)??
+            .body(),
         ) else {
             return Err(anyhow::anyhow!("failed to initialize process"));
         };
-        // build initial caps
-        let mut requested_capabilities: Vec<kt::Capability> = vec![];
-        for value in &entry.request_capabilities {
-            match value {
-                serde_json::Value::String(process_name) => {
-                    if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                        requested_capabilities.push(kt::Capability {
-                            issuer: Address {
-                                node: our_node.to_string(),
-                                process: parsed_process_id.clone(),
-                            },
-                            params: "\"messaging\"".into(),
-                        });
-                    } else {
-                        println!("{process_id} manifest requested invalid cap: {value}");
-                    }
-                }
-                serde_json::Value::Object(map) => {
-                    if let Some(process_name) = map.get("process") {
-                        if let Ok(parsed_process_id) = process_name
-                            .as_str()
-                            .unwrap_or_default()
-                            .parse::<ProcessId>()
-                        {
-                            if let Some(params) = map.get("params") {
-                                requested_capabilities.push(kt::Capability {
-                                    issuer: Address {
-                                        node: our_node.to_string(),
-                                        process: parsed_process_id.clone(),
-                                    },
-                                    params: params.to_string(),
-                                });
-                            } else {
-                                println!("{process_id} manifest requested invalid cap: {value}");
-                            }
-                        }
-                    }
-                }
-                val => {
-                    println!("{process_id} manifest requested invalid cap: {val}");
-                    continue;
-                }
-            }
-        }
+
+        // build initial caps from manifest
+        let mut requested_capabilities = parse_capabilities(our_node, &entry.request_capabilities);
 
         if entry.request_networking {
             requested_capabilities.push(kt::Capability {
@@ -462,42 +378,38 @@ pub fn install(
             .to_string(),
         });
 
-        Request::new()
-            .target(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                target: parsed_new_process_id.clone(),
-                capabilities: requested_capabilities,
-            })?)
-            .send()?;
+        kernel_request(kt::KernelCommand::GrantCapabilities {
+            target: process_id.clone(),
+            capabilities: requested_capabilities,
+        })
+        .send()?;
     }
 
     // THEN, *after* all processes have been initialized, grant caps in manifest
     // this is done after initialization so that processes within a package
     // can grant capabilities to one another in the manifest.
     for entry in &manifest {
-        let process_id = format!("{}:{}", entry.process_name, package_id);
-        let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
-            return Err(anyhow::anyhow!("invalid process id!"));
-        };
+        let process_id = ProcessId::new(
+            Some(&entry.process_name),
+            package_id.package(),
+            package_id.publisher(),
+        );
+
         for value in &entry.grant_capabilities {
             match value {
                 serde_json::Value::String(process_name) => {
                     if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
-                        Request::to(("our", "kernel", "distro", "sys"))
-                            .body(
-                                serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                                    target: parsed_process_id,
-                                    capabilities: vec![kt::Capability {
-                                        issuer: Address {
-                                            node: our_node.to_string(),
-                                            process: parsed_new_process_id.clone(),
-                                        },
-                                        params: "\"messaging\"".into(),
-                                    }],
-                                })
-                                .unwrap(),
-                            )
-                            .send()?;
+                        kernel_request(kt::KernelCommand::GrantCapabilities {
+                            target: parsed_process_id,
+                            capabilities: vec![kt::Capability {
+                                issuer: Address {
+                                    node: our_node.to_string(),
+                                    process: process_id.clone(),
+                                },
+                                params: "\"messaging\"".into(),
+                            }],
+                        })
+                        .send()?;
                     } else {
                         println!("{process_id} manifest tried to grant invalid cap: {value}");
                     }
@@ -510,20 +422,17 @@ pub fn install(
                             .parse::<ProcessId>()
                         {
                             if let Some(params) = map.get("params") {
-                                Request::to(("our", "kernel", "distro", "sys"))
-                                    .body(serde_json::to_vec(
-                                        &kt::KernelCommand::GrantCapabilities {
-                                            target: parsed_process_id,
-                                            capabilities: vec![kt::Capability {
-                                                issuer: Address {
-                                                    node: our_node.to_string(),
-                                                    process: parsed_new_process_id.clone(),
-                                                },
-                                                params: params.to_string(),
-                                            }],
+                                kernel_request(kt::KernelCommand::GrantCapabilities {
+                                    target: parsed_process_id,
+                                    capabilities: vec![kt::Capability {
+                                        issuer: Address {
+                                            node: our_node.to_string(),
+                                            process: process_id.clone(),
                                         },
-                                    )?)
-                                    .send()?;
+                                        params: params.to_string(),
+                                    }],
+                                })
+                                .send()?;
                             }
                         }
                     } else {
@@ -538,10 +447,7 @@ pub fn install(
         }
 
         let Ok(kt::KernelResponse::StartedProcess) = serde_json::from_slice(
-            Request::to(("our", "kernel", "distro", "sys"))
-                .body(serde_json::to_vec(&kt::KernelCommand::RunProcess(
-                    parsed_new_process_id,
-                ))?)
+            kernel_request(kt::KernelCommand::RunProcess(process_id))
                 .send_and_await_response(VFS_TIMEOUT)??
                 .body(),
         ) else {
@@ -551,41 +457,102 @@ pub fn install(
     Ok(())
 }
 
+/// given a `PackageId`, read its manifest, kill all processes declared in it,
+/// then remove its drive in the virtual filesystem.
 pub fn uninstall(package_id: &PackageId) -> anyhow::Result<()> {
+    // the drive corresponding to the package we will be removing
     let drive_path = format!("/{package_id}/pkg");
-    Request::new()
-        .target(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: format!("{}/manifest.json", drive_path),
-            action: vfs::VfsAction::Read,
-        })?)
-        .send_and_await_response(VFS_TIMEOUT)??;
+
+    // get manifest.json from drive
+    vfs_request(
+        format!("{}/manifest.json", drive_path),
+        vfs::VfsAction::Read,
+    )
+    .send_and_await_response(VFS_TIMEOUT)??;
     let Some(blob) = get_blob() else {
         return Err(anyhow::anyhow!("no blob"));
     };
-    let manifest = String::from_utf8(blob.bytes)?;
-    let manifest = serde_json::from_str::<Vec<kt::PackageManifestEntry>>(&manifest)?;
-    // reading from the package manifest, kill every process
+    let manifest = serde_json::from_slice::<Vec<kt::PackageManifestEntry>>(&blob.bytes)?;
+
+    // reading from the package manifest, kill every process named
     for entry in &manifest {
-        let process_id = format!("{}:{}", entry.process_name, package_id);
-        let Ok(parsed_new_process_id) = process_id.parse::<ProcessId>() else {
-            continue;
-        };
-        Request::new()
-            .target(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::KillProcess(
-                parsed_new_process_id,
-            ))?)
-            .send()?;
+        kernel_request(kt::KernelCommand::KillProcess(ProcessId::new(
+            Some(&entry.process_name),
+            package_id.package(),
+            package_id.publisher(),
+        )))
+        .send()?;
     }
+
     // then, delete the drive
-    Request::new()
-        .target(("our", "vfs", "distro", "sys"))
-        .body(serde_json::to_vec(&vfs::VfsRequest {
-            path: drive_path,
-            action: vfs::VfsAction::RemoveDirAll,
-        })?)
+    vfs_request(drive_path, vfs::VfsAction::RemoveDirAll)
         .send_and_await_response(VFS_TIMEOUT)??;
 
     Ok(())
+}
+
+fn parse_capabilities(our_node: &str, caps: &Vec<serde_json::Value>) -> Vec<kt::Capability> {
+    let mut requested_capabilities: Vec<kt::Capability> = vec![];
+    for value in caps {
+        match value {
+            serde_json::Value::String(process_name) => {
+                if let Ok(parsed_process_id) = process_name.parse::<ProcessId>() {
+                    requested_capabilities.push(kt::Capability {
+                        issuer: Address {
+                            node: our_node.to_string(),
+                            process: parsed_process_id.clone(),
+                        },
+                        params: "\"messaging\"".into(),
+                    });
+                } else {
+                    println!("manifest requested invalid cap: {value}");
+                }
+            }
+            serde_json::Value::Object(map) => {
+                if let Some(process_name) = map.get("process") {
+                    if let Ok(parsed_process_id) = process_name
+                        .as_str()
+                        .unwrap_or_default()
+                        .parse::<ProcessId>()
+                    {
+                        if let Some(params) = map.get("params") {
+                            requested_capabilities.push(kt::Capability {
+                                issuer: Address {
+                                    node: our_node.to_string(),
+                                    process: parsed_process_id.clone(),
+                                },
+                                params: params.to_string(),
+                            });
+                        } else {
+                            println!("manifest requested invalid cap: {value}");
+                        }
+                    }
+                }
+            }
+            val => {
+                println!("manifest requested invalid cap: {val}");
+                continue;
+            }
+        }
+    }
+    requested_capabilities
+}
+
+fn kernel_request(command: kt::KernelCommand) -> Request {
+    Request::new()
+        .target(("our", "kernel", "distro", "sys"))
+        .body(serde_json::to_vec(&command).expect("failed to serialize VfsRequest"))
+}
+
+pub fn vfs_request<T>(path: T, action: vfs::VfsAction) -> Request
+where
+    T: Into<String>,
+{
+    Request::new().target(("our", "vfs", "distro", "sys")).body(
+        serde_json::to_vec(&vfs::VfsRequest {
+            path: path.into(),
+            action,
+        })
+        .expect("failed to serialize VfsRequest"),
+    )
 }
