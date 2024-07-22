@@ -544,7 +544,7 @@ fn kernel_request(command: kt::KernelCommand) -> Request {
         .body(serde_json::to_vec(&command).expect("failed to serialize VfsRequest"))
 }
 
-fn vfs_request<T>(path: T, action: vfs::VfsAction) -> Request
+pub fn vfs_request<T>(path: T, action: vfs::VfsAction) -> Request
 where
     T: Into<String>,
 {

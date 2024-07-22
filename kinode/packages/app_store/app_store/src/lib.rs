@@ -179,21 +179,22 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
 
 /// fielding requests to download packages and APIs from us
 fn handle_remote_request(state: &mut State, source: &Address, request: RemoteRequest) -> Resp {
-    let (package_id, desired_version_hash) = match &request {
+    let (package_id, desired_version_hash) = match request {
         RemoteRequest::Download(RemoteDownloadRequest {
             package_id,
             desired_version_hash,
-        }) => (package_id, desired_version_hash),
+        }) => (package_id.to_process_lib(), desired_version_hash),
     };
 
-    let package_id = package_id.to_owned().to_process_lib();
     let Some(package_state) = state.get_downloaded_package(&package_id) else {
         return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NoPackage));
     };
+
     if !package_state.mirroring {
         return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NotMirroring));
     }
-    if let Some(hash) = desired_version_hash.clone() {
+
+    if let Some(hash) = desired_version_hash {
         if package_state.our_version != hash {
             return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::HashMismatch(
                 HashMismatch {
@@ -204,26 +205,17 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
         }
     }
 
-    let file_name = match &request {
-        RemoteRequest::Download(_) => {
-            // the file name of the zipped app
-            format!("/{}.zip", package_id)
-        }
-    };
+    let file_name = format!("/{package_id}.zip");
 
     // get the .zip from VFS and attach as blob to response
-    let Ok(Ok(_)) = Request::to(("our", "vfs", "distro", "sys"))
-        .body(
-            serde_json::to_vec(&vfs::VfsRequest {
-                path: format!("/{}/pkg{}", package_id, file_name),
-                action: vfs::VfsAction::Read,
-            })
-            .unwrap(),
-        )
-        .send_and_await_response(VFS_TIMEOUT)
-    else {
+    let Ok(Ok(_)) = utils::vfs_request(
+        format!("/{}/pkg{}", package_id, file_name),
+        vfs::VfsAction::Read,
+    )
+    .send_and_await_response(VFS_TIMEOUT) else {
         return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::FileNotFound));
     };
+
     // transfer will *inherit* the blob bytes we receive from VFS
     match spawn_transfer(&state.our, &file_name, None, APP_SHARE_TIMEOUT, &source) {
         Ok(()) => Resp::RemoteResponse(RemoteResponse::DownloadApproved),
@@ -334,15 +326,7 @@ pub fn get_api(state: &mut State, package_id: &PackageId) -> (LocalResponse, Opt
     if !state.downloaded_apis.contains(package_id) {
         return (LocalResponse::GetApiResponse(GetApiResponse::Failure), None);
     }
-    let Ok(Ok(_)) = Request::new()
-        .target(("our", "vfs", "distro", "sys"))
-        .body(
-            serde_json::to_vec(&vfs::VfsRequest {
-                path: format!("/{package_id}/pkg/api.zip"),
-                action: vfs::VfsAction::Read,
-            })
-            .unwrap(),
-        )
+    let Ok(Ok(_)) = utils::vfs_request(format!("/{package_id}/pkg/api.zip"), vfs::VfsAction::Read)
         .send_and_await_response(VFS_TIMEOUT)
     else {
         return (LocalResponse::GetApiResponse(GetApiResponse::Failure), None);
@@ -406,13 +390,15 @@ pub fn start_download(
         if let Ok(Resp::RemoteResponse(RemoteResponse::DownloadApproved)) =
             serde_json::from_slice::<Resp>(&body)
         {
-            let requested = RequestedPackage {
-                from,
-                mirror,
-                auto_update,
-                desired_version_hash,
-            };
-            state.requested_packages.insert(package_id, requested);
+            state.requested_packages.insert(
+                package_id,
+                RequestedPackage {
+                    from,
+                    mirror,
+                    auto_update,
+                    desired_version_hash,
+                },
+            );
             return DownloadResponse::Started;
         }
     }
