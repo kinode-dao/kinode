@@ -371,12 +371,11 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             && ((!node_info.ips.is_empty() && !node_info.ports.is_empty())
                 || node_info.routers.len() > 0)
         {
-            return Request::new()
-                .target((&our.node, "net", "distro", "sys"))
+            Request::to((&our.node, "net", "distro", "sys"))
                 .body(rmp_serde::to_vec(&net::NetAction::KnsUpdate(
                     node_info.clone(),
                 ))?)
-                .send();
+                .send()?;
         }
     }
     Ok(())

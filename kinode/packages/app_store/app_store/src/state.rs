@@ -346,11 +346,8 @@ impl State {
                 let note = Note::decode_log_data(log.data(), false)
                     .map_err(|_| AppStoreLogError::DecodeLogError)?;
 
-                let name =
-                    get_name(&note.nodehash.to_string(), log.block_number, None).map_err(|e| {
-                        println!("Error decoding name: {:?}", e);
-                        AppStoreLogError::DecodeLogError
-                    })?;
+                let name = get_name(&note.nodehash.to_string(), log.block_number, None)
+                    .ok_or(AppStoreLogError::DecodeLogError)?;
 
                 let note_str = String::from_utf8_lossy(&note.note).to_string();
 

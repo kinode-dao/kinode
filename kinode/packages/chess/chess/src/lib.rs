@@ -44,7 +44,7 @@ fn save_chess_state(state: &ChessState) {
 }
 
 fn load_chess_state() -> ChessState {
-    match get_typed_state(|bytes| Ok(bincode::deserialize::<HashMap<String, Game>>(bytes)?)) {
+    match get_typed_state(|bytes| bincode::deserialize::<HashMap<String, Game>>(bytes)) {
         Some(games) => ChessState {
             games,
             clients: HashSet::new(),
@@ -265,24 +265,27 @@ fn handle_chess_request(
             // Remember, the other player is waiting for this.
             Response::new()
                 .body(serde_json::to_vec(&ChessResponse::NewGameAccepted)?)
-                .send()
+                .send()?;
+            Ok(())
         }
         ChessRequest::Move(MoveRequest { ref move_str, .. }) => {
             // Get the associated game, and respond with an error if
             // we don't have it in our state.
             let Some(game) = state.games.get_mut(game_id) else {
                 // If we don't have a game with them, reject the move.
-                return Response::new()
+                Response::new()
                     .body(serde_json::to_vec(&ChessResponse::MoveRejected)?)
-                    .send();
+                    .send()?;
+                return Ok(());
             };
             // Convert the saved board to one we can manipulate.
             let mut board = Board::from_fen(&game.board).unwrap();
             if !board.apply_uci_move(move_str) {
                 // Reject invalid moves!
-                return Response::new()
+                Response::new()
                     .body(serde_json::to_vec(&ChessResponse::MoveRejected)?)
-                    .send();
+                    .send()?;
+                return Ok(());
             }
             game.turns += 1;
             if board.checkmate() || board.stalemate() {
@@ -295,7 +298,8 @@ fn handle_chess_request(
             // Send a response to tell them we've accepted the move.
             Response::new()
                 .body(serde_json::to_vec(&ChessResponse::MoveAccepted)?)
-                .send()
+                .send()?;
+            Ok(())
         }
         ChessRequest::Resign(_) => {
             // They've resigned. The sender isn't waiting for a response to this,
@@ -336,7 +340,7 @@ fn handle_local_request(
             // The request is exactly the same as what we got from terminal.
             // We'll give them 5 seconds to respond...
             let Ok(Message::Response { ref body, .. }) = Request::new()
-                .target((game_id.as_ref(), our.process.clone()))
+                .target((game_id, our.process.clone()))
                 .body(serde_json::to_vec(&action)?)
                 .send_and_await_response(5)?
             else {
@@ -382,7 +386,7 @@ fn handle_local_request(
             // The request is exactly the same as what we got from terminal.
             // We'll give them 5 seconds to respond...
             let Ok(Message::Response { ref body, .. }) = Request::new()
-                .target((game_id.as_ref(), our.process.clone()))
+                .target((game_id, our.process.clone()))
                 .body(serde_json::to_vec(&action)?)
                 .send_and_await_response(5)?
             else {
@@ -408,7 +412,7 @@ fn handle_local_request(
             };
             // send the other player an end game request -- no response expected
             Request::new()
-                .target((with_who.as_ref(), our.process.clone()))
+                .target((with_who, our.process.clone()))
                 .body(serde_json::to_vec(&action)?)
                 .send()?;
             game.ended = true;

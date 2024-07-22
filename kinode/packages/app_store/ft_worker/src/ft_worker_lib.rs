@@ -76,7 +76,7 @@ pub fn spawn_transfer(
         None => None,
     };
     let mut req = Request::new()
-        .target((our.node.as_ref(), worker_process_id))
+        .target((&our.node, worker_process_id))
         .inherit(!blob_or_inherit.is_some())
         .expects_response(timeout + 1) // don't call with 2^64 lol
         .body(
@@ -102,7 +102,8 @@ pub fn spawn_transfer(
     if let Some(blob) = blob_or_inherit {
         req = req.blob(blob);
     }
-    req.send()
+    req.send().unwrap();
+    Ok(())
 }
 
 /// A helper function to allow a process to easily handle an incoming transfer
@@ -128,8 +129,10 @@ pub fn spawn_receive_transfer(our: &Address, body: &[u8]) -> anyhow::Result<()> 
     };
     // forward receive command to worker
     Request::new()
-        .target((our.node.as_ref(), worker_process_id))
+        .target((&our.node, worker_process_id))
         .inherit(true)
         .body(body)
         .send()
+        .unwrap();
+    Ok(())
 }

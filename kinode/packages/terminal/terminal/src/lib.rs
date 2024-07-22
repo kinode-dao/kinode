@@ -47,7 +47,7 @@ fn parse_command(state: &mut TerminalState, line: &str) -> anyhow::Result<()> {
 
 call_init!(init);
 fn init(our: Address) {
-    let mut state: TerminalState = match get_typed_state(|bytes| Ok(bincode::deserialize(bytes)?)) {
+    let mut state: TerminalState = match get_typed_state(|bytes| bincode::deserialize(bytes)) {
         Some(s) => s,
         None => {
             let state = TerminalState {
