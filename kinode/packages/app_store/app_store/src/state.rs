@@ -1,18 +1,14 @@
 use crate::{utils, DownloadRequest, LocalRequest};
 use crate::{KIMAP_ADDRESS, VFS_TIMEOUT};
-use alloy_sol_types::{sol, SolEvent};
+use alloy_sol_types::SolEvent;
 use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
-    eth, kernel_types as kt, kimap::Kimap, net::get_name, println, vfs, Address, Message, NodeId,
+    eth, kernel_types as kt, kimap, net::get_name, println, vfs, Address, Message, NodeId,
     PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-
-sol! {
-    event Note(bytes32 indexed nodehash, bytes32 indexed notehash, bytes indexed labelhash, bytes note, bytes data);
-}
 
 //
 // app store types
@@ -96,7 +92,7 @@ pub struct State {
     /// the eth provider we are using -- not persisted
     pub provider: eth::Provider,
     /// the kimap helper we are using -- not persisted
-    pub kimap: Kimap,
+    pub kimap: kimap::Kimap,
     /// the address of the contract we are using to read package listings
     pub contract_address: String,
     /// the last block at which we saved the state of the listings to disk.
@@ -153,7 +149,7 @@ impl State {
         State {
             our,
             provider: provider.clone(),
-            kimap: Kimap::new(provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap()),
+            kimap: kimap::Kimap::new(provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap()),
             contract_address: s.contract_address,
             last_saved_block: s.last_saved_block,
             package_hashes: s.package_hashes,
@@ -174,7 +170,7 @@ impl State {
         let mut state = State {
             our,
             provider: provider.clone(),
-            kimap: Kimap::new(provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap()),
+            kimap: kimap::Kimap::new(provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap()),
             contract_address,
             last_saved_block: crate::KIMAP_FIRST_BLOCK,
             package_hashes: HashMap::new(),
@@ -339,25 +335,23 @@ impl State {
         log: eth::Log,
         update_listings: bool,
     ) -> Result<(), AppStoreLogError> {
+        println!("ingesting contract event");
+
         let block_number: u64 = log.block_number.ok_or(AppStoreLogError::NoBlockNumber)?;
 
         match log.topics()[0] {
-            Note::SIGNATURE_HASH => {
-                let note = Note::decode_log_data(log.data(), false)
-                    .map_err(|_| AppStoreLogError::DecodeLogError)?;
+            kimap::contract::Note::SIGNATURE_HASH => {
+                let note =
+                    kimap::contract::Note::decode_log_data(log.data(), false).map_err(|e| {
+                        println!("error decoding note: {e}");
+                        AppStoreLogError::DecodeLogError
+                    })?;
 
-                let name = get_name(&note.nodehash.to_string(), log.block_number, None)
+                let name = get_name(&note.nodehash.to_string(), log.block_number, Some(5))
                     .ok_or(AppStoreLogError::DecodeLogError)?;
 
-                let note_str = String::from_utf8_lossy(&note.note).to_string();
-
-                // println!("got note {note_str} for {name}");
-                // let notehash = note.notehash.to_string();
-                // let notehash = note.notehash.to_string();
-                // let full_name = format!("{note_str}.{name}");
-
-                match note_str.as_str() {
-                    "~metadata-uri" => {
+                match std::str::from_utf8(&note.note) {
+                    Ok("~metadata-uri") => {
                         let metadata_url = String::from_utf8_lossy(&note.data).to_string();
                         // generate ~metadata-hash notehash
                         let meta_note_name = format!("~metadata-hash.{name}");
@@ -422,7 +416,7 @@ impl State {
                             };
                         }
                     }
-                    "~metadata-hash" => {
+                    Ok("~metadata-hash") => {
                         let metadata_hash = String::from_utf8_lossy(&note.data).to_string();
                         // generate ~metadata-uri notehash
                         let meta_note_name = format!("~metadata-uri.{name}");

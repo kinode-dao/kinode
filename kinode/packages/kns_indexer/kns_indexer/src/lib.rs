@@ -1,7 +1,6 @@
 use crate::kinode::process::kns_indexer::{
     GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
-use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
     await_message, call_init, eth, kimap, net, print_to_terminal, println, Address, Message,
@@ -83,14 +82,6 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     #[cfg(feature = "simulation-mode")]
     add_temp_hardcoded_tlzs(&mut state);
 
-    let notes = vec![
-        keccak256("~net-key"),
-        keccak256("~ws-port"),
-        keccak256("~routers"),
-        keccak256("~tcp-port"),
-        keccak256("~ip"),
-    ];
-
     // sub_id: 1
     let mints_filter = eth::Filter::new()
         .address(state.contract_address)
@@ -98,11 +89,13 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         .event("Mint(bytes32,bytes32,bytes,bytes)");
 
     // sub_id: 2
+    // we need to see all note events, even though we don't
+    // record them all, because other apps rely on us to have
+    // a good `last_block` for `IndexerRequests`
     let notes_filter = eth::Filter::new()
         .address(state.contract_address)
         .to_block(eth::BlockNumberOrTag::Latest)
-        .event("Note(bytes32,bytes32,bytes,bytes,bytes)")
-        .topic3(notes);
+        .event("Note(bytes32,bytes32,bytes,bytes,bytes)");
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
@@ -155,7 +148,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     ref hash,
                     ref block,
                 }) => {
-                    if *block <= state.last_block {
+                    // make sure we've seen the whole block
+                    if *block < state.last_block {
                         Response::new()
                             .body(serde_json::to_vec(&IndexerResponses::Name(
                                 state.names.get(hash).cloned(),
@@ -169,7 +163,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     }
                 }
                 IndexerRequests::NodeInfo(NodeInfoRequest { ref name, block }) => {
-                    if block <= state.last_block {
+                    // make sure we've seen the whole block
+                    if block < state.last_block {
                         Response::new()
                             .body(serde_json::to_vec(&IndexerResponses::NodeInfo(
                                 state.nodes.get(name).cloned(),
@@ -183,7 +178,8 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
                     }
                 }
                 IndexerRequests::GetState(GetStateRequest { block }) => {
-                    if block <= state.last_block {
+                    // make sure we've seen the whole block
+                    if block < state.last_block {
                         Response::new().body(serde_json::to_vec(&state)?).send()?;
                     } else {
                         pending_requests
@@ -228,11 +224,25 @@ fn handle_eth_message(
         }
     }
 
+    handle_pending_requests(state, pending_requests)?;
+
+    // set_state(&bincode::serialize(state)?);
+    Ok(())
+}
+
+fn handle_pending_requests(
+    state: &mut State,
+    pending_requests: &mut BTreeMap<u64, Vec<IndexerRequests>>,
+) -> anyhow::Result<()> {
     // check the pending_requests btreemap to see if there are any requests that
     // can be handled now that the state block has been updated
+    if pending_requests.is_empty() {
+        return Ok(());
+    }
     let mut blocks_to_remove = vec![];
     for (block, requests) in pending_requests.iter() {
-        if *block <= state.last_block {
+        // make sure we've seen the whole block
+        if *block < state.last_block {
             for request in requests.iter() {
                 match request {
                     IndexerRequests::NamehashToName(NamehashToNameRequest { hash, .. }) => {
@@ -263,8 +273,6 @@ fn handle_eth_message(
     for block in blocks_to_remove.iter() {
         pending_requests.remove(block);
     }
-
-    // set_state(&bincode::serialize(state)?);
     Ok(())
 }
 
@@ -398,7 +406,7 @@ fn fetch_and_process_logs(
                         print_to_terminal(1, &format!("log-handling error! {e:?}"));
                     }
                 }
-                return ();
+                return;
             }
             Err(e) => {
                 println!("got eth error while fetching logs: {e:?}, trying again in 5s...");
