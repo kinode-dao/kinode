@@ -6,10 +6,8 @@ type OsHomeProps = {
     nodeChainId: string
 }
 
-function KinodeHome({ knsName, nodeChainId }: OsHomeProps) {
+function KinodeHome({ knsName }: OsHomeProps) {
     const navigate = useNavigate()
-    const inviteRedir = () => navigate('/claim-invite')
-    // const registerEthRedir = () => navigate('/register-eth-name')
     const registerRedir = () => navigate('/register-name')
     const resetRedir = () => navigate('/reset')
     const importKeyfileRedir = () => navigate('/import-keyfile')
@@ -23,49 +21,36 @@ function KinodeHome({ knsName, nodeChainId }: OsHomeProps) {
 
     return (
         <>
-            <div className="flex flex-col max-w-[460px] w-full gap-4 mt-8">
-                {previouslyBooted ? (
-                    <button onClick={loginRedir}> Login </button>
-                ) : (
-                    <>
-                        {<h4 className="self-start mx-auto">
-                            New here? Register a username to get started
-                        </h4>}
-                        <button
-                            onClick={registerRedir}
-                        >
-                            Register Kinode Name
-                        </button>
-                        <h4 className="self-start mx-auto">
-                            Other options
-                        </h4>
-                        {/* {nodeChainId !== OPTIMISM_OPT_HEX && <button
-                            disabled={!hasNetwork}
-                            onClick={registerEthRedir}
-                            className="alt"
-                        >
-                            Register ENS Name
-                        </button>} */}
-                        <button
-                            onClick={inviteRedir}
-                            className="alt"
-                        >
-                            Claim Kinode Invite
-                        </button>
-                        <button
-                            onClick={resetRedir}
-                            className="alt"
-                        >
-                            Reset Kinode Name
-                        </button>
-                        <button
-                            onClick={importKeyfileRedir}
-                            className="alt"
-                        >
-                            Import Keyfile
-                        </button>
-                    </>
-                )}
+            <div className="container fade-in">
+                <div className="section">
+                    <div className="content">
+                        {previouslyBooted ? (
+                            <div className="text-center">
+                                <h2 className="mb-2">Welcome back!</h2>
+                                <button onClick={loginRedir} className="button">Login</button>
+                            </div>
+                        ) : (
+                            <>
+                                <h2 className="text-center mb-2">Welcome to Kinode</h2>
+                                <h4 className="text-center mb-2">New here? Register a username to get started</h4>
+                                <div className="button-group">
+                                    <button onClick={registerRedir} className="button">
+                                        Register Kinode Name
+                                    </button>
+                                </div>
+                                <h4 className="text-center mt-2 mb-2">Other options</h4>
+                                <div className="button-group">
+                                    <button onClick={resetRedir} className="button secondary">
+                                        Reset Kinode Name
+                                    </button>
+                                    <button onClick={importKeyfileRedir} className="button secondary">
+                                        Import Keyfile
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
             </div>
         </>
     )
