@@ -16,7 +16,7 @@ import DirectCheckbox from "../components/DirectCheckbox";
 import EnterKnsName from "../components/EnterKnsName";
 
 import { useAccount, usePublicClient, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { useConnectModal } from "@rainbow-me/rainbowkit";
+import { useConnectModal, useAddRecentTransaction } from "@rainbow-me/rainbowkit";
 import { kinohash } from "../utils/kinohash";
 
 const NAME_INVALID_PUNY = "Unsupported punycode character";
@@ -39,18 +39,24 @@ function ResetKnsName({
   setWsPort,
   setTcpPort,
   setRouters,
-  nodeChainId,
 }: ResetProps) {
   const { address } = useAccount();
   const navigate = useNavigate();
   const client = usePublicClient();
   const { openConnectModal } = useConnectModal();
 
-  const { data: hash, writeContract, isPending, isError, error } = useWriteContract();
+  const { data: hash, writeContract, isPending, isError, error } = useWriteContract({
+    mutation: {
+      onSuccess: (data) => {
+        addRecentTransaction({ hash: data, description: `Reset KNS ID: ${name}.os` });
+      }
+    }
+  });
   const { isLoading: isConfirming, isSuccess: isConfirmed } =
     useWaitForTransactionReceipt({
       hash,
-    })
+    });
+  const addRecentTransaction = useAddRecentTransaction();
 
   const [name, setName] = useState<string>(knsName.slice(0, -3));
   const [nameVets, setNameVets] = useState<string[]>([]);
@@ -199,40 +205,39 @@ function ResetKnsName({
 
 
   return (
-    <>
-      {Boolean(address) && (
-        <form id="signup-form" className="flex flex-col" onSubmit={handleResetRecords}>
-          {isPending || isConfirming ? (
-            <Loader msg={isConfirming ? "Resetting Networking Information..." : "Please confirm the transaction in your wallet"} />
-          ) : (
-            <>
-              <h3 className="flex flex-col w-full place-items-center mb-2">
-                <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2">
-                  Specify the node ID to reset
-                  <Tooltip text={`Kinodes use a .os name in order to identify themselves to other nodes in the network.`} />
-                </label>
+    <div className="container fade-in">
+      <div className="section">
+        {Boolean(address) && (
+          <form className="form" onSubmit={handleResetRecords}>
+            {isPending || isConfirming ? (
+              <Loader msg={isConfirming ? "Resetting Networking Information..." : "Please confirm the transaction in your wallet"} />
+            ) : (
+              <>
+                <h3 className="form-label">
+                  <Tooltip text="Kinodes use a .os name in order to identify themselves to other nodes in the network.">
+                    Specify the node ID to reset
+                  </Tooltip>
+                </h3>
                 <EnterKnsName {...{ name, setName, nameVets, triggerNameCheck, nameValidities, setNameValidities, isReset: true }} />
-              </h3>
-
-              <DirectCheckbox {...{ direct, setDirect }} />
-
-              <button
-                type="submit"
-                className="mt-2"
-                disabled={isPending || isConfirming || nameValidities.length !== 0}
-              >
-                Reset Node
-              </button>
-            </>
-          )}
-          {isError && (
-            <p className="text-red-500 mt-2">
-              Error: {error?.message || "An error occurred, please try again."}
-            </p>
-          )}
-        </form>
-      )}
-    </>
+                <DirectCheckbox {...{ direct, setDirect }} />
+                <button
+                  type="submit"
+                  className="button mt-2"
+                  disabled={isPending || isConfirming || nameValidities.length !== 0}
+                >
+                  Reset Node
+                </button>
+              </>
+            )}
+            {isError && (
+              <p className="error-message mt-2">
+                Error: {error?.message || "An error occurred, please try again."}
+              </p>
+            )}
+          </form>
+        )}
+      </div>
+    </div>
   );
 }
 export default ResetKnsName;

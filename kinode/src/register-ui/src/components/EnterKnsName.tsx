@@ -96,8 +96,8 @@ function EnterKnsName({
     e.target.value.indexOf(".") === -1 && setName(e.target.value);
 
   return (
-    <div className="flex flex-col w-full place-items-center place-content-center">
-      <div className="flex w-full place-items-center">
+    <div className="enter-kns-name">
+      <div className="input-wrapper">
         <input
           value={name}
           onChange={noDots}
@@ -105,15 +105,12 @@ function EnterKnsName({
           required
           name="dot-os-name"
           placeholder="e.g. myname"
-          className="grow"
+          className="kns-input"
         />
-        <div className="ml-2 text-lg">.os</div>
+        <span className="kns-suffix">.os</span>
       </div>
       {nameValidities.map((x, i) => (
-        <div key={i}>
-          <br />
-          <span className="text-red-500">{x}</span>
-        </div>
+        <p key={i} className="error-message">{x}</p>
       ))}
     </div>
   );

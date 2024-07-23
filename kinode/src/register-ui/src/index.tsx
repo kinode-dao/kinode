@@ -2,11 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client'
 
 import App from './App';
-import '@unocss/reset/tailwind.css'
 import '@rainbow-me/rainbowkit/styles.css';
-
-import '@unocss/reset/tailwind.css'
-import 'uno.css'
 import './index.css';
 
 import {
@@ -24,14 +20,12 @@ import {
   QueryClient,
 } from "@tanstack/react-query";
 
-
 import { Buffer } from 'buffer';
 window.Buffer = Buffer;
 
-
 const config = getDefaultConfig({
   appName: 'Kinode Register UI',
-  projectId: 'YOUR_PROJECT_ID', // apparently need project_Id if using wallet_connect
+  projectId: 'YOUR_PROJECT_ID',
   chains: [optimism],
   ssr: false,
   transports: {
@@ -43,15 +37,12 @@ const config = getDefaultConfig({
 
 const queryClient = new QueryClient();
 
-// fix the separate div outside of <App>...
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <RainbowKitProvider showRecentTransactions={true}>
-          <div id="signup-page" className="flex flex-col place-items-center place-content-center h-screen w-screen">
-            <App />
-          </div>
+          <App />
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>
