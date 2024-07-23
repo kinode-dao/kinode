@@ -200,7 +200,7 @@ impl State {
             mirroring_from: package_state.mirrored_from.clone(),
             mirroring: package_state.mirroring,
             auto_update: package_state.auto_update,
-        })?);
+        })?)?;
         if utils::extract_api(package_id)? {
             self.downloaded_apis.insert(package_id.to_owned());
         }
@@ -419,6 +419,7 @@ impl State {
             match self.packages.entry(package_id) {
                 std::collections::hash_map::Entry::Occupied(mut listing) => {
                     let listing = listing.get_mut();
+                    listing.tba = tba;
                     listing.metadata_uri = metadata_uri;
                     listing.metadata_hash = metadata_hash;
                     listing.metadata = Some(metadata);
