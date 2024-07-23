@@ -1026,19 +1026,6 @@ pub struct Keyfile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyfileVet {
-    pub password_hash: String,
-    pub keyfile: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KeyfileVetted {
-    pub username: String,
-    pub networking_key: String,
-    pub routers: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BootInfo {
     pub password_hash: String,
     pub username: String,

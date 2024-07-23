@@ -65,20 +65,6 @@ function ImportKeyfile({
         if (keyErrs.length === 0 && localKey !== "") {
           let hashed_password = sha256(toBytes(pw));
 
-          const response = await fetch(getFetchUrl("/vet-keyfile"), {
-            method: "POST",
-            credentials: 'include',
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              keyfile: localKey,
-              password_hash: hashed_password,
-            }),
-          });
-
-          if (response.status > 399) {
-            throw new Error("Incorrect password");
-          }
-
           const result = await fetch(getFetchUrl("/import-keyfile"), {
             method: "POST",
             credentials: 'include',
