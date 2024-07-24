@@ -17,9 +17,7 @@ const ICON: &str = include_str!("icon");
 pub fn init_frontend(our: &Address) {
     for path in [
         "/apps",
-        "/apps/listed",
         "/apps/:id",
-        "/apps/listed/:id",
         "/apps/:id/caps",
         "/apps/:id/mirror",
         "/apps/:id/auto-update",
@@ -146,7 +144,7 @@ fn make_widget() -> String {
     <div id="latest-apps"></div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            fetch('/main:app_store:sys/apps/listed', { credentials: 'include' })
+            fetch('/main:app_store:sys/apps', { credentials: 'include' })
                 .then(response => response.json())
                 .then(data => {
                     const container = document.getElementById('latest-apps');
@@ -181,15 +179,12 @@ fn make_widget() -> String {
 }
 
 /// Actions supported over HTTP:
-/// - get all downloaded apps: GET /apps
-/// - get all listed apps: GET /apps/listed
+/// - get all apps: GET /apps
 /// - get some subset of listed apps, via search or filter: ?
-/// - get detail about a specific downloaded app: GET /apps/:id
+/// - get detail about a specific app: GET /apps/:id
 /// - get capabilities for a specific downloaded app: GET /apps/:id/caps
-/// - get detail about a specific listed app: GET /apps/listed/:id
 ///
-/// - download a listed app: POST /apps/listed/:id
-/// - install a downloaded app: POST /apps/:id
+/// - install a downloaded app, download a listed app: POST /apps/:id
 /// - uninstall/delete a downloaded app: DELETE /apps/:id
 /// - update a downloaded app: PUT /apps/:id
 /// - approve capabilities for a downloaded app: POST /apps/:id/caps
@@ -306,9 +301,68 @@ fn serve_paths(
                     ))
                 }
                 Method::POST => {
-                    // install an app
-                    crate::handle_install(state, &package_id)?;
-                    Ok((StatusCode::CREATED, None, format!("Installed").into_bytes()))
+                    let Some(listing) = state.packages.get(&package_id) else {
+                        return Ok((
+                            StatusCode::NOT_FOUND,
+                            None,
+                            format!("App not found: {package_id}").into_bytes(),
+                        ));
+                    };
+                    if listing.state.is_some() {
+                        // install a downloaded app
+                        crate::handle_install(state, &package_id)?;
+                        Ok((StatusCode::CREATED, None, format!("Installed").into_bytes()))
+                    } else {
+                        // download a listed app
+                        let pkg_listing: &PackageListing = state
+                            .packages
+                            .get(&package_id)
+                            .ok_or(anyhow::anyhow!("No package"))?;
+                        // from POST body, look for download_from field and use that as the mirror
+                        let body = crate::get_blob()
+                            .ok_or(anyhow::anyhow!("missing blob"))?
+                            .bytes;
+                        let body_json: serde_json::Value =
+                            serde_json::from_slice(&body).unwrap_or_default();
+                        let mirrors: &Vec<NodeId> = pkg_listing
+                            .metadata
+                            .as_ref()
+                            .expect("Package does not have metadata")
+                            .properties
+                            .mirrors
+                            .as_ref();
+                        let download_from = body_json
+                            .get("download_from")
+                            .unwrap_or(&json!(mirrors
+                                .first()
+                                .ok_or(anyhow::anyhow!("No mirrors for package {package_id}"))?))
+                            .as_str()
+                            .ok_or(anyhow::anyhow!("download_from not a string"))?
+                            .to_string();
+                        // TODO select on FE? or after download but before install?
+                        let mirror = false;
+                        let auto_update = false;
+                        let desired_version_hash = None;
+                        match crate::start_download(
+                            state,
+                            package_id,
+                            download_from,
+                            mirror,
+                            auto_update,
+                            desired_version_hash,
+                        ) {
+                            DownloadResponse::Started => Ok((
+                                StatusCode::CREATED,
+                                None,
+                                format!("Downloading").into_bytes(),
+                            )),
+                            other => Ok((
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                None,
+                                format!("Failed to download: {other:?}").into_bytes(),
+                            )),
+                        }
+                    }
                 }
                 Method::PUT => {
                     // update a downloaded app
@@ -352,75 +406,6 @@ fn serve_paths(
                         None,
                         format!("Uninstalled").into_bytes(),
                     ))
-                }
-                _ => Ok((
-                    StatusCode::METHOD_NOT_ALLOWED,
-                    None,
-                    format!("Invalid method {method} for {bound_path}").into_bytes(),
-                )),
-            }
-        }
-        // download a listed app: POST
-        "/apps/listed/:id" => {
-            let Ok(package_id) = get_package_id(url_params) else {
-                return Ok((
-                    StatusCode::BAD_REQUEST,
-                    None,
-                    format!("Missing id").into_bytes(),
-                ));
-            };
-
-            match method {
-                Method::POST => {
-                    // download an app
-                    let pkg_listing: &PackageListing = state
-                        .packages
-                        .get(&package_id)
-                        .ok_or(anyhow::anyhow!("No package"))?;
-                    // from POST body, look for download_from field and use that as the mirror
-                    let body = crate::get_blob()
-                        .ok_or(anyhow::anyhow!("missing blob"))?
-                        .bytes;
-                    let body_json: serde_json::Value =
-                        serde_json::from_slice(&body).unwrap_or_default();
-                    let mirrors: &Vec<NodeId> = pkg_listing
-                        .metadata
-                        .as_ref()
-                        .expect("Package does not have metadata")
-                        .properties
-                        .mirrors
-                        .as_ref();
-                    let download_from = body_json
-                        .get("download_from")
-                        .unwrap_or(&json!(mirrors
-                            .first()
-                            .ok_or(anyhow::anyhow!("No mirrors for package {package_id}"))?))
-                        .as_str()
-                        .ok_or(anyhow::anyhow!("download_from not a string"))?
-                        .to_string();
-                    // TODO select on FE? or after download but before install?
-                    let mirror = false;
-                    let auto_update = false;
-                    let desired_version_hash = None;
-                    match crate::start_download(
-                        state,
-                        package_id,
-                        download_from,
-                        mirror,
-                        auto_update,
-                        desired_version_hash,
-                    ) {
-                        DownloadResponse::Started => Ok((
-                            StatusCode::CREATED,
-                            None,
-                            format!("Downloading").into_bytes(),
-                        )),
-                        other => Ok((
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            None,
-                            format!("Failed to download: {other:?}").into_bytes(),
-                        )),
-                    }
                 }
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
