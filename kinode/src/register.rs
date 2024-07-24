@@ -9,8 +9,8 @@ use alloy_primitives::{Address as EthAddress, Bytes, FixedBytes, U256};
 use alloy_sol_types::{eip712_domain, SolCall, SolStruct};
 use base64::{engine::general_purpose::STANDARD as base64_standard, Engine};
 use lib::types::core::{
-    BootInfo, Identity, ImportKeyfileInfo, Keyfile, KeyfileVet, KeyfileVetted, LoginAndResetInfo,
-    LoginInfo, NodeRouting, UnencryptedIdentity,
+    BootInfo, Identity, ImportKeyfileInfo, Keyfile, LoginAndResetInfo, LoginInfo, NodeRouting,
+    UnencryptedIdentity,
 };
 use ring::{rand::SystemRandom, signature, signature::KeyPair};
 use std::{
@@ -141,13 +141,6 @@ pub async fn register(
             warp::post()
                 .and(our_temp_id.clone())
                 .and_then(generate_networking_info),
-        ))
-        .or(warp::path("vet-keyfile").and(
-            warp::post()
-                .and(warp::body::content_length_limit(1024 * 16))
-                .and(warp::body::json())
-                .and(keyfile.clone())
-                .and_then(handle_keyfile_vet),
         ))
         .or(warp::path("boot").and(
             warp::post()
@@ -288,31 +281,6 @@ async fn get_unencrypted_info(keyfile: Option<Vec<u8>>) -> Result<impl Reply, Re
 
 async fn generate_networking_info(our_temp_id: Arc<Identity>) -> Result<impl Reply, Rejection> {
     Ok(warp::reply::json(our_temp_id.as_ref()))
-}
-
-async fn handle_keyfile_vet(
-    payload: KeyfileVet,
-    keyfile: Option<Vec<u8>>,
-) -> Result<impl Reply, Rejection> {
-    // additional checks?
-    let encoded_keyfile = match payload.keyfile.is_empty() {
-        true => keyfile.ok_or(warp::reject())?,
-        false => base64_standard
-            .decode(payload.keyfile)
-            .map_err(|_| warp::reject())?,
-    };
-
-    let decoded_keyfile = keygen::decode_keyfile(&encoded_keyfile, &payload.password_hash)
-        .map_err(|_| warp::reject())?;
-
-    Ok(warp::reply::json(&KeyfileVetted {
-        username: decoded_keyfile.username,
-        networking_key: format!(
-            "0x{}",
-            hex::encode(decoded_keyfile.networking_keypair.public_key().as_ref())
-        ),
-        routers: decoded_keyfile.routers,
-    }))
 }
 
 async fn handle_boot(

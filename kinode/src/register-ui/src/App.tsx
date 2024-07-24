@@ -3,16 +3,14 @@ import { Navigate, BrowserRouter as Router, Route, Routes, useParams } from 'rea
 
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 
-import RegisterEthName from "./pages/RegisterEthName";
 import RegisterKnsName from "./pages/RegisterKnsName";
-import ClaimOsInvite from "./pages/ClaimKnsInvite";
 import SetPassword from "./pages/SetPassword";
 import Login from './pages/Login'
 import ResetKnsName from './pages/ResetKnsName'
 import KinodeHome from "./pages/KinodeHome"
 import ImportKeyfile from "./pages/ImportKeyfile";
 import { UnencryptedIdentity } from "./lib/types";
-import { getFetchUrl } from "./utils/fetch";
+import Header from "./components/Header";
 
 
 function App() {
@@ -47,7 +45,7 @@ function App() {
   useEffect(() => {
     (async () => {
       try {
-        const infoResponse = await fetch(getFetchUrl('/info'), { method: 'GET', credentials: 'include' })
+        const infoResponse = await fetch('/info', { method: 'GET', credentials: 'include' })
 
         if (infoResponse.status > 399) {
           console.log('no info, unbooted')
@@ -66,7 +64,7 @@ function App() {
       }
 
       try {
-        const currentChainResponse = await fetch(getFetchUrl('/current-chain'), { method: 'GET', credentials: 'include' })
+        const currentChainResponse = await fetch('/current-chain', { method: 'GET', credentials: 'include' })
 
         if (currentChainResponse.status < 400) {
           const nodeChainId = await currentChainResponse.json()
@@ -104,25 +102,26 @@ function App() {
 
   return (
     <>
-      <div className="absolute top-0 right-0 m-4">
-        <ConnectButton chainStatus="icon" accountStatus="full" />
+      <Header />
+      <div id="signup-page" className="container">
+        <Router>
+          <main>
+            <Routes>
+              <Route path="/" element={navigateToLogin
+                ? <Navigate to="/login" replace />
+                : <KinodeHome {...props} />
+              } />
+              <Route path="/register-name" element={<RegisterKnsName  {...props} />} />
+              <Route path="/set-password" element={<SetPassword {...props} />} />
+              <Route path="/reset" element={<ResetKnsName {...props} />} />
+              <Route path="/import-keyfile" element={<ImportKeyfile {...props} />} />
+              <Route path="/login" element={<Login {...props} />} />
+            </Routes>
+          </main>
+        </Router>
       </div>
-      <Router>
-        <Routes>
-          <Route path="/" element={navigateToLogin
-            ? <Navigate to="/login" replace />
-            : <KinodeHome {...props} />
-          } />
-          <Route path="/claim-invite" element={<ClaimOsInvite {...props} />} />
-          <Route path="/register-name" element={<RegisterKnsName  {...props} />} />
-          <Route path="/register-eth-name" element={<RegisterEthName {...props} />} />
-          <Route path="/set-password" element={<SetPassword {...props} />} />
-          <Route path="/reset" element={<ResetKnsName {...props} />} />
-          <Route path="/import-keyfile" element={<ImportKeyfile {...props} />} />
-          <Route path="/login" element={<Login {...props} />} />
-        </Routes>
-      </Router>
     </>
+
   )
 }
 

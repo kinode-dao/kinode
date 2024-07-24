@@ -2,8 +2,6 @@ import React, { useState, useEffect, FormEvent, useCallback } from "react";
 import Loader from "../components/Loader";
 import { downloadKeyfile } from "../utils/download-keyfile";
 import { Tooltip } from "../components/Tooltip";
-import { getFetchUrl } from "../utils/fetch";
-
 import { sha256, toBytes } from "viem";
 import { useSignTypedData, useAccount, useChainId } from 'wagmi'
 import { KINOMAP } from "../abis";
@@ -87,7 +85,7 @@ function SetPassword({
         })
 
         try {
-          const result = await fetch(getFetchUrl("/boot"), {
+          const result = await fetch("/boot", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             credentials: "include",
@@ -107,7 +105,7 @@ function SetPassword({
           downloadKeyfile(knsName, base64String);
 
           const interval = setInterval(async () => {
-            const res = await fetch(getFetchUrl("/"), { credentials: 'include' });
+            const res = await fetch("/", { credentials: 'include' });
 
             if (
               res.status < 300 &&
@@ -129,51 +127,41 @@ function SetPassword({
 
   return (
     <>
-
       {loading ? (
         <Loader msg="Setting up node..." />
       ) : (
-        <form id="signup-form" className="flex flex-col w-full max-w-[450px] gap-4" onSubmit={handleSubmit}>
-          <div className="flex flex-col w-full place-items-center place-content-center">
-            <div className="flex w-full place-items-center mb-2">
-              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-2" style={{ fontSize: 20 }} htmlFor="password">New Password</label>
-              <Tooltip text={`This password will be used to log in if you restart your node or switch browsers.`} />
-            </div>
-            <div className="flex w-full place-items-center">
-              <input
-                className="grow"
-                type="password"
-                id="password"
-                required
-                minLength={6}
-                name="password"
-                placeholder="Min 6 characters"
-                value={pw}
-                onChange={(e) => setPw(e.target.value)}
-                autoFocus
-              />
-            </div>
+        <form className="form" onSubmit={handleSubmit}>
+          <div className="form-group">
+            <Tooltip text="This password will be used to log in if you restart your node or switch browsers.">
+              <label className="form-label" htmlFor="password">New Password</label>
+            </Tooltip>
+            <input
+              type="password"
+              id="password"
+              required
+              minLength={6}
+              name="password"
+              placeholder="Min 6 characters"
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              autoFocus
+            />
           </div>
-          <div className="flex flex-col w-full place-items-center place-content-center">
-            <div className="flex w-full place-items-center">
-              <label className="flex leading-6 place-items-center mt-2 cursor-pointer mb-4" style={{ fontSize: 20 }} htmlFor="confirm-password">Confirm Password</label>
-            </div>
-            <div className="flex w-full place-items-center">
-              <input
-                className="grow"
-                type="password"
-                id="confirm-password"
-                required
-                minLength={6}
-                name="confirm-password"
-                placeholder="Min 6 characters"
-                value={pw2}
-                onChange={(e) => setPw2(e.target.value)}
-              />
-            </div>
-            {Boolean(error) && <p style={{ color: "red" }}>{error}</p>}
+          <div className="form-group">
+            <label className="form-label" htmlFor="confirm-password">Confirm Password</label>
+            <input
+              type="password"
+              id="confirm-password"
+              required
+              minLength={6}
+              name="confirm-password"
+              placeholder="Min 6 characters"
+              value={pw2}
+              onChange={(e) => setPw2(e.target.value)}
+            />
           </div>
-          <button type="submit">Submit</button>
+          {Boolean(error) && <p className="error-message">{error}</p>}
+          <button type="submit" className="button">Submit</button>
         </form>
       )}
     </>
