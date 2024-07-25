@@ -81,6 +81,24 @@ fn init(our: Address) {
     )
     .expect("failed to bind to /our.js");
 
+    bind_http_static_path(
+        "/kinode.css",
+        true,
+        false,
+        Some("text/css".to_string()),
+        include_str!("../../pkg/kinode.css").into(),
+    )
+    .expect("failed to bind /kinode.css");
+
+    bind_http_static_path(
+        "/kinode.svg",
+        true,
+        false,
+        Some("image/svg+xml".to_string()),
+        include_str!("../../pkg/kinode.svg").into(),
+    )
+    .expect("failed to bind /kinode.svg");
+
     bind_http_path("/apps", true, false).expect("failed to bind /apps");
     bind_http_path("/version", true, false).expect("failed to bind /version");
     bind_http_path("/order", true, false).expect("failed to bind /order");
