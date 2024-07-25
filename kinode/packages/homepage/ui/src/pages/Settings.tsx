@@ -1,3 +1,1 @@
-export const Settings = () => <div>
-  Settings go here!
-</div>
+export const Settings = () => <div></div>

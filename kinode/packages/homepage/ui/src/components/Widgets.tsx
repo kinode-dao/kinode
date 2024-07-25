@@ -1,18 +1,12 @@
 import useHomepageStore from "../store/homepageStore"
 import Widget from "./Widget"
 import usePersistentStore from "../store/persistentStore"
-import { isMobileCheck } from "../utils/dimensions"
-import classNames from "classnames"
 
 const Widgets = () => {
   const { apps } = useHomepageStore()
   const { widgetSettings } = usePersistentStore();
-  const isMobile = isMobileCheck()
 
-  return <div className={classNames("flex-center flex-wrap flex-grow self-stretch", {
-    'gap-2 m-2': isMobile,
-    'gap-4 m-4': !isMobile
-  })}>
+  return <div>
     {apps
       .filter(app => app.widget)
       .map(({ widget, package_name }, _i, _appsWithWidgets) => !widgetSettings[package_name]?.hide && <Widget
