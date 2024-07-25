@@ -1,3 +1,27 @@
+/* forms */
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-label {
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+}
+
+.form-input {
+    padding: 0.75rem;
+    border: 2px solid var(--orange);
+    border-radius: 4px;
+    transition: all 0.3s ease;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--dark-orange);
+    box-shadow: 0 0 0 3px rgba(255, 79, 0, 0.2);
+}
+
 /* tooltips */
 .tooltip {
     position: relative;

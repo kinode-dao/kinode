@@ -97,14 +97,8 @@ body {
     cursor: crosshair;
 }
 
-.container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 2rem;
-}
-
 /* Sections */
-.section {
+section {
     background-color: light-dark(var(--white), var(--maroon));
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
@@ -113,35 +107,30 @@ body {
     transition: transform 0.3s ease;
 }
 
-.section:hover {
+section:hover {
     transform: translateY(-5px);
 }
 
 /* Forms */
-.form {
+form {
     display: flex;
     flex-direction: column;
     gap: 1rem;
 }
 
-.form-group {
-    display: flex;
-    flex-direction: column;
-}
-
-.form-label {
+form label {
     margin-bottom: 0.5rem;
     font-weight: bold;
 }
 
-.form-input {
+form input {
     padding: 0.75rem;
     border: 2px solid var(--orange);
     border-radius: 4px;
     transition: all 0.3s ease;
 }
 
-.form-input:focus {
+form input:focus {
     outline: none;
     border-color: var(--dark-orange);
     box-shadow: 0 0 0 3px rgba(255, 79, 0, 0.2);
