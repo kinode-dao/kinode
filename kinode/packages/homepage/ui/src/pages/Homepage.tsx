@@ -10,7 +10,6 @@ import { isMobileCheck } from '../utils/dimensions'
 import classNames from 'classnames'
 import WidgetsSettingsModal from '../components/WidgetsSettingsModal'
 
-import valetIcon from '../../public/valet-icon.png'
 import { getFetchUrl } from '../utils/fetch'
 
 interface AppStoreApp {
@@ -24,7 +23,7 @@ function Homepage() {
   const [our, setOur] = useState('')
   const [version, setVersion] = useState('')
   const [allAppsExpanded, setAllAppsExpanded] = useState(false)
-  const { setApps, isHosted, fetchHostedStatus, showWidgetsSettings, setShowWidgetsSettings } = useHomepageStore()
+  const { setApps, fetchHostedStatus, showWidgetsSettings, setShowWidgetsSettings } = useHomepageStore()
   const isMobile = isMobileCheck()
 
   const getAppPathsAndIcons = () => {
@@ -95,11 +94,6 @@ function Homepage() {
         'top-8 left-8 right-8': !isMobile,
         'top-2 left-2 right-2': isMobile
       })}>
-        {isHosted && <img
-          src={valetIcon}
-          className='!w-12 !h-12 !p-1 button icon object-cover'
-          onClick={() => window.location.href = `https://valet.kinode.org/`}
-        />}
         <span>{our}</span>
         <span className='bg-white/10 rounded p-1'>v{version}</span>
         <button

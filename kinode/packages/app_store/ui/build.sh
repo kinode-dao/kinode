@@ -1,1 +1,1 @@
-npm run build:copy
+npm install && npm run build:copy

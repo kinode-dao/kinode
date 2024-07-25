@@ -1,1 +1,1 @@
-yarn && yarn run tc && yarn build
+npm install && npm run build:copy
