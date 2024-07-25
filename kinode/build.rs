@@ -106,22 +106,24 @@ fn main() -> anyhow::Result<()> {
     let parent_dir = pwd.parent().unwrap();
     let packages_dir = pwd.join("packages");
 
-    // build core frontends
-    let core_frontends = vec![
-        "src/register-ui",
-        "packages/app_store/ui",
-        "packages/homepage/ui",
-        // chess when brought in
-    ];
+    if std::env::var("SKIP_BUILD_FRONTEND").is_ok() {
+        // build core frontends
+        let core_frontends = vec![
+            "src/register-ui",
+            "packages/app_store/ui",
+            "packages/homepage/ui",
+            // chess when brought in
+        ];
 
-    // for each frontend, execute build.sh
-    for frontend in core_frontends {
-        let status = std::process::Command::new("sh")
-            .current_dir(pwd.join(frontend))
-            .arg("./build.sh")
-            .status()?;
-        if !status.success() {
-            return Err(anyhow::anyhow!("Failed to build frontend: {}", frontend));
+        // for each frontend, execute build.sh
+        for frontend in core_frontends {
+            let status = std::process::Command::new("sh")
+                .current_dir(pwd.join(frontend))
+                .arg("./build.sh")
+                .status()?;
+            if !status.success() {
+                return Err(anyhow::anyhow!("Failed to build frontend: {}", frontend));
+            }
         }
     }
 
