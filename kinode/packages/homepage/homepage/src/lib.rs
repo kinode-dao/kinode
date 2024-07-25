@@ -32,22 +32,6 @@ wit_bindgen::generate!({
     additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
-const ICON_0: &str = include_str!("./icons/bird-white.svg");
-const ICON_1: &str = include_str!("./icons/bird-orange.svg");
-const ICON_2: &str = include_str!("./icons/bird-plain.svg");
-const ICON_3: &str = include_str!("./icons/k-orange.svg");
-const ICON_4: &str = include_str!("./icons/k-plain.svg");
-const ICON_5: &str = include_str!("./icons/k-white.svg");
-const ICON_6: &str = include_str!("./icons/kbird-orange.svg");
-const ICON_7: &str = include_str!("./icons/kbird-plain.svg");
-const ICON_8: &str = include_str!("./icons/kbird-white.svg");
-const ICON_9: &str = include_str!("./icons/kbranch-orange.svg");
-const ICON_A: &str = include_str!("./icons/kbranch-plain.svg");
-const ICON_B: &str = include_str!("./icons/kbranch-white.svg");
-const ICON_C: &str = include_str!("./icons/kflower-orange.svg");
-const ICON_D: &str = include_str!("./icons/kflower-plain.svg");
-const ICON_E: &str = include_str!("./icons/kflower-white.svg");
-
 call_init!(init);
 fn init(our: Address) {
     let mut app_data: BTreeMap<String, HomepageApp> = BTreeMap::new();
@@ -99,10 +83,27 @@ fn init(our: Address) {
     )
     .expect("failed to bind /kinode.svg");
 
+    bind_http_static_path(
+        "/bird-orange.svg",
+        true,
+        false,
+        Some("image/svg+xml".to_string()),
+        include_str!("../../pkg/bird-orange.svg").into(),
+    )
+    .expect("failed to bind /bird-orange.svg");
+
+    bind_http_static_path(
+        "/bird-plain.svg",
+        true,
+        false,
+        Some("image/svg+xml".to_string()),
+        include_str!("../../pkg/bird-plain.svg").into(),
+    )
+    .expect("failed to bind /bird-plain.svg");
+
     bind_http_path("/apps", true, false).expect("failed to bind /apps");
     bind_http_path("/version", true, false).expect("failed to bind /version");
     bind_http_path("/order", true, false).expect("failed to bind /order");
-    bind_http_path("/icons/:id", true, false).expect("failed to bind /icons/:id");
 
     loop {
         let Ok(ref message) = await_message() else {
@@ -204,39 +205,6 @@ fn init(our: Address) {
                                         vec![],
                                     );
                                 }
-                            }
-                            "/icons/:id" => {
-                                let id = incoming
-                                    .url_params()
-                                    .get("id")
-                                    .unwrap_or(&"0".to_string())
-                                    .clone();
-                                let icon = match id.to_uppercase().as_str() {
-                                    "0" => ICON_0,
-                                    "1" => ICON_1,
-                                    "2" => ICON_2,
-                                    "3" => ICON_3,
-                                    "4" => ICON_4,
-                                    "5" => ICON_5,
-                                    "6" => ICON_6,
-                                    "7" => ICON_7,
-                                    "8" => ICON_8,
-                                    "9" => ICON_9,
-                                    "A" => ICON_A,
-                                    "B" => ICON_B,
-                                    "C" => ICON_C,
-                                    "D" => ICON_D,
-                                    "E" => ICON_E,
-                                    _ => ICON_0,
-                                };
-                                send_response(
-                                    StatusCode::OK,
-                                    Some(HashMap::from([(
-                                        "Content-Type".to_string(),
-                                        "image/svg+xml".to_string(),
-                                    )])),
-                                    icon.as_bytes().to_vec(),
-                                );
                             }
                             _ => {
                                 send_response(

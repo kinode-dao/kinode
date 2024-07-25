@@ -1,6 +1,5 @@
 import { HomepageApp } from "../store/homepageStore"
 import { useState } from "react"
-import AppIconPlaceholder from "./AppIconPlaceholder"
 
 interface AppDisplayProps {
   app?: HomepageApp
@@ -17,9 +16,8 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
   >
     {app?.base64_icon
       ? <img src={app.base64_icon} />
-      : <AppIconPlaceholder
-        text={app?.state?.our_version || '0'}
-      />}
+      : <img src='/bird-orange.svg' />
+    }
     <h6>{app?.label || app?.package_name}</h6>
     {app?.path && isHovered && <button
       onClick={(e) => {

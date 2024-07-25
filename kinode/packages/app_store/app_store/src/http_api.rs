@@ -159,7 +159,7 @@ fn make_widget() -> String {
                             a.innerHTML = `<div
                                 class="app-image"
                                 style="
-                                    background-image: url('${app.metadata.image || `/icons/${iconLetter}`}');
+                                    background-image: url('${app.metadata.image || `/bird-orange.svg`}');
                                 "
                             ></div>
                             <div class="app-info">

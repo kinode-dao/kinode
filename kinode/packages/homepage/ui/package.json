@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "build:copy": "npm run build && rm -rf ../pkg/ui && cp -r dist ../pkg/ui",
+    "build:copy": "npm run build && rm -rf ../pkg/ui && cp -r dist ../pkg/ui && rm -rf dist",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },
