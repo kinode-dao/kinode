@@ -1,0 +1,1 @@
+yarn && yarn run tc && yarn build

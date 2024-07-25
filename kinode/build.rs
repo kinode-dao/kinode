@@ -169,5 +169,23 @@ fn main() -> anyhow::Result<()> {
     let bootstrapped_processes_path = target_dir.join("bootstrapped_processes.rs");
     fs::write(&bootstrapped_processes_path, bootstrapped_processes)?;
 
+    // build core frontends
+    let core_frontends = vec![
+        "src/register-ui",
+        "packages/app_store/ui",
+        "packages/homepage/ui",
+        // chess when brought in
+    ];
+
+    // for each frontend, execute build.sh
+    for frontend in core_frontends {
+        let status = std::process::Command::new("sh")
+            .arg(format!("{}/build.sh", frontend))
+            .status()?;
+        if !status.success() {
+            return Err(anyhow::anyhow!("Failed to build frontend: {}", frontend));
+        }
+    }
+
     Ok(())
 }
