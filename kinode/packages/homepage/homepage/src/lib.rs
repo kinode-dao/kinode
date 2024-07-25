@@ -1,16 +1,15 @@
 #![feature(let_chains)]
+use crate::kinode::process::homepage::{AddRequest, Request as HomepageRequest};
 use kinode_process_lib::{
     await_message, call_init, get_blob,
     http::{
         bind_http_path, bind_http_static_path, send_response, serve_ui, HttpServerError,
-        HttpServerRequest, StatusCode,
+        HttpServerRequest, Method, StatusCode,
     },
     println, Address, Message,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-
-use crate::kinode::process::homepage::{AddRequest, Request as HomepageRequest};
 
 /// Fetching OS version from main package.. LMK if there's a better way...
 const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
@@ -101,6 +100,15 @@ fn init(our: Address) {
     )
     .expect("failed to bind /bird-plain.svg");
 
+    bind_http_static_path(
+        "/version",
+        true,
+        false,
+        Some("text/plain".to_string()),
+        version_from_cargo_toml().into(),
+    )
+    .expect("failed to bind /version");
+
     bind_http_path("/apps", true, false).expect("failed to bind /apps");
     bind_http_path("/version", true, false).expect("failed to bind /version");
     bind_http_path("/order", true, false).expect("failed to bind /order");
@@ -172,14 +180,15 @@ fn init(our: Address) {
                                     },
                                 );
                             }
-                            "/version" => {
-                                send_response(
-                                    StatusCode::OK,
-                                    Some(HashMap::new()),
-                                    version_from_cargo_toml().as_bytes().to_vec(),
-                                );
-                            }
                             "/order" => {
+                                let Ok(Method::POST) = incoming.method() else {
+                                    send_response(
+                                        StatusCode::BAD_REQUEST,
+                                        Some(HashMap::new()),
+                                        vec![],
+                                    );
+                                    return;
+                                };
                                 // POST of a list of package names.
                                 // go through the list and update each app in app_data to have the index of its name in the list as its order
                                 if let Some(body) = get_blob() {

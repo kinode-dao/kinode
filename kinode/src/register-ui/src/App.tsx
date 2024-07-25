@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
 import { Navigate, BrowserRouter as Router, Route, Routes, useParams } from 'react-router-dom';
 
-import { ConnectButton } from '@rainbow-me/rainbowkit';
-
 import RegisterKnsName from "./pages/RegisterKnsName";
 import SetPassword from "./pages/SetPassword";
 import Login from './pages/Login'
