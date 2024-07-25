@@ -180,7 +180,8 @@ fn main() -> anyhow::Result<()> {
     // for each frontend, execute build.sh
     for frontend in core_frontends {
         let status = std::process::Command::new("sh")
-            .arg(format!("{}/build.sh", frontend))
+            .current_dir(pwd.join(frontend))
+            .arg("./build.sh")
             .status()?;
         if !status.success() {
             return Err(anyhow::anyhow!("Failed to build frontend: {}", frontend));
