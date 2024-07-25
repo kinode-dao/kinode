@@ -9,10 +9,9 @@ import { useNavigate } from "react-router-dom";
 import { appId } from "../utils/app";
 import { PUBLISH_PATH } from "../constants/path";
 import HomeButton from "../components/HomeButton";
-import { isMobileCheck } from "../utils/dimensions";
-import classNames from "classnames";
 
-export default function MyAppsPage() { // eslint-disable-line
+
+export default function MyAppsPage() {
   const { myApps, getMyApps, } = useAppsStore()
   const navigate = useNavigate();
 
@@ -53,16 +52,12 @@ export default function MyAppsPage() { // eslint-disable-line
     }
   }, [myApps]);
 
-  const isMobile = isMobileCheck()
   console.log({ myApps })
 
   return (
-    <div className={classNames("flex flex-col w-full h-screen p-2",
-      {
-        'gap-4 max-w-screen': isMobile,
-        'gap-8 max-w-[900px]': !isMobile,
-      })}>
-      {!isMobile && <HomeButton />}
+    <div className="flex flex-col w-full h-screen p-2 gap-4 max-w-screen">
+      <HomeButton />
+      <SearchHeader value={searchQuery} onChange={searchMyApps} />
       <SearchHeader value={searchQuery} onChange={searchMyApps} />
       <div className="flex justify-between items-center mt-2">
         <h3>My Packages</h3>
@@ -72,10 +67,7 @@ export default function MyAppsPage() { // eslint-disable-line
         </button>
       </div>
 
-      <div className={classNames("flex flex-col card gap-2 mt-2",
-        {
-          'max-h-[80vh] overflow-y-scroll overflow-x-visible': !isMobile,
-        })}
+      <div className="flex flex-col card gap-2 mt-2 max-h-[80vh] overflow-y-scroll overflow-x-visible"
         style={{
           scrollbarWidth: 'thin',
           scrollbarColor: '#FFF5D9 transparent',
@@ -106,6 +98,6 @@ export default function MyAppsPage() { // eslint-disable-line
           showMoreActions
         />)}
       </div>
-    </div>
+    </div >
   );
 }

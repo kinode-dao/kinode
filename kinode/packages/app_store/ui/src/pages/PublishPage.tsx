@@ -19,8 +19,6 @@ import {
 } from "../components";
 import useAppsStore from "../store/apps-store";
 import { AppInfo } from "../types/Apps";
-import classNames from "classnames";
-import { isMobileCheck } from "../utils/dimensions";
 
 
 export default function PublishPage() {
@@ -234,13 +232,9 @@ export default function PublishPage() {
     }
   }, [listedApps, packageName, publisherId, isUpdate, setIsUpdate]);
 
-  const isMobile = isMobileCheck()
   return (
-    <div className={classNames("w-full flex flex-col gap-2", {
-      'max-w-[900px]': !isMobile,
-      'p-2 h-screen w-screen': isMobile
-    })}>
-      {!isMobile && <HomeButton />}
+    <div className="w-full flex flex-col gap-2 max-w-[900px] p-2 h-screen w-screen">
+      <HomeButton />
       <SearchHeader
         hideSearch
         hidePublish
@@ -281,7 +275,7 @@ export default function PublishPage() {
         <MetadataForm {...{ packageName, publisherId, app: state?.app }} goBack={() => setShowMetadataForm(false)} />
       ) : !address || !isConnected ? (
         <>
-          <h4>Please connect your wallet {isMobile && <br />} to publish a package</h4>
+          <h4>Please connect your wallet to publish a package</h4>
           <ConnectButton />
         </>
       ) : isConnecting ? (

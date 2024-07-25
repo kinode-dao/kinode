@@ -1,7 +1,5 @@
-import classNames from 'classnames'
 import React, { MouseEvent } from 'react'
 import { FaX } from 'react-icons/fa6'
-import { isMobileCheck } from '../utils/dimensions'
 
 export interface ModalProps extends React.HTMLAttributes<HTMLDivElement> {
   show: boolean
@@ -26,18 +24,10 @@ const Modal: React.FC<ModalProps> = ({
     return null
   }
 
-  const isMobile = isMobileCheck()
 
   return (
     <div
-      className={classNames(`bg-black/25 backdrop-blur-lg fixed top-0 bottom-0 left-0 right-0 flex flex-col c z-30 min-h-[10em] isMobile-${isMobile}`,
-        {
-          isMobile,
-          show,
-          'min-w-[30em]': !isMobile,
-          'min-w-[75vw]': isMobile,
-        }
-      )}
+      className={`bg-black/25 backdrop-blur-lg fixed top-0 bottom-0 left-0 right-0 flex flex-col c z-30 min-h-[10em]`}
       onClick={hide}
     >
       <div
@@ -61,7 +51,7 @@ const Modal: React.FC<ModalProps> = ({
           {props.children}
         </div>
       </div>
-    </div>
+    </div >
   )
 }
 

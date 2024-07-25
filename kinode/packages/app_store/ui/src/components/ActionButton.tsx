@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { AppInfo } from "../types/Apps";
 import UpdateButton from "./UpdateButton";
 import DownloadButton from "./DownloadButton";
 import InstallButton from "./InstallButton";
 import LaunchButton from "./LaunchButton";
 import { FaCheck } from "react-icons/fa6";
-import classNames from "classnames";
 
 interface ActionButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
   app: AppInfo;
@@ -52,13 +51,6 @@ export default function ActionButton({ app, launchPath = '', isIcon = false, per
                   <FaCheck />
                 </button>
                 : <></>
-        // <button
-        //   onClick={() => { }}
-        //   {...props as any}
-        //   className={classNames("clear pointer-events-none", props.className)}
-        // >
-        //   Installed
-        // </button>
       }
     </>
   );

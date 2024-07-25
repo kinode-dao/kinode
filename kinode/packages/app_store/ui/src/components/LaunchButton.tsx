@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AppInfo } from "../types/Apps";
-import classNames from "classnames";
 import { FaPlay } from "react-icons/fa6";
 
 interface LaunchButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
@@ -21,14 +20,11 @@ export default function LaunchButton({ app, launchPath, isIcon = false, ...props
       <button
         {...props}
         type="button"
-        className={classNames("text-sm self-start", props.className, {
-          'icon clear': isIcon,
-          'alt': !isIcon
-        })}
+        className={`text-sm self-start ${props.className} ${isIcon ? 'icon clear' : 'alt'}`}
         onClick={onLaunch}
       >
         {isIcon ? <FaPlay /> : "Launch"}
-      </button>
+      </button >
     </>
   );
 }

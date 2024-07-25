@@ -19,14 +19,12 @@ import {
 } from "@tanstack/react-query";
 
 
-import '@unocss/reset/tailwind.css'
-import 'uno.css'
 import './index.css'
 
 const config = getDefaultConfig({
   appName: 'Kinode App Store',
-  projectId: 'YOUR_PROJECT_ID', // apparently need project_Id if using wallet_connect
-  chains: [anvil, optimism], // change back to OP main once ready
+  projectId: 'YOUR_PROJECT_ID',
+  chains: [optimism],
   ssr: false,
   transports: {
     [anvil.id]: http(),

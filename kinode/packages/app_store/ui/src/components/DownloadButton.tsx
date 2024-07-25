@@ -4,7 +4,6 @@ import useAppsStore from "../store/apps-store";
 import Modal from "./Modal";
 import { getAppName } from "../utils/app";
 import Loader from "./Loader";
-import classNames from "classnames";
 import { FaDownload } from "react-icons/fa6";
 
 interface DownloadButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
@@ -68,10 +67,6 @@ export default function DownloadButton({ app, isIcon = false, ...props }: Downlo
       <button
         {...props}
         type="button"
-        className={classNames("text-sm self-start", props.className, {
-          'icon clear': isIcon,
-          'black': !isIcon,
-        })}
         disabled={!!downloading}
         onClick={onClick}
       >

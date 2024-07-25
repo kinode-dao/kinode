@@ -8,9 +8,6 @@ import {
 } from "react-icons/fa6";
 
 import { MY_APPS_PATH, PUBLISH_PATH } from "../constants/path";
-import classNames from "classnames";
-import { isMobileCheck } from "../utils/dimensions";
-import HomeButton from "./HomeButton";
 import { FaHome } from "react-icons/fa";
 
 interface SearchHeaderProps {
@@ -35,13 +32,9 @@ export default function SearchHeader({
 
   const canGoBack = location.key !== "default";
   const isMyAppsPage = location.pathname === MY_APPS_PATH;
-  const isMobile = isMobileCheck()
 
   return (
-    <div className={classNames("flex justify-between", {
-      "gap-4": isMobile,
-      "gap-8": !isMobile
-    })}>
+    <div className="flex justify-between">
       {location.pathname !== '/'
         ? <button
           className="flex flex-col c icon icon-orange"
@@ -55,53 +48,49 @@ export default function SearchHeader({
         >
           <FaArrowLeft />
         </button>
-        : isMobile
-          ? <button
-            className={classNames("icon icon-orange", {
-            })}
-            onClick={() => window.location.href = '/'}
-          >
-            <FaHome />
-          </button>
-          : <></>}
-      {!hidePublish && <button
-        className="flex flex-col c icon icon-orange"
-        onClick={() => navigate(PUBLISH_PATH)}
-      >
-        <FaUpload />
-      </button>}
-      {!hideSearch && (
-        <div className="flex flex-1 rounded-md relative">
-          <input
-            type="text"
-            ref={inputRef}
-            onChange={(event) => onChange(event.target.value)}
-            value={value}
-            placeholder="Search for apps..."
-            className="w-full self-stretch grow"
-          />
-          <button
-            className={classNames("icon border-0 absolute top-1/2 -translate-y-1/2", {
-              'right-2': isMobile,
-              'right-4': !isMobile
-            })}
-            type="button"
-            onClick={() => inputRef.current?.focus()}
-          >
-            <FaMagnifyingGlass />
-          </button>
-        </div>
-      )}
+        : <button
+          className="icon icon-orange"
+          onClick={() => window.location.href = '/'}
+        >
+          <FaHome />
+        </button>
+      }
+      {
+        !hidePublish && <button
+          className="flex flex-col c icon icon-orange"
+          onClick={() => navigate(PUBLISH_PATH)}
+        >
+          <FaUpload />
+        </button>
+      }
+      {
+        !hideSearch && (
+          <div className="flex flex-1 rounded-md relative">
+            <input
+              type="text"
+              ref={inputRef}
+              onChange={(event) => onChange(event.target.value)}
+              value={value}
+              placeholder="Search for apps..."
+              className="w-full self-stretch grow"
+            />
+            <button
+              className="icon border-0 absolute top-1/2 -translate-y-1/2 right-4"
+              type="button"
+              onClick={() => inputRef.current?.focus()}
+            >
+              <FaMagnifyingGlass />
+            </button>
+          </div>
+        )
+      }
       <button
-        className={classNames("flex c", {
-          "gap-4": isMobile,
-          "gap-8 basis-1/5": !isMobile
-        })}
+        className="flex c gap-4 basis-1/5"
         onClick={() => (isMyAppsPage ? navigate(-1) : navigate(MY_APPS_PATH))}
       >
         <span>My Apps</span>
-        {!isMobile && <FaDownload />}
+        <FaDownload />
       </button>
-    </div>
+    </div >
   );
 }

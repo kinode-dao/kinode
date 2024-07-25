@@ -1,7 +1,5 @@
-import classNames from 'classnames'
 import React from 'react'
 import { hexToRgb, hslToRgb, rgbToHex, rgbToHsl } from '../utils/colors'
-import { isMobileCheck } from '../utils/dimensions'
 
 interface ColorDotProps extends React.HTMLAttributes<HTMLSpanElement> {
   num: string,
@@ -10,13 +8,10 @@ interface ColorDotProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 const ColorDot: React.FC<ColorDotProps> = ({
   num,
-  dotSize,
+  dotSize = 'medium',
   ...props
 }) => {
-  const isMobile = isMobileCheck()
-
   num = num ? num : '';
-
   while (num.length < 6) {
     num = '0' + num
   }
@@ -29,25 +24,18 @@ const ColorDot: React.FC<ColorDotProps> = ({
 
   const angle = (parseInt(num, 16) % 360) || -45
 
+  const dotStyle = {
+    '--left-color': leftColor,
+    '--right-color': rightColor,
+    '--gradient-angle': `${angle}deg`,
+  } as React.CSSProperties;
+
   return (
-    <div {...props} className={classNames('flex', props.className)}>
+    <div {...props} className={`color-dot-wrapper ${props.className || ''}`}>
       <div
-        className={classNames('m-0 align-self-center border rounded-full outline-black', {
-          'h-32 w-32': !isMobile && dotSize === 'large',
-          'h-18 w-18': !isMobile && dotSize === 'medium',
-          'h-12 w-12': isMobile || dotSize === 'small',
-          'border-4': !isMobile,
-          'border-2': isMobile,
-        })}
-        style={{
-          borderTopColor: leftColor,
-          borderRightColor: rightColor,
-          borderBottomColor: rightColor,
-          borderLeftColor: leftColor,
-          background: `linear-gradient(${angle}deg, ${leftColor} 0 50%, ${rightColor} 50% 100%)`,
-          filter: 'saturate(0.25)',
-          opacity: '0.75'
-        }} />
+        className={`color-dot color-dot-${dotSize}`}
+        style={dotStyle}
+      />
       {props.children}
     </div>
   )

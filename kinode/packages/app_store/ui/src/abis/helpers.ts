@@ -39,7 +39,7 @@ export function encodeIntoMintCall(multicalls: `0x${string}`, our_address: `0x${
         functionName: 'execute',
         args: [
             MULTICALL,
-            BigInt(0), // value
+            BigInt(0),
             multicalls,
             1
         ]
@@ -52,7 +52,7 @@ export function encodeIntoMintCall(multicalls: `0x${string}`, our_address: `0x${
             our_address,
             encodePacked(["bytes"], [stringToHex(app_name)]),
             initCall,
-            "0x", // erc721 details? <- encode app_store here? actually might be a slick way to do it. 
+            "0x",
             KINO_ACCOUNT_IMPL,
         ]
     })

@@ -4,7 +4,6 @@ import useAppsStore from "../store/apps-store";
 import Modal from "./Modal";
 import { getAppName } from "../utils/app";
 import Loader from "./Loader";
-import classNames from "classnames";
 import { FaExclamation } from "react-icons/fa6";
 
 interface UpdateButtonProps extends React.HTMLAttributes<HTMLButtonElement> {
@@ -56,9 +55,7 @@ export default function UpdateButton({ app, isIcon = false, ...props }: UpdateBu
       <button
         {...props}
         type="button"
-        className={classNames("text-sm self-start", props.className, {
-          'icon clear': isIcon
-        })}
+        className={`text-sm self-start ${props.className} ${isIcon ? "icon clear" : ""}`}
         onClick={onClick}
       >
         {isIcon ? <FaExclamation /> : 'Update'}

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback, ReactElement } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { FaGlobe, FaPeopleGroup } from "react-icons/fa6";
 
 import { AppInfo } from "../types/Apps";
 import useAppsStore from "../store/apps-store";
@@ -9,13 +10,8 @@ import SearchHeader from "../components/SearchHeader";
 import { appId } from "../utils/app";
 import { PUBLISH_PATH } from "../constants/path";
 import HomeButton from "../components/HomeButton";
-import classNames from "classnames";
-import { isMobileCheck } from "../utils/dimensions";
-import { FaGlobe, FaPeopleGroup, FaStar } from "react-icons/fa6";
-
 
 export default function AppPage() {
-  // eslint-disable-line
   const { myApps, listedApps, getListedApp } = useAppsStore();
   const navigate = useNavigate();
   const params = useParams();
@@ -36,7 +32,7 @@ export default function AppPage() {
           .catch(console.error);
       }
     }
-  }, [params.id, myApps, listedApps]);
+  }, [params.id, myApps, listedApps, getListedApp]);
 
   const goToPublish = useCallback(() => {
     navigate(PUBLISH_PATH, { state: { app } });
@@ -51,44 +47,23 @@ export default function AppPage() {
     app?.state?.our_version ||
     (versions[(versions.length || 1) - 1] || ["", ""])[1];
 
-  const isMobile = isMobileCheck()
-
-  const appDetails: Array<{ top: ReactElement, middle: ReactElement, bottom: ReactElement }> = [
-    // {
-    //   top: <div className={classNames({ 'text-sm': isMobile })}>0 ratings</div>,
-    //   middle: <span className="text-2xl">5.0</span>,
-    //   bottom: <div className={classNames("flex-center gap-1", {
-    //     'text-sm': isMobile
-    //   })}>
-    //     <FaStar />
-    //     <FaStar />
-    //     <FaStar />
-    //     <FaStar />
-    //     <FaStar />
-    //   </div>
-    // },
+  const appDetails = [
     {
-      top: <div className={classNames({ 'text-sm': isMobile })}>Developer</div>,
+      top: "Developer",
       middle: <FaPeopleGroup size={36} />,
-      bottom: <div className={classNames({ 'text-sm': isMobile })}>
-        {app?.publisher}
-      </div>
+      bottom: app?.publisher
     },
     {
-      top: <div className={classNames({ 'text-sm': isMobile })}>Version</div>,
-      middle: <span className="text-2xl">{version}</span>,
-      bottom: <div className={classNames({ 'text-xs': isMobile })}>
-        {hash.slice(0, 5)}...{hash.slice(-5)}
-      </div>
+      top: "Version",
+      middle: <span className="version-number">{version}</span>,
+      bottom: `${hash.slice(0, 5)}...${hash.slice(-5)}`
     },
     {
-      top: <div className={classNames({ 'text-sm': isMobile })}>Mirrors</div>,
+      top: "Mirrors",
       middle: <FaGlobe size={36} />,
-      bottom: <div className={classNames({ 'text-sm': isMobile })}>
-        {app?.metadata?.properties?.mirrors?.length || 0}
-      </div>
+      bottom: app?.metadata?.properties?.mirrors?.length || 0
     }
-  ]
+  ];
 
   useEffect(() => {
     fetch('/apps').then(data => data.json())
@@ -103,73 +78,58 @@ export default function AppPage() {
   }, [app])
 
   return (
-    <div className={classNames("flex flex-col w-full p-2",
-      {
-        'gap-4 max-w-screen': isMobile,
-        'gap-8 max-w-[900px]': !isMobile,
-      })}
-    >
-      {!isMobile && <HomeButton />}
+    <div className="app-page">
+      <HomeButton />
       <SearchHeader
         value=""
         onChange={() => null}
         hideSearch
         hidePublish
       />
-      <div className={classNames("flex-col-center card !rounded-3xl", {
-        'p-12 gap-4 grow overflow-y-auto': isMobile,
-        'p-24 gap-8': !isMobile,
-      })}>
-        {app ? <>
-          <AppHeader app={app} size={isMobile ? "medium" : "large"} />
-          <div className="w-5/6 h-0 border border-orange" />
-          <div className={classNames("flex items-start text-xl", {
-            'gap-4 flex-wrap': isMobile,
-            'gap-8': !isMobile,
-          })}>
-            {appDetails.map((detail, index) => <>
-              <div
-                className={classNames("flex-col-center gap-2 justify-between self-stretch", {
-                  'rounded-lg bg-white/10 p-1 min-w-1/4 grow': isMobile,
-                  'opacity-50': !isMobile,
-                })}
-                key={index}
-              >
-                {detail.top}
-                {detail.middle}
-                {detail.bottom}
+      <div className="app-details-card">
+        {app ? (
+          <>
+            <AppHeader app={app} size="large" />
+            <hr className="app-divider" />
+            <div className="app-info-grid">
+              {appDetails.map((detail, index) => (
+                <React.Fragment key={index}>
+                  <div className="app-info-item">
+                    <div className="app-info-top">{detail.top}</div>
+                    <div className="app-info-middle">{detail.middle}</div>
+                    <div className="app-info-bottom">{detail.bottom}</div>
+                  </div>
+                  {index !== appDetails.length - 1 && <div className="app-info-divider" />}
+                </React.Fragment>
+              ))}
+            </div>
+            {Array.isArray(app.metadata?.properties?.screenshots) && app.metadata?.properties.screenshots.length > 0 && (
+              <div className="app-screenshots">
+                {app.metadata.properties.screenshots.map((screenshot, index) => (
+                  <img key={index + screenshot} src={screenshot} alt={`Screenshot ${index + 1}`} className="app-screenshot" />
+                ))}
               </div>
-              {!isMobile && index !== appDetails.length - 1 && <div className="h-3/4 w-0 border border-orange self-center" />}
-            </>)}
-          </div>
-          {Array.isArray(app.metadata?.properties?.screenshots)
-            && app.metadata?.properties.screenshots.length > 0
-            && <div className="flex flex-wrap overflow-x-auto max-w-full">
-              {app.metadata.properties.screenshots.map(
-                (screenshot, index) => (
-                  <img key={index + screenshot} src={screenshot} className="mr-2 max-h-20 max-w-full rounded border border-black" />
-                )
-              )}
-            </div>}
-          <div className={classNames("flex-center gap-2", {
-            'flex-col': isMobile,
-          })}>
-            <ActionButton
-              app={app}
-              launchPath={launchPath}
-              className={classNames("self-center bg-orange text-lg px-12")}
-              permitMultiButton
-            />
-          </div>
-          {app.installed && app.state?.mirroring && (
-            <button type="button" onClick={goToPublish}>
-              Publish
-            </button>
-          )}
-        </> : <>
-          <h4>App details not found for </h4>
-          <h4>{params.id}</h4>
-        </>}
+            )}
+            <div className="app-actions">
+              <ActionButton
+                app={app}
+                launchPath={launchPath}
+                className="app-action-button"
+                permitMultiButton
+              />
+            </div>
+            {app.installed && app.state?.mirroring && (
+              <button type="button" onClick={goToPublish} className="publish-button">
+                Publish
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <h4>App details not found for</h4>
+            <h4>{params.id}</h4>
+          </>
+        )}
       </div>
     </div>
   );

@@ -4,8 +4,7 @@ import { MyApps, AppInfo, PackageManifest } from '../types/Apps'
 import { HTTP_STATUS } from '../constants/http';
 import { appId, getAppType } from '../utils/app';
 
-const BASE_URL = (import.meta as any).env.BASE_URL; // eslint-disable-line
-
+const BASE_URL = '/main:app_store:sys'
 const isApp = (a1: AppInfo, a2: AppInfo) => a1.package === a2.package && a1.publisher === a2.publisher
 
 export interface AppsStore {
@@ -48,7 +47,7 @@ const useAppsStore = create<AppsStore>()(
       query: '',
       getMyApps: async () => {
         const listedApps = await get().getListedApps()
-        const res = await fetch(`${BASE_URL}/apps`)
+        const res = await fetch(`/apps`)
         const apps = await res.json() as AppInfo[]
 
         const myApps = apps.reduce((acc, app) => {
@@ -70,7 +69,7 @@ const useAppsStore = create<AppsStore>()(
         return myApps
       },
       getListedApps: async () => {
-        const res = await fetch(`${BASE_URL}/apps/listed`)
+        const res = await fetch(`${BASE_URL}/apps`)
         const apps = await res.json() as AppInfo[]
         set({ listedApps: apps })
         return apps
@@ -90,22 +89,22 @@ const useAppsStore = create<AppsStore>()(
           method: 'POST'
         })
         if (approveRes.status !== HTTP_STATUS.OK) {
-          throw new Error(`Failed to approve caps for app: ${appId(info)}`)
+          throw new Error(`Failed to approve caps for app: ${appId(info)} `)
         }
 
-        const installRes = await fetch(`${BASE_URL}/apps/${appId(info)}`, {
+        const installRes = await fetch(`${BASE_URL}/apps/${appId(info)} `, {
           method: 'POST'
         })
         if (installRes.status !== HTTP_STATUS.CREATED) {
-          throw new Error(`Failed to install app: ${appId(info)}`)
+          throw new Error(`Failed to install app: ${appId(info)} `)
         }
       },
       updateApp: async (app: AppInfo) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(app)}`, {
+        const res = await fetch(`/ apps / ${appId(app)} `, {
           method: 'PUT'
         })
         if (res.status !== HTTP_STATUS.NO_CONTENT) {
-          throw new Error(`Failed to update app: ${appId(app)}`)
+          throw new Error(`Failed to update app: ${appId(app)} `)
         }
 
         // TODO: get the app from the server instead of updating locally
@@ -113,11 +112,11 @@ const useAppsStore = create<AppsStore>()(
       uninstallApp: async (app: AppInfo) => {
         if (!confirm(`Are you sure you want to remove ${appId(app)}?`)) return
 
-        const res = await fetch(`${BASE_URL}/apps/${appId(app)}`, {
+        const res = await fetch(`/ apps / ${appId(app)} `, {
           method: 'DELETE'
         })
         if (res.status !== HTTP_STATUS.NO_CONTENT) {
-          throw new Error(`Failed to remove app: ${appId(app)}`)
+          throw new Error(`Failed to remove app: ${appId(app)} `)
         }
 
         const myApps = { ...get().myApps }
@@ -127,24 +126,24 @@ const useAppsStore = create<AppsStore>()(
         set({ myApps, listedApps })
       },
       getListedApp: async (packageName: string) => {
-        const res = await fetch(`${BASE_URL}/apps/listed/${packageName}`)
+        const res = await fetch(`/ apps / listed / ${packageName} `)
         if (res.status !== HTTP_STATUS.OK) {
-          throw new Error(`Failed to get app: ${packageName}`)
+          throw new Error(`Failed to get app: ${packageName} `)
         }
         const app = await res.json() as AppInfo
         return app
       },
       downloadApp: async (info: AppInfo, download_from: string) => {
-        const res = await fetch(`${BASE_URL}/apps/listed/${appId(info)}`, {
+        const res = await fetch(`/ apps / listed / ${appId(info)} `, {
           method: 'POST',
           body: JSON.stringify({ download_from }),
         })
         if (res.status !== HTTP_STATUS.CREATED) {
-          throw new Error(`Failed to get app: ${appId(info)}`)
+          throw new Error(`Failed to get app: ${appId(info)} `)
         }
       },
       getCaps: async (info: AppInfo) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(info)}/caps`)
+        const res = await fetch(`/ apps / ${appId(info)} /caps`)
         if (res.status !== HTTP_STATUS.OK) {
           throw new Error(`Failed to get app: ${appId(info)}`)
         }
@@ -153,7 +152,7 @@ const useAppsStore = create<AppsStore>()(
         return caps[0]
       },
       approveCaps: async (info: AppInfo) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(info)}/caps`, {
+        const res = await fetch(`/apps/${appId(info)}/caps`, {
           method: 'POST'
         })
         if (res.status !== HTTP_STATUS.OK) {
@@ -161,7 +160,7 @@ const useAppsStore = create<AppsStore>()(
         }
       },
       rebuildIndex: async () => {
-        const res = await fetch(`${BASE_URL}/apps/rebuild-index`, {
+        const res = await fetch(`/apps/rebuild-index`, {
           method: 'POST'
         })
         if (res.status !== HTTP_STATUS.OK) {
@@ -169,7 +168,7 @@ const useAppsStore = create<AppsStore>()(
         }
       },
       setMirroring: async (info: AppInfo, mirroring: boolean) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(info)}/mirror`, {
+        const res = await fetch(`/apps/${appId(info)}/mirror`, {
           method: mirroring ? 'PUT' : 'DELETE',
         })
         if (res.status !== HTTP_STATUS.OK) {
@@ -178,7 +177,7 @@ const useAppsStore = create<AppsStore>()(
         get().getMyApp(info)
       },
       setAutoUpdate: async (info: AppInfo, autoUpdate: boolean) => {
-        const res = await fetch(`${BASE_URL}/apps/${appId(info)}/auto-update`, {
+        const res = await fetch(`/apps/${appId(info)}/auto-update`, {
           method: autoUpdate ? 'PUT' : 'DELETE',
         })
         if (res.status !== HTTP_STATUS.OK) {
