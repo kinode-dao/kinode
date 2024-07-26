@@ -37,6 +37,7 @@ select {
     --ansi-red: #dc322f;
     --maroon: #4f0000;
     --gray: #657b83;
+    --tasteful-dark: #1f1f1f;
 }
 
 /* Typography */
@@ -91,7 +92,7 @@ body {
     font-family: var(--font-family-main, sans-serif);
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
-    background-color: light-dark(var(--tan), var(--off-black));
+    background-color: light-dark(var(--tan), var(--tasteful-dark));
 }
 
 /* Sections */
