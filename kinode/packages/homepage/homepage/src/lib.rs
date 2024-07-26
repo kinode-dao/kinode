@@ -30,7 +30,7 @@ struct HomepageApp {
     label: String,
     base64_icon: Option<String>,
     widget: Option<String>,
-    order: Option<u32>,
+    order: u32,
     favorite: bool,
 }
 
@@ -163,7 +163,7 @@ fn init(our: Address) {
                                 label,
                                 base64_icon: icon,
                                 widget,
-                                order: None,
+                                order: app_data.len() as u32,
                                 favorite: DEFAULT_FAVES
                                     .contains(&message.source().process.to_string().as_str()),
                             },
@@ -221,7 +221,7 @@ fn init(our: Address) {
                                     continue;
                                 };
                                 if let Some(app) = app_data.get_mut(&favorite_toggle.0) {
-                                    app.order = Some(favorite_toggle.1);
+                                    app.order = favorite_toggle.1;
                                     app.favorite = favorite_toggle.2;
                                 }
                                 send_response(

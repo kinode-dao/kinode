@@ -1,4 +1,4 @@
-import { HomepageApp } from "../store/homepageStore"
+import useHomepageStore, { HomepageApp } from "../store/homepageStore"
 import { useState } from "react"
 
 interface AppDisplayProps {
@@ -6,6 +6,7 @@ interface AppDisplayProps {
 }
 
 const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
+  const { setApps } = useHomepageStore()
   const [isHovered, setIsHovered] = useState(false)
 
   return <a
@@ -21,13 +22,16 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
       : <img className="app-icon" src='/bird-orange.svg' />
     }
     <h6>{app?.label || app?.package_name}</h6>
-    {isHovered && !app?.path && <p>This app does not serve a UI</p>}
+    {isHovered && !app?.path && <p className="no-ui">This app does not serve a UI</p>}
     {app?.path && isHovered && <button className="app-fave-button"
       onClick={(e) => {
         e.preventDefault()
         fetch(`/favorite`, {
           method: 'POST',
-          body: JSON.stringify([app.package_name, !app.favorite, app.order])
+          body: JSON.stringify([app?.id, app?.order, !app?.favorite])
+        }).then(() => {
+          fetch('/apps', { credentials: 'include' }).then(res => res.json()).catch(() => [])
+            .then(setApps)
         })
       }}
     >

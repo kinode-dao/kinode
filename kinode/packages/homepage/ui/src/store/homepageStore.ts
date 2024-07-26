@@ -10,7 +10,7 @@ export interface HomepageApp {
   label: string,
   base64_icon?: string,
   widget?: string
-  order?: number
+  order: number
   favorite: boolean
 }
 

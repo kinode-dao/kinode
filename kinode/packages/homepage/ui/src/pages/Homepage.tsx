@@ -52,8 +52,14 @@ function Homepage() {
     <div id="homepage">
       <header>
         <KinodeBird />
-        <h1>{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, {our}</h1>
-        <a href="https://github.com/kinode-dao/kinode/releases" target="_blank">[version v{version}]</a>
+        <h1>{new Date().getHours() < 4
+          ? 'Good evening'
+          : new Date().getHours() < 12
+            ? 'Good morning'
+            : new Date().getHours() < 18
+              ? 'Good afternoon'
+              : 'Good evening'}, {our}</h1>
+        <a href="https://github.com/kinode-dao/kinode/releases" target="_blank">[v{version}]</a>
         <button onClick={() => setShowWidgetsSettings(true)}>
           <FaScrewdriverWrench />
         </button>

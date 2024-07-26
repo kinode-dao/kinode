@@ -67,7 +67,6 @@ fn create_widget(location_json: serde_json::Value) -> String {
         <script>
             // Get user's location from IP address and display that point
             const data = {};
-            console.log(data);
             const gData = [{{
                 lat: data.latitude,
                 lng: data.longitude,

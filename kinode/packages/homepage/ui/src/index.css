@@ -22,7 +22,7 @@ header h1 {
 }
 
 .kino-bird {
-    filter: invert(1);
+    filter: light-dark(invert(1), invert(0));
 }
 
 [data-rfd-droppable-context-id] {
@@ -61,6 +61,12 @@ header h1 {
     right: 0;
 }
 
+.no-ui {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+}
+
 #widgets {
     width: 100%;
     display: flex;
@@ -70,7 +76,7 @@ header h1 {
     gap: 10px;
 }
 
-#widget {
+.widget {
     border: 1px solid black;
     border-radius: 10px;
     text-align: center;
@@ -81,19 +87,30 @@ header h1 {
     overflow: hidden;
 }
 
-#widget p {
+.widget iframe {
+    border: none;
+    width: 100%;
+    height: 100%;
+}
+
+.widget .bottom-bar {
+    display: none;
     position: absolute;
     bottom: 0;
     border-top: 1px solid black;
     background-color: var(--blue);
     width: 100%;
     padding: 2px;
+    flex-direction: row;
+    justify-content: space-between;
 }
 
-#widget iframe {
-    border: none;
-    width: 100%;
-    height: 100%;
+.widget:hover .bottom-bar {
+    display: flex;
+}
+
+.widget .bottom-bar p {
+    font-size: 0.8em;
 }
 
 footer {

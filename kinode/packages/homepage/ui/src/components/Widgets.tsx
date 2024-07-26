@@ -8,6 +8,7 @@ const Widgets = () => {
 
   return <div id="widgets">
     {apps.filter((app) => app.widget && !widgetSettings[app.id]?.hide).map((app) => <Widget
+      id={app.id}
       label={app.label}
       widget={app.widget!}
       key={app.id}
