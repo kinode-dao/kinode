@@ -23,7 +23,7 @@ header h1 {
     filter: invert(1);
 }
 
-[data-rfd-droppable-context-id=":r1:"] {
+[data-rfd-droppable-context-id] {
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
