@@ -100,70 +100,83 @@ function populate_eth_rpc_settings(settings) {
 }
 
 function populate_process_map(process_map) {
+    // apps we don't want user to kill, also runtime modules that cannot be killed
+    const do_not_kill = [
+        'settings:setting:sys',
+        'main:app_store:sys',
+        'net:distro:sys',
+        'kernel:distro:sys',
+        'kv:distro:sys',
+        'sqlite:distro:sys',
+        'eth:distro:sys',
+        'vfs:distro:sys',
+        'state:distro:sys',
+        'kns_indexer:kns_indexer:sys',
+        'http_client:distro:sys',
+        'http_server:distro:sys',
+        'terminal:terminal:sys',
+        'timer:distro:sys',
+    ];
+
     const ul = document.getElementById('process-map');
     ul.innerHTML = '';
     Object.entries(process_map).forEach(([id, process]) => {
         const li = document.createElement('li');
 
-        const name = document.createElement('p');
-        name.innerHTML = `${id}`;
-        name.innerHTML += `<button class="kill-process" data-id="${id}">kill</button>`;
-        li.appendChild(name);
+        const toggleButton = document.createElement('button');
+        toggleButton.textContent = `${id}`;
+        toggleButton.onclick = function () {
+            const details = this.nextElementSibling;
+            details.style.display = details.style.display === 'none' ? 'block' : 'none';
+        };
+        li.appendChild(toggleButton);
 
-        const public = document.createElement('p');
-        public.innerHTML = `public: ${process.public}`;
-        li.appendChild(public);
+        const detailsDiv = document.createElement('div');
+        detailsDiv.style.display = 'none';
 
-        const on_exit = document.createElement('p');
-        on_exit.innerHTML = `on_exit: ${process.on_exit}`;
-        li.appendChild(on_exit);
+        if (!do_not_kill.includes(id)) {
+            const killButton = document.createElement('button');
+            killButton.className = 'kill-process';
+            killButton.setAttribute('data-id', id);
+            killButton.textContent = 'kill';
+            detailsDiv.appendChild(killButton);
+        }
 
-        const wit_version = document.createElement('p');
+        const publicInfo = document.createElement('p');
+        publicInfo.textContent = `public: ${process.public}`;
+        detailsDiv.appendChild(publicInfo);
+
+        const onExit = document.createElement('p');
+        onExit.textContent = `on_exit: ${process.on_exit}`;
+        detailsDiv.appendChild(onExit);
+
         if (process.wit_version) {
-            wit_version.innerHTML = `wit_version: ${process.wit_version}`;
-            li.appendChild(wit_version);
+            const witVersion = document.createElement('p');
+            witVersion.textContent = `wit_version: ${process.wit_version}`;
+            detailsDiv.appendChild(witVersion);
         }
 
-        const wasm_bytes_handle = document.createElement('p');
         if (process.wasm_bytes_handle) {
-            wasm_bytes_handle.innerHTML = `wasm_bytes_handle: ${process.wasm_bytes_handle}`;
-            li.appendChild(wasm_bytes_handle);
+            const wasmBytesHandle = document.createElement('p');
+            wasmBytesHandle.textContent = `wasm_bytes_handle: ${process.wasm_bytes_handle}`;
+            detailsDiv.appendChild(wasmBytesHandle);
         }
 
-        const caps = document.createElement('ul');
+        const capsList = document.createElement('ul');
         process.capabilities.forEach(cap => {
-            const li = document.createElement('li');
-            li.innerHTML = `${cap.issuer}(${JSON.stringify(JSON.parse(cap.params), null, 2)})`;
-            caps.appendChild(li);
+            const capLi = document.createElement('li');
+            capLi.textContent = `${cap.issuer}(${JSON.stringify(JSON.parse(cap.params), null, 2)})`;
+            capsList.appendChild(capLi);
         });
-        li.appendChild(caps);
+        detailsDiv.appendChild(capsList);
 
+        li.appendChild(detailsDiv);
         ul.appendChild(li);
     });
     document.querySelectorAll('.kill-process').forEach(button => {
-        let id = button.getAttribute('data-id');
-        // apps we don't want user to kill, also runtime modules that cannot be killed
-        const do_not_kill = [
-            'settings:setting:sys',
-            'main:app_store:sys',
-            'net:distro:sys',
-            'kernel:distro:sys',
-            'kv:distro:sys',
-            'sqlite:distro:sys',
-            'eth:distro:sys',
-            'vfs:distro:sys',
-            'state:distro:sys',
-            'kns_indexer:kns_indexer:sys',
-            'http_client:distro:sys',
-            'http_server:distro:sys',
-            'terminal:terminal:sys',
-            'timer:distro:sys',
-        ];
-        if (!do_not_kill.includes(id)) {
-            button.addEventListener('click', () => {
-                api_call({ "KillProcess": id });
-            });
-        }
+        button.addEventListener('click', () => {
+            api_call({ "KillProcess": button.getAttribute('data-id') });
+        });
     });
 }
 
