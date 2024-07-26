@@ -142,7 +142,23 @@ function populate_process_map(process_map) {
     });
     document.querySelectorAll('.kill-process').forEach(button => {
         let id = button.getAttribute('data-id');
-        const do_not_kill = ['settings:setting:sys', 'main:app_store:sys'];
+        // apps we don't want user to kill, also runtime modules that cannot be killed
+        const do_not_kill = [
+            'settings:setting:sys',
+            'main:app_store:sys',
+            'net:distro:sys',
+            'kernel:distro:sys',
+            'kv:distro:sys',
+            'sqlite:distro:sys',
+            'eth:distro:sys',
+            'vfs:distro:sys',
+            'state:distro:sys',
+            'kns_indexer:kns_indexer:sys',
+            'http_client:distro:sys',
+            'http_server:distro:sys',
+            'terminal:terminal:sys',
+            'timer:distro:sys',
+        ];
         if (!do_not_kill.includes(id)) {
             button.addEventListener('click', () => {
                 api_call({ "KillProcess": id });

@@ -289,8 +289,6 @@ fn handle_http_request(
             };
             let request = serde_json::from_slice::<SettingsRequest>(&blob.bytes)?;
             let response = handle_settings_request(state, request);
-            state.fetch()?;
-            state.ws_update();
             Ok(http::send_response(
                 http::StatusCode::OK,
                 None,
