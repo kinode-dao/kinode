@@ -198,7 +198,7 @@ fn init(our: Address) {
                                         Some(HashMap::new()),
                                         vec![],
                                     );
-                                    return;
+                                    continue;
                                 };
                                 // POST of a list of package names.
                                 // go through the list and update each app in app_data to have the index of its name in the list as its order
@@ -208,7 +208,7 @@ fn init(our: Address) {
                                         Some(HashMap::new()),
                                         vec![],
                                     );
-                                    return;
+                                    continue;
                                 };
                                 let Ok(favorite_toggle) =
                                     serde_json::from_slice::<(String, u32, bool)>(&body.bytes)
@@ -218,7 +218,7 @@ fn init(our: Address) {
                                         Some(HashMap::new()),
                                         vec![],
                                     );
-                                    return;
+                                    continue;
                                 };
                                 if let Some(app) = app_data.get_mut(&favorite_toggle.0) {
                                     app.order = Some(favorite_toggle.1);

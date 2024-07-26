@@ -20,7 +20,6 @@ function Homepage() {
     ]).then(([appsData, version]) => {
       setVersion(version)
       setApps(appsData)
-      console.log(appsData)
     });
   }
 
@@ -37,6 +36,17 @@ function Homepage() {
         }
       })
   }, [our])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && allAppsExpanded) {
+        setAllAppsExpanded(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [allAppsExpanded]);
 
   return (
     <div id="homepage">

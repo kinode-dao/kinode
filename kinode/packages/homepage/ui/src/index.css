@@ -1,9 +1,11 @@
 body {
-    width: 100%;
+    width: 90vw;
+    margin: 0 auto;
 }
 
 #homepage {
-    width: 100%;
+    max-width: 960px;
+    margin: 0 auto;
 }
 
 header {
@@ -32,7 +34,7 @@ header h1 {
     background-color: #4f000085;
     padding: 10px;
     border-radius: 10px;
-    max-width: 90%;
+    width: fit-content;
     margin: 0 auto;
     margin-bottom: 10px;
 }
@@ -63,6 +65,8 @@ header h1 {
     width: 100%;
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-evenly;
     gap: 10px;
 }
 
@@ -72,7 +76,7 @@ header h1 {
     text-align: center;
     position: relative;
     max-width: 100%;
-    width: 400px;
+    width: 300px;
     height: 400px;
     overflow: hidden;
 }
@@ -93,18 +97,24 @@ header h1 {
 }
 
 footer {
-    position: absolute;
+    text-align: center;
+    position: fixed;
     bottom: 0;
-    width: 100%;
+    width: 90vw;
+    margin: 0 auto;
     max-height: 100vh;
+    max-width: 960px;
 }
 
 #all-apps {
-    border-top: 1px solid black;
+    border: 1px solid black;
     display: flex;
     flex-direction: row;
     gap: 10px;
+    justify-content: space-evenly;
+    padding: 10px;
     background-color: #4f000085;
+    border-radius: 5px 5px 0px 0px;
 }
 
 .app-icon {
@@ -119,18 +129,28 @@ footer {
     width: 100%;
     height: 100%;
     text-align: center;
+    background-color: #000000cc;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .modal-inner {
-    background-color: #00000085;
+    width: fit-content;
+    text-align: center;
+    background-color: var(--gray);
     border-radius: 25px;
     border: 1px solid black;
+    padding: 25px;
+    margin: auto;
 }
 
 .modal-header {
-    margin-top: 20vh;
+    text-align: center;
     display: flex;
     flex-direction: row;
+    justify-content: space-between;
+    margin-bottom: 2em;
 }
 
 .modal .widget-settings {

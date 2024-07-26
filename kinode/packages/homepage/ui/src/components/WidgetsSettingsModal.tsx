@@ -18,23 +18,12 @@ const WidgetsSettingsModal = () => {
             <h4>{app.label}</h4>
             <div>
               <div>
-                <span>Show widget</span>
-                <div>
-                  <input
-                    type="checkbox"
-                    checked={!widgetSettings[app.id]?.hide}
-                    onChange={() => toggleWidgetVisibility(app.id)}
-                    autoFocus
-                  />
-                  {!widgetSettings[app.id]?.hide && (
-                    <span
-                      onClick={() => toggleWidgetVisibility(app.id)}
-                      className="checkmark"
-                    >
-                      &#10003;
-                    </span>
-                  )}
-                </div>
+                <span>Show widget<input
+                  type="checkbox"
+                  checked={!widgetSettings[app.id]?.hide}
+                  onChange={() => toggleWidgetVisibility(app.id)}
+                  autoFocus
+                /></span>
               </div>
               <div>
                 <span>Widget size</span>
