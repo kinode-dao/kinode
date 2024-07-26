@@ -574,11 +574,6 @@ pub async fn kernel(
     let mut non_rebooted_processes: HashSet<t::ProcessId> = HashSet::new();
 
     for (process_id, persisted) in &process_map {
-        // filter out OnExit::None processes from process_map
-        if persisted.on_exit.is_none() {
-            non_rebooted_processes.insert(process_id.clone());
-            continue;
-        }
         // runtime extensions will have a bytes_handle of "", because they have no
         // WASM code saved in filesystem.
         if persisted.wasm_bytes_handle.is_empty() {
@@ -897,6 +892,10 @@ pub async fn kernel(
                         &engine,
                         &home_directory_path,
                     ).await {
+                        // drain process map of processes with OnExit::None
+                        process_map.retain(|_, persisted| !persisted.on_exit.is_none());
+                        // persist state
+                        persist_state(&send_to_loop, &process_map).await;
                         // shut down the node
                         return Ok(());
                     }

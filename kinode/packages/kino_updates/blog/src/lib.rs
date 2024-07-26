@@ -32,7 +32,7 @@ fn init(_our: Address) {
             .body(
                 serde_json::json!({
                     "Add": {
-                        "label": "KinoUpdates",
+                        "label": "Updates from kinode.org",
                         "widget": create_widget(fetch_most_recent_blog_posts(12)),
                     }
                 })

@@ -1,6 +1,6 @@
 {
-    "name": "kino_updates",
-    "description": "A simple widget that serves latest blog posts from kinode.org",
+    "name": "Kinode Updates",
+    "description": "A simple widget that serves latest blog posts and more from kinode.org",
     "image": "https://kinode.org/static/media/kinode.a60d538cb0ae88c56b07.png",
     "properties": {
         "package_name": "kino_updates",
