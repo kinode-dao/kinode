@@ -32,7 +32,7 @@ function populate(data) {
     populate_net_diagnostics(data.diagnostics);
     populate_eth_rpc_providers(data.eth_rpc_providers);
     populate_eth_rpc_settings(data.eth_rpc_access_settings);
-    // populate_kernel()
+    populate_process_map(data.process_map);
 }
 
 function populate_node_info(identity) {
@@ -97,6 +97,58 @@ function populate_eth_rpc_settings(settings) {
             ul.appendChild(li);
         });
     }
+}
+
+function populate_process_map(process_map) {
+    const ul = document.getElementById('process-map');
+    ul.innerHTML = '';
+    Object.entries(process_map).forEach(([id, process]) => {
+        const li = document.createElement('li');
+
+        const name = document.createElement('p');
+        name.innerHTML = `${id}`;
+        name.innerHTML += `<button class="kill-process" data-id="${id}">kill</button>`;
+        li.appendChild(name);
+
+        const public = document.createElement('p');
+        public.innerHTML = `public: ${process.public}`;
+        li.appendChild(public);
+
+        const on_exit = document.createElement('p');
+        on_exit.innerHTML = `on_exit: ${process.on_exit}`;
+        li.appendChild(on_exit);
+
+        const wit_version = document.createElement('p');
+        if (process.wit_version) {
+            wit_version.innerHTML = `wit_version: ${process.wit_version}`;
+            li.appendChild(wit_version);
+        }
+
+        const wasm_bytes_handle = document.createElement('p');
+        if (process.wasm_bytes_handle) {
+            wasm_bytes_handle.innerHTML = `wasm_bytes_handle: ${process.wasm_bytes_handle}`;
+            li.appendChild(wasm_bytes_handle);
+        }
+
+        const caps = document.createElement('ul');
+        process.capabilities.forEach(cap => {
+            const li = document.createElement('li');
+            li.innerHTML = `${cap.issuer}(${JSON.stringify(JSON.parse(cap.params), null, 2)})`;
+            caps.appendChild(li);
+        });
+        li.appendChild(caps);
+
+        ul.appendChild(li);
+    });
+    document.querySelectorAll('.kill-process').forEach(button => {
+        let id = button.getAttribute('data-id');
+        const do_not_kill = ['settings:setting:sys', 'main:app_store:sys'];
+        if (!do_not_kill.includes(id)) {
+            button.addEventListener('click', () => {
+                api_call({ "KillProcess": id });
+            });
+        }
+    });
 }
 
 // Call init to start the application

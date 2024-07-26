@@ -365,7 +365,6 @@ async fn handle_kernel_request(
         // skip the capabilities-cleanup RevokeAll, pass "no-revoke" in the metadata
         //
         t::KernelCommand::KillProcess(process_id) => {
-            senders.remove(&process_id);
             let process_handle = match process_handles.remove(&process_id) {
                 Some(ph) => ph,
                 None => {
@@ -375,6 +374,7 @@ async fn handle_kernel_request(
                     return None;
                 }
             };
+            senders.remove(&process_id);
             process_handle.abort();
             process_map.remove(&process_id);
             if request.metadata != Some("no-revoke".to_string()) {

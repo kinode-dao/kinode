@@ -43,6 +43,7 @@ struct SettingsState {
     pub diagnostics: Option<String>,
     pub eth_rpc_providers: Option<eth::SavedConfigs>,
     pub eth_rpc_access_settings: Option<eth::AccessSettings>,
+    pub process_map: Option<kernel_types::ProcessMap>,
 }
 
 impl SettingsState {
@@ -54,6 +55,7 @@ impl SettingsState {
             diagnostics: None,
             eth_rpc_providers: None,
             eth_rpc_access_settings: None,
+            process_map: None,
         }
     }
 
@@ -127,7 +129,29 @@ impl SettingsState {
         };
         self.eth_rpc_access_settings = Some(access_settings);
 
-        // TODO: running processes
+        // running processes
+        let Ok(Ok(Message::Response { body, .. })) =
+            Request::to(("our", "kernel", "distro", "sys"))
+                .body(
+                    serde_json::to_vec(&kernel_types::KernelCommand::Debug(
+                        kernel_types::KernelPrint::ProcessMap,
+                    ))
+                    .unwrap(),
+                )
+                .send_and_await_response(5)
+        else {
+            return Err(anyhow::anyhow!(
+                "failed to get running processes from kernel"
+            ));
+        };
+        let Ok(kernel_types::KernelResponse::Debug(kernel_types::KernelPrintResponse::ProcessMap(
+            process_map,
+        ))) = serde_json::from_slice(&body)
+        else {
+            return Err(anyhow::anyhow!("got malformed response from kernel"));
+        };
+        self.process_map = Some(process_map);
+
         Ok(())
     }
 }
