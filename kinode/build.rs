@@ -107,6 +107,8 @@ fn main() -> anyhow::Result<()> {
     let packages_dir = pwd.join("packages");
 
     if std::env::var("SKIP_BUILD_FRONTEND").is_ok() {
+        println!("Skipping build frontend");
+    } else {
         // build core frontends
         let core_frontends = vec![
             "src/register-ui",

@@ -16,12 +16,15 @@ const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
 
 #[derive(Serialize, Deserialize)]
 struct HomepageApp {
-    package_name: String,
+    process: String,
+    package: String,
+    publisher: String,
     path: Option<String>,
     label: String,
     base64_icon: Option<String>,
     widget: Option<String>,
-    order: Option<u16>,
+    order: Option<u32>,
+    favorite: bool,
 }
 
 wit_bindgen::generate!({
@@ -110,8 +113,7 @@ fn init(our: Address) {
     .expect("failed to bind /version");
 
     bind_http_path("/apps", true, false).expect("failed to bind /apps");
-    bind_http_path("/version", true, false).expect("failed to bind /version");
-    bind_http_path("/order", true, false).expect("failed to bind /order");
+    bind_http_path("/favorite", true, false).expect("failed to bind /favorite");
 
     loop {
         let Ok(ref message) = await_message() else {
@@ -140,13 +142,13 @@ fn init(our: Address) {
                         app_data.insert(
                             message.source().process.to_string(),
                             HomepageApp {
-                                package_name: message.source().package().to_string(),
+                                process: message.source().process().to_string(),
+                                package: message.source().package().to_string(),
+                                publisher: message.source().publisher().to_string(),
                                 path: path.map(|path| {
                                     format!(
-                                        "/{}:{}:{}/{}",
-                                        message.source().process(),
-                                        message.source().package(),
-                                        message.source().publisher(),
+                                        "/{}/{}",
+                                        message.source(),
                                         path.strip_prefix('/').unwrap_or(&path)
                                     )
                                 }),
@@ -154,6 +156,7 @@ fn init(our: Address) {
                                 base64_icon: icon,
                                 widget,
                                 order: None,
+                                favorite: false,
                             },
                         );
                     }
@@ -175,12 +178,12 @@ fn init(our: Address) {
                                     )])),
                                     {
                                         let mut apps: Vec<_> = app_data.values().collect();
-                                        apps.sort_by_key(|app| app.order.unwrap_or(255));
+                                        apps.sort_by_key(|app| app.order.unwrap_or(u32::MAX));
                                         serde_json::to_vec(&apps).unwrap_or_else(|_| Vec::new())
                                     },
                                 );
                             }
-                            "/order" => {
+                            "/favorite" => {
                                 let Ok(Method::POST) = incoming.method() else {
                                     send_response(
                                         StatusCode::BAD_REQUEST,
@@ -191,39 +194,38 @@ fn init(our: Address) {
                                 };
                                 // POST of a list of package names.
                                 // go through the list and update each app in app_data to have the index of its name in the list as its order
-                                if let Some(body) = get_blob() {
-                                    let apps: Vec<String> =
-                                        serde_json::from_slice(&body.bytes).unwrap();
-                                    for (i, app) in apps.iter().enumerate() {
-                                        if let Some(app) = app_data.get_mut(app) {
-                                            app.order = Some(i as u16);
-                                        }
-                                    }
-                                    send_response(
-                                        StatusCode::OK,
-                                        Some(HashMap::from([(
-                                            "Content-Type".to_string(),
-                                            "application/json".to_string(),
-                                        )])),
-                                        vec![],
-                                    );
-                                } else {
+                                let Some(body) = get_blob() else {
                                     send_response(
                                         StatusCode::BAD_REQUEST,
                                         Some(HashMap::new()),
                                         vec![],
                                     );
+                                    return;
+                                };
+                                let Ok(favorite_toggle) =
+                                    serde_json::from_slice::<(String, bool)>(&body.bytes)
+                                else {
+                                    send_response(
+                                        StatusCode::BAD_REQUEST,
+                                        Some(HashMap::new()),
+                                        vec![],
+                                    );
+                                    return;
+                                };
+                                if let Some(app) = app_data.get_mut(&favorite_toggle.0) {
+                                    app.favorite = favorite_toggle.1;
                                 }
-                            }
-                            _ => {
                                 send_response(
                                     StatusCode::OK,
                                     Some(HashMap::from([(
                                         "Content-Type".to_string(),
-                                        "text/plain".to_string(),
+                                        "application/json".to_string(),
                                     )])),
-                                    "yes hello".as_bytes().to_vec(),
+                                    vec![],
                                 );
+                            }
+                            _ => {
+                                send_response(StatusCode::NOT_FOUND, Some(HashMap::new()), vec![]);
                             }
                         }
                     }

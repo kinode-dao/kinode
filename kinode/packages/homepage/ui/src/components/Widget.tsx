@@ -15,7 +15,7 @@ const Widget: React.FC<WidgetProps> = ({ package_name, widget }) => {
     setTallScreen(window.innerHeight > window.innerWidth)
   }, [window.innerHeight, window.innerWidth])
 
-  return <div>
+  return <div id="widget">
     <h6>
       {apps.find(app => app.package_name === package_name)?.label || package_name}
     </h6>

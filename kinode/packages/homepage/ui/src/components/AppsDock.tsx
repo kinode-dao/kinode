@@ -79,8 +79,6 @@ const AppsDock: React.FC = () => {
               </div>
             )}
           </Draggable>)}
-          {provided.placeholder}
-          {dockedApps.length === 0 && <div>Favorite an app to pin it to your dock.</div>}
         </div>
       )}
     </Droppable>

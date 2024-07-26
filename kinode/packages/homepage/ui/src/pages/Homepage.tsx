@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import KinodeText from '../components/KinodeText'
 import KinodeBird from '../components/KinodeBird'
 import useHomepageStore, { HomepageApp } from '../store/homepageStore'
 import { FaChevronDown, FaChevronUp, FaScrewdriverWrench } from 'react-icons/fa6'
@@ -45,27 +44,28 @@ function Homepage() {
   }, [our])
 
   return (
-    <div>
-      <h5>
-        <span>Hello, {our}</span>
+    <div id="homepage">
+      <header>
+        <KinodeBird />
+        <h1>{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, {our}</h1>
         <span>v{version}</span>
         <button onClick={() => setShowWidgetsSettings(true)}>
           <FaScrewdriverWrench />
         </button>
-      </h5>
-      <div>
-        <KinodeBird />
-        <KinodeText />
-      </div>
+      </header>
       <AppsDock />
       <Widgets />
-      <button onClick={() => setAllAppsExpanded(!allAppsExpanded)}>
-        {allAppsExpanded ? <FaChevronDown /> : <FaChevronUp />}
-        <span>{allAppsExpanded ? 'Collapse' : 'All apps'}</span>
-      </button>
-      <AllApps expanded={allAppsExpanded} />
+      <footer>
+        <button onClick={() => setAllAppsExpanded(!allAppsExpanded)}>
+          {allAppsExpanded ? <FaChevronDown /> : <FaChevronUp />}
+          <span>{allAppsExpanded ? 'Collapse' : 'All apps'}</span>
+        </button>
+        <div style={{ display: allAppsExpanded ? 'block' : 'none' }}>
+          <AllApps expanded={allAppsExpanded} />
+        </div>
+      </footer>
       {showWidgetsSettings && <WidgetsSettingsModal />}
-    </div>
+    </div >
   )
 }
 

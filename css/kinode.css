@@ -94,7 +94,6 @@ body {
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     background-color: light-dark(var(--tan), var(--off-black));
-    cursor: crosshair;
 }
 
 /* Sections */
@@ -148,7 +147,6 @@ button {
     color: white;
     border: none;
     border-radius: 4px;
-    cursor: pointer;
     transition: background-color 0.3s;
 }
 

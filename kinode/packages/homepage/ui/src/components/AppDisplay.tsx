@@ -15,8 +15,8 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
     onMouseLeave={() => setIsHovered(false)}
   >
     {app?.base64_icon
-      ? <img src={app.base64_icon} />
-      : <img src='/bird-orange.svg' />
+      ? <img className="app-icon" src={app.base64_icon} />
+      : <img className="app-icon" src='/bird-orange.svg' />
     }
     <h6>{app?.label || app?.package_name}</h6>
     {app?.path && isHovered && <button

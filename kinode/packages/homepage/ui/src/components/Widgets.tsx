@@ -6,7 +6,7 @@ const Widgets = () => {
   const { apps } = useHomepageStore()
   const { widgetSettings } = usePersistentStore();
 
-  return <div>
+  return <div id="widgets">
     {apps
       .filter(app => app.widget)
       .map(({ widget, package_name }, _i, _appsWithWidgets) => !widgetSettings[package_name]?.hide && <Widget
