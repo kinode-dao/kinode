@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react"
-import useHomepageStore from "../store/homepageStore"
 
 interface WidgetProps {
-  package_name: string,
+  label: string
   widget: string
-  forceLarge?: boolean
 }
 
-const Widget: React.FC<WidgetProps> = ({ package_name, widget }) => {
-  const { apps } = useHomepageStore()
+const Widget: React.FC<WidgetProps> = ({ label, widget }) => {
   const [_tallScreen, setTallScreen] = useState(window.innerHeight > window.innerWidth)
 
   useEffect(() => {
@@ -16,13 +13,8 @@ const Widget: React.FC<WidgetProps> = ({ package_name, widget }) => {
   }, [window.innerHeight, window.innerWidth])
 
   return <div id="widget">
-    <h6>
-      {apps.find(app => app.package_name === package_name)?.label || package_name}
-    </h6>
-    <iframe
-      srcDoc={widget || ""}
-      data-widget-code={widget}
-    />
+    <p>{label}</p>
+    <iframe srcDoc={widget} />
   </div>
 }
 

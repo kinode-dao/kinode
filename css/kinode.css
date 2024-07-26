@@ -50,7 +50,6 @@ p,
 label,
 li {
     color: light-dark(var(--off-black), var(--off-white));
-    margin-bottom: 0.5em;
 }
 
 h1 {
@@ -80,7 +79,6 @@ h6 {
 a {
     color: light-dark(var(--blue), var(--orange));
     text-decoration: none;
-    transition: all 0.3s ease;
 }
 
 a:hover {

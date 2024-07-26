@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import KinodeBird from '../components/KinodeBird'
-import useHomepageStore, { HomepageApp } from '../store/homepageStore'
+import useHomepageStore from '../store/homepageStore'
 import { FaChevronDown, FaChevronUp, FaScrewdriverWrench } from 'react-icons/fa6'
 import AppsDock from '../components/AppsDock'
 import AllApps from '../components/AllApps'
@@ -15,17 +15,12 @@ function Homepage() {
 
   const getAppPathsAndIcons = () => {
     Promise.all([
-      fetch('/apps', { credentials: 'include' }).then(res => res.json() as any as HomepageApp[]).catch(() => []),
+      fetch('/apps', { credentials: 'include' }).then(res => res.json()).catch(() => []),
       fetch('/version', { credentials: 'include' }).then(res => res.text()).catch(() => '')
     ]).then(([appsData, version]) => {
-
       setVersion(version)
-
-      const apps = appsData.map(app => ({
-        ...app,
-      }));
-
-      setApps(apps);
+      setApps(appsData)
+      console.log(appsData)
     });
   }
 
@@ -48,7 +43,7 @@ function Homepage() {
       <header>
         <KinodeBird />
         <h1>{new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, {our}</h1>
-        <span>v{version}</span>
+        <a href="https://github.com/kinode-dao/kinode/releases" target="_blank">[version v{version}]</a>
         <button onClick={() => setShowWidgetsSettings(true)}>
           <FaScrewdriverWrench />
         </button>

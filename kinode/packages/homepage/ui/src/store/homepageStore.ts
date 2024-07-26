@@ -2,15 +2,16 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
 export interface HomepageApp {
+  id: string,
+  process: string,
   package_name: string,
-  path: string
+  publisher: string,
+  path?: string
   label: string,
   base64_icon?: string,
-  state?: {
-    our_version: string
-  }
   widget?: string
   order?: number
+  favorite: boolean
 }
 
 export interface HomepageStore {
@@ -28,7 +29,6 @@ const useHomepageStore = create<HomepageStore>()(
     (set, get) => ({
       get,
       set,
-
       apps: [],
       setApps: (apps: HomepageApp[]) => set({ apps }),
       showWidgetsSettings: false,

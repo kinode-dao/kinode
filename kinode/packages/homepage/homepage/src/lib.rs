@@ -14,8 +14,15 @@ use std::collections::{BTreeMap, HashMap};
 /// Fetching OS version from main package.. LMK if there's a better way...
 const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
 
+const DEFAULT_FAVES: &[&str] = &[
+    "chess:chess:sys",
+    "main:app_store:sys",
+    "settings:settings:sys",
+];
+
 #[derive(Serialize, Deserialize)]
 struct HomepageApp {
+    id: String,
     process: String,
     package: String,
     publisher: String,
@@ -142,13 +149,14 @@ fn init(our: Address) {
                         app_data.insert(
                             message.source().process.to_string(),
                             HomepageApp {
+                                id: message.source().process.to_string(),
                                 process: message.source().process().to_string(),
                                 package: message.source().package().to_string(),
                                 publisher: message.source().publisher().to_string(),
                                 path: path.map(|path| {
                                     format!(
                                         "/{}/{}",
-                                        message.source(),
+                                        message.source().process,
                                         path.strip_prefix('/').unwrap_or(&path)
                                     )
                                 }),
@@ -156,7 +164,8 @@ fn init(our: Address) {
                                 base64_icon: icon,
                                 widget,
                                 order: None,
-                                favorite: false,
+                                favorite: DEFAULT_FAVES
+                                    .contains(&message.source().process.to_string().as_str()),
                             },
                         );
                     }
@@ -176,11 +185,10 @@ fn init(our: Address) {
                                         "Content-Type".to_string(),
                                         "application/json".to_string(),
                                     )])),
-                                    {
-                                        let mut apps: Vec<_> = app_data.values().collect();
-                                        apps.sort_by_key(|app| app.order.unwrap_or(u32::MAX));
-                                        serde_json::to_vec(&apps).unwrap_or_else(|_| Vec::new())
-                                    },
+                                    serde_json::to_vec(
+                                        &app_data.values().collect::<Vec<&HomepageApp>>(),
+                                    )
+                                    .unwrap(),
                                 );
                             }
                             "/favorite" => {
@@ -203,7 +211,7 @@ fn init(our: Address) {
                                     return;
                                 };
                                 let Ok(favorite_toggle) =
-                                    serde_json::from_slice::<(String, bool)>(&body.bytes)
+                                    serde_json::from_slice::<(String, u32, bool)>(&body.bytes)
                                 else {
                                     send_response(
                                         StatusCode::BAD_REQUEST,
@@ -213,7 +221,8 @@ fn init(our: Address) {
                                     return;
                                 };
                                 if let Some(app) = app_data.get_mut(&favorite_toggle.0) {
-                                    app.favorite = favorite_toggle.1;
+                                    app.order = Some(favorite_toggle.1);
+                                    app.favorite = favorite_toggle.2;
                                 }
                                 send_response(
                                     StatusCode::OK,

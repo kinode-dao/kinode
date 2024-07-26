@@ -7,14 +7,11 @@ const Widgets = () => {
   const { widgetSettings } = usePersistentStore();
 
   return <div id="widgets">
-    {apps
-      .filter(app => app.widget)
-      .map(({ widget, package_name }, _i, _appsWithWidgets) => !widgetSettings[package_name]?.hide && <Widget
-        package_name={package_name}
-        widget={widget!}
-        forceLarge={_appsWithWidgets.length === 1}
-        key={package_name}
-      />)}
+    {apps.filter((app) => app.widget && !widgetSettings[app.id]?.hide).map((app) => <Widget
+      label={app.label}
+      widget={app.widget!}
+      key={app.id}
+    />)}
   </div>
 }
 

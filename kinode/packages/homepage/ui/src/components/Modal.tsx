@@ -7,9 +7,9 @@ interface Props extends React.HTMLAttributes<HTMLDivElement> {
 
 export const Modal: React.FC<Props> = ({ title, onClose, children }) => {
   return (
-    <div>
-      <div>
-        <div>
+    <div className="modal">
+      <div className="modal-inner">
+        <div className="modal-header">
           <h1>{title}</h1>
           <button onClick={onClose}>
             <FaX />

@@ -67,14 +67,12 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     }}
 
     body {{
-        color: white;
         overflow: hidden;
         height: 100vh;
         width: 100vw;
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
-        font-family: sans-serif;
     }}
 
     #latest-blog-posts {{
@@ -97,7 +95,6 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         width: 100%;
         display: flex;
         gap: 8px;
-        background-color: rgba(255, 255, 255, 0.1);
         border-radius: 0.5em;
         padding: 0.5em;
     }}
@@ -123,13 +120,8 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
     }}
     </style>
 </head>
-<body class="text-white overflow-hidden">
-    <div
-        id="latest-blog-posts"
-        style="
-            scrollbar-color: transparent transparent;
-            scrollbar-width: none;
-        ">
+<body>
+    <div id="latest-blog-posts">
         {}
     </div>
 </body>

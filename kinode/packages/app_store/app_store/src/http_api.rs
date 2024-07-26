@@ -72,7 +72,6 @@ fn make_widget() -> String {
         }
 
         body {
-            color: white;
             overflow: hidden;
         }
 
@@ -88,8 +87,6 @@ fn make_widget() -> String {
             height: 100vh;
             width: 100vw;
             overflow-y: auto;
-            scrollbar-color: transparent transparent;
-            scrollbar-width: none;
         }
 
         .app {
@@ -99,14 +96,9 @@ fn make_widget() -> String {
             align-items: stretch;
             border-radius: 0.5rem;
             box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-            background-color: rgba(255, 255, 255, 0.1);
             cursor: pointer;
             font-family: sans-serif;
             width: 100%;
-        }
-
-        .app:hover {
-            background-color: rgba(255, 255, 255, 0.2);
         }
 
         .app-image {
@@ -140,7 +132,7 @@ fn make_widget() -> String {
         }
     </style>
 </head>
-<body class="text-white overflow-hidden">
+<body>
     <div id="latest-apps"></div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {

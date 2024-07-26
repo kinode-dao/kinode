@@ -11,8 +11,8 @@ export interface PersistentStore {
     }
   }
   setWidgetSettings: (widgetSettings: PersistentStore['widgetSettings']) => void
-  toggleWidgetVisibility: (package_name: string) => void
-  setWidgetSize: (package_name: string, size: 'small' | 'large') => void,
+  toggleWidgetVisibility: (package_id: string) => void
+  setWidgetSize: (package_id: string, size: 'small' | 'large') => void,
 }
 
 const usePersistentStore = create<PersistentStore>()(
@@ -22,25 +22,25 @@ const usePersistentStore = create<PersistentStore>()(
       set,
       widgetSettings: {},
       setWidgetSettings: (widgetSettings: PersistentStore['widgetSettings']) => set({ widgetSettings }),
-      toggleWidgetVisibility: (package_name: string) => {
+      toggleWidgetVisibility: (package_id: string) => {
         const { widgetSettings } = get()
         set({
           widgetSettings: {
             ...widgetSettings,
-            [package_name]: {
-              ...widgetSettings[package_name],
-              hide: !widgetSettings[package_name]?.hide
+            [package_id]: {
+              ...widgetSettings[package_id],
+              hide: !widgetSettings[package_id]?.hide
             }
           }
         })
       },
-      setWidgetSize: (package_name: string, size: 'small' | 'large') => {
+      setWidgetSize: (package_id: string, size: 'small' | 'large') => {
         const { widgetSettings } = get()
         set({
           widgetSettings: {
             ...widgetSettings,
-            [package_name]: {
-              ...widgetSettings[package_name],
+            [package_id]: {
+              ...widgetSettings[package_id],
               size
             }
           }

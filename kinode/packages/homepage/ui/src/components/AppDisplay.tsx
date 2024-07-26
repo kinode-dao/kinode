@@ -13,15 +13,20 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
     href={app?.path}
     onMouseEnter={() => setIsHovered(true)}
     onMouseLeave={() => setIsHovered(false)}
+    className="app-display"
   >
     {app?.base64_icon
       ? <img className="app-icon" src={app.base64_icon} />
       : <img className="app-icon" src='/bird-orange.svg' />
     }
     <h6>{app?.label || app?.package_name}</h6>
-    {app?.path && isHovered && <button
+    {app?.path && isHovered && <button className="app-fave-button"
       onClick={(e) => {
         e.preventDefault()
+        fetch(`/favorite`, {
+          method: 'POST',
+          body: JSON.stringify([app.package_name, !app.favorite, app.order])
+        })
       }}
     >
     </button>}

@@ -1,24 +1,18 @@
 import useHomepageStore, { HomepageApp } from "../store/homepageStore"
 import AppDisplay from "./AppDisplay"
 import { useEffect, useState } from "react"
-import { DragDropContext, Draggable, DropResult, Droppable } from 'react-beautiful-dnd'
+import { DragDropContext, Draggable, DropResult, Droppable } from '@hello-pangea/dnd'
 
 const AppsDock: React.FC = () => {
   const { apps } = useHomepageStore()
   const [dockedApps, setDockedApps] = useState<HomepageApp[]>([])
 
   useEffect(() => {
-    let final: HomepageApp[] = []
-    const orderedApps = dockedApps.filter(a => a.order !== undefined && a.order !== null)
-    const unorderedApps = dockedApps.filter(a => a.order === undefined || a.order === null)
+    const orderedApps = apps
+      .filter(a => a.favorite)
+      .sort((a, b) => (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER))
 
-    for (let i = 0; i < orderedApps.length; i++) {
-      final[orderedApps[i].order!] = orderedApps[i]
-    }
-
-    final = final.filter(a => a)
-    unorderedApps.forEach(a => final.push(a))
-    setDockedApps(final)
+    setDockedApps(orderedApps)
   }, [apps])
 
   // a little function to help us with reordering the result
@@ -27,7 +21,7 @@ const AppsDock: React.FC = () => {
     const [removed] = result.splice(startIndex, 1);
     result.splice(endIndex, 0, removed);
 
-    return result;
+    return removed;
   };
 
   const onDragEnd = (result: DropResult) => {
@@ -36,21 +30,19 @@ const AppsDock: React.FC = () => {
       return;
     }
 
-    const items = reorder(
+    const app = reorder(
       dockedApps,
       result.source.index,
       result.destination.index
     );
 
-    const packageNames = items.map(app => app.package_name);
-
-    fetch('/order', {
+    fetch('/favorite', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       credentials: 'include',
-      body: JSON.stringify(packageNames)
+      body: JSON.stringify([app.id, app.order, app.favorite])
     })
       .catch(e => console.error(e));
   }
@@ -62,11 +54,9 @@ const AppsDock: React.FC = () => {
           ref={provided.innerRef}
           {...provided.droppableProps}
         >
-          {/*dockedApps.length === 0
-            ? <AppDisplay app={apps.find(app => app.package_name === 'app_store')!} />
-            : */ dockedApps.map(app => <Draggable
-            key={app.package_name}
-            draggableId={app.package_name}
+          {dockedApps.map(app => <Draggable
+            key={app.id}
+            draggableId={app.id}
             index={dockedApps.indexOf(app)}
           >
             {(provided, _snapshot) => (
@@ -74,6 +64,7 @@ const AppsDock: React.FC = () => {
                 ref={provided.innerRef}
                 {...provided.draggableProps}
                 {...provided.dragHandleProps}
+                className="docked-app"
               >
                 <AppDisplay app={app} />
               </div>
