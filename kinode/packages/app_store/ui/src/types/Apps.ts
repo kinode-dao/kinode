@@ -6,7 +6,7 @@ export interface MyApps {
 }
 
 export interface AppListing {
-    owner?: string
+    tba: string
     package: string
     publisher: string
     metadata_hash: string

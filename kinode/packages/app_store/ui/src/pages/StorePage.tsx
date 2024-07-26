@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import useAppsStore from "../store";
 import { AppInfo } from "../types/Apps";
+import { appId } from '../utils/app'
 import { Link } from "react-router-dom";
 import { FaGlobe, FaPeopleGroup, FaCode } from "react-icons/fa6";
 
@@ -61,7 +62,7 @@ export default function StorePage() {
           </thead>
           <tbody>
             {filteredApps.map((app) => (
-              <AppRow key={app.package} app={app} />
+              <AppRow key={appId(app)} app={app} />
             ))}
           </tbody>
         </table>
@@ -81,7 +82,7 @@ const AppRow: React.FC<AppRowProps> = ({ app }) => {
   return (
     <tr className="app-row">
       <td>
-        <Link to={`/app-details/${app.package}`} className="app-name">
+        <Link to={`/app/${appId(app)}`} className="app-name">
           {app.metadata?.name || app.package}
         </Link>
       </td>

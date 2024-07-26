@@ -39,30 +39,28 @@ export default defineConfig({
   server: {
     open: true,
     proxy: {
-      '^/our\\.js': {
+      [`^${BASE_URL}/our.js`]: {
         target: PROXY_URL,
         changeOrigin: true,
         rewrite: (path) => {
-          console.log('Rewriting path for our.js:', path);
+          console.log('Proxying  jsrequest:', path);
           return '/our.js';
         },
       },
-      '^/kinode\\.css': {
+      [`^${BASE_URL}/kinode.css`]: {
         target: PROXY_URL,
         changeOrigin: true,
         rewrite: (path) => {
-          console.log('Rewriting path for kinode.css:', path);
+          console.log('Proxying  csrequest:', path);
           return '/kinode.css';
         },
       },
+      // This route will match all other HTTP requests to the backend
       [`^${BASE_URL}/(?!(@vite/client|src/.*|node_modules/.*|@react-refresh|$))`]: {
         target: PROXY_URL,
         changeOrigin: true,
-        rewrite: (path) => {
-          console.log('Rewriting path for other requests:', path);
-          return path.replace(BASE_URL, '');
-        },
       },
+
     },
 
 

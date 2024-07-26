@@ -30,7 +30,7 @@ pub fn init_frontend(our: &Address) {
         "ui",
         true,
         false,
-        vec!["/", "/my-apps", "/apps/:id", "/publish"],
+        vec!["/", "/my-apps", "/app/:id", "/publish"],
     )
     .expect("failed to serve static UI");
 

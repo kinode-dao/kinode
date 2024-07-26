@@ -1,35 +1,23 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { FaGlobe, FaPeopleGroup, FaCode } from "react-icons/fa6";
+import { FaGlobe, FaPeopleGroup, FaCode, FaLink, FaCaretDown } from "react-icons/fa6";
 
 import { AppInfo } from "../types/Apps";
 import useAppsStore from "../store";
 import { PUBLISH_PATH } from "../constants/path";
+import { FaCheckCircle, FaTimesCircle } from "react-icons/fa";
 
 export default function AppPage() {
   const { getApp, installApp, updateApp, uninstallApp, setMirroring, setAutoUpdate } = useAppsStore();
   const navigate = useNavigate();
   const { id } = useParams();
   const [app, setApp] = useState<AppInfo | undefined>(undefined);
-  const [launchPath, setLaunchPath] = useState('');
 
   useEffect(() => {
     if (id) {
       getApp(id).then(setApp).catch(console.error);
     }
   }, [id, getApp]);
-
-  useEffect(() => {
-    fetch('/apps').then(data => data.json())
-      .then((data: Array<{ package_name: string, path: string }>) => {
-        if (Array.isArray(data)) {
-          const homepageAppData = data.find(otherApp => app?.package === otherApp.package_name)
-          if (homepageAppData) {
-            setLaunchPath(homepageAppData.path)
-          }
-        }
-      })
-  }, [app])
 
   const handleInstall = () => app && installApp(app);
   const handleUpdate = () => app && updateApp(app);
@@ -45,7 +33,9 @@ export default function AppPage() {
   const version = app.metadata?.properties?.current_version || "Unknown";
   const versions = Object.entries(app.metadata?.properties?.code_hashes || {});
   const hash = app.state?.our_version || (versions[(versions.length || 1) - 1] || ["", ""])[1];
-  const mirrors = app.metadata?.properties?.mirrors?.length || 0;
+  const mirrors = app.metadata?.properties?.mirrors || [];
+
+  const tbaLink = `https://optimistic.etherscan.io/address/${app.tba}`;
 
   return (
     <div className="app-page">
@@ -68,8 +58,44 @@ export default function AppPage() {
           <div className="app-info-item">
             <FaGlobe size={36} />
             <span>Mirrors</span>
-            <span>{mirrors}</span>
+            <span>{mirrors.length}</span>
+            <MirrorsDropdown mirrors={mirrors} />
           </div>
+          <div className="app-info-item">
+            <FaLink size={36} />
+            <span>TBA</span>
+            <a href={tbaLink} target="_blank" rel="noopener noreferrer">
+              {`${app.package}.${app.publisher}`}
+            </a>
+          </div>
+          <div className="app-info-item">
+            <span>Installed</span>
+            {app.installed ? <FaCheckCircle color="green" /> : <FaTimesCircle color="red" />}
+          </div>
+          {app.state && (
+            <>
+              <div className="app-info-item">
+                <span>Mirrored From</span>
+                <span>{app.state.mirrored_from || "N/A"}</span>
+              </div>
+              <div className="app-info-item">
+                <span>Capabilities Approved</span>
+                {app.state.caps_approved ? <FaCheckCircle color="green" /> : <FaTimesCircle color="red" />}
+              </div>
+              <div className="app-info-item">
+                <span>Mirroring</span>
+                {app.state.mirroring ? <FaCheckCircle color="green" /> : <FaTimesCircle color="red" />}
+              </div>
+              <div className="app-info-item">
+                <span>Auto Update</span>
+                {app.state.auto_update ? <FaCheckCircle color="green" /> : <FaTimesCircle color="red" />}
+              </div>
+              <div className="app-info-item">
+                <span>Verified</span>
+                {app.state.verified ? <FaCheckCircle color="green" /> : <FaTimesCircle color="red" />}
+              </div>
+            </>
+          )}
         </div>
         {app.metadata?.properties?.screenshots && (
           <div className="app-screenshots">
@@ -96,11 +122,27 @@ export default function AppPage() {
           ) : (
             <button onClick={handleInstall}>Install</button>
           )}
-          {launchPath && (
-            <a href={launchPath} className="button">Launch</a>
-          )}
         </div>
       </div>
     </div>
   );
 }
+
+const MirrorsDropdown = ({ mirrors }: { mirrors: string[] }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="mirrors-dropdown">
+      <button onClick={() => setIsOpen(!isOpen)} className="mirrors-dropdown-toggle">
+        Mirrors <FaCaretDown />
+      </button>
+      {isOpen && (
+        <ul className="mirrors-list">
+          {mirrors.map((mirror, index) => (
+            <li key={index}>{mirror}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+};

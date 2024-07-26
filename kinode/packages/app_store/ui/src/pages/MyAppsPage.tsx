@@ -5,6 +5,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { AppInfo } from "../types/Apps";
 import useAppsStore from "../store";
 import { PUBLISH_PATH } from "../constants/path";
+import { appId } from "../utils/app";
 
 export default function MyAppsPage() {
   const { apps, getApps } = useAppsStore();
@@ -67,7 +68,7 @@ interface AppEntryProps {
 
 const AppEntry: React.FC<AppEntryProps> = ({ app }) => {
   return (
-    <Link to={`/apps/${app.package}`} className="app-entry">
+    <Link to={`/app/${appId(app)}`} className="app-entry">
       <h3>{app.metadata?.name || app.package}</h3>
       <p>{app.metadata?.description || "No description available"}</p>
     </Link>
