@@ -30,7 +30,7 @@ pub fn init_frontend(our: &Address) {
         "ui",
         true,
         false,
-        vec!["/", "/my-apps", "/app-details/:id", "/publish"],
+        vec!["/", "/my-apps", "/apps/:id", "/publish"],
     )
     .expect("failed to serve static UI");
 
@@ -152,7 +152,7 @@ fn make_widget() -> String {
                         if (app.metadata) {
                             const a = document.createElement('a');
                             a.className = 'app';
-                            a.href = `/main:app_store:sys/app-details/${app.package}:${app.publisher}`
+                            a.href = `/main:app_store:sys/apps/${app.package}:${app.publisher}`
                             a.target = '_blank';
                             a.rel = 'noopener noreferrer';
                             const iconLetter = app.metadata_hash.replace('0x', '')[0].toUpperCase();

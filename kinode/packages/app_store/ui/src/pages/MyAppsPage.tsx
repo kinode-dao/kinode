@@ -1,103 +1,75 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { FaUpload } from "react-icons/fa";
+import { useNavigate, Link } from "react-router-dom";
 
-import { AppInfo, MyApps } from "../types/Apps";
-import useAppsStore from "../store/apps-store";
-import AppEntry from "../components/AppEntry";
-import SearchHeader from "../components/SearchHeader";
-import { useNavigate } from "react-router-dom";
-import { appId } from "../utils/app";
+import { AppInfo } from "../types/Apps";
+import useAppsStore from "../store";
 import { PUBLISH_PATH } from "../constants/path";
-import HomeButton from "../components/HomeButton";
-
 
 export default function MyAppsPage() {
-  const { myApps, getMyApps, } = useAppsStore()
+  const { apps, getApps } = useAppsStore();
   const navigate = useNavigate();
 
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [displayedApps, setDisplayedApps] = useState<MyApps>(myApps);
 
   useEffect(() => {
-    getMyApps()
-      .then(setDisplayedApps)
-      .catch((error) => console.error(error));
-  }, []); // eslint-disable-line
+    getApps();
+  }, [getApps]);
 
-  const searchMyApps = useCallback((query: string) => {
-    setSearchQuery(query);
-    const filteredApps = Object.keys(myApps).reduce((acc, key) => {
-      acc[key] = myApps[key].filter((app) => {
-        return app.package.toLowerCase().includes(query.toLowerCase())
-          || app.metadata?.description?.toLowerCase().includes(query.toLowerCase())
-          || app.metadata?.description?.toLowerCase().includes(query.toLowerCase());
-      })
+  const filteredApps = apps.filter((app) =>
+    app.package.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    app.metadata?.description?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-      return acc
-    }, {
-      downloaded: [] as AppInfo[],
-      installed: [] as AppInfo[],
-      local: [] as AppInfo[],
-      system: [] as AppInfo[],
-    } as MyApps)
-
-    setDisplayedApps(filteredApps);
-  }, [myApps]);
-
-  useEffect(() => {
-    if (searchQuery) {
-      searchMyApps(searchQuery);
-    } else {
-      setDisplayedApps(myApps);
-    }
-  }, [myApps]);
-
-  console.log({ myApps })
+  const categorizedApps = {
+    installed: filteredApps.filter(app => app.installed),
+    downloaded: filteredApps.filter(app => !app.installed && app.state),
+    available: filteredApps.filter(app => !app.state)
+  };
 
   return (
-    <div className="flex flex-col w-full h-screen p-2 gap-4 max-w-screen">
-      <HomeButton />
-      <SearchHeader value={searchQuery} onChange={searchMyApps} />
-      <SearchHeader value={searchQuery} onChange={searchMyApps} />
-      <div className="flex justify-between items-center mt-2">
-        <h3>My Packages</h3>
-        <button className="alt" onClick={() => navigate(PUBLISH_PATH)}>
+    <div className="my-apps-page">
+      <div className="my-apps-header">
+        <h1>My Packages</h1>
+        <button className="publish-button" onClick={() => navigate(PUBLISH_PATH)}>
           <FaUpload className="mr-2" />
           Publish Package
         </button>
       </div>
 
-      <div className="flex flex-col card gap-2 mt-2 max-h-[80vh] overflow-y-scroll overflow-x-visible"
-        style={{
-          scrollbarWidth: 'thin',
-          scrollbarColor: '#FFF5D9 transparent',
-        }}
-      >
-        {displayedApps.downloaded.length > 0 && <h4>Downloaded</h4>}
-        {(displayedApps.downloaded || []).map((app) => <AppEntry
-          key={appId(app)}
-          app={app}
-          showMoreActions
-        />)}
-        {displayedApps.installed.length > 0 && <h4>Installed</h4>}
-        {(displayedApps.installed || []).map((app) => <AppEntry
-          key={appId(app)}
-          app={app}
-          showMoreActions
-        />)}
-        {displayedApps.local.length > 0 && <h4>Local</h4>}
-        {(displayedApps.local || []).map((app) => <AppEntry
-          key={appId(app)}
-          app={app}
-          showMoreActions
-        />)}
-        {displayedApps.system.length > 0 && <h4>System</h4>}
-        {(displayedApps.system || []).map((app) => <AppEntry
-          key={appId(app)}
-          app={app}
-          showMoreActions
-        />)}
+      <input
+        type="text"
+        placeholder="Search packages..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        className="search-input"
+      />
+
+      <div className="apps-list">
+        {Object.entries(categorizedApps).map(([category, apps]) => (
+          apps.length > 0 && (
+            <div key={category} className="app-category">
+              <h2>{category.charAt(0).toUpperCase() + category.slice(1)}</h2>
+              {apps.map((app) => (
+                <AppEntry key={app.package} app={app} />
+              ))}
+            </div>
+          )
+        ))}
       </div>
-    </div >
+    </div>
   );
 }
+
+interface AppEntryProps {
+  app: AppInfo;
+}
+
+const AppEntry: React.FC<AppEntryProps> = ({ app }) => {
+  return (
+    <Link to={`/apps/${app.package}`} className="app-entry">
+      <h3>{app.metadata?.name || app.package}</h3>
+      <p>{app.metadata?.description || "No description available"}</p>
+    </Link>
+  );
+};
