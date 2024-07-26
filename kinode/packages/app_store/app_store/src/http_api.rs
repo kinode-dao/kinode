@@ -5,7 +5,7 @@ use kinode_process_lib::{
         bind_http_path, bind_ws_path, send_response, serve_ui, IncomingHttpRequest, Method,
         StatusCode,
     },
-    Address, NodeId, PackageId, Request,
+    println, Address, NodeId, PackageId, ProcessId, Request,
 };
 use serde_json::json;
 use std::collections::HashMap;
@@ -323,36 +323,126 @@ fn serve_paths(
                             .properties
                             .mirrors
                             .as_ref();
+
                         let download_from = body_json
                             .get("download_from")
-                            .unwrap_or(&json!(mirrors
-                                .first()
-                                .ok_or(anyhow::anyhow!("No mirrors for package {package_id}"))?))
-                            .as_str()
-                            .ok_or(anyhow::anyhow!("download_from not a string"))?
-                            .to_string();
-                        // TODO select on FE? or after download but before install?
-                        let mirror = false;
-                        let auto_update = false;
-                        let desired_version_hash = None;
-                        match crate::start_download(
-                            state,
-                            package_id,
-                            download_from,
-                            mirror,
-                            auto_update,
-                            desired_version_hash,
-                        ) {
-                            DownloadResponse::Started => Ok((
-                                StatusCode::CREATED,
-                                None,
-                                format!("Downloading").into_bytes(),
-                            )),
-                            other => Ok((
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .or_else(|| mirrors.first().map(|mirror| mirror.to_string()));
+
+                        // if no specific mirror specified, loop through and ping them.
+                        if let Some(download_from) = download_from {
+                            // TODO choose more on frontend.
+                            let mirror = false;
+                            let auto_update = false;
+                            let desired_version_hash = None;
+                            match crate::start_download(
+                                state,
+                                package_id,
+                                download_from,
+                                mirror,
+                                auto_update,
+                                desired_version_hash,
+                            ) {
+                                DownloadResponse::Started => Ok((
+                                    StatusCode::CREATED,
+                                    None,
+                                    format!("Downloading").into_bytes(),
+                                )),
+                                other => Ok((
+                                    StatusCode::SERVICE_UNAVAILABLE,
+                                    None,
+                                    format!("Failed to download: {other:?}").into_bytes(),
+                                )),
+                            }
+                        } else {
+                            let online_mirrors: Vec<NodeId> = mirrors
+                                .iter()
+                                .filter_map(|mirror| {
+                                    let target = Address::new(
+                                        mirror,
+                                        ProcessId::new(Some("net"), "distro", "sys"),
+                                    );
+                                    let request = Request::new().target(target).body(vec![]).send();
+
+                                    match request {
+                                        Ok(_) => Some(mirror.clone()),
+                                        Err(_) => None,
+                                    }
+                                })
+                                .collect();
+
+                            println!("all mirrors: {:?}", mirrors);
+                            println!("online mirrors: {:?}", online_mirrors);
+
+                            let mut failed_mirrors = Vec::new();
+                            for online_mirror in &online_mirrors {
+                                let mirror = true;
+                                let auto_update = false;
+                                let desired_version_hash = None;
+                                match crate::start_download(
+                                    state,
+                                    package_id.clone(),
+                                    online_mirror.to_string(),
+                                    mirror,
+                                    auto_update,
+                                    desired_version_hash,
+                                ) {
+                                    DownloadResponse::Started => {
+                                        return Ok((
+                                            StatusCode::CREATED,
+                                            None,
+                                            format!(
+                                                "Download started from mirror: {}",
+                                                online_mirror
+                                            )
+                                            .into_bytes(),
+                                        ));
+                                    }
+                                    _ => {
+                                        failed_mirrors.push(online_mirror.to_string());
+                                        continue;
+                                    }
+                                }
+                            }
+                            let mut failed_mirrors = Vec::new();
+                            for online_mirror in &online_mirrors {
+                                let mirror = true;
+                                let auto_update = false;
+                                let desired_version_hash = None;
+                                match crate::start_download(
+                                    state,
+                                    package_id.clone(),
+                                    online_mirror.to_string(),
+                                    mirror,
+                                    auto_update,
+                                    desired_version_hash,
+                                ) {
+                                    DownloadResponse::Started => {
+                                        return Ok((
+                                            StatusCode::CREATED,
+                                            None,
+                                            format!(
+                                                "Download started from mirror: {}",
+                                                online_mirror
+                                            )
+                                            .into_bytes(),
+                                        ));
+                                    }
+                                    _ => {
+                                        failed_mirrors.push(online_mirror.to_string());
+                                        continue;
+                                    }
+                                }
+                            }
+                            Ok((
                                 StatusCode::SERVICE_UNAVAILABLE,
                                 None,
-                                format!("Failed to download: {other:?}").into_bytes(),
-                            )),
+                                format!(
+                                    "Failed to start download from any mirrors. Failed mirrors: {:?}",
+                                    failed_mirrors
+                                ).into_bytes(),
+                            ))
                         }
                     }
                 }
