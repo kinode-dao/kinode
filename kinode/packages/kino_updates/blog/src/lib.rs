@@ -50,20 +50,21 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         r#"<html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/kinode.css">
     <style>
     * {{
         box-sizing: border-box;
         margin: 0;
         padding: 0;
-    }}
-
-    a {{
-        text-decoration: none;
-        color: inherit;
+        font-family: 'Kode Mono', monospace;
     }}
 
     h2 {{
         font-size: medium;
+    }}
+
+    p {{
+        font-size: small;
     }}
 
     body {{
@@ -73,6 +74,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
+        background: transparent;
     }}
 
     #latest-blog-posts {{
@@ -80,7 +82,6 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
         flex-direction: column;
         padding: 0.5rem;
         gap: 0.5rem;
-        backdrop-filter: brightness(1.25);
         border-radius: 0.75rem;
         box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
         height: 100vh;

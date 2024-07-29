@@ -59,20 +59,18 @@ fn make_widget() -> String {
     return r#"<html>
 <head>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/kinode.css">
     <style>
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-        }
-
-        a {
-            text-decoration: none;
-            color: inherit;
+            font-family: 'Kode Mono', monospace;
         }
 
         body {
             overflow: hidden;
+            background: transparent;
         }
 
         #latest-apps {
@@ -81,7 +79,6 @@ fn make_widget() -> String {
             padding: 0.5rem;
             gap: 0.5rem;
             align-items: center;
-            backdrop-filter: saturate(1.25);
             border-radius: 1rem;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             height: 100vh;

@@ -1,6 +1,12 @@
-body {
-    width: 90vw;
-    margin: 0 auto;
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+a {
+    font-family: 'Kode Mono', monospace;
 }
 
 #homepage {
@@ -13,12 +19,17 @@ header {
     display: flex;
     flex-direction: row;
     flex-wrap: wrap;
-    align-items: center;
+    align-items: flex-end;
+    padding-bottom: 2px;
     justify-content: space-between;
 }
 
-header h1 {
-    font-style: italic;
+header h2 {
+    flex-grow: 100;
+}
+
+header button {
+    margin-left: 4px;
 }
 
 @media (prefers-color-scheme: light) {
@@ -35,7 +46,7 @@ header h1 {
     flex-wrap: wrap;
     gap: 10px;
     justify-content: center;
-    background-color: #4f000085;
+    background-color: #4f000055;
     padding: 10px;
     border-radius: 10px;
     margin: 0 auto;

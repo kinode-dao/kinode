@@ -93,6 +93,9 @@ body {
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     background-color: light-dark(var(--tan), var(--tasteful-dark));
+    background-image: radial-gradient(circle at -1% -47%, #4700002b 7%, transparent 58.05%), radial-gradient(circle at 81% 210%, #d6430550 17%, transparent 77.05%);
+    min-width: 100vw;
+    min-height: 100vh;
 }
 
 /* Sections */
