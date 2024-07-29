@@ -35,6 +35,7 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
         })
       }}
     >
+      {app?.favorite ? '★' : '☆'}
     </button>}
   </a>
 }

@@ -56,12 +56,20 @@ header h1 {
 
 .app-display {
     position: relative;
+    text-decoration: none;
+}
+
+.app-display:hover {
+    text-decoration: underline;
 }
 
 .app-fave-button {
     position: absolute;
     top: 0;
     right: 0;
+    padding: 2px;
+    margin: 0;
+    font-size: 0.7em;
 }
 
 .no-ui {
@@ -140,6 +148,7 @@ footer {
 .app-icon {
     width: 64px;
     height: 64px;
+    margin: 0 auto;
 }
 
 .modal {
