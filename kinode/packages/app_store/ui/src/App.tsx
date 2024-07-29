@@ -2,9 +2,8 @@ import React from "react";
 import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 
 import StorePage from "./pages/StorePage";
-import MyAppsPage from "./pages/MyAppsPage";
 import AppPage from "./pages/AppPage";
-import { APP_DETAILS_PATH, MY_APPS_PATH, PUBLISH_PATH, STORE_PATH } from "./constants/path";
+import { APP_DETAILS_PATH, PUBLISH_PATH, STORE_PATH } from "./constants/path";
 import PublishPage from "./pages/PublishPage";
 import Header from "./components/Header";
 
@@ -19,7 +18,6 @@ function App() {
         <Header />
         <Routes>
           <Route path={STORE_PATH} element={<StorePage />} />
-          <Route path={MY_APPS_PATH} element={<MyAppsPage />} />
           <Route path={`${APP_DETAILS_PATH}/:id`} element={<AppPage />} />
           <Route path={PUBLISH_PATH} element={<PublishPage />} />
         </Routes>

@@ -39,7 +39,7 @@ export default function PublishPage() {
 
   useEffect(() => {
     setMyPublishedApps(
-      apps.filter((app) => app.owner?.toLowerCase() === address?.toLowerCase())
+      apps.filter((app) => app.publisher?.toLowerCase() === window.our.node?.toLowerCase())
     );
   }, [apps, address])
 

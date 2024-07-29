@@ -3,20 +3,22 @@ import useAppsStore from "../store";
 import { AppInfo } from "../types/Apps";
 import { appId } from '../utils/app'
 import { Link } from "react-router-dom";
-import { FaGlobe, FaPeopleGroup, FaCode } from "react-icons/fa6";
+import { FaGlobe, FaPeopleGroup, FaCode, FaFilter } from "react-icons/fa6";
 
 export default function StorePage() {
   const { apps, getApps, rebuildIndex } = useAppsStore();
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isRebuildingIndex, setIsRebuildingIndex] = useState(false);
+  const [showMyApps, setShowMyApps] = useState(false);
 
   useEffect(() => {
     getApps();
   }, [getApps]);
 
   const filteredApps = apps.filter((app) =>
-    app.package.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    app.metadata?.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    (app.package.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      app.metadata?.description?.toLowerCase().includes(searchQuery.toLowerCase())) &&
+    (!showMyApps || app.installed)
   );
 
   const handleRebuildIndex = async () => {
@@ -44,6 +46,12 @@ export default function StorePage() {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
+        <button
+          className={`filter-button ${showMyApps ? 'active' : ''}`}
+          onClick={() => setShowMyApps(!showMyApps)}
+        >
+          <FaFilter /> {showMyApps ? 'All Apps' : 'My Apps'}
+        </button>
         <button onClick={handleRebuildIndex} disabled={isRebuildingIndex}>
           {isRebuildingIndex ? "Rebuilding..." : "Rebuild Index"}
         </button>
