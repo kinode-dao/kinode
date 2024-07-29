@@ -1,56 +1,53 @@
 import useHomepageStore, { HomepageApp } from "../store/homepageStore"
+import usePersistentStore from "../store/persistentStore"
 import AppDisplay from "./AppDisplay"
 import { useEffect, useState } from "react"
 import { DragDropContext, Draggable, DropResult, Droppable } from '@hello-pangea/dnd'
 
 const AppsDock: React.FC = () => {
-  const { apps, setApps } = useHomepageStore()
+  const { apps } = useHomepageStore()
+  const { appOrder, setAppOrder } = usePersistentStore()
   const [dockedApps, setDockedApps] = useState<HomepageApp[]>([])
 
   useEffect(() => {
-    const orderedApps = apps
-      .filter(a => a.favorite)
-      .sort((a, b) => (a.order - b.order))
+    // Sort apps based on persisted order
+    const orderedApps = apps.filter(app => app.favorite).sort((a, b) => {
+      return appOrder.indexOf(a.id) - appOrder.indexOf(b.id);
+    });
+    setDockedApps(orderedApps);
 
-    setDockedApps(orderedApps)
-  }, [apps])
-
-  // a little function to help us with reordering the result
-  const reorder = (list: HomepageApp[], startIndex: number, endIndex: number) => {
-    const result = Array.from(list);
-    const [removed] = result.splice(startIndex, 1);
-    result.splice(endIndex, 0, removed);
-
-    removed.order = endIndex
-
-    return removed;
-  };
-
-  const onDragEnd = (result: DropResult) => {
-    // dropped outside the list
-    if (!result.destination) {
-      return;
-    }
-
-    const app = reorder(
-      dockedApps,
-      result.source.index,
-      result.destination.index
-    );
-
-    fetch('/favorite', {
+    // Sync the order with the backend
+    fetch('/order', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       credentials: 'include',
-      body: JSON.stringify([app.id, app.order, app.favorite])
-    })
-      .catch(e => console.error(e))
-      .then(() => {
-        fetch('/apps', { credentials: 'include' }).then(res => res.json()).catch(() => [])
-          .then(setApps)
-      });
+      body: JSON.stringify(orderedApps.map(app => [app.id, appOrder.indexOf(app.id)]))
+    });
+  }, [apps, appOrder])
+
+  const onDragEnd = (result: DropResult) => {
+    if (!result.destination) {
+      return;
+    }
+
+    const reorderedApps = Array.from(dockedApps);
+    const [reorderedItem] = reorderedApps.splice(result.source.index, 1);
+    reorderedApps.splice(result.destination.index, 0, reorderedItem);
+
+    const newAppOrder = reorderedApps.map(app => app.id);
+    setAppOrder(newAppOrder);
+    setDockedApps(reorderedApps);
+
+    fetch('/order', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include',
+      body: JSON.stringify(reorderedApps.map((app, index) => [app.id, index]))
+    });
   }
 
   return <DragDropContext onDragEnd={onDragEnd}>
@@ -60,10 +57,10 @@ const AppsDock: React.FC = () => {
           ref={provided.innerRef}
           {...provided.droppableProps}
         >
-          {dockedApps.map(app => <Draggable
+          {dockedApps.map((app, index) => <Draggable
             key={app.id}
             draggableId={app.id}
-            index={dockedApps.indexOf(app)}
+            index={index}
           >
             {(provided, _snapshot) => (
               <div

@@ -26,9 +26,9 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
     {app?.path && isHovered && <button className="app-fave-button"
       onClick={(e) => {
         e.preventDefault()
-        fetch(`/favorite`, {
+        fetch('/favorite', {
           method: 'POST',
-          body: JSON.stringify([app?.id, app?.order, !app?.favorite])
+          body: JSON.stringify([app?.id, !app?.favorite])
         }).then(() => {
           fetch('/apps', { credentials: 'include' }).then(res => res.json()).catch(() => [])
             .then(setApps)

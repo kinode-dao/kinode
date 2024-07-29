@@ -121,6 +121,7 @@ fn init(our: Address) {
 
     bind_http_path("/apps", true, false).expect("failed to bind /apps");
     bind_http_path("/favorite", true, false).expect("failed to bind /favorite");
+    bind_http_path("/order", true, false).expect("failed to bind /order");
 
     loop {
         let Ok(ref message) = await_message() else {
@@ -200,8 +201,6 @@ fn init(our: Address) {
                                     );
                                     continue;
                                 };
-                                // POST of a list of package names.
-                                // go through the list and update each app in app_data to have the index of its name in the list as its order
                                 let Some(body) = get_blob() else {
                                     send_response(
                                         StatusCode::BAD_REQUEST,
@@ -211,7 +210,7 @@ fn init(our: Address) {
                                     continue;
                                 };
                                 let Ok(favorite_toggle) =
-                                    serde_json::from_slice::<(String, u32, bool)>(&body.bytes)
+                                    serde_json::from_slice::<(String, bool)>(&body.bytes)
                                 else {
                                     send_response(
                                         StatusCode::BAD_REQUEST,
@@ -221,8 +220,7 @@ fn init(our: Address) {
                                     continue;
                                 };
                                 if let Some(app) = app_data.get_mut(&favorite_toggle.0) {
-                                    app.order = favorite_toggle.1;
-                                    app.favorite = favorite_toggle.2;
+                                    app.favorite = favorite_toggle.1;
                                 }
                                 send_response(
                                     StatusCode::OK,
@@ -232,6 +230,40 @@ fn init(our: Address) {
                                     )])),
                                     vec![],
                                 );
+                            }
+                            "/order" => {
+                                let Ok(Method::POST) = incoming.method() else {
+                                    send_response(
+                                        StatusCode::BAD_REQUEST,
+                                        Some(HashMap::new()),
+                                        vec![],
+                                    );
+                                    continue;
+                                };
+                                let Some(body) = get_blob() else {
+                                    send_response(
+                                        StatusCode::BAD_REQUEST,
+                                        Some(HashMap::new()),
+                                        vec![],
+                                    );
+                                    continue;
+                                };
+                                let Ok(order_list) =
+                                    serde_json::from_slice::<Vec<(String, u32)>>(&body.bytes)
+                                else {
+                                    send_response(
+                                        StatusCode::BAD_REQUEST,
+                                        Some(HashMap::new()),
+                                        vec![],
+                                    );
+                                    continue;
+                                };
+                                for (app_id, order) in order_list {
+                                    if let Some(app) = app_data.get_mut(&app_id) {
+                                        app.order = order;
+                                    }
+                                }
+                                send_response(StatusCode::OK, Some(HashMap::new()), vec![]);
                             }
                             _ => {
                                 send_response(StatusCode::NOT_FOUND, Some(HashMap::new()), vec![]);

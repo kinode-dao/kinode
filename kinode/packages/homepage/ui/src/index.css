@@ -21,9 +21,13 @@ header h1 {
     font-style: italic;
 }
 
-.kino-bird {
-    filter: light-dark(invert(1), invert(0));
+@media (prefers-color-scheme: light) {
+    .kino-bird {
+        filter: invert(1);
+    }
 }
+
+@media (prefers-color-scheme: dark) {}
 
 [data-rfd-droppable-context-id] {
     display: flex;
@@ -34,7 +38,6 @@ header h1 {
     background-color: #4f000085;
     padding: 10px;
     border-radius: 10px;
-    width: fit-content;
     margin: 0 auto;
     margin-bottom: 10px;
 }

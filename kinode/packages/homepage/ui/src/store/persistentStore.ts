@@ -13,6 +13,8 @@ export interface PersistentStore {
   setWidgetSettings: (widgetSettings: PersistentStore['widgetSettings']) => void
   toggleWidgetVisibility: (package_id: string) => void
   setWidgetSize: (package_id: string, size: 'small' | 'large') => void,
+  appOrder: string[]
+  setAppOrder: (appOrder: string[]) => void
 }
 
 const usePersistentStore = create<PersistentStore>()(
@@ -46,6 +48,8 @@ const usePersistentStore = create<PersistentStore>()(
           }
         })
       },
+      appOrder: [],
+      setAppOrder: (appOrder: string[]) => set({ appOrder }),
     }),
     {
       name: 'homepage_persistent_store', // unique name for the store
