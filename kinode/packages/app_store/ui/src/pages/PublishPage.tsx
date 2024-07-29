@@ -1,32 +1,17 @@
 import React, { useState, useCallback, FormEvent, useEffect } from "react";
 import { useLocation } from "react-router-dom";
-
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit';
 import { keccak256, toBytes } from 'viem';
 import { mechAbi, KINOMAP, encodeIntoMintCall, encodeMulticalls, kinomapAbi, MULTICALL } from "../abis";
 import { kinohash } from '../utils/kinohash';
-
-import {
-  SearchHeader,
-  Jazzicon,
-  Loader,
-  MetadataForm,
-  Checkbox,
-  Tooltip,
-  HomeButton,
-  MessagePopup
-} from "../components";
-import useAppsStore from "../store/apps-store";
+import useAppsStore from "../store";
 import { AppInfo } from "../types/Apps";
-import classNames from "classnames";
-import { isMobileCheck } from "../utils/dimensions";
-
 
 export default function PublishPage() {
   const { state } = useLocation();
   const { openConnectModal } = useConnectModal();
-  const { listedApps } = useAppsStore();
+  const { apps } = useAppsStore();
   const publicClient = usePublicClient();
 
   const { address, isConnected, isConnecting } = useAccount();
@@ -36,14 +21,8 @@ export default function PublishPage() {
       hash,
     });
 
-  // single state for displaying messages
-  const [showMetadataForm, setShowMetadataForm] = useState<boolean>(false);
-
   const [packageName, setPackageName] = useState<string>("");
-  const [publisherId, setPublisherId] = useState<string>(
-    window.our?.node || ""
-  );
-
+  const [publisherId, setPublisherId] = useState<string>(window.our?.node || "");
   const [metadataUrl, setMetadataUrl] = useState<string>("");
   const [metadataHash, setMetadataHash] = useState<string>("");
   const [isUpdate, setIsUpdate] = useState<boolean>(false);
@@ -60,16 +39,15 @@ export default function PublishPage() {
 
   useEffect(() => {
     setMyPublishedApps(
-      listedApps.filter((app) => app.owner?.toLowerCase() === address?.toLowerCase())
+      apps.filter((app) => app.publisher?.toLowerCase() === window.our.node?.toLowerCase())
     );
-  }, [listedApps, address])
+  }, [apps, address])
 
   const calculateMetadataHash = useCallback(async () => {
     if (!metadataUrl) {
       setMetadataHash("");
       return;
     }
-
 
     try {
       const metadataResponse = await fetch(metadataUrl);
@@ -78,15 +56,9 @@ export default function PublishPage() {
       const metadataHash = keccak256(toBytes(metadataText));
       setMetadataHash(metadataHash);
     } catch (error) {
-      window.alert(
-        "Error calculating metadata hash. Please ensure the URL is valid and the metadata is in JSON format."
-      );
+      alert("Error calculating metadata hash. Please ensure the URL is valid and the metadata is in JSON format.");
     }
   }, [metadataUrl]);
-
-
-
-
 
   const publishPackage = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
@@ -101,13 +73,9 @@ export default function PublishPage() {
       let node = window.our?.node || "0x";
       let metadata = metadataHash;
 
-
       if (isUpdate) {
         node = `${packageName}.${window.our?.node || "0x"}`;
       }
-
-      console.log('we are publishing... with node, and isUpdate: ', node, isUpdate)
-
 
       try {
         let data = await publicClient.readContract({
@@ -116,8 +84,6 @@ export default function PublishPage() {
           functionName: 'get',
           args: [kinohash(node)]
         });
-
-        console.log('node:', node, 'publisherId:', publisherId, 'address:', address, 'node:', node, 'data:', data);
 
         if (!metadata) {
           const metadataResponse = await fetch(metadataUrl);
@@ -130,9 +96,6 @@ export default function PublishPage() {
         const args = isUpdate ? multicall : encodeIntoMintCall(multicall, address!, packageName);
 
         const [tba, _owner, _data] = data || [];
-
-        console.log('tba: ', tba);
-
 
         writeContract({
           abi: mechAbi,
@@ -158,22 +121,7 @@ export default function PublishPage() {
         console.error(error);
       }
     },
-    [
-      publicClient,
-      openConnectModal,
-      packageName,
-      publisherId,
-      address,
-      metadataUrl,
-      metadataHash,
-      isUpdate,
-      writeContract,
-      setPackageName,
-      setPublisherId,
-      setMetadataUrl,
-      setMetadataHash,
-      setIsUpdate,
-    ]
+    [publicClient, openConnectModal, packageName, publisherId, address, metadataUrl, metadataHash, isUpdate, writeContract]
   );
 
   const unpublishPackage = useCallback(
@@ -195,7 +143,6 @@ export default function PublishPage() {
         });
 
         const [tba, _owner, _data] = data || [];
-        console.log('node:', window.our?.node, 'publisherId:', publisherId, 'address:', address, 'node:', node, 'data:', data);
 
         const multicall = encodeMulticalls("", "");
 
@@ -211,98 +158,58 @@ export default function PublishPage() {
           ]
         });
 
-
       } catch (error) {
         console.error(error);
       }
     },
-    [publicClient, openConnectModal, writeContract, publisherId, address]
+    [publicClient, openConnectModal, writeContract]
   );
 
-
-  const checkIfUpdate = useCallback(async () => {
+  const checkIfUpdate = useCallback(() => {
     if (isUpdate) return;
 
     if (
       packageName &&
       publisherId &&
-      listedApps.find(
+      apps.find(
         (app) => app.package === packageName && app.publisher === publisherId
       )
     ) {
       setIsUpdate(true);
     }
-  }, [listedApps, packageName, publisherId, isUpdate, setIsUpdate]);
+  }, [apps, packageName, publisherId, isUpdate]);
 
-  const isMobile = isMobileCheck()
   return (
-    <div className={classNames("w-full flex flex-col gap-2", {
-      'max-w-[900px]': !isMobile,
-      'p-2 h-screen w-screen': isMobile
-    })}>
-      {!isMobile && <HomeButton />}
-      <SearchHeader
-        hideSearch
-        hidePublish
-        onBack={showMetadataForm ? () => setShowMetadataForm(false) : undefined}
-      />
-      {isConfirming && (
-        <MessagePopup
-          type="info"
-          content="Transaction submitted. Waiting for confirmation..."
-          onClose={() => { }}
-        />
-      )}
-      {isConfirmed && (
-        <MessagePopup
-          type="success"
-          content={`Package ${isUpdate ? 'updated' : 'published'} successfully!`}
-          onClose={() => { }}
-        />
-      )}
-      {error && (
-        <MessagePopup
-          type="error"
-          content={`Error: ${error.message}`}
-          onClose={() => { }}
-        />
-      )}
-      <div className="flex-center justify-between">
-        <h4>Publish Package</h4>
-        {Boolean(address) && <div className="card flex-center">
+    <div className="publish-page">
+      <h1>Publish Package</h1>
+      {Boolean(address) && (
+        <div className="publisher-info">
           <span>Publishing as:</span>
-          <span className="font-mono">{address?.slice(0, 4)}...{address?.slice(-4)}</span>
-        </div>}
-      </div>
+          <span className="address">{address?.slice(0, 4)}...{address?.slice(-4)}</span>
+        </div>
+      )}
 
       {isConfirming ? (
-        <Loader msg="Publishing package..." />
-      ) : showMetadataForm ? (
-        <MetadataForm {...{ packageName, publisherId, app: state?.app }} goBack={() => setShowMetadataForm(false)} />
+        <div className="message info">Publishing package...</div>
       ) : !address || !isConnected ? (
         <>
-          <h4>Please connect your wallet {isMobile && <br />} to publish a package</h4>
+          <h4>Please connect your wallet to publish a package</h4>
           <ConnectButton />
         </>
       ) : isConnecting ? (
-        <Loader msg="Approve connection in your wallet" />
+        <div className="message info">Approve connection in your wallet</div>
       ) : (
-        <form
-          className="flex flex-col flex-1 overflow-y-auto gap-2"
-          onSubmit={publishPackage}
-        >
-          <div
-            className="flex cursor-pointer p-2 -mb-2"
-            onClick={() => setIsUpdate(!isUpdate)}
-          >
-            <Checkbox
-              checked={isUpdate} readOnly
+        <form className="publish-form" onSubmit={publishPackage}>
+          <div className="form-group">
+            <input
+              type="checkbox"
+              id="update"
+              checked={isUpdate}
+              onChange={() => setIsUpdate(!isUpdate)}
             />
-            <label htmlFor="update" className="cursor-pointer ml-4">
-              Update existing package
-            </label>
+            <label htmlFor="update">Update existing package</label>
           </div>
-          <div className="flex flex-col">
+          <div className="form-group">
             <label htmlFor="package-name">Package Name</label>
             <input
               id="package-name"
@@ -314,7 +221,7 @@ export default function PublishPage() {
               onBlur={checkIfUpdate}
             />
           </div>
-          <div className="flex flex-col">
+          <div className="form-group">
             <label htmlFor="publisher-id">Publisher ID</label>
             <input
               id="publisher-id"
@@ -325,10 +232,8 @@ export default function PublishPage() {
               onBlur={checkIfUpdate}
             />
           </div>
-          <div className="flex flex-col gap-2">
-            <label htmlFor="metadata-url">
-              Metadata URL
-            </label>
+          <div className="form-group">
+            <label htmlFor="metadata-url">Metadata URL</label>
             <input
               id="metadata-url"
               type="text"
@@ -338,25 +243,17 @@ export default function PublishPage() {
               onBlur={calculateMetadataHash}
               placeholder="https://github/my-org/my-repo/metadata.json"
             />
-            <div>
+            <p className="help-text">
               Metadata is a JSON file that describes your package.
-              <br /> You can{" "}
-              <a onClick={() => setShowMetadataForm(true)}
-                className="underline cursor-pointer"
-              >
-                fill out a template here
-              </a>
-              .
-            </div>
+            </p>
           </div>
-          <div className="flex flex-col">
+          <div className="form-group">
             <label htmlFor="metadata-hash">Metadata Hash</label>
             <input
               readOnly
               id="metadata-hash"
               type="text"
               value={metadataHash}
-              onChange={(e) => setMetadataHash(e.target.value)}
               placeholder="Calculated automatically from metadata URL"
             />
           </div>
@@ -366,26 +263,32 @@ export default function PublishPage() {
         </form>
       )}
 
-      <div className="flex flex-col">
-        <h4>Packages You Own</h4>
+      {isConfirmed && (
+        <div className="message success">
+          Package {isUpdate ? 'updated' : 'published'} successfully!
+        </div>
+      )}
+      {error && (
+        <div className="message error">
+          Error: {error.message}
+        </div>
+      )}
+
+      <div className="my-packages">
+        <h2>Packages You Own</h2>
         {myPublishedApps.length > 0 ? (
-          <div className="flex flex-col">
+          <ul>
             {myPublishedApps.map((app) => (
-              <div key={`${app.package}${app.publisher}`} className="flex items-center justify-between">
-                <div className="flex items-center">
-                  <Jazzicon address={app.publisher} className="mr-2" />
-                  <span>{app.package}</span>
-                </div>
-                <button className="flex items-center" onClick={() => unpublishPackage(app.package, app.publisher)}>
-                  <span>Unpublish</span>
+              <li key={`${app.package}${app.publisher}`}>
+                <span>{app.package}</span>
+                <button onClick={() => unpublishPackage(app.package, app.publisher)}>
+                  Unpublish
                 </button>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         ) : (
-          <div className="flex items-center">
-            <span>No packages published</span>
-          </div>
+          <p>No packages published</p>
         )}
       </div>
     </div>

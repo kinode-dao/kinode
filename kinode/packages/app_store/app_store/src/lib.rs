@@ -156,6 +156,7 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                 } else {
                     // attempt to resubscribe
                     state
+                        .kimap
                         .provider
                         .subscribe_loop(1, utils::app_store_filter(state));
                 }
@@ -207,7 +208,11 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
         }) => (package_id.to_process_lib(), desired_version_hash),
     };
 
-    let Some(package_state) = state.get_downloaded_package(&package_id) else {
+    let Some(listing) = state.packages.get(&package_id) else {
+        return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NoPackage));
+    };
+
+    let Some(ref package_state) = listing.state else {
         return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NoPackage));
     };
 
@@ -216,11 +221,11 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
     }
 
     if let Some(hash) = desired_version_hash {
-        if package_state.our_version != hash {
+        if package_state.our_version_hash != hash {
             return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::HashMismatch(
                 HashMismatch {
                     requested: hash,
-                    have: package_state.our_version,
+                    have: package_state.our_version_hash.clone(),
                 },
             )));
         }
@@ -230,7 +235,7 @@ fn handle_remote_request(state: &mut State, source: &Address, request: RemoteReq
 
     // get the .zip from VFS and attach as blob to response
     let Ok(Ok(_)) = utils::vfs_request(
-        format!("/{}/pkg{}", package_id, file_name),
+        format!("/{package_id}/pkg{file_name}"),
         vfs::VfsAction::Read,
     )
     .send_and_await_response(VFS_TIMEOUT) else {
@@ -377,15 +382,10 @@ pub fn list_apis(state: &mut State) -> LocalResponse {
 
 pub fn rebuild_index(state: &mut State) -> LocalResponse {
     // kill our old subscription and build a new one.
-    let _ = state.provider.unsubscribe(1);
+    let _ = state.kimap.provider.unsubscribe(1);
 
     let eth_provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);
-    *state = State::new(
-        state.our.clone(),
-        eth_provider,
-        state.contract_address.clone(),
-    )
-    .expect("state creation failed");
+    *state = State::new(state.our.clone(), eth_provider).expect("state creation failed");
 
     fetch_and_subscribe_logs(state);
     LocalResponse::RebuildIndexResponse(RebuildIndexResponse::Success)
@@ -475,32 +475,21 @@ fn handle_receive_download_package(
         return Err(anyhow::anyhow!("received download but found no blob"));
     };
     // check the version hash for this download against requested!
-    let download_hash = utils::generate_version_hash(&blob.bytes);
-    let (verified, metadata) = match requested_package.desired_version_hash {
+    let download_hash = utils::sha_256_hash(&blob.bytes);
+    let verified = match requested_package.desired_version_hash {
         Some(hash) => {
-            let Some(package_listing) = state.get_listing(package_id) else {
-                return Err(anyhow::anyhow!(
-                    "downloaded package cannot be found in manager--rejecting download!"
-                ));
-            };
-            let Some(metadata) = &package_listing.metadata else {
-                return Err(anyhow::anyhow!(
-                    "downloaded package has no metadata to check validity against!"
-                ));
-            };
             if download_hash != hash {
                 return Err(anyhow::anyhow!(
                     "downloaded package is not desired version--rejecting download! \
                     download hash: {download_hash}, desired hash: {hash}"
                 ));
-            } else {
-                (true, Some(metadata.clone()))
             }
+            true
         }
-        None => match state.get_listing(package_id) {
+        None => match state.packages.get(package_id) {
             None => {
                 println!("downloaded package cannot be found onchain, proceeding with unverified download");
-                (true, None)
+                false
             }
             Some(package_listing) => {
                 if let Some(metadata) = &package_listing.metadata {
@@ -515,19 +504,20 @@ fn handle_receive_download_package(
                             proceeding with unverified download"
                         );
                     }
-                    (true, Some(metadata.clone()))
+                    false
                 } else {
                     println!("downloaded package has no metadata to check validity against, proceeding with unverified download");
-                    (true, None)
+                    false
                 }
             }
         },
     };
 
-    let old_manifest_hash = match state.downloaded_packages.get(package_id) {
-        Some(package_state) => package_state
-            .manifest_hash
-            .clone()
+    let old_manifest_hash = match state.packages.get(package_id) {
+        Some(listing) => listing
+            .state
+            .as_ref()
+            .and_then(|state| state.manifest_hash.clone())
             .unwrap_or("OLD".to_string()),
         _ => "OLD".to_string(),
     };
@@ -536,22 +526,22 @@ fn handle_receive_download_package(
         package_id,
         PackageState {
             mirrored_from: Some(requested_package.from),
-            our_version: download_hash,
+            our_version_hash: download_hash,
             installed: false,
             verified,
             caps_approved: false,
             manifest_hash: None, // generated in the add fn
             mirroring: requested_package.mirror,
             auto_update: requested_package.auto_update,
-            metadata,
         },
         Some(blob.bytes),
     )?;
 
-    let new_manifest_hash = match state.downloaded_packages.get(package_id) {
-        Some(package_state) => package_state
-            .manifest_hash
-            .clone()
+    let new_manifest_hash = match state.packages.get(package_id) {
+        Some(listing) => listing
+            .state
+            .as_ref()
+            .and_then(|state| state.manifest_hash.clone())
             .unwrap_or("NEW".to_string()),
         _ => "NEW".to_string(),
     };
@@ -595,8 +585,9 @@ fn handle_eth_sub_event(
 /// make sure you have reviewed and approved caps in manifest before calling this
 pub fn handle_install(state: &mut State, package_id: &PackageId) -> anyhow::Result<()> {
     // wit version will default to the latest if not specified
-    let metadata = state
-        .get_downloaded_package(package_id)
+    let metadata = &state
+        .packages
+        .get(package_id)
         .ok_or_else(|| anyhow::anyhow!("package not found in manager"))?
         .metadata;
 

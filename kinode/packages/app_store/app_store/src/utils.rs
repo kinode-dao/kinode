@@ -10,7 +10,7 @@ use {
         eth, get_blob, get_state, http, kernel_types as kt, kimap, println, vfs, Address,
         LazyLoadBlob, PackageId, ProcessId, Request,
     },
-    std::{collections::HashSet, str::FromStr},
+    std::collections::HashSet,
 };
 
 // quite annoyingly, we must convert from our gen'd version of PackageId
@@ -61,26 +61,33 @@ pub fn fetch_state(our: Address, provider: eth::Provider) -> State {
     if let Some(state_bytes) = get_state() {
         match serde_json::from_slice::<SerializedState>(&state_bytes) {
             Ok(state) => {
-                if state.contract_address == KIMAP_ADDRESS {
-                    return State::from_serialized(our, provider, state);
+                if state.kimap.address().to_string() == KIMAP_ADDRESS {
+                    return State::from_serialized(our, state);
                 } else {
                     println!(
-                        "state contract address mismatch! expected {}, got {}",
-                        KIMAP_ADDRESS, state.contract_address
+                        "state contract address mismatch. rebuilding state! expected {}, got {}",
+                        KIMAP_ADDRESS,
+                        state.kimap.address().to_string()
                     );
                 }
             }
-            Err(e) => println!("failed to deserialize saved state: {e}"),
+            Err(e) => println!("failed to deserialize saved state, rebuilding: {e}"),
         }
     }
-    State::new(our, provider, KIMAP_ADDRESS.to_string()).expect("state creation failed")
+    State::new(our, provider).expect("state creation failed")
 }
 
+/// create the filter used for app store getLogs and subscription.
+/// the app store exclusively looks for ~metadata-uri postings: if one is
+/// observed, we then *query* for ~metadata-hash to verify the content
+/// at the URI.
+///
+/// this means that ~metadata-hash should be *posted before or at the same time* as ~metadata-uri!
 pub fn app_store_filter(state: &State) -> eth::Filter {
-    let notes = vec![keccak256("~metadata-uri"), keccak256("~metadata-hash")];
+    let notes = vec![keccak256("~metadata-uri")];
 
     eth::Filter::new()
-        .address(eth::Address::from_str(&state.contract_address).unwrap())
+        .address(*state.kimap.address())
         .events([kimap::contract::Note::SIGNATURE])
         .topic3(notes)
 }
@@ -90,7 +97,7 @@ pub fn fetch_and_subscribe_logs(state: &mut State) {
     let filter = app_store_filter(state);
     // get past logs, subscribe to new ones.
     for log in fetch_logs(
-        &state.provider,
+        &state.kimap.provider,
         &filter.clone().from_block(state.last_saved_block),
     ) {
         if let Err(e) = state.ingest_contract_event(log, false) {
@@ -98,7 +105,7 @@ pub fn fetch_and_subscribe_logs(state: &mut State) {
         };
     }
     state.update_listings();
-    state.provider.subscribe_loop(1, filter);
+    state.kimap.provider.subscribe_loop(1, filter);
 }
 
 /// fetch logs from the chain with a given filter
@@ -126,7 +133,7 @@ pub fn fetch_metadata_from_url(
             http::send_request_await_response(http::Method::GET, url, None, timeout, vec![])
         {
             if let Some(body) = get_blob() {
-                let hash = generate_metadata_hash(&body.bytes);
+                let hash = keccak_256_hash(&body.bytes);
                 if &hash == metadata_hash {
                     return Ok(serde_json::from_slice::<kt::Erc721Metadata>(&body.bytes)
                         .map_err(|_| AppStoreLogError::MetadataNotFound)?);
@@ -139,11 +146,11 @@ pub fn fetch_metadata_from_url(
     Err(AppStoreLogError::MetadataNotFound)
 }
 
-/// generate a Keccak-256 hash of the metadata bytes
-pub fn generate_metadata_hash(metadata: &[u8]) -> String {
+/// generate a Keccak-256 hash string (with 0x prefix) of the metadata bytes
+pub fn keccak_256_hash(bytes: &[u8]) -> String {
     use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
-    hasher.update(metadata);
+    hasher.update(bytes);
     format!("0x{:x}", hasher.finalize())
 }
 
@@ -157,10 +164,10 @@ pub fn generate_package_hash(name: &str, publisher_dnswire: &[u8]) -> String {
 }
 
 /// generate a SHA-256 hash of the zip bytes to act as a version hash
-pub fn generate_version_hash(zip_bytes: &[u8]) -> String {
+pub fn sha_256_hash(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
-    hasher.update(zip_bytes);
+    hasher.update(bytes);
     format!("{:x}", hasher.finalize())
 }
 
@@ -187,31 +194,23 @@ pub fn new_package(
     mirror: bool,
     bytes: Vec<u8>,
 ) -> anyhow::Result<()> {
+    // add to listings
+    state.add_listing(package_id, metadata);
+
     // set the version hash for this new local package
-    let our_version = generate_version_hash(&bytes);
+    let our_version_hash = sha_256_hash(&bytes);
 
     let package_state = PackageState {
         mirrored_from: Some(state.our.node.clone()),
-        our_version,
+        our_version_hash,
         installed: false,
-        verified: true, // side loaded apps are implicitly verified because there is no "source" to verify against
+        verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
         caps_approved: true, // TODO see if we want to auto-approve local installs
         manifest_hash: None, // generated in the add fn
         mirroring: mirror,
         auto_update: false, // can't auto-update a local package
-        metadata: Some(metadata),
     };
-    let Ok(()) = state.add_downloaded_package(&package_id, package_state, Some(bytes)) else {
-        return Err(anyhow::anyhow!("failed to add package"));
-    };
-
-    let drive_path = format!("/{package_id}/pkg");
-    if let Ok(Ok(_)) = vfs_request(format!("{}/api", drive_path), vfs::VfsAction::Metadata)
-        .send_and_await_response(VFS_TIMEOUT)
-    {
-        state.downloaded_apis.insert(package_id.to_owned());
-    };
-    Ok(())
+    state.add_downloaded_package(&package_id, package_state, Some(bytes))
 }
 
 /// create a new package drive in VFS and add the package zip to it.
@@ -263,7 +262,7 @@ pub fn create_package_drive(
         timeout: VFS_TIMEOUT,
     };
     let manifest_bytes = manifest_file.read()?;
-    Ok(generate_metadata_hash(&manifest_bytes))
+    Ok(keccak_256_hash(&manifest_bytes))
 }
 
 pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {

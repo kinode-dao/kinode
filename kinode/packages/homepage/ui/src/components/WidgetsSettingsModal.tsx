@@ -11,57 +11,47 @@ const WidgetsSettingsModal = () => {
     title='Widget Settings'
     onClose={() => setShowWidgetsSettings(false)}
   >
-    <div className="flex-col-center gap-4 mt-4">
-      {apps.filter(app => app.widget).map(({ label, package_name }) => <div className="flex items-start bg-white/10 rounded p-2 self-stretch">
-        <h4 className="mr-4 grow">{label}</h4>
-        <div className="flex flex-col gap-4 grow">
-          <div className="flex-center gap-2">
-            <span>Show widget</span>
-            <div className="flex relative grow">
-              <input
-                type="checkbox"
-                checked={!widgetSettings[package_name]?.hide}
-                onChange={() => toggleWidgetVisibility(package_name)}
-                autoFocus
-              />
-              {!widgetSettings[package_name]?.hide && (
-                <span
-                  onClick={() => toggleWidgetVisibility(package_name)}
-                  className="checkmark"
-                >
-                  &#10003;
-                </span>
-              )}
+    <div className="widget-settings">
+      {apps.filter((app) => app.widget).map((app) => {
+        return (
+          <div>
+            <h4>{app.label}</h4>
+            <div>
+              <div>
+                <span>Show widget<input
+                  type="checkbox"
+                  checked={!widgetSettings[app.id]?.hide}
+                  onChange={() => toggleWidgetVisibility(app.id)}
+                  autoFocus
+                /></span>
+              </div>
+              <div>
+                <span>Widget size</span>
+                <div>
+                  <button
+                    className={classNames({
+                      'clear': widgetSettings[app.package_name]?.size === 'large'
+                    })}
+                    onClick={() => setWidgetSize(app.package_name, 'small')}
+                  >
+                    Small
+                  </button>
+                  <button
+                    className={classNames({
+                      'clear': widgetSettings[app.package_name]?.size !== 'large'
+                    })}
+                    onClick={() => setWidgetSize(app.package_name, 'large')}
+                  >
+                    Large
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="flex-center gap-2">
-            <span>Widget size</span>
-            <div className="flex-center grow">
-              <button
-                className={classNames({
-                  'clear': widgetSettings[package_name]?.size === 'large'
-                })}
-                onClick={() => setWidgetSize(package_name, 'small')}
-              >
-                Small
-              </button>
-              <button
-                className={classNames({
-                  'clear': widgetSettings[package_name]?.size !== 'large'
-                })}
-                onClick={() => setWidgetSize(package_name, 'large')}
-              >
-                Large
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>)}
-      <button
-        className="clear"
-        onClick={() => window.location.href = '/settings:settings:sys'}
-      >
-        Looking for system settings?
+        );
+      })}
+      <button onClick={() => window.location.href = '/settings:settings:sys'}>
+        System settings
       </button>
     </div>
   </Modal>

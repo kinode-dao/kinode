@@ -5,8 +5,125 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>Kinode Settings</title>
-    <link rel="stylesheet" href="/settings:settings:sys/style.css">
+    <link rel="stylesheet" href="/kinode.css">
+    <script src="/our.js"></script>
+    <script>
+        document.title = window.our.node + " - settings";
+    </script>
+    <style>
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            color: #f0f0f0;
+        }
+
+        h1 {
+            padding: 20px;
+        }
+
+        main {
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px 20px;
+            grid-auto-flow: row;
+            grid-template-areas:
+                "diagnostics diagnostics diagnostics"
+                "node-info pings pings"
+                "eth-rpc-providers eth-rpc-providers eth-rpc-settings"
+                "kernel kernel kernel";
+            padding: 20px;
+            max-width: 1100px;
+            min-width: 300px;
+        }
+
+        article#net-diagnostics {
+            grid-area: diagnostics;
+        }
+
+        p#diagnostics,
+        p#peer-pki-response,
+        p#peer-ping-response {
+            white-space: pre-wrap;
+        }
+
+        article#node-info {
+            grid-area: node-info;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+        }
+
+        #shutdown {
+            background-color: var(--ansi-red)
+        }
+
+        #shutdown:hover {
+            background-color: var(--maroon);
+        }
+
+        article#pings {
+            grid-area: pings;
+        }
+
+        article#eth-rpc-providers {
+            grid-area: eth-rpc-providers;
+        }
+
+        article#eth-rpc-settings {
+            grid-area: eth-rpc-settings;
+        }
+
+        article#kernel {
+            grid-area: kernel;
+        }
+
+        div#provider-edits {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px 20px;
+            grid-auto-flow: row;
+        }
+
+        article {
+            border: 1px solid #444;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        li {
+            padding: 8px;
+            margin-bottom: 6px;
+            border-radius: 4px;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        #process-map li p:first-child {
+            font-weight: bold;
+        }
+
+        #process-map li ul {
+            padding-left: 20px;
+        }
+
+        #process-map li ul li {
+            margin-bottom: 1px;
+            padding: 0;
+        }
+
+        button.kill-process {
+            padding: 3px 6px;
+            margin: 10px;
+        }
+    </style>
 </head>
 
 <body>
@@ -77,8 +194,7 @@
 
         <article id="kernel">
             <h2>running processes</h2>
-            <p>(TODO)</p>
-            <ul></ul>
+            <ul id="process-map"></ul>
         </article>
 
 

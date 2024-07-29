@@ -2,10 +2,9 @@ import { parseAbi } from "viem";
 
 export { encodeMulticalls, encodeIntoMintCall } from "./helpers";
 
-// move to constants? // also for anvil/optimism
 export const KINOMAP: `0x${string}` = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 export const MULTICALL: `0x${string}` = "0xcA11bde05977b3631167028862bE2a173976CA11";
-export const KINO_ACCOUNT_IMPL: `0x${string}` = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
+export const KINO_ACCOUNT_IMPL: `0x${string}` = "0x58790D9957ECE58607A4b58308BBD5FE1a2e4789";
 
 
 export const multicallAbi = parseAbi([

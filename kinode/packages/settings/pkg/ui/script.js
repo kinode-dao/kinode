@@ -32,7 +32,7 @@ function populate(data) {
     populate_net_diagnostics(data.diagnostics);
     populate_eth_rpc_providers(data.eth_rpc_providers);
     populate_eth_rpc_settings(data.eth_rpc_access_settings);
-    // populate_kernel()
+    populate_process_map(data.process_map);
 }
 
 function populate_node_info(identity) {
@@ -97,6 +97,87 @@ function populate_eth_rpc_settings(settings) {
             ul.appendChild(li);
         });
     }
+}
+
+function populate_process_map(process_map) {
+    // apps we don't want user to kill, also runtime modules that cannot be killed
+    const do_not_kill = [
+        'settings:setting:sys',
+        'main:app_store:sys',
+        'net:distro:sys',
+        'kernel:distro:sys',
+        'kv:distro:sys',
+        'sqlite:distro:sys',
+        'eth:distro:sys',
+        'vfs:distro:sys',
+        'state:distro:sys',
+        'kns_indexer:kns_indexer:sys',
+        'http_client:distro:sys',
+        'http_server:distro:sys',
+        'terminal:terminal:sys',
+        'timer:distro:sys',
+    ];
+
+    const ul = document.getElementById('process-map');
+    ul.innerHTML = '';
+    Object.entries(process_map).forEach(([id, process]) => {
+        const li = document.createElement('li');
+
+        const toggleButton = document.createElement('button');
+        toggleButton.textContent = `${id}`;
+        toggleButton.onclick = function () {
+            const details = this.nextElementSibling;
+            details.style.display = details.style.display === 'none' ? 'block' : 'none';
+        };
+        li.appendChild(toggleButton);
+
+        const detailsDiv = document.createElement('div');
+        detailsDiv.style.display = 'none';
+
+        if (!do_not_kill.includes(id)) {
+            const killButton = document.createElement('button');
+            killButton.className = 'kill-process';
+            killButton.setAttribute('data-id', id);
+            killButton.textContent = 'kill';
+            detailsDiv.appendChild(killButton);
+        }
+
+        const publicInfo = document.createElement('p');
+        publicInfo.textContent = `public: ${process.public}`;
+        detailsDiv.appendChild(publicInfo);
+
+        const onExit = document.createElement('p');
+        onExit.textContent = `on_exit: ${process.on_exit}`;
+        detailsDiv.appendChild(onExit);
+
+        if (process.wit_version) {
+            const witVersion = document.createElement('p');
+            witVersion.textContent = `wit_version: ${process.wit_version}`;
+            detailsDiv.appendChild(witVersion);
+        }
+
+        if (process.wasm_bytes_handle) {
+            const wasmBytesHandle = document.createElement('p');
+            wasmBytesHandle.textContent = `wasm_bytes_handle: ${process.wasm_bytes_handle}`;
+            detailsDiv.appendChild(wasmBytesHandle);
+        }
+
+        const capsList = document.createElement('ul');
+        process.capabilities.forEach(cap => {
+            const capLi = document.createElement('li');
+            capLi.textContent = `${cap.issuer}(${JSON.stringify(JSON.parse(cap.params), null, 2)})`;
+            capsList.appendChild(capLi);
+        });
+        detailsDiv.appendChild(capsList);
+
+        li.appendChild(detailsDiv);
+        ul.appendChild(li);
+    });
+    document.querySelectorAll('.kill-process').forEach(button => {
+        button.addEventListener('click', () => {
+            api_call({ "KillProcess": button.getAttribute('data-id') });
+        });
+    });
 }
 
 // Call init to start the application

@@ -1,176 +1,72 @@
-import React, { useState, useEffect, useMemo, useCallback, ReactElement } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-
-import { AppInfo } from "../types/Apps";
-import useAppsStore from "../store/apps-store";
-import ActionButton from "../components/ActionButton";
-import AppHeader from "../components/AppHeader";
-import SearchHeader from "../components/SearchHeader";
+import React from "react";
+import { useParams } from "react-router-dom";
+import { FaDownload, FaSync, FaTrash, FaMagnet, FaCog, FaCheck, FaTimes } from "react-icons/fa";
+import useAppsStore from "../store";
 import { appId } from "../utils/app";
-import { PUBLISH_PATH } from "../constants/path";
-import HomeButton from "../components/HomeButton";
-import classNames from "classnames";
-import { isMobileCheck } from "../utils/dimensions";
-import { FaGlobe, FaPeopleGroup, FaStar } from "react-icons/fa6";
-
 
 export default function AppPage() {
-  // eslint-disable-line
-  const { myApps, listedApps, getListedApp } = useAppsStore();
-  const navigate = useNavigate();
-  const params = useParams();
-  const [app, setApp] = useState<AppInfo | undefined>(undefined);
-  const [launchPath, setLaunchPath] = useState('');
+  const { installApp, updateApp, uninstallApp, setMirroring, setAutoUpdate, apps } = useAppsStore();
+  const { id } = useParams();
+  const app = apps.find(a => appId(a) === id);
 
-  useEffect(() => {
-    const myApp = myApps.local.find((a) => appId(a) === params.id);
-    if (myApp) return setApp(myApp);
+  if (!app) {
+    return <div className="app-page"><h4>App details not found for {id}</h4></div>;
+  }
 
-    if (params.id) {
-      const app = listedApps.find((a) => appId(a) === params.id);
-      if (app) {
-        setApp(app);
-      } else {
-        getListedApp(params.id)
-          .then((app) => setApp(app))
-          .catch(console.error);
-      }
-    }
-  }, [params.id, myApps, listedApps]);
-
-  const goToPublish = useCallback(() => {
-    navigate(PUBLISH_PATH, { state: { app } });
-  }, [app, navigate]);
-
-  const version = useMemo(
-    () => app?.metadata?.properties?.current_version || "Unknown",
-    [app]
-  );
-  const versions = Object.entries(app?.metadata?.properties?.code_hashes || {});
-  const hash =
-    app?.state?.our_version ||
-    (versions[(versions.length || 1) - 1] || ["", ""])[1];
-
-  const isMobile = isMobileCheck()
-
-  const appDetails: Array<{ top: ReactElement, middle: ReactElement, bottom: ReactElement }> = [
-    // {
-    //   top: <div className={classNames({ 'text-sm': isMobile })}>0 ratings</div>,
-    //   middle: <span className="text-2xl">5.0</span>,
-    //   bottom: <div className={classNames("flex-center gap-1", {
-    //     'text-sm': isMobile
-    //   })}>
-    //     <FaStar />
-    //     <FaStar />
-    //     <FaStar />
-    //     <FaStar />
-    //     <FaStar />
-    //   </div>
-    // },
-    {
-      top: <div className={classNames({ 'text-sm': isMobile })}>Developer</div>,
-      middle: <FaPeopleGroup size={36} />,
-      bottom: <div className={classNames({ 'text-sm': isMobile })}>
-        {app?.publisher}
-      </div>
-    },
-    {
-      top: <div className={classNames({ 'text-sm': isMobile })}>Version</div>,
-      middle: <span className="text-2xl">{version}</span>,
-      bottom: <div className={classNames({ 'text-xs': isMobile })}>
-        {hash.slice(0, 5)}...{hash.slice(-5)}
-      </div>
-    },
-    {
-      top: <div className={classNames({ 'text-sm': isMobile })}>Mirrors</div>,
-      middle: <FaGlobe size={36} />,
-      bottom: <div className={classNames({ 'text-sm': isMobile })}>
-        {app?.metadata?.properties?.mirrors?.length || 0}
-      </div>
-    }
-  ]
-
-  useEffect(() => {
-    fetch('/apps').then(data => data.json())
-      .then((data: Array<{ package_name: string, path: string }>) => {
-        if (Array.isArray(data)) {
-          const homepageAppData = data.find(otherApp => app?.package === otherApp.package_name)
-          if (homepageAppData) {
-            setLaunchPath(homepageAppData.path)
-          }
-        }
-      })
-  }, [app])
+  const handleInstall = () => app && installApp(app);
+  const handleUpdate = () => app && updateApp(app);
+  const handleUninstall = () => app && uninstallApp(app);
+  const handleMirror = () => app && setMirroring(app, !app.state?.mirroring);
+  const handleAutoUpdate = () => app && setAutoUpdate(app, !app.state?.auto_update);
 
   return (
-    <div className={classNames("flex flex-col w-full p-2",
-      {
-        'gap-4 max-w-screen': isMobile,
-        'gap-8 max-w-[900px]': !isMobile,
-      })}
-    >
-      {!isMobile && <HomeButton />}
-      <SearchHeader
-        value=""
-        onChange={() => null}
-        hideSearch
-        hidePublish
-      />
-      <div className={classNames("flex-col-center card !rounded-3xl", {
-        'p-12 gap-4 grow overflow-y-auto': isMobile,
-        'p-24 gap-8': !isMobile,
-      })}>
-        {app ? <>
-          <AppHeader app={app} size={isMobile ? "medium" : "large"} />
-          <div className="w-5/6 h-0 border border-orange" />
-          <div className={classNames("flex items-start text-xl", {
-            'gap-4 flex-wrap': isMobile,
-            'gap-8': !isMobile,
-          })}>
-            {appDetails.map((detail, index) => <>
-              <div
-                className={classNames("flex-col-center gap-2 justify-between self-stretch", {
-                  'rounded-lg bg-white/10 p-1 min-w-1/4 grow': isMobile,
-                  'opacity-50': !isMobile,
-                })}
-                key={index}
-              >
-                {detail.top}
-                {detail.middle}
-                {detail.bottom}
-              </div>
-              {!isMobile && index !== appDetails.length - 1 && <div className="h-3/4 w-0 border border-orange self-center" />}
-            </>)}
-          </div>
-          {Array.isArray(app.metadata?.properties?.screenshots)
-            && app.metadata?.properties.screenshots.length > 0
-            && <div className="flex flex-wrap overflow-x-auto max-w-full">
-              {app.metadata.properties.screenshots.map(
-                (screenshot, index) => (
-                  <img key={index + screenshot} src={screenshot} className="mr-2 max-h-20 max-w-full rounded border border-black" />
-                )
-              )}
-            </div>}
-          <div className={classNames("flex-center gap-2", {
-            'flex-col': isMobile,
-          })}>
-            <ActionButton
-              app={app}
-              launchPath={launchPath}
-              className={classNames("self-center bg-orange text-lg px-12")}
-              permitMultiButton
-            />
-          </div>
-          {app.installed && app.state?.mirroring && (
-            <button type="button" onClick={goToPublish}>
-              Publish
-            </button>
+    <section className="app-page">
+      <h2>{app.metadata?.name || app.package}</h2>
+      <p className="app-description">{app.metadata?.description || "No description available"}</p>
+      <div className="app-details">
+        <div className="app-info">
+          <ul className="app-details-list">
+            <li><span>Version:</span> <span>{app.metadata?.properties?.current_version || "Unknown"}</span></li>
+            <li><span>Developer:</span> <span>{app.publisher}</span></li>
+            <li><span>Mirrors:</span> <span>{app.metadata?.properties?.mirrors?.length || 0}</span></li>
+            <li>
+              <span>Installed:</span>
+              {app.installed ? <FaCheck className="status-icon installed" /> : <FaTimes className="status-icon not-installed" />}
+            </li>
+            <li>
+              <span>Mirroring:</span>
+              {app.state?.mirroring ? <FaCheck className="status-icon mirroring" /> : <FaTimes className="status-icon not-mirroring" />}
+            </li>
+            <li>
+              <span>Auto-Update:</span>
+              {app.state?.auto_update ? <FaCheck className="status-icon auto-update" /> : <FaTimes className="status-icon no-auto-update" />}
+            </li>
+          </ul>
+        </div>
+        <div className="app-actions">
+          {app.installed ? (
+            <>
+              <button onClick={handleUpdate} className="secondary"><FaSync /> Update</button>
+              <button onClick={handleUninstall} className="secondary"><FaTrash /> Uninstall</button>
+            </>
+          ) : (
+            <button onClick={handleInstall}><FaDownload /> Install</button>
           )}
-        </> : <>
-          <h4>App details not found for </h4>
-          <h4>{params.id}</h4>
-        </>}
+          <button onClick={handleMirror} className="secondary">
+            <FaMagnet /> {app.state?.mirroring ? "Stop Mirroring" : "Start Mirroring"}
+          </button>
+          <button onClick={handleAutoUpdate} className="secondary">
+            <FaCog /> {app.state?.auto_update ? "Disable Auto-Update" : "Enable Auto-Update"}
+          </button>
+        </div>
       </div>
-    </div>
+      {app.metadata?.properties?.screenshots && (
+        <div className="app-screenshots">
+          {app.metadata.properties.screenshots.map((screenshot, index) => (
+            <img key={index} src={screenshot} alt={`Screenshot ${index + 1}`} className="app-screenshot" />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

@@ -1,55 +1,42 @@
-import classNames from "classnames"
-import { HomepageApp } from "../store/homepageStore"
-import { FaHeart, FaRegHeart, } from "react-icons/fa6"
+import useHomepageStore, { HomepageApp } from "../store/homepageStore"
 import { useState } from "react"
-import usePersistentStore from "../store/persistentStore"
-import { isMobileCheck } from "../utils/dimensions"
-import AppIconPlaceholder from "./AppIconPlaceholder"
 
 interface AppDisplayProps {
   app?: HomepageApp
 }
 
 const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
-  const { favoriteApp, favoriteApps } = usePersistentStore();
+  const { setApps } = useHomepageStore()
   const [isHovered, setIsHovered] = useState(false)
-  const isMobile = isMobileCheck()
 
   return <a
-    className={classNames("flex-col-center gap-2 relative hover:opacity-90 transition-opacity", {
-      'cursor-pointer': app?.path,
-      'cursor-not-allowed': !app?.path,
-    })}
     id={app?.package_name}
-    href={app?.path}
+    href={app?.path || undefined}
     onMouseEnter={() => setIsHovered(true)}
     onMouseLeave={() => setIsHovered(false)}
+    className="app-display"
+    title={isHovered ? (app?.label || app?.package_name) : (!app?.path ? "This app does not serve a UI" : undefined)}
   >
     {app?.base64_icon
-      ? <img
-        src={app.base64_icon}
-        className={classNames('rounded', {
-          'h-8 w-8': isMobile,
-          'h-16 w-16': !isMobile
-        })}
-      />
-      : <AppIconPlaceholder
-        text={app?.state?.our_version || '0'}
-        size={'small'}
-        className="h-16 w-16"
-      />}
+      ? <img className="app-icon" src={app.base64_icon} />
+      : <img className="app-icon" src='/bird-orange.svg' />
+    }
     <h6>{app?.label || app?.package_name}</h6>
-    {app?.path && isHovered && <button
-      className="absolute p-2 -top-2 -right-2 clear text-sm"
+    {isHovered && !app?.path && <p className="no-ui">This app does not serve a UI</p>}
+    {app?.path && isHovered && <button className="app-fave-button"
       onClick={(e) => {
         e.preventDefault()
-        favoriteApp(app.package_name)
+        fetch(`/favorite`, {
+          method: 'POST',
+          body: JSON.stringify([app?.id, app?.order, !app?.favorite])
+        }).then(() => {
+          fetch('/apps', { credentials: 'include' }).then(res => res.json()).catch(() => [])
+            .then(setApps)
+        })
       }}
     >
-      {favoriteApps[app.package_name]?.favorite ? <FaHeart /> : <FaRegHeart />}
     </button>}
   </a>
 }
 
 export default AppDisplay
-

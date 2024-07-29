@@ -1,6 +1,5 @@
 import { FaX } from "react-icons/fa6"
-import { isMobileCheck } from "../utils/dimensions"
-import classNames from "classnames"
+import { useEffect } from 'react';
 
 interface Props extends React.HTMLAttributes<HTMLDivElement> {
   title: string
@@ -8,19 +7,26 @@ interface Props extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export const Modal: React.FC<Props> = ({ title, onClose, children }) => {
-  const isMobile = isMobileCheck()
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose]);
+
   return (
-    <div className="flex fixed top-0 left-0 w-full h-full bg-black bg-opacity-50 place-items-center place-content-center backdrop-blur-md">
-      <div className={classNames("flex flex-col rounded-lg bg-black py-4 shadow-lg max-h-screen overflow-y-auto", {
-        'min-w-[500px] px-8 w-1/2': !isMobile,
-        'px-4 w-full': isMobile
-      })}>
-        <div className="flex">
-          <h1 className="grow">{title}</h1>
-          <button
-            className="icon self-start"
-            onClick={onClose}
-          >
+    <div className="modal">
+      <div className="modal-inner">
+        <div className="modal-header">
+          <h1>{title}</h1>
+          <button onClick={onClose}>
             <FaX />
           </button>
         </div>

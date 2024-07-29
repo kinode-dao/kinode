@@ -3,8 +3,7 @@ use crate::{KIMAP_ADDRESS, VFS_TIMEOUT};
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
-    eth, kernel_types as kt, kimap, net::get_name, println, vfs, Address, Message, NodeId,
-    PackageId, Request,
+    eth, kernel_types as kt, kimap, net, println, vfs, Address, NodeId, PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -41,26 +40,31 @@ impl std::fmt::Display for AppStoreLogError {
 
 impl std::error::Error for AppStoreLogError {}
 
-pub type PackageHash = String;
-
-/// listing information derived from metadata hash in listing event
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct PackageListing {
-    pub owner: String, // eth address,
-    pub name: String,
-    pub publisher: NodeId, // this should be moved to metadata...
-    pub metadata_url: String,
-    pub metadata_hash: String,
-    pub metadata: Option<kt::Erc721Metadata>,
+#[derive(Debug, Deserialize, Serialize)]
+pub struct MirroringFile {
+    pub mirroring_from: Option<NodeId>,
+    pub mirroring: bool,
+    pub auto_update: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RequestedPackage {
     pub from: NodeId,
     pub mirror: bool,
     pub auto_update: bool,
     // if none, we're requesting the latest version onchain
     pub desired_version_hash: Option<String>,
+}
+
+/// listing information derived from metadata hash in listing event
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PackageListing {
+    pub tba: eth::Address,
+    pub metadata_uri: String,
+    pub metadata_hash: String,
+    pub metadata: Option<kt::Erc721Metadata>,
+    /// if we have downloaded the package, this is populated
+    pub state: Option<PackageState>,
 }
 
 /// state of an individual package we have downloaded
@@ -70,7 +74,7 @@ pub struct PackageState {
     /// this is "us" if we don't know the source (usually cause it's a local install)
     pub mirrored_from: Option<NodeId>,
     /// the version of the package we have downloaded
-    pub our_version: String,
+    pub our_version_hash: String,
     pub installed: bool,
     pub verified: bool,
     pub caps_approved: bool,
@@ -82,33 +86,22 @@ pub struct PackageState {
     pub mirroring: bool,
     /// if we get a listing data update, will we try to download it?
     pub auto_update: bool,
-    pub metadata: Option<kt::Erc721Metadata>,
 }
 
 /// this process's saved state
 pub struct State {
     /// our address, grabbed from init()
     pub our: Address,
-    /// the eth provider we are using -- not persisted
-    pub provider: eth::Provider,
-    /// the kimap helper we are using -- not persisted
+    /// the kimap helper we are using
     pub kimap: kimap::Kimap,
-    /// the address of the contract we are using to read package listings
-    pub contract_address: String,
     /// the last block at which we saved the state of the listings to disk.
     /// when we boot, we can read logs starting from this block and
     /// rebuild latest state.
     pub last_saved_block: u64,
-    pub package_hashes: HashMap<PackageId, PackageHash>,
     /// we keep the full state of the package manager here, calculated from
     /// the listings contract logs. in the future, we'll offload this and
     /// only track a certain number of packages...
-    pub listed_packages: HashMap<PackageHash, PackageListing>,
-    /// we keep the full state of the packages we have downloaded here.
-    /// in order to keep this synchronized with our filesystem, we will
-    /// ingest apps on disk if we have to rebuild our state. this is also
-    /// updated every time we download, create, or uninstall a package.
-    pub downloaded_packages: HashMap<PackageId, PackageState>,
+    pub packages: HashMap<PackageId, PackageListing>,
     /// the APIs we have
     pub downloaded_apis: HashSet<PackageId>,
     /// the packages we have outstanding requests to download (not persisted)
@@ -119,11 +112,9 @@ pub struct State {
 
 #[derive(Deserialize)]
 pub struct SerializedState {
-    pub contract_address: String,
+    pub kimap: kimap::Kimap,
     pub last_saved_block: u64,
-    pub package_hashes: HashMap<PackageId, PackageHash>,
-    pub listed_packages: HashMap<PackageHash, PackageListing>,
-    pub downloaded_packages: HashMap<PackageId, PackageState>,
+    pub packages: HashMap<PackageId, PackageListing>,
     pub downloaded_apis: HashSet<PackageId>,
 }
 
@@ -134,48 +125,35 @@ impl Serialize for State {
     {
         use serde::ser::SerializeStruct;
         let mut state = serializer.serialize_struct("State", 6)?;
-        state.serialize_field("contract_address", &self.contract_address)?;
+        state.serialize_field("kimap", &self.kimap)?;
         state.serialize_field("last_saved_block", &self.last_saved_block)?;
-        state.serialize_field("package_hashes", &self.package_hashes)?;
-        state.serialize_field("listed_packages", &self.listed_packages)?;
-        state.serialize_field("downloaded_packages", &self.downloaded_packages)?;
+        state.serialize_field("packages", &self.packages)?;
         state.serialize_field("downloaded_apis", &self.downloaded_apis)?;
         state.end()
     }
 }
 
 impl State {
-    pub fn from_serialized(our: Address, provider: eth::Provider, s: SerializedState) -> Self {
+    pub fn from_serialized(our: Address, s: SerializedState) -> Self {
         State {
             our,
-            provider: provider.clone(),
-            kimap: kimap::Kimap::new(provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap()),
-            contract_address: s.contract_address,
+            kimap: s.kimap,
             last_saved_block: s.last_saved_block,
-            package_hashes: s.package_hashes,
-            listed_packages: s.listed_packages,
-            downloaded_packages: s.downloaded_packages,
+            packages: s.packages,
             downloaded_apis: s.downloaded_apis,
             requested_packages: HashMap::new(),
             requested_apis: HashMap::new(),
         }
     }
+
     /// To create a new state, we populate the downloaded_packages map
     /// with all packages parseable from our filesystem.
-    pub fn new(
-        our: Address,
-        provider: eth::Provider,
-        contract_address: String,
-    ) -> anyhow::Result<Self> {
+    pub fn new(our: Address, provider: eth::Provider) -> anyhow::Result<Self> {
         let mut state = State {
             our,
-            provider: provider.clone(),
             kimap: kimap::Kimap::new(provider, eth::Address::from_str(KIMAP_ADDRESS).unwrap()),
-            contract_address,
             last_saved_block: crate::KIMAP_FIRST_BLOCK,
-            package_hashes: HashMap::new(),
-            listed_packages: HashMap::new(),
-            downloaded_packages: HashMap::new(),
+            packages: HashMap::new(),
             downloaded_apis: HashSet::new(),
             requested_packages: HashMap::new(),
             requested_apis: HashMap::new(),
@@ -184,30 +162,49 @@ impl State {
         Ok(state)
     }
 
-    pub fn get_listing(&self, package_id: &PackageId) -> Option<&PackageListing> {
-        self.listed_packages
-            .get(self.package_hashes.get(package_id)?)
+    pub fn add_listing(&mut self, package_id: &PackageId, metadata: kt::Erc721Metadata) {
+        self.packages.insert(
+            package_id.clone(),
+            PackageListing {
+                tba: eth::Address::ZERO,
+                metadata_uri: "".to_string(),
+                metadata_hash: utils::sha_256_hash(&serde_json::to_vec(&metadata).unwrap()),
+                metadata: Some(metadata),
+                state: None,
+            },
+        );
     }
 
-    pub fn get_downloaded_package(&self, package_id: &PackageId) -> Option<PackageState> {
-        self.downloaded_packages.get(package_id).cloned()
-    }
-
+    /// if package_bytes is None, we already have the package downloaded
+    /// in VFS and this is being called to rebuild our process state
     pub fn add_downloaded_package(
         &mut self,
         package_id: &PackageId,
         mut package_state: PackageState,
-        package_bytes: Option<Vec<u8>>,
+        package_zip_bytes: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        if let Some(package_bytes) = package_bytes {
+        let Some(listing) = self.packages.get_mut(package_id) else {
+            return Err(anyhow::anyhow!("package not found"));
+        };
+        // if passed zip bytes, make drive
+        if let Some(package_bytes) = package_zip_bytes {
             let manifest_hash = utils::create_package_drive(package_id, package_bytes)?;
             package_state.manifest_hash = Some(manifest_hash);
         }
+        // persist mirroring status
+        let mirroring_file = vfs::File {
+            path: format!("/{package_id}/pkg/.mirroring"),
+            timeout: 5,
+        };
+        mirroring_file.write(&serde_json::to_vec(&MirroringFile {
+            mirroring_from: package_state.mirrored_from.clone(),
+            mirroring: package_state.mirroring,
+            auto_update: package_state.auto_update,
+        })?)?;
         if utils::extract_api(package_id)? {
             self.downloaded_apis.insert(package_id.to_owned());
         }
-        self.downloaded_packages
-            .insert(package_id.to_owned(), package_state);
+        listing.state = Some(package_state);
         // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
@@ -219,11 +216,15 @@ impl State {
         fn_: impl FnOnce(&mut PackageState),
     ) -> bool {
         let res = self
-            .downloaded_packages
+            .packages
             .get_mut(package_id)
-            .map(|package_state| {
-                fn_(package_state);
-                true
+            .map(|listing| {
+                if let Some(package_state) = &mut listing.state {
+                    fn_(package_state);
+                    true
+                } else {
+                    false
+                }
             })
             .unwrap_or(false);
         // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
@@ -256,62 +257,86 @@ impl State {
 
     /// saves state
     pub fn populate_packages_from_filesystem(&mut self) -> anyhow::Result<()> {
-        let Message::Response { body, .. } =
-            utils::vfs_request("/".to_string(), vfs::VfsAction::ReadDir)
+        // call VFS and ask for all directories in our root drive
+        // (we have root VFS capability so this is allowed)
+        // we will interpret any that are package dirs and ingest them
+        let vfs::VfsResponse::ReadDir(entries) = serde_json::from_slice::<vfs::VfsResponse>(
+            utils::vfs_request("/", vfs::VfsAction::ReadDir)
                 .send_and_await_response(VFS_TIMEOUT)??
+                .body(),
+        )?
         else {
-            return Err(anyhow::anyhow!("vfs: bad response"));
-        };
-        let response = serde_json::from_slice::<vfs::VfsResponse>(&body)?;
-        let vfs::VfsResponse::ReadDir(entries) = response else {
-            return Err(anyhow::anyhow!("vfs: unexpected response: {:?}", response));
+            return Err(anyhow::anyhow!("vfs: unexpected response to ReadDir"));
         };
         for entry in entries {
+            // ignore non-dirs
+            if entry.file_type != vfs::FileType::Directory {
+                continue;
+            }
             // ignore non-package dirs
             let Ok(package_id) = entry.path.parse::<PackageId>() else {
                 continue;
             };
-            if entry.file_type == vfs::FileType::Directory {
-                let zip_file = vfs::File {
-                    path: format!("/{}/pkg/{}.zip", package_id, package_id),
-                    timeout: 5,
-                };
-                let Ok(zip_file_bytes) = zip_file.read() else {
-                    continue;
-                };
-                // generate entry from this data
-                // for the version hash, take the SHA-256 hash of the zip file
-                let our_version = utils::generate_version_hash(&zip_file_bytes);
-                let manifest_file = vfs::File {
-                    path: format!("/{}/pkg/manifest.json", package_id),
-                    timeout: 5,
-                };
-                let manifest_bytes = manifest_file.read()?;
-                // the user will need to turn mirroring and auto-update back on if they
-                // have to reset the state of their app store for some reason. the apps
-                // themselves will remain on disk unless explicitly deleted.
-                self.add_downloaded_package(
-                    &package_id,
-                    PackageState {
-                        mirrored_from: None,
-                        our_version,
-                        installed: true,
-                        verified: true,       // implicitly verified (TODO re-evaluate)
-                        caps_approved: false, // must re-approve if you want to do something
-                        manifest_hash: Some(utils::generate_metadata_hash(&manifest_bytes)),
-                        mirroring: false,
-                        auto_update: false,
-                        metadata: None,
-                    },
-                    None,
-                )?;
-
-                if let Ok(Ok(_)) =
-                    utils::vfs_request(format!("/{package_id}/pkg/api"), vfs::VfsAction::Metadata)
-                        .send_and_await_response(VFS_TIMEOUT)
-                {
-                    self.downloaded_apis.insert(package_id.to_owned());
+            // grab package .zip if it exists
+            let zip_file = vfs::File {
+                path: format!("/{package_id}/pkg/{package_id}.zip"),
+                timeout: 5,
+            };
+            let Ok(zip_file_bytes) = zip_file.read() else {
+                continue;
+            };
+            // generate entry from this data
+            // for the version hash, take the SHA-256 hash of the zip file
+            let our_version_hash = utils::sha_256_hash(&zip_file_bytes);
+            let manifest_file = vfs::File {
+                path: format!("/{package_id}/pkg/manifest.json"),
+                timeout: 5,
+            };
+            let manifest_bytes = manifest_file.read()?;
+            // get mirroring data if available
+            let mirroring_file = vfs::File {
+                path: format!("/{package_id}/pkg/.mirroring"),
+                timeout: 5,
+            };
+            let mirroring_data = if let Ok(bytes) = mirroring_file.read() {
+                serde_json::from_slice::<MirroringFile>(&bytes)?
+            } else {
+                MirroringFile {
+                    mirroring_from: None,
+                    mirroring: false,
+                    auto_update: false,
                 }
+            };
+            self.packages.insert(
+                package_id.clone(),
+                PackageListing {
+                    tba: eth::Address::ZERO,
+                    metadata_uri: "".to_string(),
+                    metadata_hash: "".to_string(),
+                    metadata: None,
+                    state: None,
+                },
+            );
+            self.add_downloaded_package(
+                &package_id,
+                PackageState {
+                    mirrored_from: mirroring_data.mirroring_from,
+                    our_version_hash,
+                    installed: true,
+                    verified: true,       // implicitly verified (TODO re-evaluate)
+                    caps_approved: false, // must re-approve if you want to do something
+                    manifest_hash: Some(utils::keccak_256_hash(&manifest_bytes)),
+                    mirroring: mirroring_data.mirroring,
+                    auto_update: mirroring_data.auto_update,
+                },
+                None,
+            )?;
+
+            if let Ok(Ok(_)) =
+                utils::vfs_request(format!("/{package_id}/pkg/api"), vfs::VfsAction::Metadata)
+                    .send_and_await_response(VFS_TIMEOUT)
+            {
+                self.downloaded_apis.insert(package_id);
             }
         }
         Ok(())
@@ -319,7 +344,7 @@ impl State {
 
     pub fn uninstall(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
         utils::uninstall(package_id)?;
-        self.downloaded_packages.remove(package_id);
+        self.packages.remove(package_id);
         // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         println!("uninstalled {package_id}");
         Ok(())
@@ -335,153 +360,80 @@ impl State {
         log: eth::Log,
         update_listings: bool,
     ) -> Result<(), AppStoreLogError> {
-        println!("ingesting contract event");
-
         let block_number: u64 = log.block_number.ok_or(AppStoreLogError::NoBlockNumber)?;
 
-        match log.topics()[0] {
-            kimap::contract::Note::SIGNATURE_HASH => {
-                let note =
-                    kimap::contract::Note::decode_log_data(log.data(), false).map_err(|e| {
-                        println!("error decoding note: {e}");
-                        AppStoreLogError::DecodeLogError
-                    })?;
+        let kimap::contract::Note::SIGNATURE_HASH = log.topics()[0] else {
+            return Ok(());
+        };
 
-                let name = get_name(&note.nodehash.to_string(), log.block_number, Some(5))
-                    .ok_or(AppStoreLogError::DecodeLogError)?;
+        let note = kimap::contract::Note::decode_log_data(log.data(), false)
+            .map_err(|_| AppStoreLogError::DecodeLogError)?;
 
-                match std::str::from_utf8(&note.note) {
-                    Ok("~metadata-uri") => {
-                        let metadata_url = String::from_utf8_lossy(&note.data).to_string();
-                        // generate ~metadata-hash notehash
-                        let meta_note_name = format!("~metadata-hash.{name}");
+        // use kns_indexer to convert nodehash to a kimap name
+        let package_full_path =
+            net::get_name(&note.nodehash.to_string(), log.block_number, Some(5))
+                .ok_or(AppStoreLogError::DecodeLogError)?;
 
-                        let (_tba, _owner, data) =
-                            self.kimap.get(&meta_note_name).map_err(|e| {
-                                println!("Error getting metadata hash: {:?}", e);
-                                AppStoreLogError::DecodeLogError
-                            })?;
+        // the app store exclusively looks for ~metadata-uri postings: if one is
+        // observed, we then *query* for ~metadata-hash to verify the content
+        // at the URI.
+        //
+        // this means that ~metadata-hash should be *posted before or at the same time* as ~metadata-uri!
+        let Ok("~metadata-uri") = std::str::from_utf8(&note.note) else {
+            return Ok(());
+        };
 
-                        if let Some(hash_note) = data {
-                            let metadata_hash = String::from_utf8_lossy(&hash_note).to_string();
-                            let metadata =
-                                utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
+        let metadata_uri = String::from_utf8_lossy(&note.data).to_string();
 
-                            // if this fails and doesn't check out, do nothing
+        // generate ~metadata-hash notehash
+        let hash_note = format!("~metadata-hash.{package_full_path}");
 
-                            let (package_name, publisher_name) = name
-                                .split_once('.')
-                                .ok_or(AppStoreLogError::InvalidPublisherName)
-                                .and_then(|(package, publisher)| {
-                                    if package.is_empty() || publisher.is_empty() {
-                                        Err(AppStoreLogError::InvalidPublisherName)
-                                    } else {
-                                        Ok((package.to_string(), publisher.to_string()))
-                                    }
-                                })?;
-                            println!(
-                                "pkg_name and publisher_name: {package_name} {publisher_name}"
-                            );
-                            // do we need package hashes anymore? seems kinda unnecessary, use nodehashes instead?
-                            // not removing for now for state compatibility
-                            let package_hash = utils::generate_package_hash(
-                                &package_name,
-                                publisher_name.as_bytes(),
-                            );
+        // owner can change which we don't track (yet?) so don't save, need to get when desired
+        let (tba, _owner, data) = self.kimap.get(&hash_note).map_err(|e| {
+            println!("Couldn't find {hash_note}: {e:?}");
+            AppStoreLogError::MetadataHashMismatch
+        })?;
 
-                            self.package_hashes.insert(
-                                PackageId::new(&package_name, &publisher_name),
-                                package_hash.clone(),
-                            );
+        if let Some(hash_note) = data {
+            let metadata_hash = String::from_utf8_lossy(&hash_note).to_string();
 
-                            match self.listed_packages.entry(package_hash) {
-                                std::collections::hash_map::Entry::Occupied(mut listing) => {
-                                    let listing = listing.get_mut();
-                                    listing.name = package_name;
-                                    listing.publisher = publisher_name;
-                                    listing.metadata_url = metadata_url;
-                                    listing.metadata_hash = metadata_hash;
-                                    listing.metadata = Some(metadata);
-                                }
-                                std::collections::hash_map::Entry::Vacant(listing) => {
-                                    listing.insert(PackageListing {
-                                        owner: "".to_string(),
-                                        name: package_name,
-                                        publisher: publisher_name,
-                                        metadata_url,
-                                        metadata_hash,
-                                        metadata: Some(metadata),
-                                    });
-                                }
-                            };
-                        }
+            // fetch metadata from the URI (currently only handling HTTP(S) URLs!)
+            // assert that the metadata hash matches the fetched data
+            let metadata = utils::fetch_metadata_from_url(&metadata_uri, &metadata_hash, 30)?;
+
+            let (package_name, publisher_name) = package_full_path
+                .split_once('.')
+                .ok_or(AppStoreLogError::InvalidPublisherName)
+                .and_then(|(package, publisher)| {
+                    if package.is_empty() || publisher.is_empty() {
+                        Err(AppStoreLogError::InvalidPublisherName)
+                    } else {
+                        Ok((package, publisher))
                     }
-                    Ok("~metadata-hash") => {
-                        let metadata_hash = String::from_utf8_lossy(&note.data).to_string();
-                        // generate ~metadata-uri notehash
-                        let meta_note_name = format!("~metadata-uri.{name}");
-                        let (_tba, _owner, data) =
-                            self.kimap.get(&meta_note_name).map_err(|e| {
-                                println!("Error getting metadata uri: {:?}", e);
-                                AppStoreLogError::DecodeLogError
-                            })?;
+                })?;
 
-                        if let Some(uri_note) = data {
-                            let metadata_url = String::from_utf8_lossy(&uri_note).to_string();
-                            let metadata =
-                                utils::fetch_metadata_from_url(&metadata_url, &metadata_hash, 5)?;
+            let package_id = PackageId::new(&package_name, &publisher_name);
 
-                            let (package_name, publisher_name) = name
-                                .split_once('.')
-                                .ok_or(AppStoreLogError::InvalidPublisherName)
-                                .and_then(|(package, publisher)| {
-                                    if package.is_empty() || publisher.is_empty() {
-                                        Err(AppStoreLogError::InvalidPublisherName)
-                                    } else {
-                                        Ok((package.to_string(), publisher.to_string()))
-                                    }
-                                })?;
-                            println!(
-                                "pkg_name and publisher_name: {package_name} {publisher_name}"
-                            );
-                            // do we need package hashes anymore? seems kinda unnecessary, use nodehashes instead?
-                            // not removing for now for state compatibility
-                            let package_hash = utils::generate_package_hash(
-                                &package_name,
-                                publisher_name.as_bytes(),
-                            );
+            println!("got new app with valid metadata: {package_id}");
 
-                            self.package_hashes.insert(
-                                PackageId::new(&package_name, &publisher_name),
-                                package_hash.clone(),
-                            );
-
-                            match self.listed_packages.entry(package_hash) {
-                                std::collections::hash_map::Entry::Occupied(mut listing) => {
-                                    let listing = listing.get_mut();
-                                    listing.name = package_name;
-                                    listing.publisher = publisher_name;
-                                    listing.metadata_url = metadata_url;
-                                    listing.metadata_hash = metadata_hash;
-                                    listing.metadata = Some(metadata);
-                                }
-                                std::collections::hash_map::Entry::Vacant(listing) => {
-                                    listing.insert(PackageListing {
-                                        owner: "".to_string(),
-                                        name: package_name,
-                                        publisher: publisher_name,
-                                        metadata_url,
-                                        metadata_hash,
-                                        metadata: Some(metadata),
-                                    });
-                                }
-                            };
-                        }
-                    }
-                    _ => {}
+            match self.packages.entry(package_id) {
+                std::collections::hash_map::Entry::Occupied(mut listing) => {
+                    let listing = listing.get_mut();
+                    listing.tba = tba;
+                    listing.metadata_uri = metadata_uri;
+                    listing.metadata_hash = metadata_hash;
+                    listing.metadata = Some(metadata);
                 }
-            }
-            _ => {}
+                std::collections::hash_map::Entry::Vacant(listing) => {
+                    listing.insert(PackageListing {
+                        tba,
+                        metadata_uri,
+                        metadata_hash,
+                        metadata: Some(metadata),
+                        state: None,
+                    });
+                }
+            };
         }
         self.last_saved_block = block_number;
         if update_listings {
@@ -494,14 +446,15 @@ impl State {
     /// this is done after ingesting a bunch of logs to remove fetches
     /// of stale metadata.
     pub fn update_listings(&mut self) {
-        for (_package_hash, listing) in self.listed_packages.iter_mut() {
+        for (package_id, listing) in self.packages.iter_mut() {
             if listing.metadata.is_none() {
-                if let Ok(metadata) =
-                    utils::fetch_metadata_from_url(&listing.metadata_url, &listing.metadata_hash, 5)
-                {
-                    let package_id = PackageId::new(&listing.name, &listing.publisher);
-                    if let Some(package_state) = self.downloaded_packages.get(&package_id) {
-                        auto_update(&self.our, package_id, &metadata, &package_state);
+                if let Ok(metadata) = utils::fetch_metadata_from_url(
+                    &listing.metadata_uri,
+                    &listing.metadata_hash,
+                    30,
+                ) {
+                    if let Some(package_state) = &listing.state {
+                        auto_update(&self.our, package_id, &metadata, package_state);
                     }
                     listing.metadata = Some(metadata);
                 }
@@ -516,7 +469,7 @@ impl State {
 /// and install it if successful.
 fn auto_update(
     our: &Address,
-    package_id: PackageId,
+    package_id: &PackageId,
     metadata: &Erc721Metadata,
     package_state: &PackageState,
 ) {
@@ -526,22 +479,22 @@ fn auto_update(
             .code_hashes
             .get(&metadata.properties.current_version);
         if let Some(mirrored_from) = &package_state.mirrored_from
-            && Some(&package_state.our_version) != latest_version_hash
+            && Some(&package_state.our_version_hash) != latest_version_hash
         {
             println!(
                 "auto-updating package {package_id} from {} to {} using mirror {mirrored_from}",
                 metadata
                     .properties
                     .code_hashes
-                    .get(&package_state.our_version)
-                    .unwrap_or(&package_state.our_version),
+                    .get(&package_state.our_version_hash)
+                    .unwrap_or(&package_state.our_version_hash),
                 metadata.properties.current_version,
             );
             Request::to(our)
                 .body(
                     serde_json::to_vec(&LocalRequest::Download(DownloadRequest {
                         package_id: crate::kinode::process::main::PackageId::from_process_lib(
-                            package_id,
+                            package_id.clone(),
                         ),
                         download_from: mirrored_from.clone(),
                         mirror: package_state.mirroring,
