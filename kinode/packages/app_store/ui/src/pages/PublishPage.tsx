@@ -25,7 +25,6 @@ export default function PublishPage() {
   const [publisherId, setPublisherId] = useState<string>(window.our?.node || "");
   const [metadataUrl, setMetadataUrl] = useState<string>("");
   const [metadataHash, setMetadataHash] = useState<string>("");
-  const [isUpdate, setIsUpdate] = useState<boolean>(false);
   const [myPublishedApps, setMyPublishedApps] = useState<AppInfo[]>([]);
 
   useEffect(() => {
@@ -33,7 +32,6 @@ export default function PublishPage() {
     if (app) {
       setPackageName(app.package);
       setPublisherId(app.publisher);
-      setIsUpdate(true);
     }
   }, [state])
 
@@ -65,26 +63,39 @@ export default function PublishPage() {
       e.preventDefault();
       e.stopPropagation();
 
-      if (!publicClient) {
+      if (!publicClient || !address) {
         openConnectModal?.();
         return;
       }
 
-      let node = window.our?.node || "0x";
-      let metadata = metadataHash;
-
-      if (isUpdate) {
-        node = `${packageName}.${window.our?.node || "0x"}`;
-      }
-
       try {
+        // Check if the package already exists and get its TBA
         let data = await publicClient.readContract({
           abi: kinomapAbi,
           address: KINOMAP,
           functionName: 'get',
-          args: [kinohash(node)]
+          args: [kinohash(`${packageName}.${publisherId}`)]
         });
 
+        let [tba, owner, _data] = data as [string, string, string];
+        let isUpdate = Boolean(tba && tba !== '0x' && owner === address);
+        let currentTBA = isUpdate ? tba as `0x${string}` : null;
+
+        // If the package doesn't exist, check for the publisher's TBA
+        if (!currentTBA) {
+          data = await publicClient.readContract({
+            abi: kinomapAbi,
+            address: KINOMAP,
+            functionName: 'get',
+            args: [kinohash(publisherId)]
+          });
+
+          [tba, owner, _data] = data as [string, string, string];
+          isUpdate = false; // It's a new package, but we might have a publisher TBA
+          currentTBA = (tba && tba !== '0x') ? tba as `0x${string}` : null;
+        }
+
+        let metadata = metadataHash;
         if (!metadata) {
           const metadataResponse = await fetch(metadataUrl);
           await metadataResponse.json(); // confirm it's valid JSON
@@ -93,13 +104,11 @@ export default function PublishPage() {
         }
 
         const multicall = encodeMulticalls(metadataUrl, metadata);
-        const args = isUpdate ? multicall : encodeIntoMintCall(multicall, address!, packageName);
-
-        const [tba, _owner, _data] = data || [];
+        const args = isUpdate ? multicall : encodeIntoMintCall(multicall, address, packageName);
 
         writeContract({
           abi: mechAbi,
-          address: tba as `0x${string}`,
+          address: currentTBA || KINOMAP,
           functionName: 'execute',
           args: [
             isUpdate ? MULTICALL : KINOMAP,
@@ -115,13 +124,12 @@ export default function PublishPage() {
         setPublisherId(window.our?.node || "");
         setMetadataUrl("");
         setMetadataHash("");
-        setIsUpdate(false);
 
       } catch (error) {
         console.error(error);
       }
     },
-    [publicClient, openConnectModal, packageName, publisherId, address, metadataUrl, metadataHash, isUpdate, writeContract]
+    [publicClient, openConnectModal, packageName, publisherId, address, metadataUrl, metadataHash, writeContract]
   );
 
   const unpublishPackage = useCallback(
@@ -132,17 +140,19 @@ export default function PublishPage() {
           return;
         }
 
-        const node = `${packageName}.${window.our?.node || "0x"}`;
-        const nodehash = kinohash(node);
-
         const data = await publicClient.readContract({
           abi: kinomapAbi,
           address: KINOMAP,
           functionName: 'get',
-          args: [nodehash]
+          args: [kinohash(`${packageName}.${publisherName}`)]
         });
 
-        const [tba, _owner, _data] = data || [];
+        const [tba, _owner, _data] = data as [string, string, string];
+
+        if (!tba || tba === '0x') {
+          console.error("No TBA found for this package");
+          return;
+        }
 
         const multicall = encodeMulticalls("", "");
 
@@ -164,20 +174,6 @@ export default function PublishPage() {
     },
     [publicClient, openConnectModal, writeContract]
   );
-
-  const checkIfUpdate = useCallback(() => {
-    if (isUpdate) return;
-
-    if (
-      packageName &&
-      publisherId &&
-      apps.find(
-        (app) => app.package === packageName && app.publisher === publisherId
-      )
-    ) {
-      setIsUpdate(true);
-    }
-  }, [apps, packageName, publisherId, isUpdate]);
 
   return (
     <div className="publish-page">
@@ -201,15 +197,6 @@ export default function PublishPage() {
       ) : (
         <form className="publish-form" onSubmit={publishPackage}>
           <div className="form-group">
-            <input
-              type="checkbox"
-              id="update"
-              checked={isUpdate}
-              onChange={() => setIsUpdate(!isUpdate)}
-            />
-            <label htmlFor="update">Update existing package</label>
-          </div>
-          <div className="form-group">
             <label htmlFor="package-name">Package Name</label>
             <input
               id="package-name"
@@ -218,7 +205,6 @@ export default function PublishPage() {
               placeholder="my-package"
               value={packageName}
               onChange={(e) => setPackageName(e.target.value)}
-              onBlur={checkIfUpdate}
             />
           </div>
           <div className="form-group">
@@ -229,7 +215,6 @@ export default function PublishPage() {
               required
               value={publisherId}
               onChange={(e) => setPublisherId(e.target.value)}
-              onBlur={checkIfUpdate}
             />
           </div>
           <div className="form-group">
@@ -265,7 +250,7 @@ export default function PublishPage() {
 
       {isConfirmed && (
         <div className="message success">
-          Package {isUpdate ? 'updated' : 'published'} successfully!
+          Package published successfully!
         </div>
       )}
       {error && (

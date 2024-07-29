@@ -16,6 +16,7 @@ use std::str::FromStr;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum AppStoreLogError {
     NoBlockNumber,
+    GetNameError,
     DecodeLogError,
     PackageHashMismatch,
     InvalidPublisherName,
@@ -28,6 +29,7 @@ impl std::fmt::Display for AppStoreLogError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             AppStoreLogError::NoBlockNumber => write!(f, "log with no block number"),
+            AppStoreLogError::GetNameError => write!(f, "no corresponding name for namehash found"),
             AppStoreLogError::DecodeLogError => write!(f, "error decoding log data"),
             AppStoreLogError::PackageHashMismatch => write!(f, "mismatched package hash"),
             AppStoreLogError::InvalidPublisherName => write!(f, "invalid publisher name"),
@@ -371,8 +373,8 @@ impl State {
 
         // use kns_indexer to convert nodehash to a kimap name
         let package_full_path =
-            net::get_name(&note.nodehash.to_string(), log.block_number, Some(5))
-                .ok_or(AppStoreLogError::DecodeLogError)?;
+            net::get_name(&note.nodehash.to_string(), log.block_number, Some(10))
+                .ok_or(AppStoreLogError::GetNameError)?;
 
         // the app store exclusively looks for ~metadata-uri postings: if one is
         // observed, we then *query* for ~metadata-hash to verify the content

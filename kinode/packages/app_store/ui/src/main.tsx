@@ -10,8 +10,6 @@ import {
 import { WagmiProvider, http } from 'wagmi';
 import {
   optimism,
-  anvil,
-  mainnet
 } from 'wagmi/chains';
 import {
   QueryClientProvider,
@@ -27,9 +25,7 @@ const config = getDefaultConfig({
   chains: [optimism],
   ssr: false,
   transports: {
-    [anvil.id]: http(),
     [optimism.id]: http(),
-    [mainnet.id]: http(),
   }
 });
 
