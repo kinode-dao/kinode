@@ -1,4 +1,4 @@
-use crate::core::{LazyLoadBlob, MessageType};
+use crate::core::LazyLoadBlob;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -142,6 +142,13 @@ pub enum HttpServerAction {
     },
     /// Sending will close a socket the process controls.
     WebSocketClose(u32),
+}
+
+/// Whether the WebSocketPush is a request or a response.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MessageType {
+    Request,
+    Response,
 }
 
 /// The possible message types for WebSocketPush. Ping and Pong are limited to 125 bytes
