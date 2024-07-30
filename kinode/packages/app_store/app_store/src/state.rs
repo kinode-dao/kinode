@@ -3,7 +3,7 @@ use crate::{KIMAP_ADDRESS, VFS_TIMEOUT};
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
-    eth, kernel_types as kt, kimap, net, println, vfs, Address, NodeId, PackageId, Request,
+    eth, kernel_types as kt, kimap, println, vfs, Address, NodeId, PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -373,8 +373,7 @@ impl State {
 
         // use kns_indexer to convert nodehash to a kimap name
         let package_full_path =
-            net::get_name(&note.nodehash.to_string(), log.block_number, Some(10))
-                .ok_or(AppStoreLogError::GetNameError)?;
+            kimap::resolve_full_name(&log, Some(10)).ok_or(AppStoreLogError::GetNameError)?;
 
         // the app store exclusively looks for ~metadata-uri postings: if one is
         // observed, we then *query* for ~metadata-hash to verify the content

@@ -307,7 +307,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             let decoded = kimap::contract::Note::decode_log_data(log.data(), true).unwrap();
 
             let note = String::from_utf8(decoded.note.to_vec())?;
-            let node_hash = decoded.nodehash.to_string();
+            let node_hash = decoded.parenthash.to_string();
 
             let Some(node_name) = get_parent_name(&state.names, &node_hash) else {
                 return Err(anyhow::anyhow!("parent node for note not found"));
