@@ -4,7 +4,7 @@ use crate::kinode::process::kns_indexer::{
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
     await_message, call_init, eth, kimap, net, print_to_terminal, println, Address, Message,
-    ProcessId, Request, Response,
+    Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -123,7 +123,7 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
     println!("subscribing to new logs...");
     subscribe_to_logs(&eth_provider, mints_filter.clone(), 1);
     subscribe_to_logs(&eth_provider, notes_filter.clone(), 2);
-    listen_to_new_blocks(&our); // sub_id: 3
+    listen_to_new_blocks(); // sub_id: 3
     println!("subscribed to logs successfully");
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
@@ -231,7 +231,7 @@ fn handle_eth_message(
             } else if e.id == 2 {
                 subscribe_to_logs(&eth_provider, notes_filter.clone(), 2);
             } else if e.id == 3 {
-                listen_to_new_blocks(&our);
+                listen_to_new_blocks();
             }
         }
         Err(e) => {
@@ -301,32 +301,36 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             let decoded = kimap::contract::Mint::decode_log_data(log.data(), true).unwrap();
             let parent_hash = decoded.parenthash.to_string();
             let child_hash = decoded.childhash.to_string();
-            let label = String::from_utf8(decoded.name.to_vec())?;
+            let name = String::from_utf8(decoded.name.to_vec())?;
 
-            let name = match get_parent_name(&state.names, &parent_hash) {
-                Some(parent_name) => format!("{}.{}", label, parent_name),
-                None => label,
+            if !kimap::valid_name(&name, false) {
+                return Err(anyhow::anyhow!("skipping invalid entry"));
+            }
+
+            let full_name = match get_parent_name(&state.names, &parent_hash) {
+                Some(parent_name) => format!("{name}.{parent_name}"),
+                None => name,
             };
 
-            state.names.insert(child_hash.clone(), name.clone());
+            state.names.insert(child_hash.clone(), full_name.clone());
 
             state.nodes.insert(
-                name.clone(),
+                full_name.clone(),
                 net::KnsUpdate {
-                    name: name.clone(),
+                    name: full_name.clone(),
                     public_key: String::new(),
                     ips: Vec::new(),
                     ports: BTreeMap::new(),
                     routers: Vec::new(),
                 },
             );
-            name
+            full_name
         }
         kimap::contract::Note::SIGNATURE_HASH => {
             let decoded = kimap::contract::Note::decode_log_data(log.data(), true).unwrap();
 
             let note = String::from_utf8(decoded.note.to_vec())?;
-            let node_hash = decoded.nodehash.to_string();
+            let node_hash = decoded.parenthash.to_string();
 
             let Some(node_name) = get_parent_name(&state.names, &node_hash) else {
                 return Err(anyhow::anyhow!("parent node for note not found"));
@@ -510,19 +514,18 @@ pub fn bytes_to_port(bytes: &[u8]) -> anyhow::Result<u16> {
     }
 }
 
-fn listen_to_new_blocks(our: &Address) {
+fn listen_to_new_blocks() {
     let eth_newheads_sub = eth::EthAction::SubscribeLogs {
         sub_id: 3,
         chain_id: CHAIN_ID,
         kind: eth::SubscriptionKind::NewHeads,
         params: eth::Params::Bool(false),
     };
-    let our_eth = Address::new(our.node(), ProcessId::new(Some("eth"), "distro", "sys"));
 
-    Request::new()
+    Request::to(("our", "eth", "distro", "sys"))
         .body(serde_json::to_vec(&eth_newheads_sub).unwrap())
-        .target(our_eth)
-        .send();
+        .send()
+        .unwrap();
 }
 
 fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter, sub_id: u64) {

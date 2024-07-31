@@ -3,7 +3,7 @@ use crate::{KIMAP_ADDRESS, VFS_TIMEOUT};
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
-    eth, kernel_types as kt, kimap, net, println, vfs, Address, NodeId, PackageId, Request,
+    eth, kernel_types as kt, kimap, println, vfs, Address, NodeId, PackageId, Request,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -371,31 +371,29 @@ impl State {
     ) -> Result<(), AppStoreLogError> {
         let block_number: u64 = log.block_number.ok_or(AppStoreLogError::NoBlockNumber)?;
 
-        let kimap::contract::Note::SIGNATURE_HASH = log.topics()[0] else {
-            return Ok(());
-        };
+        let note: kimap::Note =
+            kimap::decode_note_log(&log).ok_or(AppStoreLogError::DecodeLogError)?;
 
-        let note = kimap::contract::Note::decode_log_data(log.data(), false)
-            .map_err(|_| AppStoreLogError::DecodeLogError)?;
-
-        // use kns_indexer to convert nodehash to a kimap name
-        let package_full_path =
-            net::get_name(&note.nodehash.to_string(), log.block_number, Some(10))
-                .ok_or(AppStoreLogError::GetNameError)?;
+        let package_id = note
+            .parent_path
+            .split_once('.')
+            .ok_or(AppStoreLogError::InvalidPublisherName)
+            .and_then(|(package, publisher)| {
+                if package.is_empty() || publisher.is_empty() {
+                    Err(AppStoreLogError::InvalidPublisherName)
+                } else {
+                    Ok(PackageId::new(&package, &publisher))
+                }
+            })?;
 
         // the app store exclusively looks for ~metadata-uri postings: if one is
         // observed, we then *query* for ~metadata-hash to verify the content
         // at the URI.
         //
-        // this means that ~metadata-hash should be *posted before or at the same time* as ~metadata-uri!
-        let Ok("~metadata-uri") = std::str::from_utf8(&note.note) else {
-            return Ok(());
-        };
-
         let metadata_uri = String::from_utf8_lossy(&note.data).to_string();
 
         // generate ~metadata-hash notehash
-        let hash_note = format!("~metadata-hash.{package_full_path}");
+        let hash_note = format!("~metadata-hash.{}", note.parent_path);
 
         // owner can change which we don't track (yet?) so don't save, need to get when desired
         let (tba, _owner, data) = self.kimap.get(&hash_note).map_err(|e| {
@@ -403,51 +401,48 @@ impl State {
             AppStoreLogError::MetadataHashMismatch
         })?;
 
-        if let Some(hash_note) = data {
-            let metadata_hash = String::from_utf8_lossy(&hash_note).to_string();
+        let Some(hash_note) = data else {
+            return Err(AppStoreLogError::MetadataNotFound);
+        };
 
-            // fetch metadata from the URI (currently only handling HTTP(S) URLs!)
-            // assert that the metadata hash matches the fetched data
-            let metadata = utils::fetch_metadata_from_url(&metadata_uri, &metadata_hash, 30)?;
+        let metadata_hash = String::from_utf8_lossy(&hash_note).to_string();
 
-            let (package_name, publisher_name) = package_full_path
-                .split_once('.')
-                .ok_or(AppStoreLogError::InvalidPublisherName)
-                .and_then(|(package, publisher)| {
-                    if package.is_empty() || publisher.is_empty() {
-                        Err(AppStoreLogError::InvalidPublisherName)
-                    } else {
-                        Ok((package, publisher))
-                    }
-                })?;
+        // fetch metadata from the URI (currently only handling HTTP(S) URLs!)
+        // assert that the metadata hash matches the fetched data
+        let metadata = if update_listings {
+            Some(utils::fetch_metadata_from_url(
+                &metadata_uri,
+                &metadata_hash,
+                30,
+            )?)
+        } else {
+            None
+        };
 
-            let package_id = PackageId::new(&package_name, &publisher_name);
-
-            println!("got new app with valid metadata: {package_id}");
-
-            match self.packages.entry(package_id) {
-                std::collections::hash_map::Entry::Occupied(mut listing) => {
-                    let listing = listing.get_mut();
-                    listing.tba = tba;
-                    listing.metadata_uri = metadata_uri;
-                    listing.metadata_hash = metadata_hash;
-                    listing.metadata = Some(metadata);
+        match self.packages.entry(package_id) {
+            std::collections::hash_map::Entry::Occupied(mut listing) => {
+                let listing = listing.get_mut();
+                listing.tba = tba;
+                listing.metadata_uri = metadata_uri;
+                listing.metadata_hash = metadata_hash;
+                if update_listings {
+                    listing.metadata = metadata;
                 }
-                std::collections::hash_map::Entry::Vacant(listing) => {
-                    listing.insert(PackageListing {
-                        tba,
-                        metadata_uri,
-                        metadata_hash,
-                        metadata: Some(metadata),
-                        state: None,
-                    });
-                }
-            };
-        }
+            }
+            std::collections::hash_map::Entry::Vacant(listing) => {
+                listing.insert(PackageListing {
+                    tba,
+                    metadata_uri,
+                    metadata_hash,
+                    metadata,
+                    state: None,
+                });
+            }
+        };
         self.last_saved_block = block_number;
-        if update_listings {
-            // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
-        }
+        // if update_listings {
+        //     kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
+        // }
         Ok(())
     }
 
@@ -456,17 +451,13 @@ impl State {
     /// of stale metadata.
     pub fn update_listings(&mut self) {
         for (package_id, listing) in self.packages.iter_mut() {
-            if listing.metadata.is_none() {
-                if let Ok(metadata) = utils::fetch_metadata_from_url(
-                    &listing.metadata_uri,
-                    &listing.metadata_hash,
-                    30,
-                ) {
-                    if let Some(package_state) = &listing.state {
-                        auto_update(&self.our, package_id, &metadata, package_state);
-                    }
-                    listing.metadata = Some(metadata);
+            if let Ok(metadata) =
+                utils::fetch_metadata_from_url(&listing.metadata_uri, &listing.metadata_hash, 30)
+            {
+                if let Some(package_state) = &listing.state {
+                    auto_update(&self.our, package_id, &metadata, package_state);
                 }
+                listing.metadata = Some(metadata);
             }
         }
         // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
