@@ -2,15 +2,6 @@ import { multicallAbi, kinomapAbi, mechAbi, KINOMAP, MULTICALL, KINO_ACCOUNT_IMP
 import { encodeFunctionData, encodePacked, stringToHex } from "viem";
 
 export function encodeMulticalls(metadataUri: string, metadataHash: string) {
-    const metadataUriCall = encodeFunctionData({
-        abi: kinomapAbi,
-        functionName: 'note',
-        args: [
-            encodePacked(["bytes"], [stringToHex("~metadata-uri")]),
-            encodePacked(["bytes"], [stringToHex(metadataUri)]),
-        ]
-    })
-
     const metadataHashCall = encodeFunctionData({
         abi: kinomapAbi,
         functionName: 'note',
@@ -20,9 +11,18 @@ export function encodeMulticalls(metadataUri: string, metadataHash: string) {
         ]
     })
 
+    const metadataUriCall = encodeFunctionData({
+        abi: kinomapAbi,
+        functionName: 'note',
+        args: [
+            encodePacked(["bytes"], [stringToHex("~metadata-uri")]),
+            encodePacked(["bytes"], [stringToHex(metadataUri)]),
+        ]
+    })
+
     const calls = [
+        { target: KINOMAP, callData: metadataHashCall },
         { target: KINOMAP, callData: metadataUriCall },
-        { target: KINOMAP, callData: metadataHashCall }
     ];
 
     const multicall = encodeFunctionData({

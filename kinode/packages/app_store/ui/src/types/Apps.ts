@@ -10,9 +10,16 @@ export interface AppListing {
     package: string
     publisher: string
     metadata_hash: string
+    metadata_uri: string
     metadata?: OnchainPackageMetadata
     installed: boolean
     state?: PackageState
+}
+
+export interface MirrorCheckFile {
+    node: string;
+    is_online: boolean;
+    error: string | null;
 }
 
 export interface Erc721Properties {

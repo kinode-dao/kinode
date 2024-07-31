@@ -50,6 +50,13 @@ pub struct MirroringFile {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct MirrorCheckFile {
+    pub node: NodeId,
+    pub is_online: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RequestedPackage {
     pub from: NodeId,
     pub mirror: bool,

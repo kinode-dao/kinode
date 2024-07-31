@@ -1,4 +1,4 @@
-use crate::state::{PackageListing, State};
+use crate::state::{MirrorCheckFile, PackageListing, State};
 use crate::DownloadResponse;
 use kinode_process_lib::{
     http::{
@@ -7,6 +7,7 @@ use kinode_process_lib::{
     },
     println, Address, NodeId, PackageId, ProcessId, Request,
 };
+use kinode_process_lib::{SendError, SendErrorKind};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -22,6 +23,7 @@ pub fn init_frontend(our: &Address) {
         "/apps/:id/mirror",
         "/apps/:id/auto-update",
         "/apps/rebuild-index",
+        "/mirrorcheck/:node",
     ] {
         bind_http_path(path, true, false).expect("failed to bind http path");
     }
@@ -173,6 +175,7 @@ fn make_widget() -> String {
 /// - get detail about a specific app: GET /apps/:id
 /// - get capabilities for a specific downloaded app: GET /apps/:id/caps
 ///
+/// - get online/offline mirrors for a listed app: GET /mirrorcheck/:node
 /// - install a downloaded app, download a listed app: POST /apps/:id
 /// - uninstall/delete a downloaded app: DELETE /apps/:id
 /// - update a downloaded app: PUT /apps/:id
@@ -218,6 +221,7 @@ fn gen_package_info(id: &PackageId, listing: &PackageListing) -> serde_json::Val
             None => false,
         },
         "metadata_hash": listing.metadata_hash,
+        "metadata_uri": listing.metadata_uri,
         "metadata": listing.metadata,
         "state": match &listing.state {
             Some(state) => json!({
@@ -258,6 +262,54 @@ fn serve_paths(
                 .map(|(package_id, listing)| gen_package_info(package_id, listing))
                 .collect();
             return Ok((StatusCode::OK, None, serde_json::to_vec(&all)?));
+        }
+        // GET online/offline mirrors for a listed app
+        "/mirrorcheck/:node" => {
+            if method != Method::GET {
+                return Ok((
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    None,
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
+                ));
+            }
+            let Some(node) = url_params.get("node") else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing node").into_bytes(),
+                ));
+            };
+            if let Err(SendError { kind, .. }) = Request::to((node, "net", "distro", "sys"))
+                .body(b"checking your mirror status...")
+                .send_and_await_response(3)
+                .unwrap()
+            {
+                match kind {
+                    SendErrorKind::Timeout => {
+                        let check_reponse = MirrorCheckFile {
+                            node: node.to_string(),
+                            is_online: false,
+                            error: Some(format!("node {} timed out", node).to_string()),
+                        };
+                        return Ok((StatusCode::OK, None, serde_json::to_vec(&check_reponse)?));
+                    }
+                    SendErrorKind::Offline => {
+                        let check_reponse = MirrorCheckFile {
+                            node: node.to_string(),
+                            is_online: false,
+                            error: Some(format!("node {} is offline", node).to_string()),
+                        };
+                        return Ok((StatusCode::OK, None, serde_json::to_vec(&check_reponse)?));
+                    }
+                }
+            } else {
+                let check_reponse = MirrorCheckFile {
+                    node: node.to_string(),
+                    is_online: true,
+                    error: None,
+                };
+                return Ok((StatusCode::OK, None, serde_json::to_vec(&check_reponse)?));
+            }
         }
         // GET detail about a specific app
         // install an app: POST
