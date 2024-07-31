@@ -7,8 +7,8 @@ use {
     alloy_primitives::keccak256,
     alloy_sol_types::SolEvent,
     kinode_process_lib::{
-        eth, get_blob, get_state, http, kernel_types as kt, kimap, println, vfs, Address,
-        LazyLoadBlob, PackageId, ProcessId, Request,
+        eth, get_blob, get_state, http, kernel_types as kt, kimap, print_to_terminal, println, vfs,
+        Address, LazyLoadBlob, PackageId, ProcessId, Request,
     },
     std::collections::HashSet,
 };
@@ -101,7 +101,7 @@ pub fn fetch_and_subscribe_logs(state: &mut State) {
         &filter.clone().from_block(state.last_saved_block),
     ) {
         if let Err(e) = state.ingest_contract_event(log, false) {
-            println!("error ingesting log: {e:?}");
+            print_to_terminal(1, &format!("error ingesting log: {e}"));
         };
     }
     state.update_listings();
