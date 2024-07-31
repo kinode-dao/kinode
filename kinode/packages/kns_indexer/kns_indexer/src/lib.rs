@@ -110,21 +110,17 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         ),
     );
 
+    // subscribe to logs first, so no logs are missed
+    println!("subscribing to new logs...");
+    eth_provider.subscribe_loop(1, mints_filter.clone());
+    eth_provider.subscribe_loop(2, notes_filter.clone());
+    listen_to_new_blocks(); // sub_id: 3
+
     // if block in state is < current_block, get logs from that part.
     println!("syncing old logs...");
     fetch_and_process_logs(&eth_provider, &our, &mut state, mints_filter.clone());
     fetch_and_process_logs(&eth_provider, &our, &mut state, notes_filter.clone());
     println!("done syncing old logs.");
-
-    let current_block = eth_provider.get_block_number().unwrap();
-    println!("current block: {}", current_block);
-    state.last_block = current_block;
-
-    println!("subscribing to new logs...");
-    subscribe_to_logs(&eth_provider, mints_filter.clone(), 1);
-    subscribe_to_logs(&eth_provider, notes_filter.clone(), 2);
-    listen_to_new_blocks(); // sub_id: 3
-    println!("subscribed to logs successfully");
 
     let mut pending_requests: BTreeMap<u64, Vec<IndexerRequests>> = BTreeMap::new();
 
@@ -227,9 +223,9 @@ fn handle_eth_message(
         Ok(Err(e)) => {
             println!("got eth subscription error ({e:?}), resubscribing");
             if e.id == 1 {
-                subscribe_to_logs(&eth_provider, mints_filter.clone(), 1);
+                eth_provider.subscribe_loop(1, mints_filter.clone());
             } else if e.id == 2 {
-                subscribe_to_logs(&eth_provider, notes_filter.clone(), 2);
+                eth_provider.subscribe_loop(2, notes_filter.clone());
             } else if e.id == 3 {
                 listen_to_new_blocks();
             }
@@ -526,17 +522,4 @@ fn listen_to_new_blocks() {
         .body(serde_json::to_vec(&eth_newheads_sub).unwrap())
         .send()
         .unwrap();
-}
-
-fn subscribe_to_logs(eth_provider: &eth::Provider, filter: eth::Filter, sub_id: u64) {
-    loop {
-        match eth_provider.subscribe(sub_id, filter.clone()) {
-            Ok(()) => break,
-            Err(_) => {
-                println!("failed to subscribe to chain! trying again in 5s...");
-                std::thread::sleep(std::time::Duration::from_secs(5));
-                continue;
-            }
-        }
-    }
 }

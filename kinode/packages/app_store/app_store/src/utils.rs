@@ -96,16 +96,17 @@ pub fn app_store_filter(state: &State) -> eth::Filter {
 pub fn fetch_and_subscribe_logs(state: &mut State) {
     let filter = app_store_filter(state);
     // get past logs, subscribe to new ones.
+    // subscribe first so we don't miss any logs
+    state.kimap.provider.subscribe_loop(1, filter.clone());
     for log in fetch_logs(
         &state.kimap.provider,
-        &filter.clone().from_block(state.last_saved_block),
+        &filter.from_block(state.last_saved_block),
     ) {
         if let Err(e) = state.ingest_contract_event(log, false) {
             print_to_terminal(1, &format!("error ingesting log: {e}"));
         };
     }
     state.update_listings();
-    state.kimap.provider.subscribe_loop(1, filter);
 }
 
 /// fetch logs from the chain with a given filter

@@ -1,6 +1,5 @@
 use crate::{utils, DownloadRequest, LocalRequest};
 use crate::{KIMAP_ADDRESS, VFS_TIMEOUT};
-use alloy_sol_types::SolEvent;
 use kinode_process_lib::kernel_types::Erc721Metadata;
 use kinode_process_lib::{
     eth, kernel_types as kt, kimap, println, vfs, Address, NodeId, PackageId, Request,
@@ -17,7 +16,7 @@ use std::str::FromStr;
 pub enum AppStoreLogError {
     NoBlockNumber,
     GetNameError,
-    DecodeLogError,
+    DecodeLogError(kimap::DecodeLogError),
     PackageHashMismatch,
     InvalidPublisherName,
     MetadataNotFound,
@@ -30,7 +29,7 @@ impl std::fmt::Display for AppStoreLogError {
         match self {
             AppStoreLogError::NoBlockNumber => write!(f, "log with no block number"),
             AppStoreLogError::GetNameError => write!(f, "no corresponding name for namehash found"),
-            AppStoreLogError::DecodeLogError => write!(f, "error decoding log data"),
+            AppStoreLogError::DecodeLogError(e) => write!(f, "error decoding log data: {e:?}"),
             AppStoreLogError::PackageHashMismatch => write!(f, "mismatched package hash"),
             AppStoreLogError::InvalidPublisherName => write!(f, "invalid publisher name"),
             AppStoreLogError::MetadataNotFound => write!(f, "metadata not found"),
@@ -365,7 +364,7 @@ impl State {
         let block_number: u64 = log.block_number.ok_or(AppStoreLogError::NoBlockNumber)?;
 
         let note: kimap::Note =
-            kimap::decode_note_log(&log).ok_or(AppStoreLogError::DecodeLogError)?;
+            kimap::decode_note_log(&log).map_err(AppStoreLogError::DecodeLogError)?;
 
         let package_id = note
             .parent_path
@@ -385,20 +384,24 @@ impl State {
         //
         let metadata_uri = String::from_utf8_lossy(&note.data).to_string();
 
-        // generate ~metadata-hash notehash
-        let hash_note = format!("~metadata-hash.{}", note.parent_path);
+        let (tba, metadata_hash) = if update_listings {
+            // generate ~metadata-hash full-path
+            let hash_note = format!("~metadata-hash.{}", note.parent_path);
 
-        // owner can change which we don't track (yet?) so don't save, need to get when desired
-        let (tba, _owner, data) = self.kimap.get(&hash_note).map_err(|e| {
-            println!("Couldn't find {hash_note}: {e:?}");
-            AppStoreLogError::MetadataHashMismatch
-        })?;
+            // owner can change which we don't track (yet?) so don't save, need to get when desired
+            let (tba, _owner, data) = self.kimap.get(&hash_note).map_err(|e| {
+                println!("Couldn't find {hash_note}: {e:?}");
+                AppStoreLogError::MetadataHashMismatch
+            })?;
 
-        let Some(hash_note) = data else {
-            return Err(AppStoreLogError::MetadataNotFound);
+            let Some(hash_note) = data else {
+                return Err(AppStoreLogError::MetadataNotFound);
+            };
+
+            (tba, String::from_utf8_lossy(&hash_note).to_string())
+        } else {
+            (eth::Address::ZERO, "".to_string())
         };
-
-        let metadata_hash = String::from_utf8_lossy(&hash_note).to_string();
 
         // fetch metadata from the URI (currently only handling HTTP(S) URLs!)
         // assert that the metadata hash matches the fetched data
@@ -415,10 +418,10 @@ impl State {
         match self.packages.entry(package_id) {
             std::collections::hash_map::Entry::Occupied(mut listing) => {
                 let listing = listing.get_mut();
-                listing.tba = tba;
                 listing.metadata_uri = metadata_uri;
-                listing.metadata_hash = metadata_hash;
                 if update_listings {
+                    listing.tba = tba;
+                    listing.metadata_hash = metadata_hash;
                     listing.metadata = metadata;
                 }
             }
@@ -444,14 +447,41 @@ impl State {
     /// of stale metadata.
     pub fn update_listings(&mut self) {
         for (package_id, listing) in self.packages.iter_mut() {
+            // if publisher is `sys`, we can skip
+            if package_id.publisher() == "sys" {
+                continue;
+            }
+
+            // generate ~metadata-hash full-path
+            let hash_note = format!(
+                "~metadata-hash.{}",
+                package_id.to_string().replace(":", ".")
+            );
+
+            // owner can change which we don't track (yet?) so don't save, need to get when desired
+            let Ok((tba, _owner, data)) = self.kimap.get(&hash_note) else {
+                println!("Couldn't find {hash_note}");
+                continue;
+            };
+
+            let Some(hash_note) = data else {
+                println!("No data for {hash_note}");
+                continue;
+            };
+
+            let metadata_hash = String::from_utf8_lossy(&hash_note).to_string();
+
             if let Ok(metadata) =
-                utils::fetch_metadata_from_url(&listing.metadata_uri, &listing.metadata_hash, 30)
+                utils::fetch_metadata_from_url(&listing.metadata_uri, &metadata_hash, 30)
             {
                 if let Some(package_state) = &listing.state {
                     auto_update(&self.our, package_id, &metadata, package_state);
                 }
                 listing.metadata = Some(metadata);
             }
+
+            listing.tba = tba;
+            listing.metadata_hash = metadata_hash;
         }
         // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
     }

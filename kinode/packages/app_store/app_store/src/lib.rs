@@ -576,7 +576,7 @@ fn handle_eth_sub_event(
     event: eth::SubscriptionResult,
 ) -> Result<(), AppStoreLogError> {
     let eth::SubscriptionResult::Log(log) = event else {
-        return Err(AppStoreLogError::DecodeLogError);
+        return Ok(()); // not a log event
     };
     state.ingest_contract_event(*log, true)
 }
