@@ -367,8 +367,6 @@ impl State {
         let note: kimap::Note =
             kimap::decode_note_log(&log).ok_or(AppStoreLogError::DecodeLogError)?;
 
-        println!("package_path: {}", note.parent_path);
-
         let package_id = note
             .parent_path
             .split_once('.')
@@ -445,8 +443,6 @@ impl State {
     /// this is done after ingesting a bunch of logs to remove fetches
     /// of stale metadata.
     pub fn update_listings(&mut self) {
-        println!("updating listings");
-        println!("{:?}", self.packages.keys());
         for (package_id, listing) in self.packages.iter_mut() {
             if let Ok(metadata) =
                 utils::fetch_metadata_from_url(&listing.metadata_uri, &listing.metadata_hash, 30)
