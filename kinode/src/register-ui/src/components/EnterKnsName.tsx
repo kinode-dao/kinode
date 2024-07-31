@@ -6,6 +6,13 @@ import { usePublicClient } from 'wagmi'
 import { KINOMAP, kinomapAbi } from '../abis'
 import { kinohash } from "../utils/kinohash";
 
+export const NAME_URL = "Name must contain only valid characters (a-z, 0-9, and -)";
+export const NAME_LENGTH = "Name must be 9 characters or more";
+export const NAME_CLAIMED = "Name is already claimed";
+export const NAME_INVALID_PUNY = "Unsupported punycode character";
+export const NAME_NOT_OWNER = "Name already exists and does not belong to this wallet";
+export const NAME_NOT_REGISTERED = "Name is not registered";
+
 type ClaimOsNameProps = {
   name: string;
   setName: React.Dispatch<React.SetStateAction<string>>;
@@ -23,12 +30,6 @@ function EnterKnsName({
   triggerNameCheck,
   isReset = false,
 }: ClaimOsNameProps) {
-  const NAME_URL =
-    "Name must be a valid URL without subdomains (A-Z, a-z, 0-9, and punycode)";
-  const NAME_LENGTH = "Name must be 9 characters or more";
-  const NAME_CLAIMED = "Name is already claimed";
-  const NAME_INVALID_PUNY = "Unsupported punycode character";
-
   const client = usePublicClient();
   const debouncer = useRef<NodeJS.Timeout | null>(null);
 
@@ -68,7 +69,7 @@ function EnterKnsName({
         if (validities.length === 0 || index !== -1 && normalized.length > 2) {
           try {
             const namehash = kinohash(normalized)
-            // maybe separate into helper function for readability? 
+            // maybe separate into helper function for readability?
             // also note picking the right chain ID & address!
             const data = await client?.readContract({
               address: KINOMAP,

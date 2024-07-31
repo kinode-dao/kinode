@@ -19,12 +19,7 @@ import { useAccount, usePublicClient, useWaitForTransactionReceipt, useWriteCont
 import { useConnectModal, useAddRecentTransaction } from "@rainbow-me/rainbowkit";
 import { kinohash } from "../utils/kinohash";
 
-const NAME_INVALID_PUNY = "Unsupported punycode character";
-const NAME_NOT_OWNER = "Name does not belong to this wallet";
-const NAME_NOT_REGISTERED = "Name is not registered";
-const NAME_URL =
-  "Name must be a valid URL without subdomains (A-Z, a-z, 0-9, and punycode)";
-
+import { NAME_URL, NAME_INVALID_PUNY, NAME_NOT_OWNER, NAME_NOT_REGISTERED } from "../components/EnterKnsName";
 
 interface ResetProps extends PageProps { }
 
@@ -109,7 +104,7 @@ function ResetKnsName({
           const namehash = kinohash(normalized)
           console.log('normalized', normalized)
           console.log('namehash', namehash)
-          // maybe separate into helper function for readability? 
+          // maybe separate into helper function for readability?
           // also note picking the right chain ID & address!
           const data = await client?.readContract({
             address: KINOMAP,
