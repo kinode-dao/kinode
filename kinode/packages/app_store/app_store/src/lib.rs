@@ -24,7 +24,7 @@ use ft_worker_lib::{
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob,
     http::{self, WsMessageType},
-    println, vfs, Address, LazyLoadBlob, Message, PackageId, Request, Response,
+    kimap, vfs, Address, LazyLoadBlob, Message, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{AppStoreLogError, PackageState, RequestedPackage, State};
