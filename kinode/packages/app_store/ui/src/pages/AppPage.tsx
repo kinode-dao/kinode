@@ -97,7 +97,7 @@ export default function AppPage() {
   const handleAutoUpdate = () => setAutoUpdate(app, !app.state?.auto_update);
   const handleLaunch = () => {
     console.log("Launching app:", app.package);
-    window.open(`/${app.package}${app.package}:${app.publisher}`, '_blank');
+    window.open(`/${app.package}:${app.package}:${app.publisher}`, '_blank');
   };
 
   const isDownloaded = app.state !== null;
