@@ -6,14 +6,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <link rel="stylesheet" href="/kinode.css">
+    <link href="https://fonts.googleapis.com/css2?family=Kode+Mono:wght@700&display=swap" rel="stylesheet">
     <script src="/our.js"></script>
     <script>
         document.title = window.our.node + " - settings";
     </script>
     <style>
-        body {
-            font-family: 'Courier New', Courier, monospace;
-            color: #f0f0f0;
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6,
+        p,
+        a,
+        li {
+            font-family: 'Kode Mono', monospace;
         }
 
         h1 {
@@ -33,7 +41,8 @@
                 "diagnostics diagnostics diagnostics"
                 "node-info pings pings"
                 "eth-rpc-providers eth-rpc-providers eth-rpc-settings"
-                "kernel kernel kernel";
+                "kernel kernel kernel"
+                "kinode-css kinode-css kinode-css";
             padding: 20px;
             max-width: 960px;
             min-width: 300px;
@@ -78,6 +87,16 @@
 
         article#kernel {
             grid-area: kernel;
+        }
+
+        article#kinode-css {
+            grid-area: kinode-css;
+        }
+
+        textarea#stylesheet-editor {
+            width: 100%;
+            min-width: 300px;
+            min-height: 400px;
         }
 
         div#provider-edits {
@@ -198,6 +217,12 @@
         <article id="kernel">
             <h2>running processes</h2>
             <ul id="process-map"></ul>
+        </article>
+
+        <article id="kinode-css">
+            <h2>stylesheet editor</h2>
+            <textarea id="stylesheet-editor"></textarea>
+            <button id="save-stylesheet">update kinode.css</button>
         </article>
 
 

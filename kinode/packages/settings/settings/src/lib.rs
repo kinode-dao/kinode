@@ -1,4 +1,7 @@
-use kinode_process_lib::{println, *};
+use kinode_process_lib::{
+    await_message, call_init, eth, get_blob, homepage, http, kernel_types, net, println, Address,
+    LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError, SendErrorKind,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 extern crate base64;
@@ -16,6 +19,7 @@ enum SettingsRequest {
     EthConfig(eth::EthConfigAction),
     Shutdown,
     KillProcess(ProcessId),
+    SetStylesheet(String),
 }
 
 type SettingsResponse = Result<Option<SettingsData>, SettingsError>;
@@ -44,6 +48,7 @@ struct SettingsState {
     pub eth_rpc_providers: Option<eth::SavedConfigs>,
     pub eth_rpc_access_settings: Option<eth::AccessSettings>,
     pub process_map: Option<kernel_types::ProcessMap>,
+    pub stylesheet: Option<String>,
 }
 
 impl SettingsState {
@@ -56,6 +61,7 @@ impl SettingsState {
             eth_rpc_providers: None,
             eth_rpc_access_settings: None,
             process_map: None,
+            stylesheet: None,
         }
     }
 
@@ -152,6 +158,16 @@ impl SettingsState {
         };
         self.process_map = Some(process_map);
 
+        // stylesheet
+        if let Ok(bytes) = (kinode_process_lib::vfs::File {
+            path: "/homepage:sys/pkg/kinode.css".to_string(),
+            timeout: 5,
+        }
+        .read())
+        {
+            self.stylesheet = Some(String::from_utf8_lossy(&bytes).to_string());
+        }
+
         Ok(())
     }
 }
@@ -164,26 +180,13 @@ wit_bindgen::generate!({
 call_init!(initialize);
 fn initialize(our: Address) {
     // add ourselves to the homepage
-    Request::to(("our", "homepage", "homepage", "sys"))
-        .body(
-            serde_json::json!({
-                "Add": {
-                    "label": "Settings",
-                    "icon": ICON,
-                    "path": "/", // just our root
-                }
-            })
-            .to_string()
-            .as_bytes()
-            .to_vec(),
-        )
-        .send()
-        .unwrap();
+    homepage::add_to_homepage("Settings", Some(ICON), Some("/"), None);
 
     // Serve the index.html and other UI files found in pkg/ui at the root path.
-    http::serve_ui(&our, "ui", true, false, vec!["/"]).unwrap();
-    http::bind_http_path("/ask", true, false).unwrap();
-    http::bind_ws_path("/", true, false).unwrap();
+    // Serving securely at `settings-sys` subdomain
+    http::secure_serve_ui(&our, "ui", vec!["/"]).unwrap();
+    http::secure_bind_http_path("/ask").unwrap();
+    http::secure_bind_ws_path("/", false).unwrap();
 
     // Grab our state, then enter the main event loop.
     let mut state: SettingsState = SettingsState::new(our);
@@ -400,6 +403,26 @@ fn handle_settings_request(
             {
                 return SettingsResponse::Err(SettingsError::KernelNonresponsive);
             }
+        }
+        SettingsRequest::SetStylesheet(stylesheet) => {
+            let Ok(()) = kinode_process_lib::vfs::File {
+                path: "/homepage:sys/pkg/kinode.css".to_string(),
+                timeout: 5,
+            }
+            .write(stylesheet.as_bytes()) else {
+                return SettingsResponse::Err(SettingsError::KernelNonresponsive);
+            };
+            Request::to(("our", "homepage", "homepage", "sys"))
+                .body(
+                    serde_json::json!({ "SetStylesheet": stylesheet })
+                        .to_string()
+                        .as_bytes(),
+                )
+                .send()
+                .unwrap();
+            state.stylesheet = Some(stylesheet);
+            state.ws_update();
+            return SettingsResponse::Ok(None);
         }
     }
 
