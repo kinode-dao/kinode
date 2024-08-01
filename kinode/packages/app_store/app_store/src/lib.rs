@@ -24,7 +24,7 @@ use ft_worker_lib::{
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob,
     http::{self, WsMessageType},
-    kimap, vfs, Address, LazyLoadBlob, Message, PackageId, Request, Response,
+    kimap, println, vfs, Address, LazyLoadBlob, Message, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{AppStoreLogError, PackageState, RequestedPackage, State};
@@ -162,7 +162,9 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                     .as_bytes()
                     .to_vec(),
                 };
-                http::send_ws_push(6969, WsMessageType::Text, ws_blob);
+                for channel_id in state.ui_ws_channels.iter() {
+                    http::send_ws_push(*channel_id, WsMessageType::Text, ws_blob.clone());
+                }
             }
             Req::FTWorkerResult(r) => {
                 println!("got weird ft_worker result: {r:?}");
@@ -192,6 +194,10 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                 }
                 if let http::HttpServerRequest::Http(req) = incoming {
                     http_api::handle_http_request(state, &req)?;
+                } else if let http::HttpServerRequest::WebSocketOpen { channel_id, .. } = incoming {
+                    state.ui_ws_channels.insert(channel_id);
+                } else if let http::HttpServerRequest::WebSocketClose { 0: channel_id } = incoming {
+                    state.ui_ws_channels.remove(&channel_id);
                 }
             }
         }

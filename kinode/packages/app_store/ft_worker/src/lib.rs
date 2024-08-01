@@ -64,7 +64,7 @@ fn handle_send(our: &Address, target: &Address, file_name: &str, timeout: u64) -
     let file_bytes = blob.bytes;
     let mut file_size = file_bytes.len() as u64;
     let mut offset: u64 = 0;
-    let chunk_size: u64 = 1048576; // 1MB, can be changed
+    let chunk_size: u64 = 262144; // 256KB
     let total_chunks = (file_size as f64 / chunk_size as f64).ceil() as u64;
     // send a file to another worker
     // start by telling target to expect a file,

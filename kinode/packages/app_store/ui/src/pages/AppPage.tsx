@@ -1,43 +1,111 @@
-import React, { useState } from "react";
-import { useParams } from "react-router-dom";
-import { FaDownload, FaSync, FaTrash, FaMagnet, FaCog, FaCheck, FaTimes, FaRocket, FaLink, FaChevronDown, FaChevronUp, FaShieldAlt } from "react-icons/fa";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { FaDownload, FaSync, FaTrash, FaMagnet, FaCog, FaCheck, FaTimes, FaRocket, FaLink, FaChevronDown, FaChevronUp, FaShieldAlt, FaSpinner, FaPlay, FaExclamationTriangle } from "react-icons/fa";
 import useAppsStore from "../store";
 import { appId } from "../utils/app";
 import { MirrorCheckFile } from "../types/Apps";
 
 export default function AppPage() {
-  const { installApp, updateApp, uninstallApp, approveCaps, setMirroring, setAutoUpdate, checkMirror, apps } = useAppsStore();
+  const { installApp, updateApp, uninstallApp, approveCaps, setMirroring, setAutoUpdate, checkMirror, apps, downloadApp, getCaps, getApp } = useAppsStore();
   const { id } = useParams();
+
   const app = apps.find(a => appId(a) === id);
   const [showMetadata, setShowMetadata] = useState(true);
   const [showLocalInfo, setShowLocalInfo] = useState(true);
   const [mirrorStatuses, setMirrorStatuses] = useState<{ [mirror: string]: MirrorCheckFile | null }>({});
+  const [selectedMirror, setSelectedMirror] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [caps, setCaps] = useState<any>(null);
+  const [showCaps, setShowCaps] = useState(false);
+  const [localProgress, setLocalProgress] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (app) {
+      checkMirrors();
+      fetchCaps();
+    }
+  }, [app]);
 
   if (!app) {
     return <div className="app-page"><h4>App details not found for {id}</h4></div>;
   }
 
-  const handleInstall = () => app && installApp(app);
-  const handleUpdate = () => app && updateApp(app);
-  const handleUninstall = () => app && uninstallApp(app);
-  const handleMirror = () => app && setMirroring(app, !app.state?.mirroring);
-  const handleApproveCaps = () => app && approveCaps(app);
-  const handleAutoUpdate = () => app && setAutoUpdate(app, !app.state?.auto_update);
+  const checkMirrors = async () => {
+    const mirrors = [app.publisher, ...(app.metadata?.properties?.mirrors || [])];
+    const statuses: { [mirror: string]: MirrorCheckFile | null } = {};
+    for (const mirror of mirrors) {
+      const status = await checkMirror(mirror);
+      statuses[mirror] = status;
+    }
+    setMirrorStatuses(statuses);
+    setSelectedMirror(statuses[app.publisher]?.is_online ? app.publisher : mirrors.find(m => statuses[m]?.is_online) || null);
+  };
+
+  const fetchCaps = async () => {
+    try {
+      const appCaps = await getCaps(app);
+      setCaps(appCaps);
+    } catch (error) {
+      console.error('Failed to fetch capabilities:', error);
+      setError(`Failed to fetch capabilities: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (selectedMirror) {
+      setError(null);
+      setIsDownloading(true);
+      setLocalProgress(0);
+      try {
+        await downloadApp(app, selectedMirror);
+        setLocalProgress(100);
+        setTimeout(() => {
+          setIsDownloading(false);
+          setLocalProgress(null);
+        }, 3000);
+      } catch (error) {
+        console.error('Download failed:', error);
+        setError(`Download failed: ${error instanceof Error ? error.message : String(error)}`);
+        setIsDownloading(false);
+        setLocalProgress(null);
+      }
+    }
+  };
+
+  const handleInstall = async () => {
+    setIsInstalling(true);
+    setError(null);
+    try {
+      if (!caps?.approved) {
+        await approveCaps(app);
+      }
+      await installApp(app);
+      await getApp(app.package);
+    } catch (error) {
+      console.error('Installation failed:', error);
+      setError(`Installation failed: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsInstalling(false);
+    }
+  };
+
+  const handleUpdate = () => updateApp(app);
+  const handleUninstall = () => uninstallApp(app);
+  const handleMirror = () => setMirroring(app, !app.state?.mirroring);
+  const handleAutoUpdate = () => setAutoUpdate(app, !app.state?.auto_update);
   const handleLaunch = () => {
     console.log("Launching app:", app.package);
-    window.open(`/${app.package}:${app.publisher}`, '_blank');
+    window.open(`/${app.package}${app.package}:${app.publisher}`, '_blank');
   };
 
+  const isDownloaded = app.state !== undefined;
+  const isInstalled = app.installed;
 
-  const handleCheckMirror = (mirror: string) => {
-    setMirrorStatuses(prev => ({ ...prev, [mirror]: null })); // Set to loading
-    checkMirror(mirror)
-      .then(status => setMirrorStatuses(prev => ({ ...prev, [mirror]: status })))
-      .catch(error => {
-        console.error(`Failed to check mirror ${mirror}:`, error);
-        setMirrorStatuses(prev => ({ ...prev, [mirror]: { node: mirror, is_online: false, error: "Request failed" } }));
-      });
-  };
+  const progressPercentage = localProgress !== null
+    ? localProgress
+    : isDownloaded ? 100 : 0;
 
   return (
     <section className="app-page">
@@ -53,8 +121,8 @@ export default function AppPage() {
 
       <div className="app-description">{app.metadata?.description || "No description available"}</div>
 
-      <div className="app-details">
-        <div className="app-info">
+      <div className="app-content">
+        <div className="app-info-column">
           <div className="info-section">
             <h3 onClick={() => setShowMetadata(!showMetadata)}>
               Metadata {showMetadata ? <FaChevronUp /> : <FaChevronDown />}
@@ -67,27 +135,27 @@ export default function AppPage() {
                 <li className="mirrors-list">
                   <span>Mirrors:</span>
                   <ul>
-                    {app.metadata?.properties?.mirrors?.map((mirror) => (
+                    {Object.entries(mirrorStatuses).map(([mirror, status]) => (
                       <li key={mirror} className="mirror-item">
                         <span className="mirror-address">{mirror}</span>
                         <button
-                          onClick={() => handleCheckMirror(mirror)}
+                          onClick={() => checkMirror(mirror)}
                           className="check-button"
                           title="Check if mirror is online"
                         >
-                          <FaSync className={mirrorStatuses[mirror] === null ? 'spinning' : ''} />
+                          <FaSync className={status === null ? 'spinning' : ''} />
                         </button>
-                        {mirrorStatuses[mirror] && (
+                        {status && (
                           <span className="mirror-status">
-                            {mirrorStatuses[mirror]?.is_online ? (
+                            {status.is_online ? (
                               <><FaCheck className="online" /> <span className="online">Online</span></>
                             ) : (
                               <>
                                 <FaTimes className="offline" />
                                 <span className="offline">Offline</span>
-                                {mirrorStatuses[mirror]?.error && (
+                                {status.error && (
                                   <span className="error-message">
-                                    ({mirrorStatuses[mirror]?.error})
+                                    ({status.error})
                                   </span>
                                 )}
                               </>
@@ -109,7 +177,7 @@ export default function AppPage() {
               <ul className="detail-list">
                 <li>
                   <span>Installed:</span>
-                  <span className="status-icon">{app.installed ? <FaCheck className="installed" /> : <FaTimes className="not-installed" />}</span>
+                  <span className="status-icon">{isInstalled ? <FaCheck className="installed" /> : <FaTimes className="not-installed" />}</span>
                 </li>
                 <li><span>Installed Version:</span> <span>{app.state?.our_version || "Not installed"}</span></li>
                 <li>
@@ -119,7 +187,7 @@ export default function AppPage() {
                 <li><span>License:</span> <span>{app.metadata?.properties?.license || "Not specified"}</span></li>
                 <li>
                   <span>Capabilities Approved:</span>
-                  <button onClick={handleApproveCaps} className={`toggle-button ${app.state?.caps_approved ? 'active' : ''}`}>
+                  <button onClick={() => approveCaps(app)} className={`toggle-button ${app.state?.caps_approved ? 'active' : ''}`}>
                     {app.state?.caps_approved ? <FaCheck /> : <FaShieldAlt />}
                     {app.state?.caps_approved ? "Approved" : "Approve Caps"}
                   </button>
@@ -143,21 +211,88 @@ export default function AppPage() {
             )}
           </div>
         </div>
-        <div className="app-actions">
-          {app.installed ? (
-            <>
-              <button onClick={handleLaunch} className="primary"><FaRocket /> Launch</button>
-              <button onClick={handleUpdate} className="secondary"><FaSync /> Update</button>
-              <button onClick={handleUninstall} className="secondary"><FaTrash /> Uninstall</button>
-            </>
-          ) : (
-            <button onClick={handleInstall} className="primary"><FaDownload /> Install</button>
+
+        <div className="app-actions-column">
+          <div className="app-actions">
+            {isInstalled ? (
+              <>
+                <button onClick={handleLaunch} className="primary"><FaPlay /> Launch</button>
+                <button onClick={handleUpdate} className="secondary"><FaSync /> Update</button>
+                <button onClick={handleUninstall} className="secondary"><FaTrash /> Uninstall</button>
+              </>
+            ) : (
+              <>
+                <div className="mirror-selection">
+                  <select
+                    value={selectedMirror || ''}
+                    onChange={(e) => setSelectedMirror(e.target.value)}
+                    disabled={isDownloading}
+                  >
+                    <option value="" disabled>Select Mirror</option>
+                    {Object.entries(mirrorStatuses).map(([mirror, status]) => (
+                      <option key={mirror} value={mirror} disabled={!status?.is_online}>
+                        {mirror} {status?.is_online ? '(Online)' : '(Offline)'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  className="download-button"
+                  onClick={handleDownload}
+                  disabled={!selectedMirror || isDownloading}
+                >
+                  {isDownloading ? (
+                    <>
+                      <FaSpinner className="fa-spin" /> Downloading...
+                    </>
+                  ) : (
+                    <>
+                      <FaDownload /> {isDownloaded ? 'Re-download' : 'Download'}
+                    </>
+                  )}
+                </button>
+                <button
+                  className="install-button"
+                  onClick={handleInstall}
+                  disabled={!isDownloaded || isInstalling}
+                >
+                  <FaRocket /> {isInstalling ? 'Installing...' : 'Install'}
+                </button>
+              </>
+            )}
+            {app.metadata?.external_url && (
+              <a href={app.metadata.external_url} target="_blank" rel="noopener noreferrer" className="external-link">
+                <FaLink /> External Link
+              </a>
+            )}
+          </div>
+
+          {(isDownloading || isDownloaded) && (
+            <div className="progress-container">
+              <div className="progress-bar">
+                <div
+                  className="progress"
+                  style={{ width: `${progressPercentage}%` }}
+                ></div>
+                <div className="progress-percentage">{progressPercentage}%</div>
+              </div>
+            </div>
           )}
-          {app.metadata?.external_url && (
-            <a href={app.metadata.external_url} target="_blank" rel="noopener noreferrer" className="external-link">
-              <FaLink /> External Link
-            </a>
+
+          {error && (
+            <div className="error-message">
+              <FaExclamationTriangle /> {error}
+            </div>
           )}
+
+          <div className="capabilities-section">
+            <h3 onClick={() => setShowCaps(!showCaps)}>
+              Requested Capabilities {showCaps ? <FaChevronUp /> : <FaChevronDown />}
+            </h3>
+            {showCaps && caps && (
+              <pre className="capabilities">{JSON.stringify(caps, null, 2)}</pre>
+            )}
+          </div>
         </div>
       </div>
 
@@ -173,4 +308,5 @@ export default function AppPage() {
       )}
     </section>
   );
+
 }

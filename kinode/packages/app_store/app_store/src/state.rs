@@ -117,6 +117,8 @@ pub struct State {
     pub requested_packages: HashMap<PackageId, RequestedPackage>,
     /// the APIs we have outstanding requests to download (not persisted)
     pub requested_apis: HashMap<PackageId, RequestedPackage>,
+    /// UI websocket connected channel_IDs
+    pub ui_ws_channels: HashSet<u32>,
 }
 
 #[derive(Deserialize)]
@@ -152,6 +154,7 @@ impl State {
             downloaded_apis: s.downloaded_apis,
             requested_packages: HashMap::new(),
             requested_apis: HashMap::new(),
+            ui_ws_channels: HashSet::new(),
         }
     }
 
@@ -166,6 +169,7 @@ impl State {
             downloaded_apis: HashSet::new(),
             requested_packages: HashMap::new(),
             requested_apis: HashMap::new(),
+            ui_ws_channels: HashSet::new(),
         };
         state.populate_packages_from_filesystem()?;
         Ok(state)
@@ -210,8 +214,10 @@ impl State {
             mirroring: package_state.mirroring,
             auto_update: package_state.auto_update,
         })?)?;
-        if utils::extract_api(package_id)? {
-            self.downloaded_apis.insert(package_id.to_owned());
+        if let Ok(extracted) = utils::extract_api(package_id) {
+            if extracted {
+                self.downloaded_apis.insert(package_id.to_owned());
+            }
         }
         listing.state = Some(package_state);
         // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
