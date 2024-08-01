@@ -5,7 +5,6 @@ function init() {
     fetch(APP_PATH)
         .then(response => response.json())
         .then(data => {
-            console.log(data);
             populate(data);
         });
 }
@@ -33,6 +32,7 @@ function populate(data) {
     populate_eth_rpc_providers(data.eth_rpc_providers);
     populate_eth_rpc_settings(data.eth_rpc_access_settings);
     populate_process_map(data.process_map);
+    populate_stylesheet_editor(data.stylesheet);
 }
 
 function populate_node_info(identity) {
@@ -180,11 +180,22 @@ function populate_process_map(process_map) {
     });
 }
 
+function populate_stylesheet_editor(stylesheet) {
+    document.getElementById('stylesheet-editor').value = stylesheet;
+}
+
+function save_stylesheet() {
+    const stylesheet = document.getElementById('stylesheet-editor').value;
+    api_call({ "SetStylesheet": stylesheet });
+}
+
 // Call init to start the application
 init();
 
 // Setup event listeners
 document.getElementById('shutdown').addEventListener('click', shutdown);
+
+document.getElementById('save-stylesheet').addEventListener('click', save_stylesheet);
 
 document.getElementById('get-peer-pki').addEventListener('submit', (e) => {
     e.preventDefault();

@@ -74,18 +74,43 @@ fn init(our: Address) {
     )
     .expect("failed to bind to /our.js");
 
+    // the base version gets written over on-bootstrap, so we look for
+    // the persisted (user-customized) version first.
+    // if it doesn't exist, we use the bootstrapped version and save it here.
+    let stylesheet = kinode_process_lib::vfs::File {
+        path: "/homepage:sys/pkg/persisted-kinode.css".to_string(),
+        timeout: 5,
+    }
+    .read()
+    .unwrap_or_else(|_| {
+        kinode_process_lib::vfs::File {
+            path: "/homepage:sys/pkg/kinode.css".to_string(),
+            timeout: 5,
+        }
+        .read()
+        .expect("failed to get kinode.css")
+    });
+
+    // save the stylesheet to the persisted file
+    kinode_process_lib::vfs::File {
+        path: "/homepage:sys/pkg/persisted-kinode.css".to_string(),
+        timeout: 5,
+    }
+    .write(&stylesheet)
+    .expect("failed to write to /persisted-kinode.css");
+
     bind_http_static_path(
         "/kinode.css",
-        true,
+        false, // kinode.css is not auth'd so that apps on subdomains can use it too!
         false,
         Some("text/css".to_string()),
-        include_str!("../../pkg/kinode.css").into(),
+        stylesheet,
     )
     .expect("failed to bind /kinode.css");
 
     bind_http_static_path(
         "/kinode.svg",
-        true,
+        false, // kinode.svg is not auth'd so that apps on subdomains can use it too!
         false,
         Some("image/svg+xml".to_string()),
         include_str!("../../pkg/kinode.svg").into(),
@@ -94,7 +119,7 @@ fn init(our: Address) {
 
     bind_http_static_path(
         "/bird-orange.svg",
-        true,
+        false, // bird-orange.svg is not auth'd so that apps on subdomains can use it too!
         false,
         Some("image/svg+xml".to_string()),
         include_str!("../../pkg/bird-orange.svg").into(),
@@ -103,7 +128,7 @@ fn init(our: Address) {
 
     bind_http_static_path(
         "/bird-plain.svg",
-        true,
+        false, // bird-plain.svg is not auth'd so that apps on subdomains can use it too!
         false,
         Some("image/svg+xml".to_string()),
         include_str!("../../pkg/bird-plain.svg").into(),
@@ -172,6 +197,28 @@ fn init(our: Address) {
                     }
                     HomepageRequest::Remove => {
                         app_data.remove(&message.source().process.to_string());
+                    }
+                    HomepageRequest::SetStylesheet(new_stylesheet_string) => {
+                        // ONLY settings:settings:sys may call this request
+                        if message.source().process != "settings:settings:sys" {
+                            continue;
+                        }
+                        kinode_process_lib::vfs::File {
+                            path: "/homepage:sys/pkg/persisted-kinode.css".to_string(),
+                            timeout: 5,
+                        }
+                        .write(new_stylesheet_string.as_bytes())
+                        .expect("failed to write to /persisted-kinode.css");
+                        // re-bind
+                        bind_http_static_path(
+                            "/kinode.css",
+                            false, // kinode.css is not auth'd so that apps on subdomains can use it too!
+                            false,
+                            Some("text/css".to_string()),
+                            new_stylesheet_string.into(),
+                        )
+                        .expect("failed to bind /kinode.css");
+                        println!("updated kinode.css!");
                     }
                 }
             } else if let Ok(req) = serde_json::from_slice::<HttpServerRequest>(message.body()) {
