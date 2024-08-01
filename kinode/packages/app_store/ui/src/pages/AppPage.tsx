@@ -100,7 +100,7 @@ export default function AppPage() {
     window.open(`/${app.package}${app.package}:${app.publisher}`, '_blank');
   };
 
-  const isDownloaded = app.state !== undefined;
+  const isDownloaded = app.state !== null;
   const isInstalled = app.installed;
 
   const progressPercentage = localProgress !== null
