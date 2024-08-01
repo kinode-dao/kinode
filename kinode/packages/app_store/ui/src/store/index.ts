@@ -3,11 +3,15 @@ import { persist } from 'zustand/middleware'
 import { AppInfo, MirrorCheckFile, PackageManifest } from '../types/Apps'
 import { HTTP_STATUS } from '../constants/http'
 import { appId } from '../utils/app'
+import KinodeClientApi from "@kinode/client-api";
+import { WEBSOCKET_URL } from '../utils/ws'
 
 const BASE_URL = '/main:app_store:sys'
 
 interface AppsStore {
   apps: AppInfo[]
+  ws: KinodeClientApi
+  downloads: Map<string, [number, number]>
   getApps: () => Promise<void>
   getApp: (id: string) => Promise<AppInfo>
   checkMirror: (node: string) => Promise<MirrorCheckFile>
@@ -26,6 +30,29 @@ const useAppsStore = create<AppsStore>()(
   persist(
     (set, get) => ({
       apps: [],
+
+      downloads: new Map(),
+
+      ws: new KinodeClientApi({
+        uri: WEBSOCKET_URL,
+        nodeId: window.our?.node,
+        processId: "main:app_store:sys",
+        onMessage: (message) => {
+          const data = JSON.parse(message);
+          console.log('we got a json message', data)
+          if (data.kind === 'progress') {
+            const appId = data.data.name.split('/').pop().split('.').shift();
+            set((state) => {
+              const newDownloads = new Map(state.downloads);
+              newDownloads.set(appId, [data.data.chunks_received, data.data.total_chunks]);
+              return { downloads: newDownloads };
+            });
+          }
+        },
+        onOpen: (_e) => {
+          console.log('open')
+        },
+      }),
 
       getApps: async () => {
         const res = await fetch(`${BASE_URL}/apps`)

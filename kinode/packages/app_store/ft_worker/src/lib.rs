@@ -155,6 +155,18 @@ fn handle_receive(
         };
         chunks_received += 1;
         file_bytes.extend(blob.bytes);
+        // send progress update to parent
+        Request::to(parent_process.clone())
+            .body(
+                serde_json::to_vec(&FTWorkerResult::ProgressUpdate {
+                    file_name: file_name.to_string(),
+                    chunks_received,
+                    total_chunks,
+                })
+                .unwrap(),
+            )
+            .send()
+            .unwrap();
         if chunks_received == total_chunks {
             break;
         }

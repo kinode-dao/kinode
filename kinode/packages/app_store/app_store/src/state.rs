@@ -353,7 +353,10 @@ impl State {
 
     pub fn uninstall(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
         utils::uninstall(package_id)?;
-        self.packages.remove(package_id);
+        let Some(listing) = self.packages.get_mut(package_id) else {
+            return Err(anyhow::anyhow!("package not found"));
+        };
+        listing.state = None;
         // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         println!("uninstalled {package_id}");
         Ok(())
