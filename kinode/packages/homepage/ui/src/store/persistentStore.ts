@@ -13,6 +13,8 @@ export interface PersistentStore {
   setWidgetSettings: (widgetSettings: PersistentStore['widgetSettings']) => void
   toggleWidgetVisibility: (package_id: string) => void
   setWidgetSize: (package_id: string, size: 'small' | 'large') => void,
+  widgetOrder: string[]
+  setWidgetOrder: (widgetOrder: string[]) => void
   appOrder: string[]
   setAppOrder: (appOrder: string[]) => void
 }
@@ -48,6 +50,8 @@ const usePersistentStore = create<PersistentStore>()(
           }
         })
       },
+      widgetOrder: [],
+      setWidgetOrder: (widgetOrder: string[]) => set({ widgetOrder }),
       appOrder: [],
       setAppOrder: (appOrder: string[]) => set({ appOrder }),
     }),
