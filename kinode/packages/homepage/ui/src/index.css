@@ -96,6 +96,8 @@ header button {
     flex-wrap: wrap;
     justify-content: space-evenly;
     gap: 10px;
+    background-color: transparent !important;
+    padding: 0 !important;
 }
 
 .widget {
@@ -133,6 +135,7 @@ header button {
 
 .widget .bottom-bar p {
     font-size: 0.8em;
+    cursor: default;
 }
 
 footer {
