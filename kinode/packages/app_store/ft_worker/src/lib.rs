@@ -64,7 +64,7 @@ fn handle_send(our: &Address, target: &Address, file_name: &str, timeout: u64) -
     let file_bytes = blob.bytes;
     let mut file_size = file_bytes.len() as u64;
     let mut offset: u64 = 0;
-    let chunk_size: u64 = 1048576; // 1MB, can be changed
+    let chunk_size: u64 = 262144; // 256KB
     let total_chunks = (file_size as f64 / chunk_size as f64).ceil() as u64;
     // send a file to another worker
     // start by telling target to expect a file,
@@ -155,6 +155,18 @@ fn handle_receive(
         };
         chunks_received += 1;
         file_bytes.extend(blob.bytes);
+        // send progress update to parent
+        Request::to(parent_process.clone())
+            .body(
+                serde_json::to_vec(&FTWorkerResult::ProgressUpdate {
+                    file_name: file_name.to_string(),
+                    chunks_received,
+                    total_chunks,
+                })
+                .unwrap(),
+            )
+            .send()
+            .unwrap();
         if chunks_received == total_chunks {
             break;
         }

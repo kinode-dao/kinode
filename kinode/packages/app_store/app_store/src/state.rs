@@ -49,6 +49,13 @@ pub struct MirroringFile {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+pub struct MirrorCheckFile {
+    pub node: NodeId,
+    pub is_online: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 pub struct RequestedPackage {
     pub from: NodeId,
     pub mirror: bool,
@@ -109,6 +116,8 @@ pub struct State {
     pub requested_packages: HashMap<PackageId, RequestedPackage>,
     /// the APIs we have outstanding requests to download (not persisted)
     pub requested_apis: HashMap<PackageId, RequestedPackage>,
+    /// UI websocket connected channel_IDs
+    pub ui_ws_channels: HashSet<u32>,
 }
 
 #[derive(Deserialize)]
@@ -144,6 +153,7 @@ impl State {
             downloaded_apis: s.downloaded_apis,
             requested_packages: HashMap::new(),
             requested_apis: HashMap::new(),
+            ui_ws_channels: HashSet::new(),
         }
     }
 
@@ -158,6 +168,7 @@ impl State {
             downloaded_apis: HashSet::new(),
             requested_packages: HashMap::new(),
             requested_apis: HashMap::new(),
+            ui_ws_channels: HashSet::new(),
         };
         state.populate_packages_from_filesystem()?;
         Ok(state)
@@ -202,8 +213,10 @@ impl State {
             mirroring: package_state.mirroring,
             auto_update: package_state.auto_update,
         })?)?;
-        if utils::extract_api(package_id)? {
-            self.downloaded_apis.insert(package_id.to_owned());
+        if let Ok(extracted) = utils::extract_api(package_id) {
+            if extracted {
+                self.downloaded_apis.insert(package_id.to_owned());
+            }
         }
         listing.state = Some(package_state);
         // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
@@ -345,7 +358,10 @@ impl State {
 
     pub fn uninstall(&mut self, package_id: &PackageId) -> anyhow::Result<()> {
         utils::uninstall(package_id)?;
-        self.packages.remove(package_id);
+        let Some(listing) = self.packages.get_mut(package_id) else {
+            return Err(anyhow::anyhow!("package not found"));
+        };
+        listing.state = None;
         // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         println!("uninstalled {package_id}");
         Ok(())
@@ -364,7 +380,7 @@ impl State {
         let block_number: u64 = log.block_number.ok_or(AppStoreLogError::NoBlockNumber)?;
 
         let note: kimap::Note =
-            kimap::decode_note_log(&log).map_err(AppStoreLogError::DecodeLogError)?;
+            kimap::decode_note_log(&log).map_err(|_| AppStoreLogError::DecodeLogError)?;
 
         let package_id = note
             .parent_path

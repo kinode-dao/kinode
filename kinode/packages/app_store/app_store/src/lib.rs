@@ -1,7 +1,7 @@
 #![feature(let_chains)]
 //! App Store:
 //! acts as both a local package manager and a protocol to share packages across the network.
-//! packages are apps; apps are packages. we use an onchain app listing contract to determine
+//! packages are apps; apps are packages. we use the kimap contract to determine
 //! what apps are available to download and what node(s) to download them from.
 //!
 //! once we know that list, we can request a package from a node and download it locally.
@@ -22,8 +22,9 @@ use ft_worker_lib::{
     spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
 };
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, http, kimap, println, vfs, Address, LazyLoadBlob,
-    Message, PackageId, Request, Response,
+    await_message, call_init, eth, get_blob,
+    http::{self, WsMessageType},
+    kimap, println, vfs, Address, LazyLoadBlob, Message, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{AppStoreLogError, PackageState, RequestedPackage, State};
@@ -53,7 +54,7 @@ pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 #[cfg(not(feature = "simulation-mode"))]
 const KIMAP_ADDRESS: &str = kimap::KIMAP_ADDRESS;
 #[cfg(feature = "simulation-mode")]
-const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F"; // note temp kimap address!
+const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 
 #[cfg(not(feature = "simulation-mode"))]
 const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK;
@@ -135,11 +136,35 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                 let resp = handle_remote_request(state, message.source(), remote_request);
                 Response::new().body(serde_json::to_vec(&resp)?).send()?;
             }
+            Req::FTWorkerCommand(_) => {
+                spawn_receive_transfer(&state.our, message.body())?;
+            }
             Req::FTWorkerResult(FTWorkerResult::ReceiveSuccess(name)) => {
                 handle_receive_download(state, &name)?;
             }
-            Req::FTWorkerCommand(_) => {
-                spawn_receive_transfer(&state.our, message.body())?;
+            Req::FTWorkerResult(FTWorkerResult::ProgressUpdate {
+                file_name,
+                chunks_received,
+                total_chunks,
+            }) => {
+                // forward progress to UI
+                let ws_blob = LazyLoadBlob {
+                    mime: Some("application/json".to_string()),
+                    bytes: serde_json::json!({
+                        "kind": "progress",
+                        "data": {
+                            "file_name": file_name,
+                            "chunks_received": chunks_received,
+                            "total_chunks": total_chunks,
+                        }
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
+                };
+                for channel_id in state.ui_ws_channels.iter() {
+                    http::send_ws_push(*channel_id, WsMessageType::Text, ws_blob.clone());
+                }
             }
             Req::FTWorkerResult(r) => {
                 println!("got weird ft_worker result: {r:?}");
@@ -169,6 +194,10 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                 }
                 if let http::HttpServerRequest::Http(req) = incoming {
                     http_api::handle_http_request(state, &req)?;
+                } else if let http::HttpServerRequest::WebSocketOpen { channel_id, .. } = incoming {
+                    state.ui_ws_channels.insert(channel_id);
+                } else if let http::HttpServerRequest::WebSocketClose { 0: channel_id } = incoming {
+                    state.ui_ws_channels.remove(&channel_id);
                 }
             }
         }
@@ -566,8 +595,12 @@ fn handle_ft_worker_result(ft_worker_result: FTWorkerResult, context: &[u8]) -> 
                 .as_secs_f64(),
         );
         Ok(())
+    } else if let FTWorkerResult::Err(e) = ft_worker_result {
+        Err(anyhow::anyhow!("failed to share app: {e:?}"))
     } else {
-        Err(anyhow::anyhow!("failed to share app"))
+        Err(anyhow::anyhow!(
+            "failed to share app: unknown FTWorkerResult {ft_worker_result:?}"
+        ))
     }
 }
 

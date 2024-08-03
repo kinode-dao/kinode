@@ -34,6 +34,11 @@ pub enum FTWorkerResult {
     SendSuccess,
     /// string is name of file. bytes in blob
     ReceiveSuccess(String),
+    ProgressUpdate {
+        file_name: String,
+        chunks_received: u64,
+        total_chunks: u64,
+    },
     Err(TransferError),
 }
 
