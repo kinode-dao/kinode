@@ -54,7 +54,7 @@ pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 #[cfg(not(feature = "simulation-mode"))]
 const KIMAP_ADDRESS: &str = kimap::KIMAP_ADDRESS;
 #[cfg(feature = "simulation-mode")]
-const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+const KIMAP_ADDRESS: &str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D";
 
 #[cfg(not(feature = "simulation-mode"))]
 const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK;

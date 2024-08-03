@@ -22,7 +22,7 @@ wit_bindgen::generate!({
 #[cfg(not(feature = "simulation-mode"))]
 const KIMAP_ADDRESS: &'static str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559"; // optimism
 #[cfg(feature = "simulation-mode")]
-const KIMAP_ADDRESS: &'static str = "0x0165878A594ca255338adfa4d48449f69242Eb8F"; // local
+const KIMAP_ADDRESS: &'static str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D"; // local
 
 #[cfg(not(feature = "simulation-mode"))]
 const CHAIN_ID: u64 = 10; // optimism
@@ -303,13 +303,15 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
                 return Err(anyhow::anyhow!("skipping invalid entry"));
             }
 
+            println!("got parent hash: {parent_hash}, child hash: {child_hash}, name: {name}");
+
             let full_name = match get_parent_name(&state.names, &parent_hash) {
                 Some(parent_name) => format!("{name}.{parent_name}"),
                 None => name,
             };
 
             state.names.insert(child_hash.clone(), full_name.clone());
-
+            println!("inserted child hash: {child_hash}, with full name: {full_name}");
             state.nodes.insert(
                 full_name.clone(),
                 net::KnsUpdate {

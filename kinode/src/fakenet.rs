@@ -13,15 +13,15 @@ use std::str::FromStr;
 use crate::{keygen, sol::*, KIMAP_ADDRESS, MULTICALL_ADDRESS};
 
 // TODO move these into contracts registry, doublecheck optimism deployments
-const FAKE_DOTDEV_TBA: &str = "0x69C30C0Cf0e9726f9eEF50bb74FA32711fA0B02D";
-const FAKE_DOTOS_TBA: &str = "0xB3244529432b9C6dB0Bdc5282cB8Fde8418E00a6";
-const _FAKE_ZEROTH_TBA: &str = "0x4eB83AA047C717C2Bc94dF108675Fc44a2Ff9D12";
+const FAKE_DOTDEV_TBA: &str = "0x1a5447E634aa056Fa302E48630Da8425EC15A53A";
+const FAKE_DOTOS_TBA: &str = "0xF5FaB379Eb87599d7B5BaBeDDEFe6EfDEC6164b0";
+const _FAKE_ZEROTH_TBA: &str = "0x02dd7FB5ca377b1a6E2960EB139aF390a24D28FA";
 
-const KINO_ACCOUNT_IMPL: &str = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
+const KINO_ACCOUNT_IMPL: &str = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
 
 const MULTICALL: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
-const KINOMAP: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+const KIMAP: &str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D";
 
 /// Attempts to connect to a local anvil fakechain,
 /// registering a name with its KiMap contract.
@@ -43,7 +43,7 @@ pub async fn mint_local(
     let multicall_address = Address::from_str(MULTICALL)?;
     let dotos = Address::from_str(FAKE_DOTOS_TBA)?;
     let dotdev = Address::from_str(FAKE_DOTDEV_TBA)?;
-    let kimap = Address::from_str(KINOMAP)?;
+    let kimap = Address::from_str(KIMAP)?;
 
     let parts: Vec<&str> = name.split('.').collect();
     let label = parts[0];
@@ -115,7 +115,7 @@ pub async fn mint_local(
 
     let localhost = Ipv4Addr::new(127, 0, 0, 1);
     let ip = keygen::ip_to_bytes(localhost.into());
-
+    let pubkey = hex::decode(pubkey)?;
     let multicalls: Vec<Call> = vec![
         Call {
             target: kimap,
@@ -142,7 +142,7 @@ pub async fn mint_local(
             callData: Bytes::from(
                 noteCall {
                     note: "~net-key".into(),
-                    data: Bytes::from(pubkey.as_bytes().to_vec()),
+                    data: Bytes::from(pubkey),
                 }
                 .abi_encode(),
             ),
