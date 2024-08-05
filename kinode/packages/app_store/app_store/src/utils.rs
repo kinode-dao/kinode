@@ -131,7 +131,7 @@ pub fn fetch_metadata_from_url(
 ) -> Result<kt::Erc721Metadata, AppStoreLogError> {
     if let Ok(url) = url::Url::parse(metadata_url) {
         if let Ok(_) =
-            http::send_request_await_response(http::Method::GET, url, None, timeout, vec![])
+            http::client::send_request_await_response(http::Method::GET, url, None, timeout, vec![])
         {
             if let Some(body) = get_blob() {
                 let hash = keccak_256_hash(&body.bytes);
