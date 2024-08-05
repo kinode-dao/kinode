@@ -575,7 +575,7 @@ pub async fn kernel(
 
     for (process_id, persisted) in &process_map {
         // runtime extensions will have a bytes_handle of "", because they have no
-        // WASM code saved in filesystem.
+        // Wasm code saved in filesystem.
         if persisted.wasm_bytes_handle.is_empty() {
             continue;
         }

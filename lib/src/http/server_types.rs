@@ -3,20 +3,20 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use thiserror::Error;
 
-/// HTTP Request type that can be shared over WASM boundary to apps.
-/// This is the one you receive from the `http_server:distro:sys` service.
-#[derive(Debug, Serialize, Deserialize)]
+/// HTTP Request received from the `http_server:distro:sys` service as a
+/// result of either an HTTP or WebSocket binding, created via [`HttpServerAction`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HttpServerRequest {
     Http(IncomingHttpRequest),
     /// Processes will receive this kind of request when a client connects to them.
     /// If a process does not want this websocket open, they should issue a *request*
-    /// containing a [`type@HttpServerAction::WebSocketClose`] message and this channel ID.
+    /// containing a [`HttpServerAction::WebSocketClose`] message and this channel ID.
     WebSocketOpen {
         path: String,
         channel_id: u32,
     },
     /// Processes can both SEND and RECEIVE this kind of request
-    /// (send as [`type@HttpServerAction::WebSocketPush`]).
+    /// (send as [`HttpServerAction::WebSocketPush`]).
     /// When received, will contain the message bytes as lazy_load_blob.
     WebSocketPush {
         channel_id: u32,
@@ -27,19 +27,26 @@ pub enum HttpServerRequest {
     WebSocketClose(u32),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+/// An HTTP request routed to a process as a result of a binding.
+///
+/// BODY is stored in the lazy_load_blob, as bytes.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IncomingHttpRequest {
-    pub source_socket_addr: Option<String>, // will parse to SocketAddr
-    pub method: String,                     // will parse to http::Method
-    pub url: String,                        // will parse to url::Url
-    pub bound_path: String,                 // the path that was originally bound
+    /// will parse to SocketAddr
+    pub source_socket_addr: Option<String>,
+    /// will parse to http::Method
+    pub method: String,
+    /// will parse to url::Url
+    pub url: String,
+    /// the matching path that was bound
+    pub bound_path: String,
+    /// will parse to http::HeaderMap
     pub headers: HashMap<String, String>,
-    pub url_params: HashMap<String, String>, // comes from route-recognizer
+    pub url_params: HashMap<String, String>,
     pub query_params: HashMap<String, String>,
-    // BODY is stored in the lazy_load_blob, as bytes
 }
 
-/// HTTP Response type that can be shared over WASM boundary to apps.
+/// HTTP Response type that can be shared over Wasm boundary to apps.
 /// Respond to [`IncomingHttpRequest`] with this type.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HttpResponse {
@@ -55,12 +62,10 @@ pub struct RpcResponseBody {
 }
 
 /// Request type sent to `http_server:distro:sys` in order to configure it.
-/// You can also send [`type@HttpServerAction::WebSocketPush`], which
-/// allows you to push messages across an existing open WebSocket connection.
 ///
-/// If a response is expected, all HttpServerActions will return a Response
-/// with the shape Result<(), HttpServerActionError> serialized to JSON.
-#[derive(Debug, Serialize, Deserialize)]
+/// If a response is expected, all actions will return a Response
+/// with the shape `Result<(), HttpServerActionError>` serialized to JSON.
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HttpServerAction {
     /// Bind expects a lazy_load_blob if and only if `cache` is TRUE. The lazy_load_blob should
     /// be the static file to serve at this path.
@@ -113,7 +118,7 @@ pub enum HttpServerAction {
     WebSocketUnbind { path: String },
     /// Processes will RECEIVE this kind of request when a client connects to them.
     /// If a process does not want this websocket open, they should issue a *request*
-    /// containing a [`type@HttpServerAction::WebSocketClose`] message and this channel ID.
+    /// containing a [`HttpServerAction::WebSocketClose`] message and this channel ID.
     WebSocketOpen { path: String, channel_id: u32 },
     /// When sent, expects a lazy_load_blob containing the WebSocket message bytes to send.
     WebSocketPush {
@@ -145,17 +150,18 @@ pub enum HttpServerAction {
 }
 
 /// Whether the WebSocketPush is a request or a response.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum MessageType {
     Request,
     Response,
 }
 
-/// The possible message types for WebSocketPush. Ping and Pong are limited to 125 bytes
-/// by the WebSockets protocol. Text will be sent as a Text frame, with the lazy_load_blob bytes
-/// being the UTF-8 encoding of the string. Binary will be sent as a Binary frame containing
-/// the unmodified lazy_load_blob bytes.
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+/// The possible message types for [`HttpServerRequest::WebSocketPush`].
+/// Ping and Pong are limited to 125 bytes by the WebSockets protocol.
+/// Text will be sent as a Text frame, with the lazy_load_blob bytes
+/// being the UTF-8 encoding of the string. Binary will be sent as a
+/// Binary frame containing the unmodified lazy_load_blob bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum WsMessageType {
     Text,
     Binary,
@@ -167,16 +173,13 @@ pub enum WsMessageType {
 /// Part of the Response type issued by http_server
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum HttpServerError {
-    #[error(
-        "http_server: request could not be parsed to HttpServerAction: {}.",
-        req
-    )]
+    #[error("request could not be parsed to HttpServerAction: {req}.")]
     BadRequest { req: String },
-    #[error("http_server: action expected blob")]
+    #[error("action expected blob")]
     NoBlob,
-    #[error("http_server: path binding error: {:?}", error)]
+    #[error("path binding error: {error}")]
     PathBindError { error: String },
-    #[error("http_server: WebSocket error: {:?}", error)]
+    #[error("WebSocket error: {error}")]
     WebSocketPushError { error: String },
 }
 
