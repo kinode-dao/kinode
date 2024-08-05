@@ -380,7 +380,7 @@ impl State {
         let block_number: u64 = log.block_number.ok_or(AppStoreLogError::NoBlockNumber)?;
 
         let note: kimap::Note =
-            kimap::decode_note_log(&log).map_err(|_| AppStoreLogError::DecodeLogError)?;
+            kimap::decode_note_log(&log).map_err(AppStoreLogError::DecodeLogError)?;
 
         let package_id = note
             .parent_path
