@@ -21,10 +21,37 @@ export default function AppPage() {
   const [showCaps, setShowCaps] = useState(false);
   const [localProgress, setLocalProgress] = useState<number | null>(null);
 
+  // split these out a bit, this page is getting slightly too heavy
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+
+  const [showMetadataUri, setShowMetadataUri] = useState(false);
+  const [metadataUriContent, setMetadataUriContent] = useState<any>(null);
+  const [showAllVersions, setShowAllVersions] = useState(false);
+
+
   useEffect(() => {
     if (app) {
       checkMirrors();
       fetchCaps();
+    }
+  }, [app]);
+
+  useEffect(() => {
+    if (app && app.metadata_uri) {
+      fetch(app.metadata_uri)
+        .then(response => response.json())
+        .then(data => setMetadataUriContent(data))
+        .catch(error => console.error('Error fetching metadata URI:', error));
+    }
+  }, [app]);
+
+  useEffect(() => {
+    if (app && app.metadata?.properties?.code_hashes) {
+      const versions = Object.keys(app.metadata.properties.code_hashes);
+      const latest = versions[versions.length - 1];
+      setLatestVersion(latest);
+      setUpdateAvailable(app.state?.our_version !== latest);
     }
   }, [app]);
 
@@ -129,9 +156,50 @@ export default function AppPage() {
             </h3>
             {showMetadata && (
               <ul className="detail-list">
-                <li><span>Version:</span> <span>{app.metadata?.properties?.current_version || "Unknown"}</span></li>
-                <li><span>~metadata-uri</span> <span className="hash">{app.metadata_uri}</span></li>
+                <li>
+                  <span>Current Version:</span> <span>{app.state?.our_version || "Not installed"}</span>
+                </li>
+                <li className="expandable-item">
+                  <div className="item-header">
+                    <span>Latest Version:</span>
+                    <span>{latestVersion || "Unknown"}</span>
+                    <button
+                      onClick={() => setShowAllVersions(!showAllVersions)}
+                      className="dropdown-toggle"
+                    >
+                      {showAllVersions ? <FaChevronUp /> : <FaChevronDown />}
+                    </button>
+                  </div>
+                  {showAllVersions && app.metadata?.properties?.code_hashes && (
+                    <div className="json-container">
+                      <pre className="json-display">
+                        {JSON.stringify(app.metadata.properties.code_hashes, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </li>
+                <li><span>Update Available:</span> <span>{updateAvailable ? "Yes" : "No"}</span></li>
+                <li className="expandable-item">
+                  <div className="item-header">
+                    <span>~metadata-uri</span>
+                    <span className="hash">{app.metadata_uri}</span>
+                    <button
+                      onClick={() => setShowMetadataUri(!showMetadataUri)}
+                      className="dropdown-toggle"
+                    >
+                      {showMetadataUri ? <FaChevronUp /> : <FaChevronDown />}
+                    </button>
+                  </div>
+                  {showMetadataUri && metadataUriContent && (
+                    <div className="json-container">
+                      <pre className="json-display">
+                        {JSON.stringify(metadataUriContent, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </li>
                 <li><span>~metadata-hash</span> <span className="hash">{app.metadata_hash}</span></li>
+
                 <li className="mirrors-list">
                   <span>Mirrors:</span>
                   <ul>

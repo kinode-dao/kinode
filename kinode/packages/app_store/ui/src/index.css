@@ -693,3 +693,46 @@ button svg,
     white-space: pre-wrap;
     word-break: break-all;
 }
+
+
+.hash {
+    font-family: monospace;
+    word-break: break-all;
+}
+
+.expandable-item {
+    background-color: light-dark(var(--tan), var(--maroon));
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.item-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+}
+
+.dropdown-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--blue);
+    padding: 5px;
+}
+
+.json-container {
+    max-height: 300px;
+    overflow-y: auto;
+    background-color: light-dark(var(--off-white), var(--off-black));
+}
+
+.json-display {
+    font-family: monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    padding: 10px;
+    margin: 0;
+    color: light-dark(var(--off-black), var(--off-white));
+}
