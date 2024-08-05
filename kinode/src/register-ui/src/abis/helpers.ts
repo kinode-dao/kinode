@@ -1,8 +1,16 @@
 
 import { NetworkingInfo } from "../lib/types";
+import { kinohash } from "../utils/kinohash";
 import { ipToBytes, portToBytes } from "../utils/kns_encoding";
 import { multicallAbi, kinomapAbi, mechAbi, KINOMAP, MULTICALL } from "./";
 import { encodeFunctionData, encodePacked, stringToHex, bytesToHex } from "viem";
+
+// Function to encode router names into keccak256 hashes
+// Function to encode router names into keccak256 hashes
+const encodeRouters = (routers: string[]): `0x${string}` => {
+    const hashedRouters = routers.map(router => kinohash(router).slice(2)); // Remove '0x' prefix
+    return `0x${hashedRouters.join('')}`;
+};
 
 export const generateNetworkingKeys = async ({
     direct,
@@ -78,6 +86,8 @@ export const generateNetworkingKeys = async ({
             ]
         });
 
+    const encodedRouters = encodeRouters(allowed_routers);
+
     const router_call =
         encodeFunctionData({
             abi: kinomapAbi,
@@ -86,7 +96,7 @@ export const generateNetworkingKeys = async ({
                 encodePacked(["bytes"], [stringToHex("~routers")]),
                 encodePacked(
                     ["bytes"],
-                    [stringToHex(allowed_routers.join(","))]
+                    [encodedRouters]
                 )]
         });
 
