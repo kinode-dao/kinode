@@ -311,7 +311,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             };
 
             state.names.insert(child_hash.clone(), full_name.clone());
-            println!("inserted child hash: {child_hash}, with full name: {full_name}");
+            // println!("inserted child hash: {child_hash}, with full name: {full_name}");
             state.nodes.insert(
                 full_name.clone(),
                 net::KnsUpdate {
@@ -360,7 +360,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
                     }
                 }
                 "~routers" => {
-                    let routers = decode_routers(&decoded.data)?;
+                    let routers = decode_routers(&decoded.data, &state)?;
                     if let Some(node) = state.nodes.get_mut(&node_name) {
                         node.routers = routers;
                         // -> indirect
@@ -482,10 +482,25 @@ fn add_temp_hardcoded_tlzs(state: &mut State) {
     );
 }
 
-/// Decodes bytes into an array of node identities, expecting UTF-8 encoded strings separated by newlines.
-fn decode_routers(data: &[u8]) -> anyhow::Result<Vec<String>> {
-    let data_str = std::str::from_utf8(data)?;
-    let routers = data_str.split(',').map(str::to_owned).collect();
+/// Decodes bytes into an array of keccak256 hashes (32 bytes each) and returns their full names.
+fn decode_routers(data: &[u8], state: &State) -> anyhow::Result<Vec<String>> {
+    if data.len() % 32 != 0 {
+        return Err(anyhow::anyhow!("got invalid data length for router hashes"));
+    }
+
+    let mut routers = Vec::new();
+    for chunk in data.chunks(32) {
+        let hash_str = format!("0x{}", hex::encode(chunk));
+
+        match state.names.get(&hash_str) {
+            Some(full_name) => routers.push(full_name.clone()),
+            None => print_to_terminal(
+                1,
+                &format!("error: no name found for router hash {hash_str}"),
+            ),
+        }
+    }
+
     Ok(routers)
 }
 
