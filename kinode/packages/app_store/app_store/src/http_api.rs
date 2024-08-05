@@ -1,11 +1,9 @@
 use crate::state::{MirrorCheckFile, PackageListing, State};
 use crate::DownloadResponse;
 use kinode_process_lib::{
-    http::{
-        bind_http_path, bind_ws_path, send_response, serve_ui, IncomingHttpRequest, Method,
-        StatusCode,
-    },
-    println, Address, NodeId, PackageId, ProcessId, Request,
+    http::server,
+    http::{self, Method, StatusCode},
+    Address, LazyLoadBlob, NodeId, PackageId, Request,
 };
 use kinode_process_lib::{SendError, SendErrorKind};
 use serde_json::json;
@@ -15,7 +13,9 @@ const ICON: &str = include_str!("icon");
 
 /// Bind static and dynamic HTTP paths for the app store,
 /// bind to our WS updates path, and add icon and widget to homepage.
-pub fn init_frontend(our: &Address) {
+pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
+    let config = server::HttpBindingConfig::default();
+
     for path in [
         "/apps",
         "/apps/:id",
@@ -27,30 +27,30 @@ pub fn init_frontend(our: &Address) {
         "/apps/rebuild-index",
         "/mirrorcheck/:node",
     ] {
-        bind_http_path(path, true, false).expect("failed to bind http path");
+        http_server
+            .bind_http_path(path, config.clone())
+            .expect("failed to bind http path");
     }
-    serve_ui(&our, "ui", true, false, vec!["/", "/app/:id", "/publish"])
+    http_server
+        .serve_ui(
+            &our,
+            "ui",
+            vec!["/", "/app/:id", "/publish"],
+            config.clone(),
+        )
         .expect("failed to serve static UI");
 
-    bind_ws_path("/", true, true).expect("failed to bind ws path");
+    http_server
+        .bind_ws_path("/", server::WsBindingConfig::default())
+        .expect("failed to bind ws path");
 
     // add ourselves to the homepage
-    Request::to(("our", "homepage", "homepage", "sys"))
-        .body(
-            serde_json::json!({
-                "Add": {
-                    "label": "App Store",
-                    "icon": ICON,
-                    "path": "/",
-                    "widget": make_widget()
-                }
-            })
-            .to_string()
-            .as_bytes()
-            .to_vec(),
-        )
-        .send()
-        .unwrap();
+    kinode_process_lib::homepage::add_to_homepage(
+        "App Store",
+        Some(ICON),
+        Some("/"),
+        Some(&make_widget()),
+    );
 }
 
 fn make_widget() -> String {
@@ -183,20 +183,23 @@ fn make_widget() -> String {
 /// - stop auto-updating a downloaded app: DELETE /apps/:id/auto-update
 ///
 /// - RebuildIndex: POST /apps/rebuild-index
-pub fn handle_http_request(state: &mut State, req: &IncomingHttpRequest) -> anyhow::Result<()> {
+pub fn handle_http_request(
+    state: &mut State,
+    req: &server::IncomingHttpRequest,
+) -> (server::HttpResponse, Option<LazyLoadBlob>) {
     match serve_paths(state, req) {
-        Ok((status_code, _headers, body)) => send_response(
-            status_code,
-            Some(HashMap::from([(
-                String::from("Content-Type"),
-                String::from("application/json"),
-            )])),
-            body,
+        Ok((status_code, _headers, body)) => (
+            server::HttpResponse::new(status_code).header("Content-Type", "application/json"),
+            Some(LazyLoadBlob {
+                mime: None,
+                bytes: body,
+            }),
         ),
-        Err(_e) => send_response(StatusCode::INTERNAL_SERVER_ERROR, None, vec![]),
+        Err(_e) => (
+            server::HttpResponse::new(http::StatusCode::INTERNAL_SERVER_ERROR),
+            None,
+        ),
     }
-
-    Ok(())
 }
 
 fn get_package_id(url_params: &HashMap<String, String>) -> anyhow::Result<PackageId> {
@@ -236,8 +239,8 @@ fn gen_package_info(id: &PackageId, listing: &PackageListing) -> serde_json::Val
 
 fn serve_paths(
     state: &mut State,
-    req: &IncomingHttpRequest,
-) -> anyhow::Result<(StatusCode, Option<HashMap<String, String>>, Vec<u8>)> {
+    req: &server::IncomingHttpRequest,
+) -> anyhow::Result<(http::StatusCode, Option<HashMap<String, String>>, Vec<u8>)> {
     let method = req.method()?;
 
     let bound_path: &str = req.bound_path(Some(&state.our.process.to_string()));

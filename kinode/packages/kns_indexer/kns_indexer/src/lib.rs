@@ -303,15 +303,12 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
                 return Err(anyhow::anyhow!("skipping invalid entry"));
             }
 
-            println!("got parent hash: {parent_hash}, child hash: {child_hash}, name: {name}");
-
             let full_name = match get_parent_name(&state.names, &parent_hash) {
                 Some(parent_name) => format!("{name}.{parent_name}"),
                 None => name,
             };
 
             state.names.insert(child_hash.clone(), full_name.clone());
-            // println!("inserted child hash: {child_hash}, with full name: {full_name}");
             state.nodes.insert(
                 full_name.clone(),
                 net::KnsUpdate {

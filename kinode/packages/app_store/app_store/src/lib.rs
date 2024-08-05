@@ -22,9 +22,8 @@ use ft_worker_lib::{
     spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
 };
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob,
-    http::{self, WsMessageType},
-    kimap, println, vfs, Address, LazyLoadBlob, Message, PackageId, Request, Response,
+    await_message, call_init, eth, get_blob, http, kimap, println, vfs, Address, LazyLoadBlob,
+    Message, PackageId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 use state::{AppStoreLogError, PackageState, RequestedPackage, State};
@@ -71,7 +70,7 @@ pub enum Req {
     FTWorkerCommand(FTWorkerCommand),
     FTWorkerResult(FTWorkerResult),
     Eth(eth::EthSubResult),
-    Http(http::HttpServerRequest),
+    Http(http::server::HttpServerRequest),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -80,14 +79,15 @@ pub enum Resp {
     LocalResponse(LocalResponse),
     RemoteResponse(RemoteResponse),
     FTWorkerResult(FTWorkerResult),
-    HttpClient(Result<http::HttpClientResponse, http::HttpClientError>),
+    HttpClient(Result<http::client::HttpClientResponse, http::client::HttpClientError>),
 }
 
 call_init!(init);
 fn init(our: Address) {
     println!("started");
 
-    http_api::init_frontend(&our);
+    let mut http_server = http::server::HttpServer::new(5);
+    http_api::init_frontend(&our, &mut http_server);
 
     println!("indexing on contract address {}", KIMAP_ADDRESS);
 
@@ -105,7 +105,7 @@ fn init(our: Address) {
                 println!("got network error: {send_error}");
             }
             Ok(message) => {
-                if let Err(e) = handle_message(&mut state, &message) {
+                if let Err(e) = handle_message(&mut state, &mut http_server, &message) {
                     println!("error handling message: {:?}", e);
                 }
             }
@@ -117,7 +117,11 @@ fn init(our: Address) {
 /// function defined for each kind of message. check whether the source
 /// of the message is allowed to send that kind of message to us.
 /// finally, fire a response if expected from a request.
-fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
+fn handle_message(
+    state: &mut State,
+    http_server: &mut http::server::HttpServer,
+    message: &Message,
+) -> anyhow::Result<()> {
     if message.is_request() {
         match serde_json::from_slice::<Req>(message.body())? {
             Req::LocalRequest(local_request) => {
@@ -148,23 +152,24 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                 total_chunks,
             }) => {
                 // forward progress to UI
-                let ws_blob = LazyLoadBlob {
-                    mime: Some("application/json".to_string()),
-                    bytes: serde_json::json!({
-                        "kind": "progress",
-                        "data": {
-                            "file_name": file_name,
-                            "chunks_received": chunks_received,
-                            "total_chunks": total_chunks,
-                        }
-                    })
-                    .to_string()
-                    .as_bytes()
-                    .to_vec(),
-                };
-                for channel_id in state.ui_ws_channels.iter() {
-                    http::send_ws_push(*channel_id, WsMessageType::Text, ws_blob.clone());
-                }
+                http_server.ws_push_all_channels(
+                    "/",
+                    http::server::WsMessageType::Text,
+                    LazyLoadBlob {
+                        mime: Some("application/json".to_string()),
+                        bytes: serde_json::json!({
+                            "kind": "progress",
+                            "data": {
+                                "file_name": file_name,
+                                "chunks_received": chunks_received,
+                                "total_chunks": total_chunks,
+                            }
+                        })
+                        .to_string()
+                        .as_bytes()
+                        .to_vec(),
+                    },
+                );
             }
             Req::FTWorkerResult(r) => {
                 println!("got weird ft_worker result: {r:?}");
@@ -186,19 +191,19 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                         .subscribe_loop(1, utils::app_store_filter(state));
                 }
             }
-            Req::Http(incoming) => {
+            Req::Http(server_request) => {
                 if !message.is_local(&state.our)
                     || message.source().process != "http_server:distro:sys"
                 {
                     return Err(anyhow::anyhow!("http_server from non-local node"));
                 }
-                if let http::HttpServerRequest::Http(req) = incoming {
-                    http_api::handle_http_request(state, &req)?;
-                } else if let http::HttpServerRequest::WebSocketOpen { channel_id, .. } = incoming {
-                    state.ui_ws_channels.insert(channel_id);
-                } else if let http::HttpServerRequest::WebSocketClose { 0: channel_id } = incoming {
-                    state.ui_ws_channels.remove(&channel_id);
-                }
+                http_server.handle_request(
+                    server_request,
+                    |incoming| http_api::handle_http_request(state, &incoming),
+                    |_channel_id, _message_type, _blob| {
+                        // not expecting any websocket messages from FE currently
+                    },
+                );
             }
         }
     } else {
@@ -208,7 +213,10 @@ fn handle_message(state: &mut State, message: &Message) -> anyhow::Result<()> {
                     Some(context) => std::str::from_utf8(context).unwrap_or_default(),
                     None => return Err(anyhow::anyhow!("http_client response without context")),
                 };
-                if let Ok(http::HttpClientResponse::Http(http::HttpResponse { status, .. })) = resp
+                if let Ok(http::client::HttpClientResponse::Http(http::client::HttpResponse {
+                    status,
+                    ..
+                })) = resp
                 {
                     if status == 200 {
                         handle_receive_download(state, &name)?;
@@ -435,23 +443,12 @@ pub fn start_download(
     };
     // if `from` is a node, send a request to it
     // but if it is a url, use http_client to GET it
+    let Ok(url) = url::Url::parse(&from) else {
+        return DownloadResponse::Denied(Reason::NotMirroring);
+    };
     if from.starts_with("http") {
         // use http_client to GET it
-        Request::to(("our", "http_client", "distro", "sys"))
-            .body(
-                serde_json::to_vec(&http::HttpClientAction::Http(http::OutgoingHttpRequest {
-                    method: "GET".to_string(),
-                    version: None,
-                    url: from.clone(),
-                    headers: std::collections::HashMap::new(),
-                }))
-                .unwrap(),
-            )
-            .context(package_id.to_string().as_bytes())
-            .expects_response(60)
-            .send()
-            .unwrap();
-
+        http::client::send_request(http::Method::GET, url, None, Some(60), vec![]);
         return DownloadResponse::Started;
     } else {
         if let Ok(Ok(Message::Response { body, .. })) =

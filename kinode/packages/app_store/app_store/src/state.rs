@@ -116,8 +116,6 @@ pub struct State {
     pub requested_packages: HashMap<PackageId, RequestedPackage>,
     /// the APIs we have outstanding requests to download (not persisted)
     pub requested_apis: HashMap<PackageId, RequestedPackage>,
-    /// UI websocket connected channel_IDs
-    pub ui_ws_channels: HashSet<u32>,
 }
 
 #[derive(Deserialize)]
@@ -153,7 +151,6 @@ impl State {
             downloaded_apis: s.downloaded_apis,
             requested_packages: HashMap::new(),
             requested_apis: HashMap::new(),
-            ui_ws_channels: HashSet::new(),
         }
     }
 
@@ -168,7 +165,6 @@ impl State {
             downloaded_apis: HashSet::new(),
             requested_packages: HashMap::new(),
             requested_apis: HashMap::new(),
-            ui_ws_channels: HashSet::new(),
         };
         state.populate_packages_from_filesystem()?;
         Ok(state)
@@ -380,7 +376,7 @@ impl State {
         let block_number: u64 = log.block_number.ok_or(AppStoreLogError::NoBlockNumber)?;
 
         let note: kimap::Note =
-            kimap::decode_note_log(&log).map_err(AppStoreLogError::DecodeLogError)?;
+            kimap::decode_note_log(&log).map_err(|e| AppStoreLogError::DecodeLogError(e))?;
 
         let package_id = note
             .parent_path

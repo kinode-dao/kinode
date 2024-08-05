@@ -1,15 +1,10 @@
 #![feature(let_chains)]
 use crate::kinode::process::homepage::{AddRequest, Request as HomepageRequest};
 use kinode_process_lib::{
-    await_message, call_init, get_blob,
-    http::{
-        bind_http_path, bind_http_static_path, send_response, serve_ui, HttpServerError,
-        HttpServerRequest, Method, StatusCode,
-    },
-    println, Address, Message,
+    await_message, call_init, get_blob, http, http::server, println, Address, LazyLoadBlob,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 /// Fetching OS version from main package.. LMK if there's a better way...
 const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
@@ -45,34 +40,42 @@ call_init!(init);
 fn init(our: Address) {
     let mut app_data: BTreeMap<String, HomepageApp> = BTreeMap::new();
 
-    serve_ui(&our, "ui", true, false, vec!["/"]).expect("failed to serve ui");
+    let mut http_server = server::HttpServer::new(5);
+    let http_config = server::HttpBindingConfig::default();
 
-    bind_http_static_path(
-        "/our",
-        false,
-        false,
-        Some("text/html".to_string()),
-        our.node().into(),
-    )
-    .expect("failed to bind to /our");
+    http_server
+        .serve_ui(&our, "ui", vec!["/"], http_config.clone())
+        .expect("failed to serve ui");
 
-    bind_http_static_path(
-        "/amionline",
-        false,
-        false,
-        Some("text/html".to_string()),
-        "yes".into(),
-    )
-    .expect("failed to bind to /amionline");
+    http_server
+        .bind_http_static_path(
+            "/our",
+            false,
+            false,
+            Some("text/html".to_string()),
+            our.node().into(),
+        )
+        .expect("failed to bind to /our");
 
-    bind_http_static_path(
-        "/our.js",
-        false,
-        false,
-        Some("application/javascript".to_string()),
-        format!("window.our = {{}}; window.our.node = '{}';", &our.node).into(),
-    )
-    .expect("failed to bind to /our.js");
+    http_server
+        .bind_http_static_path(
+            "/amionline",
+            false,
+            false,
+            Some("text/html".to_string()),
+            "yes".into(),
+        )
+        .expect("failed to bind to /amionline");
+
+    http_server
+        .bind_http_static_path(
+            "/our.js",
+            false,
+            false,
+            Some("application/javascript".to_string()),
+            format!("window.our = {{}}; window.our.node = '{}';", &our.node).into(),
+        )
+        .expect("failed to bind to /our.js");
 
     // the base version gets written over on-bootstrap, so we look for
     // the persisted (user-customized) version first.
@@ -99,67 +102,156 @@ fn init(our: Address) {
     .write(&stylesheet)
     .expect("failed to write to /persisted-kinode.css");
 
-    bind_http_static_path(
-        "/kinode.css",
-        false, // kinode.css is not auth'd so that apps on subdomains can use it too!
-        false,
-        Some("text/css".to_string()),
-        stylesheet,
-    )
-    .expect("failed to bind /kinode.css");
+    http_server
+        .bind_http_static_path(
+            "/kinode.css",
+            false, // kinode.css is not auth'd so that apps on subdomains can use it too!
+            false,
+            Some("text/css".to_string()),
+            stylesheet,
+        )
+        .expect("failed to bind /kinode.css");
 
-    bind_http_static_path(
-        "/kinode.svg",
-        false, // kinode.svg is not auth'd so that apps on subdomains can use it too!
-        false,
-        Some("image/svg+xml".to_string()),
-        include_str!("../../pkg/kinode.svg").into(),
-    )
-    .expect("failed to bind /kinode.svg");
+    http_server
+        .bind_http_static_path(
+            "/kinode.svg",
+            false, // kinode.svg is not auth'd so that apps on subdomains can use it too!
+            false,
+            Some("image/svg+xml".to_string()),
+            include_str!("../../pkg/kinode.svg").into(),
+        )
+        .expect("failed to bind /kinode.svg");
 
-    bind_http_static_path(
-        "/bird-orange.svg",
-        false, // bird-orange.svg is not auth'd so that apps on subdomains can use it too!
-        false,
-        Some("image/svg+xml".to_string()),
-        include_str!("../../pkg/bird-orange.svg").into(),
-    )
-    .expect("failed to bind /bird-orange.svg");
+    http_server
+        .bind_http_static_path(
+            "/bird-orange.svg",
+            false, // bird-orange.svg is not auth'd so that apps on subdomains can use it too!
+            false,
+            Some("image/svg+xml".to_string()),
+            include_str!("../../pkg/bird-orange.svg").into(),
+        )
+        .expect("failed to bind /bird-orange.svg");
 
-    bind_http_static_path(
-        "/bird-plain.svg",
-        false, // bird-plain.svg is not auth'd so that apps on subdomains can use it too!
-        false,
-        Some("image/svg+xml".to_string()),
-        include_str!("../../pkg/bird-plain.svg").into(),
-    )
-    .expect("failed to bind /bird-plain.svg");
+    http_server
+        .bind_http_static_path(
+            "/bird-plain.svg",
+            false, // bird-plain.svg is not auth'd so that apps on subdomains can use it too!
+            false,
+            Some("image/svg+xml".to_string()),
+            include_str!("../../pkg/bird-plain.svg").into(),
+        )
+        .expect("failed to bind /bird-plain.svg");
 
-    bind_http_static_path(
-        "/version",
-        true,
-        false,
-        Some("text/plain".to_string()),
-        version_from_cargo_toml().into(),
-    )
-    .expect("failed to bind /version");
+    http_server
+        .bind_http_static_path(
+            "/version",
+            true,
+            false,
+            Some("text/plain".to_string()),
+            version_from_cargo_toml().into(),
+        )
+        .expect("failed to bind /version");
 
-    bind_http_path("/apps", true, false).expect("failed to bind /apps");
-    bind_http_path("/favorite", true, false).expect("failed to bind /favorite");
-    bind_http_path("/order", true, false).expect("failed to bind /order");
+    http_server
+        .bind_http_path("/apps", http_config.clone())
+        .expect("failed to bind /apps");
+    http_server
+        .bind_http_path("/favorite", http_config.clone())
+        .expect("failed to bind /favorite");
+    http_server
+        .bind_http_path("/order", http_config)
+        .expect("failed to bind /order");
 
     loop {
         let Ok(ref message) = await_message() else {
             // we never send requests, so this will never happen
             continue;
         };
-        if let Message::Response { source, body, .. } = message
-            && source.process == "http_server:distro:sys"
-        {
-            match serde_json::from_slice::<Result<(), HttpServerError>>(&body) {
-                Ok(Ok(())) => continue,
-                Ok(Err(e)) => println!("got error from http_server: {e}"),
-                Err(_e) => println!("got malformed message from http_server!"),
+        if message.source().process == "http_server:distro:sys" {
+            if message.is_request() {
+                let Ok(request) = http_server.parse_request(message.body()) else {
+                    continue;
+                };
+                http_server.handle_request(
+                    request,
+                    |incoming| {
+                        let path = incoming.bound_path(None);
+                        match path {
+                            "/apps" => (
+                                server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+                                Some(LazyLoadBlob::new(
+                                    Some("application/json"),
+                                    serde_json::to_vec(
+                                        &app_data.values().collect::<Vec<&HomepageApp>>(),
+                                    )
+                                    .unwrap(),
+                                )),
+                            ),
+                            "/favorite" => {
+                                let Ok(http::Method::POST) = incoming.method() else {
+                                    return (
+                                        server::HttpResponse::new(
+                                            http::StatusCode::METHOD_NOT_ALLOWED,
+                                        ),
+                                        None,
+                                    );
+                                };
+                                let Some(body) = get_blob() else {
+                                    return (
+                                        server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+                                        None,
+                                    );
+                                };
+                                let Ok(favorite_toggle) =
+                                    serde_json::from_slice::<(String, bool)>(&body.bytes)
+                                else {
+                                    return (
+                                        server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+                                        None,
+                                    );
+                                };
+                                if let Some(app) = app_data.get_mut(&favorite_toggle.0) {
+                                    app.favorite = favorite_toggle.1;
+                                }
+                                (server::HttpResponse::new(http::StatusCode::OK), None)
+                            }
+                            "/order" => {
+                                let Ok(http::Method::POST) = incoming.method() else {
+                                    return (
+                                        server::HttpResponse::new(
+                                            http::StatusCode::METHOD_NOT_ALLOWED,
+                                        ),
+                                        None,
+                                    );
+                                };
+                                let Some(body) = get_blob() else {
+                                    return (
+                                        server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+                                        None,
+                                    );
+                                };
+                                let Ok(order_list) =
+                                    serde_json::from_slice::<Vec<(String, u32)>>(&body.bytes)
+                                else {
+                                    return (
+                                        server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+                                        None,
+                                    );
+                                };
+                                for (app_id, order) in order_list {
+                                    if let Some(app) = app_data.get_mut(&app_id) {
+                                        app.order = order;
+                                    }
+                                }
+                                (server::HttpResponse::new(http::StatusCode::OK), None)
+                            }
+                            _ => (server::HttpResponse::new(http::StatusCode::NOT_FOUND), None),
+                        }
+                    },
+                    |_channel_id, _message_type, _message| {
+                        // not expecting any websocket messages from FE currently
+                    },
+                );
             }
         } else {
             // handle messages to add or remove an app from the homepage.
@@ -210,114 +302,17 @@ fn init(our: Address) {
                         .write(new_stylesheet_string.as_bytes())
                         .expect("failed to write to /persisted-kinode.css");
                         // re-bind
-                        bind_http_static_path(
-                            "/kinode.css",
-                            false, // kinode.css is not auth'd so that apps on subdomains can use it too!
-                            false,
-                            Some("text/css".to_string()),
-                            new_stylesheet_string.into(),
-                        )
-                        .expect("failed to bind /kinode.css");
+                        http_server
+                            .bind_http_static_path(
+                                "/kinode.css",
+                                false, // kinode.css is not auth'd so that apps on subdomains can use it too!
+                                false,
+                                Some("text/css".to_string()),
+                                new_stylesheet_string.into(),
+                            )
+                            .expect("failed to bind /kinode.css");
                         println!("updated kinode.css!");
                     }
-                }
-            } else if let Ok(req) = serde_json::from_slice::<HttpServerRequest>(message.body()) {
-                match req {
-                    HttpServerRequest::Http(incoming) => {
-                        let path = incoming.bound_path(None);
-                        match path {
-                            "/apps" => {
-                                send_response(
-                                    StatusCode::OK,
-                                    Some(HashMap::from([(
-                                        "Content-Type".to_string(),
-                                        "application/json".to_string(),
-                                    )])),
-                                    serde_json::to_vec(
-                                        &app_data.values().collect::<Vec<&HomepageApp>>(),
-                                    )
-                                    .unwrap(),
-                                );
-                            }
-                            "/favorite" => {
-                                let Ok(Method::POST) = incoming.method() else {
-                                    send_response(
-                                        StatusCode::BAD_REQUEST,
-                                        Some(HashMap::new()),
-                                        vec![],
-                                    );
-                                    continue;
-                                };
-                                let Some(body) = get_blob() else {
-                                    send_response(
-                                        StatusCode::BAD_REQUEST,
-                                        Some(HashMap::new()),
-                                        vec![],
-                                    );
-                                    continue;
-                                };
-                                let Ok(favorite_toggle) =
-                                    serde_json::from_slice::<(String, bool)>(&body.bytes)
-                                else {
-                                    send_response(
-                                        StatusCode::BAD_REQUEST,
-                                        Some(HashMap::new()),
-                                        vec![],
-                                    );
-                                    continue;
-                                };
-                                if let Some(app) = app_data.get_mut(&favorite_toggle.0) {
-                                    app.favorite = favorite_toggle.1;
-                                }
-                                send_response(
-                                    StatusCode::OK,
-                                    Some(HashMap::from([(
-                                        "Content-Type".to_string(),
-                                        "application/json".to_string(),
-                                    )])),
-                                    vec![],
-                                );
-                            }
-                            "/order" => {
-                                let Ok(Method::POST) = incoming.method() else {
-                                    send_response(
-                                        StatusCode::BAD_REQUEST,
-                                        Some(HashMap::new()),
-                                        vec![],
-                                    );
-                                    continue;
-                                };
-                                let Some(body) = get_blob() else {
-                                    send_response(
-                                        StatusCode::BAD_REQUEST,
-                                        Some(HashMap::new()),
-                                        vec![],
-                                    );
-                                    continue;
-                                };
-                                let Ok(order_list) =
-                                    serde_json::from_slice::<Vec<(String, u32)>>(&body.bytes)
-                                else {
-                                    send_response(
-                                        StatusCode::BAD_REQUEST,
-                                        Some(HashMap::new()),
-                                        vec![],
-                                    );
-                                    continue;
-                                };
-                                for (app_id, order) in order_list {
-                                    if let Some(app) = app_data.get_mut(&app_id) {
-                                        app.order = order;
-                                    }
-                                }
-                                send_response(StatusCode::OK, Some(HashMap::new()), vec![]);
-                            }
-                            _ => {
-                                send_response(StatusCode::NOT_FOUND, Some(HashMap::new()), vec![]);
-                            }
-                        }
-                    }
-                    _ => {}
                 }
             }
         }

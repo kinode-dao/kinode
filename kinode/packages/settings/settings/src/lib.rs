@@ -3,7 +3,7 @@ use kinode_process_lib::{
     LazyLoadBlob, Message, NodeId, ProcessId, Request, Response, SendError, SendErrorKind,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 extern crate base64;
 
 const ICON: &str = include_str!("icon");
@@ -42,7 +42,6 @@ enum SettingsError {
 #[derive(Debug, Serialize, Deserialize)]
 struct SettingsState {
     pub our: Address,
-    pub ws_clients: HashSet<u32>,
     pub identity: Option<net::Identity>,
     pub diagnostics: Option<String>,
     pub eth_rpc_providers: Option<eth::SavedConfigs>,
@@ -55,7 +54,6 @@ impl SettingsState {
     fn new(our: Address) -> Self {
         Self {
             our,
-            ws_clients: HashSet::new(),
             identity: None,
             diagnostics: None,
             eth_rpc_providers: None,
@@ -65,17 +63,15 @@ impl SettingsState {
         }
     }
 
-    fn ws_update(&self) {
-        for channel in &self.ws_clients {
-            http::send_ws_push(
-                *channel,
-                http::WsMessageType::Text,
-                LazyLoadBlob {
-                    mime: Some("application/json".to_string()),
-                    bytes: serde_json::to_vec(self).unwrap(),
-                },
-            );
-        }
+    fn ws_update(&self, http_server: &http::server::HttpServer) {
+        http_server.ws_push_all_channels(
+            "/",
+            http::server::WsMessageType::Text,
+            LazyLoadBlob {
+                mime: Some("application/json".to_string()),
+                bytes: serde_json::to_vec(self).unwrap(),
+            },
+        )
     }
 
     /// get data that the settings page presents to user
@@ -182,18 +178,28 @@ fn initialize(our: Address) {
     // add ourselves to the homepage
     homepage::add_to_homepage("Settings", Some(ICON), Some("/"), None);
 
-    // Serve the index.html and other UI files found in pkg/ui at the root path.
-    // Serving securely at `settings-sys` subdomain
-    http::secure_serve_ui(&our, "ui", vec!["/"]).unwrap();
-    http::secure_bind_http_path("/ask").unwrap();
-    http::secure_bind_ws_path("/", false).unwrap();
-
     // Grab our state, then enter the main event loop.
     let mut state: SettingsState = SettingsState::new(our);
-    main_loop(&mut state);
+
+    let mut http_server = http::server::HttpServer::new(5);
+
+    // Serve the index.html and other UI files found in pkg/ui at the root path.
+    // Serving securely at `settings-sys` subdomain
+    http_server
+        .serve_ui(
+            &state.our,
+            "ui",
+            vec!["/"],
+            http::server::HttpBindingConfig::default().secure_subdomain(true),
+        )
+        .unwrap();
+    http_server.secure_bind_http_path("/ask").unwrap();
+    http_server.secure_bind_ws_path("/").unwrap();
+
+    main_loop(&mut state, &mut http_server);
 }
 
-fn main_loop(state: &mut SettingsState) {
+fn main_loop(state: &mut SettingsState, http_server: &mut http::server::HttpServer) {
     loop {
         match await_message() {
             Err(send_error) => {
@@ -209,7 +215,8 @@ fn main_loop(state: &mut SettingsState) {
                 if source.node() != state.our.node {
                     continue; // ignore messages from other nodes
                 }
-                let response = handle_request(&source, &body, state);
+                let response = handle_request(&source, &body, state, http_server);
+                state.ws_update(http_server);
                 if expects_response.is_some() {
                     Response::new()
                         .body(serde_json::to_vec(&response).unwrap())
@@ -222,42 +229,45 @@ fn main_loop(state: &mut SettingsState) {
     }
 }
 
-fn handle_request(source: &Address, body: &[u8], state: &mut SettingsState) -> SettingsResponse {
+fn handle_request(
+    source: &Address,
+    body: &[u8],
+    state: &mut SettingsState,
+    http_server: &mut http::server::HttpServer,
+) -> SettingsResponse {
     // source node is ALWAYS ourselves since networking is disabled
     if source.process == "http_server:distro:sys" {
         // receive HTTP requests and websocket connection messages from our server
-        match serde_json::from_slice::<http::HttpServerRequest>(body)
-            .map_err(|_| SettingsError::MalformedRequest)?
-        {
-            http::HttpServerRequest::Http(ref incoming) => {
-                match handle_http_request(state, incoming) {
-                    Ok(()) => Ok(None),
+        let server_request = http_server
+            .parse_request(body)
+            .map_err(|_| SettingsError::MalformedRequest)?;
+
+        http_server.handle_request(
+            server_request,
+            |req| {
+                let result = handle_http_request(state, &req);
+                match result {
+                    Ok((resp, blob)) => (resp, blob),
                     Err(e) => {
                         println!("error handling HTTP request: {e}");
-                        http::send_response(
-                            http::StatusCode::INTERNAL_SERVER_ERROR,
-                            None,
-                            "Service Unavailable".to_string().as_bytes().to_vec(),
-                        );
-                        Ok(None)
+                        (
+                            http::server::HttpResponse {
+                                status: 500,
+                                headers: HashMap::new(),
+                            },
+                            Some(LazyLoadBlob {
+                                mime: Some("application/text".to_string()),
+                                bytes: e.to_string().as_bytes().to_vec(),
+                            }),
+                        )
                     }
                 }
-            }
-            http::HttpServerRequest::WebSocketOpen { channel_id, .. } => {
-                state.ws_clients.insert(channel_id);
-                Ok(None)
-            }
-            http::HttpServerRequest::WebSocketClose(channel_id) => {
-                // client frontend closed a websocket
-                state.ws_clients.remove(&channel_id);
-                Ok(None)
-            }
-            http::HttpServerRequest::WebSocketPush { .. } => {
-                // client frontend sent a websocket message
-                // we don't expect this! we only use websockets to push updates
-                Ok(None)
-            }
-        }
+            },
+            |_channel_id, _message_type, _blob| {
+                // we don't expect websocket messages
+            },
+        );
+        Ok(None)
     } else {
         let settings_request = serde_json::from_slice::<SettingsRequest>(body)
             .map_err(|_| SettingsError::MalformedRequest)?;
@@ -268,45 +278,46 @@ fn handle_request(source: &Address, body: &[u8], state: &mut SettingsState) -> S
 /// Handle HTTP requests from our own frontend.
 fn handle_http_request(
     state: &mut SettingsState,
-    http_request: &http::IncomingHttpRequest,
-) -> anyhow::Result<()> {
+    http_request: &http::server::IncomingHttpRequest,
+) -> anyhow::Result<(http::server::HttpResponse, Option<LazyLoadBlob>)> {
     match http_request.method()?.as_str() {
         "GET" => {
             state.fetch()?;
-            Ok(http::send_response(
-                http::StatusCode::OK,
-                Some(HashMap::from([(
-                    String::from("Content-Type"),
-                    String::from("application/json"),
-                )])),
-                serde_json::to_vec(&state)?,
+            Ok((
+                http::server::HttpResponse::new(http::StatusCode::OK)
+                    .header("Content-Type", "application/json"),
+                Some(LazyLoadBlob::new(
+                    Some("application/json"),
+                    serde_json::to_vec(&state)?,
+                )),
             ))
         }
         "POST" => {
             let Some(blob) = get_blob() else {
-                return Ok(http::send_response(
-                    http::StatusCode::BAD_REQUEST,
-                    None,
-                    vec![],
-                ));
+                return Err(anyhow::anyhow!("malformed request"));
             };
             let request = serde_json::from_slice::<SettingsRequest>(&blob.bytes)?;
             let response = handle_settings_request(state, request);
-            Ok(http::send_response(
-                http::StatusCode::OK,
-                None,
+            Ok((
+                http::server::HttpResponse::new(http::StatusCode::OK)
+                    .header("Content-Type", "application/json"),
                 match response {
-                    Ok(Some(data)) => serde_json::to_vec(&data)?,
-                    Ok(None) => "null".as_bytes().to_vec(),
-                    Err(e) => serde_json::to_vec(&e)?,
+                    Ok(Some(data)) => Some(LazyLoadBlob::new(
+                        Some("application/json"),
+                        serde_json::to_vec(&data)?,
+                    )),
+                    Ok(None) => None,
+                    Err(e) => Some(LazyLoadBlob::new(
+                        Some("application/json"),
+                        serde_json::to_vec(&e)?,
+                    )),
                 },
             ))
         }
         // Any other method will be rejected.
-        _ => Ok(http::send_response(
-            http::StatusCode::METHOD_NOT_ALLOWED,
+        _ => Ok((
+            http::server::HttpResponse::new(http::StatusCode::METHOD_NOT_ALLOWED),
             None,
-            vec![],
         )),
     }
 }
@@ -421,12 +432,10 @@ fn handle_settings_request(
                 .send()
                 .unwrap();
             state.stylesheet = Some(stylesheet);
-            state.ws_update();
             return SettingsResponse::Ok(None);
         }
     }
 
     state.fetch().map_err(|_| SettingsError::StateFetchFailed)?;
-    state.ws_update();
     SettingsResponse::Ok(None)
 }
