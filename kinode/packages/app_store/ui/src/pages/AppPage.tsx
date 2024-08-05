@@ -29,6 +29,9 @@ export default function AppPage() {
   const [metadataUriContent, setMetadataUriContent] = useState<any>(null);
   const [showAllVersions, setShowAllVersions] = useState(false);
 
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<number | null>(null);
+
 
   useEffect(() => {
     if (app) {
@@ -48,10 +51,12 @@ export default function AppPage() {
 
   useEffect(() => {
     if (app && app.metadata?.properties?.code_hashes) {
-      const versions = Object.keys(app.metadata.properties.code_hashes);
-      const latest = versions[versions.length - 1];
-      setLatestVersion(latest);
-      setUpdateAvailable(app.state?.our_version !== latest);
+      const versions = Object.entries(app.metadata.properties.code_hashes);
+      if (versions.length > 0) {
+        const [latestVersion, latestHash] = versions[versions.length - 1];
+        setLatestVersion(latestVersion);
+        setUpdateAvailable(app.state?.our_version !== latestHash);
+      }
     }
   }, [app]);
 
@@ -101,6 +106,28 @@ export default function AppPage() {
     }
   };
 
+  const handleUpdate = async () => {
+    if (selectedMirror) {
+      setError(null);
+      setIsUpdating(true);
+      setUpdateProgress(0);
+      try {
+        await updateApp(app, selectedMirror);
+        setUpdateProgress(100);
+        setTimeout(() => {
+          setIsUpdating(false);
+          setUpdateProgress(null);
+          getApp(app.package); // Refresh app data after update
+        }, 3000);
+      } catch (error) {
+        console.error('Update failed:', error);
+        setError(`Update failed: ${error instanceof Error ? error.message : String(error)}`);
+        setIsUpdating(false);
+        setUpdateProgress(null);
+      }
+    }
+  };
+
   const handleInstall = async () => {
     setIsInstalling(true);
     setError(null);
@@ -118,7 +145,6 @@ export default function AppPage() {
     }
   };
 
-  const handleUpdate = () => updateApp(app);
   const handleUninstall = () => uninstallApp(app);
   const handleMirror = () => setMirroring(app, !app.state?.mirroring);
   const handleAutoUpdate = () => setAutoUpdate(app, !app.state?.auto_update);
@@ -130,9 +156,11 @@ export default function AppPage() {
   const isDownloaded = app.state !== null;
   const isInstalled = app.installed;
 
-  const progressPercentage = localProgress !== null
-    ? localProgress
-    : isDownloaded ? 100 : 0;
+  const progressPercentage = updateProgress !== null
+    ? updateProgress
+    : localProgress !== null
+      ? localProgress
+      : isDownloaded ? 100 : 0;
 
   return (
     <section className="app-page">
@@ -178,7 +206,7 @@ export default function AppPage() {
                     </div>
                   )}
                 </li>
-                <li><span>Update Available:</span> <span>{updateAvailable ? "Yes" : "No"}</span></li>
+                {/* <li><span>Update Available:</span> <span>{updateAvailable ? "Yes" : "No"}</span></li> */}
                 <li className="expandable-item">
                   <div className="item-header">
                     <span>~metadata-uri</span>
@@ -285,7 +313,23 @@ export default function AppPage() {
             {isInstalled ? (
               <>
                 <button onClick={handleLaunch} className="primary"><FaPlay /> Launch</button>
-                <button onClick={handleUpdate} className="secondary"><FaSync /> Update</button>
+                {updateAvailable && (
+                  <button
+                    onClick={handleUpdate}
+                    className={`secondary ${isUpdating ? 'updating' : ''}`}
+                    disabled={!selectedMirror || isUpdating}
+                  >
+                    {isUpdating ? (
+                      <>
+                        <FaSpinner className="fa-spin" /> Updating...
+                      </>
+                    ) : (
+                      <>
+                        <FaSync /> Update
+                      </>
+                    )}
+                  </button>
+                )}
                 <button onClick={handleUninstall} className="secondary"><FaTrash /> Uninstall</button>
               </>
             ) : (
@@ -294,7 +338,7 @@ export default function AppPage() {
                   <select
                     value={selectedMirror || ''}
                     onChange={(e) => setSelectedMirror(e.target.value)}
-                    disabled={isDownloading}
+                    disabled={isDownloading || isUpdating}
                   >
                     <option value="" disabled>Select Mirror</option>
                     {Object.entries(mirrorStatuses).map(([mirror, status]) => (
@@ -335,7 +379,8 @@ export default function AppPage() {
             )}
           </div>
 
-          {(isDownloading || isDownloaded) && (
+
+          {(isDownloading || isUpdating || isDownloaded) && (
             <div className="progress-container">
               <div className="progress-bar">
                 <div

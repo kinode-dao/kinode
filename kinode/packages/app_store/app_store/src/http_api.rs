@@ -21,6 +21,7 @@ pub fn init_frontend(our: &Address) {
         "/apps/:id",
         "/apps/:id/download",
         "/apps/:id/install",
+        "/apps/:id/update",
         "/apps/:id/caps",
         "/apps/:id/mirror",
         "/apps/:id/auto-update",
@@ -408,6 +409,75 @@ fn serve_paths(
                     StatusCode::SERVICE_UNAVAILABLE,
                     None,
                     format!("Failed to download: {other:?}").into_bytes(),
+                )),
+            }
+        }
+        // POST /apps/:id/update
+        // update a downloaded app
+        "/apps/:id/update" => {
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+
+            match method {
+                Method::POST => {
+                    let pkg_listing: &PackageListing = state
+                        .packages
+                        .get(&package_id)
+                        .ok_or(anyhow::anyhow!("No package"))?;
+
+                    let body = crate::get_blob()
+                        .ok_or(anyhow::anyhow!("missing blob"))?
+                        .bytes;
+                    let body_json: serde_json::Value =
+                        serde_json::from_slice(&body).unwrap_or_default();
+
+                    let download_from = body_json
+                        .get("download_from")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string())
+                        .or_else(|| {
+                            pkg_listing
+                                .metadata
+                                .as_ref()?
+                                .properties
+                                .mirrors
+                                .first()
+                                .map(|m| m.to_string())
+                        })
+                        .ok_or_else(|| anyhow::anyhow!("No download_from specified!"))?;
+
+                    let desired_version_hash = body_json
+                        .get("version")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string());
+
+                    match crate::start_download(
+                        state,
+                        package_id,
+                        download_from,
+                        false, // Don't mirror during update
+                        pkg_listing.state.as_ref().map_or(false, |s| s.auto_update),
+                        desired_version_hash,
+                    ) {
+                        DownloadResponse::Started => {
+                            Ok((StatusCode::ACCEPTED, None, format!("Updating").into_bytes()))
+                        }
+                        other => Ok((
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            None,
+                            format!("Failed to update: {other:?}").into_bytes(),
+                        )),
+                    }
+                }
+                _ => Ok((
+                    StatusCode::METHOD_NOT_ALLOWED,
+                    None,
+                    format!("Invalid method {method} for {bound_path}").into_bytes(),
                 )),
             }
         }

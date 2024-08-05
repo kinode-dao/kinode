@@ -16,7 +16,7 @@ interface AppsStore {
   getApp: (id: string) => Promise<AppInfo>
   checkMirror: (node: string) => Promise<MirrorCheckFile>
   installApp: (app: AppInfo) => Promise<void>
-  updateApp: (app: AppInfo) => Promise<void>
+  updateApp: (app: AppInfo, downloadFrom: string) => Promise<void>
   uninstallApp: (app: AppInfo) => Promise<void>
   downloadApp: (app: AppInfo, downloadFrom: string) => Promise<void>
   getCaps: (app: AppInfo) => Promise<PackageManifest>
@@ -93,9 +93,18 @@ const useAppsStore = create<AppsStore>()(
         await get().getApp(appId(app))
       },
 
-      updateApp: async (app: AppInfo) => {
-        // Note: The backend doesn't have a specific update endpoint, so we might need to implement this differently
-        throw new Error('Update functionality not implemented')
+      updateApp: async (app: AppInfo, downloadFrom: string) => {
+        const res = await fetch(`${BASE_URL}/apps/${appId(app)}/update`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ download_from: downloadFrom }),
+        });
+
+        if (res.status !== HTTP_STATUS.ACCEPTED) {
+          throw new Error(`Failed to update app: ${appId(app)}`);
+        }
       },
 
       uninstallApp: async (app: AppInfo) => {
@@ -108,13 +117,14 @@ const useAppsStore = create<AppsStore>()(
 
       downloadApp: async (app: AppInfo, downloadFrom: string) => {
         const res = await fetch(`${BASE_URL}/apps/${appId(app)}/download`, {
-          method: 'PUT',
+          method: 'POST',
           body: JSON.stringify({ download_from: downloadFrom }),
         })
         if (res.status !== HTTP_STATUS.CREATED) {
           throw new Error(`Failed to download app: ${appId(app)}`)
         }
       },
+
 
       getCaps: async (app: AppInfo) => {
         const res = await fetch(`${BASE_URL}/apps/${appId(app)}/caps`)
