@@ -44,7 +44,7 @@ fn init(our: Address) {
     let http_config = server::HttpBindingConfig::default();
 
     http_server
-        .serve_ui(&our, "ui", http_config.clone())
+        .serve_ui(&our, "ui", vec!["/"], http_config.clone())
         .expect("failed to serve ui");
 
     http_server

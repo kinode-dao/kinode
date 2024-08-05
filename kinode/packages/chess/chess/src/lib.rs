@@ -102,7 +102,7 @@ fn initialize(our: Address) {
     // Serve the index.html and other UI files found in pkg/ui at the root path.
     // authenticated=true, local_only=false
     http_server
-        .serve_ui(&our, "ui", http_config.clone())
+        .serve_ui(&our, "ui", vec!["/"], http_config.clone())
         .expect("failed to serve ui");
 
     // Allow HTTP requests to be made to /games; they will be handled dynamically.

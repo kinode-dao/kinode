@@ -189,6 +189,7 @@ fn initialize(our: Address) {
         .serve_ui(
             &state.our,
             "ui",
+            vec!["/"],
             http::server::HttpBindingConfig::default().secure_subdomain(true),
         )
         .unwrap();
