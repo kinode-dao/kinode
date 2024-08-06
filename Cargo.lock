@@ -1346,13 +1346,11 @@ name = "chess"
 version = "0.2.1"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "bincode",
  "kinode_process_lib 0.9.0",
  "pleco",
  "serde",
  "serde_json",
- "url",
  "wit-bindgen",
 ]
 
