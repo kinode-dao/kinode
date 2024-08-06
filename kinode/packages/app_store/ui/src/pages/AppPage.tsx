@@ -50,16 +50,28 @@ export default function AppPage() {
   }, [app]);
 
   useEffect(() => {
+    console.log("Checking app version updates...");
     if (app && app.metadata?.properties?.code_hashes) {
       const versions = Object.entries(app.metadata.properties.code_hashes);
+      console.log("Available versions:", versions);
       if (versions.length > 0) {
         const [latestVersion, latestHash] = versions[versions.length - 1];
+        console.log(`Latest version found: ${latestVersion} with hash ${latestHash}`);
         setLatestVersion(latestVersion);
-        setUpdateAvailable(app.state?.our_version !== latestHash);
+        const isUpdateAvailable = app.state?.our_version !== latestHash;
+        console.log(`Update available: ${isUpdateAvailable}`);
+        setUpdateAvailable(isUpdateAvailable);
       }
+    } else {
+      console.log("No code hashes available in metadata.");
+      // app metadata
+      console.log("App metadata:", app);
+      // app state
+      console.log("App state:", app.state);
+      // app publisher
+      console.log("App publisher:", app.publisher);
     }
   }, [app]);
-
   if (!app) {
     return <div className="app-page"><h4>App details not found for {id}</h4></div>;
   }
@@ -314,21 +326,37 @@ export default function AppPage() {
               <>
                 <button onClick={handleLaunch} className="primary"><FaPlay /> Launch</button>
                 {updateAvailable && (
-                  <button
-                    onClick={handleUpdate}
-                    className={`secondary ${isUpdating ? 'updating' : ''}`}
-                    disabled={!selectedMirror || isUpdating}
-                  >
-                    {isUpdating ? (
-                      <>
-                        <FaSpinner className="fa-spin" /> Updating...
-                      </>
-                    ) : (
-                      <>
-                        <FaSync /> Update
-                      </>
-                    )}
-                  </button>
+                  <>
+                    <div className="mirror-selection">
+                      <select
+                        value={selectedMirror || ''}
+                        onChange={(e) => setSelectedMirror(e.target.value)}
+                        disabled={isUpdating}
+                      >
+                        <option value="" disabled>Select Mirror</option>
+                        {Object.entries(mirrorStatuses).map(([mirror, status]) => (
+                          <option key={mirror} value={mirror} disabled={!status?.is_online}>
+                            {mirror} {status?.is_online ? '(Online)' : '(Offline)'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <button
+                      onClick={handleUpdate}
+                      className={`secondary ${isUpdating ? 'updating' : ''}`}
+                      disabled={!selectedMirror || isUpdating}
+                    >
+                      {isUpdating ? (
+                        <>
+                          <FaSpinner className="fa-spin" /> Updating...
+                        </>
+                      ) : (
+                        <>
+                          <FaSync /> Update
+                        </>
+                      )}
+                    </button>
+                  </>
                 )}
                 <button onClick={handleUninstall} className="secondary"><FaTrash /> Uninstall</button>
               </>

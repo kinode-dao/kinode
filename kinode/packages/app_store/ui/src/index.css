@@ -74,9 +74,7 @@
 }
 
 .app-actions-buttons button {
-    flex: 1 0 auto;
     min-width: 120px;
-    /* Ensure buttons have a minimum width */
 }
 
 .mirror-selection {

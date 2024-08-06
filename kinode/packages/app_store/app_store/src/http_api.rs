@@ -176,7 +176,7 @@ fn make_widget() -> String {
 /// - download a listed app: POST /apps/:id/download
 /// - install a downloaded app: POST /apps/:id/install
 /// - uninstall/delete a downloaded app: DELETE /apps/:id
-/// - update a downloaded app: PUT /apps/:id FIX
+/// - update a downloaded app: POST /apps/:id/update
 /// - approve capabilities for a downloaded app: POST /apps/:id/caps
 /// - start mirroring a downloaded app: PUT /apps/:id/mirror
 /// - stop mirroring a downloaded app: DELETE /apps/:id/mirror
@@ -373,13 +373,23 @@ fn serve_paths(
                 .ok_or(anyhow::anyhow!("missing blob"))?
                 .bytes;
             let body_json: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let mirrors: &Vec<NodeId> = pkg_listing
+            let mirrors: Option<&Vec<NodeId>> = pkg_listing
                 .metadata
                 .as_ref()
-                .expect("Package does not have metadata")
-                .properties
-                .mirrors
-                .as_ref();
+                .and_then(|metadata| Some(metadata.properties.mirrors.as_ref()));
+
+            let mirrors = match mirrors {
+                Some(m) => m,
+                None => {
+                    return Ok((
+                        StatusCode::BAD_REQUEST,
+                        None,
+                        "Package does not have metadata or mirrors"
+                            .as_bytes()
+                            .to_vec(),
+                    ));
+                }
+            };
 
             let download_from = body_json
                 .get("download_from")

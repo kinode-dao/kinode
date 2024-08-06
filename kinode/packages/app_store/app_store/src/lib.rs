@@ -505,6 +505,9 @@ fn handle_receive_download_package(
     };
     // check the version hash for this download against requested!
     let download_hash = utils::sha_256_hash(&blob.bytes);
+
+    // note TEMP: erroring here, to not mess up internal installed state
+    // longer term, separate downloads and installs logic.
     let verified = match requested_package.desired_version_hash {
         Some(hash) => {
             if download_hash != hash {
@@ -517,8 +520,9 @@ fn handle_receive_download_package(
         }
         None => match state.packages.get(package_id) {
             None => {
-                println!("downloaded package cannot be found onchain, proceeding with unverified download");
-                false
+                return Err(anyhow::anyhow!(
+                    "downloaded package cannot be found onchain, rejecting unverified download"
+                ));
             }
             Some(package_listing) => {
                 if let Some(metadata) = &package_listing.metadata {
@@ -527,16 +531,15 @@ fn handle_receive_download_package(
                         .code_hashes
                         .get(&metadata.properties.current_version);
                     if Some(&download_hash) != latest_hash {
-                        println!(
+                        return Err(anyhow::anyhow!(
                             "downloaded package is not latest version \
                             download hash: {download_hash}, latest hash: {latest_hash:?} \
-                            proceeding with unverified download"
-                        );
+                            rejecting unverified download"
+                        ));
                     }
                     false
                 } else {
-                    println!("downloaded package has no metadata to check validity against, proceeding with unverified download");
-                    false
+                    return Err(anyhow::anyhow!("downloaded package has no metadata to check validity against, rejecting unverified download"));
                 }
             }
         },
