@@ -12,13 +12,13 @@ use std::collections::{HashMap, HashSet};
 
 const ICON: &str = include_str!("icon");
 
-//
-// Our serializable state format.
-//
-
+///
+/// Our serializable state format.
+///
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct Game {
-    pub id: String, // the node with whom we are playing
+    /// the node with whom we are playing
+    pub id: String,
     pub turns: u64,
     pub board: String,
     pub white: String,

@@ -9,7 +9,7 @@ call_init!(init);
 fn init(_our: Address) {
     // fetch our location with HTTP client
     let location_json = loop {
-        match http::send_request_await_response(
+        match http::client::send_request_await_response(
             http::Method::GET,
             url::Url::parse("https://ipapi.co/json/").unwrap(),
             Some(std::collections::HashMap::from([(

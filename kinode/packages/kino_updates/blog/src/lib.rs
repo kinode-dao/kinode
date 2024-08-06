@@ -135,7 +135,7 @@ fn create_widget(posts: Vec<KinodeBlogPost>) -> String {
 }
 
 fn fetch_most_recent_blog_posts(n: usize) -> Vec<KinodeBlogPost> {
-    let blog_posts = match http::send_request_await_response(
+    let blog_posts = match http::client::send_request_await_response(
         http::Method::GET,
         url::Url::parse("https://kinode.org/api/blog/posts").unwrap(),
         None,
