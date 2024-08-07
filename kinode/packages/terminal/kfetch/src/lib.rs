@@ -1,10 +1,10 @@
 use kinode_process_lib::kernel_types::{
     KernelCommand, KernelPrint, KernelPrintResponse, KernelResponse,
 };
-use kinode_process_lib::{call_init, eth, net, println, Address, Message, Request};
+use kinode_process_lib::{eth, net, println, script, Address, Message, Request};
 use std::collections::HashSet;
 
-/// Fetching OS version from main package.. LMK if there's a better way...
+/// Fetching OS version from main package
 const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
 
 wit_bindgen::generate!({
@@ -12,19 +12,18 @@ wit_bindgen::generate!({
     world: "process-v0",
 });
 
-call_init!(init);
-fn init(our: Address) {
+script!(init);
+/// no args taken
+fn init(our: Address, _args: String) -> String {
     // get identity
     let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
         .body(rmp_serde::to_vec(&net::NetAction::GetPeer(our.node.clone())).unwrap())
         .send_and_await_response(60)
     else {
-        println!("failed to get response from net");
-        return;
+        return "failed to get response from net".to_string();
     };
     let Ok(net::NetResponse::Peer(Some(our_id))) = rmp_serde::from_slice(&body) else {
-        println!("got malformed response from net");
-        return;
+        return "got malformed response from net".to_string();
     };
 
     // get eth providers
@@ -34,12 +33,10 @@ fn init(our: Address) {
         .send_and_await_response(60)
         .unwrap()
     else {
-        println!("failed to get response from eth");
-        return;
+        return "failed to get response from eth".to_string();
     };
     let Ok(eth::EthConfigResponse::Providers(providers)) = serde_json::from_slice(&body) else {
-        println!("failed to parse eth response");
-        return;
+        return "failed to parse eth response".to_string();
     };
 
     // get eth subs
@@ -49,16 +46,14 @@ fn init(our: Address) {
         .send_and_await_response(60)
         .unwrap()
     else {
-        println!("failed to get response from eth");
-        return;
+        return "failed to get response from eth".to_string();
     };
     let Ok(eth::EthConfigResponse::State {
         active_subscriptions,
         outstanding_requests,
     }) = serde_json::from_slice(&body)
     else {
-        println!("failed to parse eth response");
-        return;
+        return "failed to parse eth response".to_string();
     };
 
     // get number of processes
@@ -68,14 +63,12 @@ fn init(our: Address) {
         .send_and_await_response(60)
         .unwrap()
     else {
-        println!("failed to get response from kernel");
-        return;
+        return "failed to get response from kernel".to_string();
     };
     let Ok(KernelResponse::Debug(KernelPrintResponse::ProcessMap(map))) =
         serde_json::from_slice::<KernelResponse>(&body)
     else {
-        println!("failed to parse kernel response");
-        return;
+        return "failed to parse kernel response".to_string();
     };
     let num_processes = map.len();
     print_bird(
@@ -89,7 +82,7 @@ fn init(our: Address) {
             .sum::<usize>(),
         outstanding_requests.len() as usize,
         num_processes,
-    );
+    )
 }
 
 fn print_bird(
@@ -99,8 +92,8 @@ fn print_bird(
     active_subscriptions: usize,
     outstanding_requests: usize,
     num_processes: usize,
-) {
-    println!(
+) -> String {
+    format!(
         r#"
     .`
 `@@,,                     ,*   {}
