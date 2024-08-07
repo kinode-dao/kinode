@@ -6,7 +6,7 @@ use kinode_process_lib::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Fetching OS version from main package.. LMK if there's a better way...
+/// Fetching OS version from main package
 const CARGO_TOML: &str = include_str!("../../../../Cargo.toml");
 
 const DEFAULT_FAVES: &[&str] = &[

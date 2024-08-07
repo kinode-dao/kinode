@@ -2,22 +2,20 @@ use clap::{Arg, Command};
 use kinode_process_lib::kernel_types::{
     KernelCommand, KernelPrint, KernelPrintResponse, KernelResponse, PersistedProcess,
 };
-use kinode_process_lib::{
-    await_next_message_body, call_init, println, Address, Message, ProcessId, Request,
-};
+use kinode_process_lib::{script, Address, Message, ProcessId, Request};
 
 wit_bindgen::generate!({
     path: "target/wit",
     world: "process-v0",
 });
 
-call_init!(init);
-fn init(_our: Address) {
-    let Ok(body) = await_next_message_body() else {
-        println!("failed to get args");
-        return;
-    };
-    let body_string = format!("top {}", String::from_utf8(body).unwrap());
+const USAGE: &str = "\x1b[1mUsage:\x1b[0m
+    \ntop [-c <show-caps>] <- to view all processes
+    \ntop <process_id> [-c <show-caps>] <- to view one process";
+
+script!(init);
+fn init(_our: Address, args: String) -> String {
+    let body_string = format!("top {args}");
 
     let Ok(parsed) = Command::new("top")
         .disable_help_flag(true)
@@ -30,8 +28,7 @@ fn init(_our: Address) {
         )
         .try_get_matches_from(body_string.split_whitespace())
     else {
-        println!("failed to parse args");
-        return;
+        return format!("Failed to parse args.\n{USAGE}");
     };
 
     let target = parsed
@@ -39,18 +36,14 @@ fn init(_our: Address) {
         .map(|s| s.parse::<ProcessId>());
     let show_caps = parsed.get_flag("show-caps");
 
-    let Ok(Message::Response { body, .. }) = Request::new()
-        .target(("our", "kernel", "distro", "sys"))
+    let Ok(Message::Response { body, .. }) = Request::to(("our", "kernel", "distro", "sys"))
         .body(if let Some(target) = &target {
             match target {
                 Ok(proc_id) => {
                     serde_json::to_vec(&KernelCommand::Debug(KernelPrint::Process(proc_id.clone())))
                         .unwrap()
                 }
-                Err(e) => {
-                    println!("invalid process id: {e}");
-                    return;
-                }
+                Err(e) => return format!("invalid process id: {e}\n{USAGE}"),
             }
         } else {
             serde_json::to_vec(&KernelCommand::Debug(KernelPrint::ProcessMap)).unwrap()
@@ -58,14 +51,12 @@ fn init(_our: Address) {
         .send_and_await_response(60)
         .unwrap()
     else {
-        println!("failed to get response from kernel");
-        return;
+        return "Failed to get response from kernel".to_string();
     };
     let Ok(KernelResponse::Debug(kernel_print_response)) =
         serde_json::from_slice::<KernelResponse>(&body)
     else {
-        println!("failed to parse kernel response");
-        return;
+        return "Failed to parse kernel response".to_string();
     };
 
     match kernel_print_response {
@@ -76,27 +67,26 @@ fn init(_our: Address) {
                 .map(|(proc_id, process)| print_process(proc_id, process, show_caps))
                 .collect::<Vec<_>>()
                 .join("\r\n");
-            println!("\r\n{printout}\r\n\r\ntop: {len} running processes");
+            format!("\r\n{printout}\r\n\r\ntop: {len} running processes")
         }
         KernelPrintResponse::Process(process) => match process {
             None => {
-                println!(
+                format!(
                     "process {} not running",
                     target.map_or("(all)".to_string(), |t| t
                         .map(|t| t.to_string())
                         .unwrap_or_default())
-                );
-                return;
+                )
             }
             Some(process) => {
-                println!(
+                format!(
                     "{}",
                     print_process(&target.unwrap().unwrap(), &process, show_caps)
-                );
+                )
             }
         },
         KernelPrintResponse::HasCap(_) => {
-            println!("kernel gave wrong kind of response");
+            format!("kernel gave wrong kind of response")
         }
     }
 }
