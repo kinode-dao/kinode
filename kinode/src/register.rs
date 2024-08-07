@@ -41,6 +41,7 @@ pub async fn register(
     http_port: u16,
     keyfile: Option<Vec<u8>>,
     maybe_rpc: Option<String>,
+    detached: bool,
 ) {
     // Networking info is generated and passed to the UI, but not used until confirmed
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
@@ -211,7 +212,9 @@ pub async fn register(
         .or(api)
         .with(warp::reply::with::headers(headers));
 
-    let _ = open::that(format!("http://localhost:{}/", http_port));
+    if !detached {
+        let _ = open::that(format!("http://localhost:{}/", http_port));
+    }
     warp::serve(routes)
         .bind_with_graceful_shutdown(([0, 0, 0, 0], http_port), async {
             kill_rx.await.ok();

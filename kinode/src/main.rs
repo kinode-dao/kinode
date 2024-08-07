@@ -78,7 +78,7 @@ async fn main() {
     let password = matches.get_one::<String>("password");
 
     // detached determines whether terminal is interactive
-    let is_detached = *matches.get_one::<bool>("detached").unwrap();
+    let detached = *matches.get_one::<bool>("detached").unwrap();
 
     #[cfg(feature = "simulation-mode")]
     let (fake_node_name, fakechain_port) = (
@@ -420,7 +420,7 @@ async fn main() {
             kernel_debug_message_sender,
             print_sender.clone(),
             print_receiver,
-            is_detached,
+            detached,
             verbose_mode,
         ) => {
             match quit {
@@ -730,7 +730,8 @@ async fn serve_register_fe(
                 (tcp_networking.0.as_ref(), tcp_networking.1),
                 http_server_port,
                 disk_keyfile,
-                maybe_rpc) => {
+                maybe_rpc,
+                detached) => {
             panic!("registration failed")
         }
         Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {
