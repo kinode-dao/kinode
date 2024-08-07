@@ -208,6 +208,7 @@ async fn main() {
                 (tcp_tcp_handle, tcp_flag_used),
                 http_server_port,
                 rpc.cloned(),
+                detached,
             )
             .await
         }
@@ -713,6 +714,7 @@ async fn serve_register_fe(
     tcp_networking: (Option<tokio::net::TcpListener>, bool),
     http_server_port: u16,
     maybe_rpc: Option<String>,
+    detached: bool,
 ) -> (Identity, Vec<u8>, Keyfile) {
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<bool>();
 
