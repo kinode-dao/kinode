@@ -1,5 +1,4 @@
-use crate::state::{MirrorCheckFile, PackageListing, State};
-use crate::DownloadResponse;
+use crate::state::State;
 use kinode_process_lib::{
     http::server,
     http::{self, Method, StatusCode},
