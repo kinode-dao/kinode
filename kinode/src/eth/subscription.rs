@@ -113,7 +113,6 @@ pub async fn create_new_subscription(
                         let (keepalive_err_sender, keepalive_err_receiver) =
                             tokio::sync::mpsc::channel(1);
                         response_channels.insert(keepalive_km_id, keepalive_err_sender);
-                        let response_channels = response_channels.clone();
                         subs.insert(
                             remote_sub_id,
                             ActiveSub::Remote {
@@ -232,8 +231,11 @@ async fn build_subscription(
                         is_replacement_successful = false;
                         return ();
                     };
-                    aps.urls.remove(index);
-                    aps.urls.insert(0, url_provider.clone());
+                    let old_provider = aps.urls.remove(index);
+                    match old_provider.pubsub {
+                        None => aps.urls.insert(0, url_provider.clone()),
+                        Some(_) => aps.urls.insert(0, old_provider),
+                    }
                 });
                 if !is_replacement_successful {
                     verbose_print(
@@ -468,7 +470,7 @@ async fn maintain_remote_subscription(
                     true,
                     Some(30),
                     IncomingReq::SubKeepalive(remote_sub_id),
-                    &send_to_loop,
+                    send_to_loop,
                 ).await;
             }
             _incoming = net_error_rx.recv() => {
@@ -485,6 +487,23 @@ async fn maintain_remote_subscription(
             }
         }
     };
+    // tell provider node we don't need their services anymore
+    // (in case they did not close the subscription on their side,
+    // such as in the 2-hour timeout case)
+    kernel_message(
+        our,
+        rand::random(),
+        Address {
+            node: provider_node.to_string(),
+            process: ETH_PROCESS_ID.clone(),
+        },
+        None,
+        true,
+        None,
+        EthAction::UnsubscribeLogs(remote_sub_id),
+        send_to_loop,
+    )
+    .await;
     active_subscriptions
         .entry(target.clone())
         .and_modify(|sub_map| {
