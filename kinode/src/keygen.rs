@@ -161,31 +161,35 @@ pub fn namehash(name: &str) -> [u8; 32] {
     node.into()
 }
 
-pub fn bytes_to_ip(bytes: &[u8]) -> Result<IpAddr, String> {
+pub fn bytes_to_ip(bytes: &[u8]) -> Result<IpAddr> {
     match bytes.len() {
-        16 => {
-            let ip_num = u128::from_be_bytes(bytes.try_into().unwrap());
-            if ip_num < (1u128 << 32) {
-                // IPv4
-                Ok(IpAddr::V4(Ipv4Addr::from(ip_num as u32)))
-            } else {
-                // IPv6
-                Ok(IpAddr::V6(Ipv6Addr::from(ip_num)))
-            }
+        4 => {
+            // IPv4 address
+            let ip_num = u32::from_be_bytes(bytes.try_into().unwrap());
+            Ok(IpAddr::V4(Ipv4Addr::from(ip_num)))
         }
-        other => Err(format!("Invalid byte length for IP address: {other}")),
+        16 => {
+            // IPv6 address
+            let ip_num = u128::from_be_bytes(bytes.try_into().unwrap());
+            Ok(IpAddr::V6(Ipv6Addr::from(ip_num)))
+        }
+        _ => Err(anyhow::anyhow!("Invalid byte length for IP address")),
     }
 }
 
 #[cfg(feature = "simulation-mode")]
-pub fn ip_to_bytes(ip: IpAddr) -> [u8; 16] {
+pub fn ip_to_bytes(ip: IpAddr) -> Vec<u8> {
     match ip {
         IpAddr::V4(ipv4) => {
-            let mut bytes = [0u8; 16];
-            bytes[12..].copy_from_slice(&ipv4.octets());
+            let mut bytes = Vec::with_capacity(4);
+            bytes.extend_from_slice(&ipv4.octets());
             bytes
         }
-        IpAddr::V6(ipv6) => ipv6.octets(),
+        IpAddr::V6(ipv6) => {
+            let mut bytes = Vec::with_capacity(16);
+            bytes.extend_from_slice(&ipv6.octets());
+            bytes
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 use crate::kinode::process::kns_indexer::{
     GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
+use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
     await_message, call_init, eth, kimap, net, print_to_terminal, println, Address, Message,
@@ -88,14 +89,20 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Mint(bytes32,bytes32,bytes,bytes)");
 
+    let notes = vec![
+        keccak256("~ws-port"),
+        keccak256("~tcp-port"),
+        keccak256("~net-key"),
+        keccak256("~routers"),
+        keccak256("~ip"),
+    ];
+
     // sub_id: 2
-    // we need to see all note events, even though we don't
-    // record them all, because other apps rely on us to have
-    // a good `last_block` for `IndexerRequests`
     let notes_filter = eth::Filter::new()
         .address(state.contract_address)
         .to_block(eth::BlockNumberOrTag::Latest)
-        .event("Note(bytes32,bytes32,bytes,bytes,bytes)");
+        .event("Note(bytes32,bytes32,bytes,bytes,bytes)")
+        .topic3(notes);
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
@@ -503,15 +510,15 @@ fn decode_routers(data: &[u8], state: &State) -> anyhow::Result<Vec<String>> {
 
 pub fn bytes_to_ip(bytes: &[u8]) -> anyhow::Result<IpAddr> {
     match bytes.len() {
+        4 => {
+            // IPv4 address
+            let ip_num = u32::from_be_bytes(bytes.try_into().unwrap());
+            Ok(IpAddr::V4(Ipv4Addr::from(ip_num)))
+        }
         16 => {
+            // IPv6 address
             let ip_num = u128::from_be_bytes(bytes.try_into().unwrap());
-            if ip_num < (1u128 << 32) {
-                // IPv4
-                Ok(IpAddr::V4(Ipv4Addr::from(ip_num as u32)))
-            } else {
-                // IPv6
-                Ok(IpAddr::V6(Ipv6Addr::from(ip_num)))
-            }
+            Ok(IpAddr::V6(Ipv6Addr::from(ip_num)))
         }
         _ => Err(anyhow::anyhow!("Invalid byte length for IP address")),
     }
