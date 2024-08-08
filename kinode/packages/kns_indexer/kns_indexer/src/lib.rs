@@ -503,15 +503,15 @@ fn decode_routers(data: &[u8], state: &State) -> anyhow::Result<Vec<String>> {
 
 pub fn bytes_to_ip(bytes: &[u8]) -> anyhow::Result<IpAddr> {
     match bytes.len() {
+        4 => {
+            // IPv4 address
+            let ip_num = u32::from_be_bytes(bytes.try_into().unwrap());
+            Ok(IpAddr::V4(Ipv4Addr::from(ip_num)))
+        }
         16 => {
+            // IPv6 address
             let ip_num = u128::from_be_bytes(bytes.try_into().unwrap());
-            if ip_num < (1u128 << 32) {
-                // IPv4
-                Ok(IpAddr::V4(Ipv4Addr::from(ip_num as u32)))
-            } else {
-                // IPv6
-                Ok(IpAddr::V6(Ipv6Addr::from(ip_num)))
-            }
+            Ok(IpAddr::V6(Ipv6Addr::from(ip_num)))
         }
         _ => Err(anyhow::anyhow!("Invalid byte length for IP address")),
     }
