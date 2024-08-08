@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { Navigate, BrowserRouter as Router, Route, Routes, useParams } from 'react-router-dom';
 
-import RegisterKnsName from "./pages/RegisterKnsName";
+import RegisterKnsName from "./pages/RegisterDotOsName";
 import SetPassword from "./pages/SetPassword";
 import Login from './pages/Login'
-import ResetKnsName from './pages/ResetKnsName'
+import ResetKnsName from './pages/ResetDotOsName'
 import KinodeHome from "./pages/KinodeHome"
 import ImportKeyfile from "./pages/ImportKeyfile";
 import { UnencryptedIdentity } from "./lib/types";
