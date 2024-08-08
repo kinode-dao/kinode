@@ -6,7 +6,7 @@ import { PageProps } from "../lib/types";
 import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { useConnectModal, useAddRecentTransaction } from "@rainbow-me/rainbowkit"
 import { dotOsAbi, generateNetworkingKeys, KINO_ACCOUNT_IMPL, DOTOS } from "../abis";
-import { encodePacked, stringToHex } from "viem";
+import { encodePacked, getFunctionSelector, stringToHex } from "viem";
 
 interface RegisterOsNameProps extends PageProps { }
 
@@ -70,6 +70,10 @@ function MintDotOsName({
 
     // strip .os suffix
     const name = knsName.replace(/\.os$/, '');
+
+    const selector = getFunctionSelector('function mint(address,bytes,bytes,bytes,address,bytes32)')
+
+    console.log("selector: ", selector)
 
     writeContract({
       abi: dotOsAbi,

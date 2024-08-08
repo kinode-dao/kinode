@@ -28,5 +28,5 @@ export const mechAbi = parseAbi([
 export const dotOsAbi = parseAbi([
     "function commit(bytes32)",
     "function getCommit(bytes memory, bytes32)",
-    "function mint(address, bytes calldata, bytes calldata, bytes calldata, address, bytes32)",
+    "function mint(address,bytes,bytes,bytes,address,bytes32)",
 ])
