@@ -24,3 +24,9 @@ export const mechAbi = parseAbi([
     "function execute(address to, uint256 value, bytes calldata data, uint8 operation) returns (bytes memory returnData)",
     "function token() external view returns (uint256,address,uint256)"
 ])
+
+export const dotOsAbi = parseAbi([
+    "function commit(bytes32)",
+    "function getCommit(bytes memory, bytes32)",
+    "function mint(address, bytes calldata, bytes calldata, bytes calldata, address, bytes32)",
+])

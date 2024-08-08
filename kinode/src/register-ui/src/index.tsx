@@ -26,7 +26,7 @@ window.Buffer = Buffer;
 
 const config = getDefaultConfig({
   appName: 'Kinode Register UI',
-  projectId: 'YOUR_PROJECT_ID',
+  projectId: 'KINODE_REGISTER',
   chains: [optimism],
   ssr: false,
   transports: {

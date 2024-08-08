@@ -1,28 +1,24 @@
 import { useState, useEffect, FormEvent, useCallback } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import EnterKnsName from "../components/EnterKnsName";
+import { useNavigate } from "react-router-dom";
 import Loader from "../components/Loader";
 import { PageProps } from "../lib/types";
 
-import DirectCheckbox from "../components/DirectCheckbox";
-import { Tooltip } from "../components/Tooltip";
-
 import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
 import { useConnectModal, useAddRecentTransaction } from "@rainbow-me/rainbowkit"
-import { kinomapAbi, generateNetworkingKeys, KINO_ACCOUNT_IMPL, DOTOS } from "../abis";
+import { dotOsAbi, generateNetworkingKeys, KINO_ACCOUNT_IMPL, DOTOS } from "../abis";
 import { encodePacked, stringToHex } from "viem";
 
 interface RegisterOsNameProps extends PageProps { }
 
-function RegisterKnsName({
+function MintDotOsName({
   direct,
-  setDirect,
-  setOsName,
+  knsName,
   setNetworkingKey,
   setIpAddress,
   setWsPort,
   setTcpPort,
   setRouters,
+  commitSecret,
 }: RegisterOsNameProps) {
   let { address } = useAccount();
   let navigate = useNavigate();
@@ -31,7 +27,7 @@ function RegisterKnsName({
   const { data: hash, writeContract, isPending, isError, error } = useWriteContract({
     mutation: {
       onSuccess: (data) => {
-        addRecentTransaction({ hash: data, description: `Register KNS ID: ${name}.os` });
+        addRecentTransaction({ hash: data, description: `Mint ${knsName}` });
       }
     }
   });
@@ -41,19 +37,15 @@ function RegisterKnsName({
     });
   const addRecentTransaction = useAddRecentTransaction();
 
-  const [name, setName] = useState('')
-  const [nameValidities, setNameValidities] = useState<string[]>([])
   const [triggerNameCheck, setTriggerNameCheck] = useState<boolean>(false)
 
   useEffect(() => {
-    document.title = "Register"
+    document.title = "Mint"
   }, [])
 
   useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address])
 
-  const enterOsNameProps = { name, setName, nameValidities, setNameValidities, triggerNameCheck }
-
-  let handleRegister = useCallback(async (e: FormEvent) => {
+  let handleMint = useCallback(async (e: FormEvent) => {
     e.preventDefault()
     e.stopPropagation()
 
@@ -65,7 +57,7 @@ function RegisterKnsName({
     const initCall = await generateNetworkingKeys({
       direct,
       our_address: address,
-      label: name,
+      label: knsName,
       setNetworkingKey,
       setIpAddress,
       setWsPort,
@@ -74,61 +66,53 @@ function RegisterKnsName({
       reset: false,
     });
 
+    console.log("minting name: ", knsName)
+
+    // strip .os suffix
+    const name = knsName.replace(/\.os$/, '');
+
     writeContract({
-      abi: kinomapAbi,
+      abi: dotOsAbi,
       address: DOTOS,
       functionName: 'mint',
       args: [
         address,
         encodePacked(["bytes"], [stringToHex(name)]),
-        initCall,
+        "0x",
         "0x",
         KINO_ACCOUNT_IMPL,
+        commitSecret
       ],
       gas: 1000000n,
     })
-  }, [name, direct, address, writeContract, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, openConnectModal])
+
+  }, [direct, address, writeContract, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, openConnectModal])
 
   useEffect(() => {
     if (isConfirmed) {
-      setOsName(`${name}.os`);
       navigate("/set-password");
     }
-  }, [isConfirmed, name, setOsName, navigate]);
+  }, [isConfirmed, address, navigate]);
 
   return (
     <div className="container fade-in">
       <div className="section">
         {Boolean(address) && (
-          <form className="form" onSubmit={handleRegister}>
+          <form className="form" onSubmit={handleMint}>
             {isPending || isConfirming ? (
-              <Loader msg={isConfirming ? 'Registering KNS ID...' : 'Please confirm the transaction in your wallet'} />
+              <Loader msg={isConfirming ? 'Minting .os name...' : 'Please confirm the transaction in your wallet'} />
             ) : (
               <>
-                <h3 className="form-label">
-                  <Tooltip text="Kinodes need an onchain node identity in order to communicate with other nodes in the network.">
-                    Choose a name for your Kinode
-                  </Tooltip>
-                </h3>
-                <EnterKnsName {...enterOsNameProps} />
-                <DirectCheckbox {...{ direct, setDirect }} />
                 <div className="button-group">
-                  <button
-                    disabled={nameValidities.length !== 0 || isPending || isConfirming}
-                    type="submit"
-                    className="button"
-                  >
-                    Register .os name
+                  <button type="submit" className="button">
+                    Mint pre-committed .os name
                   </button>
-                  <Link to="/reset" className="button secondary">
-                    Already have a dot-os-name?
-                  </Link>
                 </div>
               </>
             )}
             {isError && (
               <p className="error-message">
-                Error: {error?.message || 'There was an error registering your dot-os-name, please try again.'}
+                Error: {error?.message || 'There was an error minting your dot-os-name, please try again.'}
               </p>
             )}
           </form>
@@ -138,4 +122,4 @@ function RegisterKnsName({
   );
 }
 
-export default RegisterKnsName;
+export default MintDotOsName;

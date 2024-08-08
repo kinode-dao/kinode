@@ -1,14 +1,17 @@
 import { useState, useEffect } from "react";
 import { Navigate, BrowserRouter as Router, Route, Routes, useParams } from 'react-router-dom';
 
-import RegisterKnsName from "./pages/RegisterDotOsName";
+import CommitDotOsName from "./pages/CommitDotOsName";
+import MintDotOsName from "./pages/MintDotOsName";
 import SetPassword from "./pages/SetPassword";
 import Login from './pages/Login'
-import ResetKnsName from './pages/ResetDotOsName'
+import ResetDotOsName from './pages/ResetDotOsName'
 import KinodeHome from "./pages/KinodeHome"
 import ImportKeyfile from "./pages/ImportKeyfile";
 import { UnencryptedIdentity } from "./lib/types";
 import Header from "./components/Header";
+import { bytesToHex } from "viem";
+
 
 
 function App() {
@@ -35,6 +38,7 @@ function App() {
   const openConnect = () => setConnectOpen(true)
   const closeConnect = () => setConnectOpen(false)
 
+  const commitSecret = bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
 
   useEffect(() => setAppSizeOnLoad(
     (window.performance.getEntriesByType('navigation') as any)[0].transferSize
@@ -96,6 +100,7 @@ function App() {
     tcp_port, setTcpPort,
     routers, setRouters,
     nodeChainId,
+    commitSecret,
   }
 
   return (
@@ -109,9 +114,10 @@ function App() {
                 ? <Navigate to="/login" replace />
                 : <KinodeHome {...props} />
               } />
-              <Route path="/register-name" element={<RegisterKnsName  {...props} />} />
+              <Route path="/commit-os-name" element={<CommitDotOsName  {...props} />} />
+              <Route path="/mint-os-name" element={<MintDotOsName  {...props} />} />
               <Route path="/set-password" element={<SetPassword {...props} />} />
-              <Route path="/reset" element={<ResetKnsName {...props} />} />
+              <Route path="/reset" element={<ResetDotOsName {...props} />} />
               <Route path="/import-keyfile" element={<ImportKeyfile {...props} />} />
               <Route path="/login" element={<Login {...props} />} />
             </Routes>
