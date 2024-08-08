@@ -213,28 +213,14 @@ fn get_package_id(url_params: &HashMap<String, String>) -> anyhow::Result<Packag
 }
 
 fn gen_package_info(id: &PackageId, listing: &PackageListing) -> serde_json::Value {
+    // fixxx
     json!({
         "tba": listing.tba,
         "package": id.package().to_string(),
         "publisher": id.publisher(),
-        "installed": match &listing.state {
-            Some(state) => state.installed,
-            None => false,
-        },
         "metadata_hash": listing.metadata_hash,
         "metadata_uri": listing.metadata_uri,
         "metadata": listing.metadata,
-        "state": match &listing.state {
-            Some(state) => json!({
-                "mirrored_from": state.mirrored_from,
-                "our_version": state.our_version_hash,
-                "caps_approved": state.caps_approved,
-                "mirroring": state.mirroring,
-                "auto_update": state.auto_update,
-                "verified": state.verified,
-            }),
-            None => json!(null),
-        },
     })
 }
 
@@ -474,7 +460,7 @@ fn serve_paths(
                         package_id,
                         download_from,
                         false, // Don't mirror during update
-                        pkg_listing.state.as_ref().map_or(false, |s| s.auto_update),
+                        false, // fixxx
                         desired_version_hash,
                     ) {
                         DownloadResponse::Started => {

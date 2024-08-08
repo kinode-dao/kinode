@@ -71,8 +71,6 @@ pub struct PackageListing {
     pub metadata_uri: String,
     pub metadata_hash: String,
     pub metadata: Option<kt::Erc721Metadata>,
-    /// if we have downloaded the package, this is populated
-    pub state: Option<PackageState>,
 }
 
 /// state of an individual package we have downloaded
@@ -178,7 +176,6 @@ impl State {
                 metadata_uri: "".to_string(),
                 metadata_hash: utils::sha_256_hash(&serde_json::to_vec(&metadata).unwrap()),
                 metadata: Some(metadata),
-                state: None,
             },
         );
     }
@@ -214,7 +211,6 @@ impl State {
                 self.downloaded_apis.insert(package_id.to_owned());
             }
         }
-        listing.state = Some(package_state);
         // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         Ok(())
     }
@@ -228,14 +224,7 @@ impl State {
         let res = self
             .packages
             .get_mut(package_id)
-            .map(|listing| {
-                if let Some(package_state) = &mut listing.state {
-                    fn_(package_state);
-                    true
-                } else {
-                    false
-                }
-            })
+            .map(|listing| true)
             .unwrap_or(false);
         // kinode_process_lib::set_state(&serde_json::to_vec(self).unwrap());
         res
@@ -324,7 +313,6 @@ impl State {
                     metadata_uri: "".to_string(),
                     metadata_hash: "".to_string(),
                     metadata: None,
-                    state: None,
                 },
             );
             self.add_downloaded_package(
@@ -357,7 +345,6 @@ impl State {
         let Some(listing) = self.packages.get_mut(package_id) else {
             return Err(anyhow::anyhow!("package not found"));
         };
-        listing.state = None;
         // kinode_process_lib::set_state(&serde_json::to_vec(self)?);
         println!("uninstalled {package_id}");
         Ok(())
@@ -443,7 +430,6 @@ impl State {
                     metadata_uri,
                     metadata_hash,
                     metadata,
-                    state: None,
                 });
             }
         };
@@ -486,9 +472,7 @@ impl State {
             if let Ok(metadata) =
                 utils::fetch_metadata_from_url(&listing.metadata_uri, &metadata_hash, 30)
             {
-                if let Some(package_state) = &listing.state {
-                    auto_update(&self.our, package_id, &metadata, package_state);
-                }
+                // auto_update(&self.our, package_id, &metadata, package_state);
                 listing.metadata = Some(metadata);
             }
 

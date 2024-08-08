@@ -86,7 +86,7 @@ fn init(our: Address) {
 
     // create new provider with request-timeout of 60s
     // can change, log requests can take quite a long time.
-    let eth_provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);
+    let eth_provider: eth::Provider = eth::Provider::new(CHAIN_ID, CHAIN_TIMEOUT);
 
     let mut state = fetch_state(our, eth_provider);
     fetch_and_subscribe_logs(&mut state);
@@ -471,14 +471,14 @@ fn handle_receive_download_package(
         },
     };
 
-    let old_manifest_hash = match state.packages.get(package_id) {
-        Some(listing) => listing
-            .state
-            .as_ref()
-            .and_then(|state| state.manifest_hash.clone())
-            .unwrap_or("OLD".to_string()),
-        _ => "OLD".to_string(),
-    };
+    // let old_manifest_hash = match state.packages.get(package_id) {
+    //     Some(listing) => listing
+    //         .metadata
+    //         .as_ref()
+    //         .and_then(|metadata| metadata.properties.manifest_hash.clone())
+    //         .unwrap_or("OLD".to_string()),
+    //     _ => "OLD".to_string(),
+    // };
 
     state.add_downloaded_package(
         package_id,
@@ -495,20 +495,20 @@ fn handle_receive_download_package(
         Some(blob.bytes),
     )?;
 
-    let new_manifest_hash = match state.packages.get(package_id) {
-        Some(listing) => listing
-            .state
-            .as_ref()
-            .and_then(|state| state.manifest_hash.clone())
-            .unwrap_or("NEW".to_string()),
-        _ => "NEW".to_string(),
-    };
+    // let new_manifest_hash = match state.packages.get(package_id) {
+    //     Some(listing) => listing
+    //         .state
+    //         .as_ref()
+    //         .and_then(|state| state.manifest_hash.clone())
+    //         .unwrap_or("NEW".to_string()),
+    //     _ => "NEW".to_string(),
+    // };
 
-    // lastly, if auto_update is true, AND the manifest has NOT changed,
-    // trigger install!
-    if requested_package.auto_update && old_manifest_hash == new_manifest_hash {
-        handle_install(state, package_id)?;
-    }
+    // // lastly, if auto_update is true, AND the manifest has NOT changed,
+    // // trigger install!
+    // if requested_package.auto_update && old_manifest_hash == new_manifest_hash {
+    //     handle_install(state, package_id)?;
+    // }
     Ok(())
 }
 

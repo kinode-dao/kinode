@@ -7,7 +7,8 @@ use {
     alloy_primitives::keccak256,
     alloy_sol_types::SolEvent,
     kinode_process_lib::{
-        eth, get_blob, get_state, http, kernel_types as kt, kimap, print_to_terminal, println, vfs,
+        eth, get_blob, get_state, http, kernel_types as kt, kimap, print_to_terminal, println,
+        vfs::{self, File},
         Address, LazyLoadBlob, PackageId, ProcessId, Request,
     },
     std::collections::HashSet,
@@ -555,4 +556,9 @@ where
         })
         .expect("failed to serialize VfsRequest"),
     )
+}
+
+pub fn print_and_log(logfile: &mut File, message: &str, verbosity: u8) {
+    print_to_terminal(verbosity, message);
+    let _ = logfile.write_all(message.as_bytes());
 }

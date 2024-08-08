@@ -9,9 +9,13 @@ use crate::kinode::process::downloads::{
 };
 
 use ft_worker_lib::{spawn_receive_transfer, spawn_send_transfer};
+use kinode::process::standard::print_to_terminal;
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, http, kimap, println, vfs, Address, Message,
-    PackageId, ProcessId, Request, Response,
+    await_message, call_init, eth, get_blob, http,
+    http::client::{HttpClientError, HttpClientResponse},
+    kimap, println,
+    vfs::{self, File, SeekFrom},
+    Address, Message, PackageId, ProcessId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
 
@@ -31,10 +35,9 @@ pub const APP_SHARE_TIMEOUT: u64 = 120; // 120s
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
 pub enum Resp {
     Download(DownloadResponse),
-    HttpClient(Result<http::client::HttpClientResponse, http::client::HttpClientError>),
+    HttpClient(Result<HttpClientResponse, HttpClientError>),
 }
 
-// downloads:app_store:sys State. read in from vfs drive: /app_store:sys/downloads
 #[derive(Debug, Serialize, Deserialize)]
 pub struct State {
     mirroring: HashSet<(PackageId, String)>, // (package_id, version_hash)
@@ -49,12 +52,18 @@ fn init(our: Address) {
     // state should be a simple struct, which can be serialized (parts of it)
     // it contains which packages we are mirroring
 
-    // // logfile
+    // logfile
 
     // load from state, okay to decouple from vfs. it's "app-state" for downloads.
     let mut state = State {
         mirroring: HashSet::new(),
     };
+
+    let mut logfile =
+        vfs::open_file("/app_store:sys/.log", true, Some(5)).expect("could not open logfile");
+    logfile
+        .seek(SeekFrom::End(0))
+        .expect("could not seek to end of logfile");
 
     loop {
         match await_message() {
@@ -63,7 +72,7 @@ fn init(our: Address) {
                 println!("got network error: {send_error}");
             }
             Ok(message) => {
-                if let Err(e) = handle_message(&our, &mut state, &message) {
+                if let Err(e) = handle_message(&our, &mut state, &message, &mut logfile) {
                     println!("error handling message: {:?}", e);
                 }
             }
@@ -75,12 +84,36 @@ fn init(our: Address) {
 /// function defined for each kind of message. check whether the source
 /// of the message is allowed to send that kind of message to us.
 /// finally, fire a response if expected from a request.
-fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow::Result<()> {
+fn handle_message(
+    our: &Address,
+    state: &mut State,
+    message: &Message,
+    logfile: &mut File,
+) -> anyhow::Result<()> {
     if message.is_request() {
         match serde_json::from_slice::<Downloads>(message.body())? {
             Downloads::Download(download_request) => {
                 let is_local = message.is_local(our);
-                handle_download_request(our, state, download_request, is_local)?;
+                match handle_download_request(our, state, download_request, is_local) {
+                    Ok(()) => {
+                        Response::new()
+                            .body(serde_json::to_vec(&Resp::Download(DownloadResponse {
+                                success: true,
+                                error: None,
+                            }))?)
+                            .send()?;
+                    }
+                    Err(e) => {
+                        // make function, print and log!
+                        print_and_log(logfile, &format!("error handling download request: {e}"), 1);
+                        Response::new()
+                            .body(serde_json::to_vec(&Resp::Download(DownloadResponse {
+                                success: false,
+                                error: Some(e.to_string()),
+                            }))?)
+                            .send()?;
+                    }
+                }
             }
             Downloads::Progress(ProgressUpdate {
                 package_id,
@@ -88,7 +121,23 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
                 downloaded,
                 total,
             }) => {
-                // forward progress to UI
+                // forward progress to main:app_store:sys,
+                // which then pushes to the frontend.
+                let target =
+                    Address::new(&our.node, ProcessId::new(Some("main"), "app_store", "sys"));
+                let _ = Request::new()
+                    .target(target)
+                    .body(
+                        serde_json::to_vec(&ProgressUpdate {
+                            package_id,
+                            version_hash,
+                            downloaded,
+                            total,
+                        })
+                        .unwrap(),
+                    )
+                    .send();
+
                 // http_server.ws_push_all_channels(
                 //     "/",
                 //     http::server::WsMessageType::Text,
@@ -114,6 +163,7 @@ fn handle_message(our: &Address, state: &mut State, message: &Message) -> anyhow
         match serde_json::from_slice::<Resp>(message.body())? {
             Resp::Download(download_response) => {
                 // TODO handle download response
+                // send_and_awaits? this might not be needed.
             }
             Resp::HttpClient(resp) => {
                 let name = match message.context() {
@@ -219,6 +269,7 @@ fn handle_download_request(
 }
 
 fn handle_receive_http_download(state: &mut State, name: &str) -> anyhow::Result<()> {
+    // use context here instead, verify bytes immediately.
     println!("Received HTTP download for: {}", name);
 
     // Parse the name to extract package_id and version_hash
@@ -297,3 +348,8 @@ fn handle_receive_http_download(state: &mut State, name: &str) -> anyhow::Result
 //     Some(metadata) => metadata.properties.wit_version,
 //     None => Some(0),
 // };
+
+pub fn print_and_log(logfile: &mut File, message: &str, verbosity: u8) {
+    print_to_terminal(verbosity, message);
+    let _ = logfile.write_all(message.as_bytes());
+}

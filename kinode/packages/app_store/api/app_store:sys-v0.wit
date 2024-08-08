@@ -52,15 +52,31 @@ interface chain {
 
     use standard.{package-id};
 
+    variant chains {
+        get-app(package-id),
+        start-auto-update(package-id),
+        stop-auto-update(package-id),
+    }
+    
     record on-chain-app {
+        // include package_id? 
         metadata-uri: string,
         metadata-hash: string,
         // this might be a thing internally, but could also just be fetched on demand
         // would negate them becoming outdated
-        metadata: option<metadata-file>,
+        metadata: option<on-chain-metadata>,
     }
 
-    record metadata-file {
+    record on-chain-metadata {
+        name: option<string>,
+        description: option<string>,
+        image: option<string>,
+        external-url: option<string>,
+        animation-url: option<string>,
+        properties: on-chain-properties,
+    }
+
+    record on-chain-properties {
         package-name: string,
         publisher: string,
         current-version: string,
@@ -72,21 +88,9 @@ interface chain {
         dependencies: option<list<string>>,
     }
 
-    record get-app {
-        app: package-id,
-    }
-
     record get-app-response {
-        app: on-chain-app,
+        app: option<on-chain-app>,
     }
-
-    // add variant
-    // and these:
-    // start-mirroring(package-id),
-    // stop-mirroring(package-id),
-    // start-auto-update(package-id),
-    // stop-auto-update(package-id),
-
 }
 
 interface main {
