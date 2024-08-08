@@ -78,7 +78,7 @@ function MintDotOsName({
       args: [
         address,
         encodePacked(["bytes"], [stringToHex(name)]),
-        "0x",
+        initCall,
         "0x",
         KINO_ACCOUNT_IMPL,
         commitSecret
