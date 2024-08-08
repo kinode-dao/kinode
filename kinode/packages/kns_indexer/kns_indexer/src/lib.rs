@@ -1,6 +1,7 @@
 use crate::kinode::process::kns_indexer::{
     GetStateRequest, IndexerRequests, NamehashToNameRequest, NodeInfoRequest,
 };
+use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
     await_message, call_init, eth, kimap, net, print_to_terminal, println, Address, Message,
@@ -88,14 +89,20 @@ fn main(our: Address, mut state: State) -> anyhow::Result<()> {
         .to_block(eth::BlockNumberOrTag::Latest)
         .event("Mint(bytes32,bytes32,bytes,bytes)");
 
+    let notes = vec![
+        keccak256("~ws-port"),
+        keccak256("~tcp-port"),
+        keccak256("~net-key"),
+        keccak256("~routers"),
+        keccak256("~ip"),
+    ];
+
     // sub_id: 2
-    // we need to see all note events, even though we don't
-    // record them all, because other apps rely on us to have
-    // a good `last_block` for `IndexerRequests`
     let notes_filter = eth::Filter::new()
         .address(state.contract_address)
         .to_block(eth::BlockNumberOrTag::Latest)
-        .event("Note(bytes32,bytes32,bytes,bytes,bytes)");
+        .event("Note(bytes32,bytes32,bytes,bytes,bytes)")
+        .topic3(notes);
 
     // 60s timeout -- these calls can take a long time
     // if they do time out, we try them again
