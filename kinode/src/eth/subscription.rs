@@ -500,7 +500,7 @@ async fn maintain_remote_subscription(
         None,
         true,
         None,
-        EthAction::UnsubscribeLogs(sub_id),
+        EthAction::UnsubscribeLogs(remote_sub_id),
         send_to_loop,
     )
     .await;
