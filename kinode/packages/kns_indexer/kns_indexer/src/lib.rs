@@ -20,7 +20,7 @@ wit_bindgen::generate!({
 });
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &'static str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559"; // optimism
+const KIMAP_ADDRESS: &'static str = "0xAfA2e57D3cBA08169b416457C14eBA2D6021c4b5"; // optimism
 #[cfg(feature = "simulation-mode")]
 const KIMAP_ADDRESS: &'static str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D"; // local
 
