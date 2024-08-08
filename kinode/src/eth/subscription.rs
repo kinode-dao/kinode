@@ -113,7 +113,6 @@ pub async fn create_new_subscription(
                         let (keepalive_err_sender, keepalive_err_receiver) =
                             tokio::sync::mpsc::channel(1);
                         response_channels.insert(keepalive_km_id, keepalive_err_sender);
-                        let response_channels = response_channels.clone();
                         subs.insert(
                             remote_sub_id,
                             ActiveSub::Remote {
