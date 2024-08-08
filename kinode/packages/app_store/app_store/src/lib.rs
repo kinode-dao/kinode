@@ -18,9 +18,6 @@ use crate::kinode::process::main::{
     NewPackageResponse, Reason, RebuildIndexResponse, RemoteDownloadRequest, RemoteRequest,
     RemoteResponse, UninstallResponse,
 };
-use ft_worker_lib::{
-    spawn_receive_transfer, spawn_transfer, FTWorkerCommand, FTWorkerResult, FileTransferContext,
-};
 use kinode_process_lib::{
     await_message, call_init, eth, get_blob, http, kimap, println, vfs, Address, LazyLoadBlob,
     Message, PackageId, Request, Response,
@@ -36,7 +33,6 @@ wit_bindgen::generate!({
     additional_derives: [serde::Deserialize, serde::Serialize],
 });
 
-mod ft_worker_lib;
 mod http_api;
 pub mod state;
 pub mod utils;
@@ -67,8 +63,6 @@ const KIMAP_FIRST_BLOCK: u64 = 1;
 pub enum Req {
     LocalRequest(LocalRequest),
     RemoteRequest(RemoteRequest),
-    FTWorkerCommand(FTWorkerCommand),
-    FTWorkerResult(FTWorkerResult),
     Eth(eth::EthSubResult),
     Http(http::server::HttpServerRequest),
 }
@@ -78,7 +72,6 @@ pub enum Req {
 pub enum Resp {
     LocalResponse(LocalResponse),
     RemoteResponse(RemoteResponse),
-    FTWorkerResult(FTWorkerResult),
     HttpClient(Result<http::client::HttpClientResponse, http::client::HttpClientError>),
 }
 
@@ -136,44 +129,31 @@ fn handle_message(
                     response.send()?;
                 }
             }
-            Req::RemoteRequest(remote_request) => {
-                let resp = handle_remote_request(state, message.source(), remote_request);
-                Response::new().body(serde_json::to_vec(&resp)?).send()?;
-            }
-            Req::FTWorkerCommand(_) => {
-                spawn_receive_transfer(&state.our, message.body())?;
-            }
-            Req::FTWorkerResult(FTWorkerResult::ReceiveSuccess(name)) => {
-                handle_receive_download(state, &name)?;
-            }
-            Req::FTWorkerResult(FTWorkerResult::ProgressUpdate {
-                file_name,
-                chunks_received,
-                total_chunks,
-            }) => {
-                // forward progress to UI
-                http_server.ws_push_all_channels(
-                    "/",
-                    http::server::WsMessageType::Text,
-                    LazyLoadBlob {
-                        mime: Some("application/json".to_string()),
-                        bytes: serde_json::json!({
-                            "kind": "progress",
-                            "data": {
-                                "file_name": file_name,
-                                "chunks_received": chunks_received,
-                                "total_chunks": total_chunks,
-                            }
-                        })
-                        .to_string()
-                        .as_bytes()
-                        .to_vec(),
-                    },
-                );
-            }
-            Req::FTWorkerResult(r) => {
-                println!("got weird ft_worker result: {r:?}");
-            }
+            // Req::FTWorkerResult(FTWorkerResult::ProgressUpdate {
+            //     file_name,
+            //     chunks_received,
+            //     total_chunks,
+            // }) => {
+            //     // forward progress to UI
+            //     http_server.ws_push_all_channels(
+            //         "/",
+            //         http::server::WsMessageType::Text,
+            //         LazyLoadBlob {
+            //             mime: Some("application/json".to_string()),
+            //             bytes: serde_json::json!({
+            //                 "kind": "progress",
+            //                 "data": {
+            //                     "file_name": file_name,
+            //                     "chunks_received": chunks_received,
+            //                     "total_chunks": total_chunks,
+            //                 }
+            //             })
+            //             .to_string()
+            //             .as_bytes()
+            //             .to_vec(),
+            //         },
+            //     );
+            // }
             Req::Eth(eth_result) => {
                 if !message.is_local(&state.our) || message.source().process != "eth:distro:sys" {
                     return Err(anyhow::anyhow!(
@@ -205,6 +185,7 @@ fn handle_message(
                     },
                 );
             }
+            _ => {}
         }
     } else {
         match serde_json::from_slice::<Resp>(message.body())? {
@@ -225,9 +206,6 @@ fn handle_message(
                     println!("got http_client error: {resp:?}");
                 }
             }
-            Resp::FTWorkerResult(ft_worker_result) => {
-                handle_ft_worker_result(ft_worker_result, message.context().unwrap_or(&vec![]))?;
-            }
             Resp::LocalResponse(_) | Resp::RemoteResponse(_) => {
                 // don't need to handle these at the moment
             }
@@ -237,55 +215,6 @@ fn handle_message(
 }
 
 /// fielding requests to download packages and APIs from us
-fn handle_remote_request(state: &mut State, source: &Address, request: RemoteRequest) -> Resp {
-    let (package_id, desired_version_hash) = match request {
-        RemoteRequest::Download(RemoteDownloadRequest {
-            package_id,
-            desired_version_hash,
-        }) => (package_id.to_process_lib(), desired_version_hash),
-    };
-
-    let Some(listing) = state.packages.get(&package_id) else {
-        return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NoPackage));
-    };
-
-    let Some(ref package_state) = listing.state else {
-        return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NoPackage));
-    };
-
-    if !package_state.mirroring {
-        return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::NotMirroring));
-    }
-
-    if let Some(hash) = desired_version_hash {
-        if package_state.our_version_hash != hash {
-            return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::HashMismatch(
-                HashMismatch {
-                    requested: hash,
-                    have: package_state.our_version_hash.clone(),
-                },
-            )));
-        }
-    }
-
-    let file_name = format!("/{package_id}.zip");
-
-    // get the .zip from VFS and attach as blob to response
-    let Ok(Ok(_)) = utils::vfs_request(
-        format!("/{package_id}/pkg{file_name}"),
-        vfs::VfsAction::Read,
-    )
-    .send_and_await_response(VFS_TIMEOUT) else {
-        return Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::FileNotFound));
-    };
-
-    // transfer will *inherit* the blob bytes we receive from VFS
-    match spawn_transfer(&state.our, &file_name, None, APP_SHARE_TIMEOUT, &source) {
-        Ok(()) => Resp::RemoteResponse(RemoteResponse::DownloadApproved),
-        Err(_e) => Resp::RemoteResponse(RemoteResponse::DownloadDenied(Reason::WorkerSpawnFailed)),
-    }
-}
-
 /// only `our.node` can call this
 fn handle_local_request(
     state: &mut State,
@@ -581,27 +510,6 @@ fn handle_receive_download_package(
         handle_install(state, package_id)?;
     }
     Ok(())
-}
-
-fn handle_ft_worker_result(ft_worker_result: FTWorkerResult, context: &[u8]) -> anyhow::Result<()> {
-    let context = serde_json::from_slice::<FileTransferContext>(context)?;
-    if let FTWorkerResult::SendSuccess = ft_worker_result {
-        println!(
-            "successfully shared {} in {:.4}s",
-            context.file_name,
-            std::time::SystemTime::now()
-                .duration_since(context.start_time)
-                .unwrap()
-                .as_secs_f64(),
-        );
-        Ok(())
-    } else if let FTWorkerResult::Err(e) = ft_worker_result {
-        Err(anyhow::anyhow!("failed to share app: {e:?}"))
-    } else {
-        Err(anyhow::anyhow!(
-            "failed to share app: unknown FTWorkerResult {ft_worker_result:?}"
-        ))
-    }
 }
 
 fn handle_eth_sub_event(

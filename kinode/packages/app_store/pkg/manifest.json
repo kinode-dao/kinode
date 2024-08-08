@@ -1,5 +1,28 @@
 [
     {
+        "process_name": "downloads",
+        "process_wasm_path": "/downloads.wasm",
+        "on_exit": "Restart",
+        "request_networking": true,
+        "request_capabilities": [
+            "http_client:distro:sys",
+            "http_server:distro:sys",
+            "vfs:distro:sys",
+            {
+                "process": "vfs:distro:sys",
+                "params": {
+                    "root": true
+                }
+            }
+        ],
+        "grant_capabilities": [
+            "http_server:distro:sys",
+            "vfs:distro:sys",
+            "http_client:distro:sys"
+        ],
+        "public": false
+    },
+    {
         "process_name": "main",
         "process_wasm_path": "/app_store.wasm",
         "on_exit": "Restart",
@@ -33,7 +56,7 @@
         ],
         "grant_capabilities": [
             "eth:distro:sys",
-	    "net:distro:sys",
+            "net:distro:sys",
             "http_client:distro:sys",
             "http_server:distro:sys",
             "kns_indexer:kns_indexer:sys",
