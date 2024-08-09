@@ -21,17 +21,17 @@ wit_bindgen::generate!({
 });
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_ADDRESS: &'static str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559"; // optimism
+const KIMAP_ADDRESS: &'static str = kimap::KIMAP_ADDRESS; // optimism
 #[cfg(feature = "simulation-mode")]
 const KIMAP_ADDRESS: &'static str = "0xEce71a05B36CA55B895427cD9a440eEF7Cf3669D"; // local
 
 #[cfg(not(feature = "simulation-mode"))]
-const CHAIN_ID: u64 = 10; // optimism
+const CHAIN_ID: u64 = kimap::KIMAP_CHAIN_ID; // optimism
 #[cfg(feature = "simulation-mode")]
 const CHAIN_ID: u64 = 31337; // local
 
 #[cfg(not(feature = "simulation-mode"))]
-const KIMAP_FIRST_BLOCK: u64 = 114_923_786; // optimism
+const KIMAP_FIRST_BLOCK: u64 = kimap::KIMAP_FIRST_BLOCK; // optimism
 #[cfg(feature = "simulation-mode")]
 const KIMAP_FIRST_BLOCK: u64 = 1; // local
 

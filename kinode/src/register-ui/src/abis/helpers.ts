@@ -76,6 +76,16 @@ export const generateNetworkingKeys = async ({
             ]
         });
 
+    const tcp_port_call =
+        encodeFunctionData({
+            abi: kinomapAbi,
+            functionName: 'note',
+            args: [
+                encodePacked(["bytes"], [stringToHex("~tcp-port")]),
+                encodePacked(["bytes"], [bytesToHex(portToBytes(tcp_port || 0))]),
+            ]
+        });
+
     const ip_address_call =
         encodeFunctionData({
             abi: kinomapAbi,
@@ -103,6 +113,7 @@ export const generateNetworkingKeys = async ({
     const calls = direct ? [
         { target: KINOMAP, callData: netkeycall },
         { target: KINOMAP, callData: ws_port_call },
+        { target: KINOMAP, callData: tcp_port_call },
         { target: KINOMAP, callData: ip_address_call },
     ] : [
         { target: KINOMAP, callData: netkeycall },

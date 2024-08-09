@@ -99,7 +99,8 @@ pub async fn register(
 
     let react_app = warp::path::end()
         .or(warp::path("login"))
-        .or(warp::path("register-name"))
+        .or(warp::path("commit-os-name"))
+        .or(warp::path("mint-os-name"))
         .or(warp::path("claim-invite"))
         .or(warp::path("reset"))
         .or(warp::path("import-keyfile"))
