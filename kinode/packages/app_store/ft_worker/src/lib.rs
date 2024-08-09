@@ -59,7 +59,7 @@ fn handle_sender(node: &str, package_id: &PackageId, version_hash: &str) -> anyh
     let target_worker = Address::from_str(node)?;
 
     let filename = format!(
-        "/app_store:sys/downloads/{}:{}-{}.zip",
+        "/app_store:sys/downloads/{}:{}/{}.zip",
         package_id.package_name, package_id.publisher_node, version_hash
     );
 
@@ -89,12 +89,21 @@ fn handle_receiver(
     version_hash: &str,
 ) -> anyhow::Result<()> {
     // TODO: write to a temporary location first, then check hash as we go, then rename to final location.
-    let full_filename = format!(
-        "/app_store:sys/downloads/{}:{}-{}.zip",
-        package_id.package_name, package_id.publisher_node, version_hash
-    );
+    let package_dir = vfs::open_dir(
+        &format!(
+            "/app_store:sys/downloads/{}:{}/",
+            package_id.package_name,
+            package_id.publisher(),
+        ),
+        true,
+        None,
+    )?;
 
-    let mut file = open_file(&full_filename, true, None)?;
+    let mut file = open_file(
+        &format!("{}/{}.zip", &package_dir.path, version_hash),
+        true,
+        None,
+    )?;
 
     let mut size: Option<u64> = None;
 

@@ -10,6 +10,7 @@ interface downloads {
         chunk(chunk-request),
         progress(progress-update),
         size(size-update),
+        get-files(option<package-id>),
     }
 
     record download-request {
@@ -30,6 +31,18 @@ interface downloads {
         version-hash: string,
         offset: u64,
         length: u64,
+    }
+
+
+    record entry {
+        name: string,
+        is-file: bool,
+        size: option<u64>,            
+    }
+
+    // not part of remote protocol, mainly for UI viewing.
+    record available-files {
+        files: list<entry>,
     }
 
     record progress-update {

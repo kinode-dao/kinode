@@ -16,7 +16,7 @@
 //! - given permissions (necessary to complete install)
 //! - uninstalled + deleted
 //! - set to automatically update if a new version is available
-use crate::kinode::process::downloads::ProgressUpdate;
+use crate::kinode::process::downloads::{DownloadResponse, ProgressUpdate};
 use crate::kinode::process::main::{
     ApisResponse, GetApiResponse, InstallResponse, LocalRequest, LocalResponse, NewPackageRequest,
     NewPackageResponse, UninstallResponse,
@@ -55,6 +55,7 @@ pub enum Req {
 #[serde(untagged)] // untagged as a meta-type for all incoming responses
 pub enum Resp {
     LocalResponse(LocalResponse),
+    Download(DownloadResponse),
 }
 
 call_init!(init);

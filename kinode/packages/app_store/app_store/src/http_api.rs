@@ -1,4 +1,8 @@
-use crate::state::{MirrorCheck, PackageState, State};
+use crate::{
+    kinode::process::downloads::{DownloadRequest, DownloadResponse},
+    state::{MirrorCheck, PackageState, State},
+};
+
 use kinode_process_lib::{
     http::server,
     http::{self, Method, StatusCode},
@@ -6,7 +10,7 @@ use kinode_process_lib::{
 };
 use kinode_process_lib::{SendError, SendErrorKind};
 use serde_json::json;
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 const ICON: &str = include_str!("icon");
 
@@ -330,27 +334,41 @@ fn serve_paths(
                     format!("Missing id").into_bytes(),
                 ));
             };
-            // // download a listed app
-            // let pkg_listing: &PackageListing = state
-            //     .packages
-            //     .get(&package_id)
-            //     .ok_or(anyhow::anyhow!("No package"))?;
             // from POST body, look for download_from field and use that as the mirror
+            let body = crate::get_blob()
+                .ok_or(anyhow::anyhow!("missing blob"))?
+                .bytes;
+            let body_json: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
+            let download_from = body_json
+                .get("download_from")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| anyhow::anyhow!("No download_from specified!"))?;
+            let version_hash = body_json
+                .get("version_hash")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .ok_or_else(|| anyhow::anyhow!("No version_hash specified!"))?;
 
-            // let download_from = body_json
-            //     .get("download_from")
-            //     .and_then(|v| v.as_str())
-            //     .map(|s| s.to_string())
-            //     .or_else(|| mirrors.first().map(|mirror| mirror.to_string()))
-            //     .ok_or_else(|| anyhow::anyhow!("No download_from specified!"))?;
+            // TODO: handle HTTP urls here I think, with different context...
 
-            let mirror = false;
-            let auto_update = false;
-            // TODO choose on frontend?
-            let desired_version_hash: Option<String> = None;
-            // TODO send to downloads:
-            // // actually just install something, we go get it from vfs or ask for it from downloads?
-            Ok((StatusCode::OK, None, vec![]))
+            let download_request = DownloadRequest {
+                package_id: crate::kinode::process::main::PackageId::from_process_lib(package_id),
+                download_from: Some(download_from),
+                desired_version_hash: version_hash,
+            };
+            // TODO make these constants somewhere or something. this is so bad
+            let downloads_process =
+                Address::from_str(&format!("{:?}@downloads:app_store:sys", our.node)).unwrap();
+
+            // send and await response to downloads process
+            let response = Request::new()
+                .target(downloads_process)
+                .body(serde_json::to_vec(&download_request).unwrap())
+                .send_and_await_response(5)??;
+
+            let response: DownloadResponse = serde_json::from_slice(&response.body())?;
+            Ok((StatusCode::OK, None, serde_json::to_vec(&response)?))
         }
         // POST /apps/:id/update
         // update a downloaded app

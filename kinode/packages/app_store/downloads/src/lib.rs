@@ -2,19 +2,21 @@
 //! downloads:app_store:sys
 //! manages downloading and sharing of versioned packages.
 //!
-use std::{collections::HashSet, str::FromStr};
-
 use crate::kinode::process::downloads::{
-    DownloadRequest, DownloadResponse, Downloads, ProgressUpdate,
+    AvailableFiles, DownloadRequest, DownloadResponse, Downloads, Entry, ProgressUpdate,
 };
+use std::{collections::HashSet, str::FromStr};
 
 use ft_worker_lib::{spawn_receive_transfer, spawn_send_transfer};
 use kinode::process::standard::print_to_terminal;
 use kinode_process_lib::{
-    await_message, call_init, eth, get_blob, http,
-    http::client::{HttpClientError, HttpClientResponse},
-    kimap, println,
-    vfs::{self, File, SeekFrom},
+    await_message, call_init,
+    http::{
+        self,
+        client::{HttpClientError, HttpClientResponse},
+    },
+    println,
+    vfs::{self, DirEntry, Directory, File, SeekFrom},
     Address, Message, PackageId, ProcessId, Request, Response,
 };
 use serde::{Deserialize, Serialize};
@@ -49,21 +51,23 @@ call_init!(init);
 fn init(our: Address) {
     println!("started");
 
-    // state should be a simple struct, which can be serialized (parts of it)
-    // it contains which packages we are mirroring
-
-    // logfile
-
     // load from state, okay to decouple from vfs. it's "app-state" for downloads.
     let mut state = State {
         mirroring: HashSet::new(),
     };
+
+    // should the files be actively in state? probably not due to updates?
+    // just install the downloads directory.
 
     let mut logfile =
         vfs::open_file("/app_store:sys/.log", true, Some(5)).expect("could not open logfile");
     logfile
         .seek(SeekFrom::End(0))
         .expect("could not seek to end of logfile");
+
+    let mut downloads =
+        vfs::open_dir("/app_store:sys/downloads", true, None).expect("could not open downloads");
+    let mut tmp = vfs::open_dir("/tmp", true, None).expect("could not open tmp");
 
     loop {
         match await_message() {
@@ -72,7 +76,14 @@ fn init(our: Address) {
                 println!("got network error: {send_error}");
             }
             Ok(message) => {
-                if let Err(e) = handle_message(&our, &mut state, &message, &mut logfile) {
+                if let Err(e) = handle_message(
+                    &our,
+                    &mut state,
+                    &message,
+                    &mut logfile,
+                    &mut downloads,
+                    &mut tmp,
+                ) {
                     println!("error handling message: {:?}", e);
                 }
             }
@@ -89,6 +100,8 @@ fn handle_message(
     state: &mut State,
     message: &Message,
     logfile: &mut File,
+    downloads: &mut Directory,
+    tmp: &mut Directory,
 ) -> anyhow::Result<()> {
     if message.is_request() {
         match serde_json::from_slice::<Downloads>(message.body())? {
@@ -156,6 +169,30 @@ fn handle_message(
                 //         .to_vec(),
                 //     },
                 // );
+            }
+            Downloads::GetFiles(maybe_id) => {
+                // if not local, throw to the boonies. (could also implement and discovery protocol here..)
+                if !message.is_local(our) {
+                    // todo figure out full error throwing for http pathways.
+                    return Err(anyhow::anyhow!("not local"));
+                }
+                let files = match maybe_id {
+                    Some(id) => {
+                        let package_path =
+                            format!("{}/{}", downloads.path, id.to_process_lib().to_string());
+                        let dir = vfs::open_dir(&package_path, false, None)?;
+                        let dir = dir.read()?;
+                        format_entries(dir)
+                    }
+                    None => {
+                        let dir = downloads.read()?;
+                        format_entries(dir)
+                    }
+                };
+
+                Response::new()
+                    .body(serde_json::to_vec(&AvailableFiles { files })?)
+                    .send()?;
             }
             _ => {}
         }
@@ -302,6 +339,22 @@ fn handle_receive_http_download(state: &mut State, name: &str) -> anyhow::Result
     Ok(())
 }
 
+fn format_entries(entries: Vec<DirEntry>) -> Vec<Entry> {
+    entries
+        .into_iter()
+        .filter_map(|entry| {
+            let name = entry.path.split('/').nth(0).unwrap_or_default();
+            let is_file = entry.file_type == vfs::FileType::File;
+            let size = vfs::metadata(&entry.path, None).ok().map(|meta| meta.len);
+            Some(Entry {
+                name: name.to_string(),
+                is_file,
+                size,
+            })
+        })
+        .collect::<Vec<Entry>>()
+}
+
 // Some useful comments for the immediate future:
 
 // NOTE: we should handle NewPackage, kit start-package should just work
@@ -352,4 +405,22 @@ fn handle_receive_http_download(state: &mut State, name: &str) -> anyhow::Result
 pub fn print_and_log(logfile: &mut File, message: &str, verbosity: u8) {
     print_to_terminal(verbosity, message);
     let _ = logfile.write_all(message.as_bytes());
+}
+
+// quite annoyingly, we must convert from our gen'd version of PackageId
+// to the process_lib's gen'd version. this is in order to access custom
+// Impls that we want to use
+impl crate::kinode::process::main::PackageId {
+    pub fn to_process_lib(self) -> PackageId {
+        PackageId {
+            package_name: self.package_name,
+            publisher_node: self.publisher_node,
+        }
+    }
+    pub fn from_process_lib(package_id: PackageId) -> Self {
+        Self {
+            package_name: package_id.package_name,
+            publisher_node: package_id.publisher_node,
+        }
+    }
 }
