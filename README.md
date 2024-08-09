@@ -163,12 +163,14 @@ The image includes EXPOSE directives for TCP port `8080` and TCP port `9000`. Po
 If you are running a direct node, you must map port `9000` to the same port on the host and on your router. Otherwise, your Kinode will not be able to connect to the rest of the network as connection info is written to the chain, and this information is based on the view from inside the Docker container.
 
 To build a local Docker image, run the following command in this project root.
-```
-docker build -t 0xlynett/kinode .
+```bash
+# The `VERSION` may be replaced with the tag of a GitHub release
+docker build -t 0xlynett/kinode . --build-arg VERSION=v0.8.6
 ```
 
 For example:
-```
+
+```bash
 docker volume create kinode-volume
 
 docker run -d -p 8080:8080 -it --name my-kinode \
