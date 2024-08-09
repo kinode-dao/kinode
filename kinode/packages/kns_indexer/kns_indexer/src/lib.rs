@@ -364,7 +364,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
                     }
                 }
                 "~routers" => {
-                    let routers = decode_routers(&decoded.data, &state)?;
+                    let routers = decode_routers(&decoded.data, &state);
                     if let Some(node) = state.nodes.get_mut(&node_name) {
                         node.routers = routers;
                         // -> indirect
@@ -487,9 +487,13 @@ fn add_temp_hardcoded_tlzs(state: &mut State) {
 }
 
 /// Decodes bytes into an array of keccak256 hashes (32 bytes each) and returns their full names.
-fn decode_routers(data: &[u8], state: &State) -> anyhow::Result<Vec<String>> {
+fn decode_routers(data: &[u8], state: &State) -> Vec<String> {
     if data.len() % 32 != 0 {
-        return Err(anyhow::anyhow!("got invalid data length for router hashes"));
+        print_to_terminal(
+            1,
+            &format!("got invalid data length for router hashes: {}", data.len()),
+        );
+        return vec![];
     }
 
     let mut routers = Vec::new();
@@ -505,7 +509,7 @@ fn decode_routers(data: &[u8], state: &State) -> anyhow::Result<Vec<String>> {
         }
     }
 
-    Ok(routers)
+    routers
 }
 
 pub fn bytes_to_ip(bytes: &[u8]) -> anyhow::Result<IpAddr> {
