@@ -1,5 +1,4 @@
-use crate::kinode::process::main::{DownloadResponse, LocalRequest, LocalResponse};
-use kinode::process::main::DownloadRequest;
+use crate::kinode::process::downloads::{DownloadRequest, DownloadResponse};
 use kinode_process_lib::{
     await_next_message_body, call_init, println, Address, Message, PackageId, Request,
 };
@@ -35,18 +34,16 @@ fn init(our: Address) {
     };
 
     let Ok(Ok(Message::Response { body, .. })) =
-        Request::to((our.node(), ("main", "app_store", "sys")))
+        Request::to((our.node(), ("downloads", "app_store", "sys")))
             .body(
-                serde_json::to_vec(&LocalRequest::Download(DownloadRequest {
+                serde_json::to_vec(&DownloadRequest {
                     package_id: crate::kinode::process::main::PackageId {
                         package_name: package_id.package_name.clone(),
                         publisher_node: package_id.publisher_node.clone(),
                     },
-                    download_from: download_from.clone(),
-                    mirror: true,
-                    auto_update: true,
-                    desired_version_hash: None,
-                }))
+                    download_from: Some(download_from.clone()),
+                    desired_version_hash: "".to_string(), // TODO FIX
+                })
                 .unwrap(),
             )
             .send_and_await_response(5)
@@ -55,18 +52,13 @@ fn init(our: Address) {
         return;
     };
 
-    let Ok(response) = serde_json::from_slice::<LocalResponse>(&body) else {
+    let Ok(response) = serde_json::from_slice::<DownloadResponse>(&body) else {
         println!("download: failed to parse response from app_store..!");
         return;
     };
 
+    // TODO FIX
     match response {
-        LocalResponse::DownloadResponse(DownloadResponse::Started) => {
-            println!("started downloading package {package_id} from {download_from}");
-        }
-        LocalResponse::DownloadResponse(_) => {
-            println!("failed to download package {package_id} from {download_from}");
-        }
         _ => {
             println!("download: unexpected response from app_store..!");
             return;

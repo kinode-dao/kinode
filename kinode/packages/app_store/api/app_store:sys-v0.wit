@@ -1,20 +1,95 @@
-interface main {
+interface downloads {
     //
-    // app store API as presented by main:app_store:sys-v0
+    // download API as presented by download:app_store:sys-v0
     //
 
     use standard.{package-id};
 
-    record onchain-metadata {
+    variant downloads {
+        download(download-request),
+        chunk(chunk-request),
+        progress(progress-update),
+        size(size-update),
+        get-files(option<package-id>),
+    }
+
+    record download-request {
+        package-id: package-id,
+        download-from: option<string>, // note, might be too much implicit complexity,
+                                       // but: download-from received locally, is an instruction where to download-from
+                                       // and if received from remote, is an instruction where to send, where the "download-from" came from.
+        desired-version-hash: string,
+    }
+
+    record download-response {
+        success: bool,
+        error: option<string>,
+    }
+
+    record chunk-request {
+        package-id: package-id,
+        version-hash: string,
+        offset: u64,
+        length: u64,
+    }
+
+
+    record entry {
+        name: string,
+        is-file: bool,
+        size: option<u64>,            
+    }
+
+    // not part of remote protocol, mainly for UI viewing.
+    record available-files {
+        files: list<entry>,
+    }
+
+    record progress-update {
+        package-id: package-id,
+        version-hash: string,
+        downloaded: u64,
+        total: u64,
+    }
+
+    record size-update {
+        package-id: package-id,
+        size: u64,
+    }
+}
+
+interface chain {
+    //
+    // on-chain API as presented by chain:app_store:sys-v0
+    //
+
+    use standard.{package-id};
+
+    variant chains {
+        get-app(package-id),
+        start-auto-update(package-id),
+        stop-auto-update(package-id),
+    }
+    
+    record on-chain-app {
+        // include package_id? 
+        metadata-uri: string,
+        metadata-hash: string,
+        // this might be a thing internally, but could also just be fetched on demand
+        // would negate them becoming outdated
+        metadata: option<on-chain-metadata>,
+    }
+
+    record on-chain-metadata {
         name: option<string>,
         description: option<string>,
         image: option<string>,
         external-url: option<string>,
         animation-url: option<string>,
-        properties: onchain-properties,
+        properties: on-chain-properties,
     }
 
-    record onchain-properties {
+    record on-chain-properties {
         package-name: string,
         publisher: string,
         current-version: string,
@@ -26,79 +101,59 @@ interface main {
         dependencies: option<list<string>>,
     }
 
+    record get-app-response {
+        app: option<on-chain-app>,
+    }
+}
+
+interface main {
+    //
+    // app store API as presented by main:app_store:sys-v0
+    //
+
+    use standard.{package-id};
+    use chain.{on-chain-metadata};
+
+
     variant request {
-        remote(remote-request),
         local(local-request),
     }
 
     variant response {
-        remote(remote-response),
         local(local-response),
     }
 
-    variant remote-request {
-        download(remote-download-request),
-    }
+    // variant reason {
+    //     no-package,
+    //     not-mirroring,
+    //     hash-mismatch(hash-mismatch),
+    //     file-not-found,
+    //     worker-spawn-failed
+    // }
 
-    record remote-download-request {
-        package-id: package-id,
-        desired-version-hash: option<string>,
-    }
-
-    variant remote-response {
-        download-approved,
-        download-denied(reason),
-    }
-
-    variant reason {
-        no-package,
-        not-mirroring,
-        hash-mismatch(hash-mismatch),
-        file-not-found,
-        worker-spawn-failed
-    }
-
-    record hash-mismatch {
-        requested: string,
-        have: string,
-    }
+    // record hash-mismatch {
+    //     requested: string,
+    //     have: string,
+    // }
 
     variant local-request {
         new-package(new-package-request),
-        download(download-request),
         install(package-id),
         uninstall(package-id),
-        start-mirroring(package-id),
-        stop-mirroring(package-id),
-        start-auto-update(package-id),
-        stop-auto-update(package-id),
-        rebuild-index,
         apis,
         get-api(package-id),
     }
 
     record new-package-request {
         package-id: package-id,
-        metadata: onchain-metadata,
+        metadata: on-chain-metadata,
         mirror: bool,
-    }
-
-    record download-request {
-        package-id: package-id,
-        download-from: string,
-        mirror: bool,
-        auto-update: bool,
-        desired-version-hash: option<string>,
     }
 
     variant local-response {
         new-package-response(new-package-response),
-        download-response(download-response),
         install-response(install-response),
         uninstall-response(uninstall-response),
-        mirror-response(mirror-response),
-        auto-update-response(auto-update-response),
-        rebuild-index-response(rebuild-index-response),
         apis-response(apis-response),
         get-api-response(get-api-response),
     }
@@ -110,35 +165,12 @@ interface main {
         already-exists,
     }
 
-    variant download-response {
-        started,
-        bad-response,
-        denied(reason),
-        already-exists,
-        already-downloading,
-    }
-
     enum install-response {
         success,
         failure, // TODO
     }
 
     enum uninstall-response {
-        success,
-        failure, // TODO
-    }
-
-    enum mirror-response {
-        success,
-        failure, // TODO
-    }
-
-    enum auto-update-response {
-        success,
-        failure, // TODO
-    }
-
-    enum rebuild-index-response {
         success,
         failure, // TODO
     }
@@ -156,5 +188,7 @@ interface main {
 
 world app-store-sys-v0 {
     import main;
+    import downloads;
+    import chain;
     include process-v0;
 }

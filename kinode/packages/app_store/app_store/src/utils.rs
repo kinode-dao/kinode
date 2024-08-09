@@ -1,14 +1,9 @@
 use {
-    crate::{
-        kinode::process::main::OnchainMetadata,
-        state::{AppStoreLogError, PackageState, SerializedState, State},
-        KIMAP_ADDRESS, VFS_TIMEOUT,
-    },
-    alloy_primitives::keccak256,
-    alloy_sol_types::SolEvent,
+    crate::state::{PackageState, State},
+    crate::VFS_TIMEOUT,
     kinode_process_lib::{
-        eth, get_blob, get_state, http, kernel_types as kt, kimap, print_to_terminal, println, vfs,
-        Address, LazyLoadBlob, PackageId, ProcessId, Request,
+        get_blob, kernel_types as kt, println, vfs, Address, LazyLoadBlob, PackageId, ProcessId,
+        Request,
     },
     std::collections::HashSet,
 };
@@ -31,122 +26,6 @@ impl crate::kinode::process::main::PackageId {
     }
 }
 
-// less annoying but still bad
-impl OnchainMetadata {
-    pub fn to_erc721_metadata(self) -> kt::Erc721Metadata {
-        use kt::Erc721Properties;
-        kt::Erc721Metadata {
-            name: self.name,
-            description: self.description,
-            image: self.image,
-            external_url: self.external_url,
-            animation_url: self.animation_url,
-            properties: Erc721Properties {
-                package_name: self.properties.package_name,
-                publisher: self.properties.publisher,
-                current_version: self.properties.current_version,
-                mirrors: self.properties.mirrors,
-                code_hashes: self.properties.code_hashes.into_iter().collect(),
-                license: self.properties.license,
-                screenshots: self.properties.screenshots,
-                wit_version: self.properties.wit_version,
-                dependencies: self.properties.dependencies,
-            },
-        }
-    }
-}
-
-/// fetch state from disk or create a new one if that fails
-pub fn fetch_state(our: Address, provider: eth::Provider) -> State {
-    if let Some(state_bytes) = get_state() {
-        match serde_json::from_slice::<SerializedState>(&state_bytes) {
-            Ok(state) => {
-                if state.kimap.address().to_string() == KIMAP_ADDRESS {
-                    return State::from_serialized(our, state);
-                } else {
-                    println!(
-                        "state contract address mismatch. rebuilding state! expected {}, got {}",
-                        KIMAP_ADDRESS,
-                        state.kimap.address().to_string()
-                    );
-                }
-            }
-            Err(e) => println!("failed to deserialize saved state, rebuilding: {e}"),
-        }
-    }
-    State::new(our, provider).expect("state creation failed")
-}
-
-/// create the filter used for app store getLogs and subscription.
-/// the app store exclusively looks for ~metadata-uri postings: if one is
-/// observed, we then *query* for ~metadata-hash to verify the content
-/// at the URI.
-///
-/// this means that ~metadata-hash should be *posted before or at the same time* as ~metadata-uri!
-pub fn app_store_filter(state: &State) -> eth::Filter {
-    let notes = vec![keccak256("~metadata-uri")];
-
-    eth::Filter::new()
-        .address(*state.kimap.address())
-        .events([kimap::contract::Note::SIGNATURE])
-        .topic3(notes)
-}
-
-/// create a filter to fetch app store event logs from chain and subscribe to new events
-pub fn fetch_and_subscribe_logs(state: &mut State) {
-    let filter = app_store_filter(state);
-    // get past logs, subscribe to new ones.
-    // subscribe first so we don't miss any logs
-    state.kimap.provider.subscribe_loop(1, filter.clone());
-    for log in fetch_logs(
-        &state.kimap.provider,
-        &filter.from_block(state.last_saved_block),
-    ) {
-        if let Err(e) = state.ingest_contract_event(log, false) {
-            print_to_terminal(1, &format!("error ingesting log: {e}"));
-        };
-    }
-    state.update_listings();
-}
-
-/// fetch logs from the chain with a given filter
-fn fetch_logs(eth_provider: &eth::Provider, filter: &eth::Filter) -> Vec<eth::Log> {
-    loop {
-        match eth_provider.get_logs(filter) {
-            Ok(res) => return res,
-            Err(_) => {
-                println!("failed to fetch logs! trying again in 5s...");
-                std::thread::sleep(std::time::Duration::from_secs(5));
-                continue;
-            }
-        }
-    }
-}
-
-/// fetch metadata from url and verify it matches metadata_hash
-pub fn fetch_metadata_from_url(
-    metadata_url: &str,
-    metadata_hash: &str,
-    timeout: u64,
-) -> Result<kt::Erc721Metadata, AppStoreLogError> {
-    if let Ok(url) = url::Url::parse(metadata_url) {
-        if let Ok(_) =
-            http::client::send_request_await_response(http::Method::GET, url, None, timeout, vec![])
-        {
-            if let Some(body) = get_blob() {
-                let hash = keccak_256_hash(&body.bytes);
-                if &hash == metadata_hash {
-                    return Ok(serde_json::from_slice::<kt::Erc721Metadata>(&body.bytes)
-                        .map_err(|_| AppStoreLogError::MetadataNotFound)?);
-                } else {
-                    return Err(AppStoreLogError::MetadataHashMismatch);
-                }
-            }
-        }
-    }
-    Err(AppStoreLogError::MetadataNotFound)
-}
-
 /// generate a Keccak-256 hash string (with 0x prefix) of the metadata bytes
 pub fn keccak_256_hash(bytes: &[u8]) -> String {
     use sha3::{Digest, Keccak256};
@@ -155,14 +34,14 @@ pub fn keccak_256_hash(bytes: &[u8]) -> String {
     format!("0x{:x}", hasher.finalize())
 }
 
-/// generate a Keccak-256 hash of the package name and publisher (match onchain)
-pub fn generate_package_hash(name: &str, publisher_dnswire: &[u8]) -> String {
-    use sha3::{Digest, Keccak256};
-    let mut hasher = Keccak256::new();
-    hasher.update([name.as_bytes(), publisher_dnswire].concat());
-    let hash = hasher.finalize();
-    format!("0x{:x}", hash)
-}
+// /// generate a Keccak-256 hash of the package name and publisher (match onchain)
+// pub fn generate_package_hash(name: &str, publisher_dnswire: &[u8]) -> String {
+//     use sha3::{Digest, Keccak256};
+//     let mut hasher = Keccak256::new();
+//     hasher.update([name.as_bytes(), publisher_dnswire].concat());
+//     let hash = hasher.finalize();
+//     format!("0x{:x}", hash)
+// }
 
 /// generate a SHA-256 hash of the zip bytes to act as a version hash
 pub fn sha_256_hash(bytes: &[u8]) -> String {
@@ -188,28 +67,36 @@ pub fn fetch_package_manifest(
     )?)
 }
 
+pub fn fetch_package_metadata(package_id: &PackageId) -> anyhow::Result<kt::Erc721Metadata> {
+    vfs_request(
+        format!("/{package_id}/pkg/metadata.json"), // OK BIG todo: figure out why tf this is not here...
+        vfs::VfsAction::Read,
+    )
+    .send_and_await_response(VFS_TIMEOUT)??;
+    let Some(blob) = get_blob() else {
+        return Err(anyhow::anyhow!("no blob"));
+    };
+    Ok(serde_json::from_slice::<kt::Erc721Metadata>(&blob.bytes)?)
+}
+
 pub fn new_package(
     package_id: &PackageId,
     state: &mut State,
-    metadata: kt::Erc721Metadata,
-    mirror: bool,
     bytes: Vec<u8>,
 ) -> anyhow::Result<()> {
     // add to listings
-    state.add_listing(package_id, metadata);
+
+    // TODO: add? to uhh listings at all?
+    // state.insert_package(package_id, metadata);
 
     // set the version hash for this new local package
     let our_version_hash = sha_256_hash(&bytes);
 
     let package_state = PackageState {
-        mirrored_from: Some(state.our.node.clone()),
         our_version_hash,
-        installed: false,
         verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
         caps_approved: true, // TODO see if we want to auto-approve local installs
         manifest_hash: None, // generated in the add fn
-        mirroring: mirror,
-        auto_update: false, // can't auto-update a local package
     };
     state.add_downloaded_package(&package_id, package_state, Some(bytes))
 }
@@ -295,14 +182,14 @@ pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
 /// which we can only do if we were the process to create that drive.
 /// note also that each capability will only be granted if we, the process
 /// using this function, own that capability ourselves.
-pub fn install(
-    package_id: &PackageId,
-    our_node: &str,
-    wit_version: Option<u32>,
-) -> anyhow::Result<()> {
+pub fn install(package_id: &PackageId, our_node: &str) -> anyhow::Result<()> {
     // get the package manifest
     let drive_path = format!("/{package_id}/pkg");
     let manifest = fetch_package_manifest(package_id)?;
+
+    // get wit version from metadata:
+    let metadata = fetch_package_metadata(package_id)?;
+    let wit_version = metadata.properties.wit_version;
 
     // first, for each process in manifest, initialize it
     // then, once all have been initialized, grant them requested caps
