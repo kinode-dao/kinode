@@ -76,7 +76,7 @@ pub async fn mint_local(
         .input(TransactionInput::new(mint_call.into()))
         .nonce(nonce)
         .with_chain_id(31337)
-        .with_gas_limit(12_000_00)
+        .with_gas_limit(2_000_000)
         .with_max_priority_fee_per_gas(200_000_000_000)
         .with_max_fee_per_gas(300_000_000_000);
 
@@ -87,7 +87,8 @@ pub async fn mint_local(
     let tx_encoded = tx_envelope.encoded_2718();
 
     // Send the raw transaction and retrieve the transaction receipt.
-    let _tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
+    let tx_hash = provider.send_raw_transaction(&tx_encoded).await?;
+    let _tx_receipt = tx_hash.get_receipt().await?;
 
     // get tba to set KNS records
     let namehash: [u8; 32] = keygen::namehash(name);
@@ -166,7 +167,7 @@ pub async fn mint_local(
         .input(TransactionInput::new(execute_call.into()))
         .nonce(nonce)
         .with_chain_id(31337)
-        .with_gas_limit(12_000_00)
+        .with_gas_limit(2_000_000)
         .with_max_priority_fee_per_gas(200_000_000_000)
         .with_max_fee_per_gas(300_000_000_000);
 
