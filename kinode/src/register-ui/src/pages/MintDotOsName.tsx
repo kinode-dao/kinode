@@ -3,10 +3,10 @@ import { useNavigate } from "react-router-dom";
 import Loader from "../components/Loader";
 import { PageProps } from "../lib/types";
 
-import { useAccount, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
+import { useAccount, useWaitForTransactionReceipt, useSendTransaction } from "wagmi";
 import { useConnectModal, useAddRecentTransaction } from "@rainbow-me/rainbowkit"
 import { dotOsAbi, generateNetworkingKeys, KINO_ACCOUNT_IMPL, DOTOS } from "../abis";
-import { encodePacked, getFunctionSelector, stringToHex } from "viem";
+import { encodePacked, parseAbi, encodeFunctionData, stringToHex } from "viem";
 
 interface RegisterOsNameProps extends PageProps { }
 
@@ -24,7 +24,7 @@ function MintDotOsName({
   let navigate = useNavigate();
   let { openConnectModal } = useConnectModal();
 
-  const { data: hash, writeContract, isPending, isError, error } = useWriteContract({
+  const { data: hash, sendTransaction, isPending, isError, error } = useSendTransaction({
     mutation: {
       onSuccess: (data) => {
         addRecentTransaction({ hash: data, description: `Mint ${knsName}` });
@@ -71,13 +71,12 @@ function MintDotOsName({
     // strip .os suffix
     const name = knsName.replace(/\.os$/, '');
 
-    const selector = getFunctionSelector('function mint(address,bytes,bytes,bytes,address,bytes32)')
+    const abi = parseAbi([
+      'function mint(address,bytes,bytes,bytes,address,bytes32)',
+    ])
 
-    console.log("selector: ", selector)
-
-    writeContract({
-      abi: dotOsAbi,
-      address: DOTOS,
+    const data = encodeFunctionData({
+      abi,
       functionName: 'mint',
       args: [
         address,
@@ -87,10 +86,26 @@ function MintDotOsName({
         KINO_ACCOUNT_IMPL,
         commitSecret
       ],
-      gas: 1000000n,
     })
 
-  }, [direct, address, writeContract, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, openConnectModal])
+    console.log("data: ", data)
+
+    // use data to write to contract -- do NOT use writeContract
+    // writeContract will NOT generate the correct selector for some reason
+    // probably THEIR bug.. no abi works
+    try {
+      sendTransaction({
+        to: DOTOS,
+        data: data,
+        gas: 1000000n,
+      })
+      console.log('Transaction sent?')
+      // You might want to add some state management here to track the transaction
+    } catch (error) {
+      console.error('Failed to send transaction:', error)
+      // Handle the error appropriately, maybe set an error state
+    }
+  }, [direct, address, sendTransaction, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, openConnectModal])
 
   useEffect(() => {
     if (isConfirmed) {
