@@ -444,7 +444,7 @@ async fn handle_import_keyfile(
     provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
-    let encoded_keyfile = match base64_standard.decode(info.keyfile.clone()) {
+    let encoded_keyfile = match base64_standard.decode(info.keyfile) {
         Ok(k) => k,
         Err(_) => {
             return Ok(warp::reply::with_status(
@@ -682,7 +682,9 @@ pub async fn assign_routing(
 
     if netkey.data.to_string() != our.networking_key {
         return Err(anyhow::anyhow!(
-            "Networking key from PKI does not match our saved networking key"
+            "Networking key from PKI ({}) does not match our saved networking key ({})",
+            format!("0x{}", hex::encode(&public_key)),
+            our.networking_key
         ));
     }
 

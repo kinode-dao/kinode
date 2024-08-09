@@ -16,7 +16,7 @@ function ImportKeyfile({
   appSizeOnLoad,
 }: ImportKeyfileProps) {
 
-  const [localKey, setLocalKey] = useState<string>("");
+  const [localKey, setLocalKey] = useState<Uint8Array | null>(null);
   const [localKeyFileName, setLocalKeyFileName] = useState<string>("");
   const [keyErrs, _setKeyErrs] = useState<string[]>([]);
 
@@ -33,14 +33,17 @@ function ImportKeyfile({
   // const KEY_BAD_ROUTERS = "Routers from records are offline"
 
   const handleKeyfile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onloadend = () => {
-      setLocalKey(reader.result as string);
-      setLocalKeyFileName(file.name);
+      if (reader.result instanceof ArrayBuffer) {
+        setLocalKey(new Uint8Array(reader.result));
+        setLocalKeyFileName(file.name);
+      }
     };
-    reader.readAsText(file);
+    reader.readAsArrayBuffer(file);
   }, []);
 
   const handleImportKeyfile = useCallback(
@@ -51,7 +54,7 @@ function ImportKeyfile({
       setLoading(true);
 
       try {
-        if (keyErrs.length === 0 && localKey !== "") {
+        if (keyErrs.length === 0 && localKey !== null) {
           let hashed_password = sha256(toBytes(pw));
 
           const result = await fetch("/import-keyfile", {
@@ -59,7 +62,7 @@ function ImportKeyfile({
             credentials: 'include',
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              keyfile: localKey,
+              keyfile: Buffer.from(localKey).toString('base64'),
               password_hash: hashed_password,
             }),
           });
