@@ -10,9 +10,6 @@ import KinodeHome from "./pages/KinodeHome"
 import ImportKeyfile from "./pages/ImportKeyfile";
 import { UnencryptedIdentity } from "./lib/types";
 import Header from "./components/Header";
-import { bytesToHex } from "viem";
-
-
 
 function App() {
   const params = useParams()
@@ -37,8 +34,6 @@ function App() {
   const [connectOpen, setConnectOpen] = useState<boolean>(false);
   const openConnect = () => setConnectOpen(true)
   const closeConnect = () => setConnectOpen(false)
-
-  const commitSecret = bytesToHex(crypto.getRandomValues(new Uint8Array(32)))
 
   useEffect(() => setAppSizeOnLoad(
     (window.performance.getEntriesByType('navigation') as any)[0].transferSize
@@ -100,7 +95,6 @@ function App() {
     tcp_port, setTcpPort,
     routers, setRouters,
     nodeChainId,
-    commitSecret,
   }
 
   return (

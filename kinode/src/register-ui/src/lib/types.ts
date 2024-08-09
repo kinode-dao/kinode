@@ -23,7 +23,6 @@ export interface PageProps {
   setPw: React.Dispatch<React.SetStateAction<string>>,
   appSizeOnLoad: number,
   nodeChainId: string,
-  commitSecret: `0x${string}`,
 }
 
 export type NetworkingInfo = {

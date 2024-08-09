@@ -23,7 +23,6 @@ function CommitDotOsName({
     setWsPort,
     setTcpPort,
     setRouters,
-    commitSecret,
 }: RegisterOsNameProps) {
     let { address } = useAccount();
     let navigate = useNavigate();
@@ -62,18 +61,18 @@ function CommitDotOsName({
             return
         }
         console.log("committing to .os name: ", name)
+        const commitSecret = keccak256(stringToHex(name))
+        const commit = keccak256(
+            encodeAbiParameters(
+                parseAbiParameters('bytes32, bytes32'),
+                [keccak256(stringToHex(name)), commitSecret]
+            )
+        )
         writeContract({
             abi: dotOsAbi,
             address: DOTOS,
             functionName: 'commit',
-            args: [
-                keccak256(
-                    encodeAbiParameters(
-                        parseAbiParameters('bytes memory, bytes32'),
-                        [keccak256(stringToHex(name)), commitSecret]
-                    )
-                )
-            ],
+            args: [commit],
             gas: 1000000n,
         })
 

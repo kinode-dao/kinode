@@ -6,7 +6,7 @@ import { PageProps } from "../lib/types";
 import { useAccount, useWaitForTransactionReceipt, useSendTransaction } from "wagmi";
 import { useConnectModal, useAddRecentTransaction } from "@rainbow-me/rainbowkit"
 import { dotOsAbi, generateNetworkingKeys, KINO_ACCOUNT_IMPL, DOTOS } from "../abis";
-import { encodePacked, parseAbi, encodeFunctionData, stringToHex } from "viem";
+import { encodePacked, encodeFunctionData, stringToHex, keccak256 } from "viem";
 
 interface RegisterOsNameProps extends PageProps { }
 
@@ -18,7 +18,6 @@ function MintDotOsName({
   setWsPort,
   setTcpPort,
   setRouters,
-  commitSecret,
 }: RegisterOsNameProps) {
   let { address } = useAccount();
   let navigate = useNavigate();
@@ -70,13 +69,10 @@ function MintDotOsName({
 
     // strip .os suffix
     const name = knsName.replace(/\.os$/, '');
-
-    const abi = parseAbi([
-      'function mint(address,bytes,bytes,bytes,address,bytes32)',
-    ])
+    const commitSecret = keccak256(stringToHex(name))
 
     const data = encodeFunctionData({
-      abi,
+      abi: dotOsAbi,
       functionName: 'mint',
       args: [
         address,
@@ -88,8 +84,6 @@ function MintDotOsName({
       ],
     })
 
-    console.log("data: ", data)
-
     // use data to write to contract -- do NOT use writeContract
     // writeContract will NOT generate the correct selector for some reason
     // probably THEIR bug.. no abi works
@@ -99,11 +93,8 @@ function MintDotOsName({
         data: data,
         gas: 1000000n,
       })
-      console.log('Transaction sent?')
-      // You might want to add some state management here to track the transaction
     } catch (error) {
       console.error('Failed to send transaction:', error)
-      // Handle the error appropriately, maybe set an error state
     }
   }, [direct, address, sendTransaction, setNetworkingKey, setIpAddress, setWsPort, setTcpPort, setRouters, openConnectModal])
 
