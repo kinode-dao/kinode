@@ -683,7 +683,7 @@ pub async fn assign_routing(
     if netkey.data.to_string() != our.networking_key {
         return Err(anyhow::anyhow!(
             "Networking key from PKI ({}) does not match our saved networking key ({})",
-            format!("0x{}", hex::encode(&public_key)),
+            netkey.data.to_string(),
             our.networking_key
         ));
     }
