@@ -124,15 +124,24 @@ pub async fn register(
         .or(warp::path("our").and(warp::get()).and(keyfile.clone()).map(
             move |keyfile: Option<Vec<u8>>| {
                 if let Some(keyfile) = keyfile {
-                    if let Ok((username, _, _, _, _, _)) = bincode::deserialize::<(
+                    if let Ok((username, _, _, _, _, _)) = serde_json::from_slice::<(
                         String,
                         Vec<String>,
                         Vec<u8>,
                         Vec<u8>,
                         Vec<u8>,
                         Vec<u8>,
-                    )>(keyfile.as_ref())
-                    {
+                    )>(&keyfile)
+                    .or_else(|_| {
+                        bincode::deserialize::<(
+                            String,
+                            Vec<String>,
+                            Vec<u8>,
+                            Vec<u8>,
+                            Vec<u8>,
+                            Vec<u8>,
+                        )>(&keyfile)
+                    }) {
                         return warp::reply::html(username);
                     }
                 }

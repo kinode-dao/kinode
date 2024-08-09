@@ -53,7 +53,7 @@ pub fn encode_keyfile(
     let jwtciphertext: Vec<u8> = cipher.encrypt(&jwt_nonce, jwt).unwrap();
     let fileciphertext: Vec<u8> = cipher.encrypt(&file_nonce, file_key.as_ref()).unwrap();
 
-    bincode::serialize(&(
+    serde_json::to_vec(&(
         username.clone(),
         routers.clone(),
         salt.to_vec(),
@@ -68,8 +68,15 @@ pub fn decode_keyfile(keyfile: &[u8], password: &str) -> Result<Keyfile, &'stati
     use generic_array::GenericArray;
 
     let (username, routers, salt, key_enc, jwt_enc, file_enc) =
-        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
-            .map_err(|_| "failed to deserialize keyfile")?;
+        serde_json::from_slice::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+            keyfile,
+        )
+        .or_else(|_| {
+            bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+                keyfile,
+            )
+        })
+        .map_err(|_| "failed to deserialize keyfile")?;
 
     // rederive disk key
     let mut disk_key: DiskKey = [0u8; CREDENTIAL_LEN];
@@ -138,9 +145,16 @@ pub fn generate_jwt(
 
 #[cfg(not(feature = "simulation-mode"))]
 pub fn get_username_and_routers(keyfile: &[u8]) -> Result<(String, Vec<String>), &'static str> {
-    let (username, routers, _salt, _key_enc, _jwt_enc) =
-        bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>)>(keyfile)
-            .map_err(|_| "failed to deserialize keyfile")?;
+    let (username, routers, _salt, _key_enc, _jwt_enc, _file_enc) =
+        serde_json::from_slice::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+            keyfile,
+        )
+        .or_else(|_| {
+            bincode::deserialize::<(String, Vec<String>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>(
+                keyfile,
+            )
+        })
+        .map_err(|_| "failed to deserialize keyfile")?;
 
     Ok((username, routers))
 }
