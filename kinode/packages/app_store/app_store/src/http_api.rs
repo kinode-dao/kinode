@@ -1,4 +1,4 @@
-use crate::state::State;
+use crate::state::{MirrorCheck, PackageState, State};
 use kinode_process_lib::{
     http::server,
     http::{self, Method, StatusCode},
@@ -16,10 +16,13 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
     let config = server::HttpBindingConfig::default();
 
     for path in [
-        "/apps",
-        "/apps/:id",
-        "/apps/:id/download",
-        "/apps/:id/install",
+        "/apps",              // all apps, combination of downloads, installed
+        "/downloads",         // all downloads
+        "/installed",         // all installed apps
+        "/ourapps",           // all apps we've published
+        "/apps/:id",          // detail about a specific app
+        "/apps/:id/download", // download a listed app
+        "/apps/:id/install",  // install a downloaded app
         "/apps/:id/update",
         "/apps/:id/caps",
         "/apps/:id/mirror",
@@ -35,7 +38,7 @@ pub fn init_frontend(our: &Address, http_server: &mut server::HttpServer) {
         .serve_ui(
             &our,
             "ui",
-            vec!["/", "/app/:id", "/publish"],
+            vec!["/", "/app/:id", "/publish", "/downloads/:id"],
             config.clone(),
         )
         .expect("failed to serve static UI");
@@ -167,9 +170,12 @@ fn make_widget() -> String {
 
 /// Actions supported over HTTP:
 /// - get all apps: GET /apps
-/// - get some subset of listed apps, via search or filter: ?
+/// - get all downloaded apps: GET /downloads
+/// - get all installed apps: GET /installed
+/// - get all apps we've published: GET /ourapps
 /// - get detail about a specific app: GET /apps/:id
-/// - get capabilities for a specific downloaded app: GET /apps/:id/caps
+/// - get detail about a specific apps downloads: GET /downloads/:id
+/// - get capabilities for a specific app: GET /apps/:id/caps
 ///
 /// - get online/offline mirrors for a listed app: GET /mirrorcheck/:node
 /// - download a listed app: POST /apps/:id/download
@@ -182,12 +188,13 @@ fn make_widget() -> String {
 /// - start auto-updating a downloaded app: PUT /apps/:id/auto-update
 /// - stop auto-updating a downloaded app: DELETE /apps/:id/auto-update
 ///
-/// - RebuildIndex: POST /apps/rebuild-index
+/// - RebuildIndex: POST /apps/rebuild-index // TODO, this could be just terminal I think?
 pub fn handle_http_request(
+    our: &Address,
     state: &mut State,
     req: &server::IncomingHttpRequest,
 ) -> (server::HttpResponse, Option<LazyLoadBlob>) {
-    match serve_paths(state, req) {
+    match serve_paths(our, state, req) {
         Ok((status_code, _headers, body)) => (
             server::HttpResponse::new(status_code).header("Content-Type", "application/json"),
             Some(LazyLoadBlob {
@@ -211,30 +218,34 @@ fn get_package_id(url_params: &HashMap<String, String>) -> anyhow::Result<Packag
     Ok(id)
 }
 
-fn gen_package_info(id: &PackageId, listing: &PackageListing) -> serde_json::Value {
-    // fixxx
+fn gen_package_info(id: &PackageId, state: &PackageState) -> serde_json::Value {
+    // installed package.
+    // on-chain info combined somewhere else.
+
     json!({
-        "tba": listing.tba,
         "package": id.package().to_string(),
         "publisher": id.publisher(),
-        "metadata_hash": listing.metadata_hash,
-        "metadata_uri": listing.metadata_uri,
-        "metadata": listing.metadata,
+        "our_version_hash": state.our_version_hash,
+        "verified": state.verified,
+        "caps_approved": state.caps_approved,
+        "manifest_hash": state.manifest_hash,
     })
 }
 
 fn serve_paths(
+    our: &Address,
     state: &mut State,
     req: &server::IncomingHttpRequest,
 ) -> anyhow::Result<(http::StatusCode, Option<HashMap<String, String>>, Vec<u8>)> {
     let method = req.method()?;
 
-    let bound_path: &str = req.bound_path(Some(&state.our.process.to_string()));
+    let bound_path: &str = req.bound_path(Some(&our.process.to_string()));
     let url_params = req.url_params();
 
     match bound_path {
         // GET all apps
         "/apps" => {
+            // TODO COMBINE DOWNLOADED AND INSTALLED
             if method != Method::GET {
                 return Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
@@ -249,53 +260,21 @@ fn serve_paths(
                 .collect();
             return Ok((StatusCode::OK, None, serde_json::to_vec(&all)?));
         }
-        // GET online/offline mirrors for a listed app
-        "/mirrorcheck/:node" => {
-            if method != Method::GET {
-                return Ok((
-                    StatusCode::METHOD_NOT_ALLOWED,
-                    None,
-                    format!("Invalid method {method} for {bound_path}").into_bytes(),
-                ));
-            }
-            let Some(node) = url_params.get("node") else {
-                return Ok((
-                    StatusCode::BAD_REQUEST,
-                    None,
-                    format!("Missing node").into_bytes(),
-                ));
-            };
-            if let Err(SendError { kind, .. }) = Request::to((node, "net", "distro", "sys"))
-                .body(b"checking your mirror status...")
-                .send_and_await_response(3)
-                .unwrap()
-            {
-                match kind {
-                    SendErrorKind::Timeout => {
-                        let check_reponse = MirrorCheckFile {
-                            node: node.to_string(),
-                            is_online: false,
-                            error: Some(format!("node {} timed out", node).to_string()),
-                        };
-                        return Ok((StatusCode::OK, None, serde_json::to_vec(&check_reponse)?));
-                    }
-                    SendErrorKind::Offline => {
-                        let check_reponse = MirrorCheckFile {
-                            node: node.to_string(),
-                            is_online: false,
-                            error: Some(format!("node {} is offline", node).to_string()),
-                        };
-                        return Ok((StatusCode::OK, None, serde_json::to_vec(&check_reponse)?));
-                    }
-                }
-            } else {
-                let check_reponse = MirrorCheckFile {
-                    node: node.to_string(),
-                    is_online: true,
-                    error: None,
-                };
-                return Ok((StatusCode::OK, None, serde_json::to_vec(&check_reponse)?));
-            }
+        "/downloads" => {
+            // TODO
+            Ok((StatusCode::OK, None, vec![]))
+        }
+        "/installed" => {
+            // TODO
+            Ok((StatusCode::OK, None, vec![]))
+        }
+        "/ourapps" => {
+            // TODO
+            Ok((StatusCode::OK, None, vec![]))
+        }
+        "/downloads/:id" => {
+            // TODO
+            Ok((StatusCode::OK, None, vec![]))
         }
         // GET detail about a specific app
         // update a downloaded app: PUT
@@ -351,64 +330,27 @@ fn serve_paths(
                     format!("Missing id").into_bytes(),
                 ));
             };
-            // download a listed app
-            let pkg_listing: &PackageListing = state
-                .packages
-                .get(&package_id)
-                .ok_or(anyhow::anyhow!("No package"))?;
+            // // download a listed app
+            // let pkg_listing: &PackageListing = state
+            //     .packages
+            //     .get(&package_id)
+            //     .ok_or(anyhow::anyhow!("No package"))?;
             // from POST body, look for download_from field and use that as the mirror
-            let body = crate::get_blob()
-                .ok_or(anyhow::anyhow!("missing blob"))?
-                .bytes;
-            let body_json: serde_json::Value = serde_json::from_slice(&body).unwrap_or_default();
-            let mirrors: Option<&Vec<NodeId>> = pkg_listing
-                .metadata
-                .as_ref()
-                .and_then(|metadata| Some(metadata.properties.mirrors.as_ref()));
 
-            let mirrors = match mirrors {
-                Some(m) => m,
-                None => {
-                    return Ok((
-                        StatusCode::BAD_REQUEST,
-                        None,
-                        "Package does not have metadata or mirrors"
-                            .as_bytes()
-                            .to_vec(),
-                    ));
-                }
-            };
-
-            let download_from = body_json
-                .get("download_from")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-                .or_else(|| mirrors.first().map(|mirror| mirror.to_string()))
-                .ok_or_else(|| anyhow::anyhow!("No download_from specified!"))?;
+            // let download_from = body_json
+            //     .get("download_from")
+            //     .and_then(|v| v.as_str())
+            //     .map(|s| s.to_string())
+            //     .or_else(|| mirrors.first().map(|mirror| mirror.to_string()))
+            //     .ok_or_else(|| anyhow::anyhow!("No download_from specified!"))?;
 
             let mirror = false;
             let auto_update = false;
             // TODO choose on frontend?
-            let desired_version_hash = None;
-            match crate::start_download(
-                state,
-                package_id,
-                download_from,
-                mirror,
-                auto_update,
-                desired_version_hash,
-            ) {
-                DownloadResponse::Started => Ok((
-                    StatusCode::CREATED,
-                    None,
-                    format!("Downloading").into_bytes(),
-                )),
-                other => Ok((
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    None,
-                    format!("Failed to download: {other:?}").into_bytes(),
-                )),
-            }
+            let desired_version_hash: Option<String> = None;
+            // TODO send to downloads:
+            // // actually just install something, we go get it from vfs or ask for it from downloads?
+            Ok((StatusCode::OK, None, vec![]))
         }
         // POST /apps/:id/update
         // update a downloaded app
@@ -421,57 +363,10 @@ fn serve_paths(
                 ));
             };
 
+            // TODO send to downloads:
+            // // actually just install something, we go get it from vfs or ask for it from downloads?
+
             match method {
-                Method::POST => {
-                    let pkg_listing: &PackageListing = state
-                        .packages
-                        .get(&package_id)
-                        .ok_or(anyhow::anyhow!("No package"))?;
-
-                    let body = crate::get_blob()
-                        .ok_or(anyhow::anyhow!("missing blob"))?
-                        .bytes;
-                    let body_json: serde_json::Value =
-                        serde_json::from_slice(&body).unwrap_or_default();
-
-                    let download_from = body_json
-                        .get("download_from")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string())
-                        .or_else(|| {
-                            pkg_listing
-                                .metadata
-                                .as_ref()?
-                                .properties
-                                .mirrors
-                                .first()
-                                .map(|m| m.to_string())
-                        })
-                        .ok_or_else(|| anyhow::anyhow!("No download_from specified!"))?;
-
-                    let desired_version_hash = body_json
-                        .get("version")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-
-                    match crate::start_download(
-                        state,
-                        package_id,
-                        download_from,
-                        false, // Don't mirror during update
-                        false, // fixxx
-                        desired_version_hash,
-                    ) {
-                        DownloadResponse::Started => {
-                            Ok((StatusCode::ACCEPTED, None, format!("Updating").into_bytes()))
-                        }
-                        other => Ok((
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            None,
-                            format!("Failed to update: {other:?}").into_bytes(),
-                        )),
-                    }
-                }
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
@@ -490,7 +385,7 @@ fn serve_paths(
                 ));
             };
 
-            match crate::handle_install(state, &package_id) {
+            match crate::utils::install(&package_id, &our.to_string()) {
                 Ok(_) => Ok((StatusCode::CREATED, None, vec![])),
                 Err(e) => Ok((
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -520,18 +415,18 @@ fn serve_paths(
                     ),
                 }),
                 // approve the capabilities for that app
-                Method::POST => Ok(
-                    match state.update_downloaded_package(&package_id, |pkg| {
-                        pkg.caps_approved = true;
-                    }) {
-                        true => (StatusCode::OK, None, vec![]),
-                        false => (
-                            StatusCode::NOT_FOUND,
-                            None,
-                            format!("App not found: {package_id}").into_bytes(),
-                        ),
-                    },
-                ),
+                // Method::POST => Ok(
+                //     match state.update_downloaded_package(&package_id, |pkg| {
+                //         pkg.caps_approved = true;
+                //     }) {
+                //         true => (StatusCode::OK, None, vec![]),
+                //         false => (
+                //             StatusCode::NOT_FOUND,
+                //             None,
+                //             format!("App not found: {package_id}").into_bytes(),
+                //         ),
+                //     },
+                // ),
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
@@ -550,17 +445,19 @@ fn serve_paths(
                 ));
             };
 
+            // TODO move to downloads.
+
             match method {
                 // start mirroring an app
-                Method::PUT => {
-                    state.start_mirroring(&package_id);
-                    Ok((StatusCode::OK, None, vec![]))
-                }
-                // stop mirroring an app
-                Method::DELETE => {
-                    state.stop_mirroring(&package_id);
-                    Ok((StatusCode::OK, None, vec![]))
-                }
+                // Method::PUT => {
+                //     state.start_mirroring(&package_id);
+                //     Ok((StatusCode::OK, None, vec![]))
+                // }
+                // // stop mirroring an app
+                // Method::DELETE => {
+                //     state.stop_mirroring(&package_id);
+                //     Ok((StatusCode::OK, None, vec![]))
+                // }
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
@@ -581,15 +478,15 @@ fn serve_paths(
 
             match method {
                 // start auto-updating an app
-                Method::PUT => {
-                    state.start_auto_update(&package_id);
-                    Ok((StatusCode::OK, None, vec![]))
-                }
-                // stop auto-updating an app
-                Method::DELETE => {
-                    state.stop_auto_update(&package_id);
-                    Ok((StatusCode::OK, None, vec![]))
-                }
+                // Method::PUT => {
+                //     state.start_auto_update(&package_id);
+                //     Ok((StatusCode::OK, None, vec![]))
+                // }
+                // // stop auto-updating an app
+                // Method::DELETE => {
+                //     state.stop_auto_update(&package_id);
+                //     Ok((StatusCode::OK, None, vec![]))
+                // }
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
@@ -597,17 +494,53 @@ fn serve_paths(
                 )),
             }
         }
-        // RebuildIndex: POST
-        "/apps/rebuild-index" => {
-            if method != Method::POST {
+        // GET online/offline mirrors for a listed app
+        "/mirrorcheck/:node" => {
+            if method != Method::GET {
                 return Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
                     None,
                     format!("Invalid method {method} for {bound_path}").into_bytes(),
                 ));
             }
-            crate::rebuild_index(state);
-            Ok((StatusCode::OK, None, vec![]))
+            let Some(node) = url_params.get("node") else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing node").into_bytes(),
+                ));
+            };
+            if let Err(SendError { kind, .. }) = Request::to((node, "net", "distro", "sys"))
+                .body(b"checking your mirror status...")
+                .send_and_await_response(3)
+                .unwrap()
+            {
+                match kind {
+                    SendErrorKind::Timeout => {
+                        let check_reponse = MirrorCheck {
+                            node: node.to_string(),
+                            is_online: false,
+                            error: Some(format!("node {} timed out", node).to_string()),
+                        };
+                        return Ok((StatusCode::OK, None, serde_json::to_vec(&check_reponse)?));
+                    }
+                    SendErrorKind::Offline => {
+                        let check_reponse = MirrorCheck {
+                            node: node.to_string(),
+                            is_online: false,
+                            error: Some(format!("node {} is offline", node).to_string()),
+                        };
+                        return Ok((StatusCode::OK, None, serde_json::to_vec(&check_reponse)?));
+                    }
+                }
+            } else {
+                let check_reponse = MirrorCheck {
+                    node: node.to_string(),
+                    is_online: true,
+                    error: None,
+                };
+                return Ok((StatusCode::OK, None, serde_json::to_vec(&check_reponse)?));
+            }
         }
         _ => Ok((
             StatusCode::NOT_FOUND,

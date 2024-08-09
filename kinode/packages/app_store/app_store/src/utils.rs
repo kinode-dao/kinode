@@ -67,6 +67,18 @@ pub fn fetch_package_manifest(
     )?)
 }
 
+pub fn fetch_package_metadata(package_id: &PackageId) -> anyhow::Result<kt::Erc721Metadata> {
+    vfs_request(
+        format!("/{package_id}/pkg/metadata.json"), // OK BIG todo: figure out why tf this is not here...
+        vfs::VfsAction::Read,
+    )
+    .send_and_await_response(VFS_TIMEOUT)??;
+    let Some(blob) = get_blob() else {
+        return Err(anyhow::anyhow!("no blob"));
+    };
+    Ok(serde_json::from_slice::<kt::Erc721Metadata>(&blob.bytes)?)
+}
+
 pub fn new_package(
     package_id: &PackageId,
     state: &mut State,
@@ -170,14 +182,14 @@ pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
 /// which we can only do if we were the process to create that drive.
 /// note also that each capability will only be granted if we, the process
 /// using this function, own that capability ourselves.
-pub fn install(
-    package_id: &PackageId,
-    our_node: &str,
-    wit_version: Option<u32>,
-) -> anyhow::Result<()> {
+pub fn install(package_id: &PackageId, our_node: &str) -> anyhow::Result<()> {
     // get the package manifest
     let drive_path = format!("/{package_id}/pkg");
     let manifest = fetch_package_manifest(package_id)?;
+
+    // get wit version from metadata:
+    let metadata = fetch_package_metadata(package_id)?;
+    let wit_version = metadata.properties.wit_version;
 
     // first, for each process in manifest, initialize it
     // then, once all have been initialized, grant them requested caps

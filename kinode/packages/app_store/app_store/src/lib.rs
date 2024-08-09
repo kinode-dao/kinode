@@ -16,6 +16,7 @@
 //! - given permissions (necessary to complete install)
 //! - uninstalled + deleted
 //! - set to automatically update if a new version is available
+use crate::kinode::process::downloads::ProgressUpdate;
 use crate::kinode::process::main::{
     ApisResponse, GetApiResponse, InstallResponse, LocalRequest, LocalResponse, NewPackageRequest,
     NewPackageResponse, UninstallResponse,
@@ -46,6 +47,7 @@ const VFS_TIMEOUT: u64 = 10;
 #[serde(untagged)] // untagged as a meta-type for all incoming requests
 pub enum Req {
     LocalRequest(LocalRequest),
+    Progress(ProgressUpdate),
     Http(http::server::HttpServerRequest),
 }
 
@@ -95,7 +97,7 @@ fn handle_message(
                 if !message.is_local(our) {
                     return Err(anyhow::anyhow!("request from non-local node"));
                 }
-                let (body, blob) = handle_local_request(state, local_request);
+                let (body, blob) = handle_local_request(our, state, local_request);
                 let response = Response::new().body(serde_json::to_vec(&body)?);
                 if let Some(blob) = blob {
                     response.blob(blob).send()?;
@@ -109,7 +111,7 @@ fn handle_message(
                 }
                 http_server.handle_request(
                     server_request,
-                    |incoming| http_api::handle_http_request(state, &incoming),
+                    |incoming| http_api::handle_http_request(our, state, &incoming),
                     |_channel_id, _message_type, _blob| {
                         // not expecting any websocket messages from FE currently
                     },
@@ -132,6 +134,7 @@ fn handle_message(
 /// fielding requests to download packages and APIs from us
 /// only `our.node` can call this
 fn handle_local_request(
+    our: &Address,
     state: &mut State,
     request: LocalRequest,
 ) -> (LocalResponse, Option<LazyLoadBlob>) {
@@ -156,7 +159,7 @@ fn handle_local_request(
             )
         }
         LocalRequest::Install(package_id) => (
-            match handle_install(state, &package_id.to_process_lib()) {
+            match utils::install(&package_id.to_process_lib(), &our.to_string()) {
                 Ok(()) => LocalResponse::InstallResponse(InstallResponse::Success),
                 Err(e) => {
                     println!("error installing package: {e}");
@@ -207,18 +210,4 @@ pub fn list_apis(state: &mut State) -> LocalResponse {
             .map(|id| crate::kinode::process::main::PackageId::from_process_lib(id))
             .collect(),
     })
-}
-
-/// the steps to take an existing package on disk and install/start it
-/// make sure you have reviewed and approved caps in manifest before calling this
-pub fn handle_install(state: &mut State, package_id: &PackageId) -> anyhow::Result<()> {
-    // wit version will default to the latest if not specified
-    let metadata = &state
-        .packages
-        .get(package_id)
-        .ok_or_else(|| anyhow::anyhow!("package not found in manager"))?;
-
-    utils::install(package_id, &state.our.node, wit_version)?;
-
-    Ok(())
 }

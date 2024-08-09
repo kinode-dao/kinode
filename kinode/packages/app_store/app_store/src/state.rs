@@ -36,6 +36,13 @@ impl std::fmt::Display for AppStoreLogError {
 
 impl std::error::Error for AppStoreLogError {}
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MirrorCheck {
+    pub node: String,
+    pub is_online: bool,
+    pub error: Option<String>,
+}
+
 /// state of an individual package we have downloaded
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PackageState {
