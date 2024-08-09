@@ -4,4 +4,5 @@ declare module '@ensdomains/eth-ens-namehash' {
 }
 declare module 'idna-uts46-hx' {
     export function toAscii(domain: string, options?: object): string;
+    export function toUnicode(domain: string, options?: object): string;
 }

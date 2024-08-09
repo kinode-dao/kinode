@@ -2,24 +2,21 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 
 export interface HomepageApp {
+  id: string,
+  process: string,
   package_name: string,
-  path: string
+  publisher: string,
+  path?: string
   label: string,
   base64_icon?: string,
-  state?: {
-    our_version: string
-  }
   widget?: string
-  order?: number
+  order: number
+  favorite: boolean
 }
 
 export interface HomepageStore {
   get: () => HomepageStore
   set: (partial: HomepageStore | Partial<HomepageStore>) => void
-
-  isHosted: boolean
-  setIsHosted: (isHosted: boolean) => void
-  fetchHostedStatus: (our: string) => Promise<void>
 
   apps: HomepageApp[]
   setApps: (apps: HomepageApp[]) => void
@@ -32,24 +29,10 @@ const useHomepageStore = create<HomepageStore>()(
     (set, get) => ({
       get,
       set,
-
       apps: [],
       setApps: (apps: HomepageApp[]) => set({ apps }),
       showWidgetsSettings: false,
       setShowWidgetsSettings: (showWidgetsSettings: boolean) => set({ showWidgetsSettings }),
-      isHosted: false,
-      setIsHosted: (isHosted: boolean) => set({ isHosted }),
-      fetchHostedStatus: async (our: string) => {
-        let hosted = false
-        try {
-          const res = await fetch(`https://${our.replace('.os', '')}.hosting.kinode.net/`)
-          hosted = res.status === 200
-        } catch (error) {
-          // do nothing
-        } finally {
-          set({ isHosted: hosted })
-        }
-      },
     }),
     {
       name: 'homepage_store', // unique name

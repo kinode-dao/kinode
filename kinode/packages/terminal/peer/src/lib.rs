@@ -1,38 +1,26 @@
-use kinode_process_lib::{
-    await_next_message_body, call_init, net, println, Address, Message, Request,
-};
+use kinode_process_lib::{net, script, Address, Message, Request};
 
 wit_bindgen::generate!({
     path: "target/wit",
     world: "process-v0",
 });
 
-call_init!(init);
-fn init(_our: Address) {
-    let Ok(args) = await_next_message_body() else {
-        println!("failed to get args");
-        return;
-    };
-    let Ok(name) = String::from_utf8(args) else {
-        println!("argument must be a string");
-        return;
-    };
+script!(init);
+fn init(_our: Address, args: String) -> String {
     let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
-        .body(rmp_serde::to_vec(&net::NetAction::GetPeer(name.clone())).unwrap())
-        .send_and_await_response(5)
+        .body(rmp_serde::to_vec(&net::NetAction::GetPeer(args.clone())).unwrap())
+        .send_and_await_response(10)
     else {
-        println!("failed to get response from networking module");
-        return;
+        return "Failed to get response from networking module".to_string();
     };
     let Ok(net::NetResponse::Peer(maybe_peer_id)) = rmp_serde::from_slice(&body) else {
-        println!("got malformed response from networking module");
-        return;
+        return "Got malformed response from networking module".to_string();
     };
     match maybe_peer_id {
-        Some(peer_id) => println!(
+        Some(peer_id) => format!(
             "peer identity for {}:\n    networking key: {}\n    routing: {:?}",
             peer_id.name, peer_id.networking_key, peer_id.routing
         ),
-        None => println!("no PKI entry found with name {name}"),
+        None => format!("no PKI entry found with name {args}"),
     }
 }

@@ -1,6 +1,4 @@
-use kinode_process_lib::{
-    await_next_message_body, call_init, println, Address, ProcessId, Request,
-};
+use kinode_process_lib::{script, Address, ProcessId, Request};
 use serde::{Deserialize, Serialize};
 
 wit_bindgen::generate!({
@@ -16,30 +14,22 @@ enum TerminalAction {
     },
 }
 
-call_init!(init);
-fn init(_our: Address) {
-    let Ok(args) = await_next_message_body() else {
-        println!("failed to get args");
-        return;
-    };
+const USAGE: &str = "\x1b[1mUsage:\x1b[0m alias <alias_name> <process_id>";
 
-    let line = String::from_utf8(args).unwrap_or("error".into());
-    if line.is_empty() {
-        println!("Change alias for a process");
-        println!("\x1b[1mUsage:\x1b[0m alias <alias_name> <process_id>");
-        return;
+script!(init);
+fn init(_our: Address, args: String) -> String {
+    if args.is_empty() {
+        return format!("Change alias for a process.\n{USAGE}");
     }
 
-    let (alias, process) = line.split_once(" ").unwrap_or((&line, ""));
+    let (alias, process) = args.split_once(" ").unwrap_or((&args, ""));
 
     if alias.is_empty() {
-        println!("no alias given");
-        return;
+        return format!("No alias given.\n{USAGE}");
     }
 
     if process.is_empty() {
-        let _ = Request::new()
-            .target(("our", "terminal", "terminal", "sys"))
+        Request::to(("our", "terminal", "terminal", "sys"))
             .body(
                 serde_json::to_vec(&TerminalAction::EditAlias {
                     alias: alias.to_string(),
@@ -47,12 +37,12 @@ fn init(_our: Address) {
                 })
                 .unwrap(),
             )
-            .send();
+            .send()
+            .unwrap();
     } else {
         match process.parse::<ProcessId>() {
             Ok(process) => {
-                let _ = Request::new()
-                    .target(("our", "terminal", "terminal", "sys"))
+                Request::to(("our", "terminal", "terminal", "sys"))
                     .body(
                         serde_json::to_vec(&TerminalAction::EditAlias {
                             alias: alias.to_string(),
@@ -60,11 +50,13 @@ fn init(_our: Address) {
                         })
                         .unwrap(),
                     )
-                    .send();
+                    .send()
+                    .unwrap();
             }
             Err(_) => {
-                println!("invalid process id");
+                return format!("Invalid process ID.\n{USAGE}");
             }
         }
     }
+    "alias set".to_string()
 }

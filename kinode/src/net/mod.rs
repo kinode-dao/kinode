@@ -3,8 +3,7 @@ use lib::types::core::{
     NetworkErrorSender, NodeRouting, PrintSender,
 };
 use types::{
-    IdentityExt, NetData, OnchainPKI, PKINames, Peers, PendingPassthroughs, TCP_PROTOCOL,
-    WS_PROTOCOL,
+    IdentityExt, NetData, OnchainPKI, Peers, PendingPassthroughs, TCP_PROTOCOL, WS_PROTOCOL,
 };
 use {dashmap::DashMap, ring::signature::Ed25519KeyPair, std::sync::Arc, tokio::task::JoinSet};
 
@@ -47,17 +46,12 @@ pub async fn networking(
     // and store a mapping of peers we have an active route for
     let pki: OnchainPKI = Arc::new(DashMap::new());
     let peers: Peers = Arc::new(DashMap::new());
-    // keep a mapping of namehashes (used onchain) to node-ids.
-    // this allows us to act as a translator for others, and translate
-    // our own router namehashes if we are indirect.
-    let names: PKINames = Arc::new(DashMap::new());
     // only used by routers
     let pending_passthroughs: PendingPassthroughs = Arc::new(DashMap::new());
 
     let net_data = NetData {
         pki,
         peers,
-        names,
         pending_passthroughs,
     };
 
@@ -165,11 +159,11 @@ async fn handle_local_request(
             // we shouldn't get these locally, ignore
         }
         Ok(NetAction::KnsUpdate(log)) => {
-            utils::ingest_log(log, &data.pki, &data.names);
+            utils::ingest_log(log, &data.pki);
         }
         Ok(NetAction::KnsBatchUpdate(logs)) => {
             for log in logs {
-                utils::ingest_log(log, &data.pki, &data.names);
+                utils::ingest_log(log, &data.pki);
             }
         }
         Ok(gets) => {
@@ -187,15 +181,11 @@ async fn handle_local_request(
                     NetResponse::Peer(data.pki.get(&peer).map(|p| p.clone())),
                     None,
                 ),
-                NetAction::GetName(namehash) => (
-                    NetResponse::Name(data.names.get(&namehash).map(|n| n.clone())),
-                    None,
-                ),
                 NetAction::GetDiagnostics => {
                     let mut printout = String::new();
                     printout.push_str(&format!(
                         "indexing from contract address {}\r\n",
-                        crate::KNS_ADDRESS
+                        crate::KIMAP_ADDRESS
                     ));
                     printout.push_str(&format!("our Identity: {:#?}\r\n", ext.our));
                     printout.push_str(&format!(

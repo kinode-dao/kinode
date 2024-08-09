@@ -1,48 +1,20 @@
-use kinode_process_lib::{
-    await_next_message_body, call_init, get_blob, println, vfs, Address, Request,
-};
+use kinode_process_lib::{println, script, vfs, Address};
 
 wit_bindgen::generate!({
     path: "target/wit",
     world: "process-v0",
 });
 
-call_init!(init);
-fn init(_our: Address) {
-    let Ok(args) = await_next_message_body() else {
-        println!("failed to get args");
-        return;
-    };
+const USAGE: &str = "\x1b[1mUsage:\x1b[0m cat <file_path>";
 
-    let Ok(file_path) = String::from_utf8(args) else {
-        println!("argument must be a single string");
-        return;
-    };
-
-    if file_path.is_empty() {
-        println!("Print the contents of a file to the terminal");
-        println!("\x1b[1mUsage:\x1b[0m cat <file_path>");
-        return;
+script!(init);
+fn init(_our: Address, args: String) -> String {
+    if args.is_empty() {
+        return format!("Print the contents of a file to the terminal.\n{USAGE}");
     }
 
-    Request::new()
-        .target(("our", "vfs", "distro", "sys"))
-        .body(
-            serde_json::to_vec(&vfs::VfsRequest {
-                path: file_path.clone(),
-                action: vfs::VfsAction::Read,
-            })
-            .unwrap(),
-        )
-        .send_and_await_response(5)
-        .unwrap()
-        .unwrap();
-    let Some(blob) = get_blob() else {
-        println!("no file found at {}", file_path);
-        return;
-    };
-    match String::from_utf8(blob.bytes) {
-        Ok(s) => println!("{s}"),
-        Err(_e) => println!("error: file at {file_path} could not be parsed as utf-8 string!"),
+    match vfs::File::new(&args, 5).read() {
+        Ok(data) => String::from_utf8_lossy(&data).to_string(),
+        Err(_) => format!("failed to read file {args} from VFS.\n{USAGE}"),
     }
 }

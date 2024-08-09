@@ -1006,7 +1006,6 @@ async fn maintain_websocket(
             read = read_stream.next() => {
                 match read {
                     Some(Ok(msg)) => {
-
                         let ws_msg_type = if msg.is_text() {
                             WsMessageType::Text
                         } else if msg.is_binary() {

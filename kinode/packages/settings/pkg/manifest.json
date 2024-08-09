@@ -16,7 +16,13 @@
             "http_server:distro:sys",
             "kernel:distro:sys",
             "net:distro:sys",
-            "vfs:distro:sys"
+            "vfs:distro:sys",
+            {
+                "process": "vfs:distro:sys",
+                "params": {
+                    "root": true
+                }
+            }
         ],
         "grant_capabilities": [
             "eth:distro:sys",

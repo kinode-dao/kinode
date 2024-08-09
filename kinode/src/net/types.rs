@@ -55,8 +55,8 @@ pub struct RoutingRequest {
 }
 
 pub type Peers = Arc<DashMap<String, Peer>>;
-pub type PKINames = Arc<DashMap<String, NodeId>>;
 pub type OnchainPKI = Arc<DashMap<String, Identity>>;
+
 /// (from, target) -> from's socket
 pub type PendingPassthroughs = Arc<DashMap<(NodeId, NodeId), PendingStream>>;
 pub enum PendingStream {
@@ -98,6 +98,5 @@ pub struct IdentityExt {
 pub struct NetData {
     pub pki: OnchainPKI,
     pub peers: Peers,
-    pub names: PKINames,
     pub pending_passthroughs: PendingPassthroughs,
 }

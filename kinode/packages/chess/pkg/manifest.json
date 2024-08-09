@@ -10,9 +10,7 @@
             "net:distro:sys",
             "vfs:distro:sys"
         ],
-        "grant_capabilities": [
-            "http_server:distro:sys"
-        ],
+        "grant_capabilities": [],
         "public": true
     }
 ]

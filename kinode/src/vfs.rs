@@ -97,7 +97,6 @@ pub async fn vfs(
         // Clone Arcs for the new task
         let our_node = our_node.clone();
         let send_to_loop = send_to_loop.clone();
-        let send_to_terminal = send_to_terminal.clone();
         let send_to_caps_oracle = send_to_caps_oracle.clone();
         let open_files = open_files.clone();
         let vfs_path = vfs_path.clone();
@@ -118,9 +117,6 @@ pub async fn vfs(
                 )
                 .await
                 {
-                    Printout::new(1, format!("vfs: {e}"))
-                        .send(&send_to_terminal)
-                        .await;
                     KernelMessage::builder()
                         .id(km_id)
                         .source((our_node.as_str(), VFS_PROCESS_ID.clone()))

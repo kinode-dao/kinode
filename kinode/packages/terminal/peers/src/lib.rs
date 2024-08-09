@@ -1,22 +1,20 @@
-use kinode_process_lib::{call_init, net, println, Address, Message, Request};
+use kinode_process_lib::{net, script, Address, Message, Request};
 
 wit_bindgen::generate!({
     path: "target/wit",
     world: "process-v0",
 });
 
-call_init!(init);
-fn init(_our: Address) {
+script!(init);
+fn init(_our: Address, _args: String) -> String {
     let Ok(Ok(Message::Response { body, .. })) = Request::to(("our", "net", "distro", "sys"))
         .body(rmp_serde::to_vec(&net::NetAction::GetPeers).unwrap())
-        .send_and_await_response(5)
+        .send_and_await_response(10)
     else {
-        println!("failed to get peers from networking module");
-        return;
+        return "Failed to get peers from networking module".to_string();
     };
     let Ok(net::NetResponse::Peers(identities)) = rmp_serde::from_slice(&body) else {
-        println!("got malformed response from networking module");
-        return;
+        return "Got malformed response from networking module".to_string();
     };
     let identities = identities
         .iter()
@@ -28,5 +26,5 @@ fn init(_our: Address) {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    println!("identities of current connected peers:\n{identities}");
+    format!("identities of current connected peers:\n{identities}")
 }

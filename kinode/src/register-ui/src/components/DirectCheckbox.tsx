@@ -7,30 +7,17 @@ interface Props {
 
 export default function DirectCheckbox({ direct, setDirect }: Props) {
   return (
-    <div className="flex place-items-center">
-      <div className="relative flex place-items-center mr-2">
+    <div className="direct-checkbox">
+      <label className="checkbox-container">
         <input
           type="checkbox"
-          id="direct"
-          name="direct"
           checked={direct}
           onChange={(e) => setDirect(e.target.checked)}
-          autoFocus
         />
-        {direct && (
-          <span
-            onClick={() => setDirect(false)}
-            className="checkmark"
-          >
-            &#10003;
-          </span>
-        )}
-      </div>
-      <label
-        htmlFor="direct"
-        className="flex place-items-center cursor-pointer"
-      >
-        Register as a direct node. If you are unsure leave unchecked.
+        <span className="checkmark"></span>
+        <span className="checkbox-label">
+          Register as a direct node. If you are unsure leave unchecked.
+        </span>
       </label>
       <DirectTooltip />
     </div>

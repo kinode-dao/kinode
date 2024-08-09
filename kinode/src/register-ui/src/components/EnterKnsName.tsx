@@ -1,15 +1,23 @@
 import React, { useEffect, useRef } from "react";
-import { DotOsRegistrar } from "../abis/types";
 import isValidDomain from "is-valid-domain";
-import hash from "@ensdomains/eth-ens-namehash";
 import { toAscii } from "idna-uts46-hx";
+import { usePublicClient } from 'wagmi'
+
+import { KINOMAP, kinomapAbi } from '../abis'
+import { kinohash } from "../utils/kinohash";
+
+export const NAME_URL = "Name must contain only valid characters (a-z, 0-9, and -)";
+export const NAME_LENGTH = "Name must be 9 characters or more";
+export const NAME_CLAIMED = "Name is already claimed";
+export const NAME_INVALID_PUNY = "Unsupported punycode character";
+export const NAME_NOT_OWNER = "Name already exists and does not belong to this wallet";
+export const NAME_NOT_REGISTERED = "Name is not registered";
 
 type ClaimOsNameProps = {
   name: string;
   setName: React.Dispatch<React.SetStateAction<string>>;
   nameValidities: string[];
   setNameValidities: React.Dispatch<React.SetStateAction<string[]>>;
-  dotOs?: DotOsRegistrar;
   triggerNameCheck: boolean;
   isReset?: boolean;
 };
@@ -19,16 +27,10 @@ function EnterKnsName({
   setName,
   nameValidities,
   setNameValidities,
-  dotOs,
   triggerNameCheck,
   isReset = false,
 }: ClaimOsNameProps) {
-  const NAME_URL =
-    "Name must be a valid URL without subdomains (A-Z, a-z, 0-9, and punycode)";
-  const NAME_LENGTH = "Name must be 9 characters or more";
-  const NAME_CLAIMED = "Name is already claimed";
-  const NAME_INVALID_PUNY = "Unsupported punycode character";
-
+  const client = usePublicClient();
   const debouncer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -66,9 +68,20 @@ function EnterKnsName({
 
         if (validities.length === 0 || index !== -1 && normalized.length > 2) {
           try {
-            const namehash = hash.hash(normalized)
-            const owner = await dotOs?.ownerOf(namehash);
-            if (owner && index === -1) validities.push(NAME_CLAIMED);
+            const namehash = kinohash(normalized)
+            // maybe separate into helper function for readability?
+            // also note picking the right chain ID & address!
+            const data = await client?.readContract({
+              address: KINOMAP,
+              abi: kinomapAbi,
+              functionName: "get",
+              args: [namehash]
+            })
+
+            const owner = data?.[1];
+            const owner_is_zero = owner === "0x0000000000000000000000000000000000000000";
+
+            if (!owner_is_zero && index === -1) validities.push(NAME_CLAIMED);
           } catch (e) {
             console.error({ e })
             if (index !== -1) validities.splice(index, 1);
@@ -77,15 +90,15 @@ function EnterKnsName({
       }
 
       setNameValidities(validities);
-    }, 500);
+    }, 100);
   }, [name, triggerNameCheck, isReset]);
 
   const noDots = (e: any) =>
     e.target.value.indexOf(".") === -1 && setName(e.target.value);
 
   return (
-    <div className="flex flex-col w-full place-items-center place-content-center">
-      <div className="flex w-full place-items-center">
+    <div className="enter-kns-name">
+      <div className="input-wrapper">
         <input
           value={name}
           onChange={noDots}
@@ -93,15 +106,12 @@ function EnterKnsName({
           required
           name="dot-os-name"
           placeholder="e.g. myname"
-          className="grow"
+          className="kns-input"
         />
-        <div className="ml-2 text-lg">.os</div>
+        <span className="kns-suffix">.os</span>
       </div>
       {nameValidities.map((x, i) => (
-        <div key={i}>
-          <br />
-          <span className="text-red-500">{x}</span>
-        </div>
+        <p key={i} className="error-message">{x}</p>
       ))}
     </div>
   );

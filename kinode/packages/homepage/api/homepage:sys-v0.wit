@@ -7,6 +7,9 @@ interface homepage {
         /// the icon is a base64 encoded image.
         add(add-request),
         remove,
+        /// ONLY settings:settings:sys may call this request
+        /// (this is checked in-code)
+        set-stylesheet(string),
     }
 
     record add-request {

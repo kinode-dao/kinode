@@ -1,48 +1,32 @@
 use kinode_process_lib::kernel_types::{KernelCommand, KernelResponse};
-use kinode_process_lib::{
-    await_next_message_body, call_init, println, Address, Message, ProcessId, Request,
-};
+use kinode_process_lib::{script, Address, Message, ProcessId, Request};
 
 wit_bindgen::generate!({
     path: "target/wit",
     world: "process-v0",
 });
 
-call_init!(init);
-fn init(_our: Address) {
-    let Ok(args) = await_next_message_body() else {
-        println!("failed to get args");
-        return;
-    };
-
-    let Ok(proc_id) = String::from_utf8(args) else {
-        println!("failed to stringify arguments");
-        return;
-    };
-
-    let body = match proc_id.parse::<ProcessId>() {
-        Ok(proc_id) => serde_json::to_vec(&KernelCommand::KillProcess(proc_id)).unwrap(),
+script!(init);
+fn init(_our: Address, args: String) -> String {
+    let process_id = match args.parse::<ProcessId>() {
+        Ok(id) => id,
         Err(_) => {
-            println!("invalid process id");
-            return;
+            return "Invalid process ID.\n\x1b[1mUsage:\x1b[0m kill <process_id>".to_string();
         }
     };
 
-    let Ok(Message::Response { body, .. }) = Request::new()
-        .target(("our", "kernel", "distro", "sys"))
-        .body(body)
+    let Ok(Message::Response { body, .. }) = Request::to(("our", "kernel", "distro", "sys"))
+        .body(serde_json::to_vec(&KernelCommand::KillProcess(process_id)).unwrap())
         .send_and_await_response(60)
         .unwrap()
     else {
-        println!("failed to get response from kernel");
-        return;
+        return "failed to get response from kernel".to_string();
     };
     let Ok(KernelResponse::KilledProcess(proc_id)) =
         serde_json::from_slice::<KernelResponse>(&body)
     else {
-        println!("failed to parse kernel response");
-        return;
+        return "failed to parse kernel response".to_string();
     };
 
-    println!("killed process {}", proc_id);
+    format!("killed process {proc_id}")
 }

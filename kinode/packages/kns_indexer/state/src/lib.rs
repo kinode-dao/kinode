@@ -1,4 +1,4 @@
-use kinode_process_lib::{call_init, net, println, Address, Message, Request};
+use kinode_process_lib::{eth, net, script, Address, Message, Request};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -12,18 +12,20 @@ wit_bindgen::generate!({
 struct State {
     chain_id: u64,
     // what contract this state pertains to
-    contract_address: String,
+    contract_address: eth::Address,
     // namehash to human readable name
     names: HashMap<String, String>,
     // human readable name to most recent on-chain routing information as json
-    // NOTE: not every namehash will have a node registered
+    // TODO: optional params knsUpdate? also include tba.
     nodes: HashMap<String, net::KnsUpdate>,
     // last block we have an update from
-    block: u64,
+    last_block: u64,
 }
 
-call_init!(init);
-fn init(_our: Address) {
+script!(init);
+fn init(_our: Address, _args: String) -> String {
+    // we don't take any args
+
     let Ok(Message::Response { body, .. }) =
         Request::to(("our", "kns_indexer", "kns_indexer", "sys"))
             .body(
@@ -39,19 +41,20 @@ fn init(_our: Address) {
             .send_and_await_response(10)
             .unwrap()
     else {
-        println!("failed to get state from kns_indexer");
-        return;
+        return "failed to get state from kns_indexer".to_string();
     };
-    let state = serde_json::from_slice::<State>(&body).expect("failed to deserialize state");
+    let Ok(state) = serde_json::from_slice::<State>(&body) else {
+        return "failed to deserialize state".to_string();
+    };
     // can change later, but for now, just print every known node name
     let mut names = state.names.values().map(AsRef::as_ref).collect::<Vec<_>>();
     names.sort();
-    println!(
+    format!(
         "\nrunning on chain id {}\nCA: {}\n{} known nodes as of block {}\n     {}",
         state.chain_id,
         state.contract_address,
         names.len(),
-        state.block,
+        state.last_block,
         names.join("\n     ")
-    );
+    )
 }
