@@ -75,12 +75,13 @@ fn get_kinode_book(packages_dir: &Path) -> anyhow::Result<()> {
         }
         let release = &releases[0];
         if release.assets.is_empty() {
-            return Err(anyhow::anyhow!("most recent kinode-book release has no assets"));
+            return Err(anyhow::anyhow!(
+                "most recent kinode-book release has no assets"
+            ));
         }
         let release_url = format!(
             "https://github.com/kinode-dao/kinode-book/releases/download/{}/{}",
-            release.tag_name,
-            release.assets[0].name,
+            release.tag_name, release.assets[0].name,
         );
         let book_dir = packages_dir.join("docs").join("pkg").join("ui");
         fs::create_dir_all(&book_dir)?;
