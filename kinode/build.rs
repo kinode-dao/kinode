@@ -1,9 +1,12 @@
 use std::{
     collections::HashSet,
     fs::{self, File},
-    io::{Cursor, Read, Write},
+    io::{BufReader, Cursor, Read, Write},
     path::{Path, PathBuf},
 };
+
+use flate2::read::GzDecoder;
+use tar::Archive;
 use zip::write::FileOptions;
 
 fn get_features() -> String {
@@ -44,6 +47,53 @@ fn output_reruns(dir: &Path, rerun_files: &HashSet<String>) {
     }
 }
 
+fn untar_gz_file(path: &Path, dest: &Path) -> std::io::Result<()> {
+    // Open the .tar.gz file
+    let tar_gz = File::open(path)?;
+    let tar_gz_reader = BufReader::new(tar_gz);
+
+    // Decode the gzip layer
+    let tar = GzDecoder::new(tar_gz_reader);
+
+    // Create a new archive from the tar file
+    let mut archive = Archive::new(tar);
+
+    // Unpack the archive into the specified destination directory
+    archive.unpack(dest)?;
+
+    Ok(())
+}
+
+fn get_kinode_book(packages_dir: &Path) -> anyhow::Result<()> {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let releases = kit::boot_fake_node::fetch_releases("kinode-dao", "kinode-book")
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        if releases.is_empty() {
+            return Err(anyhow::anyhow!("couldn't retrieve kinode-book releases"));
+        }
+        let release = &releases[0];
+        if release.assets.is_empty() {
+            return Err(anyhow::anyhow!("most recent kinode-book release has no assets"));
+        }
+        let release_url = format!(
+            "https://github.com/kinode-dao/kinode-book/releases/download/{}/{}",
+            release.tag_name,
+            release.assets[0].name,
+        );
+        let book_dir = packages_dir.join("docs").join("pkg").join("ui");
+        fs::create_dir_all(&book_dir)?;
+        let book_tar_path = book_dir.join("book.tar.gz");
+        kit::build::download_file(&release_url, &book_tar_path)
+            .await
+            .map_err(|e| anyhow::anyhow!("{e:?}"))?;
+        untar_gz_file(&book_tar_path, &book_dir)?;
+        fs::remove_file(book_tar_path)?;
+        Ok(())
+    })
+}
+
 fn build_and_zip_package(
     entry_path: PathBuf,
     parent_pkg_path: &str,
@@ -60,7 +110,11 @@ fn build_and_zip_package(
             None,
             None,
             None,
-            true,
+            vec![],
+            vec![],
+            false,
+            false,
+            false,
         )
         .await
         .map_err(|e| anyhow::anyhow!("{:?}", e))?;
@@ -129,9 +183,7 @@ fn main() -> anyhow::Result<()> {
         }
     }
 
-    let entries: Vec<_> = fs::read_dir(packages_dir)?
-        .map(|entry| entry.unwrap().path())
-        .collect();
+    get_kinode_book(&packages_dir)?;
 
     let rerun_files: HashSet<String> = HashSet::from([
         "Cargo.lock".to_string(),
@@ -142,9 +194,12 @@ fn main() -> anyhow::Result<()> {
 
     let features = get_features();
 
-    let results: Vec<anyhow::Result<(String, String, Vec<u8>)>> = entries
-        .iter()
-        .filter_map(|entry_path| {
+    let results: Vec<anyhow::Result<(String, String, Vec<u8>)>> = fs::read_dir(&packages_dir)?
+        .filter_map(|entry| {
+            let entry_path = match entry {
+                Ok(e) => e.path(),
+                Err(_) => return None,
+            };
             let parent_pkg_path = entry_path.join("pkg");
             if !parent_pkg_path.exists() {
                 // don't run on, e.g., `.DS_Store`
