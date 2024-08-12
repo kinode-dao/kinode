@@ -13,13 +13,14 @@ export const NAME_INVALID_PUNY = "Unsupported punycode character";
 export const NAME_NOT_OWNER = "Name already exists and does not belong to this wallet";
 export const NAME_NOT_REGISTERED = "Name is not registered";
 
-type ClaimOsNameProps = {
+type ClaimNameProps = {
   name: string;
   setName: React.Dispatch<React.SetStateAction<string>>;
   nameValidities: string[];
   setNameValidities: React.Dispatch<React.SetStateAction<string[]>>;
   triggerNameCheck: boolean;
   isReset?: boolean;
+  topLevelZone?: string;
 };
 
 function EnterKnsName({
@@ -29,7 +30,8 @@ function EnterKnsName({
   setNameValidities,
   triggerNameCheck,
   isReset = false,
-}: ClaimOsNameProps) {
+  topLevelZone = ".os",
+}: ClaimNameProps) {
   const client = usePublicClient();
   const debouncer = useRef<NodeJS.Timeout | null>(null);
 
@@ -51,14 +53,14 @@ function EnterKnsName({
       let normalized = ''
       index = validities.indexOf(NAME_INVALID_PUNY);
       try {
-        normalized = toAscii(name + ".os");
+        normalized = toAscii(name + topLevelZone);
         if (index !== -1) validities.splice(index, 1);
       } catch (e) {
         if (index === -1) validities.push(NAME_INVALID_PUNY);
       }
 
       // only check if name is valid punycode
-      if (normalized && normalized !== '.os') {
+      if (normalized && normalized !== topLevelZone) {
         index = validities.indexOf(NAME_URL);
         if (name !== "" && !isValidDomain(normalized)) {
           if (index === -1) validities.push(NAME_URL);
@@ -104,11 +106,11 @@ function EnterKnsName({
           onChange={noDots}
           type="text"
           required
-          name="dot-os-name"
+          name="name"
           placeholder="e.g. myname"
           className="kns-input"
         />
-        <span className="kns-suffix">.os</span>
+        <span className="kns-suffix">{topLevelZone}</span>
       </div>
       {nameValidities.map((x, i) => (
         <p key={i} className="error-message">{x}</p>

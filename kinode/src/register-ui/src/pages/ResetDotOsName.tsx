@@ -43,7 +43,7 @@ function ResetKnsName({
   const { data: hash, writeContract, isPending, isError, error } = useWriteContract({
     mutation: {
       onSuccess: (data) => {
-        addRecentTransaction({ hash: data, description: `Reset KNS ID: ${name}.os` });
+        addRecentTransaction({ hash: data, description: `Reset KNS ID: ${name}` });
       }
     }
   });
@@ -87,7 +87,7 @@ function ResetKnsName({
       let normalized: string;
       index = vets.indexOf(NAME_INVALID_PUNY);
       try {
-        normalized = toAscii(name + ".os");
+        normalized = toAscii(name);
         if (index !== -1) vets.splice(index, 1);
       } catch (e) {
         if (index === -1) vets.push(NAME_INVALID_PUNY);
@@ -102,8 +102,7 @@ function ResetKnsName({
 
         try {
           const namehash = kinohash(normalized)
-          console.log('normalized', normalized)
-          console.log('namehash', namehash)
+
           // maybe separate into helper function for readability?
           // also note picking the right chain ID & address!
           const data = await client?.readContract({
@@ -114,10 +113,6 @@ function ResetKnsName({
           })
           const tba = data?.[0];
           const owner = data?.[1];
-
-
-          console.log('GOT data', data)
-          console.log('GOT tba', tba)
 
           index = vets.indexOf(NAME_NOT_OWNER);
           if (owner === address && index !== -1) vets.splice(index, 1);
@@ -167,10 +162,6 @@ function ResetKnsName({
           reset: true,
         });
 
-        console.log('data', data)
-
-        console.log('tba', tba)
-
         writeContract({
           address: tba as `0x${string}`,
           abi: mechAbi,
@@ -209,8 +200,8 @@ function ResetKnsName({
             ) : (
               <>
                 <h3 className="form-label">
-                  <Tooltip text="Kinodes use a .os name in order to identify themselves to other nodes in the network.">
-                    Specify the node ID to reset
+                  <Tooltip text="The full name your node uses to identify itself to other nodes in the network.">
+                    Specify the node ID to reset. Include the top-level suffix (e.g. .os).
                   </Tooltip>
                 </h3>
                 <EnterKnsName {...{ name, setName, nameVets, triggerNameCheck, nameValidities, setNameValidities, isReset: true }} />
