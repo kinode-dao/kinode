@@ -178,7 +178,7 @@ fn init(our: Address) {
                         let path = incoming.bound_path(None);
                         match path {
                             "/apps" => (
-                                server::HttpResponse::new(http::StatusCode::BAD_REQUEST),
+                                server::HttpResponse::new(http::StatusCode::OK),
                                 Some(LazyLoadBlob::new(
                                     Some("application/json"),
                                     serde_json::to_vec(
