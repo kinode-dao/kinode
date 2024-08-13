@@ -8,6 +8,7 @@ use std::{collections::HashMap, str::FromStr};
 use crate::kinode::process::chain::{
     Chains, GetAppResponse, OnChainApp, OnChainMetadata, OnChainProperties,
 };
+use crate::kinode::process::main::Error;
 use alloy_primitives::keccak256;
 use alloy_sol_types::SolEvent;
 use kinode_process_lib::{
@@ -93,6 +94,14 @@ fn init(our: Address) {
             Ok(message) => {
                 if let Err(e) = handle_message(&our, &mut state, &message) {
                     println!("error handling message: {:?}", e);
+                    let _ = Response::new()
+                        .body(
+                            serde_json::to_vec(&Error {
+                                reason: e.to_string(),
+                            })
+                            .unwrap(),
+                        )
+                        .send();
                 }
             }
         }

@@ -1,11 +1,17 @@
 use {
-    crate::state::{PackageState, State},
-    crate::VFS_TIMEOUT,
+    crate::{
+        kinode::process::{
+            chain::{Chains, GetAppResponse, OnChainMetadata},
+            downloads::{AddDownloadRequest, DownloadResponse, Downloads},
+        },
+        state::{PackageState, State},
+        VFS_TIMEOUT,
+    },
     kinode_process_lib::{
         get_blob, kernel_types as kt, println, vfs, Address, LazyLoadBlob, PackageId, ProcessId,
         Request,
     },
-    std::collections::HashSet,
+    std::{collections::HashSet, str::FromStr},
 };
 
 // quite annoyingly, we must convert from our gen'd version of PackageId
@@ -67,38 +73,66 @@ pub fn fetch_package_manifest(
     )?)
 }
 
-pub fn fetch_package_metadata(package_id: &PackageId) -> anyhow::Result<kt::Erc721Metadata> {
-    vfs_request(
-        format!("/{package_id}/pkg/metadata.json"), // OK BIG todo: figure out why tf this is not here...
-        vfs::VfsAction::Read,
-    )
-    .send_and_await_response(VFS_TIMEOUT)??;
-    let Some(blob) = get_blob() else {
-        return Err(anyhow::anyhow!("no blob"));
+pub fn fetch_package_metadata(
+    package_id: &crate::kinode::process::main::PackageId,
+) -> anyhow::Result<OnChainMetadata> {
+    let chain = Address::from_str("our@chain:app_store:sys")?;
+    let resp = Request::new()
+        .target(chain)
+        .body(serde_json::to_vec(&Chains::GetApp(package_id.clone())).unwrap())
+        .send_and_await_response(5)??;
+
+    let resp = serde_json::from_slice::<GetAppResponse>(&resp.body())?;
+    let app = match resp.app {
+        Some(app) => app,
+        None => {
+            return Err(anyhow::anyhow!(
+                "No app data found in response from chain:app_store:sys"
+            ))
+        }
     };
-    Ok(serde_json::from_slice::<kt::Erc721Metadata>(&blob.bytes)?)
+    let metadata = match app.metadata {
+        Some(metadata) => metadata,
+        None => {
+            return Err(anyhow::anyhow!(
+                "No metadata found in response from chain:app_store:sys"
+            ))
+        }
+    };
+    Ok(metadata)
 }
 
 pub fn new_package(
-    package_id: &PackageId,
-    state: &mut State,
+    package_id: crate::kinode::process::main::PackageId,
+    mirror: bool,
     bytes: Vec<u8>,
 ) -> anyhow::Result<()> {
-    // add to listings
-
-    // TODO: add? to uhh listings at all?
-    // state.insert_package(package_id, metadata);
-
     // set the version hash for this new local package
-    let our_version_hash = sha_256_hash(&bytes);
+    let version_hash = sha_256_hash(&bytes);
 
-    let package_state = PackageState {
-        our_version_hash,
-        verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
-        caps_approved: true, // TODO see if we want to auto-approve local installs
-        manifest_hash: None, // generated in the add fn
+    let downloads = Address::from_str("our@downloads:app_store:sys")?;
+    let resp = Request::new()
+        .target(downloads)
+        .body(serde_json::to_vec(&Downloads::AddDownload(
+            AddDownloadRequest {
+                package_id: package_id.clone(),
+                version_hash: version_hash.clone(),
+                mirror,
+            },
+        ))?)
+        .blob_bytes(bytes)
+        .send_and_await_response(5)??;
+
+    let download_resp = serde_json::from_slice::<DownloadResponse>(&resp.body())?;
+    println!("got download resp: {:?}", download_resp);
+    if !download_resp.success {
+        return Err(anyhow::anyhow!(
+            "failed to add download: {:?}",
+            download_resp.error
+        ));
     };
-    state.add_downloaded_package(&package_id, package_state, Some(bytes))
+
+    Ok(())
 }
 
 /// create a new package drive in VFS and add the package zip to it.
@@ -138,6 +172,7 @@ pub fn create_package_drive(
         ));
     };
 
+    // be careful, this is technically a duplicate.. but..
     // save the zip file itself in VFS for sharing with other nodes
     // call it <package_id>.zip
     let zip_path = format!("{}/{}.zip", drive_name, package_id);
@@ -174,7 +209,8 @@ pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
     Ok(false)
 }
 
-/// given a `PackageId`, interact with VFS and kernel to get manifest,
+/// given a `PackageId`, interact with VFS and kernel to get {package_hash}.zip,
+/// unzip the manifest and pkg,
 /// grant the capabilities in manifest, then initialize and start
 /// the processes in manifest.
 ///
@@ -182,13 +218,49 @@ pub fn extract_api(package_id: &PackageId) -> anyhow::Result<bool> {
 /// which we can only do if we were the process to create that drive.
 /// note also that each capability will only be granted if we, the process
 /// using this function, own that capability ourselves.
-pub fn install(package_id: &PackageId, our_node: &str) -> anyhow::Result<()> {
-    // get the package manifest
-    let drive_path = format!("/{package_id}/pkg");
-    let manifest = fetch_package_manifest(package_id)?;
+pub fn install(
+    package_id: &crate::kinode::process::main::PackageId,
+    metadata: Option<OnChainMetadata>,
+    version_hash: &str,
+    state: &mut State,
+    our_node: &str,
+) -> anyhow::Result<()> {
+    let process_package_id = package_id.clone().to_process_lib();
+    let file = vfs::open_file(
+        &format!("/app_store:sys/downloads/{process_package_id}/{version_hash}.zip"),
+        false,
+        Some(VFS_TIMEOUT),
+    )?;
+    let bytes = file.read()?;
+    let manifest_hash = create_package_drive(&process_package_id, bytes)?;
 
-    // get wit version from metadata:
-    let metadata = fetch_package_metadata(package_id)?;
+    let package_state = PackageState {
+        our_version_hash: version_hash.to_string(),
+        verified: true, // sideloaded apps are implicitly verified because there is no "source" to verify against
+        caps_approved: true, // TODO see if we want to auto-approve local installs
+        manifest_hash: Some(manifest_hash),
+    };
+
+    if let Ok(extracted) = extract_api(&process_package_id) {
+        if extracted {
+            state.installed_apis.insert(process_package_id.clone());
+        }
+    }
+
+    state
+        .packages
+        .insert(process_package_id.clone(), package_state);
+
+    // get the package manifest
+    let drive_path = format!("/{process_package_id}/pkg");
+    let manifest = fetch_package_manifest(&process_package_id)?;
+    // get wit version from metadata if local or chain if remote.
+    let metadata = if let Some(metadata) = metadata {
+        metadata
+    } else {
+        fetch_package_metadata(&package_id)?
+    };
+
     let wit_version = metadata.properties.wit_version;
 
     // first, for each process in manifest, initialize it
@@ -201,11 +273,11 @@ pub fn install(package_id: &PackageId, our_node: &str) -> anyhow::Result<()> {
             format!("/{}", entry.process_wasm_path)
         };
         let wasm_path = format!("{}{}", drive_path, wasm_path);
-
+        println!("wasm path: {wasm_path}");
         let process_id = ProcessId::new(
             Some(&entry.process_name),
-            package_id.package(),
-            package_id.publisher(),
+            process_package_id.package(),
+            process_package_id.publisher(),
         );
 
         // kill process if it already exists
@@ -236,16 +308,19 @@ pub fn install(package_id: &PackageId, our_node: &str) -> anyhow::Result<()> {
         ) else {
             return Err(anyhow::anyhow!("failed to initialize process"));
         };
+        // println!("kernel process gave us something back.");
 
-        // build initial caps from manifest
+        // // build initial caps from manifest
         let mut requested_capabilities = parse_capabilities(our_node, &entry.request_capabilities);
-
+        println!("parsed caps.");
         if entry.request_networking {
             requested_capabilities.push(kt::Capability {
                 issuer: Address::new(our_node, ("kernel", "distro", "sys")),
                 params: "\"network\"".to_string(),
             });
         }
+
+        println!("requested caps: {:?}", requested_capabilities);
 
         // always grant read/write to their drive, which we created for them
         requested_capabilities.push(kt::Capability {
@@ -265,6 +340,7 @@ pub fn install(package_id: &PackageId, our_node: &str) -> anyhow::Result<()> {
             .to_string(),
         });
 
+        // NOTE.. this crashes...
         kernel_request(kt::KernelCommand::GrantCapabilities {
             target: process_id.clone(),
             capabilities: requested_capabilities,
@@ -278,8 +354,8 @@ pub fn install(package_id: &PackageId, our_node: &str) -> anyhow::Result<()> {
     for entry in &manifest {
         let process_id = ProcessId::new(
             Some(&entry.process_name),
-            package_id.package(),
-            package_id.publisher(),
+            process_package_id.package(),
+            process_package_id.publisher(),
         );
 
         for value in &entry.grant_capabilities {
@@ -340,6 +416,7 @@ pub fn install(package_id: &PackageId, our_node: &str) -> anyhow::Result<()> {
         ) else {
             return Err(anyhow::anyhow!("failed to start process"));
         };
+        println!("started the process!");
     }
     Ok(())
 }

@@ -18,8 +18,8 @@
 //! - set to automatically update if a new version is available
 use crate::kinode::process::downloads::{DownloadResponse, ProgressUpdate};
 use crate::kinode::process::main::{
-    ApisResponse, GetApiResponse, InstallResponse, LocalRequest, LocalResponse, NewPackageRequest,
-    NewPackageResponse, UninstallResponse,
+    ApisResponse, Error, GetApiResponse, InstallPackageRequest, InstallResponse, LocalRequest,
+    LocalResponse, NewPackageRequest, NewPackageResponse, UninstallResponse,
 };
 use kinode_process_lib::{
     await_message, call_init, get_blob, http, println, vfs, Address, LazyLoadBlob, Message,
@@ -56,6 +56,7 @@ pub enum Req {
 pub enum Resp {
     LocalResponse(LocalResponse),
     Download(DownloadResponse),
+    Err(Error),
 }
 
 call_init!(init);
@@ -118,6 +119,31 @@ fn handle_message(
                     },
                 );
             }
+            Req::Progress(progress) => {
+                if !message.is_local(&our) {
+                    return Err(anyhow::anyhow!("http_server from non-local node"));
+                }
+                println!("progress: {:?}", progress);
+                http_server.ws_push_all_channels(
+                    "/",
+                    http::server::WsMessageType::Text,
+                    LazyLoadBlob {
+                        mime: Some("application/json".to_string()),
+                        bytes: serde_json::json!({
+                            "kind": "progress",
+                            "data": {
+                                "package_id": progress.package_id,
+                                "version_hash": progress.version_hash,
+                                "downloaded": progress.downloaded,
+                                "total": progress.total,
+                            }
+                        })
+                        .to_string()
+                        .as_bytes()
+                        .to_vec(),
+                    },
+                );
+            }
             _ => {}
         }
     } else {
@@ -140,11 +166,8 @@ fn handle_local_request(
     request: LocalRequest,
 ) -> (LocalResponse, Option<LazyLoadBlob>) {
     match request {
-        LocalRequest::NewPackage(NewPackageRequest {
-            package_id,
-            metadata,
-            mirror,
-        }) => {
+        LocalRequest::NewPackage(NewPackageRequest { package_id, mirror }) => {
+            // note, use metadata and mirror?
             let Some(blob) = get_blob() else {
                 return (
                     LocalResponse::NewPackageResponse(NewPackageResponse::NoBlob),
@@ -152,16 +175,29 @@ fn handle_local_request(
                 );
             };
             (
-                match utils::new_package(&package_id.to_process_lib(), state, blob.bytes) {
+                match utils::new_package(package_id, mirror, blob.bytes) {
                     Ok(()) => LocalResponse::NewPackageResponse(NewPackageResponse::Success),
                     Err(_) => LocalResponse::NewPackageResponse(NewPackageResponse::InstallFailed),
                 },
                 None,
             )
         }
-        LocalRequest::Install(package_id) => (
-            match utils::install(&package_id.to_process_lib(), &our.to_string()) {
-                Ok(()) => LocalResponse::InstallResponse(InstallResponse::Success),
+        LocalRequest::Install(InstallPackageRequest {
+            package_id,
+            metadata,
+            version_hash,
+        }) => (
+            match utils::install(
+                &package_id,
+                metadata,
+                &version_hash,
+                state,
+                &our.to_string(),
+            ) {
+                Ok(()) => {
+                    println!("successfully installed package:");
+                    LocalResponse::InstallResponse(InstallResponse::Success)
+                }
                 Err(e) => {
                     println!("error installing package: {e}");
                     LocalResponse::InstallResponse(InstallResponse::Failure)

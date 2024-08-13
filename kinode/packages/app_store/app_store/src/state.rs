@@ -77,31 +77,6 @@ impl State {
         Ok(state)
     }
 
-    /// if package_bytes is None, we already have the package downloaded
-    /// in VFS and this is being called to rebuild our process state
-    pub fn add_downloaded_package(
-        &mut self,
-        package_id: &PackageId,
-        mut package_state: PackageState,
-        package_zip_bytes: Option<Vec<u8>>,
-    ) -> anyhow::Result<()> {
-        let Some(listing) = self.packages.get_mut(package_id) else {
-            return Err(anyhow::anyhow!("package not found"));
-        };
-        // if passed zip bytes, make drive
-        if let Some(package_bytes) = package_zip_bytes {
-            let manifest_hash = utils::create_package_drive(package_id, package_bytes)?;
-            package_state.manifest_hash = Some(manifest_hash);
-        }
-
-        if let Ok(extracted) = utils::extract_api(package_id) {
-            if extracted {
-                self.installed_apis.insert(package_id.to_owned());
-            }
-        }
-        Ok(())
-    }
-
     // /// returns True if the package was found and updated, False otherwise
     // pub fn update_downloaded_package(
     //     &mut self,

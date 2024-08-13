@@ -1,12 +1,14 @@
 use crate::{
-    kinode::process::downloads::{DownloadRequest, DownloadResponse},
+    kinode::process::downloads::{DownloadRequest, DownloadResponse, Downloads},
+    kinode::process::main::Error,
     state::{MirrorCheck, PackageState, State},
+    Resp,
 };
 
 use kinode_process_lib::{
     http::server,
     http::{self, Method, StatusCode},
-    Address, LazyLoadBlob, NodeId, PackageId, Request,
+    Address, LazyLoadBlob, PackageId, Request,
 };
 use kinode_process_lib::{SendError, SendErrorKind};
 use serde_json::json;
@@ -206,9 +208,15 @@ pub fn handle_http_request(
                 bytes: body,
             }),
         ),
-        Err(_e) => (
+        Err(e) => (
             server::HttpResponse::new(http::StatusCode::INTERNAL_SERVER_ERROR),
-            None,
+            Some(LazyLoadBlob {
+                mime: None,
+                bytes: serde_json::to_vec(&Error {
+                    reason: e.to_string(),
+                })
+                .unwrap(),
+            }),
         ),
     }
 }
@@ -220,6 +228,13 @@ fn get_package_id(url_params: &HashMap<String, String>) -> anyhow::Result<Packag
 
     let id = package_id.parse::<PackageId>()?;
     Ok(id)
+}
+
+fn get_version_hash(url_params: &HashMap<String, String>) -> anyhow::Result<String> {
+    let Some(version_hash) = url_params.get("version_hash") else {
+        return Err(anyhow::anyhow!("Missing version_hash"));
+    };
+    Ok(version_hash.to_string())
 }
 
 fn gen_package_info(id: &PackageId, state: &PackageState) -> serde_json::Value {
@@ -265,20 +280,50 @@ fn serve_paths(
             return Ok((StatusCode::OK, None, serde_json::to_vec(&all)?));
         }
         "/downloads" => {
-            // TODO
-            Ok((StatusCode::OK, None, vec![]))
+            // get all local downloads!
+            let downloads = Address::from_str("our@downloads:app_store:sys")?;
+            let resp = Request::new()
+                .target(downloads)
+                .body(serde_json::to_vec(&Downloads::GetFiles(None))?)
+                .send_and_await_response(5)??;
+
+            let msg = serde_json::from_slice::<Resp>(resp.body())?;
+            println!("downlaods response: {:?}", msg);
+            // shouldn't really return status code
+            Ok((StatusCode::OK, None, resp.body().to_vec()))
         }
         "/installed" => {
-            // TODO
-            Ok((StatusCode::OK, None, vec![]))
+            // TODO format json for UI
+            println!("/installed response: {:?}", state.packages);
+
+            let body = serde_json::to_vec(&state.packages)?;
+            Ok((StatusCode::OK, None, body))
         }
         "/ourapps" => {
-            // TODO
+            // TODO, fetch from state
             Ok((StatusCode::OK, None, vec![]))
         }
         "/downloads/:id" => {
-            // TODO
-            Ok((StatusCode::OK, None, vec![]))
+            // get downloads for a specific app
+            let Ok(package_id) = get_package_id(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing id").into_bytes(),
+                ));
+            };
+            // fix
+            let package_id = crate::kinode::process::main::PackageId::from_process_lib(package_id);
+            let downloads = Address::from_str("our@downloads:app_store:sys")?;
+            let resp = Request::new()
+                .target(downloads)
+                .body(serde_json::to_vec(&Downloads::GetFiles(Some(package_id)))?)
+                .send_and_await_response(5)??;
+
+            let msg = serde_json::from_slice::<Resp>(resp.body())?;
+            println!("downlaods response: {:?}", msg);
+            // shouldn't really return status code
+            Ok((StatusCode::OK, None, resp.body().to_vec()))
         }
         // GET detail about a specific app
         // update a downloaded app: PUT
@@ -367,7 +412,8 @@ fn serve_paths(
                 .body(serde_json::to_vec(&download_request).unwrap())
                 .send_and_await_response(5)??;
 
-            let response: DownloadResponse = serde_json::from_slice(&response.body())?;
+            let response: Resp = serde_json::from_slice(&response.body())?;
+            println!("got download response: {:?}", response);
             Ok((StatusCode::OK, None, serde_json::to_vec(&response)?))
         }
         // POST /apps/:id/update
@@ -383,7 +429,7 @@ fn serve_paths(
 
             // TODO send to downloads:
             // // actually just install something, we go get it from vfs or ask for it from downloads?
-
+            // yeah this should be obsolete
             match method {
                 _ => Ok((
                     StatusCode::METHOD_NOT_ALLOWED,
@@ -403,7 +449,24 @@ fn serve_paths(
                 ));
             };
 
-            match crate::utils::install(&package_id, &our.to_string()) {
+            let Ok(version_hash) = get_version_hash(url_params) else {
+                return Ok((
+                    StatusCode::BAD_REQUEST,
+                    None,
+                    format!("Missing version_hash").into_bytes(),
+                ));
+            };
+
+            let process_package_id =
+                crate::kinode::process::main::PackageId::from_process_lib(package_id);
+
+            match crate::utils::install(
+                &process_package_id,
+                None,
+                &version_hash,
+                state,
+                &our.to_string(),
+            ) {
                 Ok(_) => Ok((StatusCode::CREATED, None, vec![])),
                 Err(e) => Ok((
                     StatusCode::SERVICE_UNAVAILABLE,

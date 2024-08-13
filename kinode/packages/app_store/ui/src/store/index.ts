@@ -24,6 +24,12 @@ interface AppsStore {
   setMirroring: (app: AppInfo, mirroring: boolean) => Promise<void>
   setAutoUpdate: (app: AppInfo, autoUpdate: boolean) => Promise<void>
   rebuildIndex: () => Promise<void>
+  // new.
+  getDownloads: () => Promise<any>
+  getInstalledApps: () => Promise<any>
+  getOurApps: () => Promise<any>
+  getDownloadsForApp: (id: string) => Promise<any>
+
 }
 
 const useAppsStore = create<AppsStore>()(
@@ -164,6 +170,62 @@ const useAppsStore = create<AppsStore>()(
         const res = await fetch(`${BASE_URL}/apps/rebuild-index`, { method: 'POST' })
         if (res.status !== HTTP_STATUS.OK) {
           throw new Error('Failed to rebuild index')
+        }
+      },
+
+      getDownloads: async () => {
+        try {
+          const res = await fetch(`${BASE_URL}/downloads`)
+          const data = await res.json()
+          if (!res.ok) {
+            console.error('Error fetching downloads:', data)
+          }
+          return data
+        } catch (error) {
+          console.error('Error fetching downloads:', error)
+          return { error: 'Failed to get downloads' }
+        }
+      },
+
+      getInstalledApps: async () => {
+        try {
+          const res = await fetch(`${BASE_URL}/installed`)
+          const data = await res.json()
+          if (!res.ok) {
+            console.error('Error fetching installed apps:', data)
+          }
+          return data
+        } catch (error) {
+          console.error('Error fetching installed apps:', error)
+          return { error: 'Failed to get installed apps' }
+        }
+      },
+
+      getOurApps: async () => {
+        try {
+          const res = await fetch(`${BASE_URL}/ourapps`)
+          const data = await res.json()
+          if (!res.ok) {
+            console.error('Error fetching our apps:', data)
+          }
+          return data
+        } catch (error) {
+          console.error('Error fetching our apps:', error)
+          return { error: 'Failed to get our apps' }
+        }
+      },
+
+      getDownloadsForApp: async (id: string) => {
+        try {
+          const res = await fetch(`${BASE_URL}/downloads/${id}`)
+          const data = await res.json()
+          if (!res.ok) {
+            console.error(`Error fetching downloads for app ${id}:`, data)
+          }
+          return data
+        } catch (error) {
+          console.error(`Error fetching downloads for app ${id}:`, error)
+          return { error: `Failed to get downloads for app: ${id}` }
         }
       },
     }),

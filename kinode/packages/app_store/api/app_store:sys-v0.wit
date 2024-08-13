@@ -11,6 +11,7 @@ interface downloads {
         progress(progress-update),
         size(size-update),
         get-files(option<package-id>),
+        add-download(add-download-request),
     }
 
     record download-request {
@@ -43,6 +44,13 @@ interface downloads {
     // not part of remote protocol, mainly for UI viewing.
     record available-files {
         files: list<entry>,
+    }
+
+    // part of new-package-request local-only flow. 
+    record add-download-request {
+        package-id: package-id,
+        version-hash: string,
+        mirror: bool,
     }
 
     record progress-update {
@@ -115,6 +123,13 @@ interface main {
     use chain.{on-chain-metadata};
 
 
+    // general error type used by both chain: and downloads: 
+    // todo: add variant for types to match on
+
+    record error {
+        reason: string,
+    }
+
     variant request {
         local(local-request),
     }
@@ -138,7 +153,7 @@ interface main {
 
     variant local-request {
         new-package(new-package-request),
-        install(package-id),
+        install(install-package-request),
         uninstall(package-id),
         apis,
         get-api(package-id),
@@ -146,8 +161,13 @@ interface main {
 
     record new-package-request {
         package-id: package-id,
-        metadata: on-chain-metadata,
         mirror: bool,
+    }
+    
+    record install-package-request {
+        package-id: package-id,
+        metadata: option<on-chain-metadata>, // if None == local sideload package.
+        version-hash: string,
     }
 
     variant local-response {

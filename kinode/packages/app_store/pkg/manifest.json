@@ -7,6 +7,8 @@
         "request_capabilities": [
             "http_client:distro:sys",
             "http_server:distro:sys",
+            "main:app_store:sys",
+            "chain:app_store:sys",
             "vfs:distro:sys",
             {
                 "process": "vfs:distro:sys",
@@ -23,6 +25,35 @@
         "public": false
     },
     {
+        "process_name": "chain",
+        "process_wasm_path": "/chain.wasm",
+        "on_exit": "Restart",
+        "request_networking": true,
+        "request_capabilities": [
+            "main:app_store:sys",
+            "downloads:app_store:sys",
+            "vfs:distro:sys",
+            "kns_indexer:kns_indexer:sys",
+            "eth:distro:sys",
+            "http_server:distro:sys",
+            "http_client:distro:sys",
+            {
+                "process": "vfs:distro:sys",
+                "params": {
+                    "root": true
+                }
+            }
+        ],
+        "grant_capabilities": [
+            "http_server:distro:sys",
+            "kns_indexer:kns_indexer:sys",
+            "vfs:distro:sys",
+            "http_client:distro:sys",
+            "eth:distro:sys"
+        ],
+        "public": false
+    },
+    {
         "process_name": "main",
         "process_wasm_path": "/app_store.wasm",
         "on_exit": "Restart",
@@ -34,6 +65,8 @@
             "http_server:distro:sys",
             "http_client:distro:sys",
             "net:distro:sys",
+            "downloads:app_store:sys",
+            "chain:app_store:sys",
             "vfs:distro:sys",
             "kernel:distro:sys",
             "eth:distro:sys",
@@ -59,6 +92,7 @@
             "net:distro:sys",
             "http_client:distro:sys",
             "http_server:distro:sys",
+            "kernel:distro:sys",
             "kns_indexer:kns_indexer:sys",
             "terminal:terminal:sys",
             "vfs:distro:sys"

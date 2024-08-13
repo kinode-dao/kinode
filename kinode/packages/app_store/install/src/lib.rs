@@ -34,13 +34,13 @@ fn init(our: Address) {
     let Ok(Ok(Message::Response { body, .. })) =
         Request::to((our.node(), ("main", "app_store", "sys")))
             .body(
-                serde_json::to_vec(&LocalRequest::Install(
-                    crate::kinode::process::main::PackageId {
-                        package_name: package_id.package_name.clone(),
-                        publisher_node: package_id.publisher_node.clone(),
-                    },
-                ))
-                .unwrap(),
+                b"temp", // serde_json::to_vec(&LocalRequest::Install(
+                        //     crate::kinode::process::main::PackageId {
+                        //         package_name: package_id.package_name.clone(),
+                        //         publisher_node: package_id.publisher_node.clone(),
+                        //     },
+                        // ))
+                        // .unwrap(),
             )
             .send_and_await_response(5)
     else {

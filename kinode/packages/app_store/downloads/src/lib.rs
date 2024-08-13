@@ -3,19 +3,21 @@
 //! manages downloading and sharing of versioned packages.
 //!
 use crate::kinode::process::downloads::{
-    AvailableFiles, DownloadRequest, DownloadResponse, Downloads, Entry, ProgressUpdate,
+    AddDownloadRequest, AvailableFiles, DownloadRequest, DownloadResponse, Downloads, Entry,
+    ProgressUpdate,
 };
+use crate::kinode::process::main::Error;
 use std::{collections::HashSet, str::FromStr};
 
 use ft_worker_lib::{spawn_receive_transfer, spawn_send_transfer};
-use kinode::process::standard::print_to_terminal;
+use kinode_process_lib::get_blob;
 use kinode_process_lib::{
     await_message, call_init,
     http::{
         self,
         client::{HttpClientError, HttpClientResponse},
     },
-    println,
+    print_to_terminal, println,
     vfs::{self, DirEntry, Directory, File, SeekFrom},
     Address, Message, PackageId, ProcessId, Request, Response,
 };
@@ -56,23 +58,28 @@ fn init(our: Address) {
         mirroring: HashSet::new(),
     };
 
-    // should the files be actively in state? probably not due to updates?
-    // just install the downloads directory.
+    // /log/.log file for debugs
+    vfs::create_drive(our.package_id(), "log", None).expect("could not create /log drive");
+    // /downloads/ for downloads
+    vfs::create_drive(our.package_id(), "downloads", None)
+        .expect("could not create /downloads drive");
 
     let mut logfile =
-        vfs::open_file("/app_store:sys/.log", true, Some(5)).expect("could not open logfile");
+        vfs::open_file("/app_store:sys/log/.log", true, Some(5)).expect("could not open logfile");
     logfile
         .seek(SeekFrom::End(0))
         .expect("could not seek to end of logfile");
-
+    // FIX this api... first creates (fails if already exists. second shouldn't fail like this... like files.)
+    let _ = vfs::open_dir("/app_store:sys/downloads", true, None);
     let mut downloads =
-        vfs::open_dir("/app_store:sys/downloads", true, None).expect("could not open downloads");
-    let mut tmp = vfs::open_dir("/tmp", true, None).expect("could not open tmp");
+        vfs::open_dir("/app_store:sys/downloads", false, None).expect("could not open downloads");
+    let _ = vfs::open_dir("/app_store:sys/downloads/tmp", true, None);
+    let mut tmp =
+        vfs::open_dir("/app_store:sys/downloads/tmp", false, None).expect("could not open tmp");
 
     loop {
         match await_message() {
             Err(send_error) => {
-                // TODO handle these based on what they are triggered by
                 println!("got network error: {send_error}");
             }
             Ok(message) => {
@@ -85,6 +92,14 @@ fn init(our: Address) {
                     &mut tmp,
                 ) {
                     println!("error handling message: {:?}", e);
+                    let _ = Response::new()
+                        .body(
+                            serde_json::to_vec(&Error {
+                                reason: e.to_string(),
+                            })
+                            .unwrap(),
+                        )
+                        .send();
                 }
             }
         }
@@ -150,25 +165,6 @@ fn handle_message(
                         .unwrap(),
                     )
                     .send();
-
-                // http_server.ws_push_all_channels(
-                //     "/",
-                //     http::server::WsMessageType::Text,
-                //     LazyLoadBlob {
-                //         mime: Some("application/json".to_string()),
-                //         bytes: serde_json::json!({
-                //             "kind": "progress",
-                //             "data": {
-                //                 "file_name": file_name,
-                //                 "chunks_received": chunks_received,
-                //                 "total_chunks": total_chunks,
-                //             }
-                //         })
-                //         .to_string()
-                //         .as_bytes()
-                //         .to_vec(),
-                //     },
-                // );
             }
             Downloads::GetFiles(maybe_id) => {
                 // if not local, throw to the boonies. (could also implement and discovery protocol here..)
@@ -192,6 +188,35 @@ fn handle_message(
 
                 Response::new()
                     .body(serde_json::to_vec(&AvailableFiles { files })?)
+                    .send()?;
+            }
+            Downloads::AddDownload(add_req) => {
+                if !message.is_local(our) {
+                    // todo figure out full error throwing for http pathways.
+                    return Err(anyhow::anyhow!("not local"));
+                }
+                let Some(blob) = get_blob() else {
+                    return Err(anyhow::anyhow!("could not get blob"));
+                };
+                let bytes = blob.bytes;
+
+                let package_dir = format!(
+                    "{}/{}",
+                    downloads.path,
+                    add_req.package_id.to_process_lib().to_string()
+                );
+                let _ = vfs::open_dir(&package_dir, true, None);
+                let file = vfs::create_file(
+                    &format!("{}/{}.zip", package_dir, add_req.version_hash),
+                    None,
+                )?;
+                let _ = file.write(bytes.as_slice())?;
+
+                Response::new()
+                    .body(serde_json::to_vec(&Resp::Download(DownloadResponse {
+                        success: true,
+                        error: None,
+                    }))?)
                     .send()?;
             }
             _ => {}
