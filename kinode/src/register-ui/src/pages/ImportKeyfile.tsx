@@ -62,7 +62,7 @@ function ImportKeyfile({
             credentials: 'include',
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              keyfile: Buffer.from(localKey).toString('base64'),
+              keyfile: Buffer.from(localKey).toString('utf8'),
               password_hash: hashed_password,
             }),
           });
