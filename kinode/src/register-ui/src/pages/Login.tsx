@@ -119,7 +119,7 @@ function Login({
 
           <div className="additional-options">
             <button
-              className="clear"
+              className="secondary"
               onClick={() => navigate('/reset')}
             >
               Reset Node & Networking Info

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import isValidDomain from "is-valid-domain";
 import { toAscii } from "idna-uts46-hx";
 import { usePublicClient } from 'wagmi'
@@ -14,33 +14,38 @@ export const NAME_NOT_OWNER = "Name already exists and does not belong to this w
 export const NAME_NOT_REGISTERED = "Name is not registered";
 
 type ClaimOsNameProps = {
+  address?: `0x${string}`;
   name: string;
   setName: React.Dispatch<React.SetStateAction<string>>;
   nameValidities: string[];
   setNameValidities: React.Dispatch<React.SetStateAction<string[]>>;
   triggerNameCheck: boolean;
+  setTba?: React.Dispatch<React.SetStateAction<string>>;
   isReset?: boolean;
 };
 
 function EnterKnsName({
+  address,
   name,
   setName,
   nameValidities,
   setNameValidities,
   triggerNameCheck,
+  setTba,
   isReset = false,
 }: ClaimOsNameProps) {
   const client = usePublicClient();
   const debouncer = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    if (isReset) return;
+  const [isPunyfied, setIsPunyfied] = useState('');
 
+  useEffect(() => {
     if (debouncer.current) clearTimeout(debouncer.current);
 
     debouncer.current = setTimeout(async () => {
       let index: number;
-      let validities = [...nameValidities];
+      let validities: string[] = [];
+      setIsPunyfied('');
 
       const len = [...name].length;
       index = validities.indexOf(NAME_LENGTH);
@@ -57,6 +62,8 @@ function EnterKnsName({
         if (index === -1) validities.push(NAME_INVALID_PUNY);
       }
 
+      if (normalized !== (name + ".os")) setIsPunyfied(normalized);
+
       // only check if name is valid punycode
       if (normalized && normalized !== '.os') {
         index = validities.indexOf(NAME_URL);
@@ -66,6 +73,7 @@ function EnterKnsName({
 
         index = validities.indexOf(NAME_CLAIMED);
 
+        // only check if name is valid and long enough
         if (validities.length === 0 || index !== -1 && normalized.length > 2) {
           try {
             const namehash = kinohash(normalized)
@@ -78,34 +86,44 @@ function EnterKnsName({
               args: [namehash]
             })
 
+            const tba = data?.[0];
+            if (tba !== undefined) {
+              setTba ? (setTba(tba)) : null;
+            } else {
+              validities.push(NAME_NOT_REGISTERED);
+            }
+
             const owner = data?.[1];
             const owner_is_zero = owner === "0x0000000000000000000000000000000000000000";
 
-            if (!owner_is_zero && index === -1) validities.push(NAME_CLAIMED);
+            if (!owner_is_zero && !isReset) validities.push(NAME_CLAIMED);
+
+            if (!owner_is_zero && isReset && address && owner !== address) validities.push(NAME_NOT_OWNER);
+
+            if (isReset && owner_is_zero) validities.push(NAME_NOT_REGISTERED);
           } catch (e) {
             console.error({ e })
             if (index !== -1) validities.splice(index, 1);
           }
         }
       }
-
       setNameValidities(validities);
-    }, 100);
+    }, 500);
   }, [name, triggerNameCheck, isReset]);
 
-  const noDots = (e: any) =>
-    e.target.value.indexOf(".") === -1 && setName(e.target.value);
+  const noDotsOrSpaces = (e: any) =>
+    e.target.value.indexOf(".") === -1 && e.target.value.indexOf(" ") === -1 && setName(e.target.value);
 
   return (
     <div className="enter-kns-name">
       <div className="input-wrapper">
         <input
           value={name}
-          onChange={noDots}
+          onChange={noDotsOrSpaces}
           type="text"
           required
           name="dot-os-name"
-          placeholder="e.g. myname"
+          placeholder="mynode123"
           className="kns-input"
         />
         <span className="kns-suffix">.os</span>
@@ -113,6 +131,7 @@ function EnterKnsName({
       {nameValidities.map((x, i) => (
         <p key={i} className="error-message">{x}</p>
       ))}
+      {isPunyfied !== '' && <p className="puny-warning">special characters will be converted to punycode: {isPunyfied}</p>}
     </div>
   );
 }

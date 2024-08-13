@@ -51,7 +51,7 @@ function CommitDotOsName({
 
     useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address])
 
-    const enterOsNameProps = { name, setName, nameValidities, setNameValidities, triggerNameCheck }
+    const enterOsNameProps = { address, name, setName, nameValidities, setNameValidities, triggerNameCheck }
 
     useEffect(() => {
         if (!address) {
@@ -102,7 +102,7 @@ function CommitDotOsName({
                             <>
                                 <h3 className="form-label">
                                     <Tooltip text="Kinodes need an onchain node identity in order to communicate with other nodes in the network.">
-                                        Choose a name for your Kinode
+                                        Choose a name for your computer
                                     </Tooltip>
                                 </h3>
                                 <EnterKnsName {...enterOsNameProps} />

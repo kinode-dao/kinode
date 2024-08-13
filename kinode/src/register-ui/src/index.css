@@ -135,7 +135,7 @@
 
 .kns-suffix {
     padding: 0.5rem;
-    background-color: var(--gray);
+    background-color: var(--blue);
     border: 1px solid var(--tasteful-dark);
     border-left: none;
     border-radius: 0 4px 4px 0;
@@ -240,7 +240,6 @@
     color: var(--off-white);
 }
 
-button.clear {
+button.secondary {
     width: 100%;
-    background-color: var(--ansi-red);
 }
