@@ -121,7 +121,7 @@ function MintDotOsName({
               <>
                 <div className="button-group">
                   <button type="submit" className="button">
-                    Mint name {knsName}
+                    Mint {knsName}
                   </button>
                 </div>
               </>

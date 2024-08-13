@@ -150,6 +150,7 @@
 .error-message {
     color: var(--ansi-red);
     margin-top: 0.5rem;
+    overflow-wrap: break-word;
 }
 
 .direct-checkbox {

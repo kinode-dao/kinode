@@ -97,7 +97,7 @@ function CommitDotOsName({
                 {
                     <form className="form" onSubmit={handleCommit}>
                         {isPending || isConfirming ? (
-                            <Loader msg={isConfirming ? 'Pre-committing to chosen ID...' : 'Please confirm the transaction in your wallet'} />
+                            <Loader msg={isConfirming ? 'Pre-committing to chosen name...' : 'Please confirm the transaction in your wallet'} />
                         ) : (
                             <>
                                 <h3 className="form-label">
@@ -113,17 +113,18 @@ function CommitDotOsName({
                                         type="submit"
                                         className="button"
                                     >
-                                        Register .os name
+                                        Register name
                                     </button>
+                                    <p>This will confirm availability of the name and reserve it, then on the next screen you will be prompted to mint.</p>
                                     <Link to="/reset" className="button secondary">
-                                        Already have a dot-os-name?
+                                        Already have a node?
                                     </Link>
                                 </div>
                             </>
                         )}
                         {isError && (
                             <p className="error-message">
-                                Error: {error?.message || 'There was an error registering your dot-os-name, please try again.'}
+                                Error: {error?.message || 'There was an error registering your name, please try again.'}
                             </p>
                         )}
                     </form>
