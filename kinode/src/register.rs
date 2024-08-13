@@ -105,6 +105,7 @@ pub async fn register(
         .or(warp::path("reset"))
         .or(warp::path("import-keyfile"))
         .or(warp::path("set-password"))
+        .or(warp::path("custom-register"))
         .and(warp::get())
         .map(move |_| warp::reply::html(include_str!("register-ui/build/index.html")));
 

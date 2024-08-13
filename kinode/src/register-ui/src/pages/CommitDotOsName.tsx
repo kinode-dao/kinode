@@ -17,7 +17,7 @@ interface RegisterOsNameProps extends PageProps { }
 function CommitDotOsName({
     direct,
     setDirect,
-    setOsName,
+    setKnsName,
     setNetworkingKey,
     setIpAddress,
     setWsPort,
@@ -80,10 +80,10 @@ function CommitDotOsName({
 
     useEffect(() => {
         if (isConfirmed) {
-            setOsName(`${name}.os`);
+            setKnsName(`${name}.os`);
             navigate("/mint-os-name");
         }
-    }, [isConfirmed, address, name, setOsName, navigate]);
+    }, [isConfirmed, address, name, setKnsName, navigate]);
 
     return (
         <div className="container fade-in">

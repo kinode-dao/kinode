@@ -28,7 +28,7 @@ function ResetKnsName({
   setDirect,
   setReset,
   knsName,
-  setOsName,
+  setKnsName,
   setNetworkingKey,
   setIpAddress,
   setWsPort,
@@ -135,7 +135,7 @@ function ResetKnsName({
           if (index === -1) vets.push(NAME_NOT_REGISTERED);
         }
 
-        if (nameVets.length === 0) setOsName(normalized);
+        if (nameVets.length === 0) setKnsName(normalized);
       }
 
       setNameVets(vets);

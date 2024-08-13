@@ -111,7 +111,6 @@ function SetPassword({
               res.status < 300 &&
               Number(res.headers.get("content-length")) !== appSizeOnLoad
             ) {
-              console.log("WE GOOD, ROUTING")
               clearInterval(interval);
               window.location.replace("/");
             }
