@@ -443,6 +443,7 @@ async fn handle_import_keyfile(
     sender: Arc<RegistrationSender>,
     provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
+    println!("received base64 keyfile: {}\r", info.keyfile);
     // if keyfile was not present in node and is present from user upload
     let encoded_keyfile = match base64_standard.decode(info.keyfile) {
         Ok(k) => k,
@@ -455,6 +456,10 @@ async fn handle_import_keyfile(
         }
     };
 
+    println!(
+        "received keyfile: {}\r",
+        String::from_utf8_lossy(&encoded_keyfile)
+    );
     let (decoded_keyfile, mut our) =
         match keygen::decode_keyfile(&encoded_keyfile, &info.password_hash) {
             Ok(k) => {
