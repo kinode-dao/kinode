@@ -57,7 +57,8 @@ span {
     color: light-dark(var(--off-black), var(--off-white));
 }
 
-p {
+p,
+li {
     font-size: 0.8em;
 }
 

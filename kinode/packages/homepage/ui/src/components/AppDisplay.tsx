@@ -15,14 +15,14 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
     onMouseEnter={() => setIsHovered(true)}
     onMouseLeave={() => setIsHovered(false)}
     className="app-display"
-    title={isHovered ? (app?.label || app?.package_name) : (!app?.path ? "This app does not serve a UI" : undefined)}
+    title={app?.label}
+    style={!app?.path ? { pointerEvents: 'none', textDecoration: 'none !important', filter: 'grayscale(100%)' } : {}}
   >
     {app?.base64_icon
       ? <img className="app-icon" src={app.base64_icon} />
       : <img className="app-icon" src='/bird-orange.svg' />
     }
     <h6>{app?.label || app?.package_name}</h6>
-    {isHovered && !app?.path && <p className="no-ui">This app does not serve a UI</p>}
     {app?.path && isHovered && <button className="app-fave-button"
       onClick={(e) => {
         e.preventDefault()
@@ -35,7 +35,7 @@ const AppDisplay: React.FC<AppDisplayProps> = ({ app }) => {
         })
       }}
     >
-      {app?.favorite ? '★' : '☆'}
+      <span>{app?.favorite ? '★' : '☆'}</span>
     </button>}
   </a>
 }

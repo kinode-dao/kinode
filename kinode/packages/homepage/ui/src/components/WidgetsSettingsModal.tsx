@@ -1,11 +1,10 @@
 import useHomepageStore from "../store/homepageStore"
 import { Modal } from "./Modal"
-import classNames from "classnames"
 import usePersistentStore from "../store/persistentStore"
 
 const WidgetsSettingsModal = () => {
   const { apps, setShowWidgetsSettings } = useHomepageStore()
-  const { widgetSettings, toggleWidgetVisibility, setWidgetSize } = usePersistentStore()
+  const { widgetSettings, toggleWidgetVisibility } = usePersistentStore()
 
   return <Modal
     title='Widget Settings'
@@ -24,27 +23,6 @@ const WidgetsSettingsModal = () => {
                   onChange={() => toggleWidgetVisibility(app.id)}
                   autoFocus
                 /></span>
-              </div>
-              <div>
-                <span>Widget size</span>
-                <div>
-                  <button
-                    className={classNames({
-                      'clear': widgetSettings[app.package_name]?.size === 'large'
-                    })}
-                    onClick={() => setWidgetSize(app.package_name, 'small')}
-                  >
-                    Small
-                  </button>
-                  <button
-                    className={classNames({
-                      'clear': widgetSettings[app.package_name]?.size !== 'large'
-                    })}
-                    onClick={() => setWidgetSize(app.package_name, 'large')}
-                  >
-                    Large
-                  </button>
-                </div>
               </div>
             </div>
           </div>
