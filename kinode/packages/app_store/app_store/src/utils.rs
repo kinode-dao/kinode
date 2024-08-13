@@ -309,10 +309,10 @@ pub fn install(
             return Err(anyhow::anyhow!("failed to initialize process"));
         };
 
-        // // build initial caps from manifest
+        // build initial caps from manifest
         let mut requested_capabilities: Vec<kt::Capability> =
             parse_capabilities(our_node, &entry.request_capabilities);
-        println!("parsed caps: {:?}", requested_capabilities);
+
         if entry.request_networking {
             requested_capabilities.push(kt::Capability {
                 issuer: Address::new(our_node, ("kernel", "distro", "sys")),
@@ -338,19 +338,11 @@ pub fn install(
             .to_string(),
         });
 
-        // NOTE.. this crashes...
-        // kernel_request(kt::KernelCommand::GrantCapabilities {
-        //     target: process_id.clone(),
-        //     capabilities: requested_capabilities,
-        // })
-        // .send()?;
-        Request::new()
-            .target(("our", "kernel", "distro", "sys"))
-            .body(serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
-                target: process_id,
-                capabilities: requested_capabilities,
-            })?)
-            .send()?;
+        kernel_request(kt::KernelCommand::GrantCapabilities {
+            target: process_id.clone(),
+            capabilities: requested_capabilities,
+        })
+        .send()?;
     }
 
     // THEN, *after* all processes have been initialized, grant caps in manifest
@@ -510,7 +502,7 @@ fn parse_capabilities(our_node: &str, caps: &Vec<serde_json::Value>) -> Vec<kt::
 fn kernel_request(command: kt::KernelCommand) -> Request {
     Request::new()
         .target(("our", "kernel", "distro", "sys"))
-        .body(serde_json::to_vec(&command).expect("failed to serialize VfsRequest"))
+        .body(serde_json::to_vec(&command).expect("failed to serialize KernelCommand"))
 }
 
 pub fn vfs_request<T>(path: T, action: vfs::VfsAction) -> Request

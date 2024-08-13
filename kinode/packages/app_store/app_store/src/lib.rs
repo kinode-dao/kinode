@@ -144,7 +144,6 @@ fn handle_message(
                     },
                 );
             }
-            _ => {}
         }
     } else {
         match serde_json::from_slice::<Resp>(message.body())? {
@@ -187,13 +186,7 @@ fn handle_local_request(
             metadata,
             version_hash,
         }) => (
-            match utils::install(
-                &package_id,
-                metadata,
-                &version_hash,
-                state,
-                &our.to_string(),
-            ) {
+            match utils::install(&package_id, metadata, &version_hash, state, &our.node) {
                 Ok(()) => {
                     println!("successfully installed package:");
                     LocalResponse::InstallResponse(InstallResponse::Success)
