@@ -1296,8 +1296,9 @@ impl Printout {
         }
     }
 
+    /// Fire the printout to the terminal without checking for success.
     pub async fn send(self, sender: &PrintSender) {
-        sender.send(self).await.expect("print sender died");
+        let _ = sender.send(self).await;
     }
 }
 
