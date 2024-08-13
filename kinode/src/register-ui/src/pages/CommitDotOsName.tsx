@@ -53,6 +53,12 @@ function CommitDotOsName({
 
     const enterOsNameProps = { name, setName, nameValidities, setNameValidities, triggerNameCheck }
 
+    useEffect(() => {
+        if (!address) {
+            openConnectModal?.();
+        }
+    }, [address, openConnectModal]);
+
     let handleCommit = useCallback(async (e: FormEvent) => {
         e.preventDefault()
         e.stopPropagation()
@@ -88,7 +94,7 @@ function CommitDotOsName({
     return (
         <div className="container fade-in">
             <div className="section">
-                {Boolean(address) && (
+                {
                     <form className="form" onSubmit={handleCommit}>
                         {isPending || isConfirming ? (
                             <Loader msg={isConfirming ? 'Pre-committing to chosen ID...' : 'Please confirm the transaction in your wallet'} />
@@ -121,7 +127,7 @@ function CommitDotOsName({
                             </p>
                         )}
                     </form>
-                )}
+                }
             </div>
         </div>
     );

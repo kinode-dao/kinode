@@ -44,6 +44,12 @@ function MintDotOsName({
 
   useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address])
 
+  useEffect(() => {
+    if (!address) {
+      openConnectModal?.();
+    }
+  }, [address, openConnectModal]);
+
   let handleMint = useCallback(async (e: FormEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -107,7 +113,7 @@ function MintDotOsName({
   return (
     <div className="container fade-in">
       <div className="section">
-        {Boolean(address) && (
+        {
           <form className="form" onSubmit={handleMint}>
             {isPending || isConfirming ? (
               <Loader msg={isConfirming ? 'Minting .os name...' : 'Please confirm the transaction in your wallet'} />
@@ -126,7 +132,7 @@ function MintDotOsName({
               </p>
             )}
           </form>
-        )}
+        }
       </div>
     </div>
   );

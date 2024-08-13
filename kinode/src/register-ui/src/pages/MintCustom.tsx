@@ -48,6 +48,12 @@ function MintCustom({
 
     useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address])
 
+    useEffect(() => {
+        if (!address) {
+            openConnectModal?.();
+        }
+    }, [address, openConnectModal]);
+
     let handleMint = useCallback(async (e: FormEvent) => {
         e.preventDefault()
         e.stopPropagation()
@@ -113,7 +119,7 @@ function MintCustom({
     return (
         <div className="container fade-in">
             <div className="section">
-                {Boolean(address) && (
+                {
                     <form className="form" onSubmit={handleMint}>
                         {isPending || isConfirming ? (
                             <Loader msg={isConfirming ? 'Minting name...' : 'Please confirm the transaction in your wallet'} />
@@ -136,7 +142,7 @@ function MintCustom({
                             </p>
                         )}
                     </form>
-                )}
+                }
             </div>
         </div>
     );

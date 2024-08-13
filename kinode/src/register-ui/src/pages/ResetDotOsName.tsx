@@ -67,9 +67,11 @@ function ResetKnsName({
   // so inputs will validate once wallet is connected
   useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address]); // eslint-disable-line react-hooks/exhaustive-deps
 
-
-  // TODO: separate this whole namechecking thing into helper function
-  // boolean to branch whether to check for occupied or to match against our_address.
+  useEffect(() => {
+    if (!address) {
+      openConnectModal?.();
+    }
+  }, [address, openConnectModal]);
 
   const nameDebouncer = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
@@ -152,8 +154,6 @@ function ResetKnsName({
         return;
       }
 
-
-
       try {
         const data = await generateNetworkingKeys({
           direct,
@@ -202,7 +202,7 @@ function ResetKnsName({
   return (
     <div className="container fade-in">
       <div className="section">
-        {Boolean(address) && (
+        {
           <form className="form" onSubmit={handleResetRecords}>
             {isPending || isConfirming ? (
               <Loader msg={isConfirming ? "Resetting Networking Information..." : "Please confirm the transaction in your wallet"} />
@@ -230,7 +230,7 @@ function ResetKnsName({
               </p>
             )}
           </form>
-        )}
+        }
       </div>
     </div>
   );
