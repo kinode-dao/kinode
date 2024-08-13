@@ -297,7 +297,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
             let decoded = kimap::contract::Mint::decode_log_data(log.data(), true).unwrap();
             let parent_hash = decoded.parenthash.to_string();
             let child_hash = decoded.childhash.to_string();
-            let name = String::from_utf8(decoded.name.to_vec())?;
+            let name = String::from_utf8(decoded.label.to_vec())?;
 
             if !kimap::valid_name(&name, false) {
                 return Err(anyhow::anyhow!("skipping invalid entry"));
@@ -324,7 +324,7 @@ fn handle_log(our: &Address, state: &mut State, log: &eth::Log) -> anyhow::Resul
         kimap::contract::Note::SIGNATURE_HASH => {
             let decoded = kimap::contract::Note::decode_log_data(log.data(), true).unwrap();
 
-            let note = String::from_utf8(decoded.note.to_vec())?;
+            let note = String::from_utf8(decoded.label.to_vec())?;
             let node_hash = decoded.parenthash.to_string();
 
             let Some(node_name) = get_parent_name(&state.names, &node_hash) else {

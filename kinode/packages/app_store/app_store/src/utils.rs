@@ -274,12 +274,12 @@ pub fn install(
         };
         let wasm_path = format!("{}{}", drive_path, wasm_path);
         println!("wasm path: {wasm_path}");
-        let process_id = ProcessId::new(
-            Some(&entry.process_name),
-            process_package_id.package(),
-            process_package_id.publisher(),
-        );
+        println!("drive path: {drive_path}");
 
+        let process_id = format!("{}:{}", entry.process_name, process_package_id);
+        let Ok(process_id) = process_id.parse::<ProcessId>() else {
+            return Err(anyhow::anyhow!("invalid process id!"));
+        };
         // kill process if it already exists
         kernel_request(kt::KernelCommand::KillProcess(process_id.clone())).send()?;
 
@@ -308,19 +308,17 @@ pub fn install(
         ) else {
             return Err(anyhow::anyhow!("failed to initialize process"));
         };
-        // println!("kernel process gave us something back.");
 
         // // build initial caps from manifest
-        let mut requested_capabilities = parse_capabilities(our_node, &entry.request_capabilities);
-        println!("parsed caps.");
+        let mut requested_capabilities: Vec<kt::Capability> =
+            parse_capabilities(our_node, &entry.request_capabilities);
+        println!("parsed caps: {:?}", requested_capabilities);
         if entry.request_networking {
             requested_capabilities.push(kt::Capability {
                 issuer: Address::new(our_node, ("kernel", "distro", "sys")),
                 params: "\"network\"".to_string(),
             });
         }
-
-        println!("requested caps: {:?}", requested_capabilities);
 
         // always grant read/write to their drive, which we created for them
         requested_capabilities.push(kt::Capability {
@@ -341,11 +339,18 @@ pub fn install(
         });
 
         // NOTE.. this crashes...
-        kernel_request(kt::KernelCommand::GrantCapabilities {
-            target: process_id.clone(),
-            capabilities: requested_capabilities,
-        })
-        .send()?;
+        // kernel_request(kt::KernelCommand::GrantCapabilities {
+        //     target: process_id.clone(),
+        //     capabilities: requested_capabilities,
+        // })
+        // .send()?;
+        Request::new()
+            .target(("our", "kernel", "distro", "sys"))
+            .body(serde_json::to_vec(&kt::KernelCommand::GrantCapabilities {
+                target: process_id,
+                capabilities: requested_capabilities,
+            })?)
+            .send()?;
     }
 
     // THEN, *after* all processes have been initialized, grant caps in manifest
