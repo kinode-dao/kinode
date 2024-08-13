@@ -3,6 +3,7 @@ import { PageProps, UnencryptedIdentity } from "../lib/types";
 import Loader from "../components/Loader";
 import { useNavigate } from "react-router-dom";
 import { sha256, toBytes } from "viem";
+import { Tooltip } from "../components/Tooltip";
 
 interface LoginProps extends PageProps { }
 
@@ -89,8 +90,9 @@ function Login({
         >
           <div className="form-group">
             <div className="form-header">
-              <h3>{knsName}</h3>
-              <span>({isDirect ? "direct" : "indirect"} node)</span>
+              <Tooltip text={`(${isDirect ? "direct" : "indirect"} node)`}>
+                <h3>{knsName}</h3>
+              </Tooltip>
             </div>
             <input
               type="password"

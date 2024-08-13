@@ -209,12 +209,15 @@ function ResetKnsName({
             ) : (
               <>
                 <h3 className="form-label">
-                  <Tooltip text="Kinodes use a .os name in order to identify themselves to other nodes in the network.">
-                    Specify the node ID to reset
+                  <Tooltip text="Kinodes use an onchain username in order to identify themselves to other nodes in the network.">
+                    Node ID to reset:
                   </Tooltip>
                 </h3>
                 <EnterKnsName {...{ name, setName, nameVets, triggerNameCheck, nameValidities, setNameValidities, isReset: true }} />
                 <DirectCheckbox {...{ direct, setDirect }} />
+                <p>
+                  A reset will not delete any data. It only updates the networking information that your node publishes onchain.
+                </p>
                 <button
                   type="submit"
                   className="button mt-2"
