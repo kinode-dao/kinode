@@ -143,7 +143,7 @@
           oninput="document.getElementById('password-err').style.display = 'none';" value="" class="self-stretch mb-2">
         <div id="password-err" class="login-row flex mb-2" style="display: none;"> Incorrect Password </div>
         <div class="flex flex-col leading-6 self-stretch mb-2">
-          <button> Login </button>
+          <button id="login-button" disabled> Login </button>
           <div class="flex flex-col mt-2 text-sm leading-6" id="fake-or-not"></div>
         </div>
       </form>
@@ -156,20 +156,27 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
   <script>
-    if ('${fake}' === 'true') {
-      document.getElementById("fake-or-not").innerHTML = "Fake node -- any password will work!";
-    } else {
-      document.getElementById("fake-or-not").innerHTML = "Restart your node to change networking settings.";
-    }
+    let isInitialized = false;
 
-    const firstPathItem = window.location.pathname.split('/')[1];
-    const expectedSecureSubdomain = generateSecureSubdomain(firstPathItem);
-    const maybeSecureSubdomain = window.location.host.split('.')[0];
-    const isSecureSubdomain = expectedSecureSubdomain === maybeSecureSubdomain;
-    if (isSecureSubdomain) {
-      document.getElementById("node-and-domain").innerText = "${node}: authenticate for secure subdomain app " + firstPathItem;
-    } else {
-      document.getElementById("node-and-domain").innerText = "${node} ";
+    function initializeLoginForm() {
+      if ('${fake}' === 'true') {
+        document.getElementById("fake-or-not").innerHTML = "Fake node -- any password will work!";
+      } else {
+        document.getElementById("fake-or-not").innerHTML = "Restart your node to change networking settings.";
+      }
+
+      const firstPathItem = window.location.pathname.split('/')[1];
+      const expectedSecureSubdomain = generateSecureSubdomain(firstPathItem);
+      const maybeSecureSubdomain = window.location.host.split('.')[0];
+      const isSecureSubdomain = expectedSecureSubdomain === maybeSecureSubdomain;
+      if (isSecureSubdomain) {
+        document.getElementById("node-and-domain").innerText = "${node}: authenticate for secure subdomain app " + firstPathItem;
+      } else {
+        document.getElementById("node-and-domain").innerText = "${node} ";
+      }
+
+      document.getElementById("login-button").disabled = false;
+      isInitialized = true;
     }
 
     async function login(password) {
@@ -197,7 +204,6 @@
         document.getElementById("password").value = "";
         document.getElementById("password-err").style.display = "flex";
         document.getElementById("password").focus();
-        return;
       }
     }
 
@@ -213,12 +219,15 @@
     }
 
     document.addEventListener("DOMContentLoaded", () => {
+      initializeLoginForm();
       const form = document.getElementById("login-form");
       form.addEventListener("submit", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const password = document.getElementById("password").value;
-        login(password);
+        if (isInitialized) {
+          const password = document.getElementById("password").value;
+          login(password);
+        }
       });
     });
   </script>
