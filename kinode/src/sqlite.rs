@@ -203,14 +203,14 @@ async fn handle_request(
                 .query_map(rusqlite::params_from_iter(parameters.iter()), |row| {
                     let mut map = HashMap::new();
                     for (i, column_name) in column_names.iter().enumerate() {
-                        let value: SqlValue = row.get(i)?;
+                        let value: Option<SqlValue> = row.get(i)?;
                         let value_json = match value {
-                            SqlValue::Integer(int) => serde_json::Value::Number(int.into()),
-                            SqlValue::Real(real) => serde_json::Value::Number(
+                            Some(SqlValue::Integer(int)) => serde_json::Value::Number(int.into()),
+                            Some(SqlValue::Real(real)) => serde_json::Value::Number(
                                 serde_json::Number::from_f64(real).unwrap(),
                             ),
-                            SqlValue::Text(text) => serde_json::Value::String(text),
-                            SqlValue::Blob(blob) => {
+                            Some(SqlValue::Text(text)) => serde_json::Value::String(text),
+                            Some(SqlValue::Blob(blob)) => {
                                 serde_json::Value::String(base64_standard.encode(blob))
                             } // or another representation if you prefer
                             _ => serde_json::Value::Null,

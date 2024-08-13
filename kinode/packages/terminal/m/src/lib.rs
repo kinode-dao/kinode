@@ -1,7 +1,5 @@
 use clap::{Arg, Command};
-use kinode_process_lib::{
-    await_next_message_body, call_init, println, Address, Request, SendErrorKind,
-};
+use kinode_process_lib::{println, script, Address, Request, SendErrorKind};
 use regex::Regex;
 
 wit_bindgen::generate!({
@@ -9,22 +7,17 @@ wit_bindgen::generate!({
     world: "process-v0",
 });
 
-call_init!(init);
-fn init(_our: Address) {
-    let Ok(body) = await_next_message_body() else {
-        println!("failed to get args");
-        return;
-    };
-    let body_string = String::from_utf8(body).unwrap();
-    if body_string.is_empty() {
-        println!("Send a Request to a Process");
-        println!("\x1b[1mUsage:\x1b[0m m <target> <body> [-a <await_time>]");
-        return;
+const USAGE: &str = "\x1b[1mUsage:\x1b[0m m <target> <body> [-a <await_time>]";
+
+script!(init);
+fn init(_our: Address, args: String) -> String {
+    if args.is_empty() {
+        return format!("Send a request to a process.\n{USAGE}");
     }
 
-    let re = Regex::new(r#"'[^']*'|\S+"#).unwrap();
-    let mut args: Vec<String> = re
-        .find_iter(body_string.as_str())
+    let mut args: Vec<String> = Regex::new(r#"'[^']*'|\S+"#)
+        .unwrap()
+        .find_iter(&args)
         .map(|mat| {
             let match_str = mat.as_str();
             // Remove the surrounding single quotes for the JSON string
@@ -50,44 +43,38 @@ fn init(_our: Address) {
         )
         .try_get_matches_from(args)
     else {
-        println!("failed to parse args");
-        return;
+        return format!("Failed to parse args.\n{USAGE}");
     };
 
     let Some(target) = parsed.get_one::<String>("target") else {
-        println!("no target");
-        return;
+        return format!("No target given.\n{USAGE}");
     };
 
     let Ok(target) = target.parse::<Address>() else {
-        println!("invalid address: \"{target}\"");
-        return;
+        return format!("Invalid address: \"{target}\"\n{USAGE}");
     };
 
     let Some(body) = parsed.get_one::<String>("body") else {
-        println!("no body");
-        return;
+        return format!("No body given.\n{USAGE}");
     };
 
     let req = Request::new().target(target).body(body.as_bytes().to_vec());
 
     match parsed.get_one::<u64>("await") {
         Some(s) => {
-            println!("awaiting response for {s}s");
+            println!("Awaiting response for {s}s");
             match req.send_and_await_response(*s).unwrap() {
-                Ok(res) => {
-                    println!("{}", String::from_utf8(res.body().to_vec()).unwrap());
-                }
+                Ok(res) => String::from_utf8_lossy(res.body()).to_string(),
                 Err(e) => {
-                    println!(
+                    format!(
                         "{}",
                         match e.kind {
                             SendErrorKind::Timeout =>
-                                "target did not send Response in time, try increasing the await time",
+                                "Target did not send response in time, try increasing the await time",
                             SendErrorKind::Offline =>
-                                "failed to send message because the target is offline",
+                                "Failed to send message because the target is offline",
                         }
-                    );
+                    )
                 }
             }
         }
@@ -95,6 +82,7 @@ fn init(_our: Address) {
             // still wait for a response, but don't do anything with it
             // do this so caps checks don't fail
             let _ = req.send_and_await_response(5).unwrap();
+            "".to_string()
         }
     }
 }

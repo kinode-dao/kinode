@@ -130,8 +130,11 @@ alias <shorthand> <full_name>
 ```
 Subsequent use of the shorthand will then be interpolated as the process ID.
 
-A list of the other terminal scripts included in this distro:
+A list of the terminal scripts included in this distro:
 
+- `alias <shorthand> <process_id>`: create an alias for a script.
+    - Example: `alias get_block get_block:kns_indexer:sys`
+    - note: all of these listed commands are just default aliases for terminal scripts.
 - `cat <vfs-file-path>`: print the contents of a file in the terminal.
     - Example: `cat /terminal:sys/pkg/scripts.json`
 - `echo <text>`: print text to the terminal.
@@ -145,8 +148,6 @@ A list of the other terminal scripts included in this distro:
     - Example: `m our@eth:distro:sys "SetPublic" -a 5`
     - the '-a' flag is used to expect a response with a given timeout
     - `our` will always be interpolated by the system as your node's name
-- `namehash_to_name <namehash>`: print the name of a node given its namehash, if we have it indexed. Namehashes are used in the onchain PKI data structure.
-    - Example: `namehash_to_name 0x46dc6209a66b3a0ef4b72f5d26c0e81c77c7ac146a62e96babf1224484b46fa9`
 - `net_diagnostics`: print some useful networking diagnostic data.
 - `peer <name>`: print the peer's PKI info, if it exists.
 - `peers`: print the peers the node currently hold connections with.
@@ -163,12 +164,14 @@ The image includes EXPOSE directives for TCP port `8080` and TCP port `9000`. Po
 If you are running a direct node, you must map port `9000` to the same port on the host and on your router. Otherwise, your Kinode will not be able to connect to the rest of the network as connection info is written to the chain, and this information is based on the view from inside the Docker container.
 
 To build a local Docker image, run the following command in this project root.
-```
-docker build -t 0xlynett/kinode .
+```bash
+# The `VERSION` may be replaced with the tag of a GitHub release
+docker build -t 0xlynett/kinode . --build-arg VERSION=v0.8.6
 ```
 
 For example:
-```
+
+```bash
 docker volume create kinode-volume
 
 docker run -d -p 8080:8080 -it --name my-kinode \

@@ -21,7 +21,7 @@ import './index.css'
 
 const config = getDefaultConfig({
   appName: 'Kinode App Store',
-  projectId: 'YOUR_PROJECT_ID',
+  projectId: 'KINODE_APP_STORE',
   chains: [optimism],
   ssr: false,
   transports: {

@@ -20,24 +20,24 @@ export function bytesToIp(bytes: Uint8Array): string {
 }
 
 export function ipToBytes(ip: string): Uint8Array {
-    const bytes = new Uint8Array(16);
-    const view = new DataView(bytes.buffer);
-
     if (ip.includes(':')) {
-        // IPv6
+        // IPv6: Create a 16-byte array
+        const bytes = new Uint8Array(16);
+        const view = new DataView(bytes.buffer);
         const parts = ip.split(':');
         for (let i = 0; i < 8; i++) {
             view.setUint16(i * 2, parseInt(parts[i] || '0', 16));
         }
+        return bytes;
     } else {
-        // IPv4
+        // IPv4: Create a 4-byte array
+        const bytes = new Uint8Array(4);
         const parts = ip.split('.');
         for (let i = 0; i < 4; i++) {
-            bytes[12 + i] = parseInt(parts[i], 10);
+            bytes[i] = parseInt(parts[i], 10);
         }
+        return bytes;
     }
-
-    return bytes;
 }
 
 export function bytesToPort(bytes: Uint8Array): number {

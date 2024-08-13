@@ -8,7 +8,7 @@ type OsHomeProps = {
 
 function KinodeHome({ knsName }: OsHomeProps) {
     const navigate = useNavigate()
-    const registerRedir = () => navigate('/register-name')
+    const registerRedir = () => navigate('/commit-os-name')
     const resetRedir = () => navigate('/reset')
     const importKeyfileRedir = () => navigate('/import-keyfile')
     const loginRedir = () => navigate('/login')

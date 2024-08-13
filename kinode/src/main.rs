@@ -53,7 +53,7 @@ pub const CHAIN_ID: u64 = 10;
 #[cfg(feature = "simulation-mode")]
 pub const CHAIN_ID: u64 = 31337;
 #[cfg(not(feature = "simulation-mode"))]
-pub const KIMAP_ADDRESS: &str = "0x7290Aa297818d0b9660B2871Bb87f85a3f9B4559";
+pub const KIMAP_ADDRESS: &str = "0xcA92476B2483aBD5D82AEBF0b56701Bb2e9be658";
 #[cfg(feature = "simulation-mode")]
 pub const KIMAP_ADDRESS: &str = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
 pub const MULTICALL_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11";
@@ -78,7 +78,7 @@ async fn main() {
     let password = matches.get_one::<String>("password");
 
     // detached determines whether terminal is interactive
-    let is_detached = *matches.get_one::<bool>("detached").unwrap();
+    let detached = *matches.get_one::<bool>("detached").unwrap();
 
     #[cfg(feature = "simulation-mode")]
     let (fake_node_name, fakechain_port) = (
@@ -208,6 +208,7 @@ async fn main() {
                 (tcp_tcp_handle, tcp_flag_used),
                 http_server_port,
                 rpc.cloned(),
+                detached,
             )
             .await
         }
@@ -420,7 +421,7 @@ async fn main() {
             kernel_debug_message_sender,
             print_sender.clone(),
             print_receiver,
-            is_detached,
+            detached,
             verbose_mode,
         ) => {
             match quit {
@@ -713,6 +714,7 @@ async fn serve_register_fe(
     tcp_networking: (Option<tokio::net::TcpListener>, bool),
     http_server_port: u16,
     maybe_rpc: Option<String>,
+    detached: bool,
 ) -> (Identity, Vec<u8>, Keyfile) {
     let (kill_tx, kill_rx) = tokio::sync::oneshot::channel::<bool>();
 
@@ -730,7 +732,8 @@ async fn serve_register_fe(
                 (tcp_networking.0.as_ref(), tcp_networking.1),
                 http_server_port,
                 disk_keyfile,
-                maybe_rpc) => {
+                maybe_rpc,
+                detached) => {
             panic!("registration failed")
         }
         Some((our, decoded_keyfile, encoded_keyfile)) = rx.recv() => {

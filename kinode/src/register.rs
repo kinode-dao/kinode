@@ -41,6 +41,7 @@ pub async fn register(
     http_port: u16,
     keyfile: Option<Vec<u8>>,
     maybe_rpc: Option<String>,
+    detached: bool,
 ) {
     // Networking info is generated and passed to the UI, but not used until confirmed
     let (public_key, serialized_networking_keypair) = keygen::generate_networking_key();
@@ -98,7 +99,8 @@ pub async fn register(
 
     let react_app = warp::path::end()
         .or(warp::path("login"))
-        .or(warp::path("register-name"))
+        .or(warp::path("commit-os-name"))
+        .or(warp::path("mint-os-name"))
         .or(warp::path("claim-invite"))
         .or(warp::path("reset"))
         .or(warp::path("import-keyfile"))
@@ -122,15 +124,24 @@ pub async fn register(
         .or(warp::path("our").and(warp::get()).and(keyfile.clone()).map(
             move |keyfile: Option<Vec<u8>>| {
                 if let Some(keyfile) = keyfile {
-                    if let Ok((username, _, _, _, _, _)) = bincode::deserialize::<(
+                    if let Ok((username, _, _, _, _, _)) = serde_json::from_slice::<(
                         String,
                         Vec<String>,
                         Vec<u8>,
                         Vec<u8>,
                         Vec<u8>,
                         Vec<u8>,
-                    )>(keyfile.as_ref())
-                    {
+                    )>(&keyfile)
+                    .or_else(|_| {
+                        bincode::deserialize::<(
+                            String,
+                            Vec<String>,
+                            Vec<u8>,
+                            Vec<u8>,
+                            Vec<u8>,
+                            Vec<u8>,
+                        )>(&keyfile)
+                    }) {
                         return warp::reply::html(username);
                     }
                 }
@@ -211,7 +222,9 @@ pub async fn register(
         .or(api)
         .with(warp::reply::with::headers(headers));
 
-    let _ = open::that(format!("http://localhost:{}/", http_port));
+    if !detached {
+        let _ = open::that(format!("http://localhost:{}/", http_port));
+    }
     warp::serve(routes)
         .bind_with_graceful_shutdown(([0, 0, 0, 0], http_port), async {
             kill_rx.await.ok();
@@ -431,7 +444,7 @@ async fn handle_import_keyfile(
     provider: Arc<RootProvider<PubSubFrontend>>,
 ) -> Result<impl Reply, Rejection> {
     // if keyfile was not present in node and is present from user upload
-    let encoded_keyfile = match base64_standard.decode(info.keyfile.clone()) {
+    let encoded_keyfile = match base64_standard.decode(info.keyfile) {
         Ok(k) => k,
         Err(_) => {
             return Ok(warp::reply::with_status(
@@ -669,7 +682,9 @@ pub async fn assign_routing(
 
     if netkey.data.to_string() != our.networking_key {
         return Err(anyhow::anyhow!(
-            "Networking key from PKI does not match our saved networking key"
+            "Networking key from PKI ({}) does not match our saved networking key ({})",
+            netkey.data.to_string(),
+            our.networking_key
         ));
     }
 

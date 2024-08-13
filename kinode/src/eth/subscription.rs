@@ -113,7 +113,6 @@ pub async fn create_new_subscription(
                         let (keepalive_err_sender, keepalive_err_receiver) =
                             tokio::sync::mpsc::channel(1);
                         response_channels.insert(keepalive_km_id, keepalive_err_sender);
-                        let response_channels = response_channels.clone();
                         subs.insert(
                             remote_sub_id,
                             ActiveSub::Remote {
@@ -180,15 +179,21 @@ async fn build_subscription(
     else {
         return Err(EthError::PermissionDenied); // will never hit
     };
-    let Some(mut aps) = providers.get_mut(&chain_id) else {
-        return Err(EthError::NoRpcForChain);
+    let mut urls = {
+        // in code block to drop providers lock asap to avoid deadlock
+        let Some(aps) = providers.get(&chain_id) else {
+            return Err(EthError::NoRpcForChain);
+        };
+        aps.urls.clone()
     };
+    let chain_id = chain_id.clone();
+
     // first, try any url providers we have for this chain,
     // then if we have none or they all fail, go to node providers.
     // finally, if no provider works, return an error.
 
     // bump the successful provider to the front of the list for future requests
-    for (index, url_provider) in aps.urls.iter_mut().enumerate() {
+    for url_provider in urls.iter_mut() {
         let pubsub = match &url_provider.pubsub {
             Some(pubsub) => pubsub,
             None => {
@@ -217,8 +222,28 @@ async fn build_subscription(
         {
             Ok(sub) => {
                 let rx = sub.into_raw();
-                let successful_provider = aps.urls.remove(index);
-                aps.urls.insert(0, successful_provider);
+                let mut is_replacement_successful = true;
+                providers.entry(chain_id).and_modify(|aps| {
+                    let Some(index) = find_index(
+                        &aps.urls.iter().map(|u| u.url.as_str()).collect(),
+                        &url_provider.url,
+                    ) else {
+                        is_replacement_successful = false;
+                        return ();
+                    };
+                    let old_provider = aps.urls.remove(index);
+                    match old_provider.pubsub {
+                        None => aps.urls.insert(0, url_provider.clone()),
+                        Some(_) => aps.urls.insert(0, old_provider),
+                    }
+                });
+                if !is_replacement_successful {
+                    verbose_print(
+                        print_tx,
+                        &format!("eth: unexpectedly couldn't find provider to be modified"),
+                    )
+                    .await;
+                }
                 return Ok(Ok(rx));
             }
             Err(rpc_error) => {
@@ -231,7 +256,26 @@ async fn build_subscription(
                 )
                 .await;
                 // this provider failed and needs to be reset
-                url_provider.pubsub = None;
+                let mut is_reset_successful = true;
+                providers.entry(chain_id).and_modify(|aps| {
+                    let Some(index) = find_index(
+                        &aps.urls.iter().map(|u| u.url.as_str()).collect(),
+                        &url_provider.url,
+                    ) else {
+                        is_reset_successful = false;
+                        return ();
+                    };
+                    let mut url = aps.urls.remove(index);
+                    url.pubsub = None;
+                    aps.urls.insert(index, url);
+                });
+                if !is_reset_successful {
+                    verbose_print(
+                        print_tx,
+                        &format!("eth: unexpectedly couldn't find provider to be modified"),
+                    )
+                    .await;
+                }
             }
         }
     }
@@ -241,7 +285,14 @@ async fn build_subscription(
     // we need to create our own unique sub id because in the remote provider node,
     // all subs will be identified under our process address.
     let remote_sub_id = rand::random();
-    for node_provider in &mut aps.nodes {
+    let nodes = {
+        // in code block to drop providers lock asap to avoid deadlock
+        let Some(aps) = providers.get(&chain_id) else {
+            return Err(EthError::NoRpcForChain);
+        };
+        aps.nodes.clone()
+    };
+    for node_provider in &nodes {
         verbose_print(
             &print_tx,
             &format!(
@@ -283,11 +334,23 @@ async fn build_subscription(
             }
             EthResponse::Response { .. } => {
                 // the response to a SubscribeLogs request must be an 'ok'
-                node_provider.usable = false;
+                set_node_unusable(
+                    &providers,
+                    &chain_id,
+                    &node_provider.kns_update.name,
+                    print_tx,
+                )
+                .await;
             }
             EthResponse::Err(e) => {
                 if let EthError::RpcMalformedResponse = e {
-                    node_provider.usable = false;
+                    set_node_unusable(
+                        &providers,
+                        &chain_id,
+                        &node_provider.kns_update.name,
+                        print_tx,
+                    )
+                    .await;
                 }
             }
         }
@@ -407,7 +470,7 @@ async fn maintain_remote_subscription(
                     true,
                     Some(30),
                     IncomingReq::SubKeepalive(remote_sub_id),
-                    &send_to_loop,
+                    send_to_loop,
                 ).await;
             }
             _incoming = net_error_rx.recv() => {
@@ -424,6 +487,23 @@ async fn maintain_remote_subscription(
             }
         }
     };
+    // tell provider node we don't need their services anymore
+    // (in case they did not close the subscription on their side,
+    // such as in the 2-hour timeout case)
+    kernel_message(
+        our,
+        rand::random(),
+        Address {
+            node: provider_node.to_string(),
+            process: ETH_PROCESS_ID.clone(),
+        },
+        None,
+        true,
+        None,
+        EthAction::UnsubscribeLogs(remote_sub_id),
+        send_to_loop,
+    )
+    .await;
     active_subscriptions
         .entry(target.clone())
         .and_modify(|sub_map| {

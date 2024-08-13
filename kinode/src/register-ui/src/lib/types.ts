@@ -22,7 +22,7 @@ export interface PageProps {
   pw: string,
   setPw: React.Dispatch<React.SetStateAction<string>>,
   appSizeOnLoad: number,
-  nodeChainId: string
+  nodeChainId: string,
 }
 
 export type NetworkingInfo = {
