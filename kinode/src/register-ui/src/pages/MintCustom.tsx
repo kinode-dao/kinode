@@ -48,6 +48,12 @@ function MintCustom({
 
     useEffect(() => setTriggerNameCheck(!triggerNameCheck), [address])
 
+    useEffect(() => {
+        if (!address) {
+            openConnectModal?.();
+        }
+    }, [address, openConnectModal]);
+
     let handleMint = useCallback(async (e: FormEvent) => {
         e.preventDefault()
         e.stopPropagation()
@@ -113,12 +119,15 @@ function MintCustom({
     return (
         <div className="container fade-in">
             <div className="section">
-                {Boolean(address) && (
+                {
                     <form className="form" onSubmit={handleMint}>
                         {isPending || isConfirming ? (
                             <Loader msg={isConfirming ? 'Minting name...' : 'Please confirm the transaction in your wallet'} />
                         ) : (
                             <>
+                                <p className="form-label">
+                                    Register a name on a different top-level zone -- this will likely fail if that zone's requirements are not met
+                                </p>
                                 <input type="text" name="name" placeholder="Enter kimap name" />
                                 <input type="text" name="full-kns-name" placeholder="Enter full KNS name" />
                                 <input type="text" name="tba" placeholder="Enter TBA to mint under" />
@@ -136,7 +145,7 @@ function MintCustom({
                             </p>
                         )}
                     </form>
-                )}
+                }
             </div>
         </div>
     );

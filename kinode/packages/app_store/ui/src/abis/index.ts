@@ -2,7 +2,7 @@ import { parseAbi } from "viem";
 
 export { encodeMulticalls, encodeIntoMintCall } from "./helpers";
 
-export const KINOMAP: `0x${string}` = "0xAfA2e57D3cBA08169b416457C14eBA2D6021c4b5";
+export const KIMAP: `0x${string}` = "0xAfA2e57D3cBA08169b416457C14eBA2D6021c4b5";
 export const MULTICALL: `0x${string}` = "0xcA11bde05977b3631167028862bE2a173976CA11";
 export const KINO_ACCOUNT_IMPL: `0x${string}` = "0xd30217e86A4910f4D7cB3E73fC3CfD28a2C33e4e";
 
@@ -12,7 +12,7 @@ export const multicallAbi = parseAbi([
     `struct Call { address target; bytes callData; }`,
 ]);
 
-export const kinomapAbi = parseAbi([
+export const kimapAbi = parseAbi([
     "function mint(address, bytes calldata, bytes calldata, bytes calldata, address) external returns (address tba)",
     "function note(bytes calldata,bytes calldata) external returns (bytes32)",
     "function get(bytes32 node) external view returns (address tokenBoundAccount, address tokenOwner, bytes memory note)",

@@ -118,13 +118,13 @@ function ImportKeyfile({
                 required
                 minLength={6}
                 name="password"
-                placeholder="Min 6 characters"
+                placeholder=""
                 value={pw}
                 onChange={(e) => setPw(e.target.value)}
               />
               {pwErr && <p className="error-message">{pwErr}</p>}
               {pwDebounced && !pwVet && 6 <= pw.length && (
-                <p className="error-message">Password is incorrect</p>
+                <p className="error-message">Password is incorrect!</p>
               )}
             </div>
 
@@ -132,7 +132,7 @@ function ImportKeyfile({
               {keyErrs.map((x, i) => (
                 <p key={i} className="error-message">{x}</p>
               ))}
-              <button type="submit" className="button">Import Keyfile</button>
+              <button type="submit" className="button">Boot Node</button>
             </div>
             <p className="text-sm mt-2">
               Please note: if the original node was booted as a direct node
