@@ -1,0 +1,18 @@
+[
+    {
+        "process_name": "docs",
+        "process_wasm_path": "/docs.wasm",
+        "on_exit": "Restart",
+        "request_networking": false,
+        "request_capabilities": [
+            "homepage:homepage:sys",
+            "http_server:distro:sys",
+            "vfs:distro:sys"
+        ],
+        "grant_capabilities": [
+            "http_server:distro:sys",
+            "vfs:distro:sys"
+        ],
+        "public": false
+    }
+]
