@@ -170,7 +170,7 @@ button:disabled {
 }
 
 button.secondary {
-    background-color: white;
+    background-color: light-dark(var(--off-white), var(--off-black));
     color: var(--orange);
     border: 2px solid var(--orange);
 }

@@ -125,6 +125,9 @@ function MintCustom({
                             <Loader msg={isConfirming ? 'Minting name...' : 'Please confirm the transaction in your wallet'} />
                         ) : (
                             <>
+                                <p className="form-label">
+                                    Register a name on a different top-level zone -- this will likely fail if that zone's requirements are not met
+                                </p>
                                 <input type="text" name="name" placeholder="Enter kimap name" />
                                 <input type="text" name="full-kns-name" placeholder="Enter full KNS name" />
                                 <input type="text" name="tba" placeholder="Enter TBA to mint under" />

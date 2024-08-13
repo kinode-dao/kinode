@@ -3,7 +3,7 @@ import isValidDomain from "is-valid-domain";
 import { toAscii } from "idna-uts46-hx";
 import { usePublicClient } from 'wagmi'
 
-import { KINOMAP, kinomapAbi } from '../abis'
+import { KIMAP, kimapAbi } from '../abis'
 import { kinohash } from "../utils/kinohash";
 
 export const NAME_URL = "Name must contain only valid characters (a-z, 0-9, and -)";
@@ -80,8 +80,8 @@ function EnterKnsName({
             // maybe separate into helper function for readability?
             // also note picking the right chain ID & address!
             const data = await client?.readContract({
-              address: KINOMAP,
-              abi: kinomapAbi,
+              address: KIMAP,
+              abi: kimapAbi,
               functionName: "get",
               args: [namehash]
             })

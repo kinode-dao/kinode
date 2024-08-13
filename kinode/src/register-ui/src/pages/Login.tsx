@@ -115,14 +115,14 @@ function Login({
             </div>
           )}
 
-          <button type="submit">Login</button>
+          <button type="submit">Log in</button>
 
           <div className="additional-options">
             <button
               className="secondary"
               onClick={() => navigate('/reset')}
             >
-              Reset Node & Networking Info
+              Reset Password & Networking Info
             </button>
           </div>
         </form>

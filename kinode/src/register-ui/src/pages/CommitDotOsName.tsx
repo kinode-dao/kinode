@@ -102,7 +102,7 @@ function CommitDotOsName({
                             <>
                                 <h3 className="form-label">
                                     <Tooltip text="Kinodes need an onchain node identity in order to communicate with other nodes in the network.">
-                                        Choose a name for your computer
+                                        Choose a name for your node
                                     </Tooltip>
                                 </h3>
                                 <EnterKnsName {...enterOsNameProps} />

@@ -3,7 +3,7 @@ import { useLocation } from "react-router-dom";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
 import { ConnectButton, useConnectModal } from '@rainbow-me/rainbowkit';
 import { keccak256, toBytes } from 'viem';
-import { mechAbi, KINOMAP, encodeIntoMintCall, encodeMulticalls, kinomapAbi, MULTICALL } from "../abis";
+import { mechAbi, KIMAP, encodeIntoMintCall, encodeMulticalls, kimapAbi, MULTICALL } from "../abis";
 import { kinohash } from '../utils/kinohash';
 import useAppsStore from "../store";
 import { AppInfo } from "../types/Apps";
@@ -71,8 +71,8 @@ export default function PublishPage() {
       try {
         // Check if the package already exists and get its TBA
         let data = await publicClient.readContract({
-          abi: kinomapAbi,
-          address: KINOMAP,
+          abi: kimapAbi,
+          address: KIMAP,
           functionName: 'get',
           args: [kinohash(`${packageName}.${publisherId}`)]
         });
@@ -84,8 +84,8 @@ export default function PublishPage() {
         // If the package doesn't exist, check for the publisher's TBA
         if (!currentTBA) {
           data = await publicClient.readContract({
-            abi: kinomapAbi,
-            address: KINOMAP,
+            abi: kimapAbi,
+            address: KIMAP,
             functionName: 'get',
             args: [kinohash(publisherId)]
           });
@@ -108,10 +108,10 @@ export default function PublishPage() {
 
         writeContract({
           abi: mechAbi,
-          address: currentTBA || KINOMAP,
+          address: currentTBA || KIMAP,
           functionName: 'execute',
           args: [
-            isUpdate ? MULTICALL : KINOMAP,
+            isUpdate ? MULTICALL : KIMAP,
             BigInt(0),
             args,
             isUpdate ? 1 : 0
@@ -141,8 +141,8 @@ export default function PublishPage() {
         }
 
         const data = await publicClient.readContract({
-          abi: kinomapAbi,
-          address: KINOMAP,
+          abi: kimapAbi,
+          address: KIMAP,
           functionName: 'get',
           args: [kinohash(`${packageName}.${publisherName}`)]
         });
@@ -161,7 +161,7 @@ export default function PublishPage() {
           address: tba as `0x${string}`,
           functionName: 'execute',
           args: [
-            KINOMAP,
+            KIMAP,
             BigInt(0),
             multicall,
             1

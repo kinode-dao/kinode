@@ -1,9 +1,9 @@
-import { multicallAbi, kinomapAbi, mechAbi, KINOMAP, MULTICALL, KINO_ACCOUNT_IMPL } from "./";
+import { multicallAbi, kimapAbi, mechAbi, KIMAP, MULTICALL, KINO_ACCOUNT_IMPL } from "./";
 import { encodeFunctionData, encodePacked, stringToHex } from "viem";
 
 export function encodeMulticalls(metadataUri: string, metadataHash: string) {
     const metadataHashCall = encodeFunctionData({
-        abi: kinomapAbi,
+        abi: kimapAbi,
         functionName: 'note',
         args: [
             encodePacked(["bytes"], [stringToHex("~metadata-hash")]),
@@ -12,7 +12,7 @@ export function encodeMulticalls(metadataUri: string, metadataHash: string) {
     })
 
     const metadataUriCall = encodeFunctionData({
-        abi: kinomapAbi,
+        abi: kimapAbi,
         functionName: 'note',
         args: [
             encodePacked(["bytes"], [stringToHex("~metadata-uri")]),
@@ -21,8 +21,8 @@ export function encodeMulticalls(metadataUri: string, metadataHash: string) {
     })
 
     const calls = [
-        { target: KINOMAP, callData: metadataHashCall },
-        { target: KINOMAP, callData: metadataUriCall },
+        { target: KIMAP, callData: metadataHashCall },
+        { target: KIMAP, callData: metadataUriCall },
     ];
 
     const multicall = encodeFunctionData({
@@ -46,7 +46,7 @@ export function encodeIntoMintCall(multicalls: `0x${string}`, our_address: `0x${
     });
 
     const mintCall = encodeFunctionData({
-        abi: kinomapAbi,
+        abi: kimapAbi,
         functionName: 'mint',
         args: [
             our_address,
