@@ -13,7 +13,7 @@ export interface PageProps {
   direct: boolean,
   setDirect: React.Dispatch<React.SetStateAction<boolean>>,
   knsName: string,
-  setOsName: React.Dispatch<React.SetStateAction<string>>,
+  setKnsName: React.Dispatch<React.SetStateAction<string>>,
   key: string,
   keyFileName: string,
   setKeyFileName: React.Dispatch<React.SetStateAction<string>>,

@@ -12,7 +12,7 @@ function KinodeHome({ knsName }: OsHomeProps) {
     const resetRedir = () => navigate('/reset')
     const importKeyfileRedir = () => navigate('/import-keyfile')
     const loginRedir = () => navigate('/login')
-
+    const customRegisterRedir = () => navigate('/custom-register')
     const previouslyBooted = Boolean(knsName)
 
     useEffect(() => {
@@ -35,7 +35,7 @@ function KinodeHome({ knsName }: OsHomeProps) {
                                 <h4 className="text-center mb-2">New here? Register a username to get started</h4>
                                 <div className="button-group">
                                     <button onClick={registerRedir} className="button">
-                                        Register Kinode Name
+                                        Register .os Name
                                     </button>
                                 </div>
                                 <h4 className="text-center mt-2 mb-2">Other options</h4>
@@ -45,6 +45,9 @@ function KinodeHome({ knsName }: OsHomeProps) {
                                     </button>
                                     <button onClick={importKeyfileRedir} className="button secondary">
                                         Import Keyfile
+                                    </button>
+                                    <button onClick={customRegisterRedir} className="button secondary">
+                                        Register non-.os Name (Advanced)
                                     </button>
                                 </div>
                             </>

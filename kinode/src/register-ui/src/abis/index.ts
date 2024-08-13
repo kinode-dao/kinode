@@ -24,28 +24,11 @@ export const mechAbi = parseAbi([
     "function token() external view returns (uint256,address,uint256)"
 ])
 
-export const dotOsAbi = [
-    {
-        type: 'function',
-        name: 'commit',
-        stateMutability: 'nonpayable',
-        inputs: [
-            { name: '_commit', type: 'bytes32' },
-        ],
-        outputs: [],
-    },
-    {
-        type: 'function',
-        name: 'mint',
-        stateMutability: 'nonpayable',
-        inputs: [
-            { name: 'who', type: 'address' },
-            { name: 'name', type: 'bytes' },
-            { name: 'initialization', type: 'bytes' },
-            { name: 'erc721Data', type: 'bytes' },
-            { name: 'implementation', type: 'address' },
-            { name: 'secret', type: 'bytes32' },
-        ],
-        outputs: [{ type: 'address' }],
-    },
-] as const
+export const dotOsAbi = parseAbi([
+    "function commit(bytes32 _commit) external",
+    "function mint(address who, bytes calldata name, bytes calldata initialization, bytes calldata erc721Data, address implementation, bytes32 secret) external returns (address)"
+]);
+
+export const customAbi = parseAbi([
+    "function mint(address who, bytes calldata name, bytes calldata initialization, bytes calldata erc721Data, address implementation) external returns (address)"
+]);

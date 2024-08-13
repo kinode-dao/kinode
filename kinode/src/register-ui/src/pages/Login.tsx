@@ -13,7 +13,7 @@ function Login({
   routers,
   setRouters,
   knsName,
-  setOsName,
+  setKnsName,
 }: LoginProps) {
   const navigate = useNavigate();
 
@@ -29,7 +29,7 @@ function Login({
           res.json()
         )) as UnencryptedIdentity;
         setRouters(infoData.allowed_routers);
-        setOsName(infoData.name);
+        setKnsName(infoData.name);
       } catch { }
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
